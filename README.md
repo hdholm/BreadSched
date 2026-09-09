@@ -265,6 +265,14 @@ new ledger transaction to one, stores the stable occurrence identity, original
 planned date and expected amount on the transaction. A changed future estimate
 therefore cannot retroactively change historical variance.
 
+**Budget-versus-actual is derived from events.** The activity report groups the same
+exact-dated occurrences and ledger transactions by calendar month, quarter or year.
+Changing the display period cannot change totals. Expectations stay in the period
+containing their planned date while actuals stay in the period containing their
+posting date, so a January 31 bill that clears February 1 exposes the cash-timing
+variance instead of being silently moved. Unresolved expectations and actual
+transactions with no planned occurrence remain visible for drill-down.
+
 **Formulas are parsed, not `eval`'d.** Scheduled-transaction formulas go through
 an `ast` walk with a node whitelist. This application's whole job is reading other
 people's financial documents; `eval` on their contents is not an option.
@@ -333,6 +341,9 @@ cashperspective scheduled household.cashperspective --post
 cashperspective budget-set household.cashperspective --name 2026 \
     --account "Expenses:Groceries" --amount 600.00
 cashperspective budget household.cashperspective --name 2026
+
+cashperspective activity household.cashperspective --start 2026-01-01 --end 2026-12-31
+cashperspective activity household.cashperspective --start 2026-01-01 --end 2026-12-31 --period quarter
 
 cashperspective scenario household.cashperspective save --name "Base case" \
     --years 20 --income-growth 0.03 --inflation 0.025 --investment-return 0.06

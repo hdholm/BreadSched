@@ -184,6 +184,20 @@ class TestBudgetAndProjection:
                         "--basis", "budget", "--budget", "2026", "--start", "2026-01-01")
         assert "Cash runs out in" in out
 
+    def test_activity_reports_periods_without_making_them_the_plan(self, capsys, book_path):
+        run(capsys, "init", book_path)
+        run(capsys, "add", book_path, "--date", "2026-01-05",
+            "--description", "Unexpected purchase", "--from", "Assets",
+            "--to", "Expenses", "--amount", "25.00")
+        result = run_json(
+            capsys, "activity", book_path, "--start", "2026-01-01",
+            "--end", "2026-03-31", "--period", "quarter",
+        )
+        assert result["period"] == "quarter"
+        assert len(result["periods"]) == 1
+        assert result["actual_amount"] == "25.00"
+        assert result["unexpected_count"] == 1
+
 
 class TestScenarios:
     @pytest.fixture

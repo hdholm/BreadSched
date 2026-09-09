@@ -1,0 +1,405 @@
+"""Derived budget/actual reporting over dated planning events.
+
+The planning engine is event driven.  This module deliberately introduces display
+periods only after planned occurrences and actual ledger transactions already have
+their real dates.  Changing a report from month to quarter or year therefore never
+changes the underlying plan or projection.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass, field
+from datetime import date, timedelta
+from enum import Enum
+
+from ..db.sqlite import DbSQLite
+from ..lib.account import Account, AccountClass
+from ..lib.money import Money
+from ..lib.recurrence import add_months
+from ..lib.scheduled import ScheduledTransaction
+from ..lib.transaction import Transaction
+from .planning import EventStatus, PlannedEvent, PlannedSplit, scheduled_events
+
+__all__ = [
+    "ActualActivity",
+    "ActivityReport",
+    "PeriodActivity",
+    "ReportingPeriod",
+    "build_activity_report",
+]
+
+
+class ReportingPeriod(str, Enum):
+    """Calendar bucket used only to display event-driven activity."""
+
+    MONTH = "month"
+    QUARTER = "quarter"
+    YEAR = "year"
+
+
+@dataclass(frozen=True, slots=True)
+class ActualActivity:
+    """One ledger transaction as it appears in a plan-vs-actual report."""
+
+    transaction: str
+    post_date: date
+    description: str
+    amount: Money
+    cash_change: Money
+    income: Money
+    expense: Money
+    planned_occurrence: str | None = None
+    planned_for: date | None = None
+    planned_amount: Money | None = None
+
+    @property
+    def unexpected(self) -> bool:
+        return self.planned_occurrence is None
+
+    @property
+    def variance(self) -> Money | None:
+        if self.planned_amount is None:
+            return None
+        return self.amount - self.planned_amount
+
+    @property
+    def date_variance_days(self) -> int | None:
+        if self.planned_for is None:
+            return None
+        return (self.post_date - self.planned_for).days
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "transaction": self.transaction,
+            "post_date": self.post_date,
+            "description": self.description,
+            "amount": self.amount,
+            "cash_change": self.cash_change,
+            "income": self.income,
+            "expense": self.expense,
+            "planned_occurrence": self.planned_occurrence,
+            "planned_for": self.planned_for,
+            "planned_amount": self.planned_amount,
+            "variance": self.variance,
+            "date_variance_days": self.date_variance_days,
+            "unexpected": self.unexpected,
+        }
+
+
+@dataclass(slots=True)
+class PeriodActivity:
+    """One display bucket assembled from exact-dated expectations and actuals."""
+
+    start: date
+    end: date
+    label: str
+    planned_amount: Money = field(default_factory=lambda: Money(0))
+    actual_amount: Money = field(default_factory=lambda: Money(0))
+    planned_cash_change: Money = field(default_factory=lambda: Money(0))
+    actual_cash_change: Money = field(default_factory=lambda: Money(0))
+    planned_income: Money = field(default_factory=lambda: Money(0))
+    actual_income: Money = field(default_factory=lambda: Money(0))
+    planned_expense: Money = field(default_factory=lambda: Money(0))
+    actual_expense: Money = field(default_factory=lambda: Money(0))
+    planned_events: list[PlannedEvent] = field(default_factory=list)
+    actual_transactions: list[ActualActivity] = field(default_factory=list)
+
+    @property
+    def amount_variance(self) -> Money:
+        return self.actual_amount - self.planned_amount
+
+    @property
+    def cash_variance(self) -> Money:
+        return self.actual_cash_change - self.planned_cash_change
+
+    @property
+    def income_variance(self) -> Money:
+        return self.actual_income - self.planned_income
+
+    @property
+    def expense_variance(self) -> Money:
+        return self.actual_expense - self.planned_expense
+
+    @property
+    def unresolved(self) -> tuple[PlannedEvent, ...]:
+        return tuple(
+            event for event in self.planned_events
+            if event.status is EventStatus.EXPECTED
+        )
+
+    @property
+    def resolved(self) -> tuple[PlannedEvent, ...]:
+        return tuple(
+            event for event in self.planned_events
+            if event.status is EventStatus.ACTUALIZED
+        )
+
+    @property
+    def unexpected(self) -> tuple[ActualActivity, ...]:
+        return tuple(item for item in self.actual_transactions if item.unexpected)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "start": self.start,
+            "end": self.end,
+            "label": self.label,
+            "planned_amount": self.planned_amount,
+            "actual_amount": self.actual_amount,
+            "amount_variance": self.amount_variance,
+            "planned_cash_change": self.planned_cash_change,
+            "actual_cash_change": self.actual_cash_change,
+            "cash_variance": self.cash_variance,
+            "planned_income": self.planned_income,
+            "actual_income": self.actual_income,
+            "income_variance": self.income_variance,
+            "planned_expense": self.planned_expense,
+            "actual_expense": self.actual_expense,
+            "expense_variance": self.expense_variance,
+            "unresolved_count": len(self.unresolved),
+            "resolved_count": len(self.resolved),
+            "unexpected_count": len(self.unexpected),
+            "planned_events": [event.as_dict() for event in self.planned_events],
+            "actual_transactions": [item.as_dict() for item in self.actual_transactions],
+        }
+
+
+@dataclass(slots=True)
+class ActivityReport:
+    """A chronological set of display buckets over one event/actual horizon."""
+
+    start: date
+    end: date
+    period: ReportingPeriod
+    periods: list[PeriodActivity]
+
+    @property
+    def planned_amount(self) -> Money:
+        return _sum_money(period.planned_amount for period in self.periods)
+
+    @property
+    def actual_amount(self) -> Money:
+        return _sum_money(period.actual_amount for period in self.periods)
+
+    @property
+    def amount_variance(self) -> Money:
+        return self.actual_amount - self.planned_amount
+
+    @property
+    def planned_cash_change(self) -> Money:
+        return _sum_money(period.planned_cash_change for period in self.periods)
+
+    @property
+    def actual_cash_change(self) -> Money:
+        return _sum_money(period.actual_cash_change for period in self.periods)
+
+    @property
+    def cash_variance(self) -> Money:
+        return self.actual_cash_change - self.planned_cash_change
+
+    @property
+    def unresolved_count(self) -> int:
+        return sum(len(period.unresolved) for period in self.periods)
+
+    @property
+    def unexpected_count(self) -> int:
+        return sum(len(period.unexpected) for period in self.periods)
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "start": self.start,
+            "end": self.end,
+            "period": self.period.value,
+            "planned_amount": self.planned_amount,
+            "actual_amount": self.actual_amount,
+            "amount_variance": self.amount_variance,
+            "planned_cash_change": self.planned_cash_change,
+            "actual_cash_change": self.actual_cash_change,
+            "cash_variance": self.cash_variance,
+            "unresolved_count": self.unresolved_count,
+            "unexpected_count": self.unexpected_count,
+            "periods": [period.as_dict() for period in self.periods],
+        }
+
+
+def _sum_money(values: Iterable[Money]) -> Money:
+    total = Money(0)
+    for value in values:
+        total = total + value
+    return total
+
+
+def _period_start(when: date, period: ReportingPeriod) -> date:
+    if period is ReportingPeriod.MONTH:
+        return when.replace(day=1)
+    if period is ReportingPeriod.QUARTER:
+        month = ((when.month - 1) // 3) * 3 + 1
+        return date(when.year, month, 1)
+    return date(when.year, 1, 1)
+
+
+def _next_period(start: date, period: ReportingPeriod) -> date:
+    months = {
+        ReportingPeriod.MONTH: 1,
+        ReportingPeriod.QUARTER: 3,
+        ReportingPeriod.YEAR: 12,
+    }[period]
+    return add_months(start, months, day=1)
+
+
+def _period_label(start: date, period: ReportingPeriod) -> str:
+    if period is ReportingPeriod.MONTH:
+        return f"{start:%b %Y}"
+    if period is ReportingPeriod.QUARTER:
+        return f"Q{(start.month - 1) // 3 + 1} {start.year}"
+    return str(start.year)
+
+
+def _make_periods(
+    start: date,
+    end: date,
+    period: ReportingPeriod,
+) -> list[PeriodActivity]:
+    found: list[PeriodActivity] = []
+    cursor = _period_start(start, period)
+    while cursor <= end:
+        nxt = _next_period(cursor, period)
+        found.append(
+            PeriodActivity(
+                start=max(start, cursor),
+                end=min(end, nxt - timedelta(days=1)),
+                label=_period_label(cursor, period),
+            )
+        )
+        cursor = nxt
+    return found
+
+
+def _index_for(periods: list[PeriodActivity], when: date) -> PeriodActivity | None:
+    for period in periods:
+        if period.start <= when <= period.end:
+            return period
+    return None
+
+
+def _gross(splits: tuple[PlannedSplit, ...]) -> Money:
+    return _sum_money(split.amount for split in splits if split.amount > 0)
+
+
+def _split_totals(
+    splits: tuple[PlannedSplit, ...],
+    accounts: dict[str, Account],
+    *,
+    funded_from_cash: bool = False,
+) -> tuple[Money, Money, Money]:
+    """Return ``(cash_change, income, expense)`` for a set of split values."""
+    cash = Money(0)
+    income = Money(0)
+    expense = Money(0)
+    for split in splits:
+        account = accounts.get(split.account)
+        if account is None:
+            continue
+        if account.atype.is_cash_like:
+            cash = cash + split.amount
+        elif account.account_class is AccountClass.INCOME:
+            value = split.amount if funded_from_cash else -split.amount
+            income = income + value
+            if funded_from_cash:
+                cash = cash + split.amount
+        elif account.account_class is AccountClass.EXPENSE:
+            expense = expense + split.amount
+            if funded_from_cash:
+                cash = cash - split.amount
+        elif funded_from_cash and account.account_class in (
+            AccountClass.ASSET,
+            AccountClass.LIABILITY,
+        ):
+            cash = cash - split.amount
+    return cash, income, expense
+
+
+def _actual_activity(
+    transaction: Transaction,
+    accounts: dict[str, Account],
+) -> ActualActivity:
+    splits = tuple(PlannedSplit(split.account, split.value) for split in transaction.splits)
+    cash, income, expense = _split_totals(splits, accounts)
+    planned_for = transaction.planned_for
+    planned_occurrence = transaction.planned_occurrence
+    if planned_occurrence is None and transaction.scheduled_from is not None:
+        # Books created before occurrence metadata existed still know which schedule
+        # posted the transaction.  Treat that as resolved plan activity rather than
+        # incorrectly reporting it as an unexpected purchase.
+        planned_for = planned_for or transaction.post_date
+        planned_occurrence = ScheduledTransaction.occurrence_key_for(
+            transaction.scheduled_from, planned_for
+        )
+    return ActualActivity(
+        transaction=transaction.handle,
+        post_date=transaction.post_date,
+        description=transaction.description,
+        amount=_gross(splits),
+        cash_change=cash,
+        income=income,
+        expense=expense,
+        planned_occurrence=planned_occurrence,
+        planned_for=planned_for,
+        planned_amount=transaction.planned_amount,
+    )
+
+
+def build_activity_report(
+    db: DbSQLite,
+    start: date,
+    end: date,
+    *,
+    period: ReportingPeriod | str = ReportingPeriod.MONTH,
+    budget_handle: str | None = None,
+) -> ActivityReport:
+    """Aggregate exact-dated planned and actual activity for display.
+
+    Expectations are placed in the period containing their planned date.  Actual
+    ledger transactions are placed in the period containing their posting date.
+    Consequently an event planned for 31 January but posted on 1 February produces
+    a January expectation and a February actual, faithfully exposing cash timing.
+    """
+    if end < start:
+        raise ValueError("activity report end date precedes start date")
+    grouping = period if isinstance(period, ReportingPeriod) else ReportingPeriod(period)
+    periods = _make_periods(start, end, grouping)
+    accounts = {account.handle: account for account in db.iter_accounts()}
+
+    for event in scheduled_events(
+        db,
+        start,
+        end,
+        budget_handle=budget_handle,
+        include_actualized=True,
+    ):
+        bucket = _index_for(periods, event.planned_date)
+        if bucket is None:
+            continue
+        cash, income, expense = _split_totals(
+            event.expected_splits,
+            accounts,
+            funded_from_cash=event.funded_from_cash,
+        )
+        bucket.planned_events.append(event)
+        bucket.planned_amount = bucket.planned_amount + event.expected_amount
+        bucket.planned_cash_change = bucket.planned_cash_change + cash
+        bucket.planned_income = bucket.planned_income + income
+        bucket.planned_expense = bucket.planned_expense + expense
+
+    for transaction in db.iter_transactions(start=start, end=end):
+        bucket = _index_for(periods, transaction.post_date)
+        if bucket is None:
+            continue
+        actual = _actual_activity(transaction, accounts)
+        bucket.actual_transactions.append(actual)
+        bucket.actual_amount = bucket.actual_amount + actual.amount
+        bucket.actual_cash_change = bucket.actual_cash_change + actual.cash_change
+        bucket.actual_income = bucket.actual_income + actual.income
+        bucket.actual_expense = bucket.actual_expense + actual.expense
+
+    return ActivityReport(start=start, end=end, period=grouping, periods=periods)

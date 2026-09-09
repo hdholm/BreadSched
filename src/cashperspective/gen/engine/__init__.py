@@ -1,6 +1,7 @@
 """Pure computation over a database: no storage, no UI."""
 
 from . import (
+    activity,
     budgeting,
     cashflow,
     dashboard,
@@ -13,6 +14,6 @@ from . import (
 )
 
 __all__ = [
-    "budgeting", "cashflow", "dashboard", "inference", "ledger", "loans",
+    "activity", "budgeting", "cashflow", "dashboard", "inference", "ledger", "loans",
     "planning", "projection", "schedule",
 ]

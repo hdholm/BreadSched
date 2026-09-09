@@ -24,6 +24,7 @@ from typing import Any
 from ..gen.db.base import DbError
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
+    activity,
     budgeting,
     cashflow,
     inference,
@@ -587,6 +588,60 @@ def cmd_budget(args: argparse.Namespace) -> int:
             args,
             text,
         )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_activity(args: argparse.Namespace) -> int:
+    """Show event-driven plan versus actuals in display-only time buckets."""
+    db = open_book(args.book, "r")
+    try:
+        start = parse_date(args.start)
+        end = parse_date(args.end)
+        if start is None or end is None:
+            raise CommandError("activity requires --start and --end")
+        budget_handle = None
+        if args.budget:
+            budget = db.get_budget_by_name(args.budget)
+            if budget is None:
+                raise CommandError(f"no budget named {args.budget!r}")
+            budget_handle = budget.handle
+        report = activity.build_activity_report(
+            db,
+            start,
+            end,
+            period=activity.ReportingPeriod(args.period),
+            budget_handle=budget_handle,
+        )
+        rows = [
+            [
+                period.label,
+                period.planned_amount.format(),
+                period.actual_amount.format(),
+                period.amount_variance.format(parens_negative=True),
+                period.planned_cash_change.format(parens_negative=True),
+                period.actual_cash_change.format(parens_negative=True),
+                len(period.unresolved),
+                len(period.unexpected),
+            ]
+            for period in report.periods
+        ]
+        text = table(
+            rows,
+            [
+                "period",
+                "planned",
+                "actual",
+                "variance",
+                "planned cash",
+                "actual cash",
+                "unresolved",
+                "unexpected",
+            ],
+            right={1, 2, 3, 4, 5, 6, 7},
+        )
+        emit(report.as_dict(), args, text)
         return 0
     finally:
         db.close()
@@ -1529,6 +1584,24 @@ def build_parser() -> argparse.ArgumentParser:
     budget = add("budget", "Budget versus actual")
     budget.add_argument("--name", help="which budget (defaults to the first)")
     budget.set_defaults(func=cmd_budget)
+
+    activity_cmd = add(
+        "activity",
+        "Event-driven plan versus actuals, grouped only for display",
+    )
+    activity_cmd.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
+    activity_cmd.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
+    activity_cmd.add_argument(
+        "--period",
+        default="month",
+        choices=[period.value for period in activity.ReportingPeriod],
+        help="display grouping; does not change event dates",
+    )
+    activity_cmd.add_argument(
+        "--budget",
+        help="limit scheduled flows to members of this legacy budget",
+    )
+    activity_cmd.set_defaults(func=cmd_activity)
 
     budget_set = add("budget-set", "Set a budget amount for an account")
     budget_set.add_argument("--name", required=True, help="budget name")
