@@ -1,3 +1,7 @@
+# Run source-tree commands against this checkout even before an editable install.
+# Preserve any caller-provided PYTHONPATH entries after the local src directory.
+export PYTHONPATH := $(CURDIR)/src$(if $(PYTHONPATH),:$(PYTHONPATH))
+
 .PHONY: install test test-ordered lint fmt typecheck build check demo cov all
 
 install:

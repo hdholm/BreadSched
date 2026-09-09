@@ -18,7 +18,7 @@ cashperspective --help                 # command line
 cashperspective-gtk household.cashperspective # graphical interface
 ```
 
-For a pre-submit development check, run `make check`. It executes Ruff, mypy, the
+For a pre-submit development check, run `make check`. The Makefile runs Python commands against the local `src/` tree, so the package itself does not need to be installed first (the development tools still need to be available). It executes Ruff, mypy, the
 randomised and fixed-order test suites, the end-to-end demo, and a source/wheel
 build. CI repeats those checks across supported Python versions and also installs
 the built wheel from outside the checkout so missing package data or accidental
