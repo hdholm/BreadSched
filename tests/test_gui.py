@@ -2659,12 +2659,10 @@ class TestStartScreen:
         monkeypatch.setattr(paths.Path, "home", classmethod(lambda cls: tmp_path))
         assert paths.documents_directory() == tmp_path
 
-    def test_books_written_under_the_old_name_are_still_offered(self):
+    def test_only_breadsched_books_are_offered(self):
         from cashperspective.gui.paths import READABLE_SUFFIXES
 
-        assert ".cashcast" in READABLE_SUFFIXES, (
-            "renaming the application must not strand existing books"
-        )
+        assert READABLE_SUFFIXES == (".breadsched",)
 
 
 def _action_names(widget, found=None):

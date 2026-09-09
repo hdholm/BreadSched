@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
+from time import monotonic
 
 from ...gen.engine import projection
 from ...gen.lib import Assumptions, ProjectionBasis, Scenario  # noqa: E402
@@ -25,6 +26,8 @@ from ._base import BaseView  # noqa: E402
 __all__ = ["ProjectionView"]
 
 LOG = get_logger(__name__)
+
+_PROGRESS_POPUP_DELAY_SECONDS = 0.5
 
 _BASIS_ORDER = [
     ProjectionBasis.SCHEDULED,
@@ -260,12 +263,28 @@ class ProjectionView(BaseView):
         if self.db is None:
             raise RuntimeError("no book is open")
 
-        progress_window, progress_bar, progress_label = self._open_progress()
+        progress_window: Gtk.Window | None = None
+        progress_bar: Gtk.ProgressBar | None = None
+        progress_label: Gtk.Label | None = None
+        started = monotonic()
         last_fraction = -1.0
         last_phase = ""
 
         def on_progress(update: projection.ProjectionProgress) -> None:
+            nonlocal progress_window, progress_bar, progress_label
             nonlocal last_fraction, last_phase
+
+            # Fast projections should feel instantaneous rather than flashing a
+            # modal window.  Create the popup lazily only after calculation has
+            # taken long enough that visible feedback is useful.  If the first
+            # callback after the delay is completion, there is nothing useful to
+            # display and we avoid a one-frame 100% popup.
+            if progress_window is None:
+                elapsed = monotonic() - started
+                if elapsed < _PROGRESS_POPUP_DELAY_SECONDS or update.fraction >= 1.0:
+                    return
+                progress_window, progress_bar, progress_label = self._open_progress()
+
             if (
                 update.phase == last_phase
                 and update.fraction < 1.0
@@ -274,6 +293,8 @@ class ProjectionView(BaseView):
                 return
             last_fraction = update.fraction
             last_phase = update.phase
+            assert progress_bar is not None
+            assert progress_label is not None
             progress_bar.set_fraction(update.fraction)
             progress_bar.set_text(f"{update.fraction:.0%}")
             progress_label.set_text(
@@ -290,7 +311,8 @@ class ProjectionView(BaseView):
         try:
             return projection.project(self.db, scenario, progress=on_progress)
         finally:
-            progress_window.close()
+            if progress_window is not None:
+                progress_window.close()
 
     def _open_progress(self) -> tuple[Gtk.Window, Gtk.ProgressBar, Gtk.Label]:
         """Create and paint the projection calculation popup."""
