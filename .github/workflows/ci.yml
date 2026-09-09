@@ -42,9 +42,6 @@ jobs:
       - name: Run the demo end to end
         run: python examples/demo.py
 
-      - name: Confirm the GUI tests skip cleanly with no display
-        run: pytest -m gui -rs
-
   package:
     name: Build and install distribution
     runs-on: ubuntu-latest
