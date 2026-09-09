@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cashperspective"
+version = "0.1.0"
+description = "Cash-flow ledger, budget and multi-year projection tool with GnuCash compatibility"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+authors = [{ name = "CashPerspective contributors" }]
+keywords = ["finance", "budget", "cashflow", "gnucash", "gtk4"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Environment :: X11 Applications :: GTK",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Accounting",
+]
+dependencies = []
+
+[project.optional-dependencies]
+gui = ["PyGObject>=3.46", "pycairo>=1.25"]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    # Shuffles test order every run and prints the seed. Order-dependent tests
+    # otherwise pass on the machine that wrote them and fail on the next one.
+    "pytest-randomly>=3.15",
+    "ruff>=0.4",
+    "mypy>=1.8",
+    "build>=1.2",
+]
+
+[project.scripts]
+cashperspective = "cashperspective.cli.main:main"
+
+[project.gui-scripts]
+cashperspective-gtk = "cashperspective.gui.launcher:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cashperspective = ["gui/resources/*.css", "plugins/**/*.gpr.py"]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = ["gui: requires a GTK4 runtime"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+check_untyped_defs = true

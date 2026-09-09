@@ -1,0 +1,13 @@
+.numeric        { font-feature-settings: "tnum"; }
+.negative       { color: @error_color; }
+.total-row      { font-weight: bold; }
+.dim            { opacity: 0.6; }
+.category-title { font-size: 1.4em; font-weight: bold; }
+.summary-value  { font-size: 1.6em; font-weight: bold; }
+.summary-label  { opacity: 0.7; font-size: 0.9em; }
+.card {
+    background: alpha(currentColor, 0.05);
+    border-radius: 8px;
+    padding: 12px;
+}
+.shortfall { background: alpha(@error_color, 0.15); }

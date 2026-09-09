@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CashPerspective</title>
+<style>
+:root {
+  --ink: #1c1f24;
+  --dim: #6b7280;
+  --line: #e2e5ea;
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --accent: #2f6fd0;
+  --bad: #b3261e;
+  --good: #1c7a4a;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Cantarell, sans-serif;
+}
+header {
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  padding: 0 16px; display: flex; align-items: center; gap: 20px;
+}
+header h1 { font-size: 15px; margin: 0; padding: 12px 0; letter-spacing: .02em; }
+nav { display: flex; gap: 2px; }
+nav button {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 14px 14px 12px; font: inherit; color: var(--dim); cursor: pointer;
+}
+nav button:hover { color: var(--ink); }
+nav button.active { color: var(--accent); border-bottom-color: var(--accent); }
+#book { margin-left: auto; color: var(--dim); font-size: 12px; }
+main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+.cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 16px; min-width: 160px;
+}
+.card .label { color: var(--dim); font-size: 12px; }
+.card .value { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; overflow: auto; margin-bottom: 16px;
+}
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { padding: 7px 12px; text-align: left; white-space: nowrap; }
+th {
+  position: sticky; top: 0; background: var(--panel); color: var(--dim);
+  font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--line);
+}
+tbody tr { border-bottom: 1px solid var(--line); }
+tbody tr:last-child { border-bottom: 0; }
+tbody tr:hover { background: #f2f6fc; }
+td.num, th.num { text-align: right; }
+.neg { color: var(--bad); }
+.pos { color: var(--good); }
+.muted { color: var(--dim); }
+.clickable { cursor: pointer; color: var(--accent); }
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+select, input, button.action {
+  font: inherit; padding: 6px 10px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--panel); color: var(--ink);
+}
+button.action { cursor: pointer; }
+button.action:hover { border-color: var(--accent); color: var(--accent); }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.shortfall { background: #fdecea; }
+.hidden { display: none; }
+.note { color: var(--dim); font-size: 12px; margin: 4px 0 12px; }
+svg { display: block; }
+form.entry { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+form.entry label { display: flex; flex-direction: column; font-size: 12px; color: var(--dim); gap: 3px; }
+#message { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
+#message.error { background: #fdecea; color: var(--bad); }
+#message.ok { background: #e8f5ee; color: var(--good); }
+</style>
+</head>
+<body>
+<header>
+  <h1>CashPerspective</h1>
+  <nav id="nav"></nav>
+  <span id="book"></span>
+</header>
+<main>
+  <div id="message" class="hidden"></div>
+  <div id="view"></div>
+</main>
+<script>
+const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Budget", "Projection", "Enter"];
+let current = "Dashboard";
+let state = { accounts: [], account: null };
+
+const el = (tag, attrs = {}, ...kids) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) node.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid === null || kid === undefined) continue;
+    node.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return node;
+};
+
+const money = (value) => {
+  const n = Number(value);
+  const text = Math.abs(n).toLocaleString(undefined, {
+    minimumFractionDigits: 2, maximumFractionDigits: 2,
+  });
+  return n < 0 ? `(${text})` : text;
+};
+const cls = (value) => (Number(value) < 0 ? "num neg" : "num");
+
+async function get(path) {
+  const response = await fetch(path);
+  if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+  return response.json();
+}
+async function post(path, body) {
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || response.statusText);
+  return payload;
+}
+
+function say(text, kind) {
+  const box = document.getElementById("message");
+  box.textContent = text;
+  box.className = kind || "ok";
+  setTimeout(() => box.classList.add("hidden"), 4000);
+}
+
+function table(headers, rows) {
+  return el("div", { class: "panel" },
+    el("table", {},
+      el("thead", {}, el("tr", {}, headers.map((h) =>
+        el("th", { class: h.num ? "num" : null }, h.label ?? h)))),
+      el("tbody", {}, rows)));
+}
+
+// ------------------------------------------------------------------- views
+
+async function showAccounts() {
+  const [summary, accounts] = await Promise.all([
+    get("/api/summary"), get("/api/accounts"),
+  ]);
+  state.accounts = accounts;
+  const cards = el("div", { class: "cards" },
+    [["Cash on hand", summary.cash], ["Net worth", summary.net_worth],
+     ["Accounts", summary.accounts], ["Transactions", summary.transactions]]
+      .map(([label, value]) => el("div", { class: "card" },
+        el("div", { class: "label" }, label),
+        el("div", { class: "value" },
+          typeof value === "string" ? money(value) : value))));
+
+  const rows = accounts.map((account) => el("tr", {},
+    el("td", { style: `padding-left:${12 + account.depth * 18}px` },
+      account.placeholder
+        ? el("span", { class: "muted" }, account.name)
+        : el("span", {
+            class: "clickable",
+            onclick: () => { state.account = account.handle; switchTo("Register"); },
+          }, account.name)),
+    el("td", { class: "muted" }, account.type),
+    el("td", { class: cls(account.balance) }, money(account.balance))));
+
+  return el("div", {}, cards,
+    el("p", { class: "note" },
+      "Click an account to open its register. Parent rows show the total of "
+      + "everything beneath them."),
+    table(["Account", "Type", { label: "Balance", num: true }], rows));
+}
+
+async function showRegister() {
+  if (!state.accounts.length) state.accounts = await get("/api/accounts");
+  const usable = state.accounts.filter((a) => !a.placeholder && a.depth > 0);
+  if (!state.account && usable.length) state.account = usable[0].handle;
+  if (!state.account) return el("p", { class: "note" }, "No accounts yet.");
+
+  const data = await get(`/api/register?account=${encodeURIComponent(state.account)}`);
+  const picker = el("select", {
+    onchange: (event) => { state.account = event.target.value; render(); },
+  }, usable.map((a) => el("option", {
+    value: a.handle, selected: a.handle === state.account ? "selected" : null,
+  }, a.full_name)));
+
+  const rows = data.rows.map((row) => el("tr", {},
+    el("td", {}, row.date),
+    el("td", { class: "muted" }, row.num),
+    el("td", {}, row.description),
+    el("td", { class: "muted" }, row.transfer),
+    el("td", { class: cls(row.amount) }, money(row.amount)),
+    el("td", { class: cls(row.balance) }, money(row.balance))));
+
+  return el("div", {},
+    el("div", { class: "toolbar" }, picker,
+      el("span", { class: "muted" }, `${data.rows.length} entries`)),
+    table(["Date", "Num", "Description", "Transfer",
+           { label: "Amount", num: true }, { label: "Balance", num: true }], rows));
+}
+
+async function showScheduled() {
+  const data = await get("/api/scheduled?days=90");
+  const definitions = data.definitions.map((s) => el("tr", {},
+    el("td", {}, s.name),
+    el("td", { class: "muted" }, s.frequency),
+    el("td", { class: "num" }, money(s.amount)),
+    el("td", { class: "muted" }, s.placeholder ? "budget only" : (s.auto ? "automatic" : "manual")),
+    el("td", { class: "muted" }, s.enabled ? "enabled" : "disabled")));
+
+  const upcoming = data.upcoming.map((o) => el("tr", {},
+    el("td", {}, o.date), el("td", {}, o.name),
+    el("td", { class: "num" }, money(o.amount))));
+
+  return el("div", {},
+    el("div", { class: "toolbar" },
+      el("button", {
+        class: "action primary",
+        onclick: async () => {
+          try {
+            const result = await post("/api/post-scheduled");
+            say(`Posted ${result.posted} transaction(s).`);
+            render();
+          } catch (error) { say(error.message, "error"); }
+        },
+      }, "Post due transactions")),
+    el("p", { class: "note" },
+      "Placeholder schedules describe budget expectations and are never posted."),
+    el("h3", {}, "Upcoming"),
+    table(["Due", "Schedule", { label: "Amount", num: true }], upcoming),
+    el("h3", {}, "Definitions"),
+    table(["Name", "Frequency", { label: "Amount", num: true }, "Posting", "State"],
+      definitions));
+}
+
+async function showBudget() {
+  const data = await get("/api/budget");
+  if (!data.budget) {
+    return el("p", { class: "note" },
+      "No budgets yet. Create one in the desktop interface or with "
+      + "`cashperspective budget-new --from-schedules`.");
+  }
+  const header = ["Account", ...data.labels.map((l) => ({ label: l, num: true })),
+                  { label: "Total", num: true }];
+  const rows = data.lines.map((line) => el("tr", {},
+    el("td", {}, line.account),
+    line.budgeted.map((value, index) => el("td", { class: cls(value) },
+      el("span", {}, money(value)),
+      el("span", { class: "muted" }, ` / ${money(line.actual[index])}`))),
+    el("td", { class: cls(line.total_budgeted) }, money(line.total_budgeted))));
+
+  const netRow = el("tr", { style: "font-weight:600" },
+    el("td", {}, "Net cash flow"),
+    data.net.map((value, index) => el("td", {
+      class: (Number(value) < 0 ? "num neg " : "num ")
+        + (data.shortfalls.includes(index) ? "shortfall" : ""),
+    }, money(value))),
+    el("td", { class: cls(data.net.reduce((a, b) => a + Number(b), 0)) },
+      money(data.net.reduce((a, b) => a + Number(b), 0))));
+
+  return el("div", {},
+    el("p", { class: "note" },
+      `Budget "${data.budget}", ${data.kind} periods. Each cell shows budgeted / `
+      + "actual. Shaded periods plan to spend more than they take in."),
+    table(header, [...rows, netRow]));
+}
+
+function chart(rows) {
+  const width = 900, height = 300, pad = { l: 70, r: 12, t: 12, b: 28 };
+  const series = [
+    { key: "cash", colour: "#2f6fd0" },
+    { key: "holdings", colour: "#1c7a4a" },
+    { key: "net_worth", colour: "#a04ec4" },
+  ];
+  const values = series.flatMap((s) => rows.map((r) => Number(r[s.key])));
+  const low = Math.min(0, ...values), high = Math.max(...values, 1);
+  const x = (i) => pad.l + (width - pad.l - pad.r) * i / Math.max(rows.length - 1, 1);
+  const y = (v) => pad.t + (height - pad.t - pad.b) * (1 - (v - low) / (high - low));
+
+  const parts = [];
+  for (let step = 0; step <= 4; step++) {
+    const value = low + (high - low) * step / 4;
+    parts.push(`<line x1="${pad.l}" y1="${y(value)}" x2="${width - pad.r}" y2="${y(value)}" stroke="#e2e5ea"/>`);
+    parts.push(`<text x="${pad.l - 8}" y="${y(value) + 4}" text-anchor="end" font-size="11" fill="#6b7280">${Math.round(value).toLocaleString()}</text>`);
+  }
+  if (low < 0) {
+    parts.push(`<line x1="${pad.l}" y1="${y(0)}" x2="${width - pad.r}" y2="${y(0)}" stroke="#b3261e" stroke-width="1.4" opacity="0.6"/>`);
+  }
+  for (const s of series) {
+    const path = rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(Number(r[s.key])).toFixed(1)}`).join("");
+    parts.push(`<path d="${path}" fill="none" stroke="${s.colour}" stroke-width="2"/>`);
+  }
+  const stride = Math.max(1, Math.floor(rows.length / 8));
+  rows.forEach((row, i) => {
+    if (i % stride) return;
+    parts.push(`<text x="${x(i)}" y="${height - 8}" text-anchor="middle" font-size="11" fill="#6b7280">${row.label}</text>`);
+  });
+  const legend = series.map((s, i) =>
+    `<rect x="${pad.l + i * 110}" y="4" width="10" height="3" fill="${s.colour}"/>`
+    + `<text x="${pad.l + i * 110 + 16}" y="8" font-size="11" fill="#6b7280">${s.key.replace("_", " ")}</text>`).join("");
+
+  const holder = el("div", { class: "panel", style: "padding:12px" });
+  holder.innerHTML = `<svg viewBox="0 0 ${width} ${height + 14}" width="100%">`
+    + `<g transform="translate(0,14)">${parts.join("")}</g>${legend}</svg>`;
+  return holder;
+}
+
+async function showProjection() {
+  const data = await get("/api/projection?years=10");
+  const s = data.summary;
+  const cards = el("div", { class: "cards" },
+    [["Ending net worth", s.ending_net_worth], ["Ending cash", s.ending_cash],
+     ["Lowest cash", s.minimum_cash]].map(([label, value]) =>
+      el("div", { class: "card" },
+        el("div", { class: "label" }, label),
+        el("div", { class: "value " + (Number(value) < 0 ? "neg" : "") }, money(value)))),
+    el("div", { class: "card" },
+      el("div", { class: "label" }, "Cash runs out"),
+      el("div", { class: "value " + (s.first_shortfall ? "neg" : "") },
+        s.first_shortfall || "Never")));
+
+  const yearly = data.rows.filter((_, i) => (i + 1) % 12 === 0).map((row) => el("tr", {},
+    el("td", {}, row.label),
+    el("td", { class: cls(row.income) }, money(row.income)),
+    el("td", { class: cls(row.expense) }, money(row.expense)),
+    el("td", { class: cls(row.cash) }, money(row.cash)),
+    el("td", { class: cls(row.holdings) }, money(row.holdings)),
+    el("td", { class: cls(row.net_worth) }, money(row.net_worth))));
+
+  return el("div", {}, cards, chart(data.rows),
+    el("p", { class: "note" }, `Scenario "${data.scenario}", by year.`),
+    table(["Month", { label: "Income", num: true }, { label: "Expense", num: true },
+           { label: "Cash", num: true }, { label: "Holdings", num: true },
+           { label: "Net worth", num: true }], yearly));
+}
+
+async function showEntry() {
+  if (!state.accounts.length) state.accounts = await get("/api/accounts");
+  const usable = state.accounts.filter((a) => !a.placeholder && a.depth > 0);
+  const options = (name) => el("select", { name },
+    usable.map((a) => el("option", { value: a.full_name }, a.full_name)));
+
+  const form = el("form", { class: "entry", onsubmit: async (event) => {
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(event.target).entries());
+    try {
+      await post("/api/transaction", data);
+      say("Transaction posted.");
+      event.target.reset();
+    } catch (error) { say(error.message, "error"); }
+  } },
+    el("label", {}, "Date",
+      el("input", { type: "date", name: "date", value: new Date().toISOString().slice(0, 10) })),
+    el("label", {}, "Description", el("input", { name: "description", required: "required" })),
+    el("label", {}, "From (money leaves)", options("from")),
+    el("label", {}, "To (money arrives)", options("to")),
+    el("label", {}, "Amount", el("input", { name: "amount", required: "required", placeholder: "0.00" })),
+    el("button", { class: "action primary", type: "submit" }, "Post"));
+
+  return el("div", {},
+    el("p", { class: "note" },
+      "Two-split entry. For anything more involved, use the desktop interface."),
+    el("div", { class: "panel", style: "padding:16px" }, form));
+}
+
+const RENDERERS = {
+  Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
+  Budget: showBudget, Projection: showProjection, Enter: showEntry,
+};
+
+// The dashboard: what is owned and owed, the liquidity verdict, and the bills.
+// The two horizons are inputs rather than fixed constants, because how much must
+// stay liquid and how long the fund should last are the household's judgement,
+// not the program's.
+async function showDashboard() {
+  const query = new URLSearchParams();
+  if (state.liquidityDays) query.set("liquidity_days", state.liquidityDays);
+  if (state.emergencyMonths) query.set("emergency_months", state.emergencyMonths);
+  const data = await get("/api/dashboard?" + query.toString());
+  const s = data.summary;
+  state.liquidityDays = data.config.liquidity_days;
+  state.emergencyMonths = data.config.emergency_months;
+
+  const short = Number(s.emergency_shortfall) > 0;
+  const tile = (label, value, alarm) => el("div", { class: "card" },
+    el("div", { class: "label" }, label),
+    el("div", { class: alarm ? "value neg" : "value" }, value));
+
+  const cards = el("div", { class: "cards" },
+    tile("Net worth", money(s.net_worth)),
+    tile("Liquid", money(s.liquid)),
+    tile(`Needed in ${data.config.liquidity_days} days`, money(s.required_liquid)),
+    tile("Available", money(s.available), Number(s.available) < 0),
+    tile(`Emergency fund (${data.config.emergency_months} mo)`, money(s.emergency_fund)),
+    tile("Months covered", s.months_covered,
+         Number(s.months_covered) < Number(data.config.emergency_months)),
+    short ? tile("Short of the fund", money(s.emergency_shortfall), true) : null);
+
+  const controls = el("div", { class: "row" },
+    el("label", {}, "Liquid for "),
+    el("input", {
+      type: "number", min: "7", max: "365", value: data.config.liquidity_days,
+      onchange: (e) => { state.liquidityDays = e.target.value; render(); },
+    }),
+    el("label", {}, " days   Emergency "),
+    el("input", {
+      type: "number", min: "1", max: "36", value: data.config.emergency_months,
+      onchange: (e) => { state.emergencyMonths = e.target.value; render(); },
+    }),
+    el("label", {}, " months"));
+
+  const groupRows = data.groups.map((g) => [
+    g.name,
+    g.value === null ? "" : money(g.value),
+    g.debt === null ? "" : money(g.debt),
+    money(g.equity === null ? g.total : g.equity),
+    g.loan_to_value === null ? "" : (g.loan_to_value * 100).toFixed(1) + "%",
+  ]);
+
+  const billRows = data.bills.map((b) => [
+    b.name,
+    b.next_due,
+    b.days_until < 0 ? `${-b.days_until} days overdue`
+      : (b.days_until === 0 ? "today" : `${b.days_until} days`),
+    b.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
+    money(b.amount), money(b.monthly), money(b.hold), money(b.annual),
+    b.estimate ? "Estimate" : "Committed",
+  ]);
+
+  return el("div", {}, cards, controls,
+    el("h2", {}, "Balances"),
+    table(["Group", { label: "Value", num: true }, { label: "Owed", num: true },
+           { label: "Equity / total", num: true }, { label: "LTV", num: true }],
+          groupRows),
+    el("h2", {}, `Pending bills (${data.bills.length})`),
+    table(["Bill", "Next due", "Due in", "Cycle",
+           { label: "Amount", num: true }, { label: "Monthly", num: true },
+           { label: "Hold now", num: true }, { label: "Annual", num: true }, "Kind"],
+          billRows));
+}
+
+function switchTo(name) { current = name; render(); }
+
+async function render() {
+  const nav = document.getElementById("nav");
+  nav.replaceChildren(...VIEWS.map((name) => el("button", {
+    class: name === current ? "active" : null, onclick: () => switchTo(name),
+  }, name)));
+  const view = document.getElementById("view");
+  view.replaceChildren(el("p", { class: "note" }, "Loading…"));
+  try {
+    view.replaceChildren(await RENDERERS[current]());
+  } catch (error) {
+    view.replaceChildren(el("p", { class: "note neg" }, `Could not load: ${error.message}`));
+  }
+}
+
+get("/api/summary").then((s) => {
+  document.getElementById("book").textContent = s.book || "";
+}).catch(() => {});
+render();
+</script>
+</body>
+</html>

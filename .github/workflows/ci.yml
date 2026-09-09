@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test on ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The core is standard-library only, so it must pass everywhere the
+        # application claims to run. No GTK is installed here on purpose: if the
+        # suite needs a display, the layering has been broken.
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Lint
+        run: ruff check src tests examples
+
+      - name: Type check
+        run: mypy src/cashperspective/gen src/cashperspective/plugins
+
+      - name: Test
+        run: pytest --cov=cashperspective --cov-report=term-missing
+
+      - name: Test again in a fixed order
+        # The randomised run above is the real check; this one makes a failure
+        # reproducible, and catches a test that only passes when shuffled.
+        run: pytest -p no:randomly
+
+      - name: Run the demo end to end
+        run: python examples/demo.py
+
+      - name: Confirm the GUI tests skip cleanly with no display
+        run: pytest -m gui -rs
+
+  package:
+    name: Build and install distribution
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install build frontend
+        run: python -m pip install --upgrade pip build
+
+      - name: Build sdist and wheel
+        run: python -m build
+
+      - name: Install the wheel, not the source tree
+        shell: bash
+        run: |
+          cd "${RUNNER_TEMP}"
+          python -m pip install "${GITHUB_WORKSPACE}"/dist/*.whl
+          python - <<'PY'
+          from importlib.resources import files
+          import cashperspective
+
+          css = files("cashperspective").joinpath("gui/resources/style.css")
+          assert css.is_file(), css
+          assert css.read_text(encoding="utf-8").strip(), css
+          assert cashperspective.__file__ is not None
+          print(cashperspective.__file__)
+          print(css)
+          PY
+          cashperspective --help >/dev/null
+
+  gui:
+    name: GTK4 interface
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install GTK4, PyGObject and cairo
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-gi python3-gi-cairo gir1.2-gtk-4.0 \
+                                  libgtk-4-1 xvfb dbus-x11
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Import every GUI module
+        # Catches a relative import that resolves to nothing, which no compile
+        # check can see. This is how `from ..gen` in views/_base.py escaped once.
+        run: |
+          python - <<'PY'
+          import importlib, pkgutil, sys
+          import cashperspective.gui
+          failed = {}
+          for module in pkgutil.walk_packages(cashperspective.gui.__path__, "cashperspective.gui."):
+              try:
+                  importlib.import_module(module.name)
+              except Exception as exc:
+                  failed[module.name] = f"{type(exc).__name__}: {exc}"
+          for name, error in failed.items():
+              print(f"FAIL {name}: {error}")
+          sys.exit(1 if failed else 0)
+          PY
+
+      - name: Build and drive every view under a virtual display
+        run: xvfb-run -a pytest -m gui -v
+
+      - name: Repeat with a session bus present
+        # A CI runner has no D-Bus session, but a developer's desktop does, and
+        # GApplication behaves differently when it can export itself on the bus.
+        # Without this step that difference is only ever found by a user.
+        run: dbus-run-session -- xvfb-run -a pytest -m gui
+
+      - name: Full suite with a display present
+        run: xvfb-run -a pytest

@@ -1,0 +1,311 @@
+"""Add or edit an account.
+
+Beyond the name and type, an account carries the relationships the rest of the
+program needs and that a foreign book never states: which dashboard group it
+belongs to, the asset a loan was borrowed against, and how a credit card is
+actually used.
+
+That last one matters more than it looks. A card cleared every month is a payment
+channel and belongs nowhere in a debt forecast; a card carrying a balance is a debt
+that compounds, and its usual payment is a real monthly outflow. Treating them the
+same makes one household look poorer than it is and the other richer.
+"""
+
+from __future__ import annotations
+
+from decimal import Decimal, InvalidOperation
+
+from ...gen.db.sqlite import DbSQLite
+from ...gen.lib import Account, AccountClass, AccountType, Money, Transaction
+from ..gi_setup import Gtk
+
+__all__ = ["AccountDialog"]
+
+_TYPES = [t for t in AccountType if t is not AccountType.ROOT]
+
+
+class AccountDialog(Gtk.Window):
+    """Create a new account, or change one that exists."""
+
+    def __init__(
+        self,
+        parent: Gtk.Window | None,
+        db: DbSQLite,
+        account: Account | None = None,
+        default_parent: str | None = None,
+    ) -> None:
+        editing = account is not None
+        super().__init__(
+            title="Edit account" if editing else "New account",
+            transient_for=parent,
+            modal=True,
+        )
+        self.db = db
+        self.account = account
+        self.editing = editing
+        self.set_default_size(560, 620)
+
+        self.parents = [a for a in db.iter_accounts() if a.placeholder or a.is_root]
+        self.parents.sort(key=db.full_name)
+        self.assets = [
+            a for a in db.iter_accounts()
+            if a.account_class is AccountClass.ASSET
+            and not a.is_root and not a.atype.is_cash_like
+        ]
+        self.assets.sort(key=db.full_name)
+
+        # Built before anything that can emit: setting a dropdown's initial value
+        # fires notify::selected, which reaches _validate long before the widgets
+        # further down this method exist.
+        self.status = Gtk.Label(xalign=0)
+        self.save_button = Gtk.Button(label="Save")
+        self._ready = False
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(18)
+        self.set_child(box)
+
+        grid = Gtk.Grid(column_spacing=10, row_spacing=8)
+        box.append(grid)
+        row = 0
+
+        self.name_entry = Gtk.Entry(placeholder_text="Checking")
+        self.name_entry.set_hexpand(True)
+        self.name_entry.connect("changed", self._validate)
+        if editing:
+            self.name_entry.set_text(account.name)
+        grid.attach(Gtk.Label(label="Name", xalign=0), 0, row, 1, 1)
+        grid.attach(self.name_entry, 1, row, 1, 1)
+        row += 1
+
+        self.type_picker = Gtk.DropDown.new_from_strings([t.value for t in _TYPES])
+        if editing:
+            self.type_picker.set_selected(_TYPES.index(account.atype))
+        self.type_picker.connect("notify::selected", self._on_type_changed)
+        grid.attach(Gtk.Label(label="Type", xalign=0), 0, row, 1, 1)
+        grid.attach(self.type_picker, 1, row, 1, 1)
+        row += 1
+
+        self.parent_picker = Gtk.DropDown.new_from_strings(
+            [db.full_name(a) or a.name for a in self.parents] or ["(none)"]
+        )
+        chosen = account.parent if editing else default_parent
+        for index, candidate in enumerate(self.parents):
+            if candidate.handle == chosen:
+                self.parent_picker.set_selected(index)
+                break
+        grid.attach(Gtk.Label(label="Parent", xalign=0), 0, row, 1, 1)
+        grid.attach(self.parent_picker, 1, row, 1, 1)
+        row += 1
+
+        self.code_entry = Gtk.Entry(placeholder_text="Optional")
+        if editing:
+            self.code_entry.set_text(account.code)
+        grid.attach(Gtk.Label(label="Code", xalign=0), 0, row, 1, 1)
+        grid.attach(self.code_entry, 1, row, 1, 1)
+        row += 1
+
+        self.description_entry = Gtk.Entry()
+        if editing:
+            self.description_entry.set_text(account.description)
+        grid.attach(Gtk.Label(label="Description", xalign=0), 0, row, 1, 1)
+        grid.attach(self.description_entry, 1, row, 1, 1)
+        row += 1
+
+        self.group_entry = Gtk.Entry(placeholder_text="Home Easton")
+        self.group_entry.set_tooltip_text("The dashboard group this account joins")
+        if editing:
+            self.group_entry.set_text(account.group)
+        grid.attach(Gtk.Label(label="Dashboard group", xalign=0), 0, row, 1, 1)
+        grid.attach(self.group_entry, 1, row, 1, 1)
+        row += 1
+
+        self.placeholder_check = Gtk.CheckButton(label="Placeholder (holds no entries)")
+        if editing:
+            self.placeholder_check.set_active(account.placeholder)
+        grid.attach(self.placeholder_check, 1, row, 1, 1)
+        row += 1
+
+        self.opening_entry = Gtk.Entry(placeholder_text="0.00")
+        self.opening_entry.set_sensitive(not editing)
+        self.opening_entry.set_tooltip_text(
+            "Posted against Opening Balances when the account is created"
+        )
+        grid.attach(Gtk.Label(label="Opening balance", xalign=0), 0, row, 1, 1)
+        grid.attach(self.opening_entry, 1, row, 1, 1)
+        row += 1
+
+        # --- loan --------------------------------------------------------
+        self.loan_box = Gtk.Box(spacing=8)
+        self.asset_picker = Gtk.DropDown.new_from_strings(
+            ["(none)"] + [db.full_name(a) for a in self.assets]
+        )
+        if editing and account.linked_asset:
+            for index, asset in enumerate(self.assets, start=1):
+                if asset.handle == account.linked_asset:
+                    self.asset_picker.set_selected(index)
+                    break
+        self.loan_box.append(Gtk.Label(label="Secured on", xalign=0))
+        self.loan_box.append(self.asset_picker)
+        box.append(self.loan_box)
+
+        # --- credit card -------------------------------------------------
+        self.card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.card_box.add_css_class("card")
+        self.full_check = Gtk.CheckButton(label="Cleared in full every month")
+        self.full_check.set_active(account.pays_in_full if editing else True)
+        self.full_check.connect("toggled", self._on_card_changed)
+        self.card_box.append(self.full_check)
+
+        card_grid = Gtk.Grid(column_spacing=10, row_spacing=6)
+        self.usual_entry = Gtk.Entry(placeholder_text="400.00")
+        self.usual_entry.set_tooltip_text(
+            "Carried as a scheduled estimate while a balance is outstanding"
+        )
+        if editing and account.usual_payment:
+            self.usual_entry.set_text(f"{account.usual_payment.to_decimal():.2f}")
+        card_grid.attach(Gtk.Label(label="Usual payment", xalign=0), 0, 0, 1, 1)
+        card_grid.attach(self.usual_entry, 1, 0, 1, 1)
+
+        self.day_spin = Gtk.SpinButton.new_with_range(1, 28, 1)
+        if editing and account.payment_day:
+            self.day_spin.set_value(account.payment_day)
+        card_grid.attach(Gtk.Label(label="Payment day", xalign=0), 0, 1, 1, 1)
+        card_grid.attach(self.day_spin, 1, 1, 1, 1)
+        self.card_box.append(card_grid)
+        box.append(self.card_box)
+
+        box.append(self.status)
+
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        if editing:
+            delete = Gtk.Button(label="Delete")
+            delete.add_css_class("destructive-action")
+            delete.connect("clicked", self._on_delete)
+            buttons.append(delete)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: self.close())
+        buttons.append(cancel)
+        self.save_button.add_css_class("suggested-action")
+        self.save_button.connect("clicked", self._on_save)
+        buttons.append(self.save_button)
+        box.append(buttons)
+
+        self._ready = True
+        self._on_type_changed()
+        self._validate()
+
+    # -------------------------------------------------------------- reactions
+
+    @property
+    def selected_type(self) -> AccountType:
+        return _TYPES[self.type_picker.get_selected()]
+
+    def _on_type_changed(self, *_args) -> None:
+        """Only show the fields that mean something for this kind of account."""
+        if not self._ready:
+            return
+        kind = self.selected_type
+        self.loan_box.set_visible(kind.account_class is AccountClass.LIABILITY)
+        self.card_box.set_visible(kind is AccountType.CREDIT)
+        self._on_card_changed()
+        self._validate()
+
+    def _on_card_changed(self, *_args) -> None:
+        if not self._ready:
+            return
+        carrying = not self.full_check.get_active()
+        self.usual_entry.set_sensitive(carrying)
+        self.day_spin.set_sensitive(carrying)
+
+    def _validate(self, *_args) -> None:
+        if not self._ready:
+            return
+        problems = []
+        if not self.name_entry.get_text().strip():
+            problems.append("give it a name")
+        if not self.parents:
+            problems.append("this book has no parent account to hang it from")
+        self.status.set_text("; ".join(problems).capitalize())
+        self.save_button.set_sensitive(not problems)
+
+    # ----------------------------------------------------------------- saving
+
+    def build(self) -> Account:
+        account = self.account or Account()
+        account.name = self.name_entry.get_text().strip()
+        account.atype = self.selected_type
+        account.code = self.code_entry.get_text().strip()
+        account.description = self.description_entry.get_text().strip()
+        account.group = self.group_entry.get_text().strip()
+        account.placeholder = self.placeholder_check.get_active()
+        if self.parents:
+            account.parent = self.parents[self.parent_picker.get_selected()].handle
+
+        index = self.asset_picker.get_selected()
+        account.linked_asset = (
+            self.assets[index - 1].handle
+            if account.atype.account_class is AccountClass.LIABILITY and index > 0
+            else None
+        )
+
+        if account.atype is AccountType.CREDIT:
+            account.pays_in_full = self.full_check.get_active()
+            text = self.usual_entry.get_text().strip()
+            try:
+                account.usual_payment = Money(text) if text else None
+            except (ValueError, InvalidOperation, ArithmeticError):
+                account.usual_payment = None
+            account.payment_day = int(self.day_spin.get_value())
+        return account
+
+    def _on_save(self, _button) -> None:
+        account = self.build()
+        opening = self.opening_entry.get_text().strip()
+        with self.db.transaction(
+            f"{'Edit' if self.editing else 'Add'} account {account.name}"
+        ) as txn:
+            if self.editing:
+                self.db.commit_account(account, txn)
+            else:
+                self.db.add_account(account, txn)
+                if opening:
+                    self._post_opening(account, opening, txn)
+        self.close()
+
+    def _post_opening(self, account: Account, amount: str, txn) -> None:
+        equity = self.db.get_account_by_name(
+            "Equity:Opening Balances"
+        ) or self.db.get_account_by_name("Equity")
+        if equity is None:
+            return
+        try:
+            value = Money(amount)
+        except (ValueError, InvalidOperation, ArithmeticError, Decimal):
+            return
+        from datetime import date
+
+        self.db.add_transaction(
+            Transaction.simple(
+                date.today(), f"{account.name} opening balance",
+                account.handle, equity.handle, value,
+            ),
+            txn,
+        )
+
+    def _on_delete(self, _button) -> None:
+        from ...gen.db.base import DbError
+
+        if not self.editing or self.account is None:
+            return
+        try:
+            with self.db.transaction(f"Remove account {self.account.name}") as txn:
+                self.db.remove_account(self.account.handle, txn)
+        except DbError as exc:
+            # An account with history or children cannot simply vanish; its
+            # entries would be orphaned and its balances would silently move.
+            self.status.set_text(str(exc))
+            self.status.add_css_class("negative")
+            return
+        self.close()
