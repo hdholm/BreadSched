@@ -1497,7 +1497,7 @@ class TestLastBookIsRemembered:
         assert app.db is not None
         assert app.book_path == str(remembered)
 
-    def test_legacy_default_book_is_not_reopened_implicitly(
+    def test_a_remembered_default_user_book_is_reopened(
         self, app, tmp_path, monkeypatch
     ):
         from cashperspective.cli.main import main as cli
@@ -1507,23 +1507,6 @@ class TestLastBookIsRemembered:
         assert cli(["init", str(default)]) == 0
         monkeypatch.setattr(paths, "default_book_path", lambda: default)
         app.settings.set("general", "last_book", str(default))
-        app.settings.save()
-
-        assert app.reopen_last_book() is False
-        assert app.db is None
-        assert app.settings.get("general", "last_book") is None
-
-    def test_explicit_default_book_is_reopened(
-        self, app, tmp_path, monkeypatch
-    ):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gui import paths
-
-        default = tmp_path / "CashPerspective.cashperspective"
-        assert cli(["init", str(default)]) == 0
-        monkeypatch.setattr(paths, "default_book_path", lambda: default)
-        app.settings.set("general", "last_book", str(default))
-        app.settings.set("general", "last_book_explicit", True)
         app.settings.save()
 
         assert app.reopen_last_book() is True
@@ -2592,6 +2575,49 @@ class TestStartScreen:
         assert paths.default_book_path().exists()
         assert app.db is not None
         assert window.stack.get_visible_child_name() != "empty"
+
+    def test_use_default_never_overwrites_an_existing_user_book(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        from cashperspective.cli.main import main as cli
+        from cashperspective.gen.lib import Account, AccountType
+        from cashperspective.gui import paths
+
+        target = tmp_path / "CashPerspective.cashperspective"
+        assert cli(["init", str(target)]) == 0
+        marker_db = DbSQLite()
+        marker_db.load(str(target))
+        with marker_db.transaction("recognizable user data") as txn:
+            marker = Account(
+                name="Existing user data",
+                atype=AccountType.BANK,
+                parent=marker_db.root_account().handle,
+            )
+            marker_db.add_account(marker, txn)
+        marker_db.close()
+
+        monkeypatch.setattr(paths, "default_book_path", lambda: target)
+        app.settings.remove("general", "last_book")
+        app.settings.save()
+
+        app.on_open_default()
+
+        assert app.db is not None
+        assert app.db.get_account(marker.handle) is not None
+        assert app.settings.get("general", "last_book") == str(target.resolve())
+
+    def test_starter_materialization_refuses_to_replace_an_existing_book(
+        self, tmp_path
+    ):
+        from cashperspective.gui.app import CashPerspectiveApplication
+
+        target = tmp_path / "existing.cashperspective"
+        target.write_bytes(b"do not replace")
+
+        with pytest.raises(FileExistsError):
+            CashPerspectiveApplication._materialize_starter_book(target)
+
+        assert target.read_bytes() == b"do not replace"
 
     def test_opening_the_default_twice_reuses_it(
         self, app, window, tmp_path, monkeypatch

@@ -89,19 +89,6 @@ class CashPerspectiveApplication(Gtk.Application):
         if not remembered:
             return False
 
-        # Older releases could leave the default book remembered even though the
-        # user never chose it.  Do not perpetuate that implicit default after the
-        # startup chooser was introduced.  Once a book is explicitly opened under
-        # the new behavior, ``last_book_explicit`` is written and the default book
-        # is treated exactly like any other remembered book.
-        from .paths import default_book_path
-
-        explicit = self.settings.get_bool("general", "last_book_explicit")
-        if not explicit and Path(remembered) == default_book_path().resolve():
-            self.settings.remove("general", "last_book")
-            self.settings.save()
-            return False
-
         if not Path(remembered).exists():
             self.settings.remove("general", "last_book")
             self.settings.save()
@@ -165,7 +152,10 @@ class CashPerspectiveApplication(Gtk.Application):
         # Remembered so the next start reopens it. Written immediately rather than
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book", str(Path(path).resolve()))
-        self.settings.set("general", "last_book_explicit", True)
+        # ``last_book_explicit`` existed briefly while startup behavior was being
+        # migrated.  Book identity is sufficient: a user book at the default path
+        # is no different from any other user-owned book.
+        self.settings.remove("general", "last_book_explicit")
         self.settings.save()
         for name in ("import", "export", "post-scheduled", "new-transaction",
                      "new-budget"):
@@ -240,23 +230,37 @@ class CashPerspectiveApplication(Gtk.Application):
         except Exception as exc:  # noqa: BLE001
             self._report(f"Could not open the book: {exc}")
 
-    def on_open_default(self, *_args) -> None:
-        """Open the one book, creating it the first time it is asked for.
+    @staticmethod
+    def _materialize_starter_book(target: Path) -> None:
+        """Create starter content in a new user-owned book at ``target``.
 
-        Offered rather than assumed: a book created unasked leaves a file someone
-        did not choose in a place they did not pick.
+        The destination must not already exist.  This boundary is intentionally
+        strict so a future packaged example/template can be copied or imported
+        here without ever opening that example as the user's live book.
+        """
+        if target.exists():
+            raise FileExistsError(f"book already exists: {target}")
+
+        from argparse import Namespace
+
+        from ..cli.main import cmd_init
+
+        target.parent.mkdir(parents=True, exist_ok=True)
+        cmd_init(Namespace(book=str(target), json=True))
+
+    def on_open_default(self, *_args) -> None:
+        """Open the user's default book, creating it only when absent.
+
+        Existing user data is never replaced by this action.  Starter/example
+        content is materialized only when the destination does not yet exist, and
+        only the resulting user-owned book is opened and remembered.
         """
         from .paths import default_book_path
 
         target = default_book_path()
         try:
             if not target.exists():
-                from argparse import Namespace
-
-                from ..cli.main import cmd_init
-
-                target.parent.mkdir(parents=True, exist_ok=True)
-                cmd_init(Namespace(book=str(target), json=True))
+                self._materialize_starter_book(target)
             self.open_book(str(target))
         except Exception as exc:  # noqa: BLE001 - surfaced to the user
             self._report(f"Could not open the default book: {exc}")
