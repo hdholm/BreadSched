@@ -444,7 +444,44 @@ def _advance_event_state(
     return cash
 
 
+def _event_escalation_factor(
+    scenario: Scenario,
+    event: planning.PlannedEvent,
+    accounts: dict[str, Account],
+) -> Decimal:
+    """Return the scenario escalation applied to one unresolved schedule event.
+
+    Scheduled transactions are balanced financial events, so income growth or
+    expense inflation must scale the whole transaction rather than only the
+    category leg.  Actualized events are ledger facts and one-off scenario events
+    already state their intended amount, so neither is escalated.
+    """
+    if (
+        event.source is not planning.EventSource.SCHEDULED
+        or event.status is planning.EventStatus.ACTUALIZED
+    ):
+        return _ONE
+
+    classes = {
+        account.account_class
+        for split in event.expected_splits
+        if (account := accounts.get(split.account)) is not None
+    }
+    if AccountClass.INCOME in classes and AccountClass.EXPENSE not in classes:
+        field: Literal["income_growth", "expense_inflation"] = "income_growth"
+    elif AccountClass.EXPENSE in classes and AccountClass.INCOME not in classes:
+        field = "expense_inflation"
+    else:
+        return _ONE
+
+    start = scenario.start.replace(day=1)
+    months = (event.when.year - start.year) * 12 + (event.when.month - start.month)
+    completed_years = max(0, months // 12)
+    return _dated_growth_factor(scenario, field, event.when, completed_years)
+
+
 def _apply_event(
+    scenario: Scenario,
     event: planning.PlannedEvent,
     accounts: dict[str, Account],
     cash: Money,
@@ -454,11 +491,12 @@ def _apply_event(
 ) -> Money:
     """Apply one event's effective splits to financial state on its exact date."""
     flows.events.append(event)
+    factor = _event_escalation_factor(scenario, event, accounts)
     for planned_split in event.splits:
         account = accounts.get(planned_split.account)
         if account is None or account.exclude_from_projection:
             continue
-        amount = planned_split.amount
+        amount = (planned_split.amount * factor).quantize(100)
         cls = account.account_class
 
         if cls is AccountClass.INCOME:
@@ -557,7 +595,7 @@ def _project_events(db: DbSQLite, scenario: Scenario) -> Projection:
             cash = _advance_event_state(
                 scenario, accounts, cursor, event.when, cash, holdings, debts, flows
             )
-            cash = _apply_event(event, accounts, cash, holdings, debts, flows)
+            cash = _apply_event(scenario, event, accounts, cash, holdings, debts, flows)
             cursor = event.when
 
         cash = _advance_event_state(

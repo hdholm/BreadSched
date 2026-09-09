@@ -184,6 +184,72 @@ class TestEventDrivenProjection:
         ]
         assert january.ledger.reconciles()
 
+    def test_income_growth_escalates_future_scheduled_paychecks(self, db, book):
+        payday = ScheduledTransaction(
+            name="Monthly pay",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 5)),
+            splits=[
+                ScheduledSplit(book.checking, Money("1000.00")),
+                ScheduledSplit(book.salary, Money("-1000.00")),
+            ],
+        )
+        with db.transaction("pay schedule") as txn:
+            db.add_scheduled(payday, txn)
+
+        result = projection.project(
+            db,
+            Scenario(
+                name="Raises",
+                start=date(2026, 1, 1),
+                years=2,
+                basis=ProjectionBasis.SCHEDULED,
+                assumptions=Assumptions(
+                    income_growth="0.10",
+                    expense_inflation="0",
+                    investment_return="0",
+                    cash_interest="0",
+                    liability_interest="0",
+                ),
+            ),
+        )
+
+        assert result.rows[0].income == Money("1000.00")
+        assert result.rows[12].income == Money("1100.00")
+        assert result.rows[12].cash_close - result.rows[11].cash_close == Money("1100.00")
+
+    def test_expense_inflation_escalates_the_balanced_scheduled_bill(self, db, book):
+        bill = ScheduledTransaction(
+            name="Monthly utility",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 8)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("100.00")),
+                ScheduledSplit(book.checking, Money("-100.00")),
+            ],
+        )
+        with db.transaction("bill schedule") as txn:
+            db.add_scheduled(bill, txn)
+
+        result = projection.project(
+            db,
+            Scenario(
+                name="Inflation",
+                start=date(2026, 1, 1),
+                years=2,
+                basis=ProjectionBasis.SCHEDULED,
+                assumptions=Assumptions(
+                    income_growth="0",
+                    expense_inflation="0.05",
+                    investment_return="0",
+                    cash_interest="0",
+                    liability_interest="0",
+                ),
+            ),
+        )
+
+        assert result.rows[0].expense == Money("100.00")
+        assert result.rows[12].expense == Money("105.00")
+        assert result.rows[12].ledger.reconciles()
+
     def test_event_date_changes_how_long_a_contribution_earns_return(self, db, book):
         contribution = ScheduledTransaction(
             name="Contribution",
