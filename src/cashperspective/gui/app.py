@@ -30,7 +30,12 @@ STYLE_RESOURCE = resources.files("cashperspective.gui").joinpath("resources/styl
 class CashPerspectiveApplication(Gtk.Application):
     """Owns the open book and the windows looking at it."""
 
-    def __init__(self, application_id: str = APP_ID, unique: bool = True) -> None:
+    def __init__(
+        self,
+        application_id: str = APP_ID,
+        unique: bool = True,
+        settings_directory: Path | None = None,
+    ) -> None:
         """Create the application.
 
         ``application_id`` and ``unique`` exist because GApplication exports itself
@@ -47,8 +52,8 @@ class CashPerspectiveApplication(Gtk.Application):
         self.book_path: str | None = None
         #: Deliberate preferences, and remembered interface state. Kept apart so a
         #: user can delete the second without losing the first.
-        self.settings = Settings("settings")
-        self.view_settings = Settings("views")
+        self.settings = Settings("settings", directory=settings_directory)
+        self.view_settings = Settings("views", directory=settings_directory)
         self.actions: dict[str, Gio.SimpleAction] = {}
 
     # ------------------------------------------------------------- life cycle
@@ -85,12 +90,12 @@ class CashPerspectiveApplication(Gtk.Application):
         the user did not ask for it this time, and an error dialog on start-up
         about a file they deliberately removed is noise.
         """
-        remembered = self.settings.get("general", "last_book")
+        remembered = self.settings.get("general", "last_book_path")
         if not remembered:
             return False
 
         if not Path(remembered).exists():
-            self.settings.remove("general", "last_book")
+            self.settings.remove("general", "last_book_path")
             self.settings.save()
             return False
         try:
@@ -151,7 +156,7 @@ class CashPerspectiveApplication(Gtk.Application):
         self.book_path = path
         # Remembered so the next start reopens it. Written immediately rather than
         # at shutdown: a crash should not cost the setting.
-        self.settings.set("general", "last_book", str(Path(path).resolve()))
+        self.settings.set("general", "last_book_path", str(Path(path).resolve()))
         self.settings.save()
         for name in ("import", "export", "post-scheduled", "new-transaction",
                      "new-budget"):

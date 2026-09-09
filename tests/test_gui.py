@@ -56,7 +56,7 @@ _APP_IDS = itertools.count()
 
 
 @pytest.fixture
-def app():
+def app(tmp_path):
     """A registered application with an identity of its own.
 
     Every test builds a new application in the same process. Reusing one id makes
@@ -65,7 +65,11 @@ def app():
     failure only shows up where it is least expected.
     """
     identifier = f"{APP_ID}.Test{next(_APP_IDS)}"
-    application = CashPerspectiveApplication(application_id=identifier, unique=False)
+    application = CashPerspectiveApplication(
+        application_id=identifier,
+        unique=False,
+        settings_directory=tmp_path / "config",
+    )
     application.register()
     application.do_startup()
     yield application
@@ -1463,11 +1467,11 @@ class TestLastBookIsRemembered:
         from cashperspective.gen.utils.settings import Settings
 
         app.open_book(populated_book)
-        assert app.settings.get("general", "last_book") == str(
+        assert app.settings.get("general", "last_book_path") == str(
             Path(populated_book).resolve()
         )
         assert Settings("settings", directory=app.settings.directory).get(
-            "general", "last_book"
+            "general", "last_book_path"
         ) == str(Path(populated_book).resolve())
 
     def test_it_is_written_immediately_not_at_shutdown(self, app, populated_book):
@@ -1483,17 +1487,19 @@ class TestLastBookIsRemembered:
         assert app.db is not None
 
     def test_a_book_that_has_gone_is_forgotten(self, app, tmp_path):
-        app.settings.set("general", "last_book", str(tmp_path / "gone.cashperspective"))
+        app.settings.set(
+            "general", "last_book_path", str(tmp_path / "gone.cashperspective")
+        )
         app.settings.save()
         assert app.reopen_last_book() is False
-        assert app.settings.get("general", "last_book") is None
+        assert app.settings.get("general", "last_book_path") is None
 
     def test_activation_reopens_an_existing_remembered_book(self, app, tmp_path):
         from cashperspective.cli.main import main as cli
 
         remembered = tmp_path / "remembered.cashperspective"
         assert cli(["init", str(remembered)]) == 0
-        app.settings.set("general", "last_book", str(remembered))
+        app.settings.set("general", "last_book_path", str(remembered))
         app.settings.save()
 
         app.do_activate()
@@ -1510,7 +1516,7 @@ class TestLastBookIsRemembered:
         default = tmp_path / "BreadSched.breadsched"
         assert cli(["init", str(default)]) == 0
         monkeypatch.setattr(paths, "default_book_path", lambda: default)
-        app.settings.set("general", "last_book", str(default))
+        app.settings.set("general", "last_book_path", str(default))
         app.settings.save()
 
         assert app.reopen_last_book() is True
@@ -1733,6 +1739,14 @@ class TestDueReview:
     def test_the_dialog_lists_what_is_due(self, due_book, window):
         dialog, due = self._dialog(due_book, window)
         assert len(dialog.choosers) == len(due) > 0
+
+    def test_due_dialog_is_modal_transient_and_destroyed_with_parent(
+        self, due_book, window
+    ):
+        dialog, _ = self._dialog(due_book, window)
+        assert dialog.get_modal() is True
+        assert dialog.get_transient_for() is window
+        assert dialog.get_destroy_with_parent() is True
 
     def test_remind_me_later_is_the_default(self, due_book, window):
         from cashperspective.gui.dialogs.due_dialog import LATER
@@ -2543,6 +2557,13 @@ class TestStartScreen:
     def test_no_book_is_open_at_first(self, window):
         assert window.stack.get_visible_child_name() == "empty"
 
+    def test_activation_without_a_remembered_book_stays_on_start_screen(self, app):
+        app.do_activate()
+        window = app.props.active_window
+        assert app.db is None
+        assert isinstance(window, ViewManager)
+        assert window.stack.get_visible_child_name() == "empty"
+
     def test_all_four_ways_in_are_offered(self, app, window):
         actions = _action_names(window.stack.get_child_by_name("empty"))
         assert set(actions) >= {
@@ -2601,14 +2622,14 @@ class TestStartScreen:
         marker_db.close()
 
         monkeypatch.setattr(paths, "default_book_path", lambda: target)
-        app.settings.remove("general", "last_book")
+        app.settings.remove("general", "last_book_path")
         app.settings.save()
 
         app.on_open_default()
 
         assert app.db is not None
         assert app.db.get_account(marker.handle) is not None
-        assert app.settings.get("general", "last_book") == str(target.resolve())
+        assert app.settings.get("general", "last_book_path") == str(target.resolve())
 
     def test_starter_materialization_refuses_to_replace_an_existing_book(
         self, tmp_path

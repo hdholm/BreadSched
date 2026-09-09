@@ -67,6 +67,7 @@ class ViewManager(Gtk.ApplicationWindow):
         # binding views to a book. Tests and embedded windows can suppress it so
         # presenting a modal window does not pump the GLib main context.
         self._prompt_due_on_open = prompt_due_on_open
+        self._due_prompt_source: int | None = None
 
         self._install_window_actions()
         self._build_header()
@@ -205,6 +206,9 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _detach_views(self) -> None:
         """Disconnect views and cancel work that belongs to the current book."""
+        if self._due_prompt_source is not None:
+            GLib.source_remove(self._due_prompt_source)
+            self._due_prompt_source = None
         for view in self._views.values():
             view.set_db(None)
         self.db = None
@@ -244,7 +248,28 @@ class ViewManager(Gtk.ApplicationWindow):
         self.navigator.select_row(self.navigator.get_row_at_index(0))
         self.show_category(CATEGORIES[0][0])
         if self._prompt_due_on_open:
-            self.prompt_for_due()
+            self._schedule_due_prompt()
+
+    def _schedule_due_prompt(self) -> None:
+        """Present the due review after the main window has reached the screen.
+
+        During application activation a remembered book can be opened before the
+        main window is presented. Presenting a modal transient in that interval
+        lets the later parent presentation cover the dialog on some window
+        managers. Deferring one main-loop turn guarantees the parent is mapped
+        first while preserving the automatic due review.
+        """
+        if self._due_prompt_source is not None:
+            GLib.source_remove(self._due_prompt_source)
+        expected_db = self.db
+
+        def present_when_ready() -> bool:
+            self._due_prompt_source = None
+            if self.db is expected_db and self.db is not None:
+                self.prompt_for_due()
+            return GLib.SOURCE_REMOVE
+
+        self._due_prompt_source = GLib.idle_add(present_when_ready)
 
     def prompt_for_due(self) -> None:
         """Ask about anything due, once, on opening the book."""

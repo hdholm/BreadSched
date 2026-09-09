@@ -38,6 +38,7 @@ class DueDialog(Gtk.Window):
         super().__init__(
             title="Scheduled transactions due", transient_for=parent, modal=True
         )
+        self.set_destroy_with_parent(True)
         self.db = db
         self.occurrences = list(occurrences)
         self.choosers: list[Gtk.DropDown] = []
