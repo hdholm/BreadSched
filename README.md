@@ -1,9 +1,9 @@
-# CashPerspective
+# BreadSched
 
 Track income and expenses against a cash-flow budget, and project them forward for
 years under assumptions you can name, save and argue with.
 
-CashPerspective reads GnuCash books directly — both the SQLite and the compressed-XML
+BreadSched reads GnuCash books directly — both the SQLite and the compressed-XML
 container — so it can sit alongside GnuCash rather than replacing it. The
 architecture follows [Gramps](https://github.com/gramps-project/gramps); the ledger
 and register interface follow
@@ -14,8 +14,8 @@ GnuCash's Python bindings installed.
 ```
 pip install -e ".[gui,dev]"     # GUI extra needs PyGObject and a GTK 4 runtime
 pytest                          # full suite; GUI tests skip without a GTK display
-cashperspective --help                 # command line
-cashperspective-gtk household.cashperspective # graphical interface
+breadsched --help                 # command line
+breadsched-gtk household.breadsched # graphical interface
 ```
 
 For a pre-submit development check, run `make check`. The Makefile runs Python commands against the local `src/` tree, so the package itself does not need to be installed first (the development tools still need to be available). It executes Ruff, mypy, one randomised test-suite run, the end-to-end demo, and a
@@ -85,7 +85,7 @@ Groups and horizons are stored in the book rather than in user settings: they na
 accounts, and carrying them to another book would point at the wrong ones.
 
 ```bash
-cashperspective dashboard household.cashperspective --emergency-months 12
+breadsched dashboard household.breadsched --emergency-months 12
 ```
 
 ### Relationships an imported book does not state
@@ -96,8 +96,8 @@ Both matter here — equity needs the pair, a forecast needs the date — so bot
 inferred, and offered rather than applied:
 
 ```bash
-cashperspective infer household.cashperspective            # list, with the evidence for each
-cashperspective infer household.cashperspective --apply    # accept the confident ones
+breadsched infer household.breadsched            # list, with the evidence for each
+breadsched infer household.breadsched --apply    # accept the confident ones
 ```
 
 A wrong guess that announces itself costs a moment; one applied quietly becomes a
@@ -123,9 +123,9 @@ put it back into all of them.
 In the interface, the budget view has *Use this budget*, *Flows…* and *Clone…*.
 
 ```bash
-cashperspective budget-clone household.cashperspective Base "Tighter"
-cashperspective budget-member household.cashperspective remove --budget Tighter --schedule Groceries
-cashperspective budget-use household.cashperspective Tighter    # the dashboard follows this one
+breadsched budget-clone household.breadsched Base "Tighter"
+breadsched budget-member household.breadsched remove --budget Tighter --schedule Groceries
+breadsched budget-use household.breadsched Tighter    # the dashboard follows this one
 ```
 
 ## Loans
@@ -296,72 +296,87 @@ offered:
 The same engines drive all three, so a figure cannot differ between them.
 
 ```bash
-cashperspective --help                       # command line
-cashperspective-gtk household.cashperspective       # GTK4 desktop interface
-cashperspective web household.cashperspective       # browser interface on 127.0.0.1:8765
+breadsched --help                       # command line
+breadsched-gtk household.breadsched       # GTK4 desktop interface
+breadsched web household.breadsched       # browser interface on 127.0.0.1:8765
 ```
 
 The web interface binds to loopback only and refuses any other host: it has no
 authentication, and a finance tool listening on a network interface is not a
 default anyone should have to discover.
 
+### Book files
+
+BreadSched books use the `.breadsched` suffix. Writable books use SQLite rollback-journal
+mode rather than WAL mode, so a closed/idle book is a single file: persistent `-wal` and
+`-shm` companions are not created. SQLite can create a temporary `-journal` file while a
+write is in progress; it is removed after a successful commit.
+
+### Projection progress
+
+Opening the Projection view, changing an assumption, or otherwise recalculating a
+projection shows a modal progress window. Progress is measured by the current projection
+date against the scenario horizon end date, so the percentage describes how far through
+the financial plan the engine has calculated rather than guessing wall-clock time
+remaining.
+
 ## Command line
 
 Every command takes `--json`, so the CLI doubles as the scripting interface.
 
 ```bash
-cashperspective init household.cashperspective
-cashperspective import household.cashperspective ~/Documents/accounts.gnucash
+breadsched init household.breadsched
+breadsched import household.breadsched ~/Documents/accounts.gnucash
 
 # When an import does not produce what you expected:
-cashperspective import household.cashperspective accounts.gnucash -v            # progress + warnings
-cashperspective import household.cashperspective accounts.gnucash --debug       # every record read
-cashperspective import household.cashperspective accounts.gnucash --log-file import.log
+breadsched import household.breadsched accounts.gnucash -v            # progress + warnings
+breadsched import household.breadsched accounts.gnucash --debug       # every record read
+breadsched import household.breadsched accounts.gnucash --log-file import.log
 
-cashperspective verify household.cashperspective       # non-mutating storage + ledger checks
-cashperspective backup household.cashperspective household.backup
-cashperspective restore household.backup restored.cashperspective
+breadsched verify household.breadsched       # non-mutating storage + ledger checks
+breadsched backup household.breadsched household.backup
+breadsched restore household.backup restored.breadsched
 # Existing destinations require --overwrite; the old book is preserved first as
-# restored.cashperspective.pre-restore.bak.
+# restored.breadsched.pre-restore.bak.
 
-cashperspective accounts household.cashperspective
-cashperspective register household.cashperspective "Assets:Checking Account" --limit 20
-cashperspective balance household.cashperspective --as-of 2026-06-30
+breadsched accounts household.breadsched
+breadsched register household.breadsched "Assets:Checking Account" --limit 20
+breadsched balance household.breadsched --as-of 2026-06-30
 
-cashperspective add household.cashperspective --date 2026-03-01 --description "Rent" \
+breadsched add household.breadsched --date 2026-03-01 --description "Rent" \
     --from "Assets:Checking Account" --to "Expenses:Rent" --amount 1800.00
 
 # `register` prints a short id for each row; edit or delete by that.
-cashperspective edit household.cashperspective e871f519 --amount 1950.00 --description "Rent, revised"
-cashperspective delete household.cashperspective e871f519
+breadsched edit household.breadsched e871f519 --amount 1950.00 --description "Rent, revised"
+breadsched delete household.breadsched e871f519
 
-cashperspective scheduled household.cashperspective --days 30
-cashperspective scheduled household.cashperspective --post
+breadsched scheduled household.breadsched --days 30
+breadsched scheduled household.breadsched --post
 
-cashperspective budget-set household.cashperspective --name 2026 \
+breadsched budget-set household.breadsched --name 2026 \
     --account "Expenses:Groceries" --amount 600.00
-cashperspective budget household.cashperspective --name 2026
+breadsched budget household.breadsched --name 2026
 
-cashperspective activity household.cashperspective --start 2026-01-01 --end 2026-12-31
-cashperspective activity household.cashperspective --start 2026-01-01 --end 2026-12-31 --period quarter
+breadsched activity household.breadsched --start 2026-01-01 --end 2026-12-31
+breadsched activity household.breadsched --start 2026-01-01 --end 2026-12-31 --period quarter
 
-cashperspective scenario household.cashperspective save --name "Base case" \
+breadsched scenario household.breadsched save --name "Base case" \
     --years 20 --income-growth 0.03 --inflation 0.025 --investment-return 0.06
-cashperspective scenario household.cashperspective save --name "Long recession" \
+breadsched scenario household.breadsched save --name "Long recession" \
     --years 20 --income-growth 0.00 --inflation 0.05 --investment-return 0.01
-cashperspective project household.cashperspective --scenario "Base case" --csv forecast.csv
-cashperspective compare household.cashperspective "Base case" "Long recession"
+breadsched project household.breadsched --scenario "Base case" --csv forecast.csv
+breadsched compare household.breadsched "Base case" "Long recession"
 ```
 
 `verify` opens the book read-only and is deliberately more tolerant than a normal
 application open: malformed object blobs are reported by type and handle instead of
 stopping at the first undecodable record. Ordinary writes are stricter. Before a
-database transaction commits, CashPerspective verifies the resulting object graph and
+database transaction commits, BreadSched verifies the resulting object graph and
 derived indexes; an invalid final state rolls the entire transaction back.
 
 `backup` uses SQLite's online backup API rather than copying the main file, so
 committed pages still resident in the WAL are included. `restore` verifies both
-SQLite integrity and CashPerspective's logical invariants before installing a
+SQLite integrity and BreadSched's logical invariants before installing a
 backup. Replacing an existing book is never implicit: `--overwrite` first writes
 a consistent `.pre-restore.bak`, removes stale SQLite WAL/SHM sidecars, and only
 then atomically installs the restored database.
@@ -374,9 +389,9 @@ gnucash-cli offers through GnuCash's Python bindings. Here it is plain SQLite, s
 no GnuCash installation is needed.
 
 ```bash
-cashperspective gnucash info         ~/Documents/accounts.gnucash
-cashperspective gnucash accounts     ~/Documents/accounts.gnucash --json
-cashperspective gnucash transactions ~/Documents/accounts.gnucash \
+breadsched gnucash info         ~/Documents/accounts.gnucash
+breadsched gnucash accounts     ~/Documents/accounts.gnucash --json
+breadsched gnucash transactions ~/Documents/accounts.gnucash \
     --start 2026-01-01 --end 2026-03-31
 ```
 
@@ -398,13 +413,13 @@ pip install -e ".[gui]"
 Three equivalent ways to start it, all accepting an optional book to open:
 
 ```bash
-cashperspective-gtk household.cashperspective     # installed launcher
-cashperspective gui household.cashperspective     # subcommand, if you only remember one binary
-python -m cashperspective.gui household.cashperspective
+breadsched-gtk household.breadsched     # installed launcher
+breadsched gui household.breadsched     # subcommand, if you only remember one binary
+python -m cashperspective.gui household.breadsched
 ```
 
 With no argument the window opens empty and you create or open a book from the
-toolbar. `cashperspective-gtk --help` and `--version` work without GTK installed, and so
+toolbar. `breadsched-gtk --help` and `--version` work without GTK installed, and so
 does the error you get if it is missing: the launcher never imports `gi` until
 arguments have been checked, so a missing GTK stack produces install instructions
 for your platform and exit code 3, rather than an import traceback.

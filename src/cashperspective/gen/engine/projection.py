@@ -11,6 +11,7 @@ books remain readable while the planning UI migrates to scheduled-event budgetin
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
@@ -23,10 +24,40 @@ from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, ProjectionBasis, Scenario
 from . import ledger, planning, schedule
 
-__all__ = ["MonthLedger", "MonthRow", "Projection", "project", "compare"]
+__all__ = [
+    "MonthLedger",
+    "MonthRow",
+    "Projection",
+    "ProjectionProgress",
+    "compare",
+    "project",
+]
 
 _ONE = Decimal(1)
 _TWELFTH = Decimal(1) / Decimal(12)
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionProgress:
+    """Progress through the projection horizon, expressed in calendar time."""
+
+    current: date
+    end: date
+    fraction: float
+    phase: str = "Calculating"
+
+
+ProgressCallback = Callable[[ProjectionProgress], None]
+
+
+def _report_progress(
+    callback: ProgressCallback | None, current: date, start: date, end: date, phase: str
+) -> None:
+    if callback is None:
+        return
+    span = max(1, (end - start).days)
+    elapsed = min(span, max(0, (current - start).days))
+    callback(ProjectionProgress(current=current, end=end, fraction=elapsed / span, phase=phase))
 
 
 def monthly_rate(annual: Decimal) -> Decimal:
@@ -538,7 +569,9 @@ def _apply_event(
     return cash
 
 
-def _project_events(db: DbSQLite, scenario: Scenario) -> Projection:
+def _project_events(
+    db: DbSQLite, scenario: Scenario, progress: ProgressCallback | None = None
+) -> Projection:
     """Project scheduled/one-off events chronologically; months are display buckets."""
     result = Projection(scenario=scenario)
     start = scenario.start.replace(day=1)
@@ -564,6 +597,7 @@ def _project_events(db: DbSQLite, scenario: Scenario) -> Projection:
         elif account.account_class is AccountClass.LIABILITY:
             debts[account.handle] = opening
 
+    _report_progress(progress, start, start, end, "Preparing events")
     all_events = planning.scenario_events(db, scenario, start, end)
     for event in all_events:
         if event.source is not planning.EventSource.SCHEDULED:
@@ -592,6 +626,7 @@ def _project_events(db: DbSQLite, scenario: Scenario) -> Projection:
         cursor = month
 
         for event in events_by_month.get((month.year, month.month), []):
+            _report_progress(progress, event.when, start, end, "Applying scheduled events")
             cash = _advance_event_state(
                 scenario, accounts, cursor, event.when, cash, holdings, debts, flows
             )
@@ -621,6 +656,13 @@ def _project_events(db: DbSQLite, scenario: Scenario) -> Projection:
         if not month_ledger.reconciles():
             raise RuntimeError(f"projection month {month:%Y-%m} does not reconcile")
 
+        _report_progress(
+            progress,
+            min(next_month - timedelta(days=1), end),
+            start,
+            end,
+            "Closing reporting period",
+        )
         result.rows.append(
             MonthRow(
                 index=index,
@@ -639,21 +681,28 @@ def _project_events(db: DbSQLite, scenario: Scenario) -> Projection:
                 ledger=month_ledger,
             )
         )
+    _report_progress(progress, end, start, end, "Complete")
     return result
 
 
-def project(db: DbSQLite, scenario: Scenario) -> Projection:
-    """Run a scenario; scheduled-first plans use the exact event-date engine."""
+def project(
+    db: DbSQLite, scenario: Scenario, progress: ProgressCallback | None = None
+) -> Projection:
+    """Run a scenario, optionally reporting calendar progress through its horizon."""
     if scenario.basis is ProjectionBasis.SCHEDULED:
-        return _project_events(db, scenario)
-    return _project_periodic(db, scenario)
+        return _project_events(db, scenario, progress)
+    return _project_periodic(db, scenario, progress)
 
 
-def _project_periodic(db: DbSQLite, scenario: Scenario) -> Projection:
+def _project_periodic(
+    db: DbSQLite, scenario: Scenario, progress: ProgressCallback | None = None
+) -> Projection:
     """Run ``scenario`` against the ledger and return month-by-month results."""
     result = Projection(scenario=scenario)
     start = scenario.start.replace(day=1)
     day_before = date.fromordinal(start.toordinal() - 1)
+    end = add_months(start, scenario.months, day=1) - timedelta(days=1)
+    _report_progress(progress, start, start, end, "Preparing projection")
 
     budget = db.get_budget(scenario.budget) if scenario.budget else None
     if scenario.budget and budget is None:
@@ -702,6 +751,7 @@ def _project_periodic(db: DbSQLite, scenario: Scenario) -> Projection:
     for index in range(scenario.months):
         month = add_months(start, index, day=1)
         month_end = date.fromordinal(add_months(start, index + 1, day=1).toordinal() - 1)
+        _report_progress(progress, month, start, end, "Calculating reporting period")
         year = index // 12
         assumptions = scenario.assumptions_for(month)
         income_factor = _dated_growth_factor(scenario, "income_growth", month, year)
@@ -853,6 +903,7 @@ def _project_periodic(db: DbSQLite, scenario: Scenario) -> Projection:
             )
         )
 
+    _report_progress(progress, end, start, end, "Complete")
     return result
 
 

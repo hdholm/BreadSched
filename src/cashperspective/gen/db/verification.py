@@ -1,4 +1,4 @@
-"""Logical consistency checks for a CashPerspective book.
+"""Logical consistency checks for a BreadSched book.
 
 SQLite's integrity checker answers whether the database file is structurally sound.
 These checks answer a different question: whether the financial objects still agree

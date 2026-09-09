@@ -44,7 +44,7 @@ class TestInit:
 
     def test_version(self, capsys):
         code, out = run(capsys, "--version")
-        assert code == 0 and out.startswith("cashperspective ")
+        assert code == 0 and out.startswith("breadsched ")
 
 
 class TestPostingAndReading:

@@ -20,7 +20,7 @@ __all__ = ["BaseView", "Row", "money_label", "column", "column_menu",
 class Row(GObject.Object):
     """Wraps a plain Python object so it can live in a ``Gio.ListStore``."""
 
-    __gtype_name__ = "CashPerspectiveRow"
+    __gtype_name__ = "BreadSchedRow"
 
     def __init__(self, payload: object, children: list | None = None) -> None:
         super().__init__()

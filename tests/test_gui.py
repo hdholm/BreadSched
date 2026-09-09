@@ -1507,7 +1507,7 @@ class TestLastBookIsRemembered:
         from cashperspective.cli.main import main as cli
         from cashperspective.gui import paths
 
-        default = tmp_path / "CashPerspective.cashperspective"
+        default = tmp_path / "BreadSched.breadsched"
         assert cli(["init", str(default)]) == 0
         monkeypatch.setattr(paths, "default_book_path", lambda: default)
         app.settings.set("general", "last_book", str(default))
@@ -2587,7 +2587,7 @@ class TestStartScreen:
         from cashperspective.gen.lib import Account, AccountType
         from cashperspective.gui import paths
 
-        target = tmp_path / "CashPerspective.cashperspective"
+        target = tmp_path / "BreadSched.breadsched"
         assert cli(["init", str(target)]) == 0
         marker_db = DbSQLite()
         marker_db.load(str(target))
@@ -2615,7 +2615,7 @@ class TestStartScreen:
     ):
         from cashperspective.gui.app import CashPerspectiveApplication
 
-        target = tmp_path / "existing.cashperspective"
+        target = tmp_path / "existing.breadsched"
         target.write_bytes(b"do not replace")
 
         with pytest.raises(FileExistsError):

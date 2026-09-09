@@ -895,7 +895,7 @@ def cmd_gnucash(args: argparse.Namespace) -> int:
     if fmt != "sqlite":
         raise CommandError(
             f"{args.source} is a {fmt} book; direct reading needs the SQLite format. "
-            "Use 'cashperspective import' to bring an XML book in."
+            "Use 'breadsched import' to bring an XML book in."
         )
     if args.action == "accounts":
         rows = gnucash_sqlite.read_accounts(args.source)
@@ -935,7 +935,7 @@ def _inference_note(suggestions: list, applied: bool) -> str:
     if applied:
         return (
             f"\n\nApplied {len(suggestions)} inferred relationship(s); "
-            "'cashperspective account list' shows them."
+            "'breadsched account list' shows them."
         )
     lines = [
         "",
@@ -948,7 +948,7 @@ def _inference_note(suggestions: list, applied: bool) -> str:
     ]
     if len(suggestions) > 8:
         lines.append(f"  ... and {len(suggestions) - 8} more")
-    lines.append("Run 'cashperspective infer BOOK --apply' to accept them.")
+    lines.append("Run 'breadsched infer BOOK --apply' to accept them.")
     return "\n".join(lines)
 
 
@@ -1290,7 +1290,7 @@ def cmd_budget_new(args: argparse.Namespace) -> int:
         if not budget.lines and not args.allow_empty:
             raise CommandError(
                 "no scheduled transactions contribute to this budget. Import a book "
-                "with schedules, or add estimates with 'cashperspective estimate add'."
+                "with schedules, or add estimates with 'breadsched estimate add'."
             )
         with db.transaction(f"Create budget {args.name}") as txn:
             db.add_budget(budget, txn)
@@ -1398,7 +1398,7 @@ def cmd_web(args: argparse.Namespace) -> int:
         except OSError as exc:
             raise CommandError(f"could not listen on {args.host}:{args.port}: {exc}") from exc
         address = f"http://{args.host}:{httpd.server_port}/"
-        print(f"CashPerspective is serving {args.book} at {address}")
+        print(f"BreadSched is serving {args.book} at {address}")
         print("Press Ctrl+C to stop.")
         try:
             httpd.serve_forever()
@@ -1474,7 +1474,7 @@ def cmd_budget_set(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="cashperspective",
+        prog="breadsched",
         description="Cash-flow ledger, budget and multi-year projection tool.",
     )
     parser.add_argument("--version", action="store_true", help="print the version and exit")
@@ -1483,7 +1483,7 @@ def build_parser() -> argparse.ArgumentParser:
     def add(name: str, help_text: str, needs_book: bool = True) -> argparse.ArgumentParser:
         sub = subparsers.add_parser(name, help=help_text, description=help_text)
         if needs_book:
-            sub.add_argument("book", help="path to the CashPerspective book")
+            sub.add_argument("book", help="path to the BreadSched book")
         sub.add_argument("--json", action="store_true", help="emit JSON instead of a table")
         sub.add_argument(
             "-v", "--verbose", action="count", default=0,
@@ -1768,7 +1768,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if getattr(args, "version", False):
         from .. import __version__
 
-        print(f"cashperspective {__version__}")
+        print(f"breadsched {__version__}")
         return 0
     if not getattr(args, "func", None):
         parser.print_help()
@@ -1780,12 +1780,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         return args.func(args)
     except (CommandError, DbError, FileNotFoundError) as exc:
-        print(f"cashperspective: {exc}", file=sys.stderr)
+        print(f"breadsched: {exc}", file=sys.stderr)
         return 2
     except sqlite3.DatabaseError as exc:
         # A corrupt or non-SQLite file reaching a reader is a user-facing problem,
         # not a bug to report as a traceback.
-        print(f"cashperspective: could not read the database: {exc}", file=sys.stderr)
+        print(f"breadsched: could not read the database: {exc}", file=sys.stderr)
         LOG.debug("database error", exc_info=True)
         return 2
     except BrokenPipeError:  # pragma: no cover - e.g. piping into head

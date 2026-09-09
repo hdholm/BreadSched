@@ -239,7 +239,7 @@ class ProjectionView(BaseView):
         if self.db is None:
             return
         try:
-            result = projection.project(self.db, self._collect())
+            result = self._project_with_progress(self._collect())
         except Exception as exc:  # noqa: BLE001 - shown to the user, and logged
             # A failure here used to escape into the signal handler that triggered
             # it, where GTK prints it and carries on. The chart kept whatever it
@@ -254,6 +254,71 @@ class ProjectionView(BaseView):
             return
         self.warning_label.remove_css_class("negative")
         self._render(result)
+
+    def _project_with_progress(self, scenario: Scenario) -> projection.Projection:
+        """Calculate one scenario while showing position through its horizon."""
+        if self.db is None:
+            raise RuntimeError("no book is open")
+
+        progress_window, progress_bar, progress_label = self._open_progress()
+        last_fraction = -1.0
+        last_phase = ""
+
+        def on_progress(update: projection.ProjectionProgress) -> None:
+            nonlocal last_fraction, last_phase
+            if (
+                update.phase == last_phase
+                and update.fraction < 1.0
+                and update.fraction - last_fraction < 0.002
+            ):
+                return
+            last_fraction = update.fraction
+            last_phase = update.phase
+            progress_bar.set_fraction(update.fraction)
+            progress_bar.set_text(f"{update.fraction:.0%}")
+            progress_label.set_text(
+                f"{update.phase}: {update.current:%b %d, %Y} of {update.end:%b %d, %Y}"
+            )
+            # Projection remains synchronous so a control change has a
+            # deterministic result before its signal handler returns. Pumping the
+            # main context keeps the modal progress window painted between engine
+            # checkpoints without coupling the financial model to GTK or threads.
+            context = GLib.MainContext.default()
+            while context.pending():
+                context.iteration(False)
+
+        try:
+            return projection.project(self.db, scenario, progress=on_progress)
+        finally:
+            progress_window.close()
+
+    def _open_progress(self) -> tuple[Gtk.Window, Gtk.ProgressBar, Gtk.Label]:
+        """Create and paint the projection calculation popup."""
+        root = self.get_root()
+        window = Gtk.Window(title="Calculating projection…", modal=True)
+        if isinstance(root, Gtk.Window):
+            window.set_transient_for(root)
+            window.set_destroy_with_parent(True)
+        window.set_default_size(440, -1)
+        window.set_resizable(False)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(18)
+        label = Gtk.Label(label="Preparing projection…", xalign=0)
+        label.set_wrap(True)
+        box.append(label)
+        bar = Gtk.ProgressBar(show_text=True)
+        bar.set_text("0%")
+        box.append(bar)
+        window.set_child(box)
+        window.present()
+
+        # Make sure the popup is visible before event expansion starts.
+        context = GLib.MainContext.default()
+        while context.pending():
+            context.iteration(False)
+        return window, bar, label
 
     def _render(self, result: projection.Projection) -> None:
         labels = [row.label for row in result.rows]
@@ -345,11 +410,11 @@ class ProjectionView(BaseView):
 
         def on_apply(_b) -> None:
             index = picker.get_selected()
+            dialog.close()
             self._comparison = (
-                projection.project(self.db, self._scenarios[index - 1])
+                self._project_with_progress(self._scenarios[index - 1])
                 if index > 0 else None
             )
-            dialog.close()
             self.recompute()
 
         apply_button.connect("clicked", on_apply)
@@ -376,7 +441,8 @@ class ProjectionView(BaseView):
                 return
             from ...plugins.export.csv_export import export_projection
 
-            export_projection(projection.project(self.db, self._collect()),
-                              file.get_path())
+            export_projection(
+                self._project_with_progress(self._collect()), file.get_path()
+            )
 
         dialog.save(self.get_root(), None, on_saved)

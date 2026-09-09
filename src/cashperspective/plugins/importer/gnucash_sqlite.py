@@ -61,7 +61,7 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
 
 # ------------------------------------------------------------------- readers
 # These are usable on their own, in the spirit of gnucash-cli: point them at a
-# book and get plain dictionaries back, with no CashPerspective database involved.
+# book and get plain dictionaries back, with no BreadSched database involved.
 
 
 def read_accounts(path: str | Path, include_templates: bool = False) -> list[dict]:
@@ -174,7 +174,7 @@ def import_book(
     message: str | None = None,
     progress=None,
 ) -> ImportResult:
-    """Copy a GnuCash SQLite book into an open CashPerspective database."""
+    """Copy a GnuCash SQLite book into an open BreadSched database."""
     result = ImportResult(source=str(path), source_format="sqlite")
     LOG.info("importing GnuCash SQLite book %s", path)
     conn = open_gnucash_sqlite(path)

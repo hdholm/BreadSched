@@ -1,5 +1,5 @@
-"""CashPerspective: a cash-flow ledger, budget and projection tool."""
+"""BreadSched: event-driven cash-flow planning and projection."""
 
 __version__ = "0.1.0"
-APP_NAME = "CashPerspective"
-APP_ID = "org.cashperspective.CashPerspective"
+APP_NAME = "BreadSched"
+APP_ID = "org.breadsched.BreadSched"

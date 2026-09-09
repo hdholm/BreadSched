@@ -525,34 +525,26 @@ class TestTransactionConcurrency:
         assert errors == []
 
 
-class TestWalRecovery:
-    def test_backup_includes_committed_data_still_in_wal(self, tmp_path):
-        path = tmp_path / "wal-book.cp"
+class TestRollbackJournalRecovery:
+    def test_books_do_not_leave_persistent_wal_or_shm_files(self, tmp_path):
+        path = tmp_path / "book.breadsched"
         db = DbSQLite()
         db.load(str(path))
-        db._require().execute("PRAGMA wal_autocheckpoint=0")
-        with db.transaction("WAL account") as txn:
-            account = Account(name="In WAL", atype=AccountType.BANK)
-            db.add_account(account, txn)
-
-        wal = Path(str(path) + "-wal")
-        assert wal.exists() and wal.stat().st_size > 0
-        backup_path = db._backup_before_migration(2)
+        assert db._require().execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+        with db.transaction("account") as txn:
+            db.add_account(Account(name="Checking", atype=AccountType.BANK), txn)
         db.close()
 
-        restored = DbSQLite()
-        restored.load(backup_path, mode="r")
-        try:
-            assert restored.get_account(account.handle).name == "In WAL"
-            assert restored.integrity_problems() == []
-        finally:
-            restored.close()
+        assert path.exists()
+        assert not Path(str(path) + "-wal").exists()
+        assert not Path(str(path) + "-shm").exists()
+        assert not Path(str(path) + "-journal").exists()
 
-    def test_abrupt_uncommitted_write_is_not_recovered(self, tmp_path):
+    def test_abrupt_uncommitted_write_is_rolled_back(self, tmp_path):
         import subprocess
         import sys
 
-        path = tmp_path / "crash-book.cp"
+        path = tmp_path / "crash-book.breadsched"
         db = DbSQLite()
         db.load(str(path))
         db.close()
@@ -560,7 +552,8 @@ class TestWalRecovery:
         code = """
 import os, sqlite3, sys
 conn = sqlite3.connect(sys.argv[1])
-conn.execute('PRAGMA journal_mode=WAL')
+conn.execute('PRAGMA journal_mode=DELETE')
+conn.execute('PRAGMA synchronous=FULL')
 conn.execute('BEGIN IMMEDIATE')
 conn.execute("INSERT INTO metadata(key,value) VALUES ('uncommitted_crash_marker','bad')")
 os._exit(0)

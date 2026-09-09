@@ -350,7 +350,7 @@ POST_ROUTES = {
 class Handler(BaseHTTPRequestHandler):
     """Serves the single page and the JSON API. One database, guarded by a lock."""
 
-    server_version = "CashPerspective"
+    server_version = "BreadSched"
     api_object: Api
     lock: threading.Lock
 

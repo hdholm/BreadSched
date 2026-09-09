@@ -152,10 +152,6 @@ class CashPerspectiveApplication(Gtk.Application):
         # Remembered so the next start reopens it. Written immediately rather than
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book", str(Path(path).resolve()))
-        # ``last_book_explicit`` existed briefly while startup behavior was being
-        # migrated.  Book identity is sufficient: a user book at the default path
-        # is no different from any other user-owned book.
-        self.settings.remove("general", "last_book_explicit")
         self.settings.save()
         for name in ("import", "export", "post-scheduled", "new-transaction",
                      "new-budget"):
@@ -175,7 +171,7 @@ class CashPerspectiveApplication(Gtk.Application):
     # ---------------------------------------------------------------- actions
 
     def on_new(self, *_args) -> None:
-        dialog = Gtk.FileDialog(title="New book", initial_name="household.cashperspective")
+        dialog = Gtk.FileDialog(title="New book", initial_name="household.breadsched")
         dialog.save(self.props.active_window, None, self._on_new_chosen)
 
     def _on_new_chosen(self, dialog, result) -> None:
@@ -214,8 +210,8 @@ class CashPerspectiveApplication(Gtk.Application):
         dialog = Gtk.FileDialog(title="Open book")
         filters = Gio.ListStore.new(Gtk.FileFilter)
         book_filter = Gtk.FileFilter()
-        book_filter.set_name("CashPerspective books")
-        book_filter.add_pattern("*.cashperspective")
+        book_filter.set_name("BreadSched books")
+        book_filter.add_pattern("*.breadsched")
         filters.append(book_filter)
         dialog.set_filters(filters)
         dialog.open(self.props.active_window, None, self._on_open_chosen)
@@ -432,7 +428,7 @@ def build_menu_model() -> Gio.Menu:
     menubar.append_submenu("_Actions", actions_menu)
 
     help_menu = Gio.Menu()
-    help_menu.append("_About CashPerspective", "app.about")
+    help_menu.append("_About BreadSched", "app.about")
     menubar.append_submenu("_Help", help_menu)
     return menubar
 

@@ -112,7 +112,7 @@ def import_book(
     message: str | None = None,
     progress=None,
 ) -> ImportResult:
-    """Copy a GnuCash XML book into an open CashPerspective database.
+    """Copy a GnuCash XML book into an open BreadSched database.
 
     The file is walked twice: once for commodities and accounts, once for
     transactions.  A single pass would risk meeting a split before its account,

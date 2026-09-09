@@ -1,8 +1,8 @@
 """Persistent settings, in INI files under the user's config directory.
 
 Follows the XDG Base Directory specification, which is what GNOME applications
-use: ``$XDG_CONFIG_HOME/cashperspective/`` when that is set, otherwise
-``~/.config/cashperspective/``. Two files, because they have different lifetimes and
+use: ``$XDG_CONFIG_HOME/breadsched/`` when that is set, otherwise
+``~/.config/breadsched/``. Two files, because they have different lifetimes and
 different levels of interest to a human:
 
 * ``settings.ini`` — deliberate preferences, such as the book to reopen.
@@ -27,7 +27,7 @@ __all__ = ["Settings", "config_directory"]
 
 LOG = get_logger(__name__)
 
-APP_DIRECTORY = "cashperspective"
+APP_DIRECTORY = "breadsched"
 
 
 def config_directory() -> Path:

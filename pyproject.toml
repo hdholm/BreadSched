@@ -3,13 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cashperspective"
+name = "breadsched"
 version = "0.1.0"
-description = "Cash-flow ledger, budget and multi-year projection tool with GnuCash compatibility"
+description = "Event-driven cash-flow planning and multi-year projection tool with GnuCash compatibility"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
-authors = [{ name = "CashPerspective contributors" }]
+authors = [{ name = "BreadSched contributors" }]
 keywords = ["finance", "budget", "cashflow", "gnucash", "gtk4"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -35,10 +35,10 @@ dev = [
 ]
 
 [project.scripts]
-cashperspective = "cashperspective.cli.main:main"
+breadsched = "cashperspective.cli.main:main"
 
 [project.gui-scripts]
-cashperspective-gtk = "cashperspective.gui.launcher:main"
+breadsched-gtk = "cashperspective.gui.launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

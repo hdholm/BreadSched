@@ -14,11 +14,11 @@ from .. import APP_NAME
 __all__ = ["default_book_path", "documents_directory", "BOOK_SUFFIX", "READABLE_SUFFIXES"]
 
 #: The suffix new books are given.
-BOOK_SUFFIX = ".cashperspective"
+BOOK_SUFFIX = ".breadsched"
 
-#: Suffixes the open dialog offers. The old name is still read: renaming the
-#: application should not strand anybody's existing book.
-READABLE_SUFFIXES = (BOOK_SUFFIX, ".cashcast")
+#: Suffixes the open dialog offers. BreadSched intentionally starts with a
+#: clean on-disk format; old prototype books are not migrated.
+READABLE_SUFFIXES = (BOOK_SUFFIX,)
 
 
 def documents_directory() -> Path:

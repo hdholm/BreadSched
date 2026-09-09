@@ -18,18 +18,18 @@ from cashperspective.gen.utils.settings import Settings, config_directory
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings("test", directory=tmp_path / "cashperspective")
+    return Settings("test", directory=tmp_path / "breadsched")
 
 
 class TestLocation:
     def test_it_follows_xdg_config_home(self, monkeypatch, tmp_path):
         monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "somewhere"))
-        assert config_directory() == tmp_path / "somewhere" / "cashperspective"
+        assert config_directory() == tmp_path / "somewhere" / "breadsched"
 
     def test_it_falls_back_to_dot_config(self, monkeypatch, tmp_path):
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
         monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
-        assert config_directory() == tmp_path / ".config" / "cashperspective"
+        assert config_directory() == tmp_path / ".config" / "breadsched"
 
     def test_the_file_is_an_ini(self, settings):
         assert settings.path.suffix == ".ini"
@@ -40,7 +40,7 @@ class TestReadingAndWriting:
         settings.set("general", "last_book", "/books/household.cashperspective")
         assert settings.save() is True
 
-        reloaded = Settings("test", directory=tmp_path / "cashperspective")
+        reloaded = Settings("test", directory=tmp_path / "breadsched")
         assert reloaded.get("general", "last_book") == "/books/household.cashperspective"
 
     def test_missing_values_return_the_default(self, settings):
@@ -54,7 +54,7 @@ class TestReadingAndWriting:
         settings.set("view", "hidden", ["memo", "num"])
         settings.save()
 
-        reloaded = Settings("test", directory=tmp_path / "cashperspective")
+        reloaded = Settings("test", directory=tmp_path / "breadsched")
         assert reloaded.get_int("view", "width") == 240
         assert reloaded.get_bool("view", "shown") is True
         assert reloaded.get_list("view", "hidden") == ["memo", "num"]
@@ -64,12 +64,12 @@ class TestReadingAndWriting:
         settings.save()
         settings.remove("general", "last_book")
         settings.save()
-        assert Settings("test", directory=tmp_path / "cashperspective").get(
+        assert Settings("test", directory=tmp_path / "breadsched").get(
             "general", "last_book"
         ) is None
 
     def test_the_directory_is_created_on_demand(self, tmp_path):
-        target = tmp_path / "deep" / "nested" / "cashperspective"
+        target = tmp_path / "deep" / "nested" / "breadsched"
         store = Settings("test", directory=target)
         store.set("general", "x", "1")
         assert store.save() is True
@@ -78,7 +78,7 @@ class TestReadingAndWriting:
 
 class TestResilience:
     def test_a_corrupt_file_yields_defaults_rather_than_raising(self, tmp_path):
-        directory = tmp_path / "cashperspective"
+        directory = tmp_path / "breadsched"
         directory.mkdir(parents=True)
         (directory / "test.ini").write_text("this is not = valid [ini at all\n\x00")
 
@@ -86,7 +86,7 @@ class TestResilience:
         assert store.get("general", "last_book") is None
 
     def test_a_corrupt_file_can_still_be_written_over(self, tmp_path):
-        directory = tmp_path / "cashperspective"
+        directory = tmp_path / "breadsched"
         directory.mkdir(parents=True)
         (directory / "test.ini").write_text("[[[broken")
 
@@ -105,7 +105,7 @@ class TestResilience:
     def test_an_unwritable_directory_is_reported_not_raised(self, tmp_path):
         blocker = tmp_path / "blocked"
         blocker.write_text("I am a file, not a directory")
-        store = Settings("test", directory=blocker / "cashperspective")
+        store = Settings("test", directory=blocker / "breadsched")
         store.set("general", "x", "1")
         assert store.save() is False
 

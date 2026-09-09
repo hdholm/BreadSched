@@ -161,8 +161,12 @@ class DbSQLite(DbBase):
         self._conn.execute("PRAGMA foreign_keys=ON")
 
         if not self.readonly:
-            self._conn.execute("PRAGMA journal_mode=WAL")
-            self._conn.execute("PRAGMA synchronous=NORMAL")
+            # BreadSched is a single-writer desktop application.  DELETE journaling
+            # keeps the user's book as one durable file instead of leaving persistent
+            # ``-wal`` and ``-shm`` companions beside it. SQLite may create a temporary
+            # ``-journal`` during a write, but removes it after a successful commit.
+            self._conn.execute("PRAGMA journal_mode=DELETE")
+            self._conn.execute("PRAGMA synchronous=FULL")
 
         try:
             if not self.readonly and not existing_book:
@@ -207,7 +211,7 @@ class DbSQLite(DbBase):
 
         if version > SCHEMA_VERSION:
             raise DbError(
-                f"book was written by a newer version (schema {version}); upgrade CashPerspective"
+                f"book was written by a newer version (schema {version}); upgrade BreadSched"
             )
         if version < SCHEMA_VERSION:
             if self.readonly:
@@ -293,7 +297,7 @@ class DbSQLite(DbBase):
     def restore_backup(
         cls, source: str, destination: str, *, overwrite: bool = False
     ) -> str:
-        """Restore a verified CashPerspective backup to ``destination``.
+        """Restore a verified BreadSched backup to ``destination``.
 
         Restores never overwrite an existing book silently.  When overwrite is
         explicitly requested, a consistent ``.pre-restore.bak`` copy of the old

@@ -15,10 +15,10 @@ from pathlib import Path
 __all__ = ["main", "USAGE"]
 
 USAGE = """\
-Usage: cashperspective-gtk [BOOK]
+Usage: breadsched-gtk [BOOK]
 
-Start the CashPerspective graphical interface, optionally opening BOOK
-(a .cashperspective file). Without BOOK, the window opens empty and you can
+Start the BreadSched graphical interface, optionally opening BOOK
+(a .breadsched file). Without BOOK, the window opens empty and you can
 create or open a book from the toolbar.
 
 Options:
@@ -26,16 +26,16 @@ Options:
   --version      show the version and exit
 
 Equivalent commands:
-  cashperspective-gtk household.cashperspective
-  cashperspective gui household.cashperspective
-  python -m cashperspective.gui household.cashperspective
+  breadsched-gtk household.breadsched
+  breadsched gui household.breadsched
+  python -m cashperspective.gui household.breadsched
 """
 
 #: Shown when the GTK stack is missing. Package names differ per platform, and a
 #: bare "install PyGObject" sends people to a pip build that fails on the C
 #: headers, so the actual system packages are named.
 INSTALL_HELP = """\
-CashPerspective's graphical interface needs GTK 4 and PyGObject, which are not
+BreadSched's graphical interface needs GTK 4 and PyGObject, which are not
 installed.
 
   Debian/Ubuntu:  sudo apt install python3-gi python3-gi-cairo \\
@@ -46,9 +46,9 @@ installed.
   Windows:        use MSYS2: pacman -S mingw-w64-ucrt-x86_64-python-gobject \\
                                        mingw-w64-ucrt-x86_64-gtk4
 
-Then reinstall CashPerspective with the gui extra:  pip install -e ".[gui]"
+Then reinstall BreadSched with the gui extra:  pip install -e ".[gui]"
 
-The command line interface needs none of this and works now:  cashperspective --help\
+The command line interface needs none of this and works now:  breadsched --help\
 """
 
 
@@ -63,12 +63,12 @@ def main(argv: list[str] | None = None) -> int:
     if "--version" in args:
         from .. import __version__
 
-        print(f"cashperspective-gtk {__version__}")
+        print(f"breadsched-gtk {__version__}")
         return 0
 
     positional = [a for a in args if not a.startswith("-")]
     if len(positional) > 1:
-        print("cashperspective-gtk: open one book at a time", file=sys.stderr)
+        print("breadsched-gtk: open one book at a time", file=sys.stderr)
         return 2
 
     book: str | None = None
@@ -76,8 +76,8 @@ def main(argv: list[str] | None = None) -> int:
         candidate = Path(positional[0]).expanduser()
         if not candidate.exists():
             print(
-                f"cashperspective-gtk: no book at {candidate}\n"
-                f"Create one with: cashperspective init {candidate}",
+                f"breadsched-gtk: no book at {candidate}\n"
+                f"Create one with: breadsched init {candidate}",
                 file=sys.stderr,
             )
             return 2

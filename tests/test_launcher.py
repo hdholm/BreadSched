@@ -20,7 +20,7 @@ _HAS_PYGOBJECT = importlib.util.find_spec("gi") is not None
 
 @pytest.fixture
 def book(tmp_path, capsys):
-    path = tmp_path / "household.cashperspective"
+    path = tmp_path / "household.breadsched"
     cli_main(["init", str(path)])
     capsys.readouterr()
     return path
@@ -30,7 +30,7 @@ class TestHelpAndVersion:
     def test_help_works_without_gtk(self, capsys):
         assert launcher.main(["--help"]) == 0
         out = capsys.readouterr().out
-        assert "cashperspective-gtk [BOOK]" in out
+        assert "breadsched-gtk [BOOK]" in out
 
     def test_short_help_flag(self, capsys):
         assert launcher.main(["-h"]) == 0
@@ -45,19 +45,19 @@ class TestHelpAndVersion:
     def test_help_lists_the_equivalent_commands(self, capsys):
         launcher.main(["--help"])
         out = capsys.readouterr().out
-        for form in ("cashperspective-gtk", "cashperspective gui", "python -m cashperspective.gui"):
+        for form in ("breadsched-gtk", "breadsched gui", "python -m cashperspective.gui"):
             assert form in out
 
 
 class TestArgumentChecking:
     def test_a_missing_book_is_reported_before_gtk_is_touched(self, tmp_path, capsys):
-        code = launcher.main([str(tmp_path / "nope.cashperspective")])
+        code = launcher.main([str(tmp_path / "nope.breadsched")])
         assert code == 2
         assert "no book at" in capsys.readouterr().err
 
     def test_the_error_suggests_how_to_create_one(self, tmp_path, capsys):
-        launcher.main([str(tmp_path / "nope.cashperspective")])
-        assert "cashperspective init" in capsys.readouterr().err
+        launcher.main([str(tmp_path / "nope.breadsched")])
+        assert "breadsched init" in capsys.readouterr().err
 
     def test_two_books_are_refused(self, book, capsys):
         assert launcher.main([str(book), str(book)]) == 2
@@ -108,7 +108,7 @@ class TestMissingGtk:
 
     def test_the_message_points_at_the_working_cli(self, book, capsys, no_gtk):
         launcher.main([str(book)])
-        assert "cashperspective --help" in capsys.readouterr().err
+        assert "breadsched --help" in capsys.readouterr().err
 
     def test_the_underlying_error_is_still_shown(self, book, capsys, no_gtk):
         launcher.main([str(book)])
@@ -116,15 +116,15 @@ class TestMissingGtk:
 
 
 class TestCliSubcommand:
-    def test_cashperspective_gui_delegates_to_the_launcher(self, book, capsys, no_gtk):
+    def test_breadsched_gui_delegates_to_the_launcher(self, book, capsys, no_gtk):
         assert cli_main(["gui", str(book)]) == 3
         assert "GTK 4 and PyGObject" in capsys.readouterr().err
 
-    def test_cashperspective_gui_accepts_no_book(self, capsys, no_gtk):
+    def test_breadsched_gui_accepts_no_book(self, capsys, no_gtk):
         assert cli_main(["gui"]) == 3
 
     @pytest.mark.skipif(not _HAS_PYGOBJECT, reason="PyGObject is not installed")
-    def test_cashperspective_gui_starts_the_application(self, book, fake_gtk):
+    def test_breadsched_gui_starts_the_application(self, book, fake_gtk):
         assert cli_main(["gui", str(book)]) == 0
         assert str(book) in fake_gtk[0]
 
@@ -165,7 +165,7 @@ class TestEntryPoints:
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
-        assert config["project"]["gui-scripts"]["cashperspective-gtk"] == (
+        assert config["project"]["gui-scripts"]["breadsched-gtk"] == (
             "cashperspective.gui.launcher:main"
         )
 
@@ -175,7 +175,7 @@ class TestEntryPoints:
         spec = importlib.util.find_spec("cashperspective.gui.__main__")
         assert spec is not None
 
-    def test_the_cli_script_is_unaffected(self):
+    def test_the_cli_script_is_breadsched(self):
         from pathlib import Path
 
         try:
@@ -185,4 +185,4 @@ class TestEntryPoints:
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
-        assert config["project"]["scripts"]["cashperspective"] == "cashperspective.cli.main:main"
+        assert config["project"]["scripts"]["breadsched"] == "cashperspective.cli.main:main"

@@ -69,6 +69,23 @@ class TestShape:
         assert result.warnings
         assert len(result.rows) == 12
 
+    def test_progress_reports_position_through_the_horizon(self, db, book):
+        scenario = Scenario(
+            name="Progress", start=date(2026, 1, 1), years=1,
+            assumptions=flat_assumptions(),
+        )
+        updates = []
+        projection.project(db, scenario, progress=updates.append)
+
+        assert updates
+        assert updates[0].current == date(2026, 1, 1)
+        assert updates[-1].end == date(2026, 12, 31)
+        assert updates[-1].current == updates[-1].end
+        assert updates[-1].fraction == 1.0
+        assert [item.fraction for item in updates] == sorted(
+            item.fraction for item in updates
+        )
+
 
 class TestBudgetDriven:
     def test_monthly_surplus_accumulates(self, db, book, monthly_budget):

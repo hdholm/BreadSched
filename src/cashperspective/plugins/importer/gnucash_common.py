@@ -7,7 +7,7 @@ Both are supported, and both funnel into :class:`ImportSink` so the mapping rule
 
 GUIDs are reused verbatim as handles.  Re-importing an updated copy of the same
 book therefore updates the existing rows rather than duplicating the whole chart of
-accounts, which is what makes "GnuCash is still my system of record, CashPerspective does
+accounts, which is what makes "GnuCash is still my system of record, BreadSched does
 the forecasting" a workable arrangement.
 """
 
@@ -165,7 +165,7 @@ def parse_gnc_date(raw: str | None) -> date:
 
 
 class ImportSink:
-    """Accumulates parsed GnuCash records and writes them into a CashPerspective book."""
+    """Accumulates parsed GnuCash records and writes them into a BreadSched book."""
 
     def __init__(self, db: DbSQLite, txn: DbTxn, result: ImportResult) -> None:
         self.db = db
