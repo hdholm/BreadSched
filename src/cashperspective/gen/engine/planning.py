@@ -18,7 +18,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.money import Money
 from ..lib.scenario import OneOff, Scenario
 from ..lib.scheduled import ScheduledTransaction
-from ..lib.transaction import Split, Transaction
+from ..lib.transaction import Transaction
 
 __all__ = [
     "EventSource",
