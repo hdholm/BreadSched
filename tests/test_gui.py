@@ -1484,6 +1484,19 @@ class TestLastBookIsRemembered:
         assert app.reopen_last_book() is False
         assert app.settings.get("general", "last_book") is None
 
+    def test_activation_reopens_an_existing_remembered_book(self, app, tmp_path):
+        from cashperspective.cli.main import main as cli
+
+        remembered = tmp_path / "remembered.cashperspective"
+        assert cli(["init", str(remembered)]) == 0
+        app.settings.set("general", "last_book", str(remembered))
+        app.settings.save()
+
+        app.do_activate()
+
+        assert app.db is not None
+        assert app.book_path == str(remembered)
+
 
 class TestSortingReordersRows:
     """Item 2: clicking a header must move the rows, not just draw an arrow."""
@@ -2521,6 +2534,14 @@ class TestStartScreen:
         for name in _action_names(window.stack.get_child_by_name("empty")):
             assert app.has_action(name.removeprefix("app.")), f"{name} is not wired"
 
+    def test_file_menu_offers_import_into_a_new_book(self):
+        from cashperspective.gui.app import build_menu_model
+
+        menu = build_menu_model()
+        actions = _menu_actions(menu)
+        assert "app.import-new" in actions
+        assert "app.import" in actions
+
     def test_the_default_book_is_named_but_not_created(self, tmp_path, monkeypatch):
         from cashperspective.gui import paths
 
@@ -2594,6 +2615,19 @@ def _action_names(widget, found=None):
         _action_names(child, found)
         child = child.get_next_sibling()
     return found
+
+
+def _menu_actions(menu):
+    actions = []
+    for index in range(menu.get_n_items()):
+        action = menu.get_item_attribute_value(index, "action", None)
+        if action is not None:
+            actions.append(action.get_string())
+        for link_name in ("section", "submenu"):
+            linked = menu.get_item_link(index, link_name)
+            if linked is not None:
+                actions.extend(_menu_actions(linked))
+    return actions
 
 
 class TestImportDialogProgress:

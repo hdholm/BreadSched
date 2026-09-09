@@ -71,9 +71,12 @@ class CashPerspectiveApplication(Gtk.Application):
 
     def do_activate(self) -> None:
         window = self.props.active_window or ViewManager(self)
-        window.present()
+        # Restore the previous book before presenting the window.  If we present
+        # first, the empty-book chooser is briefly visible even when there is a
+        # perfectly good remembered book to reopen.
         if self.db is None:
             self.reopen_last_book()
+        window.present()
 
     def reopen_last_book(self) -> bool:
         """Reopen the book from last time, if it is still there.
@@ -384,7 +387,8 @@ def build_menu_model() -> Gio.Menu:
     new_section.append("_Open Book…", "app.open")
     file_menu.append_section(None, new_section)
     transfer = Gio.Menu()
-    transfer.append("_Import GnuCash Book…", "app.import")
+    transfer.append("Import GnuCash Book into _New Book…", "app.import-new")
+    transfer.append("Import GnuCash Book into _Current Book…", "app.import")
     transfer.append("_Export Transactions…", "app.export")
     file_menu.append_section(None, transfer)
     quit_section = Gio.Menu()
