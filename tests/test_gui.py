@@ -1497,6 +1497,38 @@ class TestLastBookIsRemembered:
         assert app.db is not None
         assert app.book_path == str(remembered)
 
+    def test_legacy_default_book_is_not_reopened_implicitly(
+        self, app, tmp_path, monkeypatch
+    ):
+        from cashperspective.cli.main import main as cli
+        from cashperspective.gui import paths
+
+        default = tmp_path / "CashPerspective.cashperspective"
+        assert cli(["init", str(default)]) == 0
+        monkeypatch.setattr(paths, "default_book_path", lambda: default)
+        app.settings.set("general", "last_book", str(default))
+        app.settings.save()
+
+        assert app.reopen_last_book() is False
+        assert app.db is None
+        assert app.settings.get("general", "last_book") is None
+
+    def test_explicit_default_book_is_reopened(
+        self, app, tmp_path, monkeypatch
+    ):
+        from cashperspective.cli.main import main as cli
+        from cashperspective.gui import paths
+
+        default = tmp_path / "CashPerspective.cashperspective"
+        assert cli(["init", str(default)]) == 0
+        monkeypatch.setattr(paths, "default_book_path", lambda: default)
+        app.settings.set("general", "last_book", str(default))
+        app.settings.set("general", "last_book_explicit", True)
+        app.settings.save()
+
+        assert app.reopen_last_book() is True
+        assert app.book_path == str(default)
+
 
 class TestSortingReordersRows:
     """Item 2: clicking a header must move the rows, not just draw an arrow."""

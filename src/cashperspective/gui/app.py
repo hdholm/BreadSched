@@ -88,6 +88,20 @@ class CashPerspectiveApplication(Gtk.Application):
         remembered = self.settings.get("general", "last_book")
         if not remembered:
             return False
+
+        # Older releases could leave the default book remembered even though the
+        # user never chose it.  Do not perpetuate that implicit default after the
+        # startup chooser was introduced.  Once a book is explicitly opened under
+        # the new behavior, ``last_book_explicit`` is written and the default book
+        # is treated exactly like any other remembered book.
+        from .paths import default_book_path
+
+        explicit = self.settings.get_bool("general", "last_book_explicit")
+        if not explicit and Path(remembered) == default_book_path().resolve():
+            self.settings.remove("general", "last_book")
+            self.settings.save()
+            return False
+
         if not Path(remembered).exists():
             self.settings.remove("general", "last_book")
             self.settings.save()
@@ -151,6 +165,7 @@ class CashPerspectiveApplication(Gtk.Application):
         # Remembered so the next start reopens it. Written immediately rather than
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book", str(Path(path).resolve()))
+        self.settings.set("general", "last_book_explicit", True)
         self.settings.save()
         for name in ("import", "export", "post-scheduled", "new-transaction",
                      "new-budget"):
