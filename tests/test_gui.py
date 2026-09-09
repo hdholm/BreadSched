@@ -438,7 +438,10 @@ class TestProjectionView:
         window.show_category("projection")
         view = window._views["projection"]
         before = list(view.chart.series[2].values)
-        view._scales["income_growth"].set_value(0.10)
+        # This fixture imports a monthly rent schedule but no scheduled income.
+        # Scheduled-event projections therefore respond to expense inflation;
+        # income growth is intentionally inert until an income schedule exists.
+        view._scales["expense_inflation"].set_value(0.10)
         assert view.chart.series[2].values != before
 
     def test_the_chart_draws_without_error(self, app, window, populated_book):
