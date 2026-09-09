@@ -215,7 +215,10 @@ class TestWarningPolicy:
         of it would also have hidden the Gtk.CssProvider deprecation this project
         did need to act on.
         """
-        import tomllib
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())

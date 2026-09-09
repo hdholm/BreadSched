@@ -158,7 +158,10 @@ class TestEntryPoints:
         """A console script bound to app:main would traceback without GTK."""
         from pathlib import Path
 
-        import tomllib
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
@@ -175,7 +178,10 @@ class TestEntryPoints:
     def test_the_cli_script_is_unaffected(self):
         from pathlib import Path
 
-        import tomllib
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
