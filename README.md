@@ -29,13 +29,15 @@ source-tree imports are caught before release.
 
 - **Double-entry ledger.** Transactions own their splits and cannot be stored
   unbalanced. Amounts are exact rationals, never floats.
-- **Cash-flow budget.** Per-period amounts rather than one annual figure, because
-  a budget that averages the heating bill across twelve months hides the January
-  the current account runs dry.
+- **Event-driven cash-flow plan.** Scheduled transactions are the recurring source
+  of truth. Pay, bills, transfers and estimates happen on their recurrence dates;
+  month/quarter/year views aggregate those dated events rather than moving them.
 - **Scheduled transactions.** Recurrence rules with month-end clamping and
-  business-day adjustment, posted idempotently.
-- **Multi-year projection.** Monthly steps over any horizon, driven by the budget,
-  by the schedules, or by both.
+  business-day adjustment, posted idempotently and linked back to the expectation
+  they actualize.
+- **Multi-year projection.** New scenarios advance from financial event to event,
+  accruing returns and interest over the exact interval between them. Legacy
+  period-budget scenarios remain readable while the UI migrates.
 - **Saved scenarios.** Named assumption sets that can be compared side by side.
 - **GnuCash import.** Accounts, transactions, commodities and scheduled
   transactions, from either container format.
@@ -237,10 +239,11 @@ at least two splits" is not actionable against a book with ten thousand of them.
 `-v`, `--debug` and `--log-file` escalate the detail; the import dialog has the
 same option and writes the log beside the file being imported.
 
-**Nothing is counted twice.** Under the `combined` projection basis, an account
-driven by a scheduled transaction is dropped from the budget, because the schedule
-is the more specific statement of intent. Rent entered in both places is charged
-once.
+**Scheduled events are the plan.** New scenarios default to the `scheduled` basis.
+A generated occurrence has a stable identity, planned date, expected splits and
+expected amount. When a ledger transaction resolves it, the original estimate is
+retained so later schedule edits cannot rewrite budget-vs-actual history. The old
+`budget` and `combined` bases remain available for existing books during migration.
 
 **Scenarios store assumptions, never results.** A saved forecast is recomputed
 against the current ledger every time it is opened, so it incorporates new actual
@@ -248,15 +251,19 @@ transactions instead of quietly going stale.
 
 **Scenario assumptions can change over time.** A scenario may contain dated
 assumption periods that override only the rates that change, globally or for a
-specific account. Investment, cash and liability rates take effect in the month a
-period begins; income growth and expense inflation preserve the existing annual
-budget-escalation behavior and use the rate in force at each projection anniversary.
+specific account. In the event-driven engine, return and interest assumptions are
+accrued over the exact number of days for which they are in force.
 
-**Every projected month reconciles.** In addition to the compact totals displayed
-in a projection row, the engine records an explicit monthly state ledger: opening
-cash, investments and liabilities; exact cash flow; per-account contributions,
-returns, debt interest and payments; and the resulting closing balances. The engine
-refuses to return a month whose recorded movements do not explain its closing state.
+**Months are reports, not the clock.** Scheduled and one-off events are processed
+on their exact dates. Between them, cash interest, investment return and liability
+interest accrue using an actual/365 convention. Monthly rows simply aggregate the
+events and effects that occurred in that calendar month, and every row still has to
+reconcile opening state, movements and closing state.
+
+**Actuals preserve the estimate.** Posting a scheduled occurrence, or matching a
+new ledger transaction to one, stores the stable occurrence identity, original
+planned date and expected amount on the transaction. A changed future estimate
+therefore cannot retroactively change historical variance.
 
 **Formulas are parsed, not `eval`'d.** Scheduled-transaction formulas go through
 an `ast` walk with a node whitelist. This application's whole job is reading other
@@ -264,10 +271,9 @@ people's financial documents; `eval` on their contents is not an option.
 
 ## Starting up
 
-The application opens on a start screen rather than creating a book. A book made
-unasked leaves a file somebody did not choose in a place they did not pick, and
-makes "which book am I looking at" the first question instead of the last. Four
-ways in are offered:
+The application reopens the last user book when it still exists. Otherwise it
+opens on a start screen rather than creating a book unasked. Four ways in are
+offered:
 
 - **New book** — an empty chart of accounts.
 - **Open book** — one you already have. Books written under the previous name

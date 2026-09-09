@@ -114,6 +114,12 @@ class Transaction(PrimaryObject):
         self.num = num
         self.notes = ""
         self.scheduled_from: str | None = None  # handle of the originating schedule
+        #: Stable identity of the plan occurrence this transaction resolved.
+        self.planned_occurrence: str | None = None
+        #: Original expected date, retained when an actual posts on a nearby date.
+        self.planned_for: date | None = None
+        #: Expected gross amount at resolution time; schedule edits cannot rewrite it.
+        self.planned_amount: Money | None = None
         self.splits: list[Split] = list(splits or [])
 
     # ------------------------------------------------------------------ splits
@@ -203,6 +209,11 @@ class Transaction(PrimaryObject):
             "num": self.num,
             "notes": self.notes,
             "scheduled_from": self.scheduled_from,
+            "planned_occurrence": self.planned_occurrence,
+            "planned_for": self.planned_for.isoformat() if self.planned_for else None,
+            "planned_amount": None
+            if self.planned_amount is None
+            else [self.planned_amount.numerator, self.planned_amount.denominator],
             "splits": [s.serialize() for s in self.splits],
         }
 
@@ -214,6 +225,13 @@ class Transaction(PrimaryObject):
         self.num = data.get("num", "")
         self.notes = data.get("notes", "")
         self.scheduled_from = data.get("scheduled_from")
+        self.planned_occurrence = data.get("planned_occurrence")
+        raw_planned_for = data.get("planned_for")
+        self.planned_for = date.fromisoformat(raw_planned_for) if raw_planned_for else None
+        raw_planned_amount = data.get("planned_amount")
+        self.planned_amount = (
+            Money(*raw_planned_amount) if raw_planned_amount is not None else None
+        )
         self.splits = [Split.from_dict(s) for s in data.get("splits", [])]
 
     def __repr__(self) -> str:

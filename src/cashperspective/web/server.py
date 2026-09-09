@@ -242,7 +242,7 @@ class Api:
             scenario = Scenario(
                 name=scenario_name or "ad hoc",
                 years=years,
-                basis=ProjectionBasis.COMBINED,
+                basis=ProjectionBasis.SCHEDULED,
                 budget=budgets[0].handle if budgets else None,
             )
         result = projection.project(self.db, scenario)

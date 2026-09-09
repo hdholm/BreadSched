@@ -7,11 +7,12 @@ from . import (
     inference,
     ledger,
     loans,
+    planning,
     projection,
     schedule,
 )
 
 __all__ = [
     "budgeting", "cashflow", "dashboard", "inference", "ledger", "loans",
-    "projection", "schedule",
+    "planning", "projection", "schedule",
 ]

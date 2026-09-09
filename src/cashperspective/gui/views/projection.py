@@ -26,6 +26,12 @@ __all__ = ["ProjectionView"]
 
 LOG = get_logger(__name__)
 
+_BASIS_ORDER = [
+    ProjectionBasis.SCHEDULED,
+    ProjectionBasis.BUDGET,
+    ProjectionBasis.COMBINED,
+]
+
 _ASSUMPTIONS = [
     ("income_growth", "Income growth", -0.05, 0.15, 0.03),
     ("expense_inflation", "Expense inflation", -0.02, 0.15, 0.025),
@@ -135,9 +141,9 @@ class ProjectionView(BaseView):
         basis_box = Gtk.Box(spacing=8)
         basis_box.append(Gtk.Label(label="Driven by", xalign=0))
         self.basis_picker = Gtk.DropDown.new_from_strings(
-            ["Budget only", "Schedules only", "Budget and schedules"]
+            ["Scheduled events", "Legacy budget", "Legacy budget + schedules"]
         )
-        self.basis_picker.set_selected(2)
+        self.basis_picker.set_selected(_BASIS_ORDER.index(self.scenario.basis))
         self.basis_picker.connect("notify::selected", self._on_input_changed)
         basis_box.append(self.basis_picker)
         box.append(basis_box)
@@ -198,7 +204,11 @@ class ProjectionView(BaseView):
         for budget in self._budgets:
             model.append(budget.name)
         self.budget_picker.set_model(model)
-        if self.scenario.budget is None and self._budgets:
+        if (
+            self.scenario.budget is None
+            and self._budgets
+            and self.scenario.basis is not ProjectionBasis.SCHEDULED
+        ):
             self.scenario.budget = self._budgets[0].handle
         for index, budget in enumerate(self._budgets):
             if budget.handle == self.scenario.budget:
@@ -208,9 +218,7 @@ class ProjectionView(BaseView):
     def _collect(self) -> Scenario:
         """Read the controls back into the working scenario."""
         self.scenario.years = int(self.years_spin.get_value())
-        self.scenario.basis = [
-            ProjectionBasis.BUDGET, ProjectionBasis.SCHEDULED, ProjectionBasis.COMBINED
-        ][self.basis_picker.get_selected()]
+        self.scenario.basis = _BASIS_ORDER[self.basis_picker.get_selected()]
         selected = self.budget_picker.get_selected()
         self.scenario.budget = (
             self._budgets[selected - 1].handle
@@ -311,10 +319,7 @@ class ProjectionView(BaseView):
         self._updating = True
         try:
             self.years_spin.set_value(chosen.years)
-            self.basis_picker.set_selected(
-                [ProjectionBasis.BUDGET, ProjectionBasis.SCHEDULED,
-                 ProjectionBasis.COMBINED].index(chosen.basis)
-            )
+            self.basis_picker.set_selected(_BASIS_ORDER.index(chosen.basis))
             for key, scale in self._scales.items():
                 scale.set_value(float(getattr(chosen.assumptions, key)))
             self._populate_budgets()

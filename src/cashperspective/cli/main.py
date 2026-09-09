@@ -1634,7 +1634,7 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--inflation", default="0.025", help="annual expense inflation")
         sub.add_argument("--investment-return", default="0.06", help="annual, nominal")
         sub.add_argument("--cash-interest", default="0.01")
-        sub.add_argument("--basis", default="combined",
+        sub.add_argument("--basis", default="scheduled",
                          choices=[b.value for b in ProjectionBasis])
         sub.add_argument("--budget", help="budget name to drive recurring amounts")
 

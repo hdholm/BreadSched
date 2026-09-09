@@ -240,7 +240,7 @@ class Scenario(PrimaryObject):
         description: str = "",
         start: date | None = None,
         years: int = 5,
-        basis: ProjectionBasis | str = ProjectionBasis.COMBINED,
+        basis: ProjectionBasis | str = ProjectionBasis.SCHEDULED,
         budget: str | None = None,
         assumptions: Assumptions | None = None,
         assumption_periods: list[AssumptionPeriod] | None = None,

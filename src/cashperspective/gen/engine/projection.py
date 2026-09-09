@@ -1,27 +1,18 @@
 """Multi-year cash-flow projection.
 
-The model steps one month at a time.  A month is the right granularity because it
-is the period on which households actually run out of money: an annual model shows
-a comfortable surplus for a year in which the current account was overdrawn twice.
+New schedule-driven scenarios are calculated as a chronological event stream.
+Scheduled transactions and one-off plan items change state on their actual planned
+dates; interest and investment assumptions accrue over the exact interval between
+events. Months remain reporting buckets only.
 
-Three rules keep the numbers defensible.
-
-**Rates compound, they do not divide.**  A 6% annual assumption becomes
-``(1.06 ** (1/12)) - 1`` per month, so twelve months of it is 6.00%, not 6.17%.
-
-**Cash is a pool; holdings are per account.**  Spendable money is fungible, so all
-bank and cash accounts collapse into one balance.  Investments and debts compound
-at their own rates and are tracked separately.
-
-**Nothing is counted twice.**  Under :attr:`ProjectionBasis.COMBINED` a scheduled
-transaction wins over a budget line for the same account, because the schedule is
-the more specific statement of intent.
+Legacy budget/combined scenarios keep the period engine temporarily so existing
+books remain readable while the planning UI migrates to scheduled-event budgeting.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Literal
 
@@ -30,7 +21,7 @@ from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, ProjectionBasis, Scenario
-from . import ledger, schedule
+from . import ledger, planning, schedule
 
 __all__ = ["MonthLedger", "MonthRow", "Projection", "project", "compare"]
 
@@ -66,9 +57,14 @@ class MonthLedger:
     investment_growth: dict[str, Money]
     liability_interest: dict[str, Money]
     debt_payments: dict[str, Money]
-    closing_cash: Money
-    closing_holdings: dict[str, Money]
-    closing_liabilities: dict[str, Money]
+    #: Signed principal movement in natural debt-balance terms. Positive means
+    #: more debt, negative means principal was paid down.
+    liability_movements: dict[str, Money] = field(default_factory=dict)
+    #: Exact dated plan events that contributed to this reporting month.
+    events: list[planning.PlannedEvent] = field(default_factory=list)
+    closing_cash: Money = field(default_factory=lambda: Money(0))
+    closing_holdings: dict[str, Money] = field(default_factory=dict)
+    closing_liabilities: dict[str, Money] = field(default_factory=dict)
 
     @property
     def holdings_open(self) -> Money:
@@ -98,6 +94,8 @@ class MonthLedger:
             "investment_growth": dict(self.investment_growth),
             "liability_interest": dict(self.liability_interest),
             "debt_payments": dict(self.debt_payments),
+            "liability_movements": dict(self.liability_movements),
+            "events": [event.as_dict() for event in self.events],
             "closing_cash": self.closing_cash,
             "closing_holdings": dict(self.closing_holdings),
             "closing_liabilities": dict(self.closing_liabilities),
@@ -127,13 +125,19 @@ class MonthLedger:
             set(self.opening_liabilities)
             | set(self.liability_interest)
             | set(self.debt_payments)
+            | set(self.liability_movements)
             | set(self.closing_liabilities)
         )
         for handle in liability_handles:
+            movement = self.liability_movements.get(handle)
+            if movement is None:
+                # Backward-compatible month ledgers produced by the legacy period
+                # engine recorded only principal reductions as debt payments.
+                movement = -self.debt_payments.get(handle, Money(0))
             expected = (
                 self.opening_liabilities.get(handle, Money(0))
                 + self.liability_interest.get(handle, Money(0))
-                - self.debt_payments.get(handle, Money(0))
+                + movement
             )
             if self.closing_liabilities.get(handle, Money(0)) != expected:
                 return False
@@ -357,7 +361,257 @@ class _MonthFlows:
                 self.cash_delta = self.cash_delta - amount
 
 
+
+
+@dataclass(slots=True)
+class _EventMonthFlows:
+    """Effects accumulated while exact dated events are processed."""
+
+    income: Money = field(default_factory=lambda: Money(0))
+    expense: Money = field(default_factory=lambda: Money(0))
+    cash_flow: Money = field(default_factory=lambda: Money(0))
+    cash_interest: Money = field(default_factory=lambda: Money(0))
+    holding_contributions: dict[str, Money] = field(default_factory=dict)
+    investment_growth: dict[str, Money] = field(default_factory=dict)
+    liability_interest: dict[str, Money] = field(default_factory=dict)
+    liability_movements: dict[str, Money] = field(default_factory=dict)
+    debt_payments: dict[str, Money] = field(default_factory=dict)
+    events: list[planning.PlannedEvent] = field(default_factory=list)
+
+
+def _period_growth_rate(annual: Decimal, days: int) -> Decimal:
+    """Effective growth over ``days`` using an actual/365 convention."""
+    if days <= 0 or annual == 0:
+        return Decimal(0)
+    if annual <= -1:
+        raise ValueError("annual rate must be greater than -100%")
+    return (_ONE + annual) ** (Decimal(days) / Decimal(365)) - _ONE
+
+
+def _assumption_boundaries(scenario: Scenario, start: date, end: date) -> list[date]:
+    """Dates inside ``(start, end)`` where interest/return assumptions can change."""
+    boundaries: set[date] = set()
+    for period in scenario.assumption_periods:
+        if start < period.start < end:
+            boundaries.add(period.start)
+        if period.end is not None:
+            after = period.end + timedelta(days=1)
+            if start < after < end:
+                boundaries.add(after)
+    return sorted(boundaries)
+
+
+def _advance_event_state(
+    scenario: Scenario,
+    accounts: dict[str, Account],
+    start: date,
+    end: date,
+    cash: Money,
+    holdings: dict[str, Money],
+    debts: dict[str, Money],
+    flows: _EventMonthFlows,
+) -> Money:
+    """Accrue state from one event date to the next without inventing cash events."""
+    points = [start, *_assumption_boundaries(scenario, start, end), end]
+    for left, right in zip(points, points[1:], strict=False):
+        days = (right - left).days
+        if days <= 0:
+            continue
+        assumptions = scenario.assumptions_for(left)
+
+        cash_rate = _period_growth_rate(assumptions.cash_interest, days)
+        cash_growth = cash * Money(cash_rate) if cash_rate else Money(0)
+        cash = cash + cash_growth
+        flows.cash_interest = flows.cash_interest + cash_growth
+
+        for handle, balance in list(holdings.items()):
+            account = accounts[handle]
+            rate = _period_growth_rate(_resolve_rate(assumptions, account), days)
+            growth = balance * Money(rate) if rate else Money(0)
+            holdings[handle] = balance + growth
+            flows.investment_growth[handle] = (
+                flows.investment_growth.get(handle, Money(0)) + growth
+            )
+
+        for handle, owed in list(debts.items()):
+            account = accounts[handle]
+            rate = _period_growth_rate(_resolve_rate(assumptions, account), days)
+            charge = owed * Money(rate) if (rate and owed > 0) else Money(0)
+            debts[handle] = owed + charge
+            flows.liability_interest[handle] = (
+                flows.liability_interest.get(handle, Money(0)) + charge
+            )
+    return cash
+
+
+def _apply_event(
+    event: planning.PlannedEvent,
+    accounts: dict[str, Account],
+    cash: Money,
+    holdings: dict[str, Money],
+    debts: dict[str, Money],
+    flows: _EventMonthFlows,
+) -> Money:
+    """Apply one event's effective splits to financial state on its exact date."""
+    flows.events.append(event)
+    for planned_split in event.splits:
+        account = accounts.get(planned_split.account)
+        if account is None or account.exclude_from_projection:
+            continue
+        amount = planned_split.amount
+        cls = account.account_class
+
+        if cls is AccountClass.INCOME:
+            flows.income = flows.income + (amount if event.funded_from_cash else -amount)
+            if event.funded_from_cash:
+                cash = cash + amount
+                flows.cash_flow = flows.cash_flow + amount
+        elif cls is AccountClass.EXPENSE:
+            flows.expense = flows.expense + amount
+            if event.funded_from_cash:
+                cash = cash - amount
+                flows.cash_flow = flows.cash_flow - amount
+        elif account.atype.is_cash_like:
+            cash = cash + amount
+            flows.cash_flow = flows.cash_flow + amount
+        elif cls is AccountClass.ASSET:
+            holdings[account.handle] = holdings.get(account.handle, Money(0)) + amount
+            flows.holding_contributions[account.handle] = (
+                flows.holding_contributions.get(account.handle, Money(0)) + amount
+            )
+            if event.funded_from_cash:
+                cash = cash - amount
+                flows.cash_flow = flows.cash_flow - amount
+        elif cls is AccountClass.LIABILITY:
+            # Ledger split sign is opposite the natural debt balance: a positive
+            # split pays principal down; a negative split borrows more.
+            movement = -amount
+            debts[account.handle] = debts.get(account.handle, Money(0)) + movement
+            flows.liability_movements[account.handle] = (
+                flows.liability_movements.get(account.handle, Money(0)) + movement
+            )
+            if amount > 0:
+                flows.debt_payments[account.handle] = (
+                    flows.debt_payments.get(account.handle, Money(0)) + amount
+                )
+            if event.funded_from_cash:
+                cash = cash - amount
+                flows.cash_flow = flows.cash_flow - amount
+    return cash
+
+
+def _project_events(db: DbSQLite, scenario: Scenario) -> Projection:
+    """Project scheduled/one-off events chronologically; months are display buckets."""
+    result = Projection(scenario=scenario)
+    start = scenario.start.replace(day=1)
+    end_exclusive = add_months(start, scenario.months, day=1)
+    end = end_exclusive - timedelta(days=1)
+    day_before = start - timedelta(days=1)
+
+    cash = Money(0)
+    holdings: dict[str, Money] = {}
+    debts: dict[str, Money] = {}
+    accounts: dict[str, Account] = {}
+    for account in db.iter_accounts():
+        if account.is_root or account.placeholder or account.exclude_from_projection:
+            continue
+        accounts[account.handle] = account
+        opening = scenario.opening_overrides.get(account.handle)
+        if opening is None:
+            opening = ledger.balance(db, account.handle, as_of=day_before)
+        if account.atype.is_cash_like:
+            cash = cash + opening
+        elif account.account_class is AccountClass.ASSET:
+            holdings[account.handle] = opening
+        elif account.account_class is AccountClass.LIABILITY:
+            debts[account.handle] = opening
+
+    all_events = planning.scenario_events(db, scenario, start, end)
+    for event in all_events:
+        if event.source is not planning.EventSource.SCHEDULED:
+            continue
+        residual = _sum(split.amount for split in event.expected_splits)
+        if residual.quantize(100):
+            _warn_once(
+                result,
+                f"scheduled transaction {event.description!r} does not balance: its "
+                f"calculated legs differ by {residual}. The forecast uses them as "
+                f"they stand, so its totals carry that difference.",
+            )
+
+    events_by_month: dict[tuple[int, int], list[planning.PlannedEvent]] = {}
+    for event in all_events:
+        if start <= event.when <= end:
+            events_by_month.setdefault((event.when.year, event.when.month), []).append(event)
+
+    for index in range(scenario.months):
+        month = add_months(start, index, day=1)
+        next_month = add_months(start, index + 1, day=1)
+        cash_open = cash
+        holdings_open = dict(holdings)
+        liabilities_open = dict(debts)
+        flows = _EventMonthFlows()
+        cursor = month
+
+        for event in events_by_month.get((month.year, month.month), []):
+            cash = _advance_event_state(
+                scenario, accounts, cursor, event.when, cash, holdings, debts, flows
+            )
+            cash = _apply_event(event, accounts, cash, holdings, debts, flows)
+            cursor = event.when
+
+        cash = _advance_event_state(
+            scenario, accounts, cursor, next_month, cash, holdings, debts, flows
+        )
+
+        month_ledger = MonthLedger(
+            opening_cash=cash_open,
+            opening_holdings=holdings_open,
+            opening_liabilities=liabilities_open,
+            cash_flow=flows.cash_flow,
+            cash_interest=flows.cash_interest,
+            holding_contributions=dict(flows.holding_contributions),
+            investment_growth=dict(flows.investment_growth),
+            liability_interest=dict(flows.liability_interest),
+            debt_payments=dict(flows.debt_payments),
+            liability_movements=dict(flows.liability_movements),
+            events=list(flows.events),
+            closing_cash=cash,
+            closing_holdings=dict(holdings),
+            closing_liabilities=dict(debts),
+        )
+        if not month_ledger.reconciles():
+            raise RuntimeError(f"projection month {month:%Y-%m} does not reconcile")
+
+        result.rows.append(
+            MonthRow(
+                index=index,
+                month=month,
+                cash_open=cash_open,
+                income=flows.income,
+                expense=flows.expense,
+                contributions=_sum(flows.holding_contributions.values()),
+                debt_payments=_sum(flows.debt_payments.values()),
+                interest_earned=flows.cash_interest,
+                investment_growth=_sum(flows.investment_growth.values()),
+                interest_charged=_sum(flows.liability_interest.values()),
+                cash_close=cash,
+                holdings=_sum(holdings.values()),
+                liabilities=_sum(debts.values()),
+                ledger=month_ledger,
+            )
+        )
+    return result
+
+
 def project(db: DbSQLite, scenario: Scenario) -> Projection:
+    """Run a scenario; scheduled-first plans use the exact event-date engine."""
+    if scenario.basis is ProjectionBasis.SCHEDULED:
+        return _project_events(db, scenario)
+    return _project_periodic(db, scenario)
+
+
+def _project_periodic(db: DbSQLite, scenario: Scenario) -> Projection:
     """Run ``scenario`` against the ledger and return month-by-month results."""
     result = Projection(scenario=scenario)
     start = scenario.start.replace(day=1)

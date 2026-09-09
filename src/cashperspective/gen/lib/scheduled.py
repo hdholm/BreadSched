@@ -136,6 +136,14 @@ class ScheduledTransaction(PrimaryObject):
 
     # ------------------------------------------------------------- realisation
 
+    @staticmethod
+    def occurrence_key_for(schedule_handle: str, when: date) -> str:
+        """Stable identity for one firing of a schedule."""
+        return f"scheduled:{schedule_handle}:{when.isoformat()}"
+
+    def occurrence_key(self, when: date) -> str:
+        return self.occurrence_key_for(self.handle, when)
+
     def amount(
         self,
         variables: dict[str, Any] | None = None,
@@ -211,6 +219,9 @@ class ScheduledTransaction(PrimaryObject):
             currency=self.currency,
         )
         txn.scheduled_from = self.handle
+        txn.planned_occurrence = self.occurrence_key(when)
+        txn.planned_for = when
+        txn.planned_amount = self.amount(variables=variables, when=when)
         # Formula legs are computed to full precision and cannot all land on exact
         # cents; ppmt and ipmt sum to pmt to thirty digits, not to two. Round each
         # leg to the currency's smallest unit and give the last leg the remainder,
