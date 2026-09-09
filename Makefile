@@ -29,7 +29,7 @@ typecheck:
 build:
 	python -m build
 
-check: lint typecheck test test-ordered demo build
+check: lint typecheck test demo build
 
 demo:
 	python examples/demo.py

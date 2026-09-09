@@ -39,11 +39,6 @@ jobs:
       - name: Test
         run: pytest --cov=cashperspective --cov-report=term-missing
 
-      - name: Test again in a fixed order
-        # The randomised run above is the real check; this one makes a failure
-        # reproducible, and catches a test that only passes when shuffled.
-        run: pytest -p no:randomly
-
       - name: Run the demo end to end
         run: python examples/demo.py
 

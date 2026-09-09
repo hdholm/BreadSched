@@ -32,7 +32,7 @@ from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, ProjectionBasis, Scenario
 from . import ledger, schedule
 
-__all__ = ["MonthRow", "Projection", "project", "compare"]
+__all__ = ["MonthLedger", "MonthRow", "Projection", "project", "compare"]
 
 _ONE = Decimal(1)
 _TWELFTH = Decimal(1) / Decimal(12)
@@ -45,6 +45,99 @@ def monthly_rate(annual: Decimal) -> Decimal:
     if annual <= -1:
         raise ValueError("annual rate must be greater than -100%")
     return (_ONE + annual) ** _TWELFTH - _ONE
+
+
+@dataclass(slots=True)
+class MonthLedger:
+    """Explain one month's projected state transition.
+
+    Stock balances are captured per account at the beginning and end of the
+    month.  Flow/effect maps contain the exact deltas that bridge those states,
+    allowing callers to explain a forecast without reverse-engineering aggregate
+    ``MonthRow`` values.
+    """
+
+    opening_cash: Money
+    opening_holdings: dict[str, Money]
+    opening_liabilities: dict[str, Money]
+    cash_flow: Money
+    cash_interest: Money
+    holding_contributions: dict[str, Money]
+    investment_growth: dict[str, Money]
+    liability_interest: dict[str, Money]
+    debt_payments: dict[str, Money]
+    closing_cash: Money
+    closing_holdings: dict[str, Money]
+    closing_liabilities: dict[str, Money]
+
+    @property
+    def holdings_open(self) -> Money:
+        return _sum(self.opening_holdings.values())
+
+    @property
+    def holdings_close(self) -> Money:
+        return _sum(self.closing_holdings.values())
+
+    @property
+    def liabilities_open(self) -> Money:
+        return _sum(self.opening_liabilities.values())
+
+    @property
+    def liabilities_close(self) -> Money:
+        return _sum(self.closing_liabilities.values())
+
+    def as_dict(self) -> dict[str, object]:
+        """Structured representation suitable for CLI JSON and future UI detail."""
+        return {
+            "opening_cash": self.opening_cash,
+            "opening_holdings": dict(self.opening_holdings),
+            "opening_liabilities": dict(self.opening_liabilities),
+            "cash_flow": self.cash_flow,
+            "cash_interest": self.cash_interest,
+            "holding_contributions": dict(self.holding_contributions),
+            "investment_growth": dict(self.investment_growth),
+            "liability_interest": dict(self.liability_interest),
+            "debt_payments": dict(self.debt_payments),
+            "closing_cash": self.closing_cash,
+            "closing_holdings": dict(self.closing_holdings),
+            "closing_liabilities": dict(self.closing_liabilities),
+        }
+
+    def reconciles(self) -> bool:
+        """Return whether every closing stock is explained by recorded effects."""
+        if self.closing_cash != self.opening_cash + self.cash_flow + self.cash_interest:
+            return False
+
+        holding_handles = (
+            set(self.opening_holdings)
+            | set(self.holding_contributions)
+            | set(self.investment_growth)
+            | set(self.closing_holdings)
+        )
+        for handle in holding_handles:
+            expected = (
+                self.opening_holdings.get(handle, Money(0))
+                + self.holding_contributions.get(handle, Money(0))
+                + self.investment_growth.get(handle, Money(0))
+            )
+            if self.closing_holdings.get(handle, Money(0)) != expected:
+                return False
+
+        liability_handles = (
+            set(self.opening_liabilities)
+            | set(self.liability_interest)
+            | set(self.debt_payments)
+            | set(self.closing_liabilities)
+        )
+        for handle in liability_handles:
+            expected = (
+                self.opening_liabilities.get(handle, Money(0))
+                + self.liability_interest.get(handle, Money(0))
+                - self.debt_payments.get(handle, Money(0))
+            )
+            if self.closing_liabilities.get(handle, Money(0)) != expected:
+                return False
+        return True
 
 
 @dataclass(slots=True)
@@ -64,6 +157,7 @@ class MonthRow:
     cash_close: Money
     holdings: Money
     liabilities: Money
+    ledger: MonthLedger
 
     @property
     def net_flow(self) -> Money:
@@ -93,6 +187,7 @@ class MonthRow:
             data[name] = getattr(self, name)
         data["net_flow"] = self.net_flow
         data["net_worth"] = self.net_worth
+        data["ledger"] = self.ledger.as_dict()
         return data
 
 
@@ -324,6 +419,8 @@ def project(db: DbSQLite, scenario: Scenario) -> Projection:
         cash_rate = monthly_rate(assumptions.cash_interest)
 
         cash_open = cash
+        holdings_open = dict(holdings)
+        liabilities_open = dict(debts)
         flows = _MonthFlows()
 
         # Budget lines ------------------------------------------------------
@@ -401,28 +498,49 @@ def project(db: DbSQLite, scenario: Scenario) -> Projection:
         interest_earned = (cash_open * cash_rate).quantize(100) if cash_rate else Money(0)
 
         investment_growth = Money(0)
+        investment_growth_by_account: dict[str, Money] = {}
         for handle, balance in list(holdings.items()):
             account = accounts[handle]
             rate = monthly_rate(_resolve_rate(assumptions, account))
             growth = (balance * rate).quantize(100) if rate else Money(0)
             investment_growth = investment_growth + growth
+            investment_growth_by_account[handle] = growth
             holdings[handle] = balance + growth + flows.contributions.get(handle, Money(0))
         for handle, amount in flows.contributions.items():
             if handle not in holdings:
                 holdings[handle] = amount
 
         interest_charged = Money(0)
+        liability_interest_by_account: dict[str, Money] = {}
         for handle, owed in list(debts.items()):
             account = accounts[handle]
             rate = monthly_rate(_resolve_rate(assumptions, account))
             charge = (owed * rate).quantize(100) if (rate and owed > 0) else Money(0)
             interest_charged = interest_charged + charge
+            liability_interest_by_account[handle] = charge
             debts[handle] = owed + charge
 
+        applied_debt_payments: dict[str, Money] = {}
         if flows.debt_payments:
-            _apply_payments(debts, flows.debt_payments)
+            applied_debt_payments = _apply_payments(debts, flows.debt_payments)
 
         cash = cash_open + flows.cash_delta + interest_earned
+        month_ledger = MonthLedger(
+            opening_cash=cash_open,
+            opening_holdings=holdings_open,
+            opening_liabilities=liabilities_open,
+            cash_flow=flows.cash_delta,
+            cash_interest=interest_earned,
+            holding_contributions=dict(flows.contributions),
+            investment_growth=investment_growth_by_account,
+            liability_interest=liability_interest_by_account,
+            debt_payments=applied_debt_payments,
+            closing_cash=cash,
+            closing_holdings=dict(holdings),
+            closing_liabilities=dict(debts),
+        )
+        if not month_ledger.reconciles():
+            raise RuntimeError(f"projection month {month:%Y-%m} does not reconcile")
 
         result.rows.append(
             MonthRow(
@@ -439,6 +557,7 @@ def project(db: DbSQLite, scenario: Scenario) -> Projection:
                 cash_close=cash,
                 holdings=_sum(holdings.values()),
                 liabilities=_sum(debts.values()),
+                ledger=month_ledger,
             )
         )
 
@@ -458,9 +577,10 @@ def _sum(values) -> Money:
     return total
 
 
-def _apply_payments(debts: dict[str, Money], payment: Money) -> None:
-    """Spread a payment across debts, highest balance first, never below zero."""
+def _apply_payments(debts: dict[str, Money], payment: Money) -> dict[str, Money]:
+    """Spread a payment across debts and return the amount applied per account."""
     remaining = payment
+    applied_by_account: dict[str, Money] = {}
     for handle in sorted(debts, key=lambda h: debts[h], reverse=True):
         if remaining <= 0:
             break
@@ -469,7 +589,9 @@ def _apply_payments(debts: dict[str, Money], payment: Money) -> None:
             continue
         applied = owed if owed < remaining else remaining
         debts[handle] = owed - applied
+        applied_by_account[handle] = applied
         remaining = remaining - applied
+    return applied_by_account
 
 
 def _budget_period(budget, month: date, extend: bool) -> int | None:

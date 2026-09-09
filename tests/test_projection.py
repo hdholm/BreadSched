@@ -530,3 +530,112 @@ class TestScenarioPersistence:
             )
         second = projection.project(db, db.get_scenario(scenario.handle))
         assert second.rows[0].cash_open - first.rows[0].cash_open == Money("10000.00")
+
+
+class TestMonthlyStateLedger:
+    def test_each_month_reconciles_from_opening_to_closing_state(
+        self, db, funded_book, monthly_budget
+    ):
+        scenario = Scenario(
+            name="Explainable",
+            start=date(2026, 3, 1),
+            years=2,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
+            assumptions=flat_assumptions(cash_interest="0.02"),
+        )
+        result = projection.project(db, scenario)
+
+        assert result.rows
+        assert all(row.ledger.reconciles() for row in result.rows)
+        first = result.rows[0]
+        assert first.ledger.opening_cash == first.cash_open
+        assert first.ledger.closing_cash == first.cash_close
+        assert first.ledger.holdings_close == first.holdings
+        assert first.ledger.liabilities_close == first.liabilities
+        assert (
+            first.ledger.opening_cash
+            + first.ledger.cash_flow
+            + first.ledger.cash_interest
+            == first.ledger.closing_cash
+        )
+
+    def test_investment_contributions_and_growth_are_attributed_by_account(
+        self, db, book
+    ):
+        sched = ScheduledTransaction(
+            name="Invest",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.brokerage, Money("500.00")),
+                ScheduledSplit(book.checking, Money("-500.00")),
+            ],
+        )
+        with db.transaction("Add investment schedule") as txn:
+            db.add_scheduled(sched, txn)
+
+        scenario = Scenario(
+            name="Explain investing",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(investment_return="0.06"),
+        )
+        row = projection.project(db, scenario).rows[0]
+
+        assert row.ledger.holding_contributions[book.brokerage] == Money("500.00")
+        assert book.brokerage in row.ledger.investment_growth
+        assert row.ledger.reconciles()
+
+    def test_debt_interest_and_payments_are_attributed_by_account(self, db, book):
+        with db.transaction("Seed card and payment") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 1),
+                    "Balance carried",
+                    book.groceries,
+                    book.card,
+                    "1000.00",
+                ),
+                txn,
+            )
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Card payment",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+                    splits=[
+                        ScheduledSplit(book.card, Money("100.00")),
+                        ScheduledSplit(book.checking, Money("-100.00")),
+                    ],
+                ),
+                txn,
+            )
+
+        scenario = Scenario(
+            name="Explain debt",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
+        )
+        row = projection.project(db, scenario).rows[0]
+
+        assert row.ledger.opening_liabilities[book.card] == Money("1000.00")
+        assert row.ledger.liability_interest[book.card] > Money(0)
+        assert row.ledger.debt_payments[book.card] == Money("100.00")
+        assert row.ledger.reconciles()
+
+    def test_month_row_dict_contains_structured_ledger(self, db, book):
+        scenario = Scenario(
+            name="JSON detail",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
+        )
+        data = projection.project(db, scenario).rows[0].as_dict()
+
+        ledger = data["ledger"]
+        assert isinstance(ledger, dict)
+        assert ledger["opening_cash"] == data["cash_open"]
+        assert ledger["closing_cash"] == data["cash_close"]

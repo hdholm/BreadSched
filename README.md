@@ -18,9 +18,10 @@ cashperspective --help                 # command line
 cashperspective-gtk household.cashperspective # graphical interface
 ```
 
-For a pre-submit development check, run `make check`. The Makefile runs Python commands against the local `src/` tree, so the package itself does not need to be installed first (the development tools still need to be available). It executes Ruff, mypy, the
-randomised and fixed-order test suites, the end-to-end demo, and a source/wheel
-build. CI repeats those checks across supported Python versions and also installs
+For a pre-submit development check, run `make check`. The Makefile runs Python commands against the local `src/` tree, so the package itself does not need to be installed first (the development tools still need to be available). It executes Ruff, mypy, one randomised test-suite run, the end-to-end demo, and a
+source/wheel build. `make test-ordered` remains available when diagnosing an
+order-dependent failure. CI repeats the normal checks across supported Python
+versions and also installs
 the built wheel from outside the checkout so missing package data or accidental
 source-tree imports are caught before release.
 
@@ -250,6 +251,12 @@ assumption periods that override only the rates that change, globally or for a
 specific account. Investment, cash and liability rates take effect in the month a
 period begins; income growth and expense inflation preserve the existing annual
 budget-escalation behavior and use the rate in force at each projection anniversary.
+
+**Every projected month reconciles.** In addition to the compact totals displayed
+in a projection row, the engine records an explicit monthly state ledger: opening
+cash, investments and liabilities; exact cash flow; per-account contributions,
+returns, debt interest and payments; and the resulting closing balances. The engine
+refuses to return a month whose recorded movements do not explain its closing state.
 
 **Formulas are parsed, not `eval`'d.** Scheduled-transaction formulas go through
 an `ast` walk with a node whitelist. This application's whole job is reading other
