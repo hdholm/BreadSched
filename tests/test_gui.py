@@ -43,6 +43,7 @@ pytestmark = [
 ]
 
 from cashperspective import APP_ID  # noqa: E402
+from cashperspective.gen.db.sqlite import DbSQLite  # noqa: E402
 from cashperspective.gen.lib import Budget, Money, Transaction  # noqa: E402
 from cashperspective.gui.app import CashPerspectiveApplication  # noqa: E402
 from cashperspective.gui.viewmanager import CATEGORIES, ViewManager  # noqa: E402
