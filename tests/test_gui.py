@@ -457,6 +457,33 @@ class TestProjectionView:
         view._scales["expense_inflation"].set_value(0.10)
         assert view.chart.series[2].values != before
 
+    def test_hidden_projection_is_only_invalidated_until_viewed(
+        self, app, window, populated_book, monkeypatch
+    ):
+        app.open_book(populated_book)
+        window.show_category("projection")
+        view = window._views["projection"]
+        window.show_category("register")
+
+        recomputes = []
+        monkeypatch.setattr(view, "recompute", lambda: recomputes.append(None))
+
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        rent = app.db.get_account_by_name("Expenses:Rent").handle
+        with app.db.transaction("new actual") as txn:
+            app.db.add_transaction(
+                Transaction.simple(
+                    date(2026, 5, 1), "May rent", rent, checking, Money("1800")
+                ),
+                txn,
+            )
+
+        assert recomputes == []
+        assert view._projection_dirty is True
+
+        window.show_category("projection")
+        assert recomputes == [None]
+
     def test_the_chart_draws_without_error(self, app, window, populated_book):
         """Exercise the Cairo draw path, which no other test touches."""
         import cairo

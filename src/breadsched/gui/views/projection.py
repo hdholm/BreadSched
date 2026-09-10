@@ -16,6 +16,7 @@ from datetime import date
 from decimal import Decimal
 from time import monotonic
 
+from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.lib import Assumptions, ProjectionBasis, Scenario  # noqa: E402
 from ...gen.utils.logs import get_logger  # noqa: E402
@@ -55,6 +56,7 @@ class ProjectionView(BaseView):
         self._scales: dict[str, Gtk.Scale] = {}
         self._comparison: projection.Projection | None = None
         self._updating = False
+        self._projection_dirty = True
         self._build()
 
     # ------------------------------------------------------------------ layout
@@ -181,8 +183,29 @@ class ProjectionView(BaseView):
 
     # ------------------------------------------------------------------- model
 
+    def set_db(self, db: DbSQLite | None) -> None:
+        """Attach a book and invalidate, but do not project while hidden."""
+        self._projection_dirty = True
+        self._comparison = None
+        super().set_db(db)
+
+    def _is_visible(self) -> bool:
+        """Return whether this is the category currently shown by the manager."""
+        return self.manager.stack.get_visible_child() is self
+
+    def _on_change(self, *_args) -> None:
+        """Invalidate projections without eagerly rebuilding a hidden view."""
+        self._projection_dirty = True
+        if self._is_visible():
+            self.schedule_refresh()
+
     def refresh(self) -> None:
         if self.db is None:
+            return
+        if not self._is_visible():
+            self._projection_dirty = True
+            return
+        if not self._projection_dirty:
             return
         self._updating = True
         try:
@@ -241,6 +264,7 @@ class ProjectionView(BaseView):
     def recompute(self) -> None:
         if self.db is None:
             return
+        self._projection_dirty = False
         try:
             result = self._project_with_progress(self._collect())
         except Exception as exc:  # noqa: BLE001 - shown to the user, and logged
