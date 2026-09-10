@@ -5,9 +5,9 @@ a change in the return assumption is visible immediately rather than after a
 dialog round trip.  A forecast is an argument about the future, and the fastest way
 to understand one is to push on it.
 
-Nothing here is saved until "Save as scenario" is pressed.  Scenarios are named
-sets of assumptions, so two of them can be put on the chart together and the gap
-between them attributed to a specific belief.
+Baseline assumption changes are a session draft until saved as a scenario. Changes to
+a selected saved scenario are persisted with "Save scenario changes". Plan and
+Projection share the same scenario selection so both views describe the same future.
 """
 
 from __future__ import annotations
@@ -21,6 +21,11 @@ from ...gen.engine import projection
 from ...gen.lib import Assumptions, ProjectionBasis, Scenario  # noqa: E402
 from ...gen.utils.logs import get_logger  # noqa: E402
 from ..gi_setup import GLib, Gtk
+from ..planning_context import (
+    baseline_scenario,
+    select_scenario,
+    selected_scenario_handle,
+)
 from ..widgets.chart import LineChart, Series  # noqa: E402
 from ._base import BaseView  # noqa: E402
 
@@ -41,6 +46,7 @@ _ASSUMPTIONS = [
     ("expense_inflation", "Expense inflation", -0.02, 0.15, 0.025),
     ("investment_return", "Investment return", -0.05, 0.15, 0.06),
     ("cash_interest", "Cash interest", 0.0, 0.10, 0.01),
+    ("liability_interest", "Liability interest", 0.0, 0.30, 0.0),
 ]
 
 
@@ -52,7 +58,9 @@ class ProjectionView(BaseView):
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
-        self.scenario = Scenario(name="Working scenario", years=10)
+        self._baseline = baseline_scenario(manager)
+        self.scenario = self._baseline
+        self._scenario_handle: str | None = selected_scenario_handle(manager)
         self._scales: dict[str, Gtk.Scale] = {}
         self._comparison: projection.Projection | None = None
         self._updating = False
@@ -112,10 +120,10 @@ class ProjectionView(BaseView):
         spacer.set_hexpand(True)
         bar.append(spacer)
 
-        save_button = Gtk.Button(label="Save as scenario")
-        save_button.add_css_class("suggested-action")
-        save_button.connect("clicked", self._on_save_clicked)
-        bar.append(save_button)
+        self.save_button = Gtk.Button(label="Save as scenario")
+        self.save_button.add_css_class("suggested-action")
+        self.save_button.connect("clicked", self._on_save_clicked)
+        bar.append(self.save_button)
 
         export_button = Gtk.Button(icon_name="document-save-symbolic")
         export_button.set_tooltip_text("Export the monthly rows as CSV")
@@ -218,10 +226,37 @@ class ProjectionView(BaseView):
     def _populate_scenarios(self) -> None:
         self._scenarios = list(self.db.iter_scenarios())
         model = Gtk.StringList()
-        model.append("Working scenario")
-        for scenario in self._scenarios:
+        model.append("Baseline")
+        selected = 0
+        chosen = None
+        for index, scenario in enumerate(self._scenarios, 1):
             model.append(scenario.name)
+            if scenario.handle == self._scenario_handle:
+                selected = index
+                chosen = scenario
+        if self._scenario_handle is not None and chosen is None:
+            self._scenario_handle = None
+            select_scenario(self.manager, None, source=self)
+        self.scenario = chosen or self._baseline
         self.scenario_picker.set_model(model)
+        self.scenario_picker.set_selected(selected)
+        self._load_scenario_controls()
+        self.save_button.set_label(
+            "Save scenario changes" if chosen is not None else "Save as scenario"
+        )
+
+    def _load_scenario_controls(self) -> None:
+        self.years_spin.set_value(self.scenario.years)
+        self.basis_picker.set_selected(_BASIS_ORDER.index(self.scenario.basis))
+        for key, scale in self._scales.items():
+            scale.set_value(float(getattr(self.scenario.assumptions, key)))
+
+    def planning_scenario_changed(self, handle: str | None) -> None:
+        """Follow the scenario selected in Plan without eagerly projecting hidden data."""
+        self._scenario_handle = handle
+        self._projection_dirty = True
+        if self._is_visible():
+            self.schedule_refresh()
 
     def _populate_budgets(self) -> None:
         self._budgets = list(self.db.iter_budgets())
@@ -423,17 +458,17 @@ class ProjectionView(BaseView):
         if self._updating or self.db is None:
             return
         index = picker.get_selected()
-        if index == 0:
-            return
-        chosen = self._scenarios[index - 1]
-        self.scenario = chosen
+        chosen = self._scenarios[index - 1] if index > 0 else None
+        self._scenario_handle = chosen.handle if chosen is not None else None
+        select_scenario(self.manager, self._scenario_handle, source=self)
+        self.scenario = chosen or self._baseline
         self._updating = True
         try:
-            self.years_spin.set_value(chosen.years)
-            self.basis_picker.set_selected(_BASIS_ORDER.index(chosen.basis))
-            for key, scale in self._scales.items():
-                scale.set_value(float(getattr(chosen.assumptions, key)))
+            self._load_scenario_controls()
             self._populate_budgets()
+            self.save_button.set_label(
+                "Save scenario changes" if chosen is not None else "Save as scenario"
+            )
         finally:
             self._updating = False
         self.recompute()
@@ -471,9 +506,17 @@ class ProjectionView(BaseView):
     def _on_save_clicked(self, _button) -> None:
         if self.db is None:
             return
+        scenario = self._collect()
+        if self._scenario_handle is not None:
+            with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+                self.db.commit_scenario(scenario, txn)
+            return
+
         from ..dialogs.scenario_dialog import SaveScenarioDialog
 
-        SaveScenarioDialog(self.get_root(), self.db, self._collect()).present()
+        draft = Scenario.from_dict(scenario.serialize())
+        draft.name = ""
+        SaveScenarioDialog(self.get_root(), self.db, draft).present()
 
     def _on_export_clicked(self, _button) -> None:
         if self.db is None:

@@ -11,6 +11,11 @@ from datetime import date
 
 from ...gen.engine.activity import ReportingPeriod, build_category_report
 from ..gi_setup import Gtk
+from ..planning_context import (
+    baseline_scenario,
+    select_scenario,
+    selected_scenario_handle,
+)
 from ._base import BaseView
 
 __all__ = ["PlanView"]
@@ -39,7 +44,7 @@ class PlanView(BaseView):
         self._end_year = self._start_year + 4
         self._updating_range = False
         self._scenarios = []
-        self._scenario_handle: str | None = None
+        self._scenario_handle: str | None = selected_scenario_handle(manager)
         self._updating_scenarios = False
         self._build()
 
@@ -161,6 +166,7 @@ class PlanView(BaseView):
             self._updating_scenarios = False
         if selected == 0 and self._scenario_handle is not None:
             self._scenario_handle = None
+            select_scenario(self.manager, None, source=self)
 
     def _scenario_at_selection(self):
         selected = self.scenario.get_selected()
@@ -181,6 +187,14 @@ class PlanView(BaseView):
             return
         selected = self._scenario_at_selection()
         self._scenario_handle = selected.handle if selected is not None else None
+        select_scenario(self.manager, self._scenario_handle, source=self)
+        self._update_scenario_actions()
+        self.schedule_refresh()
+
+    def planning_scenario_changed(self, handle: str | None) -> None:
+        """Follow scenario selections made in another planning view."""
+        self._scenario_handle = handle
+        self._populate_scenarios()
         self._update_scenario_actions()
         self.schedule_refresh()
 
@@ -341,7 +355,7 @@ class PlanView(BaseView):
         self._populate_scenarios()
         start = date(self._start_year, 1, 1)
         end = date(self._end_year, 12, 31)
-        selected_scenario = self._selected_scenario()
+        selected_scenario = self._selected_scenario() or baseline_scenario(self.manager)
         self._report = build_category_report(
             self.db,
             start,

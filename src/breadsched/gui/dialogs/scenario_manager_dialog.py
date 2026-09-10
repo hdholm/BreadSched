@@ -1,11 +1,12 @@
-"""Manage saved planning scenarios and their base assumptions."""
+"""Manage saved planning scenarios, base assumptions, and dated overrides."""
 
 from __future__ import annotations
 
-from decimal import Decimal
+from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib import Scenario
+from ...gen.lib import AssumptionPeriod, Scenario
 from ...gen.lib.base import create_handle
 from ..gi_setup import Gtk
 
@@ -86,9 +87,15 @@ class ScenarioManagerDialog(Gtk.Window):
             self.rate_controls[attribute] = control
         self.editor.append(rates)
 
+        timeline_row = Gtk.Box(spacing=8)
         self.timeline_summary = Gtk.Label(xalign=0, wrap=True)
         self.timeline_summary.add_css_class("dim")
-        self.editor.append(self.timeline_summary)
+        self.timeline_summary.set_hexpand(True)
+        timeline_row.append(self.timeline_summary)
+        self.timeline_button = Gtk.Button(label="Edit dated assumptions…")
+        self.timeline_button.connect("clicked", self._on_edit_timeline)
+        timeline_row.append(self.timeline_button)
+        self.editor.append(timeline_row)
 
         self.event_summary = Gtk.Label(xalign=0, wrap=True)
         self.event_summary.add_css_class("dim")
@@ -143,6 +150,7 @@ class ScenarioManagerDialog(Gtk.Window):
         self.save_button.set_sensitive(enabled)
         self.duplicate_button.set_sensitive(enabled)
         self.delete_button.set_sensitive(enabled)
+        self.timeline_button.set_sensitive(enabled)
         if scenario is None:
             self.name_entry.set_text("")
             self.description_entry.set_text("")
@@ -158,7 +166,7 @@ class ScenarioManagerDialog(Gtk.Window):
         periods = len(scenario.assumption_periods)
         changes = len(scenario.schedule_overrides)
         self.timeline_summary.set_text(
-            f"{periods} dated assumption period(s). Timeline editing is handled separately."
+            f"{periods} dated assumption period(s)."
         )
         self.event_summary.set_text(
             f"{changes} scenario-specific recurring event change(s) are preserved here."
@@ -214,6 +222,17 @@ class ScenarioManagerDialog(Gtk.Window):
             number += 1
         return candidate
 
+    def _on_edit_timeline(self, _button) -> None:
+        scenario = self._selected()
+        if scenario is None:
+            return
+        AssumptionTimelineDialog(self, self.db, scenario, self._timeline_saved).present()
+
+    def _timeline_saved(self, handle: str) -> None:
+        self._reload(handle)
+        self.status.set_text("Dated assumptions saved.")
+        self.status.remove_css_class("negative")
+
     def _on_delete(self, _button) -> None:
         scenario = self._selected()
         if scenario is None:
@@ -228,6 +247,222 @@ class ScenarioManagerDialog(Gtk.Window):
     def _error(self, message: str) -> None:
         self.status.set_text(message)
         self.status.add_css_class("negative")
+
+
+class AssumptionTimelineDialog(Gtk.Window):
+    """List and edit dated overrides for one saved scenario."""
+
+    def __init__(
+        self,
+        parent: Gtk.Window,
+        db: DbSQLite,
+        scenario: Scenario,
+        saved_callback,
+    ) -> None:
+        super().__init__(
+            title=f"Dated assumptions — {scenario.name}",
+            transient_for=parent,
+            modal=True,
+        )
+        self.db = db
+        self.scenario = scenario
+        self.saved_callback = saved_callback
+        self._periods: list[AssumptionPeriod] = []
+        self.set_default_size(720, 420)
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(18)
+        self.set_child(box)
+        box.append(
+            Gtk.Label(
+                label=(
+                    "Dated values override the scenario's base annual assumptions only for "
+                    "their date range. Leave a rate blank to inherit the value already in force."
+                ),
+                xalign=0,
+                wrap=True,
+            )
+        )
+
+        row = Gtk.Box(spacing=8)
+        self.picker = Gtk.DropDown()
+        self.picker.set_hexpand(True)
+        row.append(self.picker)
+        add = Gtk.Button(label="Add…")
+        add.connect("clicked", self._on_add)
+        row.append(add)
+        self.edit_button = Gtk.Button(label="Edit…")
+        self.edit_button.connect("clicked", self._on_edit)
+        row.append(self.edit_button)
+        self.delete_button = Gtk.Button(label="Delete")
+        self.delete_button.add_css_class("destructive-action")
+        self.delete_button.connect("clicked", self._on_delete)
+        row.append(self.delete_button)
+        box.append(row)
+
+        self.summary = Gtk.Label(xalign=0, wrap=True)
+        self.summary.add_css_class("dim")
+        box.append(self.summary)
+        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
+        close.connect("clicked", lambda *_: self.close())
+        box.append(close)
+        self._reload()
+
+    def _reload(self, selected: int = 0) -> None:
+        self._periods = sorted(
+            self.scenario.assumption_periods,
+            key=lambda period: (period.start, period.end or date.max),
+        )
+        model = Gtk.StringList()
+        for period in self._periods:
+            through = period.end.isoformat() if period.end is not None else "onward"
+            detail = period.description.strip() or self._changed_rates(period)
+            model.append(f"{period.start.isoformat()} — {through}: {detail}")
+        self.picker.set_model(model)
+        if self._periods:
+            self.picker.set_selected(min(selected, len(self._periods) - 1))
+        enabled = bool(self._periods)
+        self.edit_button.set_sensitive(enabled)
+        self.delete_button.set_sensitive(enabled)
+        self.summary.set_text(
+            f"{len(self._periods)} dated assumption period(s). Later-starting overlapping "
+            "periods win for values they override."
+        )
+
+    @staticmethod
+    def _changed_rates(period: AssumptionPeriod) -> str:
+        names = [
+            label
+            for label, attribute in _ASSUMPTIONS
+            if getattr(period, attribute) is not None
+        ]
+        return ", ".join(names) if names else "no rate overrides"
+
+    def _selected_index(self) -> int | None:
+        index = self.picker.get_selected()
+        return index if index < len(self._periods) else None
+
+    def _on_add(self, _button) -> None:
+        AssumptionPeriodDialog(self, None, self._save_new).present()
+
+    def _on_edit(self, _button) -> None:
+        index = self._selected_index()
+        if index is None:
+            return
+        AssumptionPeriodDialog(self, self._periods[index], self._save_edit).present()
+
+    def _save_new(self, period: AssumptionPeriod) -> None:
+        self.scenario.assumption_periods.append(period)
+        self._commit()
+        self._reload(len(self.scenario.assumption_periods) - 1)
+
+    def _save_edit(self, period: AssumptionPeriod) -> None:
+        index = self._selected_index()
+        if index is None:
+            return
+        old = self._periods[index]
+        original_index = self.scenario.assumption_periods.index(old)
+        self.scenario.assumption_periods[original_index] = period
+        self._commit()
+        self._reload(index)
+
+    def _on_delete(self, _button) -> None:
+        index = self._selected_index()
+        if index is None:
+            return
+        self.scenario.assumption_periods.remove(self._periods[index])
+        self._commit()
+        self._reload(max(0, index - 1))
+
+    def _commit(self) -> None:
+        with self.db.transaction(f"Update scenario {self.scenario.name}") as txn:
+            self.db.commit_scenario(self.scenario, txn)
+        self.saved_callback(self.scenario.handle)
+
+
+class AssumptionPeriodDialog(Gtk.Window):
+    """Edit one dated set of optional annual-rate overrides."""
+
+    def __init__(self, parent: Gtk.Window, period: AssumptionPeriod | None, callback) -> None:
+        super().__init__(
+            title="Edit dated assumptions" if period is not None else "Add dated assumptions",
+            transient_for=parent,
+            modal=True,
+        )
+        self.period = period
+        self.callback = callback
+        self.set_default_size(520, -1)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(18)
+        self.set_child(box)
+
+        grid = Gtk.Grid(column_spacing=12, row_spacing=8)
+        box.append(grid)
+        grid.attach(Gtk.Label(label="Start (YYYY-MM-DD)", xalign=0), 0, 0, 1, 1)
+        self.start_entry = Gtk.Entry()
+        self.start_entry.set_text(period.start.isoformat() if period else date.today().isoformat())
+        grid.attach(self.start_entry, 1, 0, 1, 1)
+        grid.attach(Gtk.Label(label="Through (blank = onward)", xalign=0), 0, 1, 1, 1)
+        self.end_entry = Gtk.Entry()
+        if period is not None and period.end is not None:
+            self.end_entry.set_text(period.end.isoformat())
+        grid.attach(self.end_entry, 1, 1, 1, 1)
+        grid.attach(Gtk.Label(label="Description", xalign=0), 0, 2, 1, 1)
+        self.description_entry = Gtk.Entry()
+        self.description_entry.set_text(period.description if period else "")
+        grid.attach(self.description_entry, 1, 2, 1, 1)
+
+        self.rate_entries: dict[str, Gtk.Entry] = {}
+        for row, (label, attribute) in enumerate(_ASSUMPTIONS, 3):
+            grid.attach(Gtk.Label(label=f"{label} %", xalign=0), 0, row, 1, 1)
+            entry = Gtk.Entry(placeholder_text="inherit")
+            value = getattr(period, attribute) if period is not None else None
+            if value is not None:
+                entry.set_text(str(value * Decimal("100")))
+            grid.attach(entry, 1, row, 1, 1)
+            self.rate_entries[attribute] = entry
+
+        self.status = Gtk.Label(xalign=0, wrap=True)
+        box.append(self.status)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: self.close())
+        buttons.append(cancel)
+        save = Gtk.Button(label="Save")
+        save.add_css_class("suggested-action")
+        save.connect("clicked", self._on_save)
+        buttons.append(save)
+        box.append(buttons)
+
+    def _on_save(self, _button) -> None:
+        try:
+            start = date.fromisoformat(self.start_entry.get_text().strip())
+            end_text = self.end_entry.get_text().strip()
+            end = date.fromisoformat(end_text) if end_text else None
+            values: dict[str, Decimal | None] = {}
+            for attribute, entry in self.rate_entries.items():
+                text = entry.get_text().strip()
+                values[attribute] = (
+                    None if not text else Decimal(text) / Decimal("100")
+                )
+            period = AssumptionPeriod(
+                start,
+                end,
+                description=self.description_entry.get_text().strip(),
+                income_growth=values["income_growth"],
+                expense_inflation=values["expense_inflation"],
+                investment_return=values["investment_return"],
+                cash_interest=values["cash_interest"],
+                liability_interest=values["liability_interest"],
+            )
+        except (ValueError, InvalidOperation) as exc:
+            self.status.set_text(f"Check the dates and percentages: {exc}")
+            self.status.add_css_class("negative")
+            return
+        self.callback(period)
+        self.close()
 
 
 class ScenarioDeleteDialog(Gtk.Window):
