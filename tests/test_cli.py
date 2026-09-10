@@ -205,7 +205,11 @@ class TestBudgetAndProjection:
 
         from breadsched.gen.db.sqlite import DbSQLite
         from breadsched.gen.lib import (
-            Money, PeriodType, Recurrence, ScheduledSplit, ScheduledTransaction,
+            Money,
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
         )
 
         run(capsys, "init", book_path)

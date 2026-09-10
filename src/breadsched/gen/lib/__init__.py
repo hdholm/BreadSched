@@ -15,7 +15,8 @@ __all__ = [
     "Account", "AccountClass", "AccountType", "AssumptionPeriod", "Assumptions",
     "Budget", "BudgetLine",
     "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",
-    "PeriodType", "PlanningResolution", "PrimaryObject", "ProjectionBasis", "ReconcileState", "Recurrence",
+    "PeriodType", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
+    "ReconcileState", "Recurrence",
     "Scenario", "ScheduledSplit", "ScheduledTransaction", "Split", "Transaction",
     "UnbalancedError", "WeekendAdjust", "ZERO", "add_months", "create_handle", "evaluate",
 ]
