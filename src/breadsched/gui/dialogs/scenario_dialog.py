@@ -85,6 +85,8 @@ class SaveScenarioDialog(Gtk.Window):
         target.assumptions = self.scenario.assumptions
         target.opening_overrides = dict(self.scenario.opening_overrides)
         target.one_offs = list(self.scenario.one_offs)
+        target.assumption_periods = list(self.scenario.assumption_periods)
+        target.schedule_overrides = list(self.scenario.schedule_overrides)
 
         with self.db.transaction(f"Save scenario {name}") as txn:
             if existing:

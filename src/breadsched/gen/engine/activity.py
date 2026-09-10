@@ -17,9 +17,16 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import add_months
+from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanningResolution, Transaction
-from .planning import EventStatus, PlannedEvent, PlannedSplit, scheduled_events
+from .planning import (
+    EventStatus,
+    PlannedEvent,
+    PlannedSplit,
+    scenario_events,
+    scheduled_events,
+)
 
 __all__ = [
     "ActualActivity",
@@ -414,6 +421,7 @@ def build_activity_report(
     *,
     period: ReportingPeriod | str = ReportingPeriod.MONTH,
     budget_handle: str | None = None,
+    scenario: Scenario | None = None,
 ) -> ActivityReport:
     """Aggregate exact-dated planned and actual activity for display.
 
@@ -428,13 +436,18 @@ def build_activity_report(
     periods = _make_periods(start, end, grouping)
     accounts = {account.handle: account for account in db.iter_accounts()}
 
-    for event in scheduled_events(
-        db,
-        start,
-        end,
-        budget_handle=budget_handle,
-        include_actualized=True,
-    ):
+    planned = (
+        scenario_events(db, scenario, start, end)
+        if scenario is not None
+        else scheduled_events(
+            db,
+            start,
+            end,
+            budget_handle=budget_handle,
+            include_actualized=True,
+        )
+    )
+    for event in planned:
         bucket = _index_for(periods, event.planned_date)
         if bucket is None:
             continue
@@ -469,6 +482,7 @@ def build_category_report(
     end: date,
     *,
     period: ReportingPeriod | str = ReportingPeriod.MONTH,
+    scenario: Scenario | None = None,
 ) -> CategoryReport:
     """Derive category-period values from planned occurrences and actual splits.
 
@@ -476,7 +490,7 @@ def build_category_report(
     transfers therefore affect projection state but never become budget expense.
     Parent category rows are roll-ups of their descendants.
     """
-    activity = build_activity_report(db, start, end, period=period)
+    activity = build_activity_report(db, start, end, period=period, scenario=scenario)
     accounts = {account.handle: account for account in db.iter_accounts()}
     periods = activity.periods
     direct_planned: dict[str, list[Money]] = {}

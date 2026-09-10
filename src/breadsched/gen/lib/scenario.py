@@ -18,10 +18,19 @@ from decimal import Decimal
 from enum import Enum
 from typing import Any
 
-from .base import PrimaryObject
+from .base import PrimaryObject, create_handle
 from .money import Money
+from .recurrence import Recurrence
+from .scheduled import ScheduledSplit, ScheduledTransaction
 
-__all__ = ["ProjectionBasis", "OneOff", "Assumptions", "AssumptionPeriod", "Scenario"]
+__all__ = [
+    "ProjectionBasis",
+    "OneOff",
+    "ScenarioSchedule",
+    "Assumptions",
+    "AssumptionPeriod",
+    "Scenario",
+]
 
 
 class ProjectionBasis(str, Enum):
@@ -66,6 +75,99 @@ class OneOff:
             account=data["account"],
             amount=Money(*data["amount"]),
             description=data.get("description", ""),
+        )
+
+
+class ScenarioSchedule:
+    """A recurring transaction estimate that belongs to one scenario.
+
+    ``source_schedule`` identifies a book-level schedule this entry replaces.
+    Replacement is whole-template rather than a partial mutation: this keeps the
+    baseline schedule untouched while allowing a scenario to change amount,
+    recurrence, accounts, or to suppress the baseline entirely.
+    """
+
+    def __init__(
+        self,
+        *,
+        handle: str | None = None,
+        name: str = "",
+        description: str = "",
+        recurrence: Recurrence | None = None,
+        splits: list[ScheduledSplit] | None = None,
+        source_schedule: str | None = None,
+        enabled: bool = True,
+        placeholder: bool = True,
+        variables: dict[str, str] | None = None,
+    ) -> None:
+        self.handle = handle or create_handle()
+        self.name = name
+        self.description = description or name
+        self.recurrence = recurrence or Recurrence()
+        self.splits = list(splits or [])
+        self.source_schedule = source_schedule
+        self.enabled = enabled
+        self.placeholder = placeholder
+        self.variables = dict(variables or {})
+
+    @classmethod
+    def from_scheduled(
+        cls,
+        schedule: ScheduledTransaction,
+        *,
+        enabled: bool = True,
+    ) -> ScenarioSchedule:
+        """Copy a book schedule into a scenario without linking mutable objects."""
+        return cls(
+            name=schedule.name,
+            description=schedule.description,
+            recurrence=Recurrence.from_dict(schedule.recurrence.serialize()),
+            splits=[ScheduledSplit.from_dict(split.serialize()) for split in schedule.splits],
+            source_schedule=schedule.handle,
+            enabled=enabled,
+            placeholder=schedule.placeholder,
+            variables=dict(schedule.variables),
+        )
+
+    def context(self, when: date) -> dict[str, Any]:
+        context: dict[str, Any] = dict(self.variables)
+        index = self.recurrence.index_of(when)
+        context["period"] = index
+        context.setdefault("i", index)
+        return context
+
+    def resolved_splits(self, when: date) -> list[tuple[str, Money]]:
+        context = self.context(when)
+        return [(split.account, split.resolve(context)) for split in self.splits]
+
+    def occurrence_key(self, scenario_handle: str, when: date) -> str:
+        return f"scenario:{scenario_handle}:{self.handle}:{when.isoformat()}"
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "handle": self.handle,
+            "name": self.name,
+            "description": self.description,
+            "recurrence": self.recurrence.serialize(),
+            "splits": [split.serialize() for split in self.splits],
+            "source_schedule": self.source_schedule,
+            "enabled": self.enabled,
+            "placeholder": self.placeholder,
+            "variables": dict(self.variables),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScenarioSchedule:
+        return cls(
+            handle=data.get("handle"),
+            name=data.get("name", ""),
+            description=data.get("description", ""),
+            recurrence=Recurrence.from_dict(data["recurrence"]),
+            splits=[ScheduledSplit.from_dict(item) for item in data.get("splits", [])],
+            source_schedule=data.get("source_schedule"),
+            enabled=data.get("enabled", True),
+            placeholder=data.get("placeholder", True),
+            variables=data.get("variables", {}),
         )
 
 
@@ -244,6 +346,7 @@ class Scenario(PrimaryObject):
         budget: str | None = None,
         assumptions: Assumptions | None = None,
         assumption_periods: list[AssumptionPeriod] | None = None,
+        schedule_overrides: list[ScenarioSchedule] | None = None,
     ) -> None:
         super().__init__(handle)
         self.name = name
@@ -255,6 +358,7 @@ class Scenario(PrimaryObject):
         self.budget = budget
         self.assumptions = assumptions or Assumptions()
         self.assumption_periods = list(assumption_periods or [])
+        self.schedule_overrides = list(schedule_overrides or [])
         #: Pretend an account starts at this balance instead of its ledger balance.
         self.opening_overrides: dict[str, Money] = {}
         self.one_offs: list[OneOff] = []
@@ -295,6 +399,7 @@ class Scenario(PrimaryObject):
             "budget": self.budget,
             "assumptions": self.assumptions.serialize(),
             "assumption_periods": [p.serialize() for p in self.assumption_periods],
+            "schedule_overrides": [item.serialize() for item in self.schedule_overrides],
             "opening_overrides": {
                 k: [v.numerator, v.denominator] for k, v in self.opening_overrides.items()
             },
@@ -313,6 +418,9 @@ class Scenario(PrimaryObject):
         self.assumption_periods = [
             AssumptionPeriod.from_dict(item)
             for item in data.get("assumption_periods", [])
+        ]
+        self.schedule_overrides = [
+            ScenarioSchedule.from_dict(item) for item in data.get("schedule_overrides", [])
         ]
         self.opening_overrides = {
             k: Money(*v) for k, v in data.get("opening_overrides", {}).items()

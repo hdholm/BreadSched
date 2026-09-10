@@ -7,6 +7,8 @@ from breadsched.gen.lib import (
     Money,
     PeriodType,
     Recurrence,
+    Scenario,
+    ScenarioSchedule,
     ScheduledSplit,
     ScheduledTransaction,
     Transaction,
@@ -227,6 +229,26 @@ class TestCategoryPlanning:
         row = next(item for item in report.expenses if item.account == book.groceries)
         assert row.planned == [Money("1500.00")]
         assert row.actual == [Money(0)]
+
+    def test_scenario_recurring_estimate_feeds_category_plan(self, db, book):
+        groceries = ScenarioSchedule(
+            name="Weekly groceries estimate",
+            recurrence=Recurrence(PeriodType.WEEK, start=date(2026, 1, 2)),
+            splits=[
+                ScheduledSplit(book.groceries, Money("300.00")),
+                ScheduledSplit(book.card, Money("-300.00")),
+            ],
+        )
+        scenario = Scenario(name="Higher grocery plan", schedule_overrides=[groceries])
+
+        report = activity.build_category_report(
+            db,
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            scenario=scenario,
+        )
+        row = next(item for item in report.expenses if item.account == book.groceries)
+        assert row.planned == [Money("1500.00")]
 
     def test_asset_transfer_does_not_become_income_or_expense(self, db, book):
         transfer = ScheduledTransaction(

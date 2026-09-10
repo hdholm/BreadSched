@@ -11,6 +11,7 @@ from breadsched.gen.lib import (
     ProjectionBasis,
     Recurrence,
     Scenario,
+    ScenarioSchedule,
     ScheduledSplit,
     ScheduledTransaction,
     Transaction,
@@ -55,6 +56,54 @@ class TestEventDomain:
             date(2026, 1, 30),
         ]
         assert all(event.key.startswith(f"scheduled:{payday.handle}:") for event in events)
+
+    def test_scenario_can_replace_a_baseline_schedule_without_mutating_it(self, db, book):
+        salary = ScheduledTransaction(
+            name="Salary",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 5)),
+            splits=[
+                ScheduledSplit(book.checking, Money("1000.00")),
+                ScheduledSplit(book.salary, Money("-1000.00")),
+            ],
+        )
+        with db.transaction("salary") as txn:
+            db.add_scheduled(salary, txn)
+
+        alternate = ScenarioSchedule.from_scheduled(salary)
+        alternate.splits = [
+            ScheduledSplit(book.checking, Money("600.00")),
+            ScheduledSplit(book.salary, Money("-600.00")),
+        ]
+        scenario = Scenario(name="Reduced hours", schedule_overrides=[alternate])
+        events = planning.scenario_events(
+            db, scenario, date(2026, 1, 1), date(2026, 1, 31)
+        )
+
+        assert len(events) == 1
+        assert events[0].source is planning.EventSource.SCENARIO_SCHEDULE
+        assert events[0].expected_amount == Money("600.00")
+        assert salary.amount(when=date(2026, 1, 5)) == Money("1000.00")
+
+    def test_disabled_scenario_override_suppresses_a_baseline_schedule(self, db, book):
+        salary = ScheduledTransaction(
+            name="Salary",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 5)),
+            splits=[
+                ScheduledSplit(book.checking, Money("1000.00")),
+                ScheduledSplit(book.salary, Money("-1000.00")),
+            ],
+        )
+        with db.transaction("salary") as txn:
+            db.add_scheduled(salary, txn)
+
+        scenario = Scenario(
+            name="Retired",
+            schedule_overrides=[ScenarioSchedule.from_scheduled(salary, enabled=False)],
+        )
+
+        assert planning.scenario_events(
+            db, scenario, date(2026, 1, 1), date(2026, 1, 31)
+        ) == []
 
     def test_posting_a_schedule_actualizes_the_generated_occurrence(self, db, book):
         bill = ScheduledTransaction(

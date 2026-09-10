@@ -562,7 +562,8 @@ def _event_escalation_factor(
     already state their intended amount, so neither is escalated.
     """
     if (
-        event.source is not planning.EventSource.SCHEDULED
+        event.source
+        not in (planning.EventSource.SCHEDULED, planning.EventSource.SCENARIO_SCHEDULE)
         or event.status is planning.EventStatus.ACTUALIZED
     ):
         return _ONE
@@ -676,7 +677,10 @@ def _project_events(
     _report_progress(progress, start, start, end, "Preparing events")
     all_events = planning.scenario_events(db, scenario, start, end)
     for event in all_events:
-        if event.source is not planning.EventSource.SCHEDULED:
+        if event.source not in (
+            planning.EventSource.SCHEDULED,
+            planning.EventSource.SCENARIO_SCHEDULE,
+        ):
             continue
         residual = _sum(split.amount for split in event.expected_splits)
         if residual.quantize(100):

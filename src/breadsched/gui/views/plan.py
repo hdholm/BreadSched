@@ -27,12 +27,18 @@ class PlanView(BaseView):
         "scheduled-add",
         "scheduled-update",
         "scheduled-delete",
+        "scenario-add",
+        "scenario-update",
+        "scenario-delete",
     )
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self._report = None
         self._year = date.today().year
+        self._scenarios = []
+        self._scenario_handle: str | None = None
+        self._updating_scenarios = False
         self._build()
 
     def _build(self) -> None:
@@ -45,6 +51,10 @@ class PlanView(BaseView):
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         bar.append(spacer)
+        bar.append(Gtk.Label(label="Scenario"))
+        self.scenario = Gtk.DropDown()
+        self.scenario.connect("notify::selected", self._on_scenario_changed)
+        bar.append(self.scenario)
         bar.append(Gtk.Label(label="Year"))
         self.year = Gtk.SpinButton.new_with_range(1900, 2300, 1)
         self.year.set_value(self._year)
@@ -95,6 +105,37 @@ class PlanView(BaseView):
         scroll.set_vexpand(True)
         self.append(scroll)
 
+    def _populate_scenarios(self) -> None:
+        if self.db is None:
+            return
+        self._scenarios = list(self.db.iter_scenarios())
+        model = Gtk.StringList()
+        model.append("Baseline")
+        selected = 0
+        for index, scenario in enumerate(self._scenarios, 1):
+            model.append(scenario.name)
+            if scenario.handle == self._scenario_handle:
+                selected = index
+        self._updating_scenarios = True
+        try:
+            self.scenario.set_model(model)
+            self.scenario.set_selected(selected)
+        finally:
+            self._updating_scenarios = False
+
+    def _selected_scenario(self):
+        selected = self.scenario.get_selected()
+        if selected == 0 or selected > len(self._scenarios):
+            return None
+        return self._scenarios[selected - 1]
+
+    def _on_scenario_changed(self, *_args) -> None:
+        if self._updating_scenarios:
+            return
+        selected = self._selected_scenario()
+        self._scenario_handle = selected.handle if selected is not None else None
+        self.refresh()
+
     def _grouping(self) -> ReportingPeriod:
         return (
             ReportingPeriod.MONTH,
@@ -109,10 +150,16 @@ class PlanView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
+        self._populate_scenarios()
         start = date(self._year, 1, 1)
         end = date(self._year, 12, 31)
+        selected_scenario = self._selected_scenario()
         self._report = build_category_report(
-            self.db, start, end, period=self._grouping()
+            self.db,
+            start,
+            end,
+            period=self._grouping(),
+            scenario=selected_scenario,
         )
         activity = self._report.activity
         self.summary.set_text(

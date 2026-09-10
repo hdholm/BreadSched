@@ -7,7 +7,14 @@ from .commodity import DEFAULT_CURRENCY, Commodity
 from .formula import FormulaError, evaluate
 from .money import ZERO, Money
 from .recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
-from .scenario import AssumptionPeriod, Assumptions, OneOff, ProjectionBasis, Scenario
+from .scenario import (
+    AssumptionPeriod,
+    Assumptions,
+    OneOff,
+    ProjectionBasis,
+    Scenario,
+    ScenarioSchedule,
+)
 from .scheduled import ScheduledSplit, ScheduledTransaction
 from .transaction import PlanningResolution, ReconcileState, Split, Transaction, UnbalancedError
 
@@ -17,6 +24,7 @@ __all__ = [
     "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",
     "PeriodType", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
     "ReconcileState", "Recurrence",
-    "Scenario", "ScheduledSplit", "ScheduledTransaction", "Split", "Transaction",
+    "Scenario", "ScenarioSchedule", "ScheduledSplit", "ScheduledTransaction", "Split",
+    "Transaction",
     "UnbalancedError", "WeekendAdjust", "ZERO", "add_months", "create_handle", "evaluate",
 ]

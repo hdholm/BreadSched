@@ -1,7 +1,8 @@
 """Event-domain planning: expected occurrences, actualization, and matching.
 
-Scheduled transactions are the authoritative source of recurring plan events.  A
-``PlannedEvent`` preserves the estimate that was in force for an occurrence while
+Book schedules and scenario-specific schedule estimates are the authoritative
+sources of recurring plan events. A ``PlannedEvent`` preserves the estimate
+that was in force for an occurrence while
 also linking an actual ledger transaction when one has been posted or matched.
 Reporting periods are deliberately absent from this module: callers may group the
 chronological stream by month, quarter, year, or any other display period without
@@ -16,7 +17,7 @@ from enum import Enum
 
 from ..db.sqlite import DbSQLite
 from ..lib.money import Money
-from ..lib.scenario import OneOff, Scenario
+from ..lib.scenario import OneOff, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanningResolution, Transaction
 
@@ -42,6 +43,7 @@ class EventSource(str, Enum):
 
     SCHEDULED = "scheduled"
     ONE_OFF = "one_off"
+    SCENARIO_SCHEDULE = "scenario_schedule"
 
 
 class EventStatus(str, Enum):
@@ -226,6 +228,7 @@ def scheduled_events(
     budget_handle: str | None = None,
     include_disabled: bool = False,
     include_actualized: bool = True,
+    exclude_handles: set[str] | None = None,
 ) -> list[PlannedEvent]:
     """Generate recurring plan events in chronological order.
 
@@ -235,7 +238,10 @@ def scheduled_events(
     """
     linked = _linked_actuals(db) if include_actualized else {}
     found: list[PlannedEvent] = []
+    excluded = exclude_handles or set()
     for schedule in db.iter_scheduled():
+        if schedule.handle in excluded:
+            continue
         if not schedule.enabled and not include_disabled:
             continue
         if not schedule.in_budget(budget_handle):
@@ -247,6 +253,67 @@ def scheduled_events(
             actual = linked.get(key) if include_actualized else None
             found.append(_scheduled_event(schedule, when, actual))
     return sorted(found, key=lambda item: (item.when, item.planned_date, item.key))
+
+
+def _scenario_schedule_event(
+    scenario: Scenario,
+    schedule: ScenarioSchedule,
+    when: date,
+    actual: Transaction | None,
+) -> PlannedEvent:
+    expected = tuple(
+        PlannedSplit(account, amount) for account, amount in schedule.resolved_splits(when)
+    )
+    expected_amount = _positive_total(expected)
+    key = schedule.occurrence_key(scenario.handle, when)
+    if actual is None:
+        return PlannedEvent(
+            key=key,
+            planned_date=when,
+            source=EventSource.SCENARIO_SCHEDULE,
+            source_handle=schedule.handle,
+            description=schedule.description,
+            expected_splits=expected,
+            expected_amount=expected_amount,
+            placeholder=schedule.placeholder,
+        )
+
+    actual_splits = _transaction_splits(actual)
+    return PlannedEvent(
+        key=key,
+        planned_date=when,
+        source=EventSource.SCENARIO_SCHEDULE,
+        source_handle=schedule.handle,
+        description=schedule.description,
+        expected_splits=expected,
+        expected_amount=(
+            actual.planned_amount
+            if actual.planned_amount is not None
+            else expected_amount
+        ),
+        placeholder=schedule.placeholder,
+        actual_transaction=actual.handle,
+        actual_date=actual.post_date,
+        actual_splits=actual_splits,
+        actual_amount=_positive_total(actual_splits),
+    )
+
+
+def _scenario_scheduled_events(
+    db: DbSQLite,
+    scenario: Scenario,
+    start: date,
+    end: date,
+) -> list[PlannedEvent]:
+    linked = _linked_actuals(db)
+    found: list[PlannedEvent] = []
+    for schedule in scenario.schedule_overrides:
+        if not schedule.enabled:
+            continue
+        for when in schedule.recurrence.occurrences(end, since=start):
+            key = schedule.occurrence_key(scenario.handle, when)
+            found.append(_scenario_schedule_event(scenario, schedule, when, linked.get(key)))
+    return found
 
 
 def _one_off_event(item: OneOff, index: int) -> PlannedEvent:
@@ -270,12 +337,19 @@ def scenario_events(
     end: date,
 ) -> list[PlannedEvent]:
     """All transaction-like planning events for a scenario, in event-date order."""
+    replaced = {
+        item.source_schedule
+        for item in scenario.schedule_overrides
+        if item.source_schedule is not None
+    }
     events = scheduled_events(
         db,
         start,
         end,
         budget_handle=scenario.budget,
+        exclude_handles=replaced,
     )
+    events.extend(_scenario_scheduled_events(db, scenario, start, end))
     events.extend(
         _one_off_event(item, index)
         for index, item in enumerate(scenario.one_offs)

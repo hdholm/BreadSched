@@ -12,6 +12,7 @@ from breadsched.gen.lib import (
     ProjectionBasis,
     Recurrence,
     Scenario,
+    ScenarioSchedule,
     ScheduledSplit,
     ScheduledTransaction,
     Transaction,
@@ -468,6 +469,30 @@ class TestComparison:
         assert rows[-1]["net_worth_delta"] > Money(0)
 
 
+class TestScenarioScheduledEvents:
+    def test_recurring_scenario_estimate_changes_projection_state(self, db, funded_book):
+        groceries = ScenarioSchedule(
+            name="Weekly groceries estimate",
+            recurrence=Recurrence(PeriodType.WEEK, start=date(2026, 1, 2)),
+            splits=[
+                ScheduledSplit(funded_book.groceries, Money("300.00")),
+                ScheduledSplit(funded_book.card, Money("-300.00")),
+            ],
+        )
+        scenario = Scenario(
+            name="Groceries",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
+            schedule_overrides=[groceries],
+        )
+
+        january = projection.project(db, scenario).rows[0]
+        assert january.expense == Money("1500.00")
+        assert january.ledger.liability_movements[funded_book.card] == Money("1500.00")
+
+
 class TestScenarioPersistence:
     def test_a_saved_scenario_reproduces_its_forecast(
         self, db, funded_book, monthly_budget
@@ -478,6 +503,16 @@ class TestScenarioPersistence:
             assumptions=Assumptions(income_growth="0.04", expense_inflation="0.03"),
         )
         scenario.add_one_off(date(2026, 9, 1), funded_book.utilities, "2500.00", "Boiler")
+        scenario.schedule_overrides.append(
+            ScenarioSchedule(
+                name="Weekly groceries",
+                recurrence=Recurrence(PeriodType.WEEK, start=date(2026, 3, 6)),
+                splits=[
+                    ScheduledSplit(funded_book.groceries, Money("275.00")),
+                    ScheduledSplit(funded_book.card, Money("-275.00")),
+                ],
+            )
+        )
         scenario.opening_overrides[funded_book.savings] = Money("15000.00")
         with db.transaction("Save scenario") as txn:
             db.add_scenario(scenario, txn)
@@ -485,6 +520,8 @@ class TestScenarioPersistence:
         reloaded = db.get_scenario(scenario.handle)
         assert reloaded.assumptions.income_growth == Decimal("0.04")
         assert reloaded.one_offs[0].description == "Boiler"
+        assert reloaded.schedule_overrides[0].name == "Weekly groceries"
+        assert reloaded.schedule_overrides[0].splits[0].amount == Money("275.00")
         assert reloaded.opening_overrides[funded_book.savings] == Money("15000.00")
 
         before = projection.project(db, scenario).summary()

@@ -38,7 +38,9 @@ source-tree imports are caught before release.
 - **Multi-year projection.** New scenarios advance from financial event to event,
   accruing returns and interest over the exact interval between them. Legacy
   period-budget scenarios remain readable while the UI migrates.
-- **Saved scenarios.** Named assumption sets that can be compared side by side.
+- **Saved scenarios.** Named assumption sets plus alternate recurring estimates
+  that can replace, suppress, or add to baseline schedules without changing the
+  book plan.
 - **GnuCash import.** Accounts, transactions, commodities and scheduled
   transactions, from either container format.
 
@@ -456,8 +458,9 @@ The Gramps-style sidebar switches among the principal book and planning views:
 - **Plan** — the category-oriented budget view, derived rather than entered. Income
   and expense account rows are rolled up from exact-dated scheduled/estimated and
   actual transaction splits, with Month/Quarter/Year and Plan/Actual/Variance views.
-  Planning edits are made in Scheduled and Review; asset transfers remain balance-
-  sheet activity rather than being counted as expenses.
+  Select Baseline or a saved scenario to see alternate recurring estimates in the
+  same category grid. Planning edits are made in Scheduled and Review; asset
+  transfers remain balance-sheet activity rather than being counted as expenses.
 - **Projection** — assumption sliders beside a Cairo line chart that recomputes as
   you drag. The zero line is drawn heavier than the other gridlines and the region
   below it tinted, so a forecast that dips negative reads as a problem rather than
