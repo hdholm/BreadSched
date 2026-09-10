@@ -20,7 +20,15 @@ from gnucash_fixtures import create_book
 
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
-from breadsched.gen.lib import Money
+from breadsched.gen.lib import (
+    Money,
+    PeriodType,
+    Recurrence,
+    ScheduledSplit,
+    ScheduledTransaction,
+    Split,
+    Transaction,
+)
 from breadsched.web.server import serve
 
 
@@ -71,6 +79,61 @@ def client(book_path):
         def get(self, path: str):
             status, body, _ = self.raw(path)
             return status, json.loads(body)
+
+        def post(self, path: str, payload: dict):
+            request = urllib.request.Request(
+                base + path,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status, json.loads(response.read())
+
+    try:
+        yield Client()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        db.close()
+
+
+@pytest.fixture
+def review_client(book_path):
+    """A web book with one unresolved actual and one nearby planned bill."""
+    db = DbSQLite()
+    db.load(str(book_path))
+    bank = db.get_account_by_name("Checking")
+    rent = db.get_account_by_name("Rent")
+    assert bank is not None and rent is not None
+    planned = ScheduledTransaction(
+        name="Estimated rent",
+        description="Estimated rent",
+        recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 2, 5)),
+        splits=[
+            ScheduledSplit(rent.handle, Money("1800.00")),
+            ScheduledSplit(bank.handle, Money("-1800.00")),
+        ],
+    )
+    actual = Transaction(post_date=date(2026, 2, 6), description="Actual rent")
+    actual.add_split(Split(rent.handle, Money("1825.00")))
+    actual.add_split(Split(bank.handle, Money("-1825.00")))
+    with db.transaction("review fixture") as txn:
+        db.add_scheduled(planned, txn)
+        db.add_transaction(actual, txn)
+
+    httpd = serve(db, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_port}"
+
+    class Client:
+        actual_handle = actual.handle
+        occurrence = planned.occurrence_key(date(2026, 2, 5))
+
+        def get(self, path: str):
+            with urllib.request.urlopen(base + path, timeout=10) as response:
+                return response.status, json.loads(response.read())
 
         def post(self, path: str, payload: dict):
             request = urllib.request.Request(
@@ -174,7 +237,7 @@ class TestPlanApi:
     def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
         _status, body, _headers = client.raw("/")
         page = body.decode()
-        assert '"Scheduled", "Plan", "Projection"' in page
+        assert '"Scheduled", "Plan", "Review", "Projection"' in page
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
@@ -308,3 +371,67 @@ class TestDashboardApi:
         assert 'let current = "Dashboard"' in page
         assert '"Dashboard", "Accounts"' in page
         assert "async function showDashboard" in page
+
+
+class TestReviewApi:
+    """The web Review surface persists the same resolution decisions as GTK."""
+
+    def test_unresolved_actuals_and_candidates_are_exposed(self, review_client):
+        status, payload = review_client.get(
+            "/api/review?"
+            + urllib.parse.urlencode({"transaction": review_client.actual_handle})
+        )
+        assert status == 200
+        assert [item["handle"] for item in payload["actuals"]] == [
+            review_client.actual_handle
+        ]
+        assert payload["selected"]["description"] == "Actual rent"
+        candidate = payload["candidates"][0]
+        assert candidate["key"] == review_client.occurrence
+        assert Money(candidate["expected_amount"]) == Money("1800.00")
+        assert Money(candidate["amount_variance"]) == Money("25.00")
+        assert candidate["date_variance_days"] == 1
+
+    def test_rejecting_a_candidate_remembers_the_decision(self, review_client):
+        status, payload = review_client.post(
+            "/api/review/reject",
+            {
+                "transaction": review_client.actual_handle,
+                "occurrence": review_client.occurrence,
+            },
+        )
+        assert status == 200
+        assert payload["rejected"] == review_client.occurrence
+        _status, review = review_client.get(
+            "/api/review?"
+            + urllib.parse.urlencode({"transaction": review_client.actual_handle})
+        )
+        assert review["candidates"] == []
+
+    def test_matching_removes_the_actual_from_the_review_queue(self, review_client):
+        status, payload = review_client.post(
+            "/api/review/match",
+            {
+                "transaction": review_client.actual_handle,
+                "occurrence": review_client.occurrence,
+            },
+        )
+        assert status == 200
+        assert payload["resolution"] == "matched"
+        _status, review = review_client.get("/api/review")
+        assert review["actuals"] == []
+
+    def test_marking_unexpected_removes_the_actual_from_the_queue(self, review_client):
+        status, payload = review_client.post(
+            "/api/review/unexpected", {"transaction": review_client.actual_handle}
+        )
+        assert status == 200
+        assert payload["resolution"] == "unexpected"
+        _status, review = review_client.get("/api/review")
+        assert review["actuals"] == []
+
+    def test_page_exposes_review_between_plan_and_projection(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode()
+        assert '"Plan", "Review", "Projection"' in page
+        assert "async function showReview" in page

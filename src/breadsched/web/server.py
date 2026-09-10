@@ -23,8 +23,24 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import activity, budgeting, cashflow, ledger, projection, schedule
-from ..gen.lib import Assumptions, Money, ProjectionBasis, Scenario, Split, Transaction
+from ..gen.engine import (
+    activity,
+    budgeting,
+    cashflow,
+    ledger,
+    planning,
+    projection,
+    schedule,
+)
+from ..gen.lib import (
+    Assumptions,
+    Money,
+    PlanningResolution,
+    ProjectionBasis,
+    Scenario,
+    Split,
+    Transaction,
+)
 from ..gen.utils.logs import get_logger
 
 __all__ = ["serve", "build_handler", "api"]
@@ -333,6 +349,73 @@ class Api:
             ],
         }
 
+    @staticmethod
+    def _actual_amount(transaction: Transaction) -> Money:
+        total = Money(0)
+        for split in transaction.splits:
+            if split.value > 0:
+                total = total + split.value
+        return total
+
+    def review(self, transaction_handle: str | None = None) -> dict:
+        """Unresolved actuals and candidate plan occurrences for Review."""
+        transactions = sorted(
+            (
+                transaction
+                for transaction in self.db.iter_transactions()
+                if transaction.planning_resolution is PlanningResolution.UNRESOLVED
+            ),
+            key=lambda transaction: (transaction.post_date, transaction.handle),
+        )
+        actuals = [
+            {
+                "handle": transaction.handle,
+                "date": transaction.post_date,
+                "description": transaction.description,
+                "amount": self._actual_amount(transaction),
+            }
+            for transaction in transactions
+        ]
+
+        selected = None
+        candidates: list[dict] = []
+        if transaction_handle is not None:
+            transaction = self.db.get_transaction(transaction_handle)
+            if transaction is None:
+                raise KeyError(transaction_handle)
+            if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
+                raise ValueError("transaction is no longer awaiting review")
+            actual_amount = self._actual_amount(transaction)
+            selected = {
+                "handle": transaction.handle,
+                "date": transaction.post_date,
+                "description": transaction.description,
+                "amount": actual_amount,
+            }
+            for candidate in planning.match_candidates(self.db, transaction):
+                event = candidate.event
+                candidates.append(
+                    {
+                        "key": event.key,
+                        "date": event.planned_date,
+                        "description": event.description,
+                        "expected_amount": event.expected_amount,
+                        "date_distance_days": candidate.date_distance,
+                        "date_variance_days": (
+                            transaction.post_date - event.planned_date
+                        ).days,
+                        "amount_difference": candidate.amount_difference,
+                        "amount_variance": actual_amount - event.expected_amount,
+                        "common_accounts": candidate.common_accounts,
+                    }
+                )
+
+        return {
+            "actuals": actuals,
+            "selected": selected,
+            "candidates": candidates,
+        }
+
     def budget(self, name: str | None = None) -> dict:
         budgets = list(self.db.iter_budgets())
         if name:
@@ -430,6 +513,55 @@ class Api:
             self.db.add_transaction(txn, batch)
         return {"handle": txn.handle, "date": when, "amount": amount}
 
+    def review_match(self, payload: dict) -> dict:
+        transaction = self.db.get_transaction(str(payload["transaction"]))
+        if transaction is None:
+            raise KeyError(str(payload["transaction"]))
+        event = planning.event_by_key(self.db, str(payload["occurrence"]))
+        if event is None:
+            raise ValueError("planned occurrence does not exist")
+        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
+            raise ValueError("transaction is no longer awaiting review")
+        planning.actualize_transaction(transaction, event)
+        with self.db.transaction("Match transaction to planned occurrence") as txn:
+            self.db.commit_transaction(transaction, txn)
+        return {
+            "transaction": transaction.handle,
+            "resolution": transaction.planning_resolution.value,
+            "occurrence": event.key,
+        }
+
+    def review_reject(self, payload: dict) -> dict:
+        transaction = self.db.get_transaction(str(payload["transaction"]))
+        if transaction is None:
+            raise KeyError(str(payload["transaction"]))
+        event = planning.event_by_key(self.db, str(payload["occurrence"]))
+        if event is None:
+            raise ValueError("planned occurrence does not exist")
+        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
+            raise ValueError("transaction is no longer awaiting review")
+        planning.reject_candidate(transaction, event)
+        with self.db.transaction("Reject planned occurrence candidate") as txn:
+            self.db.commit_transaction(transaction, txn)
+        return {
+            "transaction": transaction.handle,
+            "rejected": event.key,
+        }
+
+    def review_unexpected(self, payload: dict) -> dict:
+        transaction = self.db.get_transaction(str(payload["transaction"]))
+        if transaction is None:
+            raise KeyError(str(payload["transaction"]))
+        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
+            raise ValueError("transaction is no longer awaiting review")
+        planning.mark_unexpected(transaction)
+        with self.db.transaction("Mark transaction as unexpected") as txn:
+            self.db.commit_transaction(transaction, txn)
+        return {
+            "transaction": transaction.handle,
+            "resolution": transaction.planning_resolution.value,
+        }
+
     def post_scheduled(self) -> dict:
         posted = schedule.post_due(self.db, only_auto=False)
         return {
@@ -487,6 +619,7 @@ ROUTES = {
         q.get("period", ["month"])[0],
         q.get("scenario", [None])[0],
     ),
+    "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
     "/api/budget": lambda a, q: a.budget(q.get("name", [None])[0]),
     "/api/coverage": lambda a, q: a.coverage(q.get("name", [None])[0]),
     "/api/projection": lambda a, q: a.projection(
@@ -497,6 +630,9 @@ ROUTES = {
 POST_ROUTES = {
     "/api/transaction": lambda a, body: a.add_transaction(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
+    "/api/review/match": lambda a, body: a.review_match(body),
+    "/api/review/reject": lambda a, body: a.review_reject(body),
+    "/api/review/unexpected": lambda a, body: a.review_unexpected(body),
 }
 
 

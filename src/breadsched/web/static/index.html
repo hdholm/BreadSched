@@ -78,6 +78,20 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
 #message { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; }
 #message.error { background: #fdecea; color: var(--bad); }
 #message.ok { background: #e8f5ee; color: var(--good); }
+
+.review-grid {
+  display: grid; grid-template-columns: minmax(280px, 38%) 1fr; gap: 16px;
+}
+.review-list button {
+  width: 100%; border: 0; border-bottom: 1px solid var(--line); background: var(--panel);
+  padding: 10px 12px; text-align: left; cursor: pointer; color: var(--ink); font: inherit;
+}
+.review-list button:last-child { border-bottom: 0; }
+.review-list button:hover, .review-list button.active { background: #f2f6fc; }
+.review-list .amount { display: block; color: var(--dim); font-variant-numeric: tabular-nums; }
+.review-detail { padding: 14px 16px; }
+.review-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+@media (max-width: 800px) { .review-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -91,9 +105,9 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
   <div id="view"></div>
 </main>
 <script>
-const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Projection", "Enter"];
+const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter"];
 let current = "Dashboard";
-let state = { accounts: [], account: null, plan: null };
+let state = { accounts: [], account: null, plan: null, review: null };
 
 const el = (tag, attrs = {}, ...kids) => {
   const node = document.createElement(tag);
@@ -340,6 +354,102 @@ async function showPlan() {
     table(headers, rows));
 }
 
+async function showReview() {
+  let data = await get(state.review
+    ? `/api/review?transaction=${encodeURIComponent(state.review)}`
+    : "/api/review");
+  if (!state.review && data.actuals.length) {
+    state.review = data.actuals[0].handle;
+    data = await get(`/api/review?transaction=${encodeURIComponent(state.review)}`);
+  }
+
+  const actualButtons = data.actuals.map((actual) => el("button", {
+    type: "button",
+    class: actual.handle === state.review ? "active" : null,
+    onclick: () => { state.review = actual.handle; render(); },
+  },
+  el("strong", {}, `${actual.date}  ${actual.description}`),
+  el("span", { class: "amount" }, money(actual.amount))));
+
+  if (!data.actuals.length) {
+    state.review = null;
+    return el("div", {},
+      el("h2", {}, "Resolve actuals"),
+      el("p", { class: "note" },
+        "No unresolved actual transactions. Imported historical transactions do not enter this queue."));
+  }
+
+  const selected = data.selected;
+  const candidateRows = data.candidates.map((candidate) => {
+    const variance = Number(candidate.amount_variance);
+    const varianceText = `${variance > 0 ? "+" : ""}${money(candidate.amount_variance)}`;
+    const dateText = `${candidate.date_variance_days >= 0 ? "+" : ""}${candidate.date_variance_days} day(s)`;
+    return el("tr", {},
+      el("td", {}, candidate.date),
+      el("td", {}, candidate.description),
+      el("td", { class: "num" }, money(candidate.expected_amount)),
+      el("td", { class: cls(candidate.amount_variance) }, varianceText),
+      el("td", { class: "num" }, dateText),
+      el("td", {},
+        el("div", { class: "review-actions" },
+          el("button", {
+            class: "action primary", type: "button",
+            onclick: async () => {
+              try {
+                await post("/api/review/match", {
+                  transaction: selected.handle, occurrence: candidate.key,
+                });
+                say("Actual matched to planned occurrence.");
+                state.review = null;
+                render();
+              } catch (error) { say(error.message, "error"); }
+            },
+          }, "Match"),
+          el("button", {
+            class: "action", type: "button",
+            onclick: async () => {
+              try {
+                await post("/api/review/reject", {
+                  transaction: selected.handle, occurrence: candidate.key,
+                });
+                say("Candidate rejected.");
+                render();
+              } catch (error) { say(error.message, "error"); }
+            },
+          }, "Reject candidate"))));
+  });
+
+  const detail = el("div", { class: "panel review-detail" },
+    el("h2", {}, "Resolve actual"),
+    el("p", {}, `${selected.date} · ${selected.description}`),
+    el("p", { class: "note" }, `Actual amount: ${money(selected.amount)}`),
+    data.candidates.length
+      ? table(["Planned", "Description", { label: "Expected", num: true },
+               { label: "Amount variance", num: true }, { label: "Date variance", num: true },
+               "Action"], candidateRows)
+      : el("p", { class: "note" }, "No candidate within the matching window."),
+    el("div", { class: "review-actions" },
+      el("button", {
+        class: "action", type: "button",
+        onclick: async () => {
+          try {
+            await post("/api/review/unexpected", { transaction: selected.handle });
+            say("Actual marked unexpected.");
+            state.review = null;
+            render();
+          } catch (error) { say(error.message, "error"); }
+        },
+      }, "Mark unexpected")));
+
+  return el("div", {},
+    el("h2", {}, "Review"),
+    el("p", { class: "note" },
+      "Match entered or imported actual transactions to scheduled expectations, reject bad suggestions, "
+      + "or mark transactions that are intentionally outside the plan."),
+    el("div", { class: "review-grid" },
+      el("div", { class: "panel review-list" }, actualButtons), detail));
+}
+
 function chart(rows) {
   const width = 900, height = 300, pad = { l: 70, r: 12, t: 12, b: 28 };
   const series = [
@@ -440,7 +550,7 @@ async function showEntry() {
 
 const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
-  Plan: showPlan, Projection: showProjection, Enter: showEntry,
+  Plan: showPlan, Review: showReview, Projection: showProjection, Enter: showEntry,
 };
 
 // The dashboard: what is owned and owed, the liquidity verdict, and the bills.
