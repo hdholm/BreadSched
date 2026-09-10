@@ -1528,7 +1528,7 @@ class TestDerivedPlanView:
         names = [app.db.full_name(account) for account in dialog._accounts]
         dialog.name_entry.set_text("Weekly groceries")
         dialog.category.set_selected(names.index("Expenses:Groceries"))
-        dialog.funding.set_selected(names.index("Liabilities:Credit Card"))
+        dialog.funding.set_selected(names.index("Assets:Checking Account"))
         dialog.amount_entry.set_text("300.00")
         dialog.frequency.set_selected(0)
         dialog.start_entry.set_text("2026-01-02")
@@ -1565,8 +1565,8 @@ class TestDerivedPlanView:
                 ScheduledSplit(rent.handle, Money("1800.00")),
                 ScheduledSplit(checking.handle, Money("-1800.00")),
             ],
-            placeholder=True,
         )
+        schedule.placeholder = True
         scenario = Scenario(name="Higher rent")
         with app.db.transaction("Scenario fixture") as txn:
             app.db.add_scheduled(schedule, txn)
