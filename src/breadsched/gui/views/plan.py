@@ -70,10 +70,29 @@ class PlanView(BaseView):
         self.measure.set_selected(0)
         self.measure.connect("notify::selected", self._render)
         bar.append(self.measure)
-        schedules = Gtk.Button(label="Edit schedules…")
+        schedules = Gtk.Button(label="Edit baseline schedules…")
         schedules.connect("clicked", lambda *_: self.manager.show_category("scheduled"))
         bar.append(schedules)
         self.append(bar)
+
+        scenario_bar = Gtk.Box(spacing=8)
+        for side in ("bottom", "start", "end"):
+            getattr(scenario_bar, f"set_margin_{side}")(8)
+        scenario_bar.append(Gtk.Label(label="Scenario events", xalign=0))
+        self.add_estimate_button = Gtk.Button(label="Add estimate…")
+        self.add_estimate_button.connect("clicked", self._on_add_estimate)
+        scenario_bar.append(self.add_estimate_button)
+        self.alter_schedule_button = Gtk.Button(label="Alter baseline…")
+        self.alter_schedule_button.connect("clicked", self._on_alter_schedule)
+        scenario_bar.append(self.alter_schedule_button)
+        self.suppress_schedule_button = Gtk.Button(label="Suppress baseline…")
+        self.suppress_schedule_button.connect("clicked", self._on_suppress_schedule)
+        scenario_bar.append(self.suppress_schedule_button)
+        self.scenario_hint = Gtk.Label(xalign=0, wrap=True)
+        self.scenario_hint.add_css_class("dim")
+        self.scenario_hint.set_hexpand(True)
+        scenario_bar.append(self.scenario_hint)
+        self.append(scenario_bar)
 
         self.summary = Gtk.Label(xalign=0, wrap=True)
         self.summary.set_margin_start(12)
@@ -136,6 +155,100 @@ class PlanView(BaseView):
         self._scenario_handle = selected.handle if selected is not None else None
         self.refresh()
 
+    def _update_scenario_actions(self) -> None:
+        selected = self._selected_scenario()
+        enabled = selected is not None
+        self.add_estimate_button.set_sensitive(enabled)
+        self.alter_schedule_button.set_sensitive(enabled)
+        self.suppress_schedule_button.set_sensitive(enabled)
+        if selected is None:
+            self.scenario_hint.set_text(
+                "Choose a saved scenario to add, alter, or suppress recurring estimates."
+            )
+        else:
+            count = len(selected.schedule_overrides)
+            self.scenario_hint.set_text(
+                f"{count} scenario-specific recurring change(s); baseline remains unchanged."
+            )
+
+    def _require_scenario(self):
+        return self._selected_scenario()
+
+    def _on_add_estimate(self, _button) -> None:
+        scenario = self._require_scenario()
+        if scenario is None or self.db is None:
+            return
+        from ..dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        ScenarioScheduleDialog(self.get_root(), self.db, scenario).present()
+
+    def _on_alter_schedule(self, _button) -> None:
+        scenario = self._require_scenario()
+        if scenario is None or self.db is None:
+            return
+        from ..dialogs.scenario_schedule_dialog import ScenarioSchedulePickerDialog
+
+        ScenarioSchedulePickerDialog(
+            self.get_root(),
+            self.db,
+            "Alter baseline in scenario",
+            "Alter…",
+            self._edit_baseline_schedule,
+        ).present()
+
+    def _edit_baseline_schedule(self, schedule) -> None:
+        scenario = self._require_scenario()
+        if scenario is None or self.db is None:
+            return
+        from ..dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        current = next(
+            (
+                item
+                for item in scenario.schedule_overrides
+                if item.source_schedule == schedule.handle
+            ),
+            None,
+        )
+        ScenarioScheduleDialog(
+            self.get_root(),
+            self.db,
+            scenario,
+            source=schedule,
+            current=current,
+        ).present()
+
+    def _on_suppress_schedule(self, _button) -> None:
+        scenario = self._require_scenario()
+        if scenario is None or self.db is None:
+            return
+        from ..dialogs.scenario_schedule_dialog import ScenarioSchedulePickerDialog
+
+        ScenarioSchedulePickerDialog(
+            self.get_root(),
+            self.db,
+            "Suppress baseline in scenario",
+            "Suppress",
+            self._suppress_baseline_schedule,
+        ).present()
+
+    def _suppress_baseline_schedule(self, schedule) -> None:
+        scenario = self._require_scenario()
+        if scenario is None or self.db is None:
+            return
+        from ...gen.lib import ScenarioSchedule
+
+        scenario.schedule_overrides = [
+            existing
+            for existing in scenario.schedule_overrides
+            if existing.source_schedule != schedule.handle
+        ]
+        scenario.schedule_overrides.append(
+            ScenarioSchedule.from_scheduled(schedule, enabled=False)
+        )
+        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+            self.db.commit_scenario(scenario, txn)
+
     def _grouping(self) -> ReportingPeriod:
         return (
             ReportingPeriod.MONTH,
@@ -169,6 +282,7 @@ class PlanView(BaseView):
             f"{activity.unresolved_count} expected unresolved   ·   "
             f"{activity.unresolved_actual_count} actuals to review"
         )
+        self._update_scenario_actions()
         self._render()
 
     def _clear_grid(self) -> None:

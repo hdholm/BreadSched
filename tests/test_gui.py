@@ -1475,6 +1475,117 @@ class TestDerivedPlanView:
         assert not hasattr(view, "_commit")
         assert not hasattr(view, "budget_picker")
 
+    def test_scenario_event_actions_require_a_saved_scenario(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        assert view.add_estimate_button.get_sensitive() is False
+        assert view.alter_schedule_button.get_sensitive() is False
+        assert view.suppress_schedule_button.get_sensitive() is False
+
+    def test_suppressing_a_baseline_schedule_is_scenario_only(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Scenario
+
+        app.open_book(populated_book)
+        schedule = next(iter(app.db.iter_scheduled()))
+        with app.db.transaction("Add scenario") as txn:
+            app.db.add_scenario(Scenario(name="No recurring payment"), txn)
+
+        window.show_category("plan")
+        view = window._views["plan"]
+        selected = next(
+            index
+            for index, scenario in enumerate(view._scenarios, 1)
+            if scenario.name == "No recurring payment"
+        )
+        view.scenario.set_selected(selected)
+        view._suppress_baseline_schedule(schedule)
+
+        saved = app.db.get_scenario_by_name("No recurring payment")
+        assert saved is not None
+        assert saved.schedule_overrides[0].source_schedule == schedule.handle
+        assert saved.schedule_overrides[0].enabled is False
+        assert app.db.get_scheduled(schedule.handle).enabled == schedule.enabled
+
+    def test_scenario_estimate_dialog_saves_a_recurring_estimate(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Scenario
+        from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        app.open_book(populated_book)
+        with app.db.transaction("Add scenario") as txn:
+            scenario = Scenario(name="Higher food")
+            app.db.add_scenario(scenario, txn)
+        scenario = app.db.get_scenario_by_name("Higher food")
+        assert scenario is not None
+
+        dialog = ScenarioScheduleDialog(window, app.db, scenario)
+        names = [app.db.full_name(account) for account in dialog._accounts]
+        dialog.name_entry.set_text("Weekly groceries")
+        dialog.category.set_selected(names.index("Expenses:Groceries"))
+        dialog.funding.set_selected(names.index("Liabilities:Credit Card"))
+        dialog.amount_entry.set_text("300.00")
+        dialog.frequency.set_selected(0)
+        dialog.start_entry.set_text("2026-01-02")
+        dialog._on_save(None)
+
+        saved = app.db.get_scenario_by_name("Higher food")
+        assert saved is not None
+        assert len(saved.schedule_overrides) == 1
+        estimate = saved.schedule_overrides[0]
+        assert estimate.source_schedule is None
+        assert estimate.placeholder is True
+        assert estimate.recurrence.describe().lower().startswith("weekly")
+
+    def test_alternate_schedule_changes_only_the_saved_scenario(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import (
+            Money,
+            PeriodType,
+            Recurrence,
+            Scenario,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+        from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        app.open_book(populated_book)
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        schedule = ScheduledTransaction(
+            name="Scenario rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(rent.handle, Money("1800.00")),
+                ScheduledSplit(checking.handle, Money("-1800.00")),
+            ],
+            placeholder=True,
+        )
+        scenario = Scenario(name="Higher rent")
+        with app.db.transaction("Scenario fixture") as txn:
+            app.db.add_scheduled(schedule, txn)
+            app.db.add_scenario(scenario, txn)
+
+        scenario = app.db.get_scenario_by_name("Higher rent")
+        schedule = app.db.get_scheduled(schedule.handle)
+        assert scenario is not None and schedule is not None
+        dialog = ScenarioScheduleDialog(window, app.db, scenario, source=schedule)
+        dialog.amount_entry.set_text("2100.00")
+        dialog._on_save(None)
+
+        saved = app.db.get_scenario_by_name("Higher rent")
+        baseline = app.db.get_scheduled(schedule.handle)
+        assert saved is not None and baseline is not None
+        assert saved.schedule_overrides[0].source_schedule == schedule.handle
+        assert saved.schedule_overrides[0].splits[0].amount == Money("2100.00")
+        assert baseline.splits[0].amount == Money("1800.00")
+
 
 class TestDueReview:
     """Item 6: due occurrences are decided one at a time, not posted for you."""
