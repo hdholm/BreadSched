@@ -423,6 +423,79 @@ class TestPlanApi:
             client.get(f"/api/plan?{query}")
         assert caught.value.code == 400
 
+    def test_plan_detail_reconciles_a_category_period(self, review_client):
+        _status, plan = review_client.get(
+            "/api/plan?from=2026-02&through=2026-02"
+        )
+        rent = next(
+            row for row in plan["categories"] if row["full_name"] == "Expenses:Rent"
+        )
+        query = urllib.parse.urlencode(
+            {
+                "account": rent["account"],
+                "start": "2026-02-01",
+                "end": "2026-02-28",
+            }
+        )
+        status, detail = review_client.get(f"/api/plan/detail?{query}")
+
+        assert status == 200
+        assert detail["category"]["full_name"] == "Expenses:Rent"
+        assert Money(detail["summary"]["planned"]) == Money("1800.00")
+        assert Money(detail["summary"]["actual"]) == Money("1825.00")
+        assert Money(detail["summary"]["variance"]) == Money("25.00")
+        assert detail["planned"][0]["source"] == "scheduled"
+        assert detail["planned"][0]["status"] == "expected"
+        assert detail["actuals"][0]["resolution"] == "unresolved"
+
+    def test_plan_detail_exposes_matched_variance_and_timing(self, review_client):
+        review_client.post(
+            "/api/review/match",
+            {
+                "transaction": review_client.actual_handle,
+                "occurrence": review_client.occurrence,
+            },
+        )
+        _status, plan = review_client.get(
+            "/api/plan?from=2026-02&through=2026-02"
+        )
+        rent = next(
+            row for row in plan["categories"] if row["full_name"] == "Expenses:Rent"
+        )
+        query = urllib.parse.urlencode(
+            {
+                "account": rent["account"],
+                "start": "2026-02-01",
+                "end": "2026-02-28",
+            }
+        )
+        _status, detail = review_client.get(f"/api/plan/detail?{query}")
+
+        assert detail["planned"][0]["status"] == "actualized"
+        assert Money(detail["planned"][0]["actual"]) == Money("1825.00")
+        assert Money(detail["planned"][0]["variance"]) == Money("25.00")
+        assert detail["actuals"][0]["resolution"] == "matched"
+        assert Money(detail["actuals"][0]["expected"]) == Money("1800.00")
+        assert Money(detail["actuals"][0]["variance"]) == Money("25.00")
+        assert detail["actuals"][0]["date_variance_days"] == 1
+
+    def test_plan_detail_rolls_up_descendant_categories(self, client):
+        _status, plan = client.get("/api/plan?from=2026-01&through=2026-01")
+        expenses = next(
+            row for row in plan["categories"] if row["full_name"] == "Expenses"
+        )
+        query = urllib.parse.urlencode(
+            {
+                "account": expenses["account"],
+                "start": "2026-01-01",
+                "end": "2026-01-31",
+            }
+        )
+        _status, detail = client.get(f"/api/plan/detail?{query}")
+
+        assert Money(detail["summary"]["actual"]) == Money("1800.00")
+        assert detail["actuals"][0]["description"] == "Rent"
+
     def test_invalid_range_is_a_bad_request(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.get("/api/plan?from=2027-01&through=2026-12")
