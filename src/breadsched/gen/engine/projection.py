@@ -443,17 +443,17 @@ def explain_month(
     for handle in holding_handles:
         account = db.get_account(handle)
         rate = _resolve_rate(assumptions, account) if account is not None else Decimal(0)
-        holdings.append(
-            ProjectionAccountDetail(
-                handle=handle,
-                name=account_name(handle),
-                opening=ledger.opening_holdings.get(handle, Money(0)),
-                movement=ledger.holding_contributions.get(handle, Money(0)),
-                accrual=ledger.investment_growth.get(handle, Money(0)),
-                closing=ledger.closing_holdings.get(handle, Money(0)),
-                annual_rate=rate,
-            )
+        detail = ProjectionAccountDetail(
+            handle=handle,
+            name=account_name(handle),
+            opening=ledger.opening_holdings.get(handle, Money(0)),
+            movement=ledger.holding_contributions.get(handle, Money(0)),
+            accrual=ledger.investment_growth.get(handle, Money(0)),
+            closing=ledger.closing_holdings.get(handle, Money(0)),
+            annual_rate=rate,
         )
+        if any((detail.opening, detail.movement, detail.accrual, detail.closing)):
+            holdings.append(detail)
 
     liability_handles = sorted(
         set(ledger.opening_liabilities)
@@ -469,17 +469,17 @@ def explain_month(
         movement = ledger.liability_movements.get(handle)
         if movement is None:
             movement = -ledger.debt_payments.get(handle, Money(0))
-        liabilities.append(
-            ProjectionAccountDetail(
-                handle=handle,
-                name=account_name(handle),
-                opening=ledger.opening_liabilities.get(handle, Money(0)),
-                movement=movement,
-                accrual=ledger.liability_interest.get(handle, Money(0)),
-                closing=ledger.closing_liabilities.get(handle, Money(0)),
-                annual_rate=rate,
-            )
+        detail = ProjectionAccountDetail(
+            handle=handle,
+            name=account_name(handle),
+            opening=ledger.opening_liabilities.get(handle, Money(0)),
+            movement=movement,
+            accrual=ledger.liability_interest.get(handle, Money(0)),
+            closing=ledger.closing_liabilities.get(handle, Money(0)),
+            annual_rate=rate,
         )
+        if any((detail.opening, detail.movement, detail.accrual, detail.closing)):
+            liabilities.append(detail)
 
     return ProjectionMonthDetail(
         index=index,

@@ -730,6 +730,23 @@ class TestMonthlyStateLedger:
         assert detail.events[0].description == "Invest"
         assert detail.assumptions.investment_return == Decimal("0.06")
 
+    def test_month_explanation_omits_inactive_zero_accounts(self, db, book):
+        scenario = Scenario(
+            name="Explain", start=date(2026, 1, 1), years=1,
+            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+        )
+        result = projection.project(db, scenario)
+        detail = projection.explain_month(db, result, 0)
+
+        assert all(
+            any((item.opening, item.movement, item.accrual, item.closing))
+            for item in detail.holdings
+        )
+        assert all(
+            any((item.opening, item.movement, item.accrual, item.closing))
+            for item in detail.liabilities
+        )
+
     def test_month_explanation_rejects_an_unknown_index(self, db, book):
         scenario = Scenario(
             name="Explain", start=date(2026, 1, 1), years=1,
