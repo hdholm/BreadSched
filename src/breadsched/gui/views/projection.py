@@ -5,9 +5,9 @@ a change in the return assumption is visible immediately rather than after a
 dialog round trip.  A forecast is an argument about the future, and the fastest way
 to understand one is to push on it.
 
-Baseline assumption changes are a session draft until saved as a scenario. Changes to
-a selected saved scenario are persisted with "Save scenario changes". Plan and
-Projection share the same scenario selection so both views describe the same future.
+Base scenario assumption changes are persisted in the open book. Changes to a selected
+saved scenario are persisted with "Save scenario changes". Plan and Projection share
+the same scenario selection so both views describe the same future.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ from ..gi_setup import GLib, Gtk
 from ..planning_context import (
     baseline_scenario,
     notify_planning_scenario_changed,
+    persist_baseline_assumptions,
     select_scenario,
     selected_scenario_handle,
 )
@@ -197,6 +198,10 @@ class ProjectionView(BaseView):
         self._projection_dirty = True
         self._comparison = None
         super().set_db(db)
+        if db is not None:
+            self._baseline = baseline_scenario(self.manager, db)
+            if self._scenario_handle is None:
+                self.scenario = self._baseline
 
     def _is_visible(self) -> bool:
         """Return whether this is the category currently shown by the manager."""
@@ -238,6 +243,7 @@ class ProjectionView(BaseView):
         if self._scenario_handle is not None and chosen is None:
             self._scenario_handle = None
             select_scenario(self.manager, None, source=self)
+        self._baseline = baseline_scenario(self.manager, self.db)
         self.scenario = (
             Scenario.from_dict(chosen.serialize()) if chosen is not None else self._baseline
         )
@@ -458,6 +464,8 @@ class ProjectionView(BaseView):
             return
         if self._scenario_handle is None:
             self._collect()
+            if self.db is not None:
+                persist_baseline_assumptions(self.manager, self.db)
             notify_planning_scenario_changed(self.manager, source=self)
         self.recompute()
 

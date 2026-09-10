@@ -12,6 +12,7 @@ from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
     notify_planning_scenario_changed,
+    persist_baseline_assumptions,
 )
 
 __all__ = ["ScenarioManagerDialog"]
@@ -33,7 +34,7 @@ class ScenarioManagerDialog(Gtk.Window):
         super().__init__(title="Manage scenarios", transient_for=parent, modal=True)
         self.db = db
         self.manager = manager
-        self._baseline = baseline_scenario(manager)
+        self._baseline = baseline_scenario(manager, db)
         self._scenarios: list[Scenario] = []
         self._loading = False
         self.set_default_size(620, 520)
@@ -203,8 +204,9 @@ class ScenarioManagerDialog(Gtk.Window):
             for _label, attribute in _ASSUMPTIONS:
                 value = Decimal(str(self.rate_controls[attribute].get_value())) / Decimal("100")
                 setattr(self._baseline.assumptions, attribute, value)
+            persist_baseline_assumptions(self.manager, self.db)
             notify_planning_scenario_changed(self.manager)
-            self.status.set_text("Base scenario assumptions updated for this session.")
+            self.status.set_text("Base scenario assumptions saved in this book.")
             self.status.remove_css_class("negative")
             return
         name = self.name_entry.get_text().strip()

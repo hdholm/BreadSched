@@ -7,6 +7,7 @@ planning data back to the book.
 
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
 
 from ...gen.engine.activity import ReportingPeriod, build_category_report
@@ -19,6 +20,21 @@ from ..planning_context import (
 from ._base import BaseView
 
 __all__ = ["PlanView"]
+
+_MONTHS = (
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+)
 
 
 class PlanView(BaseView):
@@ -40,9 +56,13 @@ class PlanView(BaseView):
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self._report = None
-        self._start_year = date.today().year
-        self._end_year = self._start_year + 4
-        self._updating_range = False
+        today = date.today()
+        self._start_date = date(today.year, 1, 1)
+        self._end_date = date(today.year + 1, 12, 31)
+        self._period_index = 0
+        self._measure_index = 0
+        self._bounds_initialized = False
+        self._updating_controls = False
         self._scenarios = []
         self._scenario_handle: str | None = selected_scenario_handle(manager)
         self._updating_scenarios = False
@@ -69,29 +89,47 @@ class PlanView(BaseView):
         self.scenario.connect("notify::selected", self._on_scenario_changed)
         bar.append(self.scenario)
         bar.append(Gtk.Label(label="From"))
-        self.start_year = Gtk.SpinButton.new_with_range(1900, 2300, 1)
-        self.start_year.set_value(self._start_year)
-        self.start_year.connect("value-changed", self._on_range_changed)
+        self.start_month = Gtk.DropDown.new_from_strings(list(_MONTHS))
+        self.start_month.set_selected(self._start_date.month - 1)
+        self.start_month.connect("notify::selected", self._on_controls_changed)
+        bar.append(self.start_month)
+        self.start_year = Gtk.SpinButton.new_with_range(1, date.today().year + 150, 1)
+        self.start_year.set_value(self._start_date.year)
+        self.start_year.connect("value-changed", self._on_controls_changed)
         bar.append(self.start_year)
         bar.append(Gtk.Label(label="Through"))
-        self.end_year = Gtk.SpinButton.new_with_range(1900, 2300, 1)
-        self.end_year.set_value(self._end_year)
-        self.end_year.connect("value-changed", self._on_range_changed)
+        self.end_month = Gtk.DropDown.new_from_strings(list(_MONTHS))
+        self.end_month.set_selected(self._end_date.month - 1)
+        self.end_month.connect("notify::selected", self._on_controls_changed)
+        bar.append(self.end_month)
+        self.end_year = Gtk.SpinButton.new_with_range(1, date.today().year + 150, 1)
+        self.end_year.set_value(self._end_date.year)
+        self.end_year.connect("value-changed", self._on_controls_changed)
         bar.append(self.end_year)
         bar.append(Gtk.Label(label="Group by"))
         self.period = Gtk.DropDown.new_from_strings(["Month", "Quarter", "Year"])
-        self.period.set_selected(0)
+        self.period.set_selected(self._period_index)
         self.period.connect("notify::selected", self._on_controls_changed)
         bar.append(self.period)
         bar.append(Gtk.Label(label="Show"))
         self.measure = Gtk.DropDown.new_from_strings(["Plan", "Actual", "Variance"])
-        self.measure.set_selected(0)
-        self.measure.connect("notify::selected", self._render)
+        self.measure.set_selected(self._measure_index)
+        self.measure.connect("notify::selected", self._on_controls_changed)
         bar.append(self.measure)
+        self.apply_button = Gtk.Button(label="Apply")
+        self.apply_button.add_css_class("suggested-action")
+        self.apply_button.connect("clicked", self._on_apply)
+        bar.append(self.apply_button)
         schedules = Gtk.Button(label="Edit baseline schedules…")
         schedules.connect("clicked", lambda *_: self.manager.show_category("scheduled"))
         bar.append(schedules)
         self.append(bar)
+
+        self.control_status = Gtk.Label(xalign=0, wrap=True)
+        self.control_status.set_margin_start(12)
+        self.control_status.set_margin_end(12)
+        self.control_status.set_margin_bottom(4)
+        self.append(self.control_status)
 
         scenario_bar = Gtk.Box(spacing=8)
         self.scenario_events_box = scenario_bar
@@ -147,6 +185,26 @@ class PlanView(BaseView):
         scroll.set_vexpand(True)
         self.append(scroll)
 
+    def set_db(self, db) -> None:
+        """Attach a book and restore the default display horizon for that book."""
+        today = date.today()
+        self._start_date = date(today.year, 1, 1)
+        self._end_date = date(today.year + 1, 12, 31)
+        self._period_index = 0
+        self._measure_index = 0
+        self._bounds_initialized = False
+        self._updating_controls = True
+        try:
+            self.start_year.set_value(self._start_date.year)
+            self.start_month.set_selected(self._start_date.month - 1)
+            self.end_year.set_value(self._end_date.year)
+            self.end_month.set_selected(self._end_date.month - 1)
+            self.period.set_selected(self._period_index)
+            self.measure.set_selected(self._measure_index)
+        finally:
+            self._updating_controls = False
+        super().set_db(db)
+
     def _populate_scenarios(self) -> None:
         if self.db is None:
             return
@@ -189,7 +247,7 @@ class PlanView(BaseView):
         self._scenario_handle = selected.handle if selected is not None else None
         select_scenario(self.manager, self._scenario_handle, source=self)
         self._update_scenario_actions()
-        self.schedule_refresh()
+        self._validate_controls(show_message=True)
 
     def planning_scenario_changed(self, handle: str | None) -> None:
         """Follow scenario selections made in another planning view."""
@@ -222,10 +280,10 @@ class PlanView(BaseView):
         from ...gen.lib import Assumptions, Scenario
         from ..dialogs.scenario_dialog import SaveScenarioDialog
 
-        base = baseline_scenario(self.manager)
+        base = baseline_scenario(self.manager, self.db)
         scenario = Scenario(
-            start=date(self._start_year, 1, 1),
-            years=self._end_year - self._start_year + 1,
+            start=self._start_date,
+            years=max(1, self._end_date.year - self._start_date.year + 1),
             basis=base.basis,
             assumptions=Assumptions.from_dict(base.assumptions.serialize()),
         )
@@ -327,42 +385,127 @@ class PlanView(BaseView):
             ReportingPeriod.MONTH,
             ReportingPeriod.QUARTER,
             ReportingPeriod.YEAR,
-        )[self.period.get_selected()]
+        )[self._period_index]
 
-    def _on_range_changed(self, control, *_args) -> None:
-        if self._updating_range:
+    @staticmethod
+    def _month_end(year: int, month: int) -> date:
+        return date(year, month, monthrange(year, month)[1])
+
+    @staticmethod
+    def _previous_month(when: date) -> date:
+        if when.month == 1:
+            return date(when.year - 1, 12, 1)
+        return date(when.year, when.month - 1, 1)
+
+    def _earliest_data_date(self) -> date:
+        today = date.today()
+        if self.db is None:
+            return date(today.year, 1, 1)
+        dates: list[date] = []
+        dates.extend(transaction.post_date for transaction in self.db.iter_transactions())
+        dates.extend(schedule.recurrence.start for schedule in self.db.iter_scheduled())
+        for scenario in self.db.iter_scenarios():
+            dates.extend(item.recurrence.start for item in scenario.schedule_overrides)
+            dates.extend(item.when for item in scenario.one_offs)
+        return min(dates, default=date(today.year, 1, 1))
+
+    def _maximum_through_month(self) -> date:
+        today = date.today()
+        anniversary_year = today.year + 150
+        anniversary = date(
+            anniversary_year,
+            today.month,
+            min(today.day, monthrange(anniversary_year, today.month)[1]),
+        )
+        candidate = date(anniversary.year, anniversary.month, 1)
+        if self._month_end(candidate.year, candidate.month) > anniversary:
+            candidate = self._previous_month(candidate)
+        return candidate
+
+    def _initialize_range_bounds(self) -> None:
+        if self.db is None or self._bounds_initialized:
             return
+        minimum = self._earliest_data_date().replace(day=1)
+        maximum = self._maximum_through_month()
+        self.start_year.set_range(minimum.year, maximum.year)
+        self.end_year.set_range(minimum.year, maximum.year)
+        if self._start_date < minimum:
+            self._start_date = minimum
+        if self._end_date < self._start_date:
+            self._end_date = self._month_end(self._start_date.year, self._start_date.month)
+        maximum_end = self._month_end(maximum.year, maximum.month)
+        if self._end_date > maximum_end:
+            self._end_date = maximum_end
+        self._updating_controls = True
+        try:
+            self.start_year.set_value(self._start_date.year)
+            self.start_month.set_selected(self._start_date.month - 1)
+            self.end_year.set_value(self._end_date.year)
+            self.end_month.set_selected(self._end_date.month - 1)
+        finally:
+            self._updating_controls = False
+        self._bounds_initialized = True
+
+    def _pending_range(self) -> tuple[date, date]:
         start_year = self.start_year.get_value_as_int()
+        start_month = self.start_month.get_selected() + 1
         end_year = self.end_year.get_value_as_int()
-        if start_year > end_year:
-            self._updating_range = True
-            try:
-                if control is self.start_year:
-                    self.end_year.set_value(start_year)
-                    end_year = start_year
-                else:
-                    self.start_year.set_value(end_year)
-                    start_year = end_year
-            finally:
-                self._updating_range = False
-        self._start_year = start_year
-        self._end_year = end_year
-        self.schedule_refresh()
+        end_month = self.end_month.get_selected() + 1
+        start = date(start_year, start_month, 1)
+        end = self._month_end(end_year, end_month)
+        return start, end
+
+    def _validate_controls(self, *, show_message: bool) -> bool:
+        if self.db is None:
+            return False
+        start, end = self._pending_range()
+        minimum = self._earliest_data_date().replace(day=1)
+        maximum_month = self._maximum_through_month()
+        maximum = self._month_end(maximum_month.year, maximum_month.month)
+        message = ""
+        if start < minimum:
+            message = f"From cannot be earlier than the first book data ({minimum:%b %Y})."
+        elif end < start:
+            message = "Through must be the same month as From or later."
+        elif end > maximum:
+            message = f"Through cannot be later than {maximum_month:%b %Y}."
+        self.apply_button.set_sensitive(not message)
+        if show_message:
+            self.control_status.set_text(message)
+            if message:
+                self.control_status.add_css_class("negative")
+            else:
+                self.control_status.remove_css_class("negative")
+        return not message
 
     def _on_controls_changed(self, *_args) -> None:
-        self.schedule_refresh()
+        if not self._updating_controls:
+            self._validate_controls(show_message=True)
+
+    def _on_apply(self, _button) -> None:
+        if not self._validate_controls(show_message=True):
+            return
+        self._start_date, self._end_date = self._pending_range()
+        self._period_index = self.period.get_selected()
+        self._measure_index = self.measure.get_selected()
+        self.control_status.set_text(
+            f"Showing {self._start_date:%b %Y} through {self._end_date:%b %Y}."
+        )
+        self.control_status.remove_css_class("negative")
+        self.refresh()
 
     def refresh(self) -> None:
         if self.db is None:
             return
+        self._initialize_range_bounds()
         self._populate_scenarios()
-        start = date(self._start_year, 1, 1)
-        end = date(self._end_year, 12, 31)
-        selected_scenario = self._selected_scenario() or baseline_scenario(self.manager)
+        selected_scenario = self._selected_scenario() or baseline_scenario(
+            self.manager, self.db
+        )
         self._report = build_category_report(
             self.db,
-            start,
-            end,
+            self._start_date,
+            self._end_date,
             period=self._grouping(),
             scenario=selected_scenario,
         )
@@ -409,7 +552,7 @@ class PlanView(BaseView):
                 name.set_tooltip_text(category.full_name)
                 self.grid.attach(name, 0, row_index, 1, 1)
                 values = (category.planned, category.actual, category.variance)[
-                    self.measure.get_selected()
+                    self._measure_index
                 ]
                 for col, value in enumerate(values, 1):
                     label = Gtk.Label(label=value.format(parens_negative=True), xalign=1)

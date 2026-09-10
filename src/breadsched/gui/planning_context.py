@@ -4,28 +4,50 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..gen.lib import ProjectionBasis, Scenario
+from ..gen.lib import Assumptions, ProjectionBasis, Scenario
 
 __all__ = [
     "baseline_scenario",
     "notify_planning_scenario_changed",
+    "persist_baseline_assumptions",
     "selected_scenario_handle",
     "select_scenario",
 ]
 
+_BASE_ASSUMPTIONS_KEY = "planning.base_assumptions"
 
-def baseline_scenario(manager) -> Scenario:
-    """Return the session's shared Base scenario assumptions."""
+
+def _db_identity(db) -> object | None:
+    if db is None:
+        return None
+    return getattr(db, "path", None) or id(db)
+
+
+def baseline_scenario(manager, db=None) -> Scenario:
+    """Return the shared Base scenario, loading its assumptions from this book."""
+    identity = _db_identity(db)
     scenario = getattr(manager, "_planning_baseline_scenario", None)
-    if scenario is None:
+    loaded_for = getattr(manager, "_planning_baseline_db", object())
+    if scenario is None or (db is not None and loaded_for != identity):
         scenario = Scenario(
             name="Base scenario",
             start=date.today().replace(month=1, day=1),
             years=10,
             basis=ProjectionBasis.SCHEDULED,
         )
+        if db is not None:
+            stored = db.get_metadata(_BASE_ASSUMPTIONS_KEY, None)
+            if isinstance(stored, dict):
+                scenario.assumptions = Assumptions.from_dict(stored)
         manager._planning_baseline_scenario = scenario
+        manager._planning_baseline_db = identity
     return scenario
+
+
+def persist_baseline_assumptions(manager, db) -> None:
+    """Persist the current Base assumptions in the open book's metadata."""
+    scenario = baseline_scenario(manager, db)
+    db.set_metadata(_BASE_ASSUMPTIONS_KEY, scenario.assumptions.serialize())
 
 
 def selected_scenario_handle(manager) -> str | None:
