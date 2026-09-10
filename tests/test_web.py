@@ -554,3 +554,130 @@ class TestScenarioManagementPage:
         assert "async function showScenarios" in page
         assert "Add dated assumptions…" in page
         assert "Dated assumption periods belong to saved scenarios" in page
+
+@pytest.fixture
+def scenario_event_client(book_path):
+    """A web book with a baseline schedule available for scenario overrides."""
+    db = DbSQLite()
+    db.load(str(book_path))
+    bank = db.get_account_by_name("Checking")
+    rent = db.get_account_by_name("Rent")
+    assert bank is not None and rent is not None
+    baseline = ScheduledTransaction(
+        name="Future rent",
+        recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 2, 1)),
+        splits=[
+            ScheduledSplit(rent.handle, Money("1800.00")),
+            ScheduledSplit(bank.handle, Money("-1800.00")),
+        ],
+    )
+    with db.transaction("Add test schedule") as txn:
+        db.add_scheduled(baseline, txn)
+    httpd = serve(db, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    base = f"http://127.0.0.1:{httpd.server_port}"
+
+    class Client:
+        def get(self, path: str):
+            with urllib.request.urlopen(base + path, timeout=10) as response:
+                return response.status, json.loads(response.read())
+
+        def post(self, path: str, payload: dict):
+            request = urllib.request.Request(
+                base + path,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status, json.loads(response.read())
+
+    try:
+        yield Client()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        db.close()
+
+
+class TestScenarioEventWebParity:
+    @staticmethod
+    def _saved_scenario(client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        return scenario
+
+    def test_scenario_only_estimate_is_persisted(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?"
+            + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        rent = next(
+            account for account in events["accounts"] if account["name"].endswith("Rent")
+        )
+        bank = next(
+            account
+            for account in events["accounts"]
+            if account["name"].endswith("Checking")
+        )
+        _status, saved = scenario_event_client.post(
+            "/api/scenario/event/save",
+            {
+                "handle": scenario["handle"],
+                "name": "Lower rent estimate",
+                "category": rent["handle"],
+                "funding": bank["handle"],
+                "amount": "1500.00",
+                "frequency": "monthly",
+                "start": "2026-03-01",
+                "weekend": "none",
+            },
+        )
+        assert len(saved["changes"]) == 1
+        assert saved["changes"][0]["source_schedule"] is None
+        assert saved["changes"][0]["amount"] == "1500.00"
+
+    def test_baseline_can_be_altered_then_suppressed(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?"
+            + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        source = events["baseline"][0]
+        assert source["simple"] is True
+        _status, altered = scenario_event_client.post(
+            "/api/scenario/event/save",
+            {
+                "handle": scenario["handle"],
+                "source_schedule": source["handle"],
+                "name": source["name"],
+                "category": source["category"],
+                "funding": source["funding"],
+                "amount": "1600.00",
+                "frequency": source["frequency"],
+                "start": source["start"],
+                "weekend": source["weekend"],
+            },
+        )
+        assert altered["changes"][0]["enabled"] is True
+        assert altered["changes"][0]["source_schedule"] == source["handle"]
+        assert altered["changes"][0]["amount"] == "1600.00"
+
+        _status, suppressed = scenario_event_client.post(
+            "/api/scenario/event/suppress",
+            {"handle": scenario["handle"], "source_schedule": source["handle"]},
+        )
+        assert len(suppressed["changes"]) == 1
+        assert suppressed["changes"][0]["enabled"] is False
+        assert suppressed["changes"][0]["source_schedule"] == source["handle"]
+
+    def test_page_has_sticky_plan_context_and_dashboard_group_cards(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode()
+        assert ".plan-table th:first-child, .plan-table td:first-child" in page
+        assert "max-height: calc(100vh - 310px)" in page
+        assert 'class:"balance-groups"' in page
+        assert '"Add estimate…"' in page
+        assert '"Alter baseline…"' in page
+        assert '"Suppress baseline…"' in page

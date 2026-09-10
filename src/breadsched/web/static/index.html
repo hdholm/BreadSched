@@ -107,6 +107,18 @@ button.destructive { color: var(--bad); }
 button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .toolbar.compact { margin: 0; gap: 4px; }
 .period-editor { padding: 14px 16px; }
+.plan-table { max-height: calc(100vh - 310px); }
+.plan-table thead th { position: sticky; top: 0; z-index: 3; }
+.plan-table th:first-child, .plan-table td:first-child { position: sticky; left: 0; background: var(--panel); z-index: 2; }
+.plan-table thead th:first-child { z-index: 4; }
+.plan-table .section-row td:first-child { background: var(--bg); }
+.balance-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:16px; }
+.balance-group { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 16px; }
+.balance-group h3 { margin:0 0 8px; font-size:14px; }
+.balance-group dl { display:grid; grid-template-columns:1fr auto; gap:4px 12px; margin:0; }
+.balance-group dt { color:var(--dim); }
+.balance-group dd { margin:0; font-variant-numeric:tabular-nums; text-align:right; }
+.scenario-events { padding:14px 16px; }
 @media (max-width: 800px) { .review-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -125,7 +137,7 @@ const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review
 let current = "Dashboard";
 let state = {
   accounts: [], account: null, plan: null, review: null,
-  scenarioManager: null, scenarioPeriod: null,
+  scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
 };
 
 const el = (tag, attrs = {}, ...kids) => {
@@ -367,6 +379,11 @@ async function showPlan() {
     }
   }
 
+  const planTable = table(headers, rows);
+  planTable.classList.add("plan-table");
+  let eventPanel = null;
+  if (currentPlan.scenario) eventPanel = await scenarioEventPanel(currentPlan.scenario, currentPlan.from);
+
   return el("div", {}, controls, cards,
     el("p", { class: "note" },
       `Showing ${data.controls.from} through ${data.controls.through}. `
@@ -374,7 +391,43 @@ async function showPlan() {
     el("p", { class: "note" },
       "Income and expense values are derived from exact-dated scheduled/estimated "
       + "and actual transaction splits; reporting periods do not store budget values."),
-    table(headers, rows));
+    eventPanel, planTable);
+}
+
+async function scenarioEventPanel(handle, fromMonth) {
+  const data = await get(`/api/scenario/events?handle=${encodeURIComponent(handle)}`);
+  const mode = state.scenarioEvent;
+  const baselineOptions = data.baseline.map((item) => el("option", { value:item.handle }, item.name));
+  const actions = el("div", { class:"toolbar compact" },
+    el("button", { class:"action", type:"button", onclick:()=>{ state.scenarioEvent={kind:"add"}; render(); } }, "Add estimate…"),
+    el("button", { class:"action", type:"button", onclick:()=>{ state.scenarioEvent={kind:"alter"}; render(); } }, "Alter baseline…"),
+    el("button", { class:"action", type:"button", onclick:()=>{ state.scenarioEvent={kind:"suppress"}; render(); } }, "Suppress baseline…"));
+  let editor = null;
+  if (mode && mode.kind === "suppress") {
+    const select = el("select", { name:"source" }, baselineOptions);
+    editor = el("form", { class:"toolbar", onsubmit:async(e)=>{ e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); await post("/api/scenario/event/suppress", {handle, source_schedule:v.source}); state.scenarioEvent=null; say("Baseline schedule suppressed in this scenario."); render(); } },
+      el("label", {}, "Baseline schedule ", select), el("button", {class:"action primary"}, "Suppress"), el("button", {class:"action", type:"button", onclick:()=>{state.scenarioEvent=null;render();}}, "Cancel"));
+  } else if (mode && (mode.kind === "add" || mode.kind === "alter")) {
+    const simpleBase = data.baseline.filter(x=>x.simple);
+    let source = mode.kind === "alter" ? simpleBase.find(x=>x.handle===mode.source) || simpleBase[0] : null;
+    const categories = data.accounts.filter(a=>a.class==="income" || a.class==="expense");
+    const category = source?.category || categories[0]?.handle || "";
+    const funding = source?.funding || data.accounts.find(a=>a.handle!==category)?.handle || "";
+    const sourceSelect = mode.kind === "alter" ? el("select", {name:"source", onchange:e=>{state.scenarioEvent={kind:"alter",source:e.target.value};render();}}, simpleBase.map(x=>el("option",{value:x.handle,selected:x.handle===source?.handle?"selected":null},x.name))) : null;
+    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, amount:v.amount, frequency:v.frequency, start:v.start, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
+      sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
+      el("label", {}, "Name", el("input", {name:"name", required:"required", value:source?.name || ""})),
+      el("label", {}, "Income / expense category", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
+      el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
+      el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:source?.amount || ""})),
+      el("label", {}, "Frequency", el("select", {name:"frequency"}, [["weekly","Weekly"],["biweekly","Fortnightly"],["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],["semiannual","Twice a year"],["annual","Yearly"],["once","One off"]].map(([v,l])=>el("option",{value:v,selected:v===(source?.frequency||"monthly")?"selected":null},l)))),
+      el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:source?.start || `${fromMonth}-01`})),
+      el("label", {}, "Weekend", el("select", {name:"weekend"}, [["none","Leave on the day"],["previous","Move to Friday before"],["next","Move to Monday after"]].map(([v,l])=>el("option",{value:v,selected:v===(source?.weekend||"none")?"selected":null},l)))),
+      el("div", {class:"toolbar"}, el("button",{class:"action primary"},"Save scenario change"), el("button",{class:"action",type:"button",onclick:()=>{state.scenarioEvent=null;render();}},"Cancel")));
+    editor = form;
+  }
+  const changes = data.changes.length ? table(["Change","Baseline","State"], data.changes.map(c=>[c.name,c.source_name||"Scenario-only estimate",c.enabled?"Active":"Suppressed"])) : el("p",{class:"note"},"No scenario-specific recurring changes yet.");
+  return el("div", {class:"panel scenario-events"}, el("h3",{},`Scenario events — ${data.scenario.name}`), actions, editor, changes);
 }
 
 const ASSUMPTION_FIELDS = [
@@ -830,13 +883,13 @@ async function showDashboard() {
     }),
     el("label", {}, " months"));
 
-  const groupRows = data.groups.map((g) => [
-    g.name,
-    g.value === null ? "" : money(g.value),
-    g.debt === null ? "" : money(g.debt),
-    money(g.equity === null ? g.total : g.equity),
-    g.loan_to_value === null ? "" : (g.loan_to_value * 100).toFixed(1) + "%",
-  ]);
+  const groupCards = el("div", { class:"balance-groups" }, data.groups.map((g) =>
+    el("div", {class:"balance-group"}, el("h3",{},g.name), el("dl",{},
+      g.value === null ? null : [el("dt",{},"Value"),el("dd",{},money(g.value))],
+      g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
+      el("dt",{},g.equity === null ? "Total" : "Equity"), el("dd",{},money(g.equity === null ? g.total : g.equity)),
+      g.loan_to_value === null ? null : [el("dt",{},"LTV"),el("dd",{},(g.loan_to_value*100).toFixed(1)+"%")
+      ]))));
 
   const billRows = data.bills.map((b) => [
     b.name,
@@ -850,9 +903,7 @@ async function showDashboard() {
 
   return el("div", {}, cards, controls,
     el("h2", {}, "Balances"),
-    table(["Group", { label: "Value", num: true }, { label: "Owed", num: true },
-           { label: "Equity / total", num: true }, { label: "LTV", num: true }],
-          groupRows),
+    groupCards,
     el("h2", {}, `Pending bills (${data.bills.length})`),
     table(["Bill", "Next due", "Due in", "Cycle",
            { label: "Amount", num: true }, { label: "Monthly", num: true },

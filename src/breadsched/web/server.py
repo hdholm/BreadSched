@@ -33,14 +33,20 @@ from ..gen.engine import (
     schedule,
 )
 from ..gen.lib import (
+    AccountClass,
     AssumptionPeriod,
     Assumptions,
     Money,
+    PeriodType,
     PlanningResolution,
     ProjectionBasis,
+    Recurrence,
     Scenario,
+    ScenarioSchedule,
+    ScheduledSplit,
     Split,
     Transaction,
+    WeekendAdjust,
 )
 from ..gen.lib.base import create_handle
 from ..gen.utils.logs import get_logger
@@ -427,6 +433,224 @@ class Api:
             self.db.commit_scenario(scenario, txn)
         return self._scenario_payload(scenario)
 
+
+    _SCENARIO_FREQUENCIES = {
+        "weekly": (PeriodType.WEEK, 1),
+        "biweekly": (PeriodType.WEEK, 2),
+        "semimonthly": (PeriodType.SEMI_MONTH, 1),
+        "monthly": (PeriodType.MONTH, 1),
+        "quarterly": (PeriodType.MONTH, 3),
+        "semiannual": (PeriodType.MONTH, 6),
+        "annual": (PeriodType.YEAR, 1),
+        "once": (PeriodType.ONCE, 1),
+    }
+    _SCENARIO_WEEKENDS = {
+        "none": WeekendAdjust.NONE,
+        "previous": WeekendAdjust.PREVIOUS,
+        "next": WeekendAdjust.NEXT,
+    }
+
+    def _scenario_for_events(self, handle: object) -> Scenario:
+        value = str(handle or "").strip()
+        if not value:
+            raise ValueError("scenario event changes require a saved scenario")
+        scenario = self.db.get_scenario(value)
+        if scenario is None:
+            raise KeyError(value)
+        return scenario
+
+    def _simple_schedule_parts(self, scheduled) -> dict | None:
+        if len(scheduled.splits) != 2 or any(
+            split.formula for split in scheduled.splits
+        ):
+            return None
+        flow = None
+        other = None
+        for split in scheduled.splits:
+            account = self.db.get_account(split.account)
+            if account is not None and account.account_class in (
+                AccountClass.INCOME, AccountClass.EXPENSE
+            ):
+                flow = split
+                break
+        if flow is None:
+            return None
+        other = next((split for split in scheduled.splits if split is not flow), None)
+        if other is None:
+            return None
+        account = self.db.get_account(flow.account)
+        assert account is not None
+        amount = flow.resolve(scheduled.variables) * account.sign()
+        return {
+            "category": flow.account,
+            "funding": other.account,
+            "amount": str(abs(amount).to_decimal()),
+        }
+
+    @staticmethod
+    def _frequency_key(recurrence: Recurrence) -> str | None:
+        for key, (period, interval) in Api._SCENARIO_FREQUENCIES.items():
+            if recurrence.period is period and recurrence.interval == interval:
+                return key
+        return None
+
+    @staticmethod
+    def _weekend_key(adjust: WeekendAdjust) -> str:
+        for key, value in Api._SCENARIO_WEEKENDS.items():
+            if adjust is value:
+                return key
+        return "none"
+
+    def _scenario_event_payload(self, item: ScenarioSchedule) -> dict:
+        source = (
+            self.db.get_scheduled(item.source_schedule)
+            if item.source_schedule
+            else None
+        )
+        simple = self._simple_schedule_parts(item)
+        return {
+            "handle": item.handle,
+            "name": item.name,
+            "source_schedule": item.source_schedule,
+            "source_name": source.name if source is not None else None,
+            "enabled": item.enabled,
+            "simple": (
+                simple is not None and self._frequency_key(item.recurrence) is not None
+            ),
+            "category": simple["category"] if simple else None,
+            "funding": simple["funding"] if simple else None,
+            "amount": simple["amount"] if simple else None,
+            "frequency": self._frequency_key(item.recurrence),
+            "start": item.recurrence.start.isoformat(),
+            "weekend": self._weekend_key(item.recurrence.weekend_adjust),
+        }
+
+    def scenario_events(self, handle: str | None) -> dict:
+        scenario = self._scenario_for_events(handle)
+        accounts = sorted(
+            (
+                account
+                for account in self.db.iter_accounts()
+                if not account.is_root and not account.placeholder
+            ),
+            key=self.db.full_name,
+        )
+        schedules = list(self.db.iter_scheduled())
+        return {
+            "scenario": {"handle": scenario.handle, "name": scenario.name},
+            "accounts": [
+                {
+                    "handle": account.handle,
+                    "name": self.db.full_name(account),
+                    "class": account.account_class.value,
+                }
+                for account in accounts
+            ],
+            "baseline": [
+                {
+                    "handle": item.handle,
+                    "name": item.name,
+                    "simple": (parts := self._simple_schedule_parts(item)) is not None
+                    and (frequency := self._frequency_key(item.recurrence)) is not None,
+                    "category": parts["category"] if parts else None,
+                    "funding": parts["funding"] if parts else None,
+                    "amount": parts["amount"] if parts else None,
+                    "frequency": frequency if parts else None,
+                    "start": item.recurrence.start.isoformat(),
+                    "weekend": self._weekend_key(item.recurrence.weekend_adjust),
+                }
+                for item in schedules
+            ],
+            "changes": [
+                self._scenario_event_payload(item) for item in scenario.schedule_overrides
+            ],
+        }
+
+    def scenario_event_save(self, payload: dict) -> dict:
+        scenario = self._scenario_for_events(payload.get("handle"))
+        source_handle = str(payload.get("source_schedule") or "").strip() or None
+        source = self.db.get_scheduled(source_handle) if source_handle else None
+        if source_handle and source is None:
+            raise KeyError(source_handle)
+        if source is not None and self._simple_schedule_parts(source) is None:
+            raise ValueError("complex schedules can only be suppressed for now")
+
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise ValueError("give the scenario estimate a name")
+        category_handle = str(payload.get("category", "")).strip()
+        funding_handle = str(payload.get("funding", "")).strip()
+        if (
+            not category_handle
+            or not funding_handle
+            or category_handle == funding_handle
+        ):
+            raise ValueError("choose two different accounts")
+        category = self.db.get_account(category_handle)
+        funding = self.db.get_account(funding_handle)
+        if category is None or funding is None:
+            raise ValueError("choose valid accounts")
+        if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
+            raise ValueError("choose an income or expense category")
+        try:
+            amount = abs(Money(str(payload.get("amount", "")).strip()))
+        except (ValueError, ArithmeticError):
+            raise ValueError("enter a valid amount") from None
+        if not amount:
+            raise ValueError("amount must be greater than zero")
+        frequency = str(payload.get("frequency", "monthly"))
+        if frequency not in self._SCENARIO_FREQUENCIES:
+            raise ValueError("choose a supported frequency")
+        weekend = str(payload.get("weekend", "none"))
+        if weekend not in self._SCENARIO_WEEKENDS:
+            raise ValueError("choose a supported weekend adjustment")
+        try:
+            start = date.fromisoformat(str(payload.get("start", "")))
+        except ValueError:
+            raise ValueError("first occurrence must be YYYY-MM-DD") from None
+        period, interval = self._SCENARIO_FREQUENCIES[frequency]
+        signed = amount * category.sign()
+        change = ScenarioSchedule(
+            name=name,
+            recurrence=Recurrence(
+                period=period, interval=interval, start=start,
+                weekend_adjust=self._SCENARIO_WEEKENDS[weekend],
+            ),
+            splits=[
+                ScheduledSplit(category.handle, signed),
+                ScheduledSplit(funding.handle, -signed),
+            ],
+            source_schedule=source_handle,
+            enabled=True,
+            placeholder=source.placeholder if source is not None else True,
+        )
+        if source_handle:
+            scenario.schedule_overrides = [
+                item for item in scenario.schedule_overrides
+                if item.source_schedule != source_handle
+            ]
+        scenario.schedule_overrides.append(change)
+        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+            self.db.commit_scenario(scenario, txn)
+        return self.scenario_events(scenario.handle)
+
+    def scenario_event_suppress(self, payload: dict) -> dict:
+        scenario = self._scenario_for_events(payload.get("handle"))
+        source_handle = str(payload.get("source_schedule", "")).strip()
+        source = self.db.get_scheduled(source_handle) if source_handle else None
+        if source is None:
+            raise KeyError(source_handle)
+        scenario.schedule_overrides = [
+            item for item in scenario.schedule_overrides
+            if item.source_schedule != source_handle
+        ]
+        scenario.schedule_overrides.append(
+            ScenarioSchedule.from_scheduled(source, enabled=False)
+        )
+        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+            self.db.commit_scenario(scenario, txn)
+        return self.scenario_events(scenario.handle)
+
     def plan(
         self,
         start_month: str | None = None,
@@ -800,6 +1024,7 @@ ROUTES = {
     ),
     "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
     "/api/scenarios": lambda a, q: a.scenarios(),
+    "/api/scenario/events": lambda a, q: a.scenario_events(q.get("handle", [None])[0]),
     "/api/budget": lambda a, q: a.budget(q.get("name", [None])[0]),
     "/api/coverage": lambda a, q: a.coverage(q.get("name", [None])[0]),
     "/api/projection": lambda a, q: a.projection(
@@ -818,6 +1043,8 @@ POST_ROUTES = {
     "/api/scenario/delete": lambda a, body: a.scenario_delete(body),
     "/api/scenario/period/save": lambda a, body: a.scenario_period_save(body),
     "/api/scenario/period/delete": lambda a, body: a.scenario_period_delete(body),
+    "/api/scenario/event/save": lambda a, body: a.scenario_event_save(body),
+    "/api/scenario/event/suppress": lambda a, body: a.scenario_event_suppress(body),
 }
 
 
