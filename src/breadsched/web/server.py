@@ -1095,6 +1095,55 @@ class Api:
             ],
         }
 
+    def projection_explain(self, payload: dict) -> dict:
+        """Explain one month of the currently applied projection draft."""
+        scenario = self._projection_draft(payload.get("handle"))
+        scenario = self._apply_projection_payload(scenario, payload)
+        result = projection.project(self.db, scenario)
+        detail = projection.explain_month(self.db, result, int(payload["month_index"]))
+
+        def account_row(item: projection.ProjectionAccountDetail) -> dict:
+            return {
+                "handle": item.handle,
+                "name": item.name,
+                "opening": item.opening,
+                "movement": item.movement,
+                "accrual": item.accrual,
+                "closing": item.closing,
+                "annual_rate": item.annual_rate,
+            }
+
+        return {
+            "index": detail.index,
+            "month": detail.month,
+            "label": detail.label,
+            "cash": {
+                "opening": detail.cash_open,
+                "flow": detail.cash_flow,
+                "interest": detail.cash_interest,
+                "closing": detail.cash_close,
+            },
+            "income": detail.income,
+            "expense": detail.expense,
+            "holdings": {
+                "opening": detail.holdings_open,
+                "movement": detail.holding_contributions,
+                "growth": detail.investment_growth,
+                "closing": detail.holdings_close,
+                "accounts": [account_row(item) for item in detail.holdings],
+            },
+            "liabilities": {
+                "opening": detail.liabilities_open,
+                "movement": detail.liability_movements,
+                "interest": detail.liability_interest,
+                "closing": detail.liabilities_close,
+                "accounts": [account_row(item) for item in detail.liabilities],
+            },
+            "net_worth": detail.net_worth,
+            "assumptions": detail.assumptions.serialize(),
+            "events": [event.as_dict() for event in detail.events],
+        }
+
     def projection(
         self, scenario_handle: str | None = None, years: int | None = None
     ) -> dict:
@@ -1344,6 +1393,7 @@ POST_ROUTES = {
     "/api/scenario/event/suppress": lambda a, body: a.scenario_event_suppress(body),
     "/api/projection/calculate": lambda a, body: a.projection_calculate(body),
     "/api/projection/compare": lambda a, body: a.projection_compare(body),
+    "/api/projection/explain": lambda a, body: a.projection_explain(body),
     "/api/projection/save": lambda a, body: a.projection_save(body),
 }
 

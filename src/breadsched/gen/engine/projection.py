@@ -30,7 +30,10 @@ __all__ = [
     "MonthRow",
     "Projection",
     "ProjectionProgress",
+    "ProjectionAccountDetail",
+    "ProjectionMonthDetail",
     "compare",
+    "explain_month",
     "project",
 ]
 
@@ -300,6 +303,47 @@ class MonthRow:
         return data
 
 
+@dataclass(frozen=True, slots=True)
+class ProjectionAccountDetail:
+    """One account's contribution to a projected month-end balance."""
+
+    handle: str
+    name: str
+    opening: Money
+    movement: Money
+    accrual: Money
+    closing: Money
+    annual_rate: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionMonthDetail:
+    """Reconciled explanation of one projected reporting month."""
+
+    index: int
+    month: date
+    label: str
+    cash_open: Money
+    cash_flow: Money
+    cash_interest: Money
+    cash_close: Money
+    income: Money
+    expense: Money
+    holdings_open: Money
+    holding_contributions: Money
+    investment_growth: Money
+    holdings_close: Money
+    liabilities_open: Money
+    liability_movements: Money
+    liability_interest: Money
+    liabilities_close: Money
+    net_worth: Money
+    assumptions: Assumptions
+    events: tuple[planning.PlannedEvent, ...]
+    holdings: tuple[ProjectionAccountDetail, ...]
+    liabilities: tuple[ProjectionAccountDetail, ...]
+
+
 @dataclass(slots=True)
 class Projection:
     """The result of running one scenario against the current ledger."""
@@ -372,6 +416,97 @@ class Projection:
             "first_shortfall": shortfall.label if shortfall else None,
             "warnings": list(self.warnings),
         }
+
+
+def explain_month(
+    db: DbSQLite, result: Projection, index: int
+) -> ProjectionMonthDetail:
+    """Explain the exact events, accruals, and account changes behind one month."""
+    if index < 0 or index >= len(result.rows):
+        raise IndexError(index)
+    row = result.rows[index]
+    ledger = row.ledger
+    assumptions = result.scenario.assumptions_for(row.month)
+
+    def account_name(handle: str) -> str:
+        account = db.get_account(handle)
+        return db.full_name(account) if account is not None else handle
+
+    holding_handles = sorted(
+        set(ledger.opening_holdings)
+        | set(ledger.holding_contributions)
+        | set(ledger.investment_growth)
+        | set(ledger.closing_holdings),
+        key=account_name,
+    )
+    holdings: list[ProjectionAccountDetail] = []
+    for handle in holding_handles:
+        account = db.get_account(handle)
+        rate = _resolve_rate(assumptions, account) if account is not None else Decimal(0)
+        holdings.append(
+            ProjectionAccountDetail(
+                handle=handle,
+                name=account_name(handle),
+                opening=ledger.opening_holdings.get(handle, Money(0)),
+                movement=ledger.holding_contributions.get(handle, Money(0)),
+                accrual=ledger.investment_growth.get(handle, Money(0)),
+                closing=ledger.closing_holdings.get(handle, Money(0)),
+                annual_rate=rate,
+            )
+        )
+
+    liability_handles = sorted(
+        set(ledger.opening_liabilities)
+        | set(ledger.liability_movements)
+        | set(ledger.liability_interest)
+        | set(ledger.closing_liabilities),
+        key=account_name,
+    )
+    liabilities: list[ProjectionAccountDetail] = []
+    for handle in liability_handles:
+        account = db.get_account(handle)
+        rate = _resolve_rate(assumptions, account) if account is not None else Decimal(0)
+        movement = ledger.liability_movements.get(handle)
+        if movement is None:
+            movement = -ledger.debt_payments.get(handle, Money(0))
+        liabilities.append(
+            ProjectionAccountDetail(
+                handle=handle,
+                name=account_name(handle),
+                opening=ledger.opening_liabilities.get(handle, Money(0)),
+                movement=movement,
+                accrual=ledger.liability_interest.get(handle, Money(0)),
+                closing=ledger.closing_liabilities.get(handle, Money(0)),
+                annual_rate=rate,
+            )
+        )
+
+    return ProjectionMonthDetail(
+        index=index,
+        month=row.month,
+        label=row.label,
+        cash_open=ledger.opening_cash,
+        cash_flow=ledger.cash_flow,
+        cash_interest=ledger.cash_interest,
+        cash_close=ledger.closing_cash,
+        income=row.income,
+        expense=row.expense,
+        holdings_open=ledger.holdings_open,
+        holding_contributions=_sum(ledger.holding_contributions.values()),
+        investment_growth=_sum(ledger.investment_growth.values()),
+        holdings_close=ledger.holdings_close,
+        liabilities_open=ledger.liabilities_open,
+        liability_movements=_sum(
+            item.movement for item in liabilities
+        ),
+        liability_interest=_sum(ledger.liability_interest.values()),
+        liabilities_close=ledger.liabilities_close,
+        net_worth=row.net_worth,
+        assumptions=assumptions,
+        events=tuple(ledger.events),
+        holdings=tuple(holdings),
+        liabilities=tuple(liabilities),
+    )
 
 
 # ---------------------------------------------------------------------- rates

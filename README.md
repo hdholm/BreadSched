@@ -493,6 +493,33 @@ associated with the real asset/cash account through which reimbursements or
 funding are recorded without confusing that ledger balance with benefit
 availability.
 
+## Forward plan: QIF and OFX imports
+
+Add Quicken QIF and OFX as supported historical-data import formats. The importer
+should feed the same validated import/domain pipeline as the existing GnuCash
+paths so account mapping, transaction invariants, historical planning status, and
+duplicate/re-import safeguards remain consistent. Before adding dependencies,
+evaluate Quiffen (https://quiffen.readthedocs.io/) and Ofxparse for license
+compatibility, maintenance status, supported Python versions, fidelity, and
+security. If they are not suitable dependencies, implement BreadSched-native
+parsers from the published formats and other legally usable format references.
+
+## Forward plan: estimates from historical activity
+
+Add an assisted workflow that analyzes historical Income/Expense category activity
+and proposes future scheduled estimates. Suggested estimates must become ordinary
+BreadSched scheduled/estimated transactions -- never a second statistical budget
+model -- so they naturally feed Plan, Projection, Review, and scenario comparison.
+The user must review and accept proposed estimates and choose whether they belong
+to Base or to a saved alternate scenario.
+
+The analysis should eventually recognize recurring cadence, seasonal behavior,
+annual or irregular-but-predictable expenses, trends, and outliers rather than
+reducing every category to a simple monthly average. Recommendations should expose
+the historical basis and confidence/reasoning used to propose the amount and
+recurrence, then remain fully editable through the normal scheduled-transaction
+workflow after creation.
+
 ## Compatibility notes
 
 | Concern | Behaviour |

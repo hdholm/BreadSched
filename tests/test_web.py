@@ -198,6 +198,31 @@ class TestItServes:
         assert payload["scenario"]["name"] == "Base scenario"
         assert payload["scenario"]["years"] == 3
 
+    def test_a_projection_month_can_be_explained(self, client):
+        status, payload = client.post(
+            "/api/projection/explain",
+            {
+                "handle": None,
+                "years": 3,
+                "basis": "scheduled",
+                "budget": None,
+                "assumptions": {
+                    "income_growth": "0.03",
+                    "expense_inflation": "0.025",
+                    "investment_return": "0.06",
+                    "cash_interest": "0.01",
+                    "liability_interest": "0.0",
+                },
+                "month_index": 11,
+            },
+        )
+        assert status == 200
+        assert payload["label"].endswith("2026")
+        assert set(payload["cash"]) == {"opening", "flow", "interest", "closing"}
+        assert "accounts" in payload["holdings"]
+        assert "accounts" in payload["liabilities"]
+        assert payload["assumptions"]["investment_return"] == "0.06"
+
     def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
         handle = scenario["handle"]

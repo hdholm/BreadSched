@@ -694,6 +694,53 @@ class TestMonthlyStateLedger:
         assert ledger["opening_cash"] == data["cash_open"]
         assert ledger["closing_cash"] == data["cash_close"]
 
+    def test_month_explanation_names_accounts_and_reconciles_effects(self, db, book):
+        with db.transaction("Seed card and investment schedule") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 1), "Card balance", book.groceries, book.card, "500"
+                ),
+                txn,
+            )
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Invest",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+                    splits=[
+                        ScheduledSplit(book.brokerage, Money("100")),
+                        ScheduledSplit(book.checking, Money("-100")),
+                    ],
+                ),
+                txn,
+            )
+        scenario = Scenario(
+            name="Explain",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(investment_return="0.06"),
+        )
+        result = projection.project(db, scenario)
+        detail = projection.explain_month(db, result, 0)
+
+        assert detail.label == "Jan 2026"
+        assert detail.cash_open + detail.cash_flow + detail.cash_interest == detail.cash_close
+        assert any(item.handle == book.brokerage for item in detail.holdings)
+        assert any(item.handle == book.card for item in detail.liabilities)
+        assert detail.events[0].description == "Invest"
+        assert detail.assumptions.investment_return == Decimal("0.06")
+
+    def test_month_explanation_rejects_an_unknown_index(self, db, book):
+        scenario = Scenario(
+            name="Explain", start=date(2026, 1, 1), years=1,
+            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+        )
+        result = projection.project(db, scenario)
+        import pytest
+
+        with pytest.raises(IndexError):
+            projection.explain_month(db, result, 12)
+
 class TestEventProjectionScaling:
     def test_assumption_resolution_is_cached_across_many_events(
         self, db, book, monkeypatch

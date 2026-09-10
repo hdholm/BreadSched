@@ -494,6 +494,15 @@ class TestProjectionView:
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 800, 400)
         view.chart._draw(view.chart, cairo.Context(surface), 800, 400)
 
+    def test_projection_month_explanation_is_available(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("projection")
+        view = window._views["projection"]
+
+        assert view._result is not None
+        assert view.explain_button.get_sensitive() is True
+        assert "events" in view.explain_button.get_tooltip_text()
+
 
 class TestDialogs:
     def test_the_transaction_dialog_starts_with_two_splits(

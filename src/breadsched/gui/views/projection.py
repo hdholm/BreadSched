@@ -65,6 +65,7 @@ class ProjectionView(BaseView):
         self._scenario_handle: str | None = selected_scenario_handle(manager)
         self._scales: dict[str, Gtk.Scale] = {}
         self._comparison: projection.Projection | None = None
+        self._result: projection.Projection | None = None
         self._updating = False
         self._projection_dirty = True
         self._build()
@@ -117,6 +118,14 @@ class ProjectionView(BaseView):
         compare_button = Gtk.Button(label="Compare with…")
         compare_button.connect("clicked", self._on_compare_clicked)
         bar.append(compare_button)
+
+        self.explain_button = Gtk.Button(label="Explain month…")
+        self.explain_button.set_sensitive(False)
+        self.explain_button.set_tooltip_text(
+            "Inspect the events, balances, and assumptions behind a projected month"
+        )
+        self.explain_button.connect("clicked", self._on_explain_clicked)
+        bar.append(self.explain_button)
 
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
@@ -197,6 +206,9 @@ class ProjectionView(BaseView):
         """Attach a book and invalidate, but do not project while hidden."""
         self._projection_dirty = True
         self._comparison = None
+        self._result = None
+        if hasattr(self, "explain_button"):
+            self.explain_button.set_sensitive(False)
         super().set_db(db)
         if db is not None:
             self._baseline = baseline_scenario(self.manager, db)
@@ -317,6 +329,8 @@ class ProjectionView(BaseView):
             # had -- nothing -- and reported "not enough data to plot", which
             # describes the symptom and hides the cause.
             LOG.exception("projection failed")
+            self._result = None
+            self.explain_button.set_sensitive(False)
             self.chart.set_data([], [])
             self.warning_label.set_text(
                 f"The projection could not be calculated: {exc}"
@@ -411,6 +425,8 @@ class ProjectionView(BaseView):
         return window, bar, label
 
     def _render(self, result: projection.Projection) -> None:
+        self._result = result
+        self.explain_button.set_sensitive(bool(result.rows))
         labels = [row.label for row in result.rows]
         series = [
             Series("Cash", [float(r.cash_close.to_decimal()) for r in result.rows],
@@ -489,6 +505,13 @@ class ProjectionView(BaseView):
         finally:
             self._updating = False
         self.recompute()
+
+    def _on_explain_clicked(self, _button) -> None:
+        if self.db is None or self._result is None:
+            return
+        from ..dialogs.projection_detail_dialog import ProjectionDetailDialog
+
+        ProjectionDetailDialog(self.get_root(), self.db, self._result).present()
 
     def _on_compare_clicked(self, _button) -> None:
         if self.db is None or not getattr(self, "_scenarios", []):

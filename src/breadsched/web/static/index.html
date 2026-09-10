@@ -1040,14 +1040,22 @@ async function showProjection() {
       el("div", { class: "value " + (s.first_shortfall ? "neg" : "") },
         s.first_shortfall || "Never")));
 
-  const yearly = data.rows.filter((_, i) => (i + 1) % 12 === 0).map((row) => el("tr", {},
-    el("td", {}, row.label),
-    el("td", { class: cls(row.income) }, money(row.income)),
-    el("td", { class: cls(row.expense) }, money(row.expense)),
-    el("td", { class: cls(row.cash) }, money(row.cash)),
-    el("td", { class: cls(row.holdings) }, money(row.holdings)),
-    el("td", { class: cls(row.liabilities) }, money(row.liabilities)),
-    el("td", { class: cls(row.net_worth) }, money(row.net_worth))));
+  const projectionValue = (row, index, key, label) => el("button", {
+    class: `plan-cell-button ${Number(row[key]) < 0 ? "neg" : ""}`,
+    type: "button",
+    title: `Explain ${row.label} projection`,
+    "aria-label": `Explain ${row.label} ${label}: ${money(row[key])}`,
+    onclick: () => openProjectionDetail(index),
+  }, money(row[key]));
+  const yearly = data.rows.map((row, i) => [row, i])
+    .filter(([, i]) => (i + 1) % 12 === 0).map(([row, i]) => el("tr", {},
+      el("td", {}, row.label),
+      el("td", { class: "plan-cell" }, projectionValue(row, i, "income", "income")),
+      el("td", { class: "plan-cell" }, projectionValue(row, i, "expense", "expense")),
+      el("td", { class: "plan-cell" }, projectionValue(row, i, "cash", "cash")),
+      el("td", { class: "plan-cell" }, projectionValue(row, i, "holdings", "holdings")),
+      el("td", { class: "plan-cell" }, projectionValue(row, i, "liabilities", "liabilities")),
+      el("td", { class: "plan-cell" }, projectionValue(row, i, "net_worth", "net worth"))));
 
   const comparison = state.projectionComparison;
   let comparisonView = null;
@@ -1095,6 +1103,83 @@ async function showProjection() {
     table(["Month", { label: "Income", num: true }, { label: "Expense", num: true },
            { label: "Cash", num: true }, { label: "Holdings", num: true },
            { label: "Liabilities", num: true }, { label: "Net worth", num: true }], yearly));
+}
+
+async function openProjectionDetail(index) {
+  const currentProjection = state.projectionData;
+  if (!currentProjection) return;
+  const scenario = currentProjection.scenario;
+  try {
+    const data = await post("/api/projection/explain", {
+      handle: scenario.handle,
+      years: scenario.years,
+      basis: scenario.basis,
+      budget: scenario.budget,
+      assumptions: scenario.assumptions,
+      month_index: index,
+    });
+    const accountRows = (items) => items.map((item) => el("tr", {},
+      el("td", {}, item.name),
+      el("td", { class: cls(item.opening) }, money(item.opening)),
+      el("td", { class: cls(item.movement) }, money(item.movement)),
+      el("td", { class: cls(item.accrual) }, money(item.accrual)),
+      el("td", { class: cls(item.closing) }, money(item.closing)),
+      el("td", { class: "num muted" }, `${(Number(item.annual_rate) * 100).toFixed(2)}%`)));
+    const eventRows = data.events.map((item) => el("tr", {},
+      el("td", {}, item.when),
+      el("td", {}, item.description),
+      el("td", { class: "muted" }, item.source),
+      el("td", { class: "muted" }, item.status),
+      el("td", { class: cls(item.expected_amount) }, money(item.expected_amount)),
+      el("td", { class: item.actual_amount == null ? "num muted" : cls(item.actual_amount) },
+        item.actual_amount == null ? "—" : money(item.actual_amount)),
+      el("td", { class: item.variance == null ? "num muted" : cls(item.variance) },
+        item.variance == null ? "—" : money(item.variance))));
+    const backdrop = el("div", {
+      class: "detail-backdrop",
+      onclick: (event) => { if (event.target === backdrop) backdrop.remove(); },
+    });
+    const rateCards = [["Income growth", data.assumptions.income_growth],
+      ["Expense inflation", data.assumptions.expense_inflation],
+      ["Investment return", data.assumptions.investment_return],
+      ["Cash interest", data.assumptions.cash_interest],
+      ["Liability interest", data.assumptions.liability_interest]];
+    backdrop.append(el("section", { class: "detail-dialog" },
+      el("div", { class: "detail-heading" },
+        el("div", {}, el("h2", {}, `${data.label} projection explanation`),
+          el("div", { class: "note" },
+            `${scenario.name}; exact events and accruals for this reporting month`)),
+        el("button", { class: "action", type: "button", onclick: () => backdrop.remove() },
+          "Close")),
+      el("div", { class: "cards detail-summary" },
+        [["Opening cash", data.cash.opening], ["Cash flow", data.cash.flow],
+         ["Cash interest", data.cash.interest], ["Closing cash", data.cash.closing],
+         ["Holdings", data.holdings.closing], ["Liabilities", data.liabilities.closing],
+         ["Net worth", data.net_worth]].map(([label, value]) => el("div", { class: "card" },
+          el("div", { class: "label" }, label),
+          el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` }, money(value))))),
+      el("h3", {}, "Active annual assumptions"),
+      el("div", { class: "cards" }, rateCards.map(([label, value]) => el("div", { class: "card" },
+        el("div", { class: "label" }, label),
+        el("div", { class: "value" }, `${(Number(value) * 100).toFixed(2)}%`)))),
+      el("h3", {}, "Exact planned events"),
+      eventRows.length ? table(["Date", "Description", "Source", "Status",
+        {label:"Expected",num:true}, {label:"Actual",num:true}, {label:"Variance",num:true}], eventRows)
+        : el("p", { class: "note" }, "No planned events occur in this month."),
+      el("h3", {}, "Investment accounts"),
+      data.holdings.accounts.length ? table(["Account", {label:"Opening",num:true},
+        {label:"Contributions",num:true}, {label:"Growth",num:true},
+        {label:"Closing",num:true}, {label:"Annual rate",num:true}],
+        accountRows(data.holdings.accounts))
+        : el("p", { class: "note" }, "No projected investment accounts."),
+      el("h3", {}, "Liability accounts"),
+      data.liabilities.accounts.length ? table(["Account", {label:"Opening",num:true},
+        {label:"Principal movement",num:true}, {label:"Interest",num:true},
+        {label:"Closing",num:true}, {label:"Annual rate",num:true}],
+        accountRows(data.liabilities.accounts))
+        : el("p", { class: "note" }, "No projected liabilities.")));
+    document.body.append(backdrop);
+  } catch (error) { say(error.message, "error"); }
 }
 
 async function showEntry() {
