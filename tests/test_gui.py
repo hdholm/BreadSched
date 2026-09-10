@@ -1462,7 +1462,7 @@ class TestDerivedPlanView:
         monthly_actual = monthly.activity.actual_cash_change
 
         view.period.set_selected(1)
-        view.flush_refresh()
+        view.apply_button.emit("clicked")
         quarterly = view._report
         assert quarterly.activity.period.value == "quarter"
         assert quarterly.activity.planned_cash_change == monthly_planned
