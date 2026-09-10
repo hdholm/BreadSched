@@ -207,3 +207,54 @@ class TestActivityAggregation:
         assert period["label"] == "Mar 2026"
         assert period["planned_events"][0]["planned_date"] == date(2026, 3, 8)
         assert period["planned_events"][0]["source"] == "scheduled"
+
+class TestCategoryPlanning:
+    def test_recurring_estimate_builds_category_period_values(self, db, book):
+        groceries = ScheduledTransaction(
+            name="Weekly groceries estimate",
+            recurrence=Recurrence(PeriodType.WEEK, start=date(2026, 1, 2)),
+            splits=[
+                ScheduledSplit(book.groceries, Money("300.00")),
+                ScheduledSplit(book.card, Money("-300.00")),
+            ],
+        )
+        with db.transaction("weekly estimate") as txn:
+            db.add_scheduled(groceries, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31)
+        )
+        row = next(item for item in report.expenses if item.account == book.groceries)
+        assert row.planned == [Money("1500.00")]
+        assert row.actual == [Money(0)]
+
+    def test_asset_transfer_does_not_become_income_or_expense(self, db, book):
+        transfer = ScheduledTransaction(
+            name="Move money to savings",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 2, 5)),
+            splits=[
+                ScheduledSplit(book.savings, Money("500.00")),
+                ScheduledSplit(book.checking, Money("-500.00")),
+            ],
+        )
+        with db.transaction("transfer") as txn:
+            db.add_scheduled(transfer, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 2, 1), date(2026, 2, 28)
+        )
+        assert report.income == ()
+        assert report.expenses == ()
+
+    def test_parent_category_rolls_up_descendant_activity(self, db, book):
+        bill = _monthly_bill(book, start=date(2026, 3, 7), amount="125.00")
+        with db.transaction("utility estimate") as txn:
+            db.add_scheduled(bill, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 3, 1), date(2026, 3, 31)
+        )
+        parent = next(item for item in report.expenses if item.account == book.expenses)
+        utility = next(item for item in report.expenses if item.account == book.utilities)
+        assert parent.planned == [Money("125.00")]
+        assert utility.planned == [Money("125.00")]

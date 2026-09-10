@@ -1447,8 +1447,9 @@ class TestDerivedPlanView:
         window.show_category("plan")
         view = window._views["plan"]
         assert view._report is not None
-        assert view._report.period.value == "month"
-        assert view._report.periods
+        assert view._report.activity.period.value == "month"
+        assert view._report.activity.periods
+        assert view._report.categories
 
     def test_grouping_changes_display_buckets_not_source_data(
         self, app, window, populated_book
@@ -1457,15 +1458,15 @@ class TestDerivedPlanView:
         window.show_category("plan")
         view = window._views["plan"]
         monthly = view._report
-        monthly_planned = monthly.planned_cash_change
-        monthly_actual = monthly.actual_cash_change
+        monthly_planned = monthly.activity.planned_cash_change
+        monthly_actual = monthly.activity.actual_cash_change
 
         view.period.set_selected(1)
         quarterly = view._report
-        assert quarterly.period.value == "quarter"
-        assert quarterly.planned_cash_change == monthly_planned
-        assert quarterly.actual_cash_change == monthly_actual
-        assert len(quarterly.periods) < len(monthly.periods)
+        assert quarterly.activity.period.value == "quarter"
+        assert quarterly.activity.planned_cash_change == monthly_planned
+        assert quarterly.activity.actual_cash_change == monthly_actual
+        assert len(quarterly.activity.periods) < len(monthly.activity.periods)
 
     def test_the_primary_plan_view_is_read_only(self, app, window, populated_book):
         app.open_book(populated_book)

@@ -24,9 +24,12 @@ from .planning import EventStatus, PlannedEvent, PlannedSplit, scheduled_events
 __all__ = [
     "ActualActivity",
     "ActivityReport",
+    "CategoryActivity",
+    "CategoryReport",
     "PeriodActivity",
     "ReportingPeriod",
     "build_activity_report",
+    "build_category_report",
 ]
 
 
@@ -239,6 +242,43 @@ class ActivityReport:
         }
 
 
+
+@dataclass(slots=True)
+class CategoryActivity:
+    """One income/expense account across the selected display periods."""
+
+    account: str
+    name: str
+    full_name: str
+    account_class: AccountClass
+    depth: int
+    planned: list[Money]
+    actual: list[Money]
+
+    @property
+    def variance(self) -> list[Money]:
+        return [actual - planned for planned, actual in zip(self.planned, self.actual)]
+
+
+@dataclass(slots=True)
+class CategoryReport:
+    """Income/expense hierarchy derived from exact-dated events and actuals."""
+
+    activity: ActivityReport
+    categories: list[CategoryActivity]
+
+    @property
+    def income(self) -> tuple[CategoryActivity, ...]:
+        return tuple(
+            row for row in self.categories if row.account_class is AccountClass.INCOME
+        )
+
+    @property
+    def expenses(self) -> tuple[CategoryActivity, ...]:
+        return tuple(
+            row for row in self.categories if row.account_class is AccountClass.EXPENSE
+        )
+
 def _sum_money(values: Iterable[Money]) -> Money:
     total = Money(0)
     for value in values:
@@ -421,3 +461,103 @@ def build_activity_report(
         bucket.actual_expense = bucket.actual_expense + actual.expense
 
     return ActivityReport(start=start, end=end, period=grouping, periods=periods)
+
+
+def build_category_report(
+    db: DbSQLite,
+    start: date,
+    end: date,
+    *,
+    period: ReportingPeriod | str = ReportingPeriod.MONTH,
+) -> CategoryReport:
+    """Derive category-period values from planned occurrences and actual splits.
+
+    Income and expense accounts are the reporting dimension. Asset/liability
+    transfers therefore affect projection state but never become budget expense.
+    Parent category rows are roll-ups of their descendants.
+    """
+    activity = build_activity_report(db, start, end, period=period)
+    accounts = {account.handle: account for account in db.iter_accounts()}
+    periods = activity.periods
+    direct_planned: dict[str, list[Money]] = {}
+    direct_actual: dict[str, list[Money]] = {}
+
+    def amounts(store: dict[str, list[Money]], handle: str) -> list[Money]:
+        return store.setdefault(handle, [Money(0) for _ in periods])
+
+    for period_index, bucket in enumerate(periods):
+        for event in bucket.planned_events:
+            for split in event.expected_splits:
+                account = accounts.get(split.account)
+                if account is None:
+                    continue
+                values = amounts(direct_planned, account.handle)
+                if account.account_class is AccountClass.INCOME:
+                    values[period_index] = values[period_index] - split.amount
+                elif account.account_class is AccountClass.EXPENSE:
+                    values[period_index] = values[period_index] + split.amount
+        for actual in bucket.actual_transactions:
+            transaction = db.get_transaction(actual.transaction)
+            if transaction is None:
+                continue
+            for split in transaction.splits:
+                account = accounts.get(split.account)
+                if account is None:
+                    continue
+                values = amounts(direct_actual, account.handle)
+                if account.account_class is AccountClass.INCOME:
+                    values[period_index] = values[period_index] - split.value
+                elif account.account_class is AccountClass.EXPENSE:
+                    values[period_index] = values[period_index] + split.value
+
+    active = set(direct_planned) | set(direct_actual)
+    for handle in list(active):
+        account = accounts.get(handle)
+        while account is not None and account.parent is not None:
+            parent = accounts.get(account.parent)
+            if parent is None or parent.account_class is not account.account_class:
+                break
+            active.add(parent.handle)
+            account = parent
+
+    children: dict[str, list[str]] = {}
+    for account in accounts.values():
+        if account.parent is not None:
+            children.setdefault(account.parent, []).append(account.handle)
+
+    def rolled(handle: str, store: dict[str, list[Money]]) -> list[Money]:
+        result = list(store.get(handle, [Money(0) for _ in periods]))
+        for child in children.get(handle, []):
+            child_account = accounts.get(child)
+            account = accounts.get(handle)
+            if (
+                child_account is None
+                or account is None
+                or child_account.account_class is not account.account_class
+            ):
+                continue
+            values = rolled(child, store)
+            result = [left + right for left, right in zip(result, values)]
+        return result
+
+    rows: list[CategoryActivity] = []
+    for handle in active:
+        account = accounts[handle]
+        if account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
+            continue
+        full_name = db.full_name(account)
+        # Hide a conventional top-level Income/Expenses root from indentation.
+        depth = max(0, full_name.count(":"))
+        rows.append(
+            CategoryActivity(
+                account=handle,
+                name=account.name,
+                full_name=full_name,
+                account_class=account.account_class,
+                depth=depth,
+                planned=rolled(handle, direct_planned),
+                actual=rolled(handle, direct_actual),
+            )
+        )
+    rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
+    return CategoryReport(activity=activity, categories=rows)

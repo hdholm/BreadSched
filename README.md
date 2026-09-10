@@ -267,11 +267,14 @@ therefore cannot retroactively change historical variance.
 
 **Budget-versus-actual is derived from events.** The activity report groups the same
 exact-dated occurrences and ledger transactions by calendar month, quarter or year.
-Changing the display period cannot change totals. Expectations stay in the period
-containing their planned date while actuals stay in the period containing their
-posting date, so a January 31 bill that clears February 1 exposes the cash-timing
-variance instead of being silently moved. Unresolved expectations and actual
-transactions with no planned occurrence remain visible for drill-down.
+Changing the display period cannot change totals. A category report independently
+aggregates the income and expense splits of those same events into the chart-of-
+accounts hierarchy, so recurring estimates such as weekly groceries remain visible
+as familiar budget categories without storing monthly budget cells. Asset transfers
+change projected balances but are not misreported as income or expense. Expectations
+stay in the period containing their planned date while actuals stay in the period
+containing their posting date, so a January 31 bill that clears February 1 exposes
+the cash-timing variance instead of being silently moved.
 
 **Formulas are parsed, not `eval`'d.** Scheduled-transaction formulas go through
 an `ast` walk with a node whitelist. This application's whole job is reading other
@@ -450,9 +453,11 @@ The Gramps-style sidebar switches among the principal book and planning views:
   actually does removes the commonest source of entry errors.
 - **Scheduled** — the standing arrangements, each expanding to its splits, with a
   Commitment/Estimate column. **Upcoming** is the diary of what is due.
-- **Plan** — a read-only event-driven plan-versus-actual view. Month, quarter,
-  and year are display buckets derived from exact-dated scheduled occurrences and
-  actual transactions; planning edits are made in Scheduled and Review.
+- **Plan** — the category-oriented budget view, derived rather than entered. Income
+  and expense account rows are rolled up from exact-dated scheduled/estimated and
+  actual transaction splits, with Month/Quarter/Year and Plan/Actual/Variance views.
+  Planning edits are made in Scheduled and Review; asset transfers remain balance-
+  sheet activity rather than being counted as expenses.
 - **Projection** — assumption sliders beside a Cairo line chart that recomputes as
   you drag. The zero line is drawn heavier than the other gridlines and the region
   below it tinted, so a forecast that dips negative reads as a problem rather than
