@@ -656,3 +656,45 @@ class TestMonthlyStateLedger:
         assert isinstance(ledger, dict)
         assert ledger["opening_cash"] == data["cash_open"]
         assert ledger["closing_cash"] == data["cash_close"]
+
+class TestEventProjectionScaling:
+    def test_assumption_resolution_is_cached_across_many_events(
+        self, db, book, monkeypatch
+    ):
+        with db.transaction("Add daily income") as txn:
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Daily income",
+                    recurrence=Recurrence(
+                        PeriodType.DAY, start=date(2026, 1, 1)
+                    ),
+                    splits=[
+                        ScheduledSplit(book.checking, Money("10.00")),
+                        ScheduledSplit(book.salary, Money("-10.00")),
+                    ],
+                ),
+                txn,
+            )
+
+        scenario = Scenario(
+            name="Long event stream",
+            start=date(2026, 1, 1),
+            years=10,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(income_growth="0.03"),
+        )
+        calls = 0
+        original = Scenario.assumptions_for
+
+        def counted(self, when):
+            nonlocal calls
+            calls += 1
+            return original(self, when)
+
+        monkeypatch.setattr(Scenario, "assumptions_for", counted)
+        result = projection.project(db, scenario)
+
+        assert len(result.rows) == 120
+        # Thousands of events share one precomputed timeline; resolving assumptions
+        # must depend on change points, not on event count or distance into the plan.
+        assert calls <= 2

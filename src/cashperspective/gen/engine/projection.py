@@ -11,6 +11,7 @@ books remain readable while the planning UI migrates to scheduled-event budgetin
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -48,6 +49,72 @@ class ProjectionProgress:
 
 
 ProgressCallback = Callable[[ProjectionProgress], None]
+
+
+@dataclass(slots=True)
+class _AssumptionTimeline:
+    """Projection-local cache for dated assumptions and annual escalation.
+
+    Scenario.assumptions_for() intentionally favors a simple domain API, but a
+    projection can ask for assumptions thousands of times.  Build the change
+    points once, then use binary search for O(log changes) lookups and O(1) annual
+    escalation factors.
+    """
+
+    scenario: Scenario
+    start: date
+    end: date
+    _points: list[date] = field(init=False, default_factory=list)
+    _values: list[Assumptions] = field(init=False, default_factory=list)
+    _income_factors: list[Decimal] = field(init=False, default_factory=list)
+    _expense_factors: list[Decimal] = field(init=False, default_factory=list)
+
+    def __post_init__(self) -> None:
+        points = {self.start}
+        for period in self.scenario.assumption_periods:
+            if self.start < period.start <= self.end:
+                points.add(period.start)
+            if period.end is not None:
+                after = period.end + timedelta(days=1)
+                if self.start < after <= self.end:
+                    points.add(after)
+        self._points = sorted(points)
+        # The expensive overlay/sort happens once per actual change point, not once
+        # per event or balance-accrual interval.
+        self._values = [self.scenario.assumptions_for(point) for point in self._points]
+
+        months = (self.end.year - self.start.year) * 12 + self.end.month - self.start.month
+        max_years = max(0, months // 12)
+        self._income_factors = [_ONE]
+        self._expense_factors = [_ONE]
+        for year in range(1, max_years + 1):
+            anniversary = add_months(self.start.replace(day=1), year * 12, day=1)
+            assumptions = self.at(anniversary)
+            self._income_factors.append(
+                self._income_factors[-1] * (_ONE + assumptions.income_growth)
+            )
+            self._expense_factors.append(
+                self._expense_factors[-1] * (_ONE + assumptions.expense_inflation)
+            )
+
+    def at(self, when: date) -> Assumptions:
+        index = bisect_right(self._points, when) - 1
+        return self._values[max(0, index)]
+
+    def boundaries_between(self, start: date, end: date) -> list[date]:
+        left = bisect_right(self._points, start)
+        right = bisect_right(self._points, end - timedelta(days=1))
+        return self._points[left:right]
+
+    def escalation(
+        self, field_name: Literal["income_growth", "expense_inflation"], completed_years: int
+    ) -> Decimal:
+        factors = (
+            self._income_factors
+            if field_name == "income_growth"
+            else self._expense_factors
+        )
+        return factors[min(max(0, completed_years), len(factors) - 1)]
 
 
 def _report_progress(
@@ -419,21 +486,8 @@ def _period_growth_rate(annual: Decimal, days: int) -> Decimal:
     return (_ONE + annual) ** (Decimal(days) / Decimal(365)) - _ONE
 
 
-def _assumption_boundaries(scenario: Scenario, start: date, end: date) -> list[date]:
-    """Dates inside ``(start, end)`` where interest/return assumptions can change."""
-    boundaries: set[date] = set()
-    for period in scenario.assumption_periods:
-        if start < period.start < end:
-            boundaries.add(period.start)
-        if period.end is not None:
-            after = period.end + timedelta(days=1)
-            if start < after < end:
-                boundaries.add(after)
-    return sorted(boundaries)
-
-
 def _advance_event_state(
-    scenario: Scenario,
+    timeline: _AssumptionTimeline,
     accounts: dict[str, Account],
     start: date,
     end: date,
@@ -443,12 +497,12 @@ def _advance_event_state(
     flows: _EventMonthFlows,
 ) -> Money:
     """Accrue state from one event date to the next without inventing cash events."""
-    points = [start, *_assumption_boundaries(scenario, start, end), end]
+    points = [start, *timeline.boundaries_between(start, end), end]
     for left, right in zip(points, points[1:], strict=False):
         days = (right - left).days
         if days <= 0:
             continue
-        assumptions = scenario.assumptions_for(left)
+        assumptions = timeline.at(left)
 
         cash_rate = _period_growth_rate(assumptions.cash_interest, days)
         cash_growth = cash * Money(cash_rate) if cash_rate else Money(0)
@@ -477,6 +531,7 @@ def _advance_event_state(
 
 def _event_escalation_factor(
     scenario: Scenario,
+    timeline: _AssumptionTimeline,
     event: planning.PlannedEvent,
     accounts: dict[str, Account],
 ) -> Decimal:
@@ -508,11 +563,12 @@ def _event_escalation_factor(
     start = scenario.start.replace(day=1)
     months = (event.when.year - start.year) * 12 + (event.when.month - start.month)
     completed_years = max(0, months // 12)
-    return _dated_growth_factor(scenario, field, event.when, completed_years)
+    return timeline.escalation(field, completed_years)
 
 
 def _apply_event(
     scenario: Scenario,
+    timeline: _AssumptionTimeline,
     event: planning.PlannedEvent,
     accounts: dict[str, Account],
     cash: Money,
@@ -522,7 +578,7 @@ def _apply_event(
 ) -> Money:
     """Apply one event's effective splits to financial state on its exact date."""
     flows.events.append(event)
-    factor = _event_escalation_factor(scenario, event, accounts)
+    factor = _event_escalation_factor(scenario, timeline, event, accounts)
     for planned_split in event.splits:
         account = accounts.get(planned_split.account)
         if account is None or account.exclude_from_projection:
@@ -578,6 +634,7 @@ def _project_events(
     end_exclusive = add_months(start, scenario.months, day=1)
     end = end_exclusive - timedelta(days=1)
     day_before = start - timedelta(days=1)
+    timeline = _AssumptionTimeline(scenario, start, end)
 
     cash = Money(0)
     holdings: dict[str, Money] = {}
@@ -628,13 +685,15 @@ def _project_events(
         for event in events_by_month.get((month.year, month.month), []):
             _report_progress(progress, event.when, start, end, "Applying scheduled events")
             cash = _advance_event_state(
-                scenario, accounts, cursor, event.when, cash, holdings, debts, flows
+                timeline, accounts, cursor, event.when, cash, holdings, debts, flows
             )
-            cash = _apply_event(scenario, event, accounts, cash, holdings, debts, flows)
+            cash = _apply_event(
+                scenario, timeline, event, accounts, cash, holdings, debts, flows
+            )
             cursor = event.when
 
         cash = _advance_event_state(
-            scenario, accounts, cursor, next_month, cash, holdings, debts, flows
+            timeline, accounts, cursor, next_month, cash, holdings, debts, flows
         )
 
         month_ledger = MonthLedger(

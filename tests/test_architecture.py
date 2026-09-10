@@ -73,7 +73,7 @@ class TestLayering:
     def test_the_core_has_no_third_party_dependencies(self):
         """Everything below the GUI runs on the standard library alone."""
         allowed = {
-            "__future__", "abc", "argparse", "ast", "calendar", "configparser", "csv",
+            "__future__", "abc", "argparse", "ast", "bisect", "calendar", "configparser", "csv",
             "dataclasses",
             "datetime", "decimal", "enum", "gzip", "json", "logging", "math",
             "numbers", "operator", "pathlib", "sqlite3", "sys", "time", "typing",

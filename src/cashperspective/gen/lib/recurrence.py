@@ -95,13 +95,23 @@ class Recurrence:
             return when - timedelta(days=when.weekday() - 4)
         return when + timedelta(days=7 - when.weekday())
 
-    def _raw_occurrences(self) -> Iterator[date]:
-        """Unadjusted firing dates, ascending and unbounded (caller must stop)."""
+    def _raw_occurrences(self, start_index: int = 0) -> Iterator[date]:
+        """Unadjusted firing dates, ascending and unbounded (caller must stop).
+
+        ``start_index`` is an occurrence ordinal for the simple recurrence types.
+        It lets long-range forecasts jump over historical occurrences instead of
+        replaying them from the schedule origin.  Semi-monthly rules retain their
+        small month-step generator because their first month can contain only one
+        valid firing, making the raw ordinal less direct.
+        """
         if self.period is PeriodType.ONCE:
-            yield self.start
+            if start_index == 0:
+                yield self.start
             return
 
         if self.period is PeriodType.SEMI_MONTH:
+            # The first month may omit one firing before self.start, so an
+            # arithmetic raw-occurrence index is deliberately not used here.
             first = self.day_of_month or self.start.day
             second = self.second_day_of_month or 15
             step = 0
@@ -114,7 +124,7 @@ class Recurrence:
                 step += 1
             # unreachable
 
-        index = 0
+        index = max(0, start_index)
         while True:
             if self.period is PeriodType.DAY:
                 yield self.start + timedelta(days=index * self.interval)
@@ -129,11 +139,38 @@ class Recurrence:
                 raise ValueError(f"unhandled period {self.period}")
             index += 1
 
+    def _start_index_near(self, since: date | None) -> int:
+        """Return a conservative raw index near ``since`` for simple rules."""
+        if since is None or since <= self.start:
+            return 0
+        # Weekend adjustment moves a firing by at most two days.  Seven days is a
+        # deliberately conservative cushion that keeps this arithmetic simple.
+        target = since - timedelta(days=7)
+        if target <= self.start:
+            return 0
+        if self.period is PeriodType.DAY:
+            return max(0, (target - self.start).days // self.interval)
+        if self.period is PeriodType.WEEK:
+            return max(0, (target - self.start).days // (7 * self.interval))
+        if self.period is PeriodType.MONTH:
+            months = (target.year - self.start.year) * 12 + target.month - self.start.month
+            return max(0, months // self.interval - 1)
+        if self.period is PeriodType.YEAR:
+            years = target.year - self.start.year
+            return max(0, years // self.interval - 1)
+        return 0
+
     def occurrences(self, until: date, since: date | None = None) -> list[date]:
-        """Every firing date in ``[since, until]``, honouring end date and count."""
+        """Every firing date in ``[since, until]``, honouring end date and count.
+
+        Daily, weekly, monthly and yearly rules jump close to ``since`` before
+        iterating.  This makes projecting an old schedule into a distant horizon
+        proportional to occurrences *inside* the horizon, not the age of the rule.
+        """
         results: list[date] = []
-        fired = 0
-        for raw in self._raw_occurrences():
+        start_index = self._start_index_near(since)
+        fired = start_index
+        for raw in self._raw_occurrences(start_index):
             if self.count is not None and fired >= self.count:
                 break
             if self.end and raw > self.end:

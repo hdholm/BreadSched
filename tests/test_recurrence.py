@@ -163,3 +163,23 @@ class TestFormula:
 
     def test_empty_expression_is_zero(self):
         assert evaluate("", {}) == 0
+
+
+def test_occurrences_jump_over_old_daily_history(monkeypatch):
+    rule = Recurrence(PeriodType.DAY, start=date(2000, 1, 1))
+    adjustments = 0
+    original = rule._adjust
+
+    def counted(when):
+        nonlocal adjustments
+        adjustments += 1
+        return original(when)
+
+    monkeypatch.setattr(rule, "_adjust", counted)
+    dates = rule.occurrences(date(2026, 1, 31), since=date(2026, 1, 1))
+
+    assert dates[0] == date(2026, 1, 1)
+    assert dates[-1] == date(2026, 1, 31)
+    assert len(dates) == 31
+    # A historical replay would perform roughly 9,500 adjustments here.
+    assert adjustments < 50
