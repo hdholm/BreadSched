@@ -10,7 +10,11 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date
 
-from ...gen.engine.activity import ReportingPeriod, build_category_report
+from ...gen.engine.activity import (
+    ReportingPeriod,
+    build_category_report,
+    explain_category_period,
+)
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -555,6 +559,34 @@ class PlanView(BaseView):
                     self._measure_index
                 ]
                 for col, value in enumerate(values, 1):
+                    period = periods[col - 1]
                     label = Gtk.Label(label=value.format(parens_negative=True), xalign=1)
-                    self.grid.attach(label, col, row_index, 1, 1)
+                    button = Gtk.Button()
+                    button.set_child(label)
+                    button.set_tooltip_text(
+                        f"Explain {category.full_name} — {period.label}"
+                    )
+                    button.connect(
+                        "clicked", self._on_plan_cell_clicked, category, period
+                    )
+                    self.grid.attach(button, col, row_index, 1, 1)
                 row_index += 1
+
+    def _on_plan_cell_clicked(self, _button, category, period) -> None:
+        if self.db is None:
+            return
+        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
+        detail = explain_category_period(
+            self.db, category.account, period.start, period.end, scenario=scenario
+        )
+        from ..dialogs.plan_detail_dialog import PlanDetailDialog
+
+        PlanDetailDialog(
+            self.get_root(),
+            self.db,
+            detail,
+            period_label=period.label,
+            scenario_name=(
+                "Base scenario" if self._scenario_handle is None else scenario.name
+            ),
+        ).present()

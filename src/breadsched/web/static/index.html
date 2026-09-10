@@ -121,8 +121,14 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .balance-group dt { color:var(--dim); }
 .balance-group dd { margin:0; font-variant-numeric:tabular-nums; text-align:right; }
 .scenario-events { padding:14px 16px; }
-.plan-cell { cursor:pointer; }
-.plan-cell:hover { outline:1px solid var(--accent); outline-offset:-1px; }
+.plan-cell { padding:0; }
+.plan-cell-button {
+  width:100%; min-width:max-content; border:1px solid var(--line); border-radius:4px; background:var(--panel);
+  color:inherit; cursor:pointer; font:inherit; font-variant-numeric:tabular-nums; text-align:right;
+  padding:7px 9px;
+}
+.plan-cell-button:hover { background:#eef4fc; }
+.plan-cell-button:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
 .detail-backdrop {
   position:fixed; inset:0; z-index:20; background:rgba(28,31,36,.35);
   display:flex; align-items:center; justify-content:center; padding:24px;
@@ -416,16 +422,19 @@ async function showPlan() {
           title: category.full_name,
         }, category.name),
         category[currentPlan.measure].map((value, index) =>
-          el("td", {
-            class: `${cls(value)} plan-cell`,
-            title: `Explain ${category.full_name} — ${data.periods[index].label}`,
-            onclick: () => openPlanDetail(
-              category, data.periods[index], currentPlan.scenario, data.periods[index].label),
-          }, money(value),
-            deltas ? el("span", {
-              class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
-              title: `Active scenario minus ${comparison.name}`,
-            }, `Δ ${money(deltas[index])}`) : null))));
+          el("td", { class: `${cls(value)} plan-cell` },
+            el("button", {
+              class: "plan-cell-button",
+              type: "button",
+              title: `Explain ${category.full_name} — ${data.periods[index].label}`,
+              "aria-label": `Explain ${category.full_name} — ${data.periods[index].label}: ${money(value)}`,
+              onclick: () => openPlanDetail(
+                category, data.periods[index], currentPlan.scenario, data.periods[index].label),
+            }, money(value),
+              deltas ? el("span", {
+                class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
+                title: `Active scenario minus ${comparison.name}`,
+              }, `Δ ${money(deltas[index])}`) : null)))));
     }
   }
 

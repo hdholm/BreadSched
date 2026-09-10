@@ -24,6 +24,7 @@ from .planning import (
     EventStatus,
     PlannedEvent,
     PlannedSplit,
+    event_by_key,
     scenario_events,
     scheduled_events,
 )
@@ -32,11 +33,15 @@ __all__ = [
     "ActualActivity",
     "ActivityReport",
     "CategoryActivity",
+    "CategoryActualDetail",
+    "CategoryPeriodDetail",
+    "CategoryPlannedDetail",
     "CategoryReport",
     "PeriodActivity",
     "ReportingPeriod",
     "build_activity_report",
     "build_category_report",
+    "explain_category_period",
 ]
 
 
@@ -267,6 +272,60 @@ class CategoryActivity:
         return [actual - planned for planned, actual in zip(self.planned, self.actual, strict=True)]
 
 
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryPlannedDetail:
+    """One planned occurrence contributing to a category/period cell."""
+
+    occurrence: str
+    planned_date: date
+    description: str
+    source: str
+    status: str
+    expected: Money
+    actual: Money | None
+    variance: Money | None
+    actual_transaction: str | None
+    actual_date: date | None
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryActualDetail:
+    """One actual transaction contributing to a category/period cell."""
+
+    transaction: str
+    post_date: date
+    description: str
+    amount: Money
+    resolution: PlanningResolution
+    planned_occurrence: str | None
+    planned_for: date | None
+    expected: Money | None
+    variance: Money | None
+    date_variance_days: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class CategoryPeriodDetail:
+    """Explanation of one derived Plan category/period value."""
+
+    account: str
+    name: str
+    full_name: str
+    account_class: AccountClass
+    start: date
+    end: date
+    planned: Money
+    actual: Money
+    planned_events: tuple[CategoryPlannedDetail, ...]
+    actual_transactions: tuple[CategoryActualDetail, ...]
+
+    @property
+    def variance(self) -> Money:
+        return self.actual - self.planned
+
+
 @dataclass(slots=True)
 class CategoryReport:
     """Income/expense hierarchy derived from exact-dated events and actuals."""
@@ -285,6 +344,109 @@ class CategoryReport:
         return tuple(
             row for row in self.categories if row.account_class is AccountClass.EXPENSE
         )
+
+
+def explain_category_period(
+    db: DbSQLite,
+    account_handle: str,
+    start: date,
+    end: date,
+    *,
+    scenario: Scenario | None = None,
+) -> CategoryPeriodDetail:
+    """Explain one category-period value from the same exact-dated activity stream."""
+    if end < start:
+        raise ValueError("Plan detail end date precedes its start date.")
+    account = db.get_account(account_handle)
+    if account is None:
+        raise KeyError(account_handle)
+    if account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
+        raise ValueError("Plan detail requires an income or expense account.")
+
+    accounts = {item.handle: item for item in db.iter_accounts()}
+    children: dict[str, list[str]] = {}
+    for item in accounts.values():
+        if item.parent is not None:
+            children.setdefault(item.parent, []).append(item.handle)
+    included: set[str] = set()
+
+    def include(handle: str) -> None:
+        item = accounts.get(handle)
+        if item is None or item.account_class is not account.account_class:
+            return
+        included.add(handle)
+        for child in children.get(handle, []):
+            include(child)
+
+    include(account.handle)
+
+    def category_amount(splits: Iterable[PlannedSplit]) -> Money:
+        total = Money(0)
+        for split in splits:
+            if split.account not in included:
+                continue
+            if account.account_class is AccountClass.INCOME:
+                total = total - split.amount
+            else:
+                total = total + split.amount
+        return total
+
+    report = build_activity_report(db, start, end, period=ReportingPeriod.MONTH, scenario=scenario)
+    planned_rows: list[CategoryPlannedDetail] = []
+    actual_rows: list[CategoryActualDetail] = []
+    planned_total = Money(0)
+    actual_total = Money(0)
+
+    for bucket in report.periods:
+        for event in bucket.planned_events:
+            expected = category_amount(event.expected_splits)
+            if expected == Money(0):
+                continue
+            actual_value = (
+                category_amount(event.actual_splits)
+                if event.actual_transaction is not None
+                else None
+            )
+            planned_total = planned_total + expected
+            planned_rows.append(CategoryPlannedDetail(
+                occurrence=event.key, planned_date=event.planned_date,
+                description=event.description, source=event.source.value,
+                status=event.status.value, expected=expected, actual=actual_value,
+                variance=actual_value - expected if actual_value is not None else None,
+                actual_transaction=event.actual_transaction, actual_date=event.actual_date,
+            ))
+
+        for actual in bucket.actual_transactions:
+            transaction = db.get_transaction(actual.transaction)
+            if transaction is None:
+                continue
+            value = category_amount(
+                PlannedSplit(split.account, split.value) for split in transaction.splits
+            )
+            if value == Money(0):
+                continue
+            actual_total = actual_total + value
+            expected = None
+            if actual.planned_occurrence:
+                event = event_by_key(db, actual.planned_occurrence)
+                if event is not None:
+                    expected = category_amount(event.expected_splits)
+            actual_rows.append(CategoryActualDetail(
+                transaction=actual.transaction, post_date=actual.post_date,
+                description=actual.description, amount=value,
+                resolution=actual.planning_resolution,
+                planned_occurrence=actual.planned_occurrence, planned_for=actual.planned_for,
+                expected=expected, variance=value - expected if expected is not None else None,
+                date_variance_days=actual.date_variance_days,
+            ))
+
+    return CategoryPeriodDetail(
+        account=account.handle, name=account.name, full_name=db.full_name(account),
+        account_class=account.account_class, start=start, end=end,
+        planned=planned_total, actual=actual_total, planned_events=tuple(planned_rows),
+        actual_transactions=tuple(actual_rows),
+    )
+
 
 def _sum_money(values: Iterable[Money]) -> Money:
     total = Money(0)

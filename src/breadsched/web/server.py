@@ -839,15 +839,6 @@ class Api:
         """Explain one Plan category/period cell from its exact-dated activity."""
         start = date.fromisoformat(start_value)
         end = date.fromisoformat(end_value)
-        if end < start:
-            raise ValueError("Plan detail end date precedes its start date.")
-
-        account = self.db.get_account(account_handle)
-        if account is None:
-            raise KeyError(account_handle)
-        if account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
-            raise ValueError("Plan detail requires an income or expense account.")
-
         scenarios = list(self.db.iter_scenarios())
         if scenario_handle:
             scenario = next(
@@ -860,126 +851,53 @@ class Api:
             scenario = self._base_scenario(start, end)
             scenario_name = "Base scenario"
 
-        accounts = {item.handle: item for item in self.db.iter_accounts()}
-        children: dict[str, list[str]] = {}
-        for item in accounts.values():
-            if item.parent is not None:
-                children.setdefault(item.parent, []).append(item.handle)
-
-        included: set[str] = set()
-
-        def include(handle: str) -> None:
-            item = accounts.get(handle)
-            if item is None or item.account_class is not account.account_class:
-                return
-            included.add(handle)
-            for child in children.get(handle, []):
-                include(child)
-
-        include(account.handle)
-
-        def category_amount(splits) -> Money:
-            total = Money(0)
-            for split in splits:
-                if split.account not in included:
-                    continue
-                if account.account_class is AccountClass.INCOME:
-                    total = total - split.amount
-                else:
-                    total = total + split.amount
-            return total
-
-        report = activity.build_activity_report(
-            self.db,
-            start,
-            end,
-            period=activity.ReportingPeriod.MONTH,
-            scenario=scenario,
+        detail = activity.explain_category_period(
+            self.db, account_handle, start, end, scenario=scenario
         )
-        planned_rows: list[dict] = []
-        actual_rows: list[dict] = []
-        planned_total = Money(0)
-        actual_total = Money(0)
-
-        for bucket in report.periods:
-            for event in bucket.planned_events:
-                expected = category_amount(event.expected_splits)
-                if expected == Money(0):
-                    continue
-                actual_value = (
-                    category_amount(event.actual_splits)
-                    if event.actual_transaction is not None
-                    else None
-                )
-                planned_total = planned_total + expected
-                planned_rows.append(
-                    {
-                        "occurrence": event.key,
-                        "date": event.planned_date,
-                        "description": event.description,
-                        "source": event.source.value,
-                        "status": event.status.value,
-                        "expected": expected,
-                        "actual": actual_value,
-                        "variance": (
-                            actual_value - expected
-                            if actual_value is not None
-                            else None
-                        ),
-                        "actual_transaction": event.actual_transaction,
-                        "actual_date": event.actual_date,
-                    }
-                )
-
-            for actual in bucket.actual_transactions:
-                transaction = self.db.get_transaction(actual.transaction)
-                if transaction is None:
-                    continue
-                value = category_amount(
-                    tuple(
-                        planning.PlannedSplit(split.account, split.value)
-                        for split in transaction.splits
-                    )
-                )
-                if value == Money(0):
-                    continue
-                actual_total = actual_total + value
-                expected = None
-                if actual.planned_occurrence:
-                    event = planning.event_by_key(self.db, actual.planned_occurrence)
-                    if event is not None:
-                        expected = category_amount(event.expected_splits)
-                actual_rows.append(
-                    {
-                        "transaction": actual.transaction,
-                        "date": actual.post_date,
-                        "description": actual.description,
-                        "amount": value,
-                        "resolution": actual.planning_resolution.value,
-                        "planned_occurrence": actual.planned_occurrence,
-                        "planned_for": actual.planned_for,
-                        "expected": expected,
-                        "variance": value - expected if expected is not None else None,
-                        "date_variance_days": actual.date_variance_days,
-                    }
-                )
-
         return {
             "category": {
-                "account": account.handle,
-                "name": account.name,
-                "full_name": self.db.full_name(account),
-                "class": account.account_class.value,
+                "account": detail.account,
+                "name": detail.name,
+                "full_name": detail.full_name,
+                "class": detail.account_class.value,
             },
-            "period": {"start": start, "end": end},
+            "period": {"start": detail.start, "end": detail.end},
             "scenario": {"handle": scenario_handle, "name": scenario_name},
             "summary": {
-                "planned": planned_total,
-                "actual": actual_total,
-                "variance": actual_total - planned_total,
+                "planned": detail.planned,
+                "actual": detail.actual,
+                "variance": detail.variance,
             },
-            "planned": planned_rows,
-            "actuals": actual_rows,
+            "planned": [
+                {
+                    "occurrence": item.occurrence,
+                    "date": item.planned_date,
+                    "description": item.description,
+                    "source": item.source,
+                    "status": item.status,
+                    "expected": item.expected,
+                    "actual": item.actual,
+                    "variance": item.variance,
+                    "actual_transaction": item.actual_transaction,
+                    "actual_date": item.actual_date,
+                }
+                for item in detail.planned_events
+            ],
+            "actuals": [
+                {
+                    "transaction": item.transaction,
+                    "date": item.post_date,
+                    "description": item.description,
+                    "amount": item.amount,
+                    "resolution": item.resolution.value,
+                    "planned_occurrence": item.planned_occurrence,
+                    "planned_for": item.planned_for,
+                    "expected": item.expected,
+                    "variance": item.variance,
+                    "date_variance_days": item.date_variance_days,
+                }
+                for item in detail.actual_transactions
+            ],
         }
 
     @staticmethod

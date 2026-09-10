@@ -508,6 +508,14 @@ class TestPlanApi:
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
+    def test_plan_values_are_keyboard_accessible_buttons(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode()
+        assert 'class: "plan-cell-button"' in page
+        assert 'type: "button"' in page
+        assert '"aria-label": `Explain ${category.full_name}' in page
+        assert '.plan-cell-button:focus-visible' in page
+
 
 class TestThreadSafety:
     """The database is opened on one thread and used from the request threads."""

@@ -1476,6 +1476,25 @@ class TestDerivedPlanView:
         assert not hasattr(view, "_commit")
         assert not hasattr(view, "budget_picker")
 
+    def test_plan_values_are_actionable_buttons(self, app, window, populated_book):
+        from breadsched.gui.gi_setup import Gtk
+
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        buttons = []
+        child = view.grid.get_first_child()
+        while child is not None:
+            if isinstance(child, Gtk.Button):
+                buttons.append(child)
+            child = child.get_next_sibling()
+
+        assert buttons
+        assert all(
+            (button.get_tooltip_text() or "").startswith("Explain ")
+            for button in buttons
+        )
+
     def test_scenario_event_actions_require_a_saved_scenario(
         self, app, window, populated_book
     ):
