@@ -1514,7 +1514,7 @@ class TestDerivedPlanView:
     def test_scenario_estimate_dialog_saves_a_recurring_estimate(
         self, app, window, populated_book
     ):
-        from breadsched.gen.lib import Scenario
+        from breadsched.gen.lib import PeriodType, Scenario
         from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
 
         app.open_book(populated_book)
@@ -1540,7 +1540,8 @@ class TestDerivedPlanView:
         estimate = saved.schedule_overrides[0]
         assert estimate.source_schedule is None
         assert estimate.placeholder is True
-        assert estimate.recurrence.describe().lower().startswith("weekly")
+        assert estimate.recurrence.period is PeriodType.WEEK
+        assert estimate.recurrence.interval == 1
 
     def test_alternate_schedule_changes_only_the_saved_scenario(
         self, app, window, populated_book

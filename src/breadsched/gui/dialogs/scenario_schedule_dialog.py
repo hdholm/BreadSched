@@ -249,7 +249,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         amount = flow_split.resolve(source.variables)
         if category is not None:
             amount = amount * category.sign()
-        self.amount_entry.set_text(abs(amount).format(grouping=False))
+        self.amount_entry.set_text(abs(amount).format())
 
     def _recurrence(self) -> Recurrence | None:
         try:
