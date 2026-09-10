@@ -86,6 +86,8 @@ class PlanView(BaseView):
         self.append(bar)
 
         scenario_bar = Gtk.Box(spacing=8)
+        self.scenario_events_box = scenario_bar
+        self.scenario_events_box.set_sensitive(False)
         for side in ("bottom", "start", "end"):
             getattr(scenario_bar, f"set_margin_{side}")(8)
         scenario_bar.append(Gtk.Label(label="Scenario events", xalign=0))
@@ -180,6 +182,7 @@ class PlanView(BaseView):
     def _update_scenario_actions(self) -> None:
         selected = self._selected_scenario()
         enabled = self.db is not None and selected is not None
+        self.scenario_events_box.set_sensitive(enabled)
         self.add_estimate_button.set_sensitive(enabled)
         self.alter_schedule_button.set_sensitive(enabled)
         self.suppress_schedule_button.set_sensitive(enabled)

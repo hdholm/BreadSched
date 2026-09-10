@@ -1482,6 +1482,7 @@ class TestDerivedPlanView:
         app.open_book(populated_book)
         window.show_category("plan")
         view = window._views["plan"]
+        assert view.scenario_events_box.get_sensitive() is False
         assert view.add_estimate_button.get_sensitive() is False
         assert view.alter_schedule_button.get_sensitive() is False
         assert view.suppress_schedule_button.get_sensitive() is False
@@ -1536,6 +1537,7 @@ class TestDerivedPlanView:
             if scenario.name == "No recurring payment"
         )
         view.scenario.set_selected(selected)
+        assert view.scenario_events_box.get_sensitive() is True
         assert view.add_estimate_button.get_sensitive() is True
         assert view.alter_schedule_button.get_sensitive() is True
         assert view.suppress_schedule_button.get_sensitive() is True
