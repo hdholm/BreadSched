@@ -224,6 +224,88 @@ class TestItServes:
         assert persisted["scenario"]["years"] == 10
         assert persisted["scenario"]["assumptions"]["investment_return"] == "0.06"
 
+    def test_projection_compares_a_draft_with_another_scenario(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        handle = scenario["handle"]
+        client.post(
+            "/api/projection/save",
+            {
+                "handle": handle,
+                "years": 10,
+                "basis": "scheduled",
+                "budget": None,
+                "assumptions": {
+                    "income_growth": "0.0",
+                    "expense_inflation": "0.0",
+                    "investment_return": "0.0",
+                    "cash_interest": "0.0",
+                    "liability_interest": "0.0",
+                },
+            },
+        )
+        status, payload = client.post(
+            "/api/projection/compare",
+            {
+                "handle": None,
+                "compare_handle": handle,
+                "years": 3,
+                "basis": "scheduled",
+                "budget": None,
+                "assumptions": {
+                    "income_growth": "0.02",
+                    "expense_inflation": "0.03",
+                    "investment_return": "0.07",
+                    "cash_interest": "0.01",
+                    "liability_interest": "0.0",
+                },
+            },
+        )
+        assert status == 200
+        assert payload["primary"]["scenario"]["name"] == "Base scenario"
+        assert payload["comparison"]["scenario"]["handle"] == handle
+        assert len(payload["comparison"]["rows"]) == 36
+        assert "ending_net_worth" in payload["comparison"]["summary_delta"]
+        assert "net_worth_delta" in payload["comparison"]["rows"][-1]
+
+    def test_projection_can_compare_a_saved_scenario_with_base(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        handle = scenario["handle"]
+        status, payload = client.post(
+            "/api/projection/compare",
+            {
+                "handle": handle,
+                "compare_handle": None,
+                "years": 2,
+                "basis": "scheduled",
+                "budget": None,
+                "assumptions": scenario["assumptions"],
+            },
+        )
+        assert status == 200
+        assert payload["primary"]["scenario"]["handle"] == handle
+        assert payload["comparison"]["scenario"] == {
+            "handle": None,
+            "name": "Base scenario",
+        }
+        assert len(payload["comparison"]["rows"]) == 24
+
+    def test_projection_compare_rejects_the_same_scenario(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        handle = scenario["handle"]
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/projection/compare",
+                {
+                    "handle": handle,
+                    "compare_handle": handle,
+                    "years": 3,
+                    "basis": "scheduled",
+                    "budget": None,
+                    "assumptions": scenario["assumptions"],
+                },
+            )
+        assert caught.value.code == 400
+
     def test_projection_save_persists_saved_scenario_controls(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
         handle = scenario["handle"]

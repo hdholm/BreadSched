@@ -904,8 +904,11 @@ class Api:
         )
         return scenario
 
-    def _projection_payload(self, scenario: Scenario, *, base: bool = False) -> dict:
-        result = projection.project(self.db, scenario)
+    def _projection_payload(
+        self, scenario: Scenario, *, base: bool = False, result=None
+    ) -> dict:
+        if result is None:
+            result = projection.project(self.db, scenario)
         return {
             "scenario": {
                 "handle": None if base else scenario.handle,
@@ -958,6 +961,67 @@ class Api:
         scenario = self._projection_draft(handle)
         self._apply_projection_payload(scenario, payload)
         return self._projection_payload(scenario, base=handle is None)
+
+    def projection_compare(self, payload: dict) -> dict:
+        """Compare an edited projection draft with another persisted scenario."""
+        handle = str(payload.get("handle") or "").strip() or None
+        compare_handle = str(payload.get("compare_handle") or "").strip() or None
+        if handle == compare_handle:
+            raise ValueError("choose two different scenarios to compare")
+
+        primary = self._projection_draft(handle)
+        self._apply_projection_payload(primary, payload)
+        comparison = self._projection_draft(compare_handle)
+        comparison.years = primary.years
+
+        primary_result = projection.project(self.db, primary)
+        comparison_result = projection.project(self.db, comparison)
+        if len(primary_result.rows) != len(comparison_result.rows):
+            raise ValueError("projection comparison horizons do not align")
+
+        def difference(left, right):
+            return left - right
+
+        primary_summary = primary_result.summary()
+        comparison_summary = comparison_result.summary()
+        return {
+            "primary": self._projection_payload(
+                primary, base=handle is None, result=primary_result
+            ),
+            "comparison": {
+                "scenario": {
+                    "handle": None if compare_handle is None else comparison.handle,
+                    "name": comparison.name,
+                },
+                "summary": comparison_summary,
+                "summary_delta": {
+                    "ending_net_worth": difference(
+                        primary_summary["ending_net_worth"],
+                        comparison_summary["ending_net_worth"],
+                    ),
+                    "ending_cash": difference(
+                        primary_summary["ending_cash"],
+                        comparison_summary["ending_cash"],
+                    ),
+                    "minimum_cash": difference(
+                        primary_summary["minimum_cash"],
+                        comparison_summary["minimum_cash"],
+                    ),
+                },
+                "rows": [
+                    {
+                        "label": left.label,
+                        "cash": right.cash_close,
+                        "net_worth": right.net_worth,
+                        "cash_delta": difference(left.cash_close, right.cash_close),
+                        "net_worth_delta": difference(left.net_worth, right.net_worth),
+                    }
+                    for left, right in zip(
+                        primary_result.rows, comparison_result.rows, strict=True
+                    )
+                ],
+            },
+        }
 
     def projection_save(self, payload: dict) -> dict:
         """Persist projection controls explicitly, preserving hidden model fields."""
@@ -1124,6 +1188,7 @@ POST_ROUTES = {
     "/api/scenario/event/save": lambda a, body: a.scenario_event_save(body),
     "/api/scenario/event/suppress": lambda a, body: a.scenario_event_suppress(body),
     "/api/projection/calculate": lambda a, body: a.projection_calculate(body),
+    "/api/projection/compare": lambda a, body: a.projection_compare(body),
     "/api/projection/save": lambda a, body: a.projection_save(body),
 }
 

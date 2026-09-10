@@ -138,7 +138,8 @@ let current = "Dashboard";
 let state = {
   accounts: [], account: null, plan: null, review: null,
   scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
-  projectionData: null, projectionHandle: null,
+  projectionData: null, projectionHandle: null, projectionCompareHandle: null,
+  projectionComparison: null,
 };
 
 const el = (tag, attrs = {}, ...kids) => {
@@ -798,6 +799,8 @@ async function showProjection() {
       const handle = event.target.value || null;
       state.projectionHandle = handle;
       state.projectionData = null;
+      state.projectionCompareHandle = null;
+      state.projectionComparison = null;
       if (state.plan) state.plan.scenario = handle;
       render();
     },
@@ -805,6 +808,25 @@ async function showProjection() {
     value: item.handle || "",
     selected: (item.handle || "") === (scenarioData.handle || "") ? "selected" : null,
   }, item.name)));
+
+  const comparePicker = el("select", {
+    name: "compare_handle",
+    onchange: (event) => {
+      state.projectionCompareHandle = event.target.value || null;
+      state.projectionComparison = null;
+    },
+  },
+    el("option", { value: "" }, "No comparison"),
+    data.controls.scenarios
+      .filter((item) => (item.handle || "") !== (scenarioData.handle || ""))
+      .map((item) => {
+        const value = item.handle || "__base__";
+        return el("option", {
+          value,
+          selected: value === (state.projectionCompareHandle || "")
+            ? "selected" : null,
+        }, item.name);
+      }));
 
   const basis = el("select", { name: "basis" }, [
     ["scheduled", "Scheduled events"],
@@ -831,13 +853,27 @@ async function showProjection() {
       assumptions: readAssumptions(event.target, "projection_"),
     };
     try {
-      state.projectionData = await post("/api/projection/calculate", payload);
-      say("Projection recalculated. Changes are not saved yet.");
+      const compareToken = values.get("compare_handle") || null;
+      state.projectionCompareHandle = compareToken;
+      if (compareToken !== null) {
+        const compareHandle = compareToken === "__base__" ? null : compareToken;
+        const compared = await post("/api/projection/compare", {
+          ...payload, compare_handle: compareHandle,
+        });
+        state.projectionData = compared.primary;
+        state.projectionComparison = compared.comparison;
+        say("Projection comparison recalculated. Changes are not saved yet.");
+      } else {
+        state.projectionData = await post("/api/projection/calculate", payload);
+        state.projectionComparison = null;
+        say("Projection recalculated. Changes are not saved yet.");
+      }
       render();
     } catch (error) { say(error.message, "error"); }
   } },
     el("div", { class: "toolbar" },
       el("label", {}, "Scenario ", scenarioPicker),
+      el("label", {}, "Compare with ", comparePicker),
       el("label", {}, "Years ", el("input", {
         type: "number", name: "years", min: "1", max: "100", step: "1",
         value: scenarioData.years,
@@ -890,11 +926,48 @@ async function showProjection() {
     el("td", { class: cls(row.liabilities) }, money(row.liabilities)),
     el("td", { class: cls(row.net_worth) }, money(row.net_worth))));
 
+  const comparison = state.projectionComparison;
+  let comparisonView = null;
+  if (comparison) {
+    const delta = comparison.summary_delta;
+    const compareYearly = comparison.rows.filter((_, i) => (i + 1) % 12 === 0)
+      .map((row, i) => el("tr", {},
+        el("td", {}, row.label),
+        el("td", { class: cls(data.rows[(i + 1) * 12 - 1].cash) },
+          money(data.rows[(i + 1) * 12 - 1].cash)),
+        el("td", { class: cls(row.cash) }, money(row.cash)),
+        el("td", { class: cls(row.cash_delta) }, money(row.cash_delta)),
+        el("td", { class: cls(data.rows[(i + 1) * 12 - 1].net_worth) },
+          money(data.rows[(i + 1) * 12 - 1].net_worth)),
+        el("td", { class: cls(row.net_worth) }, money(row.net_worth)),
+        el("td", { class: cls(row.net_worth_delta) }, money(row.net_worth_delta))));
+    comparisonView = el("section", { class: "panel scenario-panel" },
+      el("h3", {}, `${scenarioData.name} vs ${comparison.scenario.name}`),
+      el("div", { class: "cards" },
+        [["Ending net worth difference", delta.ending_net_worth],
+         ["Ending cash difference", delta.ending_cash],
+         ["Lowest cash difference", delta.minimum_cash]].map(([label, value]) =>
+          el("div", { class: "card" },
+            el("div", { class: "label" }, label),
+            el("div", { class: "value " + (Number(value) < 0 ? "neg" : "") },
+              money(value))))),
+      el("p", { class: "note" },
+        `Differences are ${scenarioData.name} minus ${comparison.scenario.name}. `
+        + `Cash shortfall: ${s.first_shortfall || "never"} vs `
+        + `${comparison.summary.first_shortfall || "never"}.`),
+      table(["Month", { label: `${scenarioData.name} cash`, num: true },
+             { label: `${comparison.scenario.name} cash`, num: true },
+             { label: "Cash difference", num: true },
+             { label: `${scenarioData.name} net worth`, num: true },
+             { label: `${comparison.scenario.name} net worth`, num: true },
+             { label: "Net worth difference", num: true }], compareYearly));
+  }
+
   const warnings = data.warnings && data.warnings.length
     ? el("p", { class: "note neg" }, data.warnings.join("  ")) : null;
   return el("div", {},
     el("h2", {}, "Projection"),
-    form, cards, chart(data.rows), warnings,
+    form, cards, chart(data.rows), comparisonView, warnings,
     el("p", { class: "note" }, `Scenario "${scenarioData.name}", by year.`),
     table(["Month", { label: "Income", num: true }, { label: "Expense", num: true },
            { label: "Cash", num: true }, { label: "Holdings", num: true },
