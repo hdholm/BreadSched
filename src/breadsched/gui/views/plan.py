@@ -56,6 +56,9 @@ class PlanView(BaseView):
         new_scenario = Gtk.Button(label="New scenario…")
         new_scenario.connect("clicked", self._on_new_scenario)
         bar.append(new_scenario)
+        manage_scenarios = Gtk.Button(label="Manage scenarios…")
+        manage_scenarios.connect("clicked", self._on_manage_scenarios)
+        bar.append(manage_scenarios)
         bar.append(Gtk.Label(label="Scenario"))
         self.scenario = Gtk.DropDown()
         self.scenario.connect("notify::selected", self._on_scenario_changed)
@@ -156,6 +159,8 @@ class PlanView(BaseView):
             self.scenario.set_selected(selected)
         finally:
             self._updating_scenarios = False
+        if selected == 0 and self._scenario_handle is not None:
+            self._scenario_handle = None
 
     def _scenario_at_selection(self):
         selected = self.scenario.get_selected()
@@ -208,6 +213,13 @@ class PlanView(BaseView):
             years=self._end_year - self._start_year + 1,
         )
         SaveScenarioDialog(self.get_root(), self.db, scenario).present()
+
+    def _on_manage_scenarios(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.scenario_manager_dialog import ScenarioManagerDialog
+
+        ScenarioManagerDialog(self.get_root(), self.db).present()
 
     def _require_scenario(self):
         selected = self._selected_scenario()
