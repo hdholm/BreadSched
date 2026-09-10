@@ -172,6 +172,15 @@ class TestDuePromptPolicy:
         )
         try:
             app.open_book(populated_book)
+            assert calls == []
+
+            # Due review is deliberately deferred by one GLib main-loop turn so
+            # the parent window is mapped before its modal child is presented.
+            from cashperspective.gui.gi_setup import GLib
+
+            context = GLib.MainContext.default()
+            while not calls and context.pending():
+                context.iteration(False)
             assert calls == [None]
         finally:
             production_window.destroy()
