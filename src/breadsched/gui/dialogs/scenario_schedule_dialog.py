@@ -61,6 +61,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.scenario = scenario
         self.source = source
         self.current = current
+        self._constructing = True
         initial = current or source
         self.set_default_size(580, 500)
         self._accounts = sorted(
@@ -177,6 +178,7 @@ class ScenarioScheduleDialog(Gtk.Window):
 
         if initial is not None:
             self._load_source(initial)
+        self._constructing = False
         self._validate()
 
     def _account_index(self, handle: str) -> int | None:
@@ -273,6 +275,8 @@ class ScenarioScheduleDialog(Gtk.Window):
         return abs(amount) if amount else None
 
     def _validate(self, *_args) -> None:
+        if self._constructing:
+            return
         problems = []
         if not self.name_entry.get_text().strip():
             problems.append("give it a name")
