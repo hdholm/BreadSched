@@ -91,6 +91,22 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
 .review-list .amount { display: block; color: var(--dim); font-variant-numeric: tabular-nums; }
 .review-detail { padding: 14px 16px; }
 .review-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+
+.scenario-panel { padding: 14px 16px; }
+.scenario-editor h3 { margin: 12px 0 8px; }
+.scenario-fields, .assumption-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.scenario-fields label, .assumption-grid label {
+  display: flex; flex-direction: column; gap: 3px; color: var(--dim); font-size: 12px;
+}
+.rate-input { display: flex; align-items: center; gap: 6px; }
+.rate-input input { width: 120px; }
+button.destructive { color: var(--bad); }
+button.destructive:hover { border-color: var(--bad); color: var(--bad); }
+.toolbar.compact { margin: 0; gap: 4px; }
+.period-editor { padding: 14px 16px; }
 @media (max-width: 800px) { .review-grid { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -107,7 +123,10 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
 <script>
 const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter"];
 let current = "Dashboard";
-let state = { accounts: [], account: null, plan: null, review: null };
+let state = {
+  accounts: [], account: null, plan: null, review: null,
+  scenarioManager: null, scenarioPeriod: null,
+};
 
 const el = (tag, attrs = {}, ...kids) => {
   const node = document.createElement(tag);
@@ -312,7 +331,11 @@ async function showPlan() {
     el("label", {}, "Through ", through),
     el("label", {}, "Group by ", period),
     el("label", {}, "Show ", measure),
-    el("button", { class: "action primary", type: "submit" }, "Apply"));
+    el("button", { class: "action primary", type: "submit" }, "Apply"),
+    el("button", {
+      class: "action", type: "button",
+      onclick: () => { state.scenarioManager = currentPlan.scenario || ""; switchTo("Scenarios"); },
+    }, "Manage scenarios…"));
 
   const summary = data.summary;
   const cards = el("div", { class: "cards" },
@@ -352,6 +375,219 @@ async function showPlan() {
       "Income and expense values are derived from exact-dated scheduled/estimated "
       + "and actual transaction splits; reporting periods do not store budget values."),
     table(headers, rows));
+}
+
+const ASSUMPTION_FIELDS = [
+  ["Income growth", "income_growth"],
+  ["Expense inflation", "expense_inflation"],
+  ["Investment return", "investment_return"],
+  ["Cash interest", "cash_interest"],
+  ["Liability interest", "liability_interest"],
+];
+
+function rateToPercent(value) {
+  return value === null || value === undefined || value === "" ? "" : String(Number(value) * 100);
+}
+
+function percentToRate(value) {
+  return String(value).trim() === "" ? "" : String(Number(value) / 100);
+}
+
+function assumptionInputs(assumptions, prefix = "") {
+  return el("div", { class: "assumption-grid" }, ASSUMPTION_FIELDS.map(([label, field]) =>
+    el("label", {}, label,
+      el("span", { class: "rate-input" },
+        el("input", {
+          type: "number", min: "-100", max: "100", step: "0.01",
+          name: `${prefix}${field}`, value: rateToPercent(assumptions[field]),
+        }),
+        el("span", { class: "muted" }, "%")))));
+}
+
+function readAssumptions(form, prefix = "") {
+  const values = new FormData(form);
+  return Object.fromEntries(ASSUMPTION_FIELDS.map(([, field]) =>
+    [field, percentToRate(values.get(`${prefix}${field}`))]));
+}
+
+async function showScenarios() {
+  const data = await get("/api/scenarios");
+  const requested = state.scenarioManager || "";
+  let selected = data.scenarios.find((item) => (item.handle || "") === requested);
+  if (!selected) {
+    selected = data.scenarios[0];
+    state.scenarioManager = selected.handle || "";
+  }
+
+  const picker = el("select", {
+    onchange: (event) => {
+      state.scenarioManager = event.target.value;
+      state.scenarioPeriod = null;
+      render();
+    },
+  }, data.scenarios.map((scenario) => el("option", {
+    value: scenario.handle || "",
+    selected: (scenario.handle || "") === (selected.handle || "") ? "selected" : null,
+  }, scenario.name)));
+
+  const base = selected.base;
+  const form = el("form", { class: "scenario-editor", onsubmit: async (event) => {
+    event.preventDefault();
+    const values = new FormData(event.target);
+    try {
+      const saved = await post("/api/scenario/save", {
+        handle: selected.handle,
+        name: values.get("name"),
+        description: values.get("description"),
+        assumptions: readAssumptions(event.target),
+      });
+      state.scenarioManager = saved.handle || "";
+      say(base ? "Base scenario assumptions saved in this book." : "Scenario saved.");
+      render();
+    } catch (error) { say(error.message, "error"); }
+  } },
+    el("div", { class: "scenario-fields" },
+      el("label", {}, "Name", el("input", {
+        name: "name", value: selected.name, disabled: base ? "disabled" : null,
+      })),
+      el("label", {}, "Description", el("input", {
+        name: "description", value: selected.description || "", disabled: base ? "disabled" : null,
+      }))),
+    el("h3", {}, "Base annual assumptions"),
+    assumptionInputs(selected.assumptions),
+    el("div", { class: "toolbar" },
+      el("button", { class: "action primary", type: "submit" }, "Save changes"),
+      el("button", {
+        class: "action", type: "button",
+        onclick: async () => {
+          try {
+            const clone = await post("/api/scenario/duplicate", { handle: selected.handle });
+            state.scenarioManager = clone.handle;
+            state.scenarioPeriod = null;
+            say(`Created "${clone.name}".`);
+            render();
+          } catch (error) { say(error.message, "error"); }
+        },
+      }, "Duplicate…"),
+      base ? null : el("button", {
+        class: "action destructive", type: "button",
+        onclick: async () => {
+          if (!confirm(`Delete scenario "${selected.name}"?`)) return;
+          try {
+            await post("/api/scenario/delete", { handle: selected.handle });
+            state.scenarioManager = "";
+            state.scenarioPeriod = null;
+            if (state.plan && state.plan.scenario === selected.handle) state.plan.scenario = null;
+            say("Scenario deleted. Base scenario was not changed.");
+            render();
+          } catch (error) { say(error.message, "error"); }
+        },
+      }, "Delete…")));
+
+  const periodRows = base ? [] : [...selected.periods]
+    .sort((a, b) => a.start.localeCompare(b.start) || (a.end || "9999").localeCompare(b.end || "9999"))
+    .map((period) => {
+      const changed = ASSUMPTION_FIELDS
+        .filter(([, field]) => period[field] !== null)
+        .map(([label]) => label)
+        .join(", ") || "No rate overrides";
+      return el("tr", {},
+        el("td", {}, period.start),
+        el("td", {}, period.end || "onward"),
+        el("td", {}, period.description || changed),
+        el("td", { class: "muted" }, changed),
+        el("td", {},
+          el("div", { class: "toolbar compact" },
+            el("button", {
+              class: "action", type: "button",
+              onclick: () => { state.scenarioPeriod = period.index; render(); },
+            }, "Edit"),
+            el("button", {
+              class: "action destructive", type: "button",
+              onclick: async () => {
+                try {
+                  await post("/api/scenario/period/delete", {
+                    handle: selected.handle, index: period.index,
+                  });
+                  state.scenarioPeriod = null;
+                  say("Dated assumption period deleted.");
+                  render();
+                } catch (error) { say(error.message, "error"); }
+              },
+            }, "Delete"))));
+    });
+
+  let periodEditor = null;
+  if (!base && state.scenarioPeriod !== null) {
+    const editing = state.scenarioPeriod === "new" ? null
+      : selected.periods.find((period) => period.index === state.scenarioPeriod);
+    if (state.scenarioPeriod !== "new" && !editing) state.scenarioPeriod = null;
+    else {
+      const assumptions = Object.fromEntries(ASSUMPTION_FIELDS.map(([, field]) =>
+        [field, editing ? editing[field] : null]));
+      periodEditor = el("form", { class: "panel period-editor", onsubmit: async (event) => {
+        event.preventDefault();
+        const values = new FormData(event.target);
+        const rates = readAssumptions(event.target, "period_");
+        try {
+          await post("/api/scenario/period/save", {
+            handle: selected.handle,
+            index: editing ? editing.index : null,
+            start: values.get("start"), end: values.get("end"),
+            description: values.get("description"), ...rates,
+          });
+          state.scenarioPeriod = null;
+          say("Dated assumptions saved.");
+          render();
+        } catch (error) { say(error.message, "error"); }
+      } },
+        el("h3", {}, editing ? "Edit dated assumptions" : "Add dated assumptions"),
+        el("p", { class: "note" },
+          "Blank rates inherit the value already in force. Later-starting overlapping periods win for values they override."),
+        el("div", { class: "scenario-fields" },
+          el("label", {}, "Start", el("input", {
+            type: "date", name: "start", required: "required",
+            value: editing ? editing.start : new Date().toISOString().slice(0, 10),
+          })),
+          el("label", {}, "Through (blank = onward)", el("input", {
+            type: "date", name: "end", value: editing ? (editing.end || "") : "",
+          })),
+          el("label", {}, "Description", el("input", {
+            name: "description", value: editing ? (editing.description || "") : "",
+          }))),
+        assumptionInputs(assumptions, "period_"),
+        el("div", { class: "toolbar" },
+          el("button", { class: "action primary", type: "submit" }, "Save dated assumptions"),
+          el("button", {
+            class: "action", type: "button",
+            onclick: () => { state.scenarioPeriod = null; render(); },
+          }, "Cancel")));
+    }
+  }
+
+  return el("div", {},
+    el("div", { class: "toolbar" },
+      el("button", { class: "action", onclick: () => switchTo("Plan") }, "← Back to Plan"),
+      el("label", {}, "Scenario ", picker)),
+    el("h2", {}, "Manage scenarios"),
+    el("p", { class: "note" },
+      "Base scenario assumptions apply to the default plan. Saved scenarios can override those assumptions and future estimated activity without changing Base."),
+    el("div", { class: "panel scenario-panel" }, form),
+    base
+      ? el("p", { class: "note" },
+          "Dated assumption periods belong to saved scenarios. Base uses the book's baseline scheduled and estimated activity.")
+      : el("div", {},
+          el("div", { class: "toolbar" },
+            el("h3", { style: "margin-right:auto" }, "Dated assumptions"),
+            el("span", { class: "muted" }, `${selected.schedule_changes} scenario event change(s)`),
+            el("button", {
+              class: "action", type: "button",
+              onclick: () => { state.scenarioPeriod = "new"; render(); },
+            }, "Add dated assumptions…")),
+          periodRows.length
+            ? table(["Start", "Through", "Description", "Overrides", "Action"], periodRows)
+            : el("p", { class: "note" }, "No dated assumption periods."),
+          periodEditor));
 }
 
 async function showReview() {
@@ -550,7 +786,7 @@ async function showEntry() {
 
 const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
-  Plan: showPlan, Review: showReview, Projection: showProjection, Enter: showEntry,
+  Plan: showPlan, Scenarios: showScenarios, Review: showReview, Projection: showProjection, Enter: showEntry,
 };
 
 // The dashboard: what is owned and owed, the liquidity verdict, and the bills.

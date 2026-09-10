@@ -33,6 +33,7 @@ from ..gen.engine import (
     schedule,
 )
 from ..gen.lib import (
+    AssumptionPeriod,
     Assumptions,
     Money,
     PlanningResolution,
@@ -41,6 +42,7 @@ from ..gen.lib import (
     Split,
     Transaction,
 )
+from ..gen.lib.base import create_handle
 from ..gen.utils.logs import get_logger
 
 __all__ = ["serve", "build_handler", "api"]
@@ -247,6 +249,183 @@ class Api:
         if isinstance(stored, dict):
             scenario.assumptions = Assumptions.from_dict(stored)
         return scenario
+
+    def _management_base_scenario(self) -> Scenario:
+        today = date.today()
+        return self._base_scenario(
+            date(today.year, 1, 1),
+            date(today.year + 9, 12, 31),
+        )
+
+    @staticmethod
+    def _scenario_payload(scenario: Scenario, *, base: bool = False) -> dict:
+        return {
+            "handle": None if base else scenario.handle,
+            "base": base,
+            "name": "Base scenario" if base else scenario.name,
+            "description": "" if base else scenario.description,
+            "assumptions": scenario.assumptions.serialize(),
+            "periods": [
+                {"index": index, **period.serialize()}
+                for index, period in enumerate(scenario.assumption_periods)
+            ],
+            "schedule_changes": 0 if base else len(scenario.schedule_overrides),
+        }
+
+    def scenarios(self) -> dict:
+        """Base and saved planning scenarios for the management surface."""
+        base = self._management_base_scenario()
+        return {
+            "scenarios": [
+                self._scenario_payload(base, base=True),
+                *(self._scenario_payload(item) for item in self.db.iter_scenarios()),
+            ]
+        }
+
+    @staticmethod
+    def _assumptions_from_payload(
+        payload: object, existing: Assumptions | None = None
+    ) -> Assumptions:
+        if not isinstance(payload, dict):
+            raise ValueError("assumptions must be an object")
+        fields = (
+            "income_growth",
+            "expense_inflation",
+            "investment_return",
+            "cash_interest",
+            "liability_interest",
+        )
+        values = {}
+        for field in fields:
+            if field not in payload:
+                raise ValueError(f"missing assumption: {field}")
+            value = Decimal(str(payload[field]))
+            if value < Decimal("-1") or value > Decimal("1"):
+                raise ValueError(f"{field} must be between -1 and 1")
+            values[field] = value
+        values["per_account"] = dict(existing.per_account) if existing is not None else {}
+        return Assumptions(**values)
+
+    def scenario_save(self, payload: dict) -> dict:
+        handle = payload.get("handle")
+        if not handle:
+            base = self._management_base_scenario()
+            assumptions = self._assumptions_from_payload(
+                payload.get("assumptions"), base.assumptions
+            )
+            self.db.set_metadata("planning.base_assumptions", assumptions.serialize())
+            return self._scenario_payload(self._management_base_scenario(), base=True)
+
+        scenario = self.db.get_scenario(str(handle))
+        if scenario is None:
+            raise KeyError(str(handle))
+        name = str(payload.get("name", "")).strip()
+        if not name:
+            raise ValueError("give the scenario a name first")
+        duplicate = self.db.get_scenario_by_name(name)
+        if duplicate is not None and duplicate.handle != scenario.handle:
+            raise ValueError(f'a scenario named "{name}" already exists')
+        scenario.name = name
+        scenario.description = str(payload.get("description", "")).strip()
+        scenario.assumptions = self._assumptions_from_payload(
+            payload.get("assumptions"), scenario.assumptions
+        )
+        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+            self.db.commit_scenario(scenario, txn)
+        return self._scenario_payload(scenario)
+
+    def _unique_scenario_copy_name(self, name: str) -> str:
+        base = f"{name} copy"
+        candidate = base
+        number = 2
+        while self.db.get_scenario_by_name(candidate) is not None:
+            candidate = f"{base} {number}"
+            number += 1
+        return candidate
+
+    def scenario_duplicate(self, payload: dict) -> dict:
+        handle = payload.get("handle")
+        if handle:
+            source = self.db.get_scenario(str(handle))
+            if source is None:
+                raise KeyError(str(handle))
+        else:
+            source = self._management_base_scenario()
+        clone = Scenario.from_dict(source.serialize())
+        clone.handle = create_handle()
+        clone.gid = ""
+        clone.change = 0
+        clone.name = self._unique_scenario_copy_name(source.name)
+        with self.db.transaction(f"Duplicate scenario {source.name}") as txn:
+            self.db.add_scenario(clone, txn)
+        return self._scenario_payload(clone)
+
+    def scenario_delete(self, payload: dict) -> dict:
+        handle = str(payload.get("handle", "")).strip()
+        if not handle:
+            raise ValueError("Base scenario cannot be deleted")
+        scenario = self.db.get_scenario(handle)
+        if scenario is None:
+            raise KeyError(handle)
+        with self.db.transaction(f"Delete scenario {scenario.name}") as txn:
+            self.db.remove_scenario(handle, txn)
+        return {"deleted": handle}
+
+    @staticmethod
+    def _optional_rate(value: object) -> Decimal | None:
+        if value is None or str(value).strip() == "":
+            return None
+        rate = Decimal(str(value))
+        if rate < Decimal("-1") or rate > Decimal("1"):
+            raise ValueError("dated assumption rates must be between -1 and 1")
+        return rate
+
+    def scenario_period_save(self, payload: dict) -> dict:
+        handle = str(payload.get("handle", "")).strip()
+        scenario = self.db.get_scenario(handle) if handle else None
+        if scenario is None:
+            raise ValueError("dated assumptions belong to a saved scenario")
+        start = date.fromisoformat(str(payload.get("start", "")))
+        end_value = str(payload.get("end", "")).strip()
+        end = date.fromisoformat(end_value) if end_value else None
+        index_value = payload.get("index")
+        existing_period = None
+        if index_value is not None and index_value != "":
+            index = int(index_value)
+            if index < 0 or index >= len(scenario.assumption_periods):
+                raise ValueError("dated assumption period no longer exists")
+            existing_period = scenario.assumption_periods[index]
+        period = AssumptionPeriod(
+            start=start,
+            end=end,
+            description=str(payload.get("description", "")).strip(),
+            income_growth=self._optional_rate(payload.get("income_growth")),
+            expense_inflation=self._optional_rate(payload.get("expense_inflation")),
+            investment_return=self._optional_rate(payload.get("investment_return")),
+            cash_interest=self._optional_rate(payload.get("cash_interest")),
+            liability_interest=self._optional_rate(payload.get("liability_interest")),
+            per_account=dict(existing_period.per_account) if existing_period is not None else {},
+        )
+        if existing_period is None:
+            scenario.assumption_periods.append(period)
+        else:
+            scenario.assumption_periods[index] = period
+        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+            self.db.commit_scenario(scenario, txn)
+        return self._scenario_payload(scenario)
+
+    def scenario_period_delete(self, payload: dict) -> dict:
+        handle = str(payload.get("handle", "")).strip()
+        scenario = self.db.get_scenario(handle) if handle else None
+        if scenario is None:
+            raise ValueError("dated assumptions belong to a saved scenario")
+        index = int(payload.get("index", -1))
+        if index < 0 or index >= len(scenario.assumption_periods):
+            raise ValueError("dated assumption period no longer exists")
+        del scenario.assumption_periods[index]
+        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+            self.db.commit_scenario(scenario, txn)
+        return self._scenario_payload(scenario)
 
     def plan(
         self,
@@ -620,6 +799,7 @@ ROUTES = {
         q.get("scenario", [None])[0],
     ),
     "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
+    "/api/scenarios": lambda a, q: a.scenarios(),
     "/api/budget": lambda a, q: a.budget(q.get("name", [None])[0]),
     "/api/coverage": lambda a, q: a.coverage(q.get("name", [None])[0]),
     "/api/projection": lambda a, q: a.projection(
@@ -633,6 +813,11 @@ POST_ROUTES = {
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),
     "/api/review/unexpected": lambda a, body: a.review_unexpected(body),
+    "/api/scenario/save": lambda a, body: a.scenario_save(body),
+    "/api/scenario/duplicate": lambda a, body: a.scenario_duplicate(body),
+    "/api/scenario/delete": lambda a, body: a.scenario_delete(body),
+    "/api/scenario/period/save": lambda a, body: a.scenario_period_save(body),
+    "/api/scenario/period/delete": lambda a, body: a.scenario_period_delete(body),
 }
 
 

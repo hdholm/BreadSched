@@ -435,3 +435,122 @@ class TestReviewApi:
         page = body.decode()
         assert '"Plan", "Review", "Projection"' in page
         assert "async function showReview" in page
+
+
+class TestScenarioManagementApi:
+    """The browser manages the same persisted Base/saved scenario model as GTK."""
+
+    @staticmethod
+    def assumptions(**changes):
+        values = {
+            "income_growth": "0.03",
+            "expense_inflation": "0.025",
+            "investment_return": "0.06",
+            "cash_interest": "0.01",
+            "liability_interest": "0.0",
+        }
+        values.update(changes)
+        return values
+
+    def test_base_assumptions_can_be_saved_and_reloaded(self, client):
+        status, payload = client.post(
+            "/api/scenario/save",
+            {"handle": None, "assumptions": self.assumptions(investment_return="0.0475")},
+        )
+        assert status == 200
+        assert payload["base"] is True
+        assert payload["assumptions"]["investment_return"] == "0.0475"
+
+        _status, listing = client.get("/api/scenarios")
+        base = listing["scenarios"][0]
+        assert base["name"] == "Base scenario"
+        assert base["assumptions"]["investment_return"] == "0.0475"
+
+    def test_base_can_be_duplicated_into_an_independent_saved_scenario(self, client):
+        client.post(
+            "/api/scenario/save",
+            {"handle": None, "assumptions": self.assumptions(income_growth="0.041")},
+        )
+        _status, clone = client.post("/api/scenario/duplicate", {"handle": None})
+        assert clone["base"] is False
+        assert clone["name"] == "Base scenario copy"
+        assert clone["assumptions"]["income_growth"] == "0.041"
+
+        clone["name"] = "Retire 2035"
+        clone["description"] = "Reduced work scenario"
+        clone["assumptions"]["income_growth"] = "0.01"
+        _status, saved = client.post("/api/scenario/save", clone)
+        assert saved["name"] == "Retire 2035"
+
+        _status, listing = client.get("/api/scenarios")
+        base = listing["scenarios"][0]
+        retire = next(item for item in listing["scenarios"] if item["name"] == "Retire 2035")
+        assert base["assumptions"]["income_growth"] == "0.041"
+        assert retire["assumptions"]["income_growth"] == "0.01"
+
+    def test_dated_assumptions_can_be_added_edited_and_deleted(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        handle = scenario["handle"]
+        _status, saved = client.post(
+            "/api/scenario/period/save",
+            {
+                "handle": handle,
+                "start": "2035-01-01",
+                "end": "",
+                "description": "Retirement returns",
+                "investment_return": "0.04",
+                "expense_inflation": "",
+                "income_growth": "",
+                "cash_interest": "",
+                "liability_interest": "",
+            },
+        )
+        assert len(saved["periods"]) == 1
+        assert saved["periods"][0]["investment_return"] == "0.04"
+        assert saved["periods"][0]["expense_inflation"] is None
+
+        _status, edited = client.post(
+            "/api/scenario/period/save",
+            {
+                "handle": handle,
+                "index": saved["periods"][0]["index"],
+                "start": "2035-01-01",
+                "end": "2040-12-31",
+                "description": "Retirement transition",
+                "investment_return": "0.035",
+                "expense_inflation": "0.045",
+                "income_growth": "",
+                "cash_interest": "",
+                "liability_interest": "",
+            },
+        )
+        assert edited["periods"][0]["end"] == "2040-12-31"
+        assert edited["periods"][0]["expense_inflation"] == "0.045"
+
+        _status, deleted = client.post(
+            "/api/scenario/period/delete",
+            {"handle": handle, "index": edited["periods"][0]["index"]},
+        )
+        assert deleted["periods"] == []
+
+    def test_saved_scenario_can_be_deleted_but_base_cannot(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        status, payload = client.post("/api/scenario/delete", {"handle": scenario["handle"]})
+        assert status == 200
+        assert payload["deleted"] == scenario["handle"]
+        _status, listing = client.get("/api/scenarios")
+        assert [item["name"] for item in listing["scenarios"]] == ["Base scenario"]
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/scenario/delete", {"handle": None})
+        assert caught.value.code == 400
+
+
+class TestScenarioManagementPage:
+    def test_plan_links_to_scenario_management(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode()
+        assert '"Manage scenarios…"' in page
+        assert "async function showScenarios" in page
+        assert "Add dated assumptions…" in page
+        assert "Dated assumption periods belong to saved scenarios" in page
