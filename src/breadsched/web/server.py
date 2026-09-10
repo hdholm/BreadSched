@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import threading
+from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 from functools import partial
@@ -22,8 +23,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import budgeting, cashflow, ledger, projection, schedule
-from ..gen.lib import Money, ProjectionBasis, Scenario, Split, Transaction
+from ..gen.engine import activity, budgeting, cashflow, ledger, projection, schedule
+from ..gen.lib import Assumptions, Money, ProjectionBasis, Scenario, Split, Transaction
 from ..gen.utils.logs import get_logger
 
 __all__ = ["serve", "build_handler", "api"]
@@ -186,6 +187,152 @@ class Api:
             ],
         }
 
+    @staticmethod
+    def _month_end(year: int, month: int) -> date:
+        return date(year, month, monthrange(year, month)[1])
+
+    @staticmethod
+    def _previous_month(when: date) -> date:
+        if when.month == 1:
+            return date(when.year - 1, 12, 1)
+        return date(when.year, when.month - 1, 1)
+
+    def _plan_earliest_data_date(self) -> date:
+        today = date.today()
+        dates: list[date] = []
+        dates.extend(transaction.post_date for transaction in self.db.iter_transactions())
+        dates.extend(schedule.recurrence.start for schedule in self.db.iter_scheduled())
+        for scenario in self.db.iter_scenarios():
+            dates.extend(item.recurrence.start for item in scenario.schedule_overrides)
+            dates.extend(item.when for item in scenario.one_offs)
+        return min(dates, default=date(today.year, 1, 1))
+
+    def _plan_maximum_through_month(self) -> date:
+        today = date.today()
+        anniversary_year = today.year + 150
+        anniversary = date(
+            anniversary_year,
+            today.month,
+            min(today.day, monthrange(anniversary_year, today.month)[1]),
+        )
+        candidate = date(anniversary.year, anniversary.month, 1)
+        if self._month_end(candidate.year, candidate.month) > anniversary:
+            candidate = self._previous_month(candidate)
+        return candidate
+
+    def _base_scenario(self, start: date, end: date) -> Scenario:
+        scenario = Scenario(
+            name="Base scenario",
+            start=start,
+            years=max(1, end.year - start.year + 1),
+            basis=ProjectionBasis.SCHEDULED,
+        )
+        stored = self.db.get_metadata("planning.base_assumptions", None)
+        if isinstance(stored, dict):
+            scenario.assumptions = Assumptions.from_dict(stored)
+        return scenario
+
+    def plan(
+        self,
+        start_month: str | None = None,
+        through_month: str | None = None,
+        period: str = "month",
+        scenario_handle: str | None = None,
+    ) -> dict:
+        """Derived category Plan using the same event stream as the GTK view."""
+        today = date.today()
+        minimum = self._plan_earliest_data_date().replace(day=1)
+        maximum_month = self._plan_maximum_through_month()
+        maximum = self._month_end(maximum_month.year, maximum_month.month)
+
+        if start_month is None:
+            start = date(today.year, 1, 1)
+            if start < minimum:
+                start = minimum
+        else:
+            start = date.fromisoformat(f"{start_month}-01")
+
+        if through_month is None:
+            end = date(today.year + 1, 12, 31)
+            if end < start:
+                end = self._month_end(start.year, start.month)
+            if end > maximum:
+                end = maximum
+        else:
+            through = date.fromisoformat(f"{through_month}-01")
+            end = self._month_end(through.year, through.month)
+
+        if start < minimum:
+            raise ValueError(
+                f"From cannot be earlier than the first book data ({minimum:%b %Y})."
+            )
+        if end < start:
+            raise ValueError("Through must be the same month as From or later.")
+        if end > maximum:
+            raise ValueError(f"Through cannot be later than {maximum_month:%b %Y}.")
+
+        grouping = activity.ReportingPeriod(period)
+        scenarios = list(self.db.iter_scenarios())
+        if scenario_handle:
+            selected = next(
+                (item for item in scenarios if item.handle == scenario_handle), None
+            )
+            if selected is None:
+                raise KeyError(scenario_handle)
+            scenario = selected
+        else:
+            scenario = self._base_scenario(start, end)
+
+        report = activity.build_category_report(
+            self.db, start, end, period=grouping, scenario=scenario
+        )
+        totals = report.activity
+        return {
+            "controls": {
+                "from": start.strftime("%Y-%m"),
+                "through": end.strftime("%Y-%m"),
+                "minimum": minimum.strftime("%Y-%m"),
+                "maximum": maximum_month.strftime("%Y-%m"),
+                "period": grouping.value,
+                "scenario": scenario_handle,
+                "scenarios": [
+                    {"handle": None, "name": "Base scenario"},
+                    *[
+                        {"handle": item.handle, "name": item.name}
+                        for item in scenarios
+                    ],
+                ],
+            },
+            "periods": [
+                {
+                    "label": item.label,
+                    "start": item.start,
+                    "end": item.end,
+                }
+                for item in totals.periods
+            ],
+            "summary": {
+                "planned_cash": totals.planned_cash_change,
+                "actual_cash": totals.actual_cash_change,
+                "variance": totals.cash_variance,
+                "unresolved_expected": totals.unresolved_count,
+                "unresolved_actuals": totals.unresolved_actual_count,
+            },
+            "categories": [
+                {
+                    "account": row.account,
+                    "name": row.name,
+                    "full_name": row.full_name,
+                    "class": row.account_class.value,
+                    "depth": row.depth,
+                    "planned": row.planned,
+                    "actual": row.actual,
+                    "variance": row.variance,
+                }
+                for row in report.categories
+            ],
+        }
+
     def budget(self, name: str | None = None) -> dict:
         budgets = list(self.db.iter_budgets())
         if name:
@@ -334,6 +481,12 @@ ROUTES = {
         q.get("account", [""])[0], int(q.get("limit", ["250"])[0])
     ),
     "/api/scheduled": lambda a, q: a.scheduled(int(q.get("days", ["60"])[0])),
+    "/api/plan": lambda a, q: a.plan(
+        q.get("from", [None])[0],
+        q.get("through", [None])[0],
+        q.get("period", ["month"])[0],
+        q.get("scenario", [None])[0],
+    ),
     "/api/budget": lambda a, q: a.budget(q.get("name", [None])[0]),
     "/api/coverage": lambda a, q: a.coverage(q.get("name", [None])[0]),
     "/api/projection": lambda a, q: a.projection(
@@ -398,6 +551,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(200, route(self.api_object, query))
         except KeyError as exc:
             self._json(404, {"error": str(exc)})
+        except ValueError as exc:
+            self._json(400, {"error": str(exc)})
         except Exception as exc:  # noqa: BLE001 - a bad request must not kill the server
             LOG.exception("request failed: %s", self.path)
             self._json(500, {"error": str(exc)})

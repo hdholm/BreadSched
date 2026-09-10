@@ -54,6 +54,8 @@ th {
 tbody tr { border-bottom: 1px solid var(--line); }
 tbody tr:last-child { border-bottom: 0; }
 tbody tr:hover { background: #f2f6fc; }
+.section-row { font-weight: 600; background: var(--bg); }
+.section-row:hover { background: var(--bg); }
 td.num, th.num { text-align: right; }
 .neg { color: var(--bad); }
 .pos { color: var(--good); }
@@ -89,9 +91,9 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
   <div id="view"></div>
 </main>
 <script>
-const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Budget", "Projection", "Enter"];
+const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Projection", "Enter"];
 let current = "Dashboard";
-let state = { accounts: [], account: null };
+let state = { accounts: [], account: null, plan: null };
 
 const el = (tag, attrs = {}, ...kids) => {
   const node = document.createElement(tag);
@@ -242,36 +244,100 @@ async function showScheduled() {
       definitions));
 }
 
-async function showBudget() {
-  const data = await get("/api/budget");
-  if (!data.budget) {
-    return el("p", { class: "note" },
-      "No budgets yet. Create one in the desktop interface or with "
-      + "`breadsched budget-new --from-schedules`.");
+async function showPlan() {
+  const applied = state.plan || {};
+  const params = new URLSearchParams();
+  if (applied.from) params.set("from", applied.from);
+  if (applied.through) params.set("through", applied.through);
+  if (applied.period) params.set("period", applied.period);
+  if (applied.scenario) params.set("scenario", applied.scenario);
+  const data = await get(`/api/plan${params.size ? `?${params}` : ""}`);
+  if (!state.plan) {
+    state.plan = {
+      from: data.controls.from, through: data.controls.through,
+      period: data.controls.period, scenario: data.controls.scenario, measure: "planned",
+    };
   }
-  const header = ["Account", ...data.labels.map((l) => ({ label: l, num: true })),
-                  { label: "Total", num: true }];
-  const rows = data.lines.map((line) => el("tr", {},
-    el("td", {}, line.account),
-    line.budgeted.map((value, index) => el("td", { class: cls(value) },
-      el("span", {}, money(value)),
-      el("span", { class: "muted" }, ` / ${money(line.actual[index])}`))),
-    el("td", { class: cls(line.total_budgeted) }, money(line.total_budgeted))));
+  const currentPlan = state.plan;
 
-  const netRow = el("tr", { style: "font-weight:600" },
-    el("td", {}, "Net cash flow"),
-    data.net.map((value, index) => el("td", {
-      class: (Number(value) < 0 ? "num neg " : "num ")
-        + (data.shortfalls.includes(index) ? "shortfall" : ""),
-    }, money(value))),
-    el("td", { class: cls(data.net.reduce((a, b) => a + Number(b), 0)) },
-      money(data.net.reduce((a, b) => a + Number(b), 0))));
+  const scenario = el("select", { name: "scenario" },
+    data.controls.scenarios.map((item) => el("option", {
+      value: item.handle || "",
+      selected: (item.handle || "") === (currentPlan.scenario || "") ? "selected" : null,
+    }, item.name)));
+  const from = el("input", {
+    name: "from", type: "month", value: currentPlan.from,
+    min: data.controls.minimum, max: data.controls.maximum,
+  });
+  const through = el("input", {
+    name: "through", type: "month", value: currentPlan.through,
+    min: data.controls.minimum, max: data.controls.maximum,
+  });
+  const period = el("select", { name: "period" },
+    [["month", "Month"], ["quarter", "Quarter"], ["year", "Year"]].map(([value, label]) =>
+      el("option", { value, selected: value === currentPlan.period ? "selected" : null }, label)));
+  const measure = el("select", { name: "measure" },
+    [["planned", "Plan"], ["actual", "Actual"], ["variance", "Variance"]].map(([value, label]) =>
+      el("option", { value, selected: value === currentPlan.measure ? "selected" : null }, label)));
 
-  return el("div", {},
+  const controls = el("form", { class: "toolbar", onsubmit: (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(event.target).entries());
+    if (values.through < values.from) {
+      say("Through must be the same month as From or later.", "error");
+      return;
+    }
+    state.plan = {
+      from: values.from, through: values.through, period: values.period,
+      scenario: values.scenario || null, measure: values.measure,
+    };
+    render();
+  } },
+    el("label", {}, "Scenario ", scenario),
+    el("label", {}, "From ", from),
+    el("label", {}, "Through ", through),
+    el("label", {}, "Group by ", period),
+    el("label", {}, "Show ", measure),
+    el("button", { class: "action primary", type: "submit" }, "Apply"));
+
+  const summary = data.summary;
+  const cards = el("div", { class: "cards" },
+    [["Planned cash", summary.planned_cash], ["Actual cash", summary.actual_cash],
+     ["Variance", summary.variance]].map(([label, value]) =>
+      el("div", { class: "card" },
+        el("div", { class: "label" }, label),
+        el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` }, money(value)))),
+    el("div", { class: "card" },
+      el("div", { class: "label" }, "Expected unresolved"),
+      el("div", { class: "value" }, summary.unresolved_expected)),
+    el("div", { class: "card" },
+      el("div", { class: "label" }, "Actuals to review"),
+      el("div", { class: "value" }, summary.unresolved_actuals)));
+
+  const headers = ["Category", ...data.periods.map((item) => ({ label: item.label, num: true }))];
+  const rows = [];
+  for (const [kind, heading] of [["income", "Income"], ["expense", "Expenses"]]) {
+    rows.push(el("tr", { class: "section-row" },
+      el("td", { colspan: String(headers.length) }, heading)));
+    for (const category of data.categories.filter((row) => row.class === kind)) {
+      rows.push(el("tr", {},
+        el("td", {
+          style: `padding-left:${12 + category.depth * 18}px`,
+          title: category.full_name,
+        }, category.name),
+        category[currentPlan.measure].map((value) =>
+          el("td", { class: cls(value) }, money(value)))));
+    }
+  }
+
+  return el("div", {}, controls, cards,
     el("p", { class: "note" },
-      `Budget "${data.budget}", ${data.kind} periods. Each cell shows budgeted / `
-      + "actual. Shaded periods plan to spend more than they take in."),
-    table(header, [...rows, netRow]));
+      `Showing ${data.controls.from} through ${data.controls.through}. `
+      + "Changes to the controls take effect only when Apply is pressed."),
+    el("p", { class: "note" },
+      "Income and expense values are derived from exact-dated scheduled/estimated "
+      + "and actual transaction splits; reporting periods do not store budget values."),
+    table(headers, rows));
 }
 
 function chart(rows) {
@@ -374,7 +440,7 @@ async function showEntry() {
 
 const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
-  Budget: showBudget, Projection: showProjection, Enter: showEntry,
+  Plan: showPlan, Projection: showProjection, Enter: showEntry,
 };
 
 // The dashboard: what is owned and owed, the liquidity verdict, and the bills.

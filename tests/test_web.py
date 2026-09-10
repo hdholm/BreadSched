@@ -139,6 +139,46 @@ class TestItServes:
         assert caught.value.code == 404
 
 
+class TestPlanApi:
+    """The web Plan is the same derived event-driven report as GTK."""
+
+    def test_the_endpoint_answers_with_derived_categories(self, client):
+        status, payload = client.get("/api/plan")
+        assert status == 200
+        assert set(payload) == {"controls", "periods", "summary", "categories"}
+        by_name = {row["full_name"]: row for row in payload["categories"]}
+        assert "Income:Salary" in by_name
+        assert "Expenses:Rent" in by_name
+        assert Money(by_name["Income:Salary"]["actual"][0]) == Money("4200.00")
+        assert Money(by_name["Expenses:Rent"]["actual"][0]) == Money("1800.00")
+
+    def test_grouping_changes_display_buckets(self, client):
+        _status, payload = client.get(
+            "/api/plan?from=2026-01&through=2026-12&period=quarter"
+        )
+        assert payload["controls"]["period"] == "quarter"
+        assert [row["label"] for row in payload["periods"]] == [
+            "Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"
+        ]
+
+    def test_plan_reports_base_and_saved_scenario_choices(self, client):
+        _status, payload = client.get("/api/plan")
+        choices = payload["controls"]["scenarios"]
+        assert choices[0] == {"handle": None, "name": "Base scenario"}
+
+    def test_invalid_range_is_a_bad_request(self, client):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/plan?from=2027-01&through=2026-12")
+        assert caught.value.code == 400
+
+    def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode()
+        assert '"Scheduled", "Plan", "Projection"' in page
+        assert "async function showPlan" in page
+        assert "async function showBudget" not in page
+
+
 class TestThreadSafety:
     """The database is opened on one thread and used from the request threads."""
 
