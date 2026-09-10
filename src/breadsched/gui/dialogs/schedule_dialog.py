@@ -116,6 +116,26 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.start_entry, 1, row, 1, 1)
         row += 1
 
+        self.ends = Gtk.DropDown.new_from_strings(
+            ["Never", "On date", "After occurrences"]
+        )
+        self.ends.connect("notify::selected", self._validate)
+        grid.attach(Gtk.Label(label="Ends", xalign=0), 0, row, 1, 1)
+        grid.attach(self.ends, 1, row, 1, 1)
+        row += 1
+
+        self.end_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.end_entry.connect("changed", self._validate)
+        grid.attach(Gtk.Label(label="End date", xalign=0), 0, row, 1, 1)
+        grid.attach(self.end_entry, 1, row, 1, 1)
+        row += 1
+
+        self.count_entry = Gtk.Entry(placeholder_text="12")
+        self.count_entry.connect("changed", self._validate)
+        grid.attach(Gtk.Label(label="Occurrences", xalign=0), 0, row, 1, 1)
+        grid.attach(self.count_entry, 1, row, 1, 1)
+        row += 1
+
         self.weekend = Gtk.DropDown.new_from_strings([w[0] for w in _WEEKEND])
         self.weekend.set_tooltip_text(
             "A payment moved off a weekend can land in a different month, which "
@@ -158,10 +178,29 @@ class ScheduleDialog(Gtk.Window):
         except ValueError:
             return None
         _label, period, interval = _FREQUENCIES[self.frequency.get_selected()]
+        end = None
+        count = None
+        if period is not PeriodType.ONCE:
+            if self.ends.get_selected() == 1:
+                try:
+                    end = date.fromisoformat(self.end_entry.get_text().strip())
+                except ValueError:
+                    return None
+                if end < start:
+                    return None
+            elif self.ends.get_selected() == 2:
+                try:
+                    count = int(self.count_entry.get_text().strip())
+                except ValueError:
+                    return None
+                if count < 1:
+                    return None
         return Recurrence(
             period=period,
             interval=interval,
             start=start,
+            end=end,
+            count=count,
             weekend_adjust=_WEEKEND[self.weekend.get_selected()][1],
         )
 
@@ -182,8 +221,13 @@ class ScheduleDialog(Gtk.Window):
         if self._amount() is None:
             problems.append("enter an amount")
         recurrence = self._recurrence()
+        period = _FREQUENCIES[self.frequency.get_selected()][1]
+        bounded = period is not PeriodType.ONCE
+        self.ends.set_sensitive(bounded)
+        self.end_entry.set_sensitive(bounded and self.ends.get_selected() == 1)
+        self.count_entry.set_sensitive(bounded and self.ends.get_selected() == 2)
         if recurrence is None:
-            problems.append("check the date (YYYY-MM-DD)")
+            problems.append("check the schedule dates/count")
         if self.category.get_selected() == self.funding.get_selected():
             problems.append("choose two different accounts")
 

@@ -522,6 +522,8 @@ class Api:
             "amount": simple["amount"] if simple else None,
             "frequency": self._frequency_key(item.recurrence),
             "start": item.recurrence.start.isoformat(),
+            "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
+            "count": item.recurrence.count,
             "weekend": self._weekend_key(item.recurrence.weekend_adjust),
         }
 
@@ -557,6 +559,8 @@ class Api:
                     "amount": parts["amount"] if parts else None,
                     "frequency": frequency if parts else None,
                     "start": item.recurrence.start.isoformat(),
+                    "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
+                    "count": item.recurrence.count,
                     "weekend": self._weekend_key(item.recurrence.weekend_adjust),
                 }
                 for item in schedules
@@ -609,11 +613,32 @@ class Api:
         except ValueError:
             raise ValueError("first occurrence must be YYYY-MM-DD") from None
         period, interval = self._SCENARIO_FREQUENCIES[frequency]
+        end = None
+        count = None
+        end_text = str(payload.get("end") or "").strip()
+        count_text = str(payload.get("count") or "").strip()
+        if period is not PeriodType.ONCE:
+            if end_text and count_text:
+                raise ValueError("choose either an end date or an occurrence count")
+            if end_text:
+                try:
+                    end = date.fromisoformat(end_text)
+                except ValueError:
+                    raise ValueError("end date must be YYYY-MM-DD") from None
+                if end < start:
+                    raise ValueError("end date cannot be before the first occurrence")
+            elif count_text:
+                try:
+                    count = int(count_text)
+                except ValueError:
+                    raise ValueError("occurrence count must be a whole number") from None
+                if count < 1:
+                    raise ValueError("occurrence count must be at least 1")
         signed = amount * category.sign()
         change = ScenarioSchedule(
             name=name,
             recurrence=Recurrence(
-                period=period, interval=interval, start=start,
+                period=period, interval=interval, start=start, end=end, count=count,
                 weekend_adjust=self._SCENARIO_WEEKENDS[weekend],
             ),
             splits=[

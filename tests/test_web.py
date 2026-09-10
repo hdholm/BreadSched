@@ -938,6 +938,70 @@ class TestScenarioEventWebParity:
         assert saved["changes"][0]["source_schedule"] is None
         assert saved["changes"][0]["amount"] == "1500.00"
 
+    def test_scenario_estimate_can_end_after_occurrence_count(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?"
+            + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        rent = next(
+            account for account in events["accounts"] if account["name"].endswith("Rent")
+        )
+        bank = next(
+            account
+            for account in events["accounts"]
+            if account["name"].endswith("Checking")
+        )
+        _status, saved = scenario_event_client.post(
+            "/api/scenario/event/save",
+            {
+                "handle": scenario["handle"],
+                "name": "Six month rent estimate",
+                "category": rent["handle"],
+                "funding": bank["handle"],
+                "amount": "1500.00",
+                "frequency": "monthly",
+                "start": "2026-03-01",
+                "count": "6",
+                "weekend": "none",
+            },
+        )
+        change = saved["changes"][0]
+        assert change["count"] == 6
+        assert change["end"] is None
+
+    def test_scenario_estimate_can_have_end_date(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?"
+            + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        rent = next(
+            account for account in events["accounts"] if account["name"].endswith("Rent")
+        )
+        bank = next(
+            account
+            for account in events["accounts"]
+            if account["name"].endswith("Checking")
+        )
+        _status, saved = scenario_event_client.post(
+            "/api/scenario/event/save",
+            {
+                "handle": scenario["handle"],
+                "name": "Temporary rent estimate",
+                "category": rent["handle"],
+                "funding": bank["handle"],
+                "amount": "1500.00",
+                "frequency": "monthly",
+                "start": "2026-03-01",
+                "end": "2026-08-31",
+                "weekend": "none",
+            },
+        )
+        change = saved["changes"][0]
+        assert change["end"] == "2026-08-31"
+        assert change["count"] is None
+
     def test_baseline_can_be_altered_then_suppressed(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(

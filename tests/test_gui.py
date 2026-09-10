@@ -1051,6 +1051,26 @@ class TestScheduleEntry:
             date(2026, 1, 2), date(2026, 1, 16), date(2026, 1, 30)
         ]
 
+    def test_schedule_can_end_on_a_date(self, dialog):
+        dialog.name_entry.set_text("Temporary rent")
+        dialog.amount_entry.set_text("1800.00")
+        dialog.start_entry.set_text("2026-01-01")
+        dialog.ends.set_selected(1)
+        dialog.end_entry.set_text("2026-03-31")
+        built = dialog.build()
+        assert built.recurrence.end == date(2026, 3, 31)
+        assert built.recurrence.count is None
+
+    def test_schedule_can_end_after_occurrences(self, dialog):
+        dialog.name_entry.set_text("Six payments")
+        dialog.amount_entry.set_text("1800.00")
+        dialog.start_entry.set_text("2026-01-01")
+        dialog.ends.set_selected(2)
+        dialog.count_entry.set_text("6")
+        built = dialog.build()
+        assert built.recurrence.count == 6
+        assert built.recurrence.end is None
+
     def test_the_scheduled_view_offers_the_dialog(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("scheduled")
