@@ -866,22 +866,70 @@ class Api:
             for row in budgeting.coverage(self.db, budgets[0])
         ]
 
-    def projection(self, scenario_name: str | None = None, years: int = 5) -> dict:
-        scenario = None
-        if scenario_name:
-            scenario = self.db.get_scenario_by_name(scenario_name)
-        if scenario is None:
-            budgets = list(self.db.iter_budgets())
-            scenario = Scenario(
-                name=scenario_name or "ad hoc",
-                years=years,
-                basis=ProjectionBasis.SCHEDULED,
-                budget=budgets[0].handle if budgets else None,
-            )
+    def _projection_draft(
+        self, scenario_handle: str | None = None, years: int | None = None
+    ) -> Scenario:
+        """Return a detached projection scenario safe for browser-side editing."""
+        if scenario_handle:
+            stored = self.db.get_scenario(scenario_handle)
+            if stored is None:
+                raise KeyError(scenario_handle)
+            scenario = Scenario.from_dict(stored.serialize())
+        else:
+            scenario = self._management_base_scenario()
+        if years is not None:
+            if years < 1 or years > 100:
+                raise ValueError("projection years must be between 1 and 100")
+            scenario.years = years
+        return scenario
+
+    def _apply_projection_payload(self, scenario: Scenario, payload: dict) -> Scenario:
+        """Apply editable projection controls to a detached scenario."""
+        years = int(payload.get("years", scenario.years))
+        if years < 1 or years > 100:
+            raise ValueError("projection years must be between 1 and 100")
+        scenario.years = years
+        basis = str(payload.get("basis", scenario.basis.value))
+        try:
+            scenario.basis = ProjectionBasis(basis)
+        except ValueError:
+            raise ValueError("choose a valid projection basis") from None
+        budget = str(payload.get("budget") or "").strip() or None
+        if budget is not None and self.db.get_budget(budget) is None:
+            raise ValueError("choose a valid budget")
+        scenario.budget = budget
+        scenario.assumptions = self._assumptions_from_payload(
+            payload.get("assumptions", scenario.assumptions.serialize()),
+            scenario.assumptions,
+        )
+        return scenario
+
+    def _projection_payload(self, scenario: Scenario, *, base: bool = False) -> dict:
         result = projection.project(self.db, scenario)
         return {
-            "scenario": scenario.name,
+            "scenario": {
+                "handle": None if base else scenario.handle,
+                "name": scenario.name,
+                "years": scenario.years,
+                "basis": scenario.basis.value,
+                "budget": scenario.budget,
+                "assumptions": scenario.assumptions.serialize(),
+            },
+            "controls": {
+                "scenarios": [
+                    {"handle": None, "name": "Base scenario"},
+                    *[
+                        {"handle": item.handle, "name": item.name}
+                        for item in self.db.iter_scenarios()
+                    ],
+                ],
+                "budgets": [
+                    {"handle": item.handle, "name": item.name}
+                    for item in self.db.iter_budgets()
+                ],
+            },
             "summary": result.summary(),
+            "warnings": list(result.warnings),
             "rows": [
                 {
                     "label": row.label,
@@ -895,6 +943,35 @@ class Api:
                 for row in result.rows
             ],
         }
+
+    def projection(
+        self, scenario_handle: str | None = None, years: int | None = None
+    ) -> dict:
+        """Calculate a persisted Base/saved scenario without mutating it."""
+        return self._projection_payload(
+            self._projection_draft(scenario_handle, years), base=scenario_handle is None
+        )
+
+    def projection_calculate(self, payload: dict) -> dict:
+        """Calculate an edited projection draft without persisting the edits."""
+        handle = str(payload.get("handle") or "").strip() or None
+        scenario = self._projection_draft(handle)
+        self._apply_projection_payload(scenario, payload)
+        return self._projection_payload(scenario, base=handle is None)
+
+    def projection_save(self, payload: dict) -> dict:
+        """Persist projection controls explicitly, preserving hidden model fields."""
+        handle = str(payload.get("handle") or "").strip() or None
+        scenario = self._projection_draft(handle)
+        self._apply_projection_payload(scenario, payload)
+        if handle is None:
+            self.db.set_metadata(
+                "planning.base_assumptions", scenario.assumptions.serialize()
+            )
+            return self._projection_payload(scenario, base=True)
+        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
+            self.db.commit_scenario(scenario, txn)
+        return self._projection_payload(scenario)
 
     # ---------------------------------------------------------------- writing
 
@@ -1028,7 +1105,8 @@ ROUTES = {
     "/api/budget": lambda a, q: a.budget(q.get("name", [None])[0]),
     "/api/coverage": lambda a, q: a.coverage(q.get("name", [None])[0]),
     "/api/projection": lambda a, q: a.projection(
-        q.get("scenario", [None])[0], int(q.get("years", ["5"])[0])
+        q.get("scenario", [None])[0],
+        int(q["years"][0]) if q.get("years") else None,
     ),
 }
 
@@ -1045,6 +1123,8 @@ POST_ROUTES = {
     "/api/scenario/period/delete": lambda a, body: a.scenario_period_delete(body),
     "/api/scenario/event/save": lambda a, body: a.scenario_event_save(body),
     "/api/scenario/event/suppress": lambda a, body: a.scenario_event_suppress(body),
+    "/api/projection/calculate": lambda a, body: a.projection_calculate(body),
+    "/api/projection/save": lambda a, body: a.projection_save(body),
 }
 
 

@@ -138,6 +138,7 @@ let current = "Dashboard";
 let state = {
   accounts: [], account: null, plan: null, review: null,
   scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
+  projectionData: null, projectionHandle: null,
 };
 
 const el = (tag, attrs = {}, ...kids) => {
@@ -780,8 +781,95 @@ function chart(rows) {
 }
 
 async function showProjection() {
-  const data = await get("/api/projection?years=10");
+  let data = state.projectionData;
+  if (!data) {
+    const handle = state.projectionHandle ?? (state.plan ? state.plan.scenario : null);
+    const suffix = handle ? `?scenario=${encodeURIComponent(handle)}` : "";
+    data = await get(`/api/projection${suffix}`);
+    state.projectionHandle = data.scenario.handle;
+    state.projectionData = data;
+  }
+  const scenarioData = data.scenario;
   const s = data.summary;
+
+  const scenarioPicker = el("select", {
+    name: "scenario",
+    onchange: (event) => {
+      const handle = event.target.value || null;
+      state.projectionHandle = handle;
+      state.projectionData = null;
+      if (state.plan) state.plan.scenario = handle;
+      render();
+    },
+  }, data.controls.scenarios.map((item) => el("option", {
+    value: item.handle || "",
+    selected: (item.handle || "") === (scenarioData.handle || "") ? "selected" : null,
+  }, item.name)));
+
+  const basis = el("select", { name: "basis" }, [
+    ["scheduled", "Scheduled events"],
+    ["budget", "Legacy budget"],
+    ["combined", "Legacy budget + schedules"],
+  ].map(([value, label]) => el("option", {
+    value, selected: value === scenarioData.basis ? "selected" : null,
+  }, label)));
+  const budget = el("select", { name: "budget" },
+    el("option", { value: "" }, "None"),
+    data.controls.budgets.map((item) => el("option", {
+      value: item.handle,
+      selected: item.handle === scenarioData.budget ? "selected" : null,
+    }, item.name)));
+
+  const form = el("form", { class: "panel scenario-panel", onsubmit: async (event) => {
+    event.preventDefault();
+    const values = new FormData(event.target);
+    const payload = {
+      handle: scenarioData.handle,
+      years: Number(values.get("years")),
+      basis: values.get("basis"),
+      budget: values.get("budget") || null,
+      assumptions: readAssumptions(event.target, "projection_"),
+    };
+    try {
+      state.projectionData = await post("/api/projection/calculate", payload);
+      say("Projection recalculated. Changes are not saved yet.");
+      render();
+    } catch (error) { say(error.message, "error"); }
+  } },
+    el("div", { class: "toolbar" },
+      el("label", {}, "Scenario ", scenarioPicker),
+      el("label", {}, "Years ", el("input", {
+        type: "number", name: "years", min: "1", max: "100", step: "1",
+        value: scenarioData.years,
+      })),
+      el("label", {}, "Driven by ", basis),
+      el("label", {}, "Budget ", budget),
+      el("button", { class: "action primary", type: "submit" }, "Apply"),
+      el("button", {
+        class: "action", type: "button",
+        onclick: async () => {
+          const values = new FormData(form);
+          try {
+            state.projectionData = await post("/api/projection/save", {
+              handle: scenarioData.handle,
+              years: Number(values.get("years")),
+              basis: values.get("basis"),
+              budget: values.get("budget") || null,
+              assumptions: readAssumptions(form, "projection_"),
+            });
+            say(scenarioData.handle
+              ? "Saved scenario projection changes."
+              : "Saved Base assumptions in this book.");
+            render();
+          } catch (error) { say(error.message, "error"); }
+        },
+      }, scenarioData.handle ? "Save scenario changes" : "Save Base assumptions")),
+    el("h3", {}, "Annual assumptions"),
+    assumptionInputs(scenarioData.assumptions, "projection_"),
+    el("p", { class: "note" },
+      "Apply recalculates this draft without saving it. Base saves only its annual assumptions; "
+      + "saved scenarios also retain their projection horizon and source settings."));
+
   const cards = el("div", { class: "cards" },
     [["Ending net worth", s.ending_net_worth], ["Ending cash", s.ending_cash],
      ["Lowest cash", s.minimum_cash]].map(([label, value]) =>
@@ -799,13 +887,18 @@ async function showProjection() {
     el("td", { class: cls(row.expense) }, money(row.expense)),
     el("td", { class: cls(row.cash) }, money(row.cash)),
     el("td", { class: cls(row.holdings) }, money(row.holdings)),
+    el("td", { class: cls(row.liabilities) }, money(row.liabilities)),
     el("td", { class: cls(row.net_worth) }, money(row.net_worth))));
 
-  return el("div", {}, cards, chart(data.rows),
-    el("p", { class: "note" }, `Scenario "${data.scenario}", by year.`),
+  const warnings = data.warnings && data.warnings.length
+    ? el("p", { class: "note neg" }, data.warnings.join("  ")) : null;
+  return el("div", {},
+    el("h2", {}, "Projection"),
+    form, cards, chart(data.rows), warnings,
+    el("p", { class: "note" }, `Scenario "${scenarioData.name}", by year.`),
     table(["Month", { label: "Income", num: true }, { label: "Expense", num: true },
            { label: "Cash", num: true }, { label: "Holdings", num: true },
-           { label: "Net worth", num: true }], yearly));
+           { label: "Liabilities", num: true }, { label: "Net worth", num: true }], yearly));
 }
 
 async function showEntry() {

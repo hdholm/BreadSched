@@ -195,6 +195,80 @@ class TestItServes:
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")
         assert len(payload["rows"]) == 36
+        assert payload["scenario"]["name"] == "Base scenario"
+        assert payload["scenario"]["years"] == 3
+
+    def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        handle = scenario["handle"]
+        _status, calculated = client.post(
+            "/api/projection/calculate",
+            {
+                "handle": handle,
+                "years": 12,
+                "basis": "scheduled",
+                "budget": None,
+                "assumptions": {
+                    "income_growth": "0.01",
+                    "expense_inflation": "0.02",
+                    "investment_return": "0.09",
+                    "cash_interest": "0.015",
+                    "liability_interest": "0.03",
+                },
+            },
+        )
+        assert calculated["scenario"]["years"] == 12
+        assert calculated["scenario"]["assumptions"]["investment_return"] == "0.09"
+
+        _status, persisted = client.get(f"/api/projection?scenario={handle}")
+        assert persisted["scenario"]["years"] == 10
+        assert persisted["scenario"]["assumptions"]["investment_return"] == "0.06"
+
+    def test_projection_save_persists_saved_scenario_controls(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        handle = scenario["handle"]
+        _status, saved = client.post(
+            "/api/projection/save",
+            {
+                "handle": handle,
+                "years": 14,
+                "basis": "scheduled",
+                "budget": None,
+                "assumptions": {
+                    "income_growth": "0.015",
+                    "expense_inflation": "0.0275",
+                    "investment_return": "0.055",
+                    "cash_interest": "0.0125",
+                    "liability_interest": "0.01",
+                },
+            },
+        )
+        assert saved["scenario"]["years"] == 14
+        _status, persisted = client.get(f"/api/projection?scenario={handle}")
+        assert persisted["scenario"]["years"] == 14
+        assert persisted["scenario"]["assumptions"]["investment_return"] == "0.055"
+
+    def test_projection_save_persists_base_assumptions_only(self, client):
+        _status, saved = client.post(
+            "/api/projection/save",
+            {
+                "handle": None,
+                "years": 20,
+                "basis": "scheduled",
+                "budget": None,
+                "assumptions": {
+                    "income_growth": "0.02",
+                    "expense_inflation": "0.03",
+                    "investment_return": "0.07",
+                    "cash_interest": "0.01",
+                    "liability_interest": "0.0",
+                },
+            },
+        )
+        assert saved["scenario"]["years"] == 20
+        _status, reopened = client.get("/api/projection")
+        assert reopened["scenario"]["years"] == 10
+        assert reopened["scenario"]["assumptions"]["investment_return"] == "0.07"
 
     def test_an_unknown_route_is_not_a_crash(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:
