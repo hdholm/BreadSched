@@ -487,28 +487,28 @@ def build_category_report(
 
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
-            for split in event.expected_splits:
-                account = accounts.get(split.account)
+            for planned_split in event.expected_splits:
+                account = accounts.get(planned_split.account)
                 if account is None:
                     continue
                 values = amounts(direct_planned, account.handle)
                 if account.account_class is AccountClass.INCOME:
-                    values[period_index] = values[period_index] - split.amount
+                    values[period_index] = values[period_index] - planned_split.amount
                 elif account.account_class is AccountClass.EXPENSE:
-                    values[period_index] = values[period_index] + split.amount
+                    values[period_index] = values[period_index] + planned_split.amount
         for actual in bucket.actual_transactions:
             transaction = db.get_transaction(actual.transaction)
             if transaction is None:
                 continue
-            for split in transaction.splits:
-                account = accounts.get(split.account)
+            for actual_split in transaction.splits:
+                account = accounts.get(actual_split.account)
                 if account is None:
                     continue
                 values = amounts(direct_actual, account.handle)
                 if account.account_class is AccountClass.INCOME:
-                    values[period_index] = values[period_index] - split.value
+                    values[period_index] = values[period_index] - actual_split.value
                 elif account.account_class is AccountClass.EXPENSE:
-                    values[period_index] = values[period_index] + split.value
+                    values[period_index] = values[period_index] + actual_split.value
 
     active = set(direct_planned) | set(direct_actual)
     for handle in list(active):
