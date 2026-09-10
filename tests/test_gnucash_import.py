@@ -12,7 +12,7 @@ import pytest
 from gnucash_fixtures import create_book, new_guid
 
 from breadsched.gen.engine import ledger
-from breadsched.gen.lib import AccountType, Money
+from breadsched.gen.lib import AccountType, Money, PlanningResolution
 from breadsched.gen.plug import IMPORTER, PluginManager
 from breadsched.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
 
@@ -91,6 +91,15 @@ class TestSqliteImport:
     def test_amounts_are_exact(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         assert ledger.balance(db, gnucash_sqlite_path.ids.checking) == Money("2350.00")
+
+    def test_imported_history_is_not_sent_to_plan_resolution(self, db, gnucash_sqlite_path):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        transactions = list(db.iter_transactions())
+        assert transactions
+        assert all(
+            transaction.planning_resolution is PlanningResolution.HISTORICAL
+            for transaction in transactions
+        )
 
     def test_multi_split_transactions_keep_every_leg(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)

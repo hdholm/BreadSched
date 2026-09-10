@@ -28,6 +28,7 @@ class PlanningResolution(str, Enum):
     UNRESOLVED = "unresolved"
     MATCHED = "matched"
     UNEXPECTED = "unexpected"
+    HISTORICAL = "historical"
 
 
 class ReconcileState(str, Enum):

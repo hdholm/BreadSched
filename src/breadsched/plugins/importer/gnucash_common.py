@@ -26,6 +26,7 @@ from ...gen.lib.account import Account, AccountType
 from ...gen.lib.commodity import Commodity
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import (
+    PlanningResolution,
     ReconcileState,
     Split,
     Transaction,
@@ -319,6 +320,9 @@ class ImportSink:
             currency=self.resolve_commodity(currency),
             num=num,
         )
+        # Imported GnuCash history is already-established actual activity.  It
+        # must not enter BreadSched's plan-resolution review queue en masse.
+        txn_obj.planning_resolution = PlanningResolution.HISTORICAL
         subject = txn_obj.describe()
 
         if not splits:

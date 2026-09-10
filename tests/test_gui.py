@@ -1861,6 +1861,89 @@ class TestDueReview:
         assert due_book.db.summary()["txn"] == 0
 
 
+class TestResolutionView:
+    def test_imported_history_does_not_enter_review_queue(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("resolution")
+        view = window._views["resolution"]
+        assert view._unresolved_transactions() == []
+        assert view.actual_summary.get_text() == "No unresolved actual transactions."
+
+    def _add_matching_actual(self, populated_book):
+        from datetime import timedelta
+
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import Split, Transaction
+
+        db = DbSQLite()
+        db.load(populated_book)
+        schedule = next(iter(db.iter_scheduled()))
+        when = next(
+            iter(
+                schedule.recurrence.occurrences(
+                    date(2026, 12, 31), since=date(2026, 1, 1)
+                )
+            )
+        )
+        actual = Transaction(
+            post_date=when + timedelta(days=1),
+            description=schedule.description,
+        )
+        for account, amount in schedule.resolved_splits(when=when):
+            actual.add_split(Split(account, amount))
+        with db.transaction("Unresolved actual") as txn:
+            db.add_transaction(actual, txn)
+        db.close()
+        return actual.handle, schedule.occurrence_key(when)
+
+    def test_match_action_persists_resolution(self, app, window, populated_book):
+        from breadsched.gen.lib import PlanningResolution
+
+        actual_handle, occurrence_key = self._add_matching_actual(populated_book)
+        app.open_book(populated_book)
+        window.show_category("resolution")
+        view = window._views["resolution"]
+        view._transaction_handle = actual_handle
+        view._refresh_candidates()
+
+        candidate_row = view.candidate_list.get_row_at_index(0)
+        assert candidate_row is not None
+        assert candidate_row.candidate.event.key == occurrence_key
+        view.candidate_list.select_row(candidate_row)
+        assert "date variance +1 day(s)" in view.variance.get_text()
+
+        view._on_match(None)
+        resolved = app.db.get_transaction(actual_handle)
+        assert resolved.planning_resolution is PlanningResolution.MATCHED
+        assert resolved.planned_occurrence == occurrence_key
+        assert all(
+            txn.handle != actual_handle for txn in view._unresolved_transactions()
+        )
+
+    def test_reject_then_unexpected_is_persistent(self, app, window, populated_book):
+        from breadsched.gen.lib import PlanningResolution
+
+        actual_handle, occurrence_key = self._add_matching_actual(populated_book)
+        app.open_book(populated_book)
+        window.show_category("resolution")
+        view = window._views["resolution"]
+        view._transaction_handle = actual_handle
+        view._refresh_candidates()
+        candidate_row = view.candidate_list.get_row_at_index(0)
+        view.candidate_list.select_row(candidate_row)
+
+        view._on_reject(None)
+        rejected = app.db.get_transaction(actual_handle)
+        assert occurrence_key in rejected.rejected_plan_occurrences
+        assert view.candidate_list.get_row_at_index(0) is None
+
+        view._on_unexpected(None)
+        resolved = app.db.get_transaction(actual_handle)
+        assert resolved.planning_resolution is PlanningResolution.UNEXPECTED
+        assert resolved.rejected_plan_occurrences == []
+
 class TestDashboardView:
     """The dashboard is the view a book opens on."""
 

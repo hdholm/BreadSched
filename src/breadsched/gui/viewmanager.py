@@ -46,6 +46,7 @@ CATEGORIES = [
     ("register", "Register", "text-x-generic-symbolic"),
     ("scheduled", "Scheduled", "alarm-symbolic"),
     ("upcoming", "Upcoming", "x-office-calendar-symbolic"),
+    ("resolution", "Review", "dialog-question-symbolic"),
     ("budget", "Budget", "view-grid-symbolic"),
     ("projection", "Projection", "network-cellular-signal-excellent-symbolic"),
 ]
@@ -360,6 +361,7 @@ class ViewManager(Gtk.ApplicationWindow):
         from .views.dashboard import DashboardView
         from .views.projection import ProjectionView
         from .views.register import RegisterView
+        from .views.resolution import ResolutionView
         from .views.scheduled import ScheduledView, UpcomingView
 
         factories = {
@@ -368,6 +370,7 @@ class ViewManager(Gtk.ApplicationWindow):
             "register": lambda: RegisterView(self),
             "scheduled": lambda: ScheduledView(self),
             "upcoming": lambda: UpcomingView(self),
+            "resolution": lambda: ResolutionView(self),
             "budget": lambda: BudgetView(self),
             "projection": lambda: ProjectionView(self),
         }
