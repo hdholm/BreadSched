@@ -657,6 +657,7 @@ class Api:
         through_month: str | None = None,
         period: str = "month",
         scenario_handle: str | None = None,
+        compare_handle: str | None = None,
     ) -> dict:
         """Derived category Plan using the same event stream as the GTK view."""
         today = date.today()
@@ -706,6 +707,81 @@ class Api:
             self.db, start, end, period=grouping, scenario=scenario
         )
         totals = report.activity
+
+        comparison = None
+        if compare_handle is not None:
+            if compare_handle == "__base__":
+                compare_scenario = self._base_scenario(start, end)
+                compare_identity = None
+                compare_name = "Base scenario"
+            else:
+                compare_scenario = next(
+                    (item for item in scenarios if item.handle == compare_handle), None
+                )
+                if compare_scenario is None:
+                    raise KeyError(compare_handle)
+                compare_identity = compare_scenario.handle
+                compare_name = compare_scenario.name
+            if compare_identity == scenario_handle:
+                raise ValueError("Plan comparison must use a different scenario.")
+            compare_report = activity.build_category_report(
+                self.db, start, end, period=grouping, scenario=compare_scenario
+            )
+            compare_rows = {row.account: row for row in compare_report.categories}
+            comparison = {
+                "handle": compare_identity,
+                "name": compare_name,
+                "summary": {
+                    "planned_cash": compare_report.activity.planned_cash_change,
+                    "actual_cash": compare_report.activity.actual_cash_change,
+                    "variance": compare_report.activity.cash_variance,
+                    "planned_cash_delta": (
+                        totals.planned_cash_change
+                        - compare_report.activity.planned_cash_change
+                    ),
+                    "actual_cash_delta": (
+                        totals.actual_cash_change
+                        - compare_report.activity.actual_cash_change
+                    ),
+                    "variance_delta": (
+                        totals.cash_variance - compare_report.activity.cash_variance
+                    ),
+                },
+                "categories": [],
+            }
+            for row in report.categories:
+                other = compare_rows.get(row.account)
+                zeroes = [Money(0) for _ in row.planned]
+                other_planned = other.planned if other is not None else zeroes
+                other_actual = other.actual if other is not None else zeroes
+                other_variance = other.variance if other is not None else zeroes
+                comparison["categories"].append(
+                    {
+                        "account": row.account,
+                        "planned": other_planned,
+                        "actual": other_actual,
+                        "variance": other_variance,
+                        "planned_delta": [
+                            value - alternate
+                            for value, alternate in zip(
+                                row.planned, other_planned, strict=True
+                            )
+                        ],
+                        "actual_delta": [
+                            value - alternate
+                            for value, alternate in zip(
+                                row.actual, other_actual, strict=True
+                            )
+                        ],
+                        "variance_delta": [
+                            value - alternate
+                            for value, alternate in zip(
+                                row.variance, other_variance, strict=True
+                            )
+                        ],
+                    }
+                )
+
         return {
             "controls": {
                 "from": start.strftime("%Y-%m"),
@@ -737,6 +813,7 @@ class Api:
                 "unresolved_expected": totals.unresolved_count,
                 "unresolved_actuals": totals.unresolved_actual_count,
             },
+            "comparison": comparison,
             "categories": [
                 {
                     "account": row.account,
@@ -1162,6 +1239,7 @@ ROUTES = {
         q.get("through", [None])[0],
         q.get("period", ["month"])[0],
         q.get("scenario", [None])[0],
+        q.get("compare", [None])[0],
     ),
     "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
     "/api/scenarios": lambda a, q: a.scenarios(),

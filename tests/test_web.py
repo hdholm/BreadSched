@@ -364,7 +364,9 @@ class TestPlanApi:
     def test_the_endpoint_answers_with_derived_categories(self, client):
         status, payload = client.get("/api/plan")
         assert status == 200
-        assert set(payload) == {"controls", "periods", "summary", "categories"}
+        assert set(payload) == {
+            "controls", "periods", "summary", "comparison", "categories"
+        }
         by_name = {row["full_name"]: row for row in payload["categories"]}
         assert "Income:Salary" in by_name
         assert "Expenses:Rent" in by_name
@@ -384,6 +386,42 @@ class TestPlanApi:
         _status, payload = client.get("/api/plan")
         choices = payload["controls"]["scenarios"]
         assert choices[0] == {"handle": None, "name": "Base scenario"}
+
+    def test_plan_compares_category_flows_with_a_saved_scenario(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        query = urllib.parse.urlencode({"compare": scenario["handle"]})
+        _status, payload = client.get(f"/api/plan?{query}")
+
+        comparison = payload["comparison"]
+        assert comparison["handle"] == scenario["handle"]
+        assert comparison["name"] == scenario["name"]
+        assert Money(comparison["summary"]["planned_cash_delta"]) == Money(0)
+        salary = next(
+            row for row in comparison["categories"]
+            if row["account"] == next(
+                item["account"] for item in payload["categories"]
+                if item["full_name"] == "Income:Salary"
+            )
+        )
+        assert all(Money(value) == Money(0) for value in salary["planned_delta"])
+
+    def test_saved_plan_can_compare_with_base(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        query = urllib.parse.urlencode(
+            {"scenario": scenario["handle"], "compare": "__base__"}
+        )
+        _status, payload = client.get(f"/api/plan?{query}")
+        assert payload["comparison"]["handle"] is None
+        assert payload["comparison"]["name"] == "Base scenario"
+
+    def test_plan_rejects_comparison_with_the_active_scenario(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        query = urllib.parse.urlencode(
+            {"scenario": scenario["handle"], "compare": scenario["handle"]}
+        )
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get(f"/api/plan?{query}")
+        assert caught.value.code == 400
 
     def test_invalid_range_is_a_bad_request(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:

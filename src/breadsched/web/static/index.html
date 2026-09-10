@@ -112,6 +112,8 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .plan-table th:first-child, .plan-table td:first-child { position: sticky; left: 0; background: var(--panel); z-index: 2; }
 .plan-table thead th:first-child { z-index: 4; }
 .plan-table .section-row td:first-child { background: var(--bg); }
+.plan-delta { display: block; margin-top: 2px; font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.plan-delta.neg { color: var(--bad); }
 .balance-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:16px; }
 .balance-group { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 16px; }
 .balance-group h3 { margin:0 0 8px; font-size:14px; }
@@ -298,11 +300,13 @@ async function showPlan() {
   if (applied.through) params.set("through", applied.through);
   if (applied.period) params.set("period", applied.period);
   if (applied.scenario) params.set("scenario", applied.scenario);
+  if (applied.compare) params.set("compare", applied.compare);
   const data = await get(`/api/plan${params.size ? `?${params}` : ""}`);
   if (!state.plan) {
     state.plan = {
       from: data.controls.from, through: data.controls.through,
-      period: data.controls.period, scenario: data.controls.scenario, measure: "planned",
+      period: data.controls.period, scenario: data.controls.scenario, compare: null,
+      measure: "planned",
     };
   }
   const currentPlan = state.plan;
@@ -312,6 +316,17 @@ async function showPlan() {
       value: item.handle || "",
       selected: (item.handle || "") === (currentPlan.scenario || "") ? "selected" : null,
     }, item.name)));
+  const compareChoices = [
+    ["", "No comparison"],
+    ...data.controls.scenarios
+      .filter((item) => (item.handle || "") !== (currentPlan.scenario || ""))
+      .map((item) => [item.handle || "__base__", item.name]),
+  ];
+  const compare = el("select", { name: "compare" },
+    compareChoices.map(([value, label]) => el("option", {
+      value, selected: value === (currentPlan.compare || "") ? "selected" : null,
+    }, label)));
+
   const from = el("input", {
     name: "from", type: "month", value: currentPlan.from,
     min: data.controls.minimum, max: data.controls.maximum,
@@ -336,11 +351,13 @@ async function showPlan() {
     }
     state.plan = {
       from: values.from, through: values.through, period: values.period,
-      scenario: values.scenario || null, measure: values.measure,
+      scenario: values.scenario || null, compare: values.compare || null,
+      measure: values.measure,
     };
     render();
   } },
     el("label", {}, "Scenario ", scenario),
+    el("label", {}, "Compare with ", compare),
     el("label", {}, "From ", from),
     el("label", {}, "Through ", through),
     el("label", {}, "Group by ", period),
@@ -352,12 +369,17 @@ async function showPlan() {
     }, "Manage scenarios…"));
 
   const summary = data.summary;
+  const comparison = data.comparison;
+  const summaryDelta = comparison ? comparison.summary : null;
   const cards = el("div", { class: "cards" },
-    [["Planned cash", summary.planned_cash], ["Actual cash", summary.actual_cash],
-     ["Variance", summary.variance]].map(([label, value]) =>
+    [["Planned cash", summary.planned_cash, summaryDelta?.planned_cash_delta],
+     ["Actual cash", summary.actual_cash, summaryDelta?.actual_cash_delta],
+     ["Variance", summary.variance, summaryDelta?.variance_delta]].map(([label, value, delta]) =>
       el("div", { class: "card" },
         el("div", { class: "label" }, label),
-        el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` }, money(value)))),
+        el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` }, money(value)),
+        comparison ? el("span", { class: `plan-delta ${Number(delta) < 0 ? "neg" : ""}` },
+          `Δ vs ${comparison.name}: ${money(delta)}`) : null)),
     el("div", { class: "card" },
       el("div", { class: "label" }, "Expected unresolved"),
       el("div", { class: "value" }, summary.unresolved_expected)),
@@ -371,13 +393,19 @@ async function showPlan() {
     rows.push(el("tr", { class: "section-row" },
       el("td", { colspan: String(headers.length) }, heading)));
     for (const category of data.categories.filter((row) => row.class === kind)) {
+      const compared = comparison?.categories.find((row) => row.account === category.account);
+      const deltas = compared ? compared[`${currentPlan.measure}_delta`] : null;
       rows.push(el("tr", {},
         el("td", {
           style: `padding-left:${12 + category.depth * 18}px`,
           title: category.full_name,
         }, category.name),
-        category[currentPlan.measure].map((value) =>
-          el("td", { class: cls(value) }, money(value)))));
+        category[currentPlan.measure].map((value, index) =>
+          el("td", { class: cls(value) }, money(value),
+            deltas ? el("span", {
+              class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
+              title: `Active scenario minus ${comparison.name}`,
+            }, `Δ ${money(deltas[index])}`) : null))));
     }
   }
 
