@@ -153,6 +153,7 @@ class PlanView(BaseView):
             return
         selected = self._selected_scenario()
         self._scenario_handle = selected.handle if selected is not None else None
+        self._update_scenario_actions()
         self.schedule_refresh()
 
     def _update_scenario_actions(self) -> None:
