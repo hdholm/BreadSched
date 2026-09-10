@@ -122,7 +122,6 @@ class BreadSchedApplication(Gtk.Application):
             ("export", self.on_export, None),
             ("post-scheduled", self.on_post_scheduled, None),
             ("new-transaction", self.on_new_transaction, "<Control>t"),
-            ("new-budget", self.on_new_budget, "<Control>b"),
             ("about", self.on_about, None),
             ("quit", lambda *_: self.quit(), "<Control>q"),
         ):
@@ -136,7 +135,7 @@ class BreadSchedApplication(Gtk.Application):
         # ignores set_sensitive(), so undo/redo availability must be expressed here
         # rather than on the button.
         for name in ("undo", "redo", "import", "export", "post-scheduled",
-                     "new-transaction", "new-budget"):
+                     "new-transaction"):
             self.actions[name].set_enabled(False)
 
     # ------------------------------------------------------------------- book
@@ -158,8 +157,7 @@ class BreadSchedApplication(Gtk.Application):
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book_path", str(Path(path).resolve()))
         self.settings.save()
-        for name in ("import", "export", "post-scheduled", "new-transaction",
-                     "new-budget"):
+        for name in ("import", "export", "post-scheduled", "new-transaction"):
             self.set_action_enabled(name, True)
         for window in self.get_windows():
             if isinstance(window, ViewManager):
@@ -364,12 +362,6 @@ class BreadSchedApplication(Gtk.Application):
 
         TransactionDialog(self.props.active_window, self.db).present()
 
-    def on_new_budget(self, *_args) -> None:
-        if self.db is None:
-            return
-        from .dialogs.budget_dialog import NewBudgetDialog
-
-        NewBudgetDialog(self.props.active_window, self.db).present()
 
     def on_about(self, *_args) -> None:
         about = Gtk.AboutDialog(
@@ -377,8 +369,8 @@ class BreadSchedApplication(Gtk.Application):
             modal=True,
             program_name=APP_NAME,
             version=__version__,
-            comments="Track income and expenses against a cash-flow budget, "
-                     "and project them forward.",
+            comments="Plan cash flow from scheduled financial events and compare "
+                     "the plan with actual activity.",
             license_type=Gtk.License.AGPL_3_0,
         )
         about.present()
@@ -428,7 +420,6 @@ def build_menu_model() -> Gio.Menu:
 
     actions_menu = Gio.Menu()
     actions_menu.append("New _Transaction…", "app.new-transaction")
-    actions_menu.append("New _Budget…", "app.new-budget")
     actions_menu.append("_Post Scheduled Transactions", "app.post-scheduled")
     menubar.append_submenu("_Actions", actions_menu)
 

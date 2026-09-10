@@ -239,7 +239,7 @@ class TestOpeningABook:
     ):
         """Row 0 is already selected the second time, so selection cannot be relied on."""
         app.open_book(populated_book)
-        window.show_category("budget")
+        window.show_category("plan")
         app.open_book(populated_book)
         # Whatever is first in CATEGORIES is what a book opens on.
         assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
@@ -799,42 +799,6 @@ class TestMenuBarAndToolbar:
         assert missing == []
 
 
-class TestBudgetCreation:
-    """Item 2: a budget has to be creatable from inside the interface."""
-
-    def test_the_budget_view_offers_a_way_to_create_one(self, app, window, tmp_path):
-        from breadsched.cli.main import main as cli
-
-        path = tmp_path / "empty.breadsched"
-        cli(["init", str(path)])
-        app.open_book(str(path))
-        window.show_category("budget")
-        view = window._views["budget"]
-        # The button is wired to an application action, so check the action exists
-        # rather than a handler name: a button bound to a missing action is dead.
-        assert app.has_action("new-budget")
-        assert view is not None
-
-    def test_the_dialog_builds(self, app, window, populated_book):
-        from breadsched.gui.dialogs.budget_dialog import NewBudgetDialog
-
-        app.open_book(populated_book)
-        dialog = NewBudgetDialog(window, app.db)
-        assert dialog is not None
-
-    def test_the_dialog_creates_a_budget_from_the_book_schedules(
-        self, app, window, populated_book
-    ):
-        from breadsched.gui.dialogs.budget_dialog import NewBudgetDialog
-
-        app.open_book(populated_book)
-        before = len(list(app.db.iter_budgets()))
-        dialog = NewBudgetDialog(window, app.db)
-        dialog.name_entry.set_text("From schedules")
-        dialog._on_create(None)
-        assert len(list(app.db.iter_budgets())) == before + 1
-
-
 class TestReplacingABook:
     """Item 1: answering 'replace' in the file chooser must actually replace."""
 
@@ -1084,58 +1048,6 @@ class TestScheduleEntry:
         assert hasattr(window._views["scheduled"], "_on_new_clicked")
 
 
-class TestBudgetEditing:
-    """Item 5: budgeted figures must be editable."""
-
-    @pytest.fixture
-    def budget_view(self, app, window, populated_book):
-        app.open_book(populated_book)
-        window.show_category("budget")
-        return window._views["budget"]
-
-    def test_a_figure_can_be_typed_over(self, budget_view, app):
-        from breadsched.gen.lib import Money
-
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        entry = budget_view._editable(account, 0, Money("100.00"))
-        entry.set_text("250.00")
-        budget_view._commit(entry, account, 0)
-        assert app.db.get_budget(budget.handle).amount(account, 0) == Money("250.00")
-
-    def test_an_empty_cell_means_zero(self, budget_view, app):
-        from breadsched.gen.lib import Money
-
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        entry = budget_view._editable(account, 1, Money("100.00"))
-        entry.set_text("")
-        budget_view._commit(entry, account, 1)
-        assert app.db.get_budget(budget.handle).amount(account, 1) == Money(0)
-
-    def test_unusable_text_is_reported_and_not_stored(self, budget_view, app):
-        from breadsched.gen.lib import Money
-
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        before = app.db.get_budget(budget.handle).amount(account, 2)
-        entry = budget_view._editable(account, 2, Money("100.00"))
-        entry.set_text("about three hundred")
-        budget_view._commit(entry, account, 2)
-        assert app.db.get_budget(budget.handle).amount(account, 2) == before
-        assert "not an amount" in budget_view.headline.get_text()
-
-    def test_rebuilding_the_grid_does_not_write_back(self, budget_view, app):
-        """Filling the cells during a repaint must not look like user edits."""
-        budget = next(iter(app.db.iter_budgets()))
-        before = {
-            handle: line.total() for handle, line in budget.lines.items()
-        }
-        budget_view.refresh()
-        after = next(iter(app.db.iter_budgets()))
-        assert {h: line.total() for h, line in after.lines.items()} == before
-
-
 class TestScheduledIsSplitInTwo:
     """Items 6, 7, 8: definitions and upcoming are separate; splits expand inline."""
 
@@ -1267,127 +1179,6 @@ def _find_menu_button(view):
             stack.append(child)
             child = child.get_next_sibling()
     return None
-
-
-class TestBudgetTree:
-    """Items 3 and 4: resizable columns and collapsible account sections."""
-
-    @pytest.fixture
-    def budget_view(self, app, window, populated_book):
-        app.open_book(populated_book)
-        window.show_category("budget")
-        return window._views["budget"]
-
-    def _columns(self, view):
-        columns = view.column_view.get_columns()
-        return [columns.get_item(i) for i in range(columns.get_n_items())]
-
-    # --- item 3 -------------------------------------------------------------
-
-    def test_every_column_is_resizable(self, budget_view):
-        columns = self._columns(budget_view)
-        assert columns, "the budget has no columns"
-        for column in columns:
-            assert column.get_resizable() is True, f"{column.get_title()} is fixed"
-
-    def test_there_is_a_column_per_period_plus_a_total(self, budget_view, app):
-        budget = next(iter(app.db.iter_budgets()))
-        titles = [c.get_title() for c in self._columns(budget_view)]
-        assert titles[0] == "Account"
-        assert budget.period_label(0) in titles
-        assert "Total" in titles
-
-    def test_columns_can_be_hidden_from_the_header_menu(self, budget_view):
-        button = _find_menu_button(budget_view)
-        assert button is not None, "no column menu on the budget"
-        column = self._columns(budget_view)[-1]
-        column.set_visible(False)
-        assert column.get_visible() is False
-
-    # --- item 4 -------------------------------------------------------------
-
-    def test_rows_are_grouped_into_collapsible_sections(self, budget_view):
-        model = budget_view.column_view.get_model().get_model()
-        depths = [model.get_item(i).get_depth() for i in range(model.get_n_items())]
-        assert 0 in depths and 1 in depths, "nothing is nested"
-
-    def test_a_section_collapses_to_its_total(self, budget_view):
-        model = budget_view.column_view.get_model().get_model()
-        section = model.get_item(0)
-        assert section.get_expanded() is True
-        expanded_rows = model.get_n_items()
-
-        section.set_expanded(False)
-        assert model.get_n_items() < expanded_rows
-        section.set_expanded(True)
-        assert model.get_n_items() == expanded_rows
-
-    def test_collapse_all_leaves_only_the_headings(self, budget_view):
-        budget_view._set_all_expanded(False)
-        model = budget_view.column_view.get_model().get_model()
-        assert all(
-            model.get_item(i).get_depth() == 0 for i in range(model.get_n_items())
-        )
-
-    def test_expand_all_brings_the_accounts_back(self, budget_view):
-        budget_view._set_all_expanded(False)
-        collapsed = budget_view.column_view.get_model().get_model().get_n_items()
-        budget_view._set_all_expanded(True)
-        assert (
-            budget_view.column_view.get_model().get_model().get_n_items() > collapsed
-        )
-
-    def test_a_section_totals_the_accounts_under_it(self, budget_view):
-        from breadsched.gen.lib import Money
-
-        section = budget_view._sections[0]
-        expected = Money(0)
-        for line in section.lines:
-            expected = expected + line.periods[0].budgeted
-        assert section.budgeted(0) == expected
-
-    def test_the_net_cash_flow_row_is_last_and_not_editable(self, budget_view):
-        from breadsched.gui.views.budget import TotalsRow
-
-        model = budget_view.column_view.get_model().get_model()
-        last = model.get_item(model.get_n_items() - 1)
-        payload = last.get_item().payload
-        assert isinstance(payload, TotalsRow)
-        assert payload.editable is False
-
-    def test_the_net_row_matches_the_report(self, budget_view, app):
-        from breadsched.gui.views.budget import TotalsRow
-
-        model = budget_view.column_view.get_model().get_model()
-        totals = model.get_item(model.get_n_items() - 1).get_item().payload
-        assert isinstance(totals, TotalsRow)
-        assert totals.budgeted(0) == budget_view._report.net_cash_flow(0)
-
-    def test_only_leaf_account_rows_accept_editing(self, budget_view):
-        """A parent shows the total of its children; typing over it would guess."""
-        from breadsched.gui.views.budget import LineRow
-
-        model = budget_view.column_view.get_model().get_model()
-        for index in range(model.get_n_items()):
-            payload = model.get_item(index).get_item().payload
-            expected = isinstance(payload, LineRow) and not payload.children
-            assert payload.editable is expected
-
-    def test_switching_actuals_off_removes_those_columns(self, budget_view):
-        with_actuals = len(self._columns(budget_view))
-        budget_view._show_actuals = False
-        budget_view.refresh()
-        assert len(self._columns(budget_view)) < with_actuals
-
-    def test_editing_still_writes_through(self, budget_view, app):
-        from breadsched.gen.lib import Money
-
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        entry = budget_view._editable(account, 0, Money("10.00"))
-        entry.set_text("321.00")
-        budget_view._commit(entry, account, 0)
-        assert app.db.get_budget(budget.handle).amount(account, 0) == Money("321.00")
 
 
 class TestEditingFromTheRegister:
@@ -1634,94 +1425,54 @@ class TestNavigationHighlight:
             assert window.navigator.get_selected_row().category_key == key
 
 
-class TestBudgetToolbarIcon:
-    """Item 4: the Budget icon shows the budget rather than a creation dialog."""
+class TestPlanToolbarIcon:
+    """The primary planning toolbar opens the derived event-driven Plan view."""
 
     def test_it_switches_category(self, app, window, populated_book):
         from breadsched.gui.viewmanager import TOOLBAR
 
-        entry = next(item for item in TOOLBAR if item[0] == "Budget")
-        assert entry[2] == "win.show-category::budget"
+        entry = next(item for item in TOOLBAR if item[0] == "Plan")
+        assert entry[2] == "win.show-category::plan"
 
-    def test_creating_a_budget_remains_available(self, app):
-        assert app.has_action("new-budget")
+    def test_plan_is_a_visible_category(self):
+        assert any(key == "plan" for key, _label, _icon in CATEGORIES)
+        assert all(key != "budget" for key, _label, _icon in CATEGORIES)
 
 
-class TestBudgetAccountHierarchy:
-    """Item 5: budget accounts cascade the way the account view does."""
+class TestDerivedPlanView:
+    def test_it_derives_periods_from_scheduled_events_and_actuals(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        assert view._report is not None
+        assert view._report.period.value == "month"
+        assert view._report.periods
 
-    def test_child_accounts_nest_under_their_parent(self, app, window, tmp_path):
-        from breadsched.cli.main import main as cli
-        from breadsched.gen.db.sqlite import DbSQLite
-        from breadsched.gen.lib import Account, AccountType, Budget
+    def test_grouping_changes_display_buckets_not_source_data(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        monthly = view._report
+        monthly_planned = monthly.planned_cash_change
+        monthly_actual = monthly.actual_cash_change
 
-        path = tmp_path / "nested.breadsched"
-        cli(["init", str(path)])
-        db = DbSQLite()
-        db.load(str(path))
-        expenses = db.get_account_by_name("Expenses")
-        with db.transaction("Nested accounts") as txn:
-            utilities = Account(
-                name="Utilities", atype=AccountType.EXPENSE, parent=expenses.handle
-            )
-            db.add_account(utilities, txn)
-            gas = Account(
-                name="Gas", atype=AccountType.EXPENSE, parent=utilities.handle
-            )
-            electric = Account(
-                name="Electricity", atype=AccountType.EXPENSE, parent=utilities.handle
-            )
-            db.add_account(gas, txn)
-            db.add_account(electric, txn)
-            budget = Budget(name="2026", start=date(2026, 1, 1), periods=12)
-            budget.set_monthly(gas.handle, "40.00")
-            budget.set_monthly(electric.handle, "60.00")
-            db.add_budget(budget, txn)
-        db.close()
+        view.period.set_selected(1)
+        quarterly = view._report
+        assert quarterly.period.value == "quarter"
+        assert quarterly.planned_cash_change == monthly_planned
+        assert quarterly.actual_cash_change == monthly_actual
+        assert len(quarterly.periods) < len(monthly.periods)
 
-        app.open_book(str(path))
-        window.show_category("budget")
-        view = window._views["budget"]
-        section = view._sections[0]
-        # The tree follows the real chart: the top-level Expenses account sits
-        # under the Expenses class heading, with Utilities beneath it.
-        top = next(row for row in section.roots if row.title == "Expenses")
-        utilities = next(row for row in top.children if row.title == "Utilities")
-        assert {child.title for child in utilities.children} == {"Gas", "Electricity"}
-        assert utilities.editable is False
-
-    def test_a_parent_totals_its_children(self, app, window, tmp_path):
-        from breadsched.cli.main import main as cli
-        from breadsched.gen.db.sqlite import DbSQLite
-        from breadsched.gen.lib import Account, AccountType, Budget, Money
-
-        path = tmp_path / "nested.breadsched"
-        cli(["init", str(path)])
-        db = DbSQLite()
-        db.load(str(path))
-        expenses = db.get_account_by_name("Expenses")
-        with db.transaction("Nested") as txn:
-            utilities = Account(
-                name="Utilities", atype=AccountType.EXPENSE, parent=expenses.handle
-            )
-            db.add_account(utilities, txn)
-            gas = Account(name="Gas", atype=AccountType.EXPENSE,
-                          parent=utilities.handle)
-            db.add_account(gas, txn)
-            budget = Budget(name="2026", start=date(2026, 1, 1), periods=12)
-            budget.set_monthly(gas.handle, "40.00")
-            db.add_budget(budget, txn)
-        db.close()
-
-        app.open_book(str(path))
-        window.show_category("budget")
-        view = window._views["budget"]
-        top = next(row for row in view._sections[0].roots if row.title == "Expenses")
-        utilities = next(row for row in top.children if row.title == "Utilities")
-        assert utilities.budgeted(0) == Money("40.00")
-        assert utilities.editable is False
-        # And the total rolls all the way up.
-        assert top.budgeted(0) == Money("40.00")
+    def test_the_primary_plan_view_is_read_only(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        assert not hasattr(view, "_commit")
+        assert not hasattr(view, "budget_picker")
 
 
 class TestDueReview:
@@ -2209,137 +1960,6 @@ class TestDashboardBillsLinkToSchedules:
         assert "budget" in view.budget_label.get_text()
 
 
-class TestBudgetControls:
-    """Choosing the budget in force, and which flows it counts."""
-
-    @pytest.fixture
-    def budget_view(self, app, window, populated_book):
-        app.open_book(populated_book)
-        window.show_category("budget")
-        return window._views["budget"]
-
-    def test_there_is_a_use_this_budget_action(self, budget_view):
-        assert hasattr(budget_view, "_on_use_clicked")
-
-    def test_the_button_says_when_the_budget_is_already_in_use(self, budget_view, app):
-        from breadsched.gen.engine import budgeting
-
-        budgeting.set_current_budget(app.db, budget_view.budget_handle)
-        budget_view._refresh_use_button()
-        assert budget_view.use_button.get_label() == "In use"
-        assert budget_view.use_button.get_sensitive() is False
-
-    def test_using_a_budget_records_it_on_the_book(self, budget_view, app):
-        from breadsched.gen.engine import budgeting
-
-        budgeting.set_current_budget(app.db, None)
-        budget_view._on_use_clicked(None)
-        assert budgeting.current_budget(app.db).handle == budget_view.budget_handle
-
-    def test_the_dashboard_follows_the_choice(self, app, window, populated_book):
-        from breadsched.gen.engine import budgeting
-
-        app.open_book(populated_book)
-        window.show_category("budget")
-        view = window._views["budget"]
-        view._on_use_clicked(None)
-
-        window.show_category("dashboard")
-        budget = budgeting.current_budget(app.db)
-        assert window._views["dashboard"].board.budget_name == budget.name
-
-    def test_a_budget_can_be_cloned_from_the_view(self, budget_view, app):
-        before = {b.name for b in app.db.iter_budgets()}
-        budget = app.db.get_budget(budget_view.budget_handle)
-        from breadsched.gen.engine import budgeting
-
-        budgeting.clone_budget(app.db, budget, "From the view")
-        after = {b.name for b in app.db.iter_budgets()}
-        assert after - before == {"From the view"}
-
-
-class TestMembershipEditor:
-    """Which recurring flows a budget counts, edited in the interface."""
-
-    @pytest.fixture
-    def dialog(self, app, window, populated_book):
-        from breadsched.gui.dialogs.membership_dialog import MembershipDialog
-
-        app.open_book(populated_book)
-        window.show_category("budget")
-        budget = app.db.get_budget(window._views["budget"].budget_handle)
-        return MembershipDialog(window, app.db, budget), budget
-
-    def test_it_lists_every_flow(self, dialog, app):
-        editor, _budget = dialog
-        assert len(editor.checks) == len(list(app.db.iter_scheduled()))
-
-    def test_everything_starts_included(self, dialog):
-        """An empty membership list means every budget, and must read that way."""
-        editor, _budget = dialog
-        assert all(check.get_active() for check in editor.checks)
-
-    def test_excluding_one_leaves_it_in_other_budgets(self, dialog, app):
-        from breadsched.gen.engine import budgeting
-
-        editor, budget = dialog
-        other = budgeting.clone_budget(app.db, budget, "Other")
-
-        editor.checks[0].set_active(False)
-        editor.apply()
-
-        sched = editor.schedules[0]
-        stored = app.db.get_scheduled(sched.handle)
-        assert stored.in_budget(budget.handle) is False
-        assert stored.in_budget(other.handle) is True
-
-    def test_including_it_again_restores_it(self, dialog, app):
-        editor, budget = dialog
-        editor.checks[0].set_active(False)
-        editor.apply()
-        editor.checks[0].set_active(True)
-        editor.apply()
-        stored = app.db.get_scheduled(editor.schedules[0].handle)
-        assert stored.in_budget(budget.handle) is True
-
-    def test_bulk_controls_set_every_row(self, dialog):
-        editor, _budget = dialog
-        editor.set_all(False)
-        assert not any(check.get_active() for check in editor.checks)
-        editor.set_all(True)
-        assert all(check.get_active() for check in editor.checks)
-
-    def test_excluding_everything_empties_the_budget(self, dialog, app):
-        from datetime import date
-
-        from breadsched.gen.engine import budgeting
-
-        editor, budget = dialog
-        editor.set_all(False)
-        editor.apply()
-
-        rebuilt = budgeting.from_schedules(
-            app.db, name="check", start=date(2026, 1, 1), periods=12,
-            budget_handle=budget.handle,
-        )
-        assert not rebuilt.lines
-
-    def test_applying_is_one_undo_step(self, dialog, app):
-        editor, _budget = dialog
-        before = app.db.summary()
-        editor.set_all(False)
-        editor.apply()
-        assert app.db.undo() is True
-        assert app.db.summary() == before
-
-    def test_the_count_is_reported(self, dialog):
-        editor, _budget = dialog
-        editor.set_all(True)
-        assert f"{len(editor.checks)} of {len(editor.checks)}" in (
-            editor.status.get_text()
-        )
-
-
 class TestAccountDialogConstruction:
     """Building the dialog must not depend on the order its widgets are made.
 
@@ -2396,188 +2016,29 @@ class TestRepaintsAreDeferred:
         source = Path("src/breadsched/gui/views/_base.py").read_text()
         assert ".is_open()" not in source
 
-
-    """A view must not rebuild itself inside the event that triggered the change.
-
-    Editing a budget cell and clicking straight into the next one runs the commit
-    from a focus handler. Rebuilding the grid there disposes the very widget whose
-    gesture is still in progress, and GTK then continues that gesture with no
-    event — which is what
-    ``gdk_event_triggers_context_menu: assertion 'event != NULL' failed`` reports.
-    """
-
     @pytest.fixture
-    def budget_view(self, app, window, populated_book):
+    def plan_view(self, app, window, populated_book):
         app.open_book(populated_book)
-        window.show_category("budget")
-        return window._views["budget"]
+        window.show_category("plan")
+        return window._views["plan"]
 
-    def test_committing_a_cell_does_not_rebuild_immediately(self, budget_view, app):
-        from breadsched.gen.lib import Money
+    def test_deferred_repaint_happens(self, plan_view):
+        plan_view.schedule_refresh()
+        assert plan_view._refresh_pending is True
+        assert plan_view._refresh_source_id is not None
+        plan_view.flush_refresh()
+        assert plan_view._refresh_pending is False
+        assert plan_view._refresh_source_id is None
 
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        entry = budget_view._editable(account, 0, Money("10.00"))
-        entry.set_text("321.00")
-
-        budget_view._commit(entry, account, 0)
-        assert budget_view._refresh_pending is True, (
-            "the grid was rebuilt inside the commit"
-        )
-
-    def test_the_edit_is_still_written_at_once(self, budget_view, app):
-        """Deferring the repaint must not defer the data."""
-        from breadsched.gen.lib import Money
-
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        entry = budget_view._editable(account, 0, Money("10.00"))
-        entry.set_text("321.00")
-        budget_view._commit(entry, account, 0)
-
-        assert app.db.get_budget(budget.handle).amount(account, 0) == Money("321.00")
-
-    def test_the_deferred_repaint_happens(self, budget_view):
-        budget_view.schedule_refresh()
-        assert budget_view._refresh_pending is True
-        assert budget_view._refresh_source_id is not None
-        budget_view.flush_refresh()
-        assert budget_view._refresh_pending is False
-        assert budget_view._refresh_source_id is None
-
-    def test_flushing_removes_the_registered_idle_source(self, budget_view):
-        """A synchronous flush must not leave a callback for a later test."""
-        from breadsched.gui.gi_setup import GLib
-
-        calls = []
-        original = budget_view.refresh
-
-        def counting_refresh():
-            calls.append(None)
-            return original()
-
-        budget_view.refresh = counting_refresh
-        budget_view.schedule_refresh()
-        budget_view.flush_refresh()
-        assert len(calls) == 1
-
-        # If flush_refresh merely cleared the boolean, this main-context turn would
-        # execute the old GLib source and refresh a second time.
-        context = GLib.MainContext.default()
-        while context.pending():
-            context.iteration(False)
-        assert len(calls) == 1
-
-    def test_destroying_the_window_cancels_a_pending_repaint(
-        self, budget_view, app, window
-    ):
-        """Fixture teardown may not leave work that can outlive the database."""
-        from breadsched.gui.gi_setup import GLib
-
-        calls = []
-        budget_view.schedule_refresh()
-        budget_view.refresh = lambda: calls.append(None)
-
-        db = app.db
-        window.destroy()
-        db.close()
-        app.db = None
-
-        context = GLib.MainContext.default()
-        while context.pending():
-            context.iteration(False)
-
-        assert calls == []
-        assert budget_view.db is None
-        assert budget_view._refresh_pending is False
-        assert budget_view._refresh_source_id is None
-
-    def test_a_source_already_queued_for_dispatch_cannot_touch_a_closed_book(
-        self, budget_view, app, monkeypatch
-    ):
-        """The callback itself must defend against teardown races.
-
-        GLib may already have made an idle source ready when teardown tries to
-        remove it.  Simulate an ineffective removal and prove the escaped source
-        still cannot refresh a closed database.
-        """
-        from breadsched.gui.gi_setup import GLib
-
-        calls = []
-        budget_view.schedule_refresh()
-        budget_view.refresh = lambda: calls.append(None)
-
-        monkeypatch.setattr(GLib, "source_remove", lambda _source_id: False)
-        budget_view.set_db(None)
-        db = app.db
-        db.close()
-        app.db = None
-
-        context = GLib.MainContext.default()
-        while context.pending():
-            context.iteration(False)
-
-        assert calls == []
-
-    def test_an_escaped_source_cannot_repaint_a_replacement_book(
-        self, budget_view, app, tmp_path, monkeypatch
-    ):
-        """Idle work belongs to the exact database that scheduled it."""
-        from breadsched.cli.main import main as cli
-        from breadsched.gen.db.sqlite import DbSQLite
-        from breadsched.gui.gi_setup import GLib
-
-        budget_view.schedule_refresh()
-        monkeypatch.setattr(GLib, "source_remove", lambda _source_id: False)
-
-        second_path = tmp_path / "replacement.breadsched"
-        cli(["init", str(second_path)])
-        second = DbSQLite()
-        second.load(str(second_path))
-        calls = []
-        try:
-            budget_view.set_db(second)
-            budget_view.refresh = lambda: calls.append(None)
-
-            context = GLib.MainContext.default()
-            while context.pending():
-                context.iteration(False)
-
-            assert calls == []
-        finally:
-            budget_view.set_db(None)
-            second.close()
-
-    def test_repeated_requests_collapse_into_one(self, budget_view):
-        budget_view.schedule_refresh()
-        budget_view.schedule_refresh()
-        budget_view.schedule_refresh()
-        assert budget_view._refresh_pending is True
-        budget_view.flush_refresh()
-        assert budget_view._refresh_pending is False
-
-    def test_a_commit_does_not_re_enter_itself(self, budget_view, app):
-        """The write emits the signal this view listens for."""
-        from breadsched.gen.lib import Money
-
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        entry = budget_view._editable(account, 0, Money("10.00"))
-
-        calls = []
-        original = budget_view._commit
-
-        def counting(*args):
-            calls.append(args)
-            return original(*args)
-
-        budget_view._commit = counting
-        entry.set_text("55.00")
-        counting(entry, account, 0)
-        assert len(calls) == 1
+    def test_repeated_requests_collapse_into_one(self, plan_view):
+        plan_view.schedule_refresh()
+        plan_view.schedule_refresh()
+        plan_view.schedule_refresh()
+        assert plan_view._refresh_pending is True
+        plan_view.flush_refresh()
+        assert plan_view._refresh_pending is False
 
     def test_the_dashboard_defers_its_rebuild_too(self, app, window, populated_book):
-        """The horizon spin buttons change the view from inside their own event."""
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
@@ -2643,19 +2104,11 @@ class TestNoGtkCriticals:
             window.show_category(key)
         assert criticals == []
 
-    def test_editing_a_budget_cell_is_quiet(self, app, window, populated_book, criticals):
-        from breadsched.gen.lib import Money
-
+    def test_changing_plan_grouping_is_quiet(self, app, window, populated_book, criticals):
         app.open_book(populated_book)
-        window.show_category("budget")
-        view = window._views["budget"]
-
-        budget = next(iter(app.db.iter_budgets()))
-        account = next(iter(budget.lines))
-        entry = view._editable(account, 0, Money("10.00"))
-        entry.set_text("99.00")
-        view._commit(entry, account, 0)
-        view.flush_refresh()
+        window.show_category("plan")
+        view = window._views["plan"]
+        view.period.set_selected(1)
         assert criticals == []
 
     def test_changing_the_dashboard_horizons_is_quiet(

@@ -438,7 +438,7 @@ its own import machinery — a warning nothing here can prevent, suppressed at t
 import rather than by a blanket test-config filter that would leave it in place for
 anyone embedding the code.
 
-Five categories in a Gramps-style sidebar, switching a stack of views:
+The Gramps-style sidebar switches among the principal book and planning views:
 
 - **Accounts** — a lazily-built `Gtk.TreeListModel` tree with recursive balances
   and summary cards. Double-clicking an account opens its register, as GnuCash
@@ -450,12 +450,9 @@ Five categories in a Gramps-style sidebar, switching a stack of views:
   actually does removes the commonest source of entry errors.
 - **Scheduled** — the standing arrangements, each expanding to its splits, with a
   Commitment/Estimate column. **Upcoming** is the diary of what is due.
-- **Budget** — a period-by-period grid on the same list widget as the other views,
-  so its columns drag to resize and hide from the header menu. Rows are grouped by
-  account class and collapse to their totals, which is what makes a chart of sixty
-  expense categories readable. Figures are editable in place; net cash flow is the
-  bottom row, with shortfall periods highlighted and the year's total in the Total
-  column.
+- **Plan** — a read-only event-driven plan-versus-actual view. Month, quarter,
+  and year are display buckets derived from exact-dated scheduled occurrences and
+  actual transactions; planning edits are made in Scheduled and Review.
 - **Projection** — assumption sliders beside a Cairo line chart that recomputes as
   you drag. The zero line is drawn heavier than the other gridlines and the region
   below it tinted, so a forecast that dips negative reads as a problem rather than

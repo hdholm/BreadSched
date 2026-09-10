@@ -32,8 +32,8 @@ TOOLBAR = [
     (None, None, None, None),
     ("Transaction", "list-add-symbolic", "app.new-transaction",
      "Enter a new transaction"),
-    ("Budget", "view-grid-symbolic", "win.show-category::budget",
-     "Show the budget"),
+    ("Plan", "view-grid-symbolic", "win.show-category::plan",
+     "Show the event-driven plan"),
     ("Accounts", "view-list-symbolic", "win.show-category::accounts",
      "Show the chart of accounts"),
     ("Projection", "network-cellular-signal-excellent-symbolic",
@@ -47,7 +47,7 @@ CATEGORIES = [
     ("scheduled", "Scheduled", "alarm-symbolic"),
     ("upcoming", "Upcoming", "x-office-calendar-symbolic"),
     ("resolution", "Review", "dialog-question-symbolic"),
-    ("budget", "Budget", "view-grid-symbolic"),
+    ("plan", "Plan", "view-grid-symbolic"),
     ("projection", "Projection", "network-cellular-signal-excellent-symbolic"),
 ]
 
@@ -357,8 +357,8 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _build_view(self, key: str):
         from .views.accounts import AccountTreeView
-        from .views.budget import BudgetView
         from .views.dashboard import DashboardView
+        from .views.plan import PlanView
         from .views.projection import ProjectionView
         from .views.register import RegisterView
         from .views.resolution import ResolutionView
@@ -371,7 +371,7 @@ class ViewManager(Gtk.ApplicationWindow):
             "scheduled": lambda: ScheduledView(self),
             "upcoming": lambda: UpcomingView(self),
             "resolution": lambda: ResolutionView(self),
-            "budget": lambda: BudgetView(self),
+            "plan": lambda: PlanView(self),
             "projection": lambda: ProjectionView(self),
         }
         factory = factories.get(key)
