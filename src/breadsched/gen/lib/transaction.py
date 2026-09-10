@@ -15,11 +15,19 @@ from typing import Any
 from .base import PrimaryObject, create_handle
 from .money import Money
 
-__all__ = ["ReconcileState", "Split", "Transaction", "UnbalancedError"]
+__all__ = ["PlanningResolution", "ReconcileState", "Split", "Transaction", "UnbalancedError"]
 
 
 class UnbalancedError(ValueError):
     """Raised when a transaction's split values do not sum to zero."""
+
+
+class PlanningResolution(str, Enum):
+    """How an actual transaction relates to the event-driven plan."""
+
+    UNRESOLVED = "unresolved"
+    MATCHED = "matched"
+    UNEXPECTED = "unexpected"
 
 
 class ReconcileState(str, Enum):
@@ -120,6 +128,10 @@ class Transaction(PrimaryObject):
         self.planned_for: date | None = None
         #: Expected gross amount at resolution time; schedule edits cannot rewrite it.
         self.planned_amount: Money | None = None
+        #: Explicit resolution state for plan-vs-actual workflow.
+        self.planning_resolution = PlanningResolution.UNRESOLVED
+        #: Occurrence keys the user has explicitly rejected as matches.
+        self.rejected_plan_occurrences: list[str] = []
         self.splits: list[Split] = list(splits or [])
 
     # ------------------------------------------------------------------ splits
@@ -214,6 +226,8 @@ class Transaction(PrimaryObject):
             "planned_amount": None
             if self.planned_amount is None
             else [self.planned_amount.numerator, self.planned_amount.denominator],
+            "planning_resolution": self.planning_resolution.value,
+            "rejected_plan_occurrences": list(self.rejected_plan_occurrences),
             "splits": [s.serialize() for s in self.splits],
         }
 
@@ -232,6 +246,15 @@ class Transaction(PrimaryObject):
         self.planned_amount = (
             Money(*raw_planned_amount) if raw_planned_amount is not None else None
         )
+        default_resolution = (
+            PlanningResolution.MATCHED
+            if self.planned_occurrence is not None or self.scheduled_from is not None
+            else PlanningResolution.UNRESOLVED
+        )
+        self.planning_resolution = PlanningResolution(
+            data.get("planning_resolution", default_resolution.value)
+        )
+        self.rejected_plan_occurrences = list(data.get("rejected_plan_occurrences", []))
         self.splits = [Split.from_dict(s) for s in data.get("splits", [])]
 
     def __repr__(self) -> str:

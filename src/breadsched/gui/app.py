@@ -1,6 +1,6 @@
 """GTK4 application shell.
 
-The GUI is a strict consumer of :mod:`cashperspective.gen`: it holds no financial logic of
+The GUI is a strict consumer of :mod:`breadsched.gen`: it holds no financial logic of
 its own, and every number it shows comes from an engine function.  That boundary is
 what lets the whole model be tested without a display server, and it is why this
 module is the only place ``gi`` is imported at start-up.
@@ -20,14 +20,14 @@ from .gi_setup import Gdk, Gio, GLib, Gtk
 from .viewmanager import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .viewmanager import ViewManager  # noqa: E402
 
-__all__ = ["CashPerspectiveApplication", "main"]
+__all__ = ["BreadSchedApplication", "main"]
 
 LOG = get_logger(__name__)
 
-STYLE_RESOURCE = resources.files("cashperspective.gui").joinpath("resources/style.css")
+STYLE_RESOURCE = resources.files("breadsched.gui").joinpath("resources/style.css")
 
 
-class CashPerspectiveApplication(Gtk.Application):
+class BreadSchedApplication(Gtk.Application):
     """Owns the open book and the windows looking at it."""
 
     def __init__(
@@ -441,11 +441,11 @@ def build_menu_model() -> Gio.Menu:
 def main(argv: list[str] | None = None) -> int:
     """Run the application directly.
 
-    Prefer :mod:`cashperspective.gui.launcher`, which validates arguments and reports a
+    Prefer :mod:`breadsched.gui.launcher`, which validates arguments and reports a
     missing GTK stack without a traceback. This entry point assumes GTK is present,
     because by the time this module imported successfully, it was.
     """
-    return CashPerspectiveApplication().run(list(sys.argv if argv is None else argv))
+    return BreadSchedApplication().run(list(sys.argv if argv is None else argv))
 
 
 if __name__ == "__main__":  # pragma: no cover

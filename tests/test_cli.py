@@ -9,12 +9,12 @@ from pathlib import Path
 
 import pytest
 
-from cashperspective.cli.main import main
+from breadsched.cli.main import main
 
 
 @pytest.fixture
 def book_path(tmp_path):
-    return str(tmp_path / "household.cashperspective")
+    return str(tmp_path / "household.breadsched")
 
 
 def run(capsys, *argv) -> tuple[int, str]:
@@ -189,6 +189,8 @@ class TestBudgetAndProjection:
         run(capsys, "add", book_path, "--date", "2026-01-05",
             "--description", "Unexpected purchase", "--from", "Assets",
             "--to", "Expenses", "--amount", "25.00")
+        posted = run_json(capsys, "register", book_path, "Assets")[0]
+        run(capsys, "plan-unexpected", book_path, posted["handle"])
         result = run_json(
             capsys, "activity", book_path, "--start", "2026-01-01",
             "--end", "2026-03-31", "--period", "quarter",
@@ -197,6 +199,61 @@ class TestBudgetAndProjection:
         assert len(result["periods"]) == 1
         assert result["actual_amount"] == "25.00"
         assert result["unexpected_count"] == 1
+
+    def test_plan_resolution_commands_preserve_user_decisions(self, capsys, book_path):
+        from datetime import date
+
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import (
+            Money, PeriodType, Recurrence, ScheduledSplit, ScheduledTransaction,
+        )
+
+        run(capsys, "init", book_path)
+        db = DbSQLite()
+        db.load(book_path)
+        try:
+            assets = db.get_account_by_name("Assets")
+            expenses = db.get_account_by_name("Expenses")
+            assert assets is not None and expenses is not None
+            bill = ScheduledTransaction(
+                name="Estimated bill",
+                recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 5)),
+                splits=[
+                    ScheduledSplit(expenses.handle, Money("25.00")),
+                    ScheduledSplit(assets.handle, Money("-25.00")),
+                ],
+            )
+            with db.transaction("plan") as txn:
+                db.add_scheduled(bill, txn)
+        finally:
+            db.close()
+
+        unresolved = run_json(
+            capsys, "plan-unresolved", book_path,
+            "--start", "2026-01-01", "--end", "2026-01-31",
+        )
+        occurrence = unresolved[0]["key"]
+
+        run(capsys, "add", book_path, "--date", "2026-01-06",
+            "--description", "Actual bill", "--from", "Assets",
+            "--to", "Expenses", "--amount", "27.00")
+        posted = run_json(capsys, "register", book_path, "Assets")[0]
+
+        matches = run_json(capsys, "plan-matches", book_path, posted["handle"])
+        assert matches[0]["occurrence"]["key"] == occurrence
+
+        run(capsys, "plan-reject", book_path, posted["handle"], occurrence)
+        assert run_json(capsys, "plan-matches", book_path, posted["handle"]) == []
+
+        resolved = run_json(
+            capsys, "plan-resolve", book_path, posted["handle"], occurrence
+        )
+        assert resolved["resolution"] == "matched"
+        assert resolved["occurrence"] == occurrence
+        assert run_json(
+            capsys, "plan-unresolved", book_path,
+            "--start", "2026-01-01", "--end", "2026-01-31",
+        ) == []
 
 
 class TestScenarios:
@@ -253,8 +310,8 @@ class TestScheduledCommands:
         # Build a book with a schedule through the API, then drive the CLI over it.
         from datetime import date
 
-        from cashperspective.gen.db.sqlite import DbSQLite
-        from cashperspective.gen.lib import (
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import (
             Account,
             AccountType,
             Money,
@@ -365,7 +422,7 @@ class TestBackupAndRestore:
         assert result["backup"] == str(backup)
         assert backup.exists()
 
-        restored = tmp_path / "restored.cashperspective"
+        restored = tmp_path / "restored.breadsched"
         result = run_json(capsys, "restore", backup, restored)
         assert result["book"] == str(restored)
         balance = run_json(capsys, "balance", restored, "Assets")
@@ -375,7 +432,7 @@ class TestBackupAndRestore:
         run(capsys, "init", book_path)
         backup = tmp_path / "book.backup"
         run(capsys, "backup", book_path, backup)
-        destination = tmp_path / "existing.cashperspective"
+        destination = tmp_path / "existing.breadsched"
         run(capsys, "init", destination)
         assert main(["restore", str(backup), str(destination)]) == 2
 
@@ -383,7 +440,7 @@ class TestBackupAndRestore:
         run(capsys, "init", book_path)
         backup = tmp_path / "book.backup"
         run(capsys, "backup", book_path, backup)
-        destination = tmp_path / "existing.cashperspective"
+        destination = tmp_path / "existing.breadsched"
         run(capsys, "init", destination)
 
         code, _ = run(capsys, "restore", backup, destination, "--overwrite")

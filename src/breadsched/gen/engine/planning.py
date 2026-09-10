@@ -18,7 +18,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.money import Money
 from ..lib.scenario import OneOff, Scenario
 from ..lib.scheduled import ScheduledTransaction
-from ..lib.transaction import Transaction
+from ..lib.transaction import PlanningResolution, Transaction
 
 __all__ = [
     "EventSource",
@@ -27,7 +27,11 @@ __all__ = [
     "PlannedEvent",
     "PlannedSplit",
     "actualize_transaction",
+    "event_by_key",
+    "mark_unexpected",
     "match_candidates",
+    "reject_candidate",
+    "unresolved_events",
     "scenario_events",
     "scheduled_events",
 ]
@@ -280,6 +284,41 @@ def scenario_events(
     return sorted(events, key=lambda item: (item.when, item.planned_date, item.key))
 
 
+def event_by_key(db: DbSQLite, key: str) -> PlannedEvent | None:
+    """Resolve a stable scheduled-occurrence key without scanning an arbitrary horizon."""
+    prefix = "scheduled:"
+    if not key.startswith(prefix):
+        return None
+    payload = key[len(prefix):]
+    try:
+        handle, raw_date = payload.rsplit(":", 1)
+        when = date.fromisoformat(raw_date)
+    except ValueError:
+        return None
+    schedule = db.get_scheduled(handle)
+    if schedule is None or when in schedule.skipped:
+        return None
+    if when not in schedule.recurrence.occurrences(when, since=when):
+        return None
+    actual = _linked_actuals(db).get(key)
+    return _scheduled_event(schedule, when, actual)
+
+
+def unresolved_events(
+    db: DbSQLite,
+    start: date,
+    end: date,
+    *,
+    budget_handle: str | None = None,
+) -> list[PlannedEvent]:
+    """Expected scheduled occurrences that have not yet been resolved to an actual."""
+    return [
+        event
+        for event in scheduled_events(db, start, end, budget_handle=budget_handle)
+        if event.status is EventStatus.EXPECTED
+    ]
+
+
 def actualize_transaction(transaction: Transaction, event: PlannedEvent) -> Transaction:
     """Attach an actual transaction to one planned occurrence without losing estimate.
 
@@ -289,8 +328,28 @@ def actualize_transaction(transaction: Transaction, event: PlannedEvent) -> Tran
     transaction.planned_occurrence = event.key
     transaction.planned_for = event.planned_date
     transaction.planned_amount = event.expected_amount
+    transaction.planning_resolution = PlanningResolution.MATCHED
+    transaction.rejected_plan_occurrences.clear()
     if event.source is EventSource.SCHEDULED:
         transaction.scheduled_from = event.source_handle
+    return transaction
+
+
+def reject_candidate(transaction: Transaction, event: PlannedEvent) -> Transaction:
+    """Remember that ``event`` is not the plan occurrence resolved by ``transaction``."""
+    if event.key not in transaction.rejected_plan_occurrences:
+        transaction.rejected_plan_occurrences.append(event.key)
+    return transaction
+
+
+def mark_unexpected(transaction: Transaction) -> Transaction:
+    """Explicitly classify an actual transaction as having no planned occurrence."""
+    transaction.scheduled_from = None
+    transaction.planned_occurrence = None
+    transaction.planned_for = None
+    transaction.planned_amount = None
+    transaction.planning_resolution = PlanningResolution.UNEXPECTED
+    transaction.rejected_plan_occurrences.clear()
     return transaction
 
 
@@ -308,6 +367,8 @@ def match_candidates(
     This intentionally avoids fuzzy/ML matching until the exact rules have earned
     user trust.
     """
+    if transaction.planning_resolution is PlanningResolution.UNEXPECTED:
+        return []
     start = transaction.post_date - timedelta(days=window_days)
     end = transaction.post_date + timedelta(days=window_days)
     actual_splits = _transaction_splits(transaction)
@@ -322,6 +383,8 @@ def match_candidates(
         include_actualized=True,
     ):
         if event.status is EventStatus.ACTUALIZED:
+            continue
+        if event.key in transaction.rejected_plan_occurrences:
             continue
         expected_accounts = {split.account for split in event.expected_splits}
         common = len(actual_accounts & expected_accounts)

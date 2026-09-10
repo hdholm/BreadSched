@@ -237,7 +237,7 @@ class ImportSink:
     ) -> Account:
         """Add an account, or adopt one the book already has in that position.
 
-        A book created with ``cashperspective init`` already has a root and the usual five
+        A book created with ``breadsched init`` already has a root and the usual five
         top-level placeholders. Importing blindly would give it a *second* root, and
         an account tree that walks from one root shows an entirely empty book while
         every balance sits under the other. So the source root is mapped onto the

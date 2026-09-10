@@ -16,7 +16,7 @@ from .base import PrimaryObject
 from .formula import FormulaError, evaluate
 from .money import Money
 from .recurrence import Recurrence
-from .transaction import Split, Transaction
+from .transaction import PlanningResolution, Split, Transaction
 
 __all__ = ["ScheduledSplit", "ScheduledTransaction"]
 
@@ -222,6 +222,7 @@ class ScheduledTransaction(PrimaryObject):
         txn.planned_occurrence = self.occurrence_key(when)
         txn.planned_for = when
         txn.planned_amount = self.amount(variables=variables, when=when)
+        txn.planning_resolution = PlanningResolution.MATCHED
         # Formula legs are computed to full precision and cannot all land on exact
         # cents; ppmt and ipmt sum to pmt to thirty digits, not to two. Round each
         # leg to the currency's smallest unit and give the last leg the remainder,

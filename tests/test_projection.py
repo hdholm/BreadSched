@@ -3,8 +3,8 @@
 from datetime import date
 from decimal import Decimal
 
-from cashperspective.gen.engine import projection
-from cashperspective.gen.lib import (
+from breadsched.gen.engine import projection
+from breadsched.gen.lib import (
     AssumptionPeriod,
     Assumptions,
     Money,

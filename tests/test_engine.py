@@ -5,8 +5,8 @@ from decimal import Decimal
 
 import pytest
 
-from cashperspective.gen.engine import cashflow, ledger, schedule
-from cashperspective.gen.lib import AccountClass, Money
+from breadsched.gen.engine import cashflow, ledger, schedule
+from breadsched.gen.lib import AccountClass, Money
 
 
 class TestBalances:
@@ -76,7 +76,7 @@ class TestRegister:
         assert rows[0].running == Money("5289.45")
 
     def test_multi_split_transactions_show_as_split(self, db, book):
-        from cashperspective.gen.lib import Split, Transaction
+        from breadsched.gen.lib import Split, Transaction
 
         with db.transaction("Split purchase") as txn:
             purchase = Transaction(post_date=date(2026, 3, 1), description="Big shop")
@@ -145,7 +145,7 @@ class TestBudgetReport:
         assert cumulative[-1] > cumulative[0]
 
     def test_unbudgeted_spending_still_appears(self, db, book, monthly_budget):
-        from cashperspective.gen.lib import Transaction
+        from breadsched.gen.lib import Transaction
 
         surprise = db.get_account_by_name("Expenses:Groceries")
         monthly_budget.lines.pop(surprise.handle, None)
@@ -209,7 +209,7 @@ class TestScheduleEngine:
 
 class TestScheduledTemplates:
     def test_a_formula_split_resolves_at_instantiation(self, db, book):
-        from cashperspective.gen.lib import (
+        from breadsched.gen.lib import (
             PeriodType,
             Recurrence,
             ScheduledSplit,
@@ -236,13 +236,13 @@ class TestScheduledTemplates:
 
 class TestRateConversion:
     def test_monthly_rate_compounds_back_to_the_annual_rate(self):
-        from cashperspective.gen.engine.projection import monthly_rate
+        from breadsched.gen.engine.projection import monthly_rate
 
         monthly = monthly_rate(Decimal("0.06"))
         assert round((1 + monthly) ** 12 - 1, 10) == Decimal("0.06")
 
     def test_a_zero_rate_stays_zero(self):
-        from cashperspective.gen.engine.projection import monthly_rate
+        from breadsched.gen.engine.projection import monthly_rate
 
         assert monthly_rate(Decimal("0")) == Decimal("0")
 
@@ -282,7 +282,7 @@ class TestUnbalancedSchedules:
 
     @pytest.fixture
     def lopsided(self, db, book):
-        from cashperspective.gen.lib import (
+        from breadsched.gen.lib import (
             PeriodType,
             Recurrence,
             ScheduledSplit,
@@ -306,7 +306,7 @@ class TestUnbalancedSchedules:
         assert lopsided.imbalance() == Money("1200.00")
 
     def test_strict_instantiation_still_refuses(self, lopsided):
-        from cashperspective.gen.lib import UnbalancedError
+        from breadsched.gen.lib import UnbalancedError
 
         with pytest.raises(UnbalancedError):
             lopsided.instantiate(date(2026, 1, 1))
@@ -318,8 +318,8 @@ class TestUnbalancedSchedules:
     def test_a_projection_completes_and_says_which_schedule_is_wrong(
         self, db, book, lopsided
     ):
-        from cashperspective.gen.engine import projection
-        from cashperspective.gen.lib import ProjectionBasis, Scenario
+        from breadsched.gen.engine import projection
+        from breadsched.gen.lib import ProjectionBasis, Scenario
 
         scenario = Scenario(
             name="With a broken schedule", start=date(2026, 1, 1), years=2,
@@ -332,8 +332,8 @@ class TestUnbalancedSchedules:
         assert any("does not balance" in warning for warning in result.warnings)
 
     def test_the_warning_is_not_repeated_for_every_month(self, db, book, lopsided):
-        from cashperspective.gen.engine import projection
-        from cashperspective.gen.lib import ProjectionBasis, Scenario
+        from breadsched.gen.engine import projection
+        from breadsched.gen.lib import ProjectionBasis, Scenario
 
         scenario = Scenario(
             name="Long", start=date(2026, 1, 1), years=10,
@@ -343,7 +343,7 @@ class TestUnbalancedSchedules:
         assert len([w for w in result.warnings if "Mortgage" in w]) == 1
 
     def test_a_budget_can_still_be_built_from_it(self, db, book, lopsided):
-        from cashperspective.gen.engine import budgeting
+        from breadsched.gen.engine import budgeting
 
         budget = budgeting.from_schedules(
             db, name="2026", start=date(2026, 1, 1), periods=12

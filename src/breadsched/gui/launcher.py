@@ -28,7 +28,7 @@ Options:
 Equivalent commands:
   breadsched-gtk household.breadsched
   breadsched gui household.breadsched
-  python -m cashperspective.gui household.breadsched
+  python -m breadsched.gui household.breadsched
 """
 
 #: Shown when the GTK stack is missing. Package names differ per platform, and a
@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
         book = str(candidate.resolve())
 
     try:
-        from .app import CashPerspectiveApplication
+        from .app import BreadSchedApplication
     except (ImportError, ValueError) as exc:
         # ImportError: PyGObject absent. ValueError: PyGObject present but the
         # GTK 4 typelib is not, which is what gi.require_version raises.
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n(underlying error: {exc})", file=sys.stderr)
         return 3
 
-    application = CashPerspectiveApplication()
+    application = BreadSchedApplication()
     # Gio parses trailing arguments as files to open, which drives do_open.
     return application.run([sys.argv[0]] + ([book] if book else []))
 

@@ -34,10 +34,10 @@ jobs:
         run: ruff check src tests examples
 
       - name: Type check
-        run: mypy src/cashperspective/gen src/cashperspective/plugins
+        run: mypy src/breadsched/gen src/breadsched/plugins
 
       - name: Test
-        run: pytest --cov=cashperspective --cov-report=term-missing
+        run: pytest --cov=breadsched --cov-report=term-missing
 
       - name: Run the demo end to end
         run: python examples/demo.py
@@ -64,16 +64,16 @@ jobs:
           python -m pip install "${GITHUB_WORKSPACE}"/dist/*.whl
           python - <<'PY'
           from importlib.resources import files
-          import cashperspective
+          import breadsched
 
-          css = files("cashperspective").joinpath("gui/resources/style.css")
+          css = files("breadsched").joinpath("gui/resources/style.css")
           assert css.is_file(), css
           assert css.read_text(encoding="utf-8").strip(), css
-          assert cashperspective.__file__ is not None
-          print(cashperspective.__file__)
+          assert breadsched.__file__ is not None
+          print(breadsched.__file__)
           print(css)
           PY
-          cashperspective --help >/dev/null
+          breadsched --help >/dev/null
 
   gui:
     name: GTK4 interface
@@ -101,9 +101,9 @@ jobs:
         run: |
           .venv/bin/python - <<'PY'
           import importlib, pkgutil, sys
-          import cashperspective.gui
+          import breadsched.gui
           failed = {}
-          for module in pkgutil.walk_packages(cashperspective.gui.__path__, "cashperspective.gui."):
+          for module in pkgutil.walk_packages(breadsched.gui.__path__, "breadsched.gui."):
               try:
                   importlib.import_module(module.name)
               except Exception as exc:

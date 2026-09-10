@@ -8,6 +8,6 @@ dist/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
-*.cashperspective
-*.cashperspective-wal
-*.cashperspective-shm
+*.breadsched
+*.breadsched-wal
+*.breadsched-shm

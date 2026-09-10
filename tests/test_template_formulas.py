@@ -20,9 +20,9 @@ import pytest
 from gnucash_fixtures import new_guid
 from gnucash_xml_fixtures import XML_WITH_SCHEDULE, create_xml_book
 
-from cashperspective.gen.lib import Money
-from cashperspective.plugins.importer import gnucash_xml
-from cashperspective.plugins.importer.gnucash_common import parse_amount_text
+from breadsched.gen.lib import Money
+from breadsched.plugins.importer import gnucash_xml
+from breadsched.plugins.importer.gnucash_common import parse_amount_text
 
 
 def book_with_formula(tmp_path, debit: str, credit: str = "") -> str:

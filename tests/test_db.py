@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from cashperspective.gen.db.base import DbError
-from cashperspective.gen.db.sqlite import DbSQLite
-from cashperspective.gen.lib import (
+from breadsched.gen.db.base import DbError
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.lib import (
     Account,
     AccountType,
     Budget,
@@ -25,7 +25,7 @@ from cashperspective.gen.lib import (
 
 class TestPersistence:
     def test_account_survives_a_round_trip(self, tmp_path):
-        path = str(tmp_path / "book.cashperspective")
+        path = str(tmp_path / "book.breadsched")
         db = DbSQLite()
         db.load(path)
         with db.transaction("Add account") as txn:
@@ -261,7 +261,7 @@ class TestSchemaMigration:
         return handle
 
     def test_v1_book_is_backed_up_and_migrated_to_v2(self, tmp_path):
-        path = tmp_path / "old.cashperspective"
+        path = tmp_path / "old.breadsched"
         handle = self._make_v1_book(path)
 
         db = DbSQLite()
@@ -276,7 +276,7 @@ class TestSchemaMigration:
         assert db.integrity_problems() == []
         db.close()
 
-        backup = tmp_path / "old.cashperspective.pre-migration-v1.bak"
+        backup = tmp_path / "old.breadsched.pre-migration-v1.bak"
         assert backup.exists()
         import sqlite3
 
@@ -295,9 +295,9 @@ class TestSchemaMigration:
     def test_failed_migration_rolls_back_the_original_book(self, tmp_path, monkeypatch):
         import sqlite3
 
-        from cashperspective.gen.db import sqlite as sqlite_backend
+        from breadsched.gen.db import sqlite as sqlite_backend
 
-        path = tmp_path / "failure.cashperspective"
+        path = tmp_path / "failure.breadsched"
         self._make_v1_book(path)
 
         def fail_halfway(conn):
@@ -320,12 +320,12 @@ class TestSchemaMigration:
             ).fetchone() is None
         finally:
             raw.close()
-        assert (tmp_path / "failure.cashperspective.pre-migration-v1.bak").exists()
+        assert (tmp_path / "failure.breadsched.pre-migration-v1.bak").exists()
 
     def test_read_only_open_is_enforced_by_sqlite(self, tmp_path):
         import sqlite3
 
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         db = DbSQLite()
         db.load(str(path))
         db.close()
@@ -337,13 +337,13 @@ class TestSchemaMigration:
         readonly.close()
 
     def test_old_schema_is_not_silently_migrated_when_opened_read_only(self, tmp_path):
-        path = tmp_path / "old-readonly.cashperspective"
+        path = tmp_path / "old-readonly.breadsched"
         self._make_v1_book(path)
 
         db = DbSQLite()
         with pytest.raises(DbError, match="open it writable once to migrate"):
             db.load(str(path), mode="r")
-        assert not (tmp_path / "old-readonly.cashperspective.pre-migration-v1.bak").exists()
+        assert not (tmp_path / "old-readonly.breadsched.pre-migration-v1.bak").exists()
 
     def test_new_books_report_clean_integrity(self, db):
         assert db.integrity_problems() == []
@@ -448,7 +448,7 @@ class TestMalformedObjectDiagnostics:
     def test_verification_open_reports_a_bad_transaction_blob(self, tmp_path):
         import sqlite3
 
-        path = tmp_path / "damaged.cashperspective"
+        path = tmp_path / "damaged.breadsched"
         db = DbSQLite()
         db.load(str(path))
         with db.transaction("Setup") as txn:
@@ -577,7 +577,7 @@ class TestTransactionLifecycleSafety:
         assert db.is_open is True
 
     def test_close_rolls_back_stray_uncommitted_sql(self, tmp_path):
-        path = tmp_path / "stray.cashperspective"
+        path = tmp_path / "stray.breadsched"
         db = DbSQLite()
         db.load(str(path))
         db._require().execute(
@@ -593,8 +593,8 @@ class TestTransactionLifecycleSafety:
             reopened.close()
 
     def test_reopening_backend_discards_old_book_undo_history(self, tmp_path):
-        first = tmp_path / "first.cashperspective"
-        second = tmp_path / "second.cashperspective"
+        first = tmp_path / "first.breadsched"
+        second = tmp_path / "second.breadsched"
         db = DbSQLite()
         db.load(str(first))
         with db.transaction("first book edit") as txn:
@@ -644,7 +644,7 @@ class TestTransactionLifecycleSafety:
 
 class TestUserBackups:
     def test_backup_to_includes_current_book_and_is_readable(self, tmp_path):
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         backup = tmp_path / "book.backup"
         db = DbSQLite()
         db.load(str(path))
@@ -670,8 +670,8 @@ class TestUserBackups:
         assert target.read_text() == "do not replace"
 
     def test_restore_preserves_the_book_it_replaces(self, tmp_path):
-        source_book = tmp_path / "source.cashperspective"
-        target_book = tmp_path / "target.cashperspective"
+        source_book = tmp_path / "source.breadsched"
+        target_book = tmp_path / "target.breadsched"
         backup = tmp_path / "saved.backup"
 
         source = DbSQLite()
@@ -707,7 +707,7 @@ class TestUserBackups:
 
     def test_restore_rejects_a_logically_damaged_backup(self, tmp_path):
         source = tmp_path / "damaged.backup"
-        destination = tmp_path / "restored.cashperspective"
+        destination = tmp_path / "restored.breadsched"
         db = DbSQLite()
         db.load(str(source))
         db.close()
@@ -740,7 +740,7 @@ class TestDerivedIndexVerification:
     def test_verifier_detects_drift_in_derived_columns(
         self, tmp_path, table, column, bad_value, code
     ):
-        path = tmp_path / "derived.cashperspective"
+        path = tmp_path / "derived.breadsched"
         db = DbSQLite()
         db.load(str(path))
         # Use a minimal valid object for whichever derived table is under test.
@@ -792,7 +792,7 @@ class TestDerivedIndexVerification:
 
 class TestObjectIdentityVerification:
     def test_verifier_detects_row_and_blob_handle_disagreement(self, tmp_path):
-        path = tmp_path / "identity.cashperspective"
+        path = tmp_path / "identity.breadsched"
         db = DbSQLite()
         db.load(str(path))
         with db.transaction("account") as txn:
@@ -816,7 +816,7 @@ class TestObjectIdentityVerification:
             verifier.close()
 
     def test_verifier_detects_duplicate_internal_handles(self, tmp_path):
-        path = tmp_path / "duplicate-identity.cashperspective"
+        path = tmp_path / "duplicate-identity.breadsched"
         db = DbSQLite()
         db.load(str(path))
         with db.transaction("accounts") as txn:
@@ -846,9 +846,9 @@ class TestObjectIdentityVerification:
 
 class TestRestoreSidecars:
     def test_restore_removes_stale_destination_wal_and_shm(self, tmp_path):
-        source_path = tmp_path / "source.cashperspective"
+        source_path = tmp_path / "source.breadsched"
         backup_path = tmp_path / "source.backup"
-        destination = tmp_path / "destination.cashperspective"
+        destination = tmp_path / "destination.breadsched"
 
         source = DbSQLite()
         source.load(str(source_path))

@@ -18,7 +18,7 @@ from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scheduled import ScheduledTransaction
-from ..lib.transaction import Transaction
+from ..lib.transaction import PlanningResolution, Transaction
 from .planning import EventStatus, PlannedEvent, PlannedSplit, scheduled_events
 
 __all__ = [
@@ -52,10 +52,15 @@ class ActualActivity:
     planned_occurrence: str | None = None
     planned_for: date | None = None
     planned_amount: Money | None = None
+    planning_resolution: PlanningResolution = PlanningResolution.UNRESOLVED
+
+    @property
+    def unresolved(self) -> bool:
+        return self.planning_resolution is PlanningResolution.UNRESOLVED
 
     @property
     def unexpected(self) -> bool:
-        return self.planned_occurrence is None
+        return self.planning_resolution is PlanningResolution.UNEXPECTED
 
     @property
     def variance(self) -> Money | None:
@@ -83,6 +88,8 @@ class ActualActivity:
             "planned_amount": self.planned_amount,
             "variance": self.variance,
             "date_variance_days": self.date_variance_days,
+            "planning_resolution": self.planning_resolution.value,
+            "unresolved": self.unresolved,
             "unexpected": self.unexpected,
         }
 
@@ -136,6 +143,10 @@ class PeriodActivity:
         )
 
     @property
+    def unresolved_actuals(self) -> tuple[ActualActivity, ...]:
+        return tuple(item for item in self.actual_transactions if item.unresolved)
+
+    @property
     def unexpected(self) -> tuple[ActualActivity, ...]:
         return tuple(item for item in self.actual_transactions if item.unexpected)
 
@@ -158,6 +169,7 @@ class PeriodActivity:
             "expense_variance": self.expense_variance,
             "unresolved_count": len(self.unresolved),
             "resolved_count": len(self.resolved),
+            "unresolved_actual_count": len(self.unresolved_actuals),
             "unexpected_count": len(self.unexpected),
             "planned_events": [event.as_dict() for event in self.planned_events],
             "actual_transactions": [item.as_dict() for item in self.actual_transactions],
@@ -202,6 +214,10 @@ class ActivityReport:
         return sum(len(period.unresolved) for period in self.periods)
 
     @property
+    def unresolved_actual_count(self) -> int:
+        return sum(len(period.unresolved_actuals) for period in self.periods)
+
+    @property
     def unexpected_count(self) -> int:
         return sum(len(period.unexpected) for period in self.periods)
 
@@ -217,6 +233,7 @@ class ActivityReport:
             "actual_cash_change": self.actual_cash_change,
             "cash_variance": self.cash_variance,
             "unresolved_count": self.unresolved_count,
+            "unresolved_actual_count": self.unresolved_actual_count,
             "unexpected_count": self.unexpected_count,
             "periods": [period.as_dict() for period in self.periods],
         }
@@ -346,6 +363,7 @@ def _actual_activity(
         planned_occurrence=planned_occurrence,
         planned_for=planned_for,
         planned_amount=transaction.planned_amount,
+        planning_resolution=transaction.planning_resolution,
     )
 
 

@@ -27,8 +27,8 @@ from gnucash_fixtures import (
     write_transaction,
 )
 
-from cashperspective.gen.db.sqlite import DbSQLite
-from cashperspective.gen.lib import (
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.lib import (
     Account,
     AccountType,
     Budget,
@@ -51,7 +51,7 @@ def isolate_logging():
     rest of the session once any test configures logging. That makes failures
     depend on test order, which is the worst kind to debug.
     """
-    logger = logging.getLogger("cashperspective")
+    logger = logging.getLogger("breadsched")
     handlers = list(logger.handlers)
     level, propagate = logger.level, logger.propagate
     yield
@@ -79,14 +79,14 @@ class LogCollector(logging.Handler):
 
 
 @pytest.fixture
-def cashperspective_logs():
-    """Capture cashperspective log records regardless of propagation or handlers.
+def breadsched_logs():
+    """Capture breadsched log records regardless of propagation or handlers.
 
-    Attaching to the ``cashperspective`` logger directly, rather than relying on records
+    Attaching to the ``breadsched`` logger directly, rather than relying on records
     reaching the root, makes the capture independent of whatever
     ``logs.configure`` has done to the logger.
     """
-    logger = logging.getLogger("cashperspective")
+    logger = logging.getLogger("breadsched")
     collector = LogCollector()
     previous = logger.level
     logger.setLevel(logging.DEBUG)

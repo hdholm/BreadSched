@@ -173,7 +173,7 @@ The layering is Gramps': a storage-agnostic object model, an abstract database
 interface, engines that are pure functions over it, and a UI that only displays.
 
 ```
-cashperspective/
+breadsched/
 ├── gen/                    core; standard library only, no GTK
 │   ├── lib/                domain objects (Money, Account, Transaction, Budget…)
 │   ├── db/                 DbBase contract + SQLite backend, batches, undo, signals
@@ -284,8 +284,8 @@ opens on a start screen rather than creating a book unasked. Four ways in are
 offered:
 
 - **New book** — an empty chart of accounts.
-- **Open book** — one you already have. Books written under the previous name
-  (`.cashcast`) still open.
+- **Open book** — an existing `.breadsched` book. The pre-BreadSched prototype
+  formats are intentionally not supported.
 - **Import a GnuCash book** — creates the new book and imports into it in one go,
   which is what a first run usually is.
 - **Use the default book** — for people who only ever want one; created in your
@@ -315,10 +315,10 @@ write is in progress; it is removed after a successful commit.
 ### Projection progress
 
 Opening the Projection view, changing an assumption, or otherwise recalculating a
-projection shows a modal progress window. Progress is measured by the current projection
-date against the scenario horizon end date, so the percentage describes how far through
-the financial plan the engine has calculated rather than guessing wall-clock time
-remaining.
+projection shows a modal progress window only when the calculation lasts long enough to
+need one. Progress is measured by the current projection date against the scenario horizon
+end date, so the percentage describes how far through the financial plan the engine has
+calculated rather than guessing wall-clock time remaining.
 
 ## Command line
 
@@ -359,6 +359,14 @@ breadsched budget household.breadsched --name 2026
 
 breadsched activity household.breadsched --start 2026-01-01 --end 2026-12-31
 breadsched activity household.breadsched --start 2026-01-01 --end 2026-12-31 --period quarter
+
+# Resolve actual transactions against the event-driven plan. New manual/imported
+# transactions stay unresolved until a user decision is made.
+breadsched plan-unresolved household.breadsched --start 2026-01-01 --end 2026-03-31
+breadsched plan-matches household.breadsched TRANSACTION_ID
+breadsched plan-reject household.breadsched TRANSACTION_ID OCCURRENCE_KEY
+breadsched plan-resolve household.breadsched TRANSACTION_ID OCCURRENCE_KEY
+breadsched plan-unexpected household.breadsched TRANSACTION_ID
 
 breadsched scenario household.breadsched save --name "Base case" \
     --years 20 --income-growth 0.03 --inflation 0.025 --investment-return 0.06
@@ -415,7 +423,7 @@ Three equivalent ways to start it, all accepting an optional book to open:
 ```bash
 breadsched-gtk household.breadsched     # installed launcher
 breadsched gui household.breadsched     # subcommand, if you only remember one binary
-python -m cashperspective.gui household.breadsched
+python -m breadsched.gui household.breadsched
 ```
 
 With no argument the window opens empty and you create or open a book from the

@@ -14,15 +14,15 @@ from datetime import date
 
 import pytest
 
-from cashperspective.cli.main import main as cli
-from cashperspective.gen.db.sqlite import DbSQLite
-from cashperspective.gen.engine import budgeting, inference
-from cashperspective.gen.lib import Money
+from breadsched.cli.main import main as cli
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.engine import budgeting, inference
+from breadsched.gen.lib import Money
 
 
 @pytest.fixture
 def book_path(tmp_path, capsys):
-    path = tmp_path / "book.cashperspective"
+    path = tmp_path / "book.breadsched"
     cli(["init", str(path)])
     for name, kind, parent in (
         ("Home Easton", "ASSET", "Assets"),
@@ -61,7 +61,7 @@ class TestAccountManagement:
         db.close()
 
     def test_an_opening_balance_can_be_posted_with_it(self, book_path, capsys):
-        from cashperspective.gen.engine import ledger
+        from breadsched.gen.engine import ledger
 
         cli(["account", str(book_path), "add", "--name", "Savings", "--type", "BANK",
              "--parent", "Assets", "--opening", "1500.00"])
@@ -141,7 +141,7 @@ class TestInference:
             db.close()
 
     def test_names_are_a_weaker_fallback_than_transactions(self, tmp_path, capsys):
-        path = tmp_path / "names.cashperspective"
+        path = tmp_path / "names.breadsched"
         cli(["init", str(path)])
         cli(["account", str(path), "add", "--name", "Home Evans", "--type", "ASSET",
              "--parent", "Assets"])
@@ -358,7 +358,7 @@ class TestMultipleBudgets:
             db.close()
 
     def test_the_dashboard_follows_the_current_budget(self, budgeted, capsys):
-        from cashperspective.gen.engine import dashboard
+        from breadsched.gen.engine import dashboard
 
         cli(["budget-clone", str(budgeted), "Base", "Tighter"])
         cli(["budget-member", str(budgeted), "remove", "--budget", "Tighter",
@@ -384,7 +384,7 @@ class TestMultipleBudgets:
 
 class TestBillFrequency:
     def test_the_cycle_reads_as_the_schedules_own_frequency(self, budgeted, capsys):
-        from cashperspective.gen.engine import dashboard
+        from breadsched.gen.engine import dashboard
 
         db = open_book(budgeted)
         try:
@@ -395,7 +395,7 @@ class TestBillFrequency:
             db.close()
 
     def test_a_quarterly_flow_says_so(self, book_path, capsys):
-        from cashperspective.gen.engine import dashboard
+        from breadsched.gen.engine import dashboard
 
         cli(["estimate", str(book_path), "add", "--name", "HOA",
              "--account", "Expenses", "--funded-from", "Assets:Checking",
@@ -412,7 +412,7 @@ class TestBillFrequency:
             db.close()
 
     def test_a_bill_carries_the_schedule_it_came_from(self, budgeted):
-        from cashperspective.gen.engine import dashboard
+        from breadsched.gen.engine import dashboard
 
         db = open_book(budgeted)
         try:
@@ -485,7 +485,7 @@ class TestMembershipIsDecidable:
 
     def test_an_older_book_with_a_list_is_read_as_decided(self):
         """Books written before the flag recorded membership only as a list."""
-        from cashperspective.gen.lib import ScheduledTransaction
+        from breadsched.gen.lib import ScheduledTransaction
 
         sched = ScheduledTransaction(name="Rent")
         data = sched.serialize()

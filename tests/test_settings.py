@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from cashperspective.gen.utils.settings import Settings, config_directory
+from breadsched.gen.utils.settings import Settings, config_directory
 
 
 @pytest.fixture
@@ -37,11 +37,11 @@ class TestLocation:
 
 class TestReadingAndWriting:
     def test_a_value_survives_a_round_trip(self, settings, tmp_path):
-        settings.set("general", "last_book", "/books/household.cashperspective")
+        settings.set("general", "last_book", "/books/household.breadsched")
         assert settings.save() is True
 
         reloaded = Settings("test", directory=tmp_path / "breadsched")
-        assert reloaded.get("general", "last_book") == "/books/household.cashperspective"
+        assert reloaded.get("general", "last_book") == "/books/household.breadsched"
 
     def test_missing_values_return_the_default(self, settings):
         assert settings.get("general", "absent", "fallback") == "fallback"
@@ -91,11 +91,11 @@ class TestResilience:
         (directory / "test.ini").write_text("[[[broken")
 
         store = Settings("test", directory=directory)
-        store.set("general", "last_book", "/books/new.cashperspective")
+        store.set("general", "last_book", "/books/new.breadsched")
         assert store.save() is True
         assert Settings("test", directory=directory).get(
             "general", "last_book"
-        ) == "/books/new.cashperspective"
+        ) == "/books/new.breadsched"
 
     def test_saving_leaves_no_temporary_file_behind(self, settings):
         settings.set("general", "x", "1")
@@ -119,10 +119,10 @@ class TestLastBook:
         return tmp_path
 
     def test_opening_a_book_records_it(self, app_settings, tmp_path, capsys):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gen.utils.settings import Settings as Store
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.utils.settings import Settings as Store
 
-        path = tmp_path / "household.cashperspective"
+        path = tmp_path / "household.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
 
@@ -133,10 +133,10 @@ class TestLastBook:
         assert Store("settings").get("general", "last_book") == str(path.resolve())
 
     def test_a_book_that_has_gone_is_forgotten(self, app_settings, tmp_path):
-        from cashperspective.gen.utils.settings import Settings as Store
+        from breadsched.gen.utils.settings import Settings as Store
 
         store = Store("settings")
-        store.set("general", "last_book", str(tmp_path / "deleted.cashperspective"))
+        store.set("general", "last_book", str(tmp_path / "deleted.breadsched"))
         store.save()
 
         remembered = store.get("general", "last_book")

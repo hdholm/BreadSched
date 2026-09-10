@@ -35,16 +35,16 @@ dev = [
 ]
 
 [project.scripts]
-breadsched = "cashperspective.cli.main:main"
+breadsched = "breadsched.cli.main:main"
 
 [project.gui-scripts]
-breadsched-gtk = "cashperspective.gui.launcher:main"
+breadsched-gtk = "breadsched.gui.launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-cashperspective = ["gui/resources/*.css", "plugins/**/*.gpr.py"]
+breadsched = ["gui/resources/*.css", "plugins/**/*.gpr.py"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

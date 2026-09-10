@@ -15,7 +15,7 @@ test-ordered:
 	pytest -p no:randomly
 
 cov:
-	pytest --cov=cashperspective --cov-report=term-missing
+	pytest --cov=breadsched --cov-report=term-missing
 
 lint:
 	ruff check src tests examples
@@ -24,7 +24,7 @@ fmt:
 	ruff check --fix src tests examples
 
 typecheck:
-	mypy src/cashperspective/gen src/cashperspective/plugins
+	mypy src/breadsched/gen src/breadsched/plugins
 
 build:
 	python -m build

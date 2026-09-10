@@ -19,11 +19,11 @@ import pytest
 from gnucash_fixtures import create_book
 from gnucash_xml_fixtures import create_xml_book
 
-from cashperspective.cli.main import main as cli
-from cashperspective.gen.db.sqlite import DbSQLite
-from cashperspective.gen.engine import ledger, schedule
-from cashperspective.gen.lib import Money
-from cashperspective.plugins.importer import gnucash_xml
+from breadsched.cli.main import main as cli
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.engine import ledger, schedule
+from breadsched.gen.lib import Money
+from breadsched.plugins.importer import gnucash_xml
 
 
 @pytest.fixture
@@ -127,11 +127,11 @@ class TestXmlScheduledTransactions:
 
 
 class TestMergingIntoAnExistingBook:
-    """`cashperspective init` makes a chart of accounts; an import must join it, not rival it."""
+    """`breadsched init` makes a chart of accounts; an import must join it, not rival it."""
 
     @pytest.fixture
     def initialised(self, tmp_path, capsys):
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         return path

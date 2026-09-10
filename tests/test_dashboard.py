@@ -13,8 +13,8 @@ from decimal import Decimal
 
 import pytest
 
-from cashperspective.gen.engine import dashboard
-from cashperspective.gen.lib import (
+from breadsched.gen.engine import dashboard
+from breadsched.gen.lib import (
     Account,
     AccountType,
     Money,
@@ -258,9 +258,9 @@ class TestConfiguration:
 class TestCli:
     def test_the_dashboard_command_reports_the_headline(self, db, household, capsys,
                                                         tmp_path):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "dash.cashperspective"
+        path = tmp_path / "dash.breadsched"
         db_path = path
         # Reuse the in-memory book by writing an equivalent one through the CLI.
         cli(["init", str(db_path)])
@@ -272,9 +272,9 @@ class TestCli:
     def test_json_output_carries_groups_and_bills(self, tmp_path, capsys):
         import json
 
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "dash.cashperspective"
+        path = tmp_path / "dash.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         cli(["dashboard", str(path), "--json"])
@@ -284,9 +284,9 @@ class TestCli:
     def test_the_horizons_can_be_overridden(self, tmp_path, capsys):
         import json
 
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "dash.cashperspective"
+        path = tmp_path / "dash.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         cli(["dashboard", str(path), "--emergency-months", "12", "--json"])
@@ -305,7 +305,7 @@ class TestLoansPairWithTheirAssets:
 
     @pytest.fixture
     def linked(self, db, book):
-        from cashperspective.gen.lib import Account, AccountType
+        from breadsched.gen.lib import Account, AccountType
 
         with db.transaction("property") as txn:
             house = Account(
@@ -462,7 +462,7 @@ class TestSeveralLoansOnOneAsset:
 
     @pytest.fixture
     def houses(self, db, book):
-        from cashperspective.gen.lib import Account, AccountType
+        from breadsched.gen.lib import Account, AccountType
 
         made = {}
         with db.transaction("properties") as txn:

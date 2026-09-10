@@ -28,9 +28,9 @@ from gnucash_fixtures import (  # noqa: E402
     write_transaction,
 )
 
-from cashperspective.gen.db.sqlite import DbSQLite  # noqa: E402
-from cashperspective.gen.engine import cashflow, ledger, projection, schedule  # noqa: E402
-from cashperspective.gen.lib import (  # noqa: E402
+from breadsched.gen.db.sqlite import DbSQLite  # noqa: E402
+from breadsched.gen.engine import cashflow, ledger, projection, schedule  # noqa: E402
+from breadsched.gen.lib import (  # noqa: E402
     Assumptions,
     Budget,
     Money,
@@ -41,7 +41,7 @@ from cashperspective.gen.lib import (  # noqa: E402
     ScheduledSplit,
     ScheduledTransaction,
 )
-from cashperspective.plugins.importer import gnucash_sqlite  # noqa: E402
+from breadsched.plugins.importer import gnucash_sqlite  # noqa: E402
 
 
 def build_gnucash_book(path: Path) -> None:
@@ -108,12 +108,12 @@ def rule(title: str) -> None:
 
 
 def main() -> int:
-    workdir = Path(tempfile.mkdtemp(prefix="cashperspective-demo-"))
+    workdir = Path(tempfile.mkdtemp(prefix="breadsched-demo-"))
     source = workdir / "gnucash-source.gnucash"
     build_gnucash_book(source)
 
     db = DbSQLite()
-    db.load(str(workdir / "household.cashperspective"))
+    db.load(str(workdir / "household.breadsched"))
 
     rule("1. Import the GnuCash book")
     result = gnucash_sqlite.import_book(db, source)

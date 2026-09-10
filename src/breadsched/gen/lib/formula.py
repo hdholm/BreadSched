@@ -52,7 +52,7 @@ _UNARY: dict[type[ast.unaryop], Callable[[Any], Any]] = {
 def _magnitude(function: Callable[..., Any]) -> Callable[..., Any]:
     """Present a loan payment as a positive amount.
 
-    The :mod:`~cashperspective.gen.lib.finance` functions use the spreadsheet sign
+    The :mod:`~breadsched.gen.lib.finance` functions use the spreadsheet sign
     convention, where a payment you make is negative. GnuCash's formula language
     does not: its templates put ``ipmt(...)`` straight into a debit slot and expect
     a positive number. Since these names are reached through *formulas*, they

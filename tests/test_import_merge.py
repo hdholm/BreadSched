@@ -13,11 +13,11 @@ from datetime import date
 import pytest
 from gnucash_fixtures import create_book, new_guid, write_account, write_transaction
 
-from cashperspective.cli.main import main as cli
-from cashperspective.gen.db.sqlite import DbSQLite
-from cashperspective.gen.engine import ledger
-from cashperspective.gen.lib import Money
-from cashperspective.plugins.importer import gnucash_sqlite
+from breadsched.cli.main import main as cli
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.engine import ledger
+from breadsched.gen.lib import Money
+from breadsched.plugins.importer import gnucash_sqlite
 
 CHART = [
     ("root", "Root Account", "ROOT", None, 0),
@@ -39,8 +39,8 @@ MOVEMENTS = [
 
 @pytest.fixture
 def initialised_book(tmp_path, capsys):
-    """A book created by `cashperspective init`, so it already has a root and placeholders."""
-    path = tmp_path / "household.cashperspective"
+    """A book created by `breadsched init`, so it already has a root and placeholders."""
+    path = tmp_path / "household.breadsched"
     cli(["init", str(path)])
     capsys.readouterr()
     db = DbSQLite()

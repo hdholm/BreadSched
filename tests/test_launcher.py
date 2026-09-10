@@ -12,8 +12,8 @@ import sys
 
 import pytest
 
-from cashperspective.cli.main import main as cli_main
-from cashperspective.gui import launcher
+from breadsched.cli.main import main as cli_main
+from breadsched.gui import launcher
 
 _HAS_PYGOBJECT = importlib.util.find_spec("gi") is not None
 
@@ -37,7 +37,7 @@ class TestHelpAndVersion:
         assert "Usage:" in capsys.readouterr().out
 
     def test_version_works_without_gtk(self, capsys):
-        from cashperspective import __version__
+        from breadsched import __version__
 
         assert launcher.main(["--version"]) == 0
         assert __version__ in capsys.readouterr().out
@@ -45,7 +45,7 @@ class TestHelpAndVersion:
     def test_help_lists_the_equivalent_commands(self, capsys):
         launcher.main(["--help"])
         out = capsys.readouterr().out
-        for form in ("breadsched-gtk", "breadsched gui", "python -m cashperspective.gui"):
+        for form in ("breadsched-gtk", "breadsched gui", "python -m breadsched.gui"):
             assert form in out
 
 
@@ -73,17 +73,17 @@ def no_gtk(monkeypatch):
     instead would make it pass vacuously on a build machine without GTK, and start
     a real main loop on one with it.
     """
-    monkeypatch.setitem(sys.modules, "cashperspective.gui.app", None)
+    monkeypatch.setitem(sys.modules, "breadsched.gui.app", None)
 
 
 @pytest.fixture
 def fake_gtk(monkeypatch):
     """Let the launcher reach the application, without entering a main loop."""
-    from cashperspective.gui import app as app_module
+    from breadsched.gui import app as app_module
 
     calls = []
     monkeypatch.setattr(
-        app_module.CashPerspectiveApplication, "run",
+        app_module.BreadSchedApplication, "run",
         lambda self, argv: calls.append(argv) or 0,
     )
     return calls
@@ -166,13 +166,13 @@ class TestEntryPoints:
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
         assert config["project"]["gui-scripts"]["breadsched-gtk"] == (
-            "cashperspective.gui.launcher:main"
+            "breadsched.gui.launcher:main"
         )
 
     def test_the_module_form_is_runnable(self):
         import importlib.util
 
-        spec = importlib.util.find_spec("cashperspective.gui.__main__")
+        spec = importlib.util.find_spec("breadsched.gui.__main__")
         assert spec is not None
 
     def test_the_cli_script_is_breadsched(self):
@@ -185,4 +185,4 @@ class TestEntryPoints:
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
-        assert config["project"]["scripts"]["breadsched"] == "cashperspective.cli.main:main"
+        assert config["project"]["scripts"]["breadsched"] == "breadsched.cli.main:main"

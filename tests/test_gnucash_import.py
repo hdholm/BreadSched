@@ -11,10 +11,10 @@ from datetime import date
 import pytest
 from gnucash_fixtures import create_book, new_guid
 
-from cashperspective.gen.engine import ledger
-from cashperspective.gen.lib import AccountType, Money
-from cashperspective.gen.plug import IMPORTER, PluginManager
-from cashperspective.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
+from breadsched.gen.engine import ledger
+from breadsched.gen.lib import AccountType, Money
+from breadsched.gen.plug import IMPORTER, PluginManager
+from breadsched.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
 
 
 class TestFormatDetection:
@@ -234,7 +234,7 @@ class TestXmlImport:
     def test_importing_both_formats_into_one_book(
         self, db, gnucash_sqlite_path, gnucash_xml_path
     ):
-        """Two households, two formats, one CashPerspective book: handles must not collide."""
+        """Two households, two formats, one BreadSched book: handles must not collide."""
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         assert db.summary()["txn"] == 5
@@ -404,7 +404,7 @@ class TestXmlScheduledTransactions:
         assert txn.value_for(gnucash_xml_path.ids.util) == Money("825.00")
 
     def test_it_appears_in_the_due_list(self, db, gnucash_xml_path):
-        from cashperspective.gen.engine import schedule as schedule_engine
+        from breadsched.gen.engine import schedule as schedule_engine
 
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         due = schedule_engine.due_occurrences(db, as_of=date(2026, 3, 15), horizon_days=0)

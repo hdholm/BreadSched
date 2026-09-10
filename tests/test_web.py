@@ -18,10 +18,10 @@ from datetime import date
 import pytest
 from gnucash_fixtures import create_book
 
-from cashperspective.cli.main import main as cli
-from cashperspective.gen.db.sqlite import DbSQLite
-from cashperspective.gen.lib import Money
-from cashperspective.web.server import serve
+from breadsched.cli.main import main as cli
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.lib import Money
+from breadsched.web.server import serve
 
 
 @pytest.fixture
@@ -44,7 +44,7 @@ def book_path(tmp_path, capsys):
              [("rent", 180000, 100, ""), ("bank", -180000, 100, "")]),
         ],
     )
-    path = tmp_path / "book.cashperspective"
+    path = tmp_path / "book.breadsched"
     cli(["init", str(path)])
     cli(["import", str(path), source.path])
     capsys.readouterr()
@@ -217,7 +217,7 @@ class TestSafety:
 
 class TestCliIntegration:
     def test_the_web_command_exists(self, capsys):
-        from cashperspective.cli.main import build_parser
+        from breadsched.cli.main import build_parser
 
         parser = build_parser()
         with pytest.raises(SystemExit):

@@ -2,8 +2,8 @@
 
 from datetime import date
 
-from cashperspective.gen.engine import activity, planning
-from cashperspective.gen.lib import (
+from breadsched.gen.engine import activity, planning
+from breadsched.gen.lib import (
     Money,
     PeriodType,
     Recurrence,
@@ -31,16 +31,15 @@ class TestActivityAggregation:
         bill = _monthly_bill(book, start=date(2026, 1, 7))
         with db.transaction("plan") as txn:
             db.add_scheduled(bill, txn)
-            db.add_transaction(
-                Transaction.simple(
-                    date(2026, 1, 20),
-                    "Unplanned groceries",
-                    book.groceries,
-                    book.checking,
-                    "35.00",
-                ),
-                txn,
+            actual = Transaction.simple(
+                date(2026, 1, 20),
+                "Unplanned groceries",
+                book.groceries,
+                book.checking,
+                "35.00",
             )
+            planning.mark_unexpected(actual)
+            db.add_transaction(actual, txn)
 
         report = activity.build_activity_report(
             db, date(2026, 1, 1), date(2026, 2, 28)
@@ -60,6 +59,7 @@ class TestActivityAggregation:
         assert len(january.unresolved) == 1
         assert len(january.unexpected) == 1
         assert report.unresolved_count == 2
+        assert report.unresolved_actual_count == 0
         assert report.unexpected_count == 1
 
     def test_matched_actual_keeps_expected_and_actual_in_their_own_date_periods(
@@ -146,6 +146,27 @@ class TestActivityAggregation:
             == yearly.planned_cash_change
         )
         assert monthly.unresolved_count == quarterly.unresolved_count == yearly.unresolved_count
+
+    def test_unclassified_actual_is_distinct_from_explicitly_unexpected(self, db, book):
+        actual = Transaction.simple(
+            date(2026, 4, 3),
+            "Needs review",
+            book.groceries,
+            book.checking,
+            "42.00",
+        )
+        with db.transaction("unresolved actual") as txn:
+            db.add_transaction(actual, txn)
+
+        report = activity.build_activity_report(
+            db, date(2026, 4, 1), date(2026, 4, 30)
+        )
+
+        assert report.unresolved_actual_count == 1
+        assert report.unexpected_count == 0
+        posted = report.periods[0].actual_transactions[0]
+        assert posted.unresolved is True
+        assert posted.unexpected is False
 
     def test_legacy_scheduled_actual_is_not_reported_as_unexpected(self, db, book):
         bill = _monthly_bill(book, start=date(2026, 4, 9))

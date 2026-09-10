@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 
-from cashperspective.gen.lib.money import Money
+from breadsched.gen.lib.money import Money
 
 
 class TestConstruction:

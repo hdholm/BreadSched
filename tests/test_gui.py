@@ -24,7 +24,7 @@ import pytest
 # import-time noise is suppressed. A test that imports gi directly reintroduces
 # both problems for the whole session, since the first import is the one that counts.
 gi_setup = pytest.importorskip(
-    "cashperspective.gui.gi_setup", reason="PyGObject is not installed"
+    "breadsched.gui.gi_setup", reason="PyGObject is not installed"
 )
 Gdk, Gtk = gi_setup.Gdk, gi_setup.Gtk
 
@@ -42,12 +42,12 @@ pytestmark = [
     pytest.mark.skipif(not _DISPLAY_OK, reason="no GTK 4 runtime or display"),
 ]
 
-from cashperspective import APP_ID  # noqa: E402
-from cashperspective.gen.db.sqlite import DbSQLite  # noqa: E402
-from cashperspective.gen.lib import Budget, Money, Transaction  # noqa: E402
-from cashperspective.gui.app import CashPerspectiveApplication  # noqa: E402
-from cashperspective.gui.viewmanager import CATEGORIES, ViewManager  # noqa: E402
-from cashperspective.gui.views._base import unwrap  # noqa: E402
+from breadsched import APP_ID  # noqa: E402
+from breadsched.gen.db.sqlite import DbSQLite  # noqa: E402
+from breadsched.gen.lib import Budget, Money, Transaction  # noqa: E402
+from breadsched.gui.app import BreadSchedApplication  # noqa: E402
+from breadsched.gui.viewmanager import CATEGORIES, ViewManager  # noqa: E402
+from breadsched.gui.views._base import unwrap  # noqa: E402
 
 CATEGORY_KEYS = [key for key, _label, _icon in CATEGORIES]
 
@@ -65,7 +65,7 @@ def app(tmp_path):
     failure only shows up where it is least expected.
     """
     identifier = f"{APP_ID}.Test{next(_APP_IDS)}"
-    application = CashPerspectiveApplication(
+    application = BreadSchedApplication(
         application_id=identifier,
         unique=False,
         settings_directory=tmp_path / "config",
@@ -92,10 +92,10 @@ def window(app):
 @pytest.fixture
 def populated_book(tmp_path, gnucash_sqlite_path):
     """A real book on disk with imported data, a budget and a schedule."""
-    from cashperspective.cli.main import main as cli
-    from cashperspective.gen.db.sqlite import DbSQLite
+    from breadsched.cli.main import main as cli
+    from breadsched.gen.db.sqlite import DbSQLite
 
-    path = tmp_path / "gui.cashperspective"
+    path = tmp_path / "gui.breadsched"
     cli(["init", str(path)])
     cli(["import", str(path), gnucash_sqlite_path.path])
 
@@ -117,10 +117,10 @@ class TestModulesImport:
         import importlib
         import pkgutil
 
-        import cashperspective.gui
+        import breadsched.gui
 
         failures = {}
-        for module in pkgutil.walk_packages(cashperspective.gui.__path__, "cashperspective.gui."):
+        for module in pkgutil.walk_packages(breadsched.gui.__path__, "breadsched.gui."):
             try:
                 importlib.import_module(module.name)
             except Exception as exc:  # noqa: BLE001 - reporting all of them at once
@@ -132,7 +132,7 @@ class TestApplicationIdentity:
     """Two applications in one process must not fight over the session bus."""
 
     def test_two_applications_can_be_registered_at_once(self, app):
-        second = CashPerspectiveApplication(
+        second = BreadSchedApplication(
             application_id=f"{APP_ID}.Second", unique=False
         )
         second.register()
@@ -140,7 +140,7 @@ class TestApplicationIdentity:
         assert app.get_is_registered()
 
     def test_the_default_identity_is_unchanged(self):
-        application = CashPerspectiveApplication()
+        application = BreadSchedApplication()
         assert application.get_application_id() == APP_ID
 
 
@@ -176,7 +176,7 @@ class TestDuePromptPolicy:
 
             # Due review is deliberately deferred by one GLib main-loop turn so
             # the parent window is mapped before its modal child is presented.
-            from cashperspective.gui.gi_setup import GLib
+            from breadsched.gui.gi_setup import GLib
 
             context = GLib.MainContext.default()
             while not calls and context.pending():
@@ -211,13 +211,13 @@ class TestOpeningABook:
 
     def test_the_title_names_the_file(self, app, window, populated_book):
         app.open_book(populated_book)
-        assert "gui.cashperspective" in window.get_title()
+        assert "gui.breadsched" in window.get_title()
 
     def test_a_new_empty_book_also_opens(self, app, window, tmp_path):
         """The reported failure: New Book wrote the file but never displayed it."""
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "fresh.cashperspective"
+        path = tmp_path / "fresh.breadsched"
         cli(["init", str(path)])
         app.open_book(str(path))
         assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
@@ -225,13 +225,13 @@ class TestOpeningABook:
     def test_opening_a_second_book_switches_cleanly(
         self, app, window, populated_book, tmp_path
     ):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
         app.open_book(populated_book)
-        second = tmp_path / "second.cashperspective"
+        second = tmp_path / "second.breadsched"
         cli(["init", str(second)])
         app.open_book(str(second))
-        assert "second.cashperspective" in window.get_title()
+        assert "second.breadsched" in window.get_title()
         assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
 
     def test_reopening_the_same_category_still_repaints(
@@ -254,9 +254,9 @@ class TestEveryViewBuilds:
 
     @pytest.mark.parametrize("category", CATEGORY_KEYS)
     def test_view_survives_an_empty_book(self, app, window, tmp_path, category):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "empty.cashperspective"
+        path = tmp_path / "empty.breadsched"
         cli(["init", str(path)])
         app.open_book(str(path))
         window.show_category(category)
@@ -472,7 +472,7 @@ class TestDialogs:
     def test_the_transaction_dialog_starts_with_two_splits(
         self, app, window, populated_book
     ):
-        from cashperspective.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
@@ -484,7 +484,7 @@ class TestDialogs:
         self, app, window, populated_book
     ):
         """The common case: pick two accounts, type one number."""
-        from cashperspective.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
         dialog = TransactionDialog(window, app.db)
@@ -493,8 +493,8 @@ class TestDialogs:
         assert "blank split will be set to" in dialog.status.get_text()
 
     def test_the_transaction_dialog_posts(self, app, window, populated_book):
-        from cashperspective.gen.lib import Money
-        from cashperspective.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gen.lib import Money
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
         dialog = TransactionDialog(window, app.db)
@@ -512,7 +512,7 @@ class TestDialogs:
         assert posted.value_for(first_account) == Money("42.00")
 
     def test_the_import_dialog_builds(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.import_dialog import ImportDialog
+        from breadsched.gui.dialogs.import_dialog import ImportDialog
 
         app.open_book(populated_book)
         dialog = ImportDialog(window, app.db)
@@ -524,7 +524,7 @@ class TestImportDialogState:
 
     @pytest.fixture
     def dialog(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.import_dialog import ImportDialog
+        from breadsched.gui.dialogs.import_dialog import ImportDialog
 
         app.open_book(populated_book)
         return ImportDialog(window, app.db)
@@ -615,8 +615,8 @@ class TestImportDialogState:
         assert "Lonely" in text
 
     def test_the_scenario_dialog_saves(self, app, window, populated_book):
-        from cashperspective.gen.lib import Scenario
-        from cashperspective.gui.dialogs.scenario_dialog import SaveScenarioDialog
+        from breadsched.gen.lib import Scenario
+        from breadsched.gui.dialogs.scenario_dialog import SaveScenarioDialog
 
         app.open_book(populated_book)
         dialog = SaveScenarioDialog(window, app.db, Scenario(name="Trial", years=7))
@@ -645,10 +645,10 @@ class TestImportNoise:
             import importlib, json, pkgutil, sys, warnings
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
-                import cashperspective.gui
-                from cashperspective.gui.gi_setup import UPSTREAM_NOISE
+                import breadsched.gui
+                from breadsched.gui.gi_setup import UPSTREAM_NOISE
                 for module in pkgutil.walk_packages(
-                    cashperspective.gui.__path__, "cashperspective.gui."
+                    breadsched.gui.__path__, "breadsched.gui."
                 ):
                     importlib.import_module(module.name)
             print(json.dumps([
@@ -664,7 +664,7 @@ class TestImportNoise:
 
         import re
 
-        from cashperspective.gui.gi_setup import UPSTREAM_NOISE
+        from breadsched.gui.gi_setup import UPSTREAM_NOISE
 
         # Two things are failures: noise the guard was supposed to absorb, and any
         # warning raised from this project's own files. New upstream warnings we
@@ -674,7 +674,7 @@ class TestImportNoise:
             w for w in warnings_seen
             if any(re.match(p, w["message"]) for p in UPSTREAM_NOISE)
         ]
-        ours = [w for w in warnings_seen if "cashperspective" in w["file"]]
+        ours = [w for w in warnings_seen if "breadsched" in w["file"]]
         assert escaped_noise == [], "the suppression in gi_setup is not working"
         assert ours == [], "this project's own code emitted a warning on import"
 
@@ -683,7 +683,7 @@ class TestImportNoise:
         import re
         import warnings
 
-        from cashperspective.gui import gi_setup
+        from breadsched.gui import gi_setup
 
         reported = (
             "GLib.unix_signal_add_full is deprecated; "
@@ -704,7 +704,7 @@ class TestImportNoise:
         """The filter must stay narrow enough to let real deprecations through."""
         import warnings
 
-        from cashperspective.gui import gi_setup
+        from breadsched.gui import gi_setup
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
@@ -720,7 +720,7 @@ class TestImportNoise:
 
     def test_every_namespace_used_is_pinned(self):
         """An unpinned namespace loads whatever is installed, with a warning."""
-        from cashperspective.gui import gi_setup
+        from breadsched.gui import gi_setup
 
         for name in ("Gtk", "Gdk", "Pango"):
             assert getattr(gi_setup, name) is not None
@@ -776,9 +776,9 @@ class TestBudgetCreation:
     """Item 2: a budget has to be creatable from inside the interface."""
 
     def test_the_budget_view_offers_a_way_to_create_one(self, app, window, tmp_path):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "empty.cashperspective"
+        path = tmp_path / "empty.breadsched"
         cli(["init", str(path)])
         app.open_book(str(path))
         window.show_category("budget")
@@ -789,7 +789,7 @@ class TestBudgetCreation:
         assert view is not None
 
     def test_the_dialog_builds(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.budget_dialog import NewBudgetDialog
+        from breadsched.gui.dialogs.budget_dialog import NewBudgetDialog
 
         app.open_book(populated_book)
         dialog = NewBudgetDialog(window, app.db)
@@ -798,7 +798,7 @@ class TestBudgetCreation:
     def test_the_dialog_creates_a_budget_from_the_book_schedules(
         self, app, window, populated_book
     ):
-        from cashperspective.gui.dialogs.budget_dialog import NewBudgetDialog
+        from breadsched.gui.dialogs.budget_dialog import NewBudgetDialog
 
         app.open_book(populated_book)
         before = len(list(app.db.iter_budgets()))
@@ -812,11 +812,11 @@ class TestReplacingABook:
     """Item 1: answering 'replace' in the file chooser must actually replace."""
 
     def test_an_existing_book_is_cleared_before_recreating(self, app, tmp_path):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gen.db.sqlite import DbSQLite
-        from cashperspective.gen.lib import Account, AccountType
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import Account, AccountType
 
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         db = DbSQLite()
         db.load(str(path))
@@ -829,13 +829,13 @@ class TestReplacingABook:
 
     def test_the_sidecar_files_go_too(self, app, tmp_path):
         """A stale -wal reattaches to the new database and carries old pages in."""
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         path.write_text("x")
         for suffix in ("-wal", "-shm", "-journal"):
-            (tmp_path / f"book.cashperspective{suffix}").write_text("x")
+            (tmp_path / f"book.breadsched{suffix}").write_text("x")
 
         app._remove_book(path)
-        assert list(tmp_path.glob("book.cashperspective*")) == []
+        assert list(tmp_path.glob("book.breadsched*")) == []
 
 
 class TestRegisterSplitDetail:
@@ -935,7 +935,7 @@ class TestColumnBehaviour:
                 assert columns.get_item(index).get_resizable() is True
 
     def test_amounts_sort_as_numbers_not_text(self):
-        from cashperspective.gui.views._base import _numeric
+        from breadsched.gui.views._base import _numeric
 
         assert _numeric("1,000.00") > _numeric("900.00")
         assert _numeric("(50.00)") < _numeric("0.00")
@@ -955,7 +955,7 @@ class TestProjectionRobustness:
     def test_a_failure_is_reported_rather_than_left_blank(
         self, app, window, populated_book, monkeypatch
     ):
-        from cashperspective.gen.engine import projection as engine
+        from breadsched.gen.engine import projection as engine
 
         app.open_book(populated_book)
         window.show_category("projection")
@@ -990,7 +990,7 @@ class TestScheduledDetail:
         assert "1,800.00" in view._splits_summary(sched)
 
     def test_a_schedule_without_splits_says_so(self, app, window, populated_book):
-        from cashperspective.gen.lib import ScheduledTransaction
+        from breadsched.gen.lib import ScheduledTransaction
 
         app.open_book(populated_book)
         window.show_category("scheduled")
@@ -1003,7 +1003,7 @@ class TestScheduleEntry:
 
     @pytest.fixture
     def dialog(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.schedule_dialog import ScheduleDialog
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
         app.open_book(populated_book)
         return ScheduleDialog(window, app.db)
@@ -1067,7 +1067,7 @@ class TestBudgetEditing:
         return window._views["budget"]
 
     def test_a_figure_can_be_typed_over(self, budget_view, app):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         budget = next(iter(app.db.iter_budgets()))
         account = next(iter(budget.lines))
@@ -1077,7 +1077,7 @@ class TestBudgetEditing:
         assert app.db.get_budget(budget.handle).amount(account, 0) == Money("250.00")
 
     def test_an_empty_cell_means_zero(self, budget_view, app):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         budget = next(iter(app.db.iter_budgets()))
         account = next(iter(budget.lines))
@@ -1087,7 +1087,7 @@ class TestBudgetEditing:
         assert app.db.get_budget(budget.handle).amount(account, 1) == Money(0)
 
     def test_unusable_text_is_reported_and_not_stored(self, budget_view, app):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         budget = next(iter(app.db.iter_budgets()))
         account = next(iter(budget.lines))
@@ -1156,8 +1156,8 @@ class TestScheduledIsSplitInTwo:
         assert names == {app.db.full_name(s.account) for s in sched.splits}
 
     def test_the_kind_column_distinguishes_commitment_from_estimate(self):
-        from cashperspective.gen.lib import ScheduledTransaction
-        from cashperspective.gui.views.scheduled import _kind_of
+        from breadsched.gen.lib import ScheduledTransaction
+        from breadsched.gui.views.scheduled import _kind_of
 
         commitment = ScheduledTransaction(name="Rent")
         estimate = ScheduledTransaction(name="Groceries")
@@ -1177,8 +1177,8 @@ class TestColumnHiding:
         assert found is not None, "no column menu in the register toolbar"
 
     def test_hiding_a_column_is_remembered(self, app, window, populated_book, tmp_path):
-        from cashperspective.gen.utils.settings import Settings
-        from cashperspective.gui.views._base import column_menu
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.views._base import column_menu
 
         app.open_book(populated_book)
         window.show_category("register")
@@ -1198,8 +1198,8 @@ class TestColumnHiding:
     def test_a_hidden_column_is_restored_on_the_next_build(
         self, app, window, populated_book, tmp_path
     ):
-        from cashperspective.gen.utils.settings import Settings
-        from cashperspective.gui.views._base import column_menu
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.views._base import column_menu
 
         app.open_book(populated_book)
         window.show_category("register")
@@ -1311,7 +1311,7 @@ class TestBudgetTree:
         )
 
     def test_a_section_totals_the_accounts_under_it(self, budget_view):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         section = budget_view._sections[0]
         expected = Money(0)
@@ -1320,7 +1320,7 @@ class TestBudgetTree:
         assert section.budgeted(0) == expected
 
     def test_the_net_cash_flow_row_is_last_and_not_editable(self, budget_view):
-        from cashperspective.gui.views.budget import TotalsRow
+        from breadsched.gui.views.budget import TotalsRow
 
         model = budget_view.column_view.get_model().get_model()
         last = model.get_item(model.get_n_items() - 1)
@@ -1329,7 +1329,7 @@ class TestBudgetTree:
         assert payload.editable is False
 
     def test_the_net_row_matches_the_report(self, budget_view, app):
-        from cashperspective.gui.views.budget import TotalsRow
+        from breadsched.gui.views.budget import TotalsRow
 
         model = budget_view.column_view.get_model().get_model()
         totals = model.get_item(model.get_n_items() - 1).get_item().payload
@@ -1338,7 +1338,7 @@ class TestBudgetTree:
 
     def test_only_leaf_account_rows_accept_editing(self, budget_view):
         """A parent shows the total of its children; typing over it would guess."""
-        from cashperspective.gui.views.budget import LineRow
+        from breadsched.gui.views.budget import LineRow
 
         model = budget_view.column_view.get_model().get_model()
         for index in range(model.get_n_items()):
@@ -1353,7 +1353,7 @@ class TestBudgetTree:
         assert len(self._columns(budget_view)) < with_actuals
 
     def test_editing_still_writes_through(self, budget_view, app):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         budget = next(iter(app.db.iter_budgets()))
         account = next(iter(budget.lines))
@@ -1375,7 +1375,7 @@ class TestEditingFromTheRegister:
         return view
 
     def _dialog_for(self, register, index=0):
-        from cashperspective.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         transaction = register._rows[index].transaction
         return TransactionDialog(
@@ -1403,7 +1403,7 @@ class TestEditingFromTheRegister:
         )
 
     def test_an_amount_edit_keeps_the_book_balanced(self, register, app):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         dialog, transaction = self._dialog_for(register)
         dialog.splits[0].amount.set_text("77.00")
@@ -1459,7 +1459,7 @@ class TestEditingFromTheRegister:
 
     def test_activating_a_split_row_edits_its_parent(self, register, app):
         """The splits are one record; editing them separately would unbalance it."""
-        from cashperspective.gui.views.register import SplitRow
+        from breadsched.gui.views.register import SplitRow
 
         model = register.column_view.get_model().get_model()
         parent = model.get_item(0)
@@ -1473,7 +1473,7 @@ class TestLastBookIsRemembered:
     """Item 1: opening a book records it for next time."""
 
     def test_opening_writes_the_setting(self, app, populated_book):
-        from cashperspective.gen.utils.settings import Settings
+        from breadsched.gen.utils.settings import Settings
 
         app.open_book(populated_book)
         assert app.settings.get("general", "last_book_path") == str(
@@ -1497,16 +1497,16 @@ class TestLastBookIsRemembered:
 
     def test_a_book_that_has_gone_is_forgotten(self, app, tmp_path):
         app.settings.set(
-            "general", "last_book_path", str(tmp_path / "gone.cashperspective")
+            "general", "last_book_path", str(tmp_path / "gone.breadsched")
         )
         app.settings.save()
         assert app.reopen_last_book() is False
         assert app.settings.get("general", "last_book_path") is None
 
     def test_activation_reopens_an_existing_remembered_book(self, app, tmp_path):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        remembered = tmp_path / "remembered.cashperspective"
+        remembered = tmp_path / "remembered.breadsched"
         assert cli(["init", str(remembered)]) == 0
         app.settings.set("general", "last_book_path", str(remembered))
         app.settings.save()
@@ -1519,8 +1519,8 @@ class TestLastBookIsRemembered:
     def test_a_remembered_default_user_book_is_reopened(
         self, app, tmp_path, monkeypatch
     ):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gui import paths
+        from breadsched.cli.main import main as cli
+        from breadsched.gui import paths
 
         default = tmp_path / "BreadSched.breadsched"
         assert cli(["init", str(default)]) == 0
@@ -1611,7 +1611,7 @@ class TestBudgetToolbarIcon:
     """Item 4: the Budget icon shows the budget rather than a creation dialog."""
 
     def test_it_switches_category(self, app, window, populated_book):
-        from cashperspective.gui.viewmanager import TOOLBAR
+        from breadsched.gui.viewmanager import TOOLBAR
 
         entry = next(item for item in TOOLBAR if item[0] == "Budget")
         assert entry[2] == "win.show-category::budget"
@@ -1624,11 +1624,11 @@ class TestBudgetAccountHierarchy:
     """Item 5: budget accounts cascade the way the account view does."""
 
     def test_child_accounts_nest_under_their_parent(self, app, window, tmp_path):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gen.db.sqlite import DbSQLite
-        from cashperspective.gen.lib import Account, AccountType, Budget
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import Account, AccountType, Budget
 
-        path = tmp_path / "nested.cashperspective"
+        path = tmp_path / "nested.breadsched"
         cli(["init", str(path)])
         db = DbSQLite()
         db.load(str(path))
@@ -1664,11 +1664,11 @@ class TestBudgetAccountHierarchy:
         assert utilities.editable is False
 
     def test_a_parent_totals_its_children(self, app, window, tmp_path):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gen.db.sqlite import DbSQLite
-        from cashperspective.gen.lib import Account, AccountType, Budget, Money
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import Account, AccountType, Budget, Money
 
-        path = tmp_path / "nested.cashperspective"
+        path = tmp_path / "nested.breadsched"
         cli(["init", str(path)])
         db = DbSQLite()
         db.load(str(path))
@@ -1702,9 +1702,9 @@ class TestDueReview:
 
     @pytest.fixture
     def due_book(self, app, window, tmp_path):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gen.db.sqlite import DbSQLite
-        from cashperspective.gen.lib import (
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import (
             Money,
             PeriodType,
             Recurrence,
@@ -1712,7 +1712,7 @@ class TestDueReview:
             ScheduledTransaction,
         )
 
-        path = tmp_path / "due.cashperspective"
+        path = tmp_path / "due.breadsched"
         cli(["init", str(path)])
         db = DbSQLite()
         db.load(str(path))
@@ -1735,8 +1735,8 @@ class TestDueReview:
         return app
 
     def _dialog(self, app, window, limit=4):
-        from cashperspective.gen.engine import schedule as engine
-        from cashperspective.gui.dialogs.due_dialog import DueDialog
+        from breadsched.gen.engine import schedule as engine
+        from breadsched.gui.dialogs.due_dialog import DueDialog
 
         due = engine.due_occurrences(app.db, horizon_days=0)[:limit]
         return DueDialog(window, app.db, due), due
@@ -1758,7 +1758,7 @@ class TestDueReview:
         assert dialog.get_destroy_with_parent() is True
 
     def test_remind_me_later_is_the_default(self, due_book, window):
-        from cashperspective.gui.dialogs.due_dialog import LATER
+        from breadsched.gui.dialogs.due_dialog import LATER
 
         dialog, _ = self._dialog(due_book, window)
         assert all(c.get_selected() == LATER for c in dialog.choosers)
@@ -1769,7 +1769,7 @@ class TestDueReview:
         assert due_book.db.summary()["txn"] == 0
 
     def test_post_now_writes_only_the_chosen_occurrence(self, due_book, window):
-        from cashperspective.gui.dialogs.due_dialog import POST
+        from breadsched.gui.dialogs.due_dialog import POST
 
         dialog, due = self._dialog(due_book, window)
         dialog.choosers[0].set_selected(POST)
@@ -1781,7 +1781,7 @@ class TestDueReview:
         assert recorded.post_date == due[0].when
 
     def test_never_marks_it_done_without_posting(self, due_book, window):
-        from cashperspective.gui.dialogs.due_dialog import NEVER
+        from breadsched.gui.dialogs.due_dialog import NEVER
 
         dialog, due = self._dialog(due_book, window)
         dialog.choosers[0].set_selected(NEVER)
@@ -1793,8 +1793,8 @@ class TestDueReview:
         assert due[0].when in sched.skipped
 
     def test_a_skipped_occurrence_is_not_raised_again(self, due_book, window):
-        from cashperspective.gen.engine import schedule as engine
-        from cashperspective.gui.dialogs.due_dialog import NEVER
+        from breadsched.gen.engine import schedule as engine
+        from breadsched.gui.dialogs.due_dialog import NEVER
 
         dialog, due = self._dialog(due_book, window)
         dialog.choosers[0].set_selected(NEVER)
@@ -1804,8 +1804,8 @@ class TestDueReview:
         assert due[0].when not in [o.when for o in again]
 
     def test_skipping_one_date_does_not_dismiss_the_others(self, due_book, window):
-        from cashperspective.gen.engine import schedule as engine
-        from cashperspective.gui.dialogs.due_dialog import NEVER
+        from breadsched.gen.engine import schedule as engine
+        from breadsched.gui.dialogs.due_dialog import NEVER
 
         before = len(engine.due_occurrences(due_book.db, horizon_days=0))
         dialog, due = self._dialog(due_book, window)
@@ -1815,7 +1815,7 @@ class TestDueReview:
         assert after == before - 1
 
     def test_postponing_leaves_it_due_next_time(self, due_book, window):
-        from cashperspective.gen.engine import schedule as engine
+        from breadsched.gen.engine import schedule as engine
 
         before = len(engine.due_occurrences(due_book.db, horizon_days=0))
         dialog, _ = self._dialog(due_book, window)
@@ -1823,7 +1823,7 @@ class TestDueReview:
         assert len(engine.due_occurrences(due_book.db, horizon_days=0)) == before
 
     def test_mixed_decisions_are_honoured_together(self, due_book, window):
-        from cashperspective.gui.dialogs.due_dialog import LATER, NEVER, POST
+        from breadsched.gui.dialogs.due_dialog import LATER, NEVER, POST
 
         dialog, _ = self._dialog(due_book, window, limit=3)
         dialog.choosers[0].set_selected(POST)
@@ -1832,14 +1832,14 @@ class TestDueReview:
         assert dialog.apply() == (1, 1)
 
     def test_bulk_choices_set_every_row(self, due_book, window):
-        from cashperspective.gui.dialogs.due_dialog import POST
+        from breadsched.gui.dialogs.due_dialog import POST
 
         dialog, _ = self._dialog(due_book, window)
         dialog.set_all(POST)
         assert all(c.get_selected() == POST for c in dialog.choosers)
 
     def test_a_skip_survives_reopening_the_book(self, due_book, window, tmp_path):
-        from cashperspective.gui.dialogs.due_dialog import NEVER
+        from breadsched.gui.dialogs.due_dialog import NEVER
 
         dialog, due = self._dialog(due_book, window)
         dialog.choosers[0].set_selected(NEVER)
@@ -1851,7 +1851,7 @@ class TestDueReview:
         assert due[0].when in sched.skipped
 
     def test_posting_is_one_undo_step(self, due_book, window):
-        from cashperspective.gui.dialogs.due_dialog import POST
+        from breadsched.gui.dialogs.due_dialog import POST
 
         dialog, _ = self._dialog(due_book, window, limit=3)
         dialog.set_all(POST)
@@ -1898,7 +1898,7 @@ class TestDashboardView:
         assert view.emergency_spin.get_value() > 0
 
     def test_changing_a_horizon_is_saved_on_the_book(self, view, app):
-        from cashperspective.gen.engine.dashboard import DashboardConfig
+        from breadsched.gen.engine.dashboard import DashboardConfig
 
         view.emergency_spin.set_value(9)
         assert DashboardConfig.load(app.db).emergency_months == 9
@@ -1909,8 +1909,8 @@ class TestDashboardView:
         assert view.board.emergency_fund > before
 
     def test_the_group_dialog_builds_and_saves(self, view, app):
-        from cashperspective.gen.engine.dashboard import DashboardConfig
-        from cashperspective.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gen.engine.dashboard import DashboardConfig
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
 
         dialog = DashboardDialog(view.get_root(), app.db, view.config)
         row = dialog.add_group()
@@ -1923,9 +1923,9 @@ class TestDashboardView:
         assert any(g.name == "Property" and g.kind == "property" for g in saved.groups)
 
     def test_an_empty_book_still_renders(self, app, window, tmp_path):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "empty.cashperspective"
+        path = tmp_path / "empty.breadsched"
         cli(["init", str(path)])
         app.open_book(str(path))
         window.show_category("dashboard")
@@ -1942,7 +1942,7 @@ class TestAccountEditor:
         return window._views["accounts"]
 
     def _dialog(self, view, account=None):
-        from cashperspective.gui.dialogs.account_dialog import AccountDialog
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
 
         root = view.db.root_account()
         return AccountDialog(
@@ -1960,8 +1960,8 @@ class TestAccountEditor:
         assert app.db.get_account_by_name("Savings") is not None
 
     def test_an_opening_balance_can_be_posted_with_it(self, accounts_view, app):
-        from cashperspective.gen.engine import ledger
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.engine import ledger
+        from breadsched.gen.lib import Money
 
         dialog = self._dialog(accounts_view)
         dialog.name_entry.set_text("Savings")
@@ -1985,8 +1985,8 @@ class TestAccountEditor:
         assert app.db.get_account(account.handle).group == "Cash"
 
     def test_loan_fields_only_show_for_a_liability(self, accounts_view, app):
-        from cashperspective.gen.lib import AccountType
-        from cashperspective.gui.dialogs.account_dialog import _TYPES
+        from breadsched.gen.lib import AccountType
+        from breadsched.gui.dialogs.account_dialog import _TYPES
 
         dialog = self._dialog(accounts_view)
         dialog.type_picker.set_selected(_TYPES.index(AccountType.BANK))
@@ -1995,8 +1995,8 @@ class TestAccountEditor:
         assert dialog.loan_box.get_visible() is True
 
     def test_card_fields_only_show_for_a_card(self, accounts_view, app):
-        from cashperspective.gen.lib import AccountType
-        from cashperspective.gui.dialogs.account_dialog import _TYPES
+        from breadsched.gen.lib import AccountType
+        from breadsched.gui.dialogs.account_dialog import _TYPES
 
         dialog = self._dialog(accounts_view)
         dialog.type_picker.set_selected(_TYPES.index(AccountType.CREDIT))
@@ -2005,8 +2005,8 @@ class TestAccountEditor:
         assert dialog.card_box.get_visible() is False
 
     def test_a_card_carrying_a_balance_records_its_payment(self, accounts_view, app):
-        from cashperspective.gen.lib import AccountType, Money
-        from cashperspective.gui.dialogs.account_dialog import _TYPES
+        from breadsched.gen.lib import AccountType, Money
+        from breadsched.gui.dialogs.account_dialog import _TYPES
 
         dialog = self._dialog(accounts_view)
         dialog.name_entry.set_text("Visa")
@@ -2022,8 +2022,8 @@ class TestAccountEditor:
         assert card.payment_day == 22
 
     def test_a_loan_can_name_its_asset(self, accounts_view, app):
-        from cashperspective.gen.lib import Account, AccountType
-        from cashperspective.gui.dialogs.account_dialog import _TYPES
+        from breadsched.gen.lib import Account, AccountType
+        from breadsched.gui.dialogs.account_dialog import _TYPES
 
         with app.db.transaction("house") as txn:
             house = Account(
@@ -2112,7 +2112,7 @@ class TestBudgetControls:
         assert hasattr(budget_view, "_on_use_clicked")
 
     def test_the_button_says_when_the_budget_is_already_in_use(self, budget_view, app):
-        from cashperspective.gen.engine import budgeting
+        from breadsched.gen.engine import budgeting
 
         budgeting.set_current_budget(app.db, budget_view.budget_handle)
         budget_view._refresh_use_button()
@@ -2120,14 +2120,14 @@ class TestBudgetControls:
         assert budget_view.use_button.get_sensitive() is False
 
     def test_using_a_budget_records_it_on_the_book(self, budget_view, app):
-        from cashperspective.gen.engine import budgeting
+        from breadsched.gen.engine import budgeting
 
         budgeting.set_current_budget(app.db, None)
         budget_view._on_use_clicked(None)
         assert budgeting.current_budget(app.db).handle == budget_view.budget_handle
 
     def test_the_dashboard_follows_the_choice(self, app, window, populated_book):
-        from cashperspective.gen.engine import budgeting
+        from breadsched.gen.engine import budgeting
 
         app.open_book(populated_book)
         window.show_category("budget")
@@ -2141,7 +2141,7 @@ class TestBudgetControls:
     def test_a_budget_can_be_cloned_from_the_view(self, budget_view, app):
         before = {b.name for b in app.db.iter_budgets()}
         budget = app.db.get_budget(budget_view.budget_handle)
-        from cashperspective.gen.engine import budgeting
+        from breadsched.gen.engine import budgeting
 
         budgeting.clone_budget(app.db, budget, "From the view")
         after = {b.name for b in app.db.iter_budgets()}
@@ -2153,7 +2153,7 @@ class TestMembershipEditor:
 
     @pytest.fixture
     def dialog(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.membership_dialog import MembershipDialog
+        from breadsched.gui.dialogs.membership_dialog import MembershipDialog
 
         app.open_book(populated_book)
         window.show_category("budget")
@@ -2170,7 +2170,7 @@ class TestMembershipEditor:
         assert all(check.get_active() for check in editor.checks)
 
     def test_excluding_one_leaves_it_in_other_budgets(self, dialog, app):
-        from cashperspective.gen.engine import budgeting
+        from breadsched.gen.engine import budgeting
 
         editor, budget = dialog
         other = budgeting.clone_budget(app.db, budget, "Other")
@@ -2202,7 +2202,7 @@ class TestMembershipEditor:
     def test_excluding_everything_empties_the_budget(self, dialog, app):
         from datetime import date
 
-        from cashperspective.gen.engine import budgeting
+        from breadsched.gen.engine import budgeting
 
         editor, budget = dialog
         editor.set_all(False)
@@ -2240,7 +2240,7 @@ class TestAccountDialogConstruction:
     """
 
     def test_it_builds_for_a_new_account(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.account_dialog import AccountDialog
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
 
         app.open_book(populated_book)
         dialog = AccountDialog(
@@ -2249,7 +2249,7 @@ class TestAccountDialogConstruction:
         assert dialog.save_button.get_sensitive() is False
 
     def test_it_builds_for_an_existing_account(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.account_dialog import AccountDialog
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
 
         app.open_book(populated_book)
         account = app.db.get_account_by_name("Assets:Checking Account")
@@ -2258,7 +2258,7 @@ class TestAccountDialogConstruction:
 
     def test_it_builds_for_every_account_type(self, app, window, populated_book):
         """Each type sets a different initial dropdown, and each one emits."""
-        from cashperspective.gui.dialogs.account_dialog import AccountDialog
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
 
         app.open_book(populated_book)
         for account in list(app.db.iter_accounts()):
@@ -2268,7 +2268,7 @@ class TestAccountDialogConstruction:
             assert dialog.selected_type is account.atype
 
     def test_validation_runs_once_the_dialog_is_ready(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.account_dialog import AccountDialog
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
 
         app.open_book(populated_book)
         dialog = AccountDialog(
@@ -2283,7 +2283,7 @@ class TestRepaintsAreDeferred:
         """Deferred-refresh guards must not call ``DbSQLite.is_open``."""
         from pathlib import Path
 
-        source = Path("src/cashperspective/gui/views/_base.py").read_text()
+        source = Path("src/breadsched/gui/views/_base.py").read_text()
         assert ".is_open()" not in source
 
 
@@ -2303,7 +2303,7 @@ class TestRepaintsAreDeferred:
         return window._views["budget"]
 
     def test_committing_a_cell_does_not_rebuild_immediately(self, budget_view, app):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         budget = next(iter(app.db.iter_budgets()))
         account = next(iter(budget.lines))
@@ -2317,7 +2317,7 @@ class TestRepaintsAreDeferred:
 
     def test_the_edit_is_still_written_at_once(self, budget_view, app):
         """Deferring the repaint must not defer the data."""
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         budget = next(iter(app.db.iter_budgets()))
         account = next(iter(budget.lines))
@@ -2337,7 +2337,7 @@ class TestRepaintsAreDeferred:
 
     def test_flushing_removes_the_registered_idle_source(self, budget_view):
         """A synchronous flush must not leave a callback for a later test."""
-        from cashperspective.gui.gi_setup import GLib
+        from breadsched.gui.gi_setup import GLib
 
         calls = []
         original = budget_view.refresh
@@ -2362,7 +2362,7 @@ class TestRepaintsAreDeferred:
         self, budget_view, app, window
     ):
         """Fixture teardown may not leave work that can outlive the database."""
-        from cashperspective.gui.gi_setup import GLib
+        from breadsched.gui.gi_setup import GLib
 
         calls = []
         budget_view.schedule_refresh()
@@ -2391,7 +2391,7 @@ class TestRepaintsAreDeferred:
         remove it.  Simulate an ineffective removal and prove the escaped source
         still cannot refresh a closed database.
         """
-        from cashperspective.gui.gi_setup import GLib
+        from breadsched.gui.gi_setup import GLib
 
         calls = []
         budget_view.schedule_refresh()
@@ -2413,14 +2413,14 @@ class TestRepaintsAreDeferred:
         self, budget_view, app, tmp_path, monkeypatch
     ):
         """Idle work belongs to the exact database that scheduled it."""
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gen.db.sqlite import DbSQLite
-        from cashperspective.gui.gi_setup import GLib
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gui.gi_setup import GLib
 
         budget_view.schedule_refresh()
         monkeypatch.setattr(GLib, "source_remove", lambda _source_id: False)
 
-        second_path = tmp_path / "replacement.cashperspective"
+        second_path = tmp_path / "replacement.breadsched"
         cli(["init", str(second_path)])
         second = DbSQLite()
         second.load(str(second_path))
@@ -2448,7 +2448,7 @@ class TestRepaintsAreDeferred:
 
     def test_a_commit_does_not_re_enter_itself(self, budget_view, app):
         """The write emits the signal this view listens for."""
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         budget = next(iter(app.db.iter_budgets()))
         account = next(iter(budget.lines))
@@ -2490,7 +2490,7 @@ def _install_log_writer() -> None:
     if _WRITER_INSTALLED:
         return
 
-    from cashperspective.gui.gi_setup import GLib
+    from breadsched.gui.gi_setup import GLib
 
     def writer(level, fields, _n, _data):
         text = ""
@@ -2534,7 +2534,7 @@ class TestNoGtkCriticals:
         assert criticals == []
 
     def test_editing_a_budget_cell_is_quiet(self, app, window, populated_book, criticals):
-        from cashperspective.gen.lib import Money
+        from breadsched.gen.lib import Money
 
         app.open_book(populated_book)
         window.show_category("budget")
@@ -2584,7 +2584,7 @@ class TestStartScreen:
             assert app.has_action(name.removeprefix("app.")), f"{name} is not wired"
 
     def test_file_menu_offers_import_into_a_new_book(self):
-        from cashperspective.gui.app import build_menu_model
+        from breadsched.gui.app import build_menu_model
 
         menu = build_menu_model()
         actions = _menu_actions(menu)
@@ -2592,7 +2592,7 @@ class TestStartScreen:
         assert "app.import" in actions
 
     def test_the_default_book_is_named_but_not_created(self, tmp_path, monkeypatch):
-        from cashperspective.gui import paths
+        from breadsched.gui import paths
 
         monkeypatch.setenv("XDG_DOCUMENTS_DIR", str(tmp_path))
         target = paths.default_book_path()
@@ -2602,7 +2602,7 @@ class TestStartScreen:
     def test_opening_the_default_creates_it_on_request(
         self, app, window, tmp_path, monkeypatch
     ):
-        from cashperspective.gui import paths
+        from breadsched.gui import paths
 
         monkeypatch.setenv("XDG_DOCUMENTS_DIR", str(tmp_path))
         app.on_open_default()
@@ -2613,9 +2613,9 @@ class TestStartScreen:
     def test_use_default_never_overwrites_an_existing_user_book(
         self, app, window, tmp_path, monkeypatch
     ):
-        from cashperspective.cli.main import main as cli
-        from cashperspective.gen.lib import Account, AccountType
-        from cashperspective.gui import paths
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.lib import Account, AccountType
+        from breadsched.gui import paths
 
         target = tmp_path / "BreadSched.breadsched"
         assert cli(["init", str(target)]) == 0
@@ -2643,21 +2643,21 @@ class TestStartScreen:
     def test_starter_materialization_refuses_to_replace_an_existing_book(
         self, tmp_path
     ):
-        from cashperspective.gui.app import CashPerspectiveApplication
+        from breadsched.gui.app import BreadSchedApplication
 
         target = tmp_path / "existing.breadsched"
         target.write_bytes(b"do not replace")
 
         with pytest.raises(FileExistsError):
-            CashPerspectiveApplication._materialize_starter_book(target)
+            BreadSchedApplication._materialize_starter_book(target)
 
         assert target.read_bytes() == b"do not replace"
 
     def test_opening_the_default_twice_reuses_it(
         self, app, window, tmp_path, monkeypatch
     ):
-        from cashperspective.gen.lib import Account, AccountType
-        from cashperspective.gui import paths
+        from breadsched.gen.lib import Account, AccountType
+        from breadsched.gui import paths
 
         monkeypatch.setenv("XDG_DOCUMENTS_DIR", str(tmp_path))
         app.on_open_default()
@@ -2672,7 +2672,7 @@ class TestStartScreen:
         assert paths.default_book_path().exists()
 
     def test_the_documents_folder_is_used_when_there_is_one(self, tmp_path, monkeypatch):
-        from cashperspective.gui import paths
+        from breadsched.gui import paths
 
         monkeypatch.delenv("XDG_DOCUMENTS_DIR", raising=False)
         documents = tmp_path / "Documents"
@@ -2683,14 +2683,14 @@ class TestStartScreen:
         assert paths.documents_directory() == documents
 
     def test_home_is_the_fallback(self, tmp_path, monkeypatch):
-        from cashperspective.gui import paths
+        from breadsched.gui import paths
 
         monkeypatch.delenv("XDG_DOCUMENTS_DIR", raising=False)
         monkeypatch.setattr(paths.Path, "home", classmethod(lambda cls: tmp_path))
         assert paths.documents_directory() == tmp_path
 
     def test_only_breadsched_books_are_offered(self):
-        from cashperspective.gui.paths import READABLE_SUFFIXES
+        from breadsched.gui.paths import READABLE_SUFFIXES
 
         assert READABLE_SUFFIXES == (".breadsched",)
 
@@ -2725,7 +2725,7 @@ class TestImportDialogProgress:
 
     @pytest.fixture
     def dialog(self, app, window, populated_book):
-        from cashperspective.gui.dialogs.import_dialog import ImportDialog
+        from breadsched.gui.dialogs.import_dialog import ImportDialog
 
         app.open_book(populated_book)
         return ImportDialog(window, app.db)
@@ -2765,8 +2765,8 @@ class TestImportDialogProgress:
         assert "transactions" in dialog.result_view.get_text()
 
     def test_fifty_warnings_are_shown(self, dialog):
-        from cashperspective.gui.dialogs.import_dialog import WARNING_LIMIT
-        from cashperspective.plugins.importer.gnucash_common import ImportResult
+        from breadsched.gui.dialogs.import_dialog import WARNING_LIMIT
+        from breadsched.plugins.importer.gnucash_common import ImportResult
 
         assert WARNING_LIMIT == 50
         result = ImportResult()

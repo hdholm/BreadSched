@@ -14,10 +14,10 @@ from decimal import Decimal
 
 import pytest
 
-from cashperspective.gen.engine.loans import LoanTerms, build_schedule, create_loan
-from cashperspective.gen.lib import Money
-from cashperspective.gen.lib.finance import amortisation_schedule, fv, ipmt, nper, pmt, ppmt, pv
-from cashperspective.gen.lib.formula import FormulaError, evaluate, normalise
+from breadsched.gen.engine.loans import LoanTerms, build_schedule, create_loan
+from breadsched.gen.lib import Money
+from breadsched.gen.lib.finance import amortisation_schedule, fv, ipmt, nper, pmt, ppmt, pv
+from breadsched.gen.lib.formula import FormulaError, evaluate, normalise
 
 
 def q(value) -> Decimal:
@@ -167,19 +167,19 @@ class TestLoanSetup:
     def test_creating_a_loan_stores_it_with_an_opening_balance(self, db, terms):
         create_loan(db, terms)
         assert [s.name for s in db.iter_scheduled()] == ["Mortgage"]
-        from cashperspective.gen.engine import ledger
+        from breadsched.gen.engine import ledger
 
         assert ledger.balance(db, terms.liability) == Money("200000.00")
 
     def test_the_opening_balance_can_be_skipped(self, db, terms):
-        from cashperspective.gen.engine import ledger
+        from breadsched.gen.engine import ledger
 
         create_loan(db, terms, opening_balance=False)
         assert ledger.balance(db, terms.liability) == Money(0)
 
     def test_a_projection_shows_the_debt_falling(self, db, terms):
-        from cashperspective.gen.engine import projection
-        from cashperspective.gen.lib import ProjectionBasis, Scenario
+        from breadsched.gen.engine import projection
+        from breadsched.gen.lib import ProjectionBasis, Scenario
 
         create_loan(db, terms)
         scenario = Scenario(
@@ -252,7 +252,7 @@ class TestGnuCashMortgageFormulas:
 
     def test_a_schedule_supplies_i_for_each_occurrence(self, db, book):
         """`i` is the period number, and must change from one payment to the next."""
-        from cashperspective.gen.lib import (
+        from breadsched.gen.lib import (
             PeriodType,
             Recurrence,
             ScheduledSplit,
@@ -278,7 +278,7 @@ class TestGnuCashMortgageFormulas:
         assert later[book.card] > first[book.card]
 
     def test_such_a_schedule_balances(self, db, book):
-        from cashperspective.gen.lib import (
+        from breadsched.gen.lib import (
             PeriodType,
             Recurrence,
             ScheduledSplit,
@@ -298,9 +298,9 @@ class TestGnuCashMortgageFormulas:
         )
         assert sched.instantiate(date(2026, 5, 1)).is_balanced()
 
-    def test_no_warning_is_logged_for_a_usable_formula(self, db, book, cashperspective_logs):
-        from cashperspective.gen.lib import ScheduledSplit
+    def test_no_warning_is_logged_for_a_usable_formula(self, db, book, breadsched_logs):
+        from breadsched.gen.lib import ScheduledSplit
 
         split = ScheduledSplit(book.card, formula=self.PRINCIPAL)
         split.resolve({"i": 1})
-        assert cashperspective_logs.containing("unusable formula") == []
+        assert breadsched_logs.containing("unusable formula") == []

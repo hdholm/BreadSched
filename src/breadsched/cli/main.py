@@ -29,6 +29,7 @@ from ..gen.engine import (
     cashflow,
     inference,
     ledger,
+    planning,
     projection,
     schedule,
 )
@@ -623,6 +624,7 @@ def cmd_activity(args: argparse.Namespace) -> int:
                 period.planned_cash_change.format(parens_negative=True),
                 period.actual_cash_change.format(parens_negative=True),
                 len(period.unresolved),
+                len(period.unresolved_actuals),
                 len(period.unexpected),
             ]
             for period in report.periods
@@ -636,12 +638,173 @@ def cmd_activity(args: argparse.Namespace) -> int:
                 "variance",
                 "planned cash",
                 "actual cash",
-                "unresolved",
+                "expected due",
+                "actual unresolved",
                 "unexpected",
             ],
-            right={1, 2, 3, 4, 5, 6, 7},
+            right={1, 2, 3, 4, 5, 6, 7, 8},
         )
         emit(report.as_dict(), args, text)
+        return 0
+    finally:
+        db.close()
+
+
+def _budget_handle(db: DbSQLite, name: str | None) -> str | None:
+    if not name:
+        return None
+    budget = db.get_budget_by_name(name)
+    if budget is None:
+        raise CommandError(f"no budget named {name!r}")
+    return budget.handle
+
+
+def cmd_plan_unresolved(args: argparse.Namespace) -> int:
+    """List unresolved scheduled expectations over an exact date horizon."""
+    db = open_book(args.book, "r")
+    try:
+        start = parse_date(args.start)
+        end = parse_date(args.end)
+        if start is None or end is None:
+            raise CommandError("plan-unresolved requires --start and --end")
+        events = planning.unresolved_events(
+            db, start, end, budget_handle=_budget_handle(db, args.budget)
+        )
+        rows = [
+            [
+                event.key,
+                event.planned_date.isoformat(),
+                event.description[:40],
+                event.expected_amount.format(),
+            ]
+            for event in events
+        ]
+        emit(
+            [event.as_dict() for event in events],
+            args,
+            table(rows, ["occurrence", "planned", "description", "expected"], right={3}),
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_plan_matches(args: argparse.Namespace) -> int:
+    """Show unresolved scheduled occurrences that could explain one actual."""
+    db = open_book(args.book, "r")
+    try:
+        transaction = _find_transaction(db, args.transaction)
+        candidates = planning.match_candidates(
+            db,
+            transaction,
+            window_days=args.window_days,
+            budget_handle=_budget_handle(db, args.budget),
+        )
+        payload = [
+            {
+                "occurrence": candidate.event.as_dict(),
+                "date_distance_days": candidate.date_distance,
+                "amount_difference": candidate.amount_difference,
+                "common_accounts": candidate.common_accounts,
+            }
+            for candidate in candidates
+        ]
+        rows = [
+            [
+                candidate.event.key,
+                candidate.event.planned_date.isoformat(),
+                candidate.event.description[:36],
+                candidate.event.expected_amount.format(),
+                candidate.date_distance,
+                candidate.amount_difference.format(),
+                candidate.common_accounts,
+            ]
+            for candidate in candidates
+        ]
+        text = table(
+            rows,
+            ["occurrence", "planned", "description", "expected", "days", "amount diff", "accounts"],
+            right={3, 4, 5, 6},
+        )
+        emit(payload, args, text)
+        return 0
+    finally:
+        db.close()
+
+
+def _event_for_resolution(db: DbSQLite, key: str) -> planning.PlannedEvent:
+    event = planning.event_by_key(db, key)
+    if event is None:
+        raise CommandError(f"no scheduled occurrence matches {key!r}")
+    if event.status is planning.EventStatus.ACTUALIZED:
+        raise CommandError(f"scheduled occurrence {key!r} is already resolved")
+    return event
+
+
+def cmd_plan_resolve(args: argparse.Namespace) -> int:
+    """Resolve one actual transaction against a selected scheduled occurrence."""
+    db = open_book(args.book)
+    try:
+        transaction = _find_transaction(db, args.transaction)
+        event = _event_for_resolution(db, args.occurrence)
+        planning.actualize_transaction(transaction, event)
+        with db.transaction("Resolve transaction against planned occurrence") as txn:
+            db.commit_transaction(transaction, txn)
+        emit(
+            {
+                "transaction": transaction.handle,
+                "resolution": transaction.planning_resolution.value,
+                "occurrence": event.key,
+                "planned_for": event.planned_date,
+                "planned_amount": event.expected_amount,
+            },
+            args,
+            f"Matched {transaction.handle[:8]} to {event.key}",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_plan_reject(args: argparse.Namespace) -> int:
+    """Persistently reject one suggested occurrence for an unresolved actual."""
+    db = open_book(args.book)
+    try:
+        transaction = _find_transaction(db, args.transaction)
+        event = _event_for_resolution(db, args.occurrence)
+        planning.reject_candidate(transaction, event)
+        with db.transaction("Reject planned occurrence candidate") as txn:
+            db.commit_transaction(transaction, txn)
+        emit(
+            {
+                "transaction": transaction.handle,
+                "rejected_occurrence": event.key,
+                "rejected": list(transaction.rejected_plan_occurrences),
+            },
+            args,
+            f"Rejected {event.key} for {transaction.handle[:8]}",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_plan_unexpected(args: argparse.Namespace) -> int:
+    """Explicitly declare an actual transaction to have no planned occurrence."""
+    db = open_book(args.book)
+    try:
+        transaction = _find_transaction(db, args.transaction)
+        planning.mark_unexpected(transaction)
+        with db.transaction("Mark transaction unexpected") as txn:
+            db.commit_transaction(transaction, txn)
+        emit(
+            {
+                "transaction": transaction.handle,
+                "resolution": transaction.planning_resolution.value,
+            },
+            args,
+            f"Marked {transaction.handle[:8]} as unexpected",
+        )
         return 0
     finally:
         db.close()
@@ -1602,6 +1765,41 @@ def build_parser() -> argparse.ArgumentParser:
         help="limit scheduled flows to members of this legacy budget",
     )
     activity_cmd.set_defaults(func=cmd_activity)
+
+    plan_unresolved = add(
+        "plan-unresolved",
+        "List scheduled expectations that have not been resolved to actuals",
+    )
+    plan_unresolved.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
+    plan_unresolved.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
+    plan_unresolved.add_argument("--budget", help="limit occurrences to one legacy budget")
+    plan_unresolved.set_defaults(func=cmd_plan_unresolved)
+
+    plan_matches = add(
+        "plan-matches",
+        "Show planned occurrences that could match an actual transaction",
+    )
+    plan_matches.add_argument("transaction", help="transaction handle, or a unique prefix")
+    plan_matches.add_argument("--window-days", type=int, default=7)
+    plan_matches.add_argument("--budget", help="limit candidates to one legacy budget")
+    plan_matches.set_defaults(func=cmd_plan_matches)
+
+    plan_resolve = add("plan-resolve", "Match an actual transaction to a planned occurrence")
+    plan_resolve.add_argument("transaction", help="transaction handle, or a unique prefix")
+    plan_resolve.add_argument("occurrence", help="stable scheduled occurrence key")
+    plan_resolve.set_defaults(func=cmd_plan_resolve)
+
+    plan_reject = add("plan-reject", "Reject a planned occurrence as a match candidate")
+    plan_reject.add_argument("transaction", help="transaction handle, or a unique prefix")
+    plan_reject.add_argument("occurrence", help="stable scheduled occurrence key")
+    plan_reject.set_defaults(func=cmd_plan_reject)
+
+    plan_unexpected = add(
+        "plan-unexpected",
+        "Declare an actual transaction to be intentionally outside the plan",
+    )
+    plan_unexpected.add_argument("transaction", help="transaction handle, or a unique prefix")
+    plan_unexpected.set_defaults(func=cmd_plan_unexpected)
 
     budget_set = add("budget-set", "Set a budget amount for an account")
     budget_set.add_argument("--name", required=True, help="budget name")

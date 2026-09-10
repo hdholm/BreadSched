@@ -15,10 +15,10 @@ from datetime import date
 import pytest
 from gnucash_fixtures import create_book, new_guid, write_transaction
 
-from cashperspective.gen.engine import ledger
-from cashperspective.gen.lib import Money
-from cashperspective.gen.utils import logs
-from cashperspective.plugins.importer import gnucash_sqlite
+from breadsched.gen.engine import ledger
+from breadsched.gen.lib import Money
+from breadsched.gen.utils import logs
+from breadsched.plugins.importer import gnucash_sqlite
 
 CHART = [
     ("root", "Root Account", "ROOT", None, 0),
@@ -162,38 +162,38 @@ class TestNothingIsLost:
 
 
 class TestLogging:
-    def test_debug_logging_names_each_transaction(self, db, tmp_path, cashperspective_logs):
+    def test_debug_logging_names_each_transaction(self, db, tmp_path, breadsched_logs):
         book = create_book(tmp_path / "logged.gnucash", CHART, [HEALTHY])
         gnucash_sqlite.import_book(db, book.path)
-        assert cashperspective_logs.containing("Weekly shop")
-        assert cashperspective_logs.containing("2 split(s)")
+        assert breadsched_logs.containing("Weekly shop")
+        assert breadsched_logs.containing("2 split(s)")
 
     def test_capture_survives_a_logger_left_unpropagating(
-        self, db, tmp_path, cashperspective_logs
+        self, db, tmp_path, breadsched_logs
     ):
         """The order dependence that failed on one machine and not another.
 
         Once any test configures logging, records stop reaching the root logger,
-        where pytest's caplog listens. Capturing on the cashperspective logger itself is
+        where pytest's caplog listens. Capturing on the breadsched logger itself is
         independent of that.
         """
-        logging.getLogger("cashperspective").propagate = False  # as an earlier test leaves it
+        logging.getLogger("breadsched").propagate = False  # as an earlier test leaves it
 
         book = create_book(tmp_path / "logged.gnucash", CHART, [HEALTHY])
         gnucash_sqlite.import_book(db, book.path)
-        assert cashperspective_logs.containing("Weekly shop")
+        assert breadsched_logs.containing("Weekly shop")
 
-    def test_configure_leaves_foreign_handlers_alone(self, db, tmp_path, cashperspective_logs):
+    def test_configure_leaves_foreign_handlers_alone(self, db, tmp_path, breadsched_logs):
         """Reconfiguring must not silently detach someone else's handler."""
         logs.configure(verbosity=2, stream=False)
         book = create_book(tmp_path / "logged.gnucash", CHART, [HEALTHY])
         gnucash_sqlite.import_book(db, book.path)
-        assert cashperspective_logs.containing("Weekly shop")
+        assert breadsched_logs.containing("Weekly shop")
 
     def test_configure_still_replaces_its_own_handlers(self, tmp_path):
         for _ in range(4):
             logs.configure(verbosity=1, path=tmp_path / "y.log", stream=True)
-        logger = logging.getLogger("cashperspective")
+        logger = logging.getLogger("breadsched")
         assert len(logger.handlers) == 2  # one console, one file
 
     def test_a_log_file_captures_the_detail(self, db, tmp_path):
@@ -212,22 +212,22 @@ class TestLogging:
     def test_reconfiguring_does_not_duplicate_handlers(self, tmp_path):
         for _ in range(3):
             logs.configure(verbosity=1, path=tmp_path / "x.log", stream=False)
-        logger = logging.getLogger("cashperspective")
+        logger = logging.getLogger("breadsched")
         assert len(logger.handlers) == 1
         logs.configure(verbosity=0)
 
     def test_the_library_does_not_configure_logging_itself(self):
         """Handlers are the application's business, never the library's."""
-        logging.getLogger("cashperspective").handlers.clear()
+        logging.getLogger("breadsched").handlers.clear()
         logs.configure(verbosity=0, stream=False)
-        assert logging.getLogger("cashperspective").propagate is False
+        assert logging.getLogger("breadsched").propagate is False
 
 
 class TestCliDiagnostics:
     def test_debug_flag_emits_detail(self, tmp_path, capsys, gnucash_sqlite_path):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         cli(["import", str(path), gnucash_sqlite_path.path, "--debug"])
@@ -236,11 +236,11 @@ class TestCliDiagnostics:
 
     def test_quiet_by_default_even_when_there_are_warnings(self, tmp_path, capsys):
         """Warnings appear once, in the report -- not again on stderr."""
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
         book = create_book(tmp_path / "messy.gnucash", CHART, [HEALTHY])
         add_raw_transaction(book, "Lonely", [("bank", 5000, 100, "")])
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         cli(["import", str(path), book.path])
@@ -249,38 +249,38 @@ class TestCliDiagnostics:
         assert captured.out.count("Lonely") == 1
 
     def test_verbose_puts_warnings_on_stderr_too(self, tmp_path, capsys):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
         book = create_book(tmp_path / "messy.gnucash", CHART, [HEALTHY])
         add_raw_transaction(book, "Lonely", [("bank", 5000, 100, "")])
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         cli(["import", str(path), book.path, "-v"])
         assert "Lonely" in capsys.readouterr().err
 
     def test_log_file_flag_writes_a_file(self, tmp_path, capsys, gnucash_sqlite_path):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         target = tmp_path / "run.log"
         cli(["init", str(path)])
         cli(["import", str(path), gnucash_sqlite_path.path, "--log-file", str(target)])
         capsys.readouterr()
         assert target.exists()
         assert "import finished" in target.read_text()
-        from cashperspective.gen.utils import logs as log_module
+        from breadsched.gen.utils import logs as log_module
 
         log_module.configure(verbosity=0)
 
     def test_json_output_carries_the_skip_reasons(self, tmp_path, capsys):
         import json
 
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
         book = create_book(tmp_path / "messy.gnucash", CHART, [HEALTHY])
         add_raw_transaction(book, "Empty", [("bank", 0, 100, "")])
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         cli(["import", str(path), book.path, "--json"])
@@ -289,20 +289,20 @@ class TestCliDiagnostics:
         assert payload["skipped_by_reason"]
 
     def test_a_missing_source_file_is_a_clean_error(self, tmp_path, capsys):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         assert cli(["import", str(path), str(tmp_path / "absent.gnucash")]) == 2
         assert "no file at" in capsys.readouterr().err
 
     def test_a_file_that_is_not_a_book_is_a_clean_error(self, tmp_path, capsys):
-        from cashperspective.cli.main import main as cli
+        from breadsched.cli.main import main as cli
 
         junk = tmp_path / "notes.txt"
         junk.write_text("this is not a GnuCash book")
-        path = tmp_path / "book.cashperspective"
+        path = tmp_path / "book.breadsched"
         cli(["init", str(path)])
         capsys.readouterr()
         assert cli(["import", str(path), str(junk)]) == 2
@@ -310,7 +310,7 @@ class TestCliDiagnostics:
 
 class TestErrorMessages:
     def test_validation_errors_name_the_transaction(self):
-        from cashperspective.gen.lib import Split, Transaction, UnbalancedError
+        from breadsched.gen.lib import Split, Transaction, UnbalancedError
 
         txn = Transaction(post_date=date(2026, 5, 5), description="Half a thing")
         txn.add_split(Split("abc", Money("10.00")))
@@ -322,7 +322,7 @@ class TestErrorMessages:
         assert "found 1" in message
 
     def test_imbalance_errors_report_the_residual(self):
-        from cashperspective.gen.lib import Split, Transaction, UnbalancedError
+        from breadsched.gen.lib import Split, Transaction, UnbalancedError
 
         txn = Transaction(post_date=date(2026, 5, 5), description="Wonky")
         txn.add_split(Split("abc", Money("10.00")))

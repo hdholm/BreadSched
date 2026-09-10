@@ -14,15 +14,15 @@ from datetime import date
 
 import pytest
 
-from cashperspective.cli.main import main as cli
-from cashperspective.gen.db.sqlite import DbSQLite
-from cashperspective.gen.engine import ledger
-from cashperspective.gen.lib import Money, Split, Transaction
+from breadsched.cli.main import main as cli
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.engine import ledger
+from breadsched.gen.lib import Money, Split, Transaction
 
 
 @pytest.fixture
 def book_path(tmp_path, capsys):
-    path = tmp_path / "book.cashperspective"
+    path = tmp_path / "book.breadsched"
     cli(["init", str(path)])
     cli(["add", str(path), "--date", "2026-01-05", "--description", "Rent",
          "--from", "Assets", "--to", "Expenses", "--amount", "1800.00"])
@@ -167,7 +167,7 @@ class TestEditsStayBalanced:
         target = db.get_transaction(handle)
         target.splits[0].value = Money("999.00")
 
-        from cashperspective.gen.lib import UnbalancedError
+        from breadsched.gen.lib import UnbalancedError
 
         with pytest.raises(UnbalancedError):
             with db.transaction("Break it") as txn:

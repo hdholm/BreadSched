@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "cashperspective"
+SRC = Path(__file__).resolve().parent.parent / "src" / "breadsched"
 
 
 def resolve_relative(module: Path, level: int, name: str | None) -> list[str] | None:
-    """Resolve a relative import to a dotted path under ``cashperspective``.
+    """Resolve a relative import to a dotted path under ``breadsched``.
 
     Mirrors Python's own rule: a module's package is its parent directory, and each
     extra leading dot climbs one level above that.
@@ -29,12 +29,12 @@ def resolve_relative(module: Path, level: int, name: str | None) -> list[str] | 
     if climb > len(package):
         return None
     base = package[: len(package) - climb] if climb else package
-    return ["cashperspective", *base, *(name.split(".") if name else [])]
+    return ["breadsched", *base, *(name.split(".") if name else [])]
 
 
 def module_exists(dotted: list[str]) -> bool:
     """True if the dotted path names a module or package on disk."""
-    relative = Path(*dotted[1:])  # drop the leading 'cashperspective'
+    relative = Path(*dotted[1:])  # drop the leading 'breadsched'
     candidate = SRC / relative
     return (candidate / "__init__.py").exists() or candidate.with_suffix(".py").exists()
 
@@ -77,7 +77,7 @@ class TestLayering:
             "dataclasses",
             "datetime", "decimal", "enum", "gzip", "json", "logging", "math",
             "numbers", "operator", "pathlib", "sqlite3", "sys", "time", "typing",
-            "uuid", "weakref", "xml", "cashperspective", "IO", "collections", "functools",
+            "uuid", "weakref", "xml", "breadsched", "IO", "collections", "functools",
             "inspect", "itertools", "os", "re", "shutil", "tempfile", "textwrap", "threading",
         }
         offenders: dict[str, set[str]] = {}
@@ -90,7 +90,7 @@ class TestLayering:
 
     def test_importing_the_gui_package_does_not_pull_in_gtk(self):
         """A user with no GTK installed must still be able to import the package."""
-        import cashperspective.gui  # noqa: F401
+        import breadsched.gui  # noqa: F401
 
         assert "gi" not in imported_names(GUI_DIR / "__init__.py")
 
@@ -111,7 +111,7 @@ class TestGuiIsCheckable:
         """Checking depth is not enough: a shallow import can still point nowhere.
 
         ``from ..gen.db import x`` inside ``gui/views/_base.py`` is well within the
-        package and resolves to ``cashperspective.gui.gen``, which does not exist. Only
+        package and resolves to ``breadsched.gui.gen``, which does not exist. Only
         resolving the target against the filesystem catches that, and it is a
         run-time-only failure otherwise, reached the moment a user clicks the view.
         """
@@ -185,18 +185,18 @@ class TestWarningPolicy:
 
         Checked here rather than with a ``filterwarnings`` entry because the module
         field of a warnings filter is matched against a *file path*, so a pattern
-        like ``cashperspective\\..*`` silently never matches and the filter does nothing.
+        like ``breadsched\\..*`` silently never matches and the filter does nothing.
         """
         import importlib
         import pkgutil
         import warnings
 
-        import cashperspective
+        import breadsched
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            for module in pkgutil.walk_packages(cashperspective.__path__, "cashperspective."):
-                if module.name.startswith("cashperspective.gui"):
+            for module in pkgutil.walk_packages(breadsched.__path__, "breadsched."):
+                if module.name.startswith("breadsched.gui"):
                     continue  # needs GTK; covered by the gui tests
                 importlib.import_module(module.name)
 
@@ -296,7 +296,7 @@ _ENUM_SETTERS = {
 
 class TestPluginRegistry:
     def test_every_importer_declares_how_to_recognise_its_files(self):
-        from cashperspective.gen.plug import IMPORTER, PluginManager
+        from breadsched.gen.plug import IMPORTER, PluginManager
 
         for plugin in PluginManager.instance().by_category(IMPORTER):
             assert plugin.extensions or plugin.sniff is not None
@@ -304,7 +304,7 @@ class TestPluginRegistry:
 
     def test_registering_a_new_importer_needs_no_edits_elsewhere(self, tmp_path):
         """The registry is the extension point; nothing else hard-codes formats."""
-        from cashperspective.gen.plug import IMPORTER, Plugin, PluginManager
+        from breadsched.gen.plug import IMPORTER, Plugin, PluginManager
 
         manager = PluginManager()
         marker = tmp_path / "ledger.qif"
@@ -325,12 +325,12 @@ class TestTheResolverItself:
     def test_it_rejects_the_bug_that_shipped(self):
         # gui/views/_base.py once said `from ..gen.db.sqlite import DbSQLite`.
         target = resolve_relative(SRC / "gui" / "views" / "_base.py", 2, "gen.db.sqlite")
-        assert target == ["cashperspective", "gui", "gen", "db", "sqlite"]
+        assert target == ["breadsched", "gui", "gen", "db", "sqlite"]
         assert not module_exists(target)
 
     def test_it_accepts_the_corrected_form(self):
         target = resolve_relative(SRC / "gui" / "views" / "_base.py", 3, "gen.db.sqlite")
-        assert target == ["cashperspective", "gen", "db", "sqlite"]
+        assert target == ["breadsched", "gen", "db", "sqlite"]
         assert module_exists(target)
 
     def test_it_resolves_a_sibling_import(self):
@@ -348,7 +348,7 @@ class TestTheResolverItself:
 class TestPackagedResources:
     def test_declared_gui_stylesheet_exists(self):
         root = Path(__file__).resolve().parent.parent
-        assert (root / "src/cashperspective/gui/resources/style.css").is_file()
+        assert (root / "src/breadsched/gui/resources/style.css").is_file()
 
     def test_application_loads_css_from_the_packaged_resource(self):
         source = (SRC / "gui" / "app.py").read_text(encoding="utf-8")

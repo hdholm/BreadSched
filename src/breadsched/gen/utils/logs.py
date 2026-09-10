@@ -21,10 +21,10 @@ __all__ = ["configure", "get_logger", "LEVELS"]
 #: own report. Letting the logger print them too would show every warning twice.
 LEVELS = [logging.ERROR, logging.INFO, logging.DEBUG]
 
-_ROOT = "cashperspective"
+_ROOT = "breadsched"
 _FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 #: Marks a handler as installed by configure(), and therefore ours to replace.
-_OWNED = "_cashperspective_managed"
+_OWNED = "_breadsched_managed"
 _TIME = "%H:%M:%S"
 
 
@@ -37,7 +37,7 @@ def configure(
     path: str | Path | None = None,
     stream: bool = True,
 ) -> Path | None:
-    """Set up logging for the ``cashperspective`` tree and return the log file, if any.
+    """Set up logging for the ``breadsched`` tree and return the log file, if any.
 
     Called more than once, it replaces its own handlers rather than stacking them,
     so re-running an import from the GUI does not double every line.

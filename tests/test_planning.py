@@ -3,8 +3,8 @@
 from datetime import date
 from decimal import Decimal
 
-from cashperspective.gen.engine import planning, projection, schedule
-from cashperspective.gen.lib import (
+from breadsched.gen.engine import planning, projection, schedule
+from breadsched.gen.lib import (
     Assumptions,
     Money,
     PeriodType,
@@ -315,3 +315,64 @@ class TestEventDrivenProjection:
         assert january.ledger.debt_payments[book.card] == Money("40.00")
         assert january.liabilities == Money("60.00")
         assert january.ledger.reconciles()
+
+class TestActualResolutionWorkflow:
+    def _bill_and_actual(self, db, book):
+        bill = ScheduledTransaction(
+            name="Electric",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 5, 7)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("180.00")),
+                ScheduledSplit(book.checking, Money("-180.00")),
+            ],
+        )
+        with db.transaction("plan bill") as txn:
+            db.add_scheduled(bill, txn)
+        actual = Transaction.simple(
+            date(2026, 5, 8),
+            "ELECTRIC CO",
+            book.utilities,
+            book.checking,
+            "193.42",
+        )
+        return bill, actual
+
+    def test_rejected_candidate_is_not_offered_again_and_persists(self, db, book):
+        _bill, actual = self._bill_and_actual(db, book)
+        candidate = planning.match_candidates(db, actual)[0]
+        planning.reject_candidate(actual, candidate.event)
+        with db.transaction("record unresolved actual") as txn:
+            db.add_transaction(actual, txn)
+
+        reloaded = db.get_transaction(actual.handle)
+        assert reloaded is not None
+        assert reloaded.planning_resolution.value == "unresolved"
+        assert candidate.event.key in reloaded.rejected_plan_occurrences
+        assert planning.match_candidates(db, reloaded) == []
+
+    def test_marking_unexpected_suppresses_future_match_suggestions(self, db, book):
+        _bill, actual = self._bill_and_actual(db, book)
+        assert planning.match_candidates(db, actual)
+
+        planning.mark_unexpected(actual)
+        with db.transaction("record unexpected actual") as txn:
+            db.add_transaction(actual, txn)
+
+        reloaded = db.get_transaction(actual.handle)
+        assert reloaded is not None
+        assert reloaded.planning_resolution.value == "unexpected"
+        assert planning.match_candidates(db, reloaded) == []
+
+    def test_matching_sets_explicit_resolution_and_clears_rejections(self, db, book):
+        _bill, actual = self._bill_and_actual(db, book)
+        event = planning.unresolved_events(
+            db, date(2026, 5, 1), date(2026, 5, 31)
+        )[0]
+        actual.rejected_plan_occurrences.append("scheduled:not-this-one:2026-05-07")
+
+        planning.actualize_transaction(actual, event)
+
+        assert actual.planning_resolution.value == "matched"
+        assert actual.rejected_plan_occurrences == []
+        assert actual.planned_occurrence == event.key
+        assert planning.event_by_key(db, event.key) is not None

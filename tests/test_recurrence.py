@@ -5,8 +5,8 @@ from decimal import Decimal
 
 import pytest
 
-from cashperspective.gen.lib.formula import FormulaError, evaluate
-from cashperspective.gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
+from breadsched.gen.lib.formula import FormulaError, evaluate
+from breadsched.gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
 
 
 class TestAddMonths:
