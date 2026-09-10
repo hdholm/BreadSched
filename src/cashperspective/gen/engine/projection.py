@@ -36,6 +36,13 @@ __all__ = [
 
 _ONE = Decimal(1)
 _TWELFTH = Decimal(1) / Decimal(12)
+# Projection growth rates originate as finite-precision Decimals. Converting them
+# directly to exact Money rationals and compounding forever lets denominators grow
+# without bound, eventually making bigint gcd/multiplication dominate runtime.
+# Keep eight decimal places of a currency unit internally (one hundred-thousandth
+# of a cent) after each accrual step. This is far below display precision while
+# bounding rational sizes for long event streams.
+_PROJECTION_MONEY_DENOMINATOR = 100_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -505,14 +512,22 @@ def _advance_event_state(
         assumptions = timeline.at(left)
 
         cash_rate = _period_growth_rate(assumptions.cash_interest, days)
-        cash_growth = cash * Money(cash_rate) if cash_rate else Money(0)
+        cash_growth = (
+            (cash * Money(cash_rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
+            if cash_rate
+            else Money(0)
+        )
         cash = cash + cash_growth
         flows.cash_interest = flows.cash_interest + cash_growth
 
         for handle, balance in list(holdings.items()):
             account = accounts[handle]
             rate = _period_growth_rate(_resolve_rate(assumptions, account), days)
-            growth = balance * Money(rate) if rate else Money(0)
+            growth = (
+                (balance * Money(rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
+                if rate
+                else Money(0)
+            )
             holdings[handle] = balance + growth
             flows.investment_growth[handle] = (
                 flows.investment_growth.get(handle, Money(0)) + growth
@@ -521,7 +536,11 @@ def _advance_event_state(
         for handle, owed in list(debts.items()):
             account = accounts[handle]
             rate = _period_growth_rate(_resolve_rate(assumptions, account), days)
-            charge = owed * Money(rate) if (rate and owed > 0) else Money(0)
+            charge = (
+                (owed * Money(rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
+                if (rate and owed > 0)
+                else Money(0)
+            )
             debts[handle] = owed + charge
             flows.liability_interest[handle] = (
                 flows.liability_interest.get(handle, Money(0)) + charge

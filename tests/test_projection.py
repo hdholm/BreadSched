@@ -698,3 +698,34 @@ class TestEventProjectionScaling:
         # Thousands of events share one precomputed timeline; resolving assumptions
         # must depend on change points, not on event count or distance into the plan.
         assert calls <= 2
+
+    def test_long_daily_projection_keeps_money_rationals_bounded(self, db, funded_book):
+        with db.transaction("Add daily expense") as txn:
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Daily expense",
+                    recurrence=Recurrence(
+                        PeriodType.DAY, start=date(2026, 1, 1)
+                    ),
+                    splits=[
+                        ScheduledSplit(funded_book.checking, Money("-1.00")),
+                        ScheduledSplit(funded_book.groceries, Money("1.00")),
+                    ],
+                ),
+                txn,
+            )
+
+        scenario = Scenario(
+            name="Bounded rationals",
+            start=date(2026, 1, 1),
+            years=10,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(cash_interest="0.04"),
+        )
+        result = projection.project(db, scenario)
+
+        assert len(result.rows) == 120
+        # Interest rates are Decimal approximations. Projection compounding must not
+        # turn those into ever-growing exact-rational denominators as events accrue.
+        assert max(row.cash_close.denominator for row in result.rows) <= 100_000_000
+        assert all(row.ledger.reconciles() for row in result.rows)
