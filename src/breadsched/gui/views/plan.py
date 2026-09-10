@@ -168,13 +168,14 @@ class PlanView(BaseView):
 
     def _update_scenario_actions(self) -> None:
         selected = self._selected_scenario()
-        self.add_estimate_button.set_sensitive(self.db is not None)
-        self.alter_schedule_button.set_sensitive(self.db is not None)
-        self.suppress_schedule_button.set_sensitive(self.db is not None)
+        enabled = self.db is not None and selected is not None
+        self.add_estimate_button.set_sensitive(enabled)
+        self.alter_schedule_button.set_sensitive(enabled)
+        self.suppress_schedule_button.set_sensitive(enabled)
         if selected is None:
             self.scenario_hint.set_text(
                 "Baseline is unchanged by scenario events. Choose or create a saved scenario "
-                "before adding, altering, or suppressing an event."
+                "to add, alter, or suppress an event."
             )
         else:
             count = len(selected.schedule_overrides)

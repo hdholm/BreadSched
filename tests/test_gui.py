@@ -1482,9 +1482,9 @@ class TestDerivedPlanView:
         app.open_book(populated_book)
         window.show_category("plan")
         view = window._views["plan"]
-        assert view.add_estimate_button.get_sensitive() is True
-        assert view.alter_schedule_button.get_sensitive() is True
-        assert view.suppress_schedule_button.get_sensitive() is True
+        assert view.add_estimate_button.get_sensitive() is False
+        assert view.alter_schedule_button.get_sensitive() is False
+        assert view.suppress_schedule_button.get_sensitive() is False
 
     def test_suppressing_a_baseline_schedule_is_scenario_only(
         self, app, window, populated_book
@@ -1504,6 +1504,9 @@ class TestDerivedPlanView:
             if scenario.name == "No recurring payment"
         )
         view.scenario.set_selected(selected)
+        assert view.add_estimate_button.get_sensitive() is True
+        assert view.alter_schedule_button.get_sensitive() is True
+        assert view.suppress_schedule_button.get_sensitive() is True
         view._suppress_baseline_schedule(schedule)
 
         saved = app.db.get_scenario_by_name("No recurring payment")
