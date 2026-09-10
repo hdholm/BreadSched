@@ -35,7 +35,9 @@ class PlanView(BaseView):
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self._report = None
-        self._year = date.today().year
+        self._start_year = date.today().year
+        self._end_year = self._start_year + 4
+        self._updating_range = False
         self._scenarios = []
         self._scenario_handle: str | None = None
         self._updating_scenarios = False
@@ -51,15 +53,23 @@ class PlanView(BaseView):
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
         bar.append(spacer)
+        new_scenario = Gtk.Button(label="New scenario…")
+        new_scenario.connect("clicked", self._on_new_scenario)
+        bar.append(new_scenario)
         bar.append(Gtk.Label(label="Scenario"))
         self.scenario = Gtk.DropDown()
         self.scenario.connect("notify::selected", self._on_scenario_changed)
         bar.append(self.scenario)
-        bar.append(Gtk.Label(label="Year"))
-        self.year = Gtk.SpinButton.new_with_range(1900, 2300, 1)
-        self.year.set_value(self._year)
-        self.year.connect("value-changed", self._on_controls_changed)
-        bar.append(self.year)
+        bar.append(Gtk.Label(label="From"))
+        self.start_year = Gtk.SpinButton.new_with_range(1900, 2300, 1)
+        self.start_year.set_value(self._start_year)
+        self.start_year.connect("value-changed", self._on_range_changed)
+        bar.append(self.start_year)
+        bar.append(Gtk.Label(label="Through"))
+        self.end_year = Gtk.SpinButton.new_with_range(1900, 2300, 1)
+        self.end_year.set_value(self._end_year)
+        self.end_year.connect("value-changed", self._on_range_changed)
+        bar.append(self.end_year)
         bar.append(Gtk.Label(label="Group by"))
         self.period = Gtk.DropDown.new_from_strings(["Month", "Quarter", "Year"])
         self.period.set_selected(0)
@@ -158,13 +168,13 @@ class PlanView(BaseView):
 
     def _update_scenario_actions(self) -> None:
         selected = self._selected_scenario()
-        enabled = selected is not None
-        self.add_estimate_button.set_sensitive(enabled)
-        self.alter_schedule_button.set_sensitive(enabled)
-        self.suppress_schedule_button.set_sensitive(enabled)
+        self.add_estimate_button.set_sensitive(self.db is not None)
+        self.alter_schedule_button.set_sensitive(self.db is not None)
+        self.suppress_schedule_button.set_sensitive(self.db is not None)
         if selected is None:
             self.scenario_hint.set_text(
-                "Choose a saved scenario to add, alter, or suppress recurring estimates."
+                "Baseline is unchanged by scenario events. Choose or create a saved scenario "
+                "before adding, altering, or suppressing an event."
             )
         else:
             count = len(selected.schedule_overrides)
@@ -172,8 +182,26 @@ class PlanView(BaseView):
                 f"{count} scenario-specific recurring change(s); baseline remains unchanged."
             )
 
+    def _on_new_scenario(self, _button) -> None:
+        if self.db is None:
+            return
+        from ...gen.lib import Scenario
+        from ..dialogs.scenario_dialog import SaveScenarioDialog
+
+        scenario = Scenario(
+            start=date(self._start_year, 1, 1),
+            years=self._end_year - self._start_year + 1,
+        )
+        SaveScenarioDialog(self.get_root(), self.db, scenario).present()
+
     def _require_scenario(self):
-        return self._selected_scenario()
+        selected = self._selected_scenario()
+        if selected is None:
+            self.scenario_hint.set_text(
+                "Select a saved scenario first; Baseline itself is never modified by "
+                "scenario events."
+            )
+        return selected
 
     def _on_add_estimate(self, _button) -> None:
         scenario = self._require_scenario()
@@ -257,16 +285,35 @@ class PlanView(BaseView):
             ReportingPeriod.YEAR,
         )[self.period.get_selected()]
 
+    def _on_range_changed(self, control, *_args) -> None:
+        if self._updating_range:
+            return
+        start_year = self.start_year.get_value_as_int()
+        end_year = self.end_year.get_value_as_int()
+        if start_year > end_year:
+            self._updating_range = True
+            try:
+                if control is self.start_year:
+                    self.end_year.set_value(start_year)
+                    end_year = start_year
+                else:
+                    self.start_year.set_value(end_year)
+                    start_year = end_year
+            finally:
+                self._updating_range = False
+        self._start_year = start_year
+        self._end_year = end_year
+        self.schedule_refresh()
+
     def _on_controls_changed(self, *_args) -> None:
-        self._year = self.year.get_value_as_int()
-        self.refresh()
+        self.schedule_refresh()
 
     def refresh(self) -> None:
         if self.db is None:
             return
         self._populate_scenarios()
-        start = date(self._year, 1, 1)
-        end = date(self._year, 12, 31)
+        start = date(self._start_year, 1, 1)
+        end = date(self._end_year, 12, 31)
         selected_scenario = self._selected_scenario()
         self._report = build_category_report(
             self.db,
