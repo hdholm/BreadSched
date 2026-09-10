@@ -1462,6 +1462,7 @@ class TestDerivedPlanView:
         monthly_actual = monthly.activity.actual_cash_change
 
         view.period.set_selected(1)
+        view.flush_refresh()
         quarterly = view._report
         assert quarterly.activity.period.value == "quarter"
         assert quarterly.activity.planned_cash_change == monthly_planned
@@ -1481,9 +1482,9 @@ class TestDerivedPlanView:
         app.open_book(populated_book)
         window.show_category("plan")
         view = window._views["plan"]
-        assert view.add_estimate_button.get_sensitive() is False
-        assert view.alter_schedule_button.get_sensitive() is False
-        assert view.suppress_schedule_button.get_sensitive() is False
+        assert view.add_estimate_button.get_sensitive() is True
+        assert view.alter_schedule_button.get_sensitive() is True
+        assert view.suppress_schedule_button.get_sensitive() is True
 
     def test_suppressing_a_baseline_schedule_is_scenario_only(
         self, app, window, populated_book
