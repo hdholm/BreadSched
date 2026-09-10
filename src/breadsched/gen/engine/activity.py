@@ -426,17 +426,18 @@ def explain_category_period(
             if value == Money(0):
                 continue
             actual_total = actual_total + value
-            expected: Money | None = None
+            matched_expected: Money | None = None
             if actual.planned_occurrence:
                 matched_event = event_by_key(db, actual.planned_occurrence)
                 if matched_event is not None:
-                    expected = category_amount(matched_event.expected_splits)
+                    matched_expected = category_amount(matched_event.expected_splits)
             actual_rows.append(CategoryActualDetail(
                 transaction=actual.transaction, post_date=actual.post_date,
                 description=actual.description, amount=value,
                 resolution=actual.planning_resolution,
                 planned_occurrence=actual.planned_occurrence, planned_for=actual.planned_for,
-                expected=expected, variance=value - expected if expected is not None else None,
+                expected=matched_expected,
+                variance=value - matched_expected if matched_expected is not None else None,
                 date_variance_days=actual.date_variance_days,
             ))
 
