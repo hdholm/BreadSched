@@ -90,12 +90,15 @@ class PlanView(BaseView):
             getattr(scenario_bar, f"set_margin_{side}")(8)
         scenario_bar.append(Gtk.Label(label="Scenario events", xalign=0))
         self.add_estimate_button = Gtk.Button(label="Add estimate…")
+        self.add_estimate_button.set_sensitive(False)
         self.add_estimate_button.connect("clicked", self._on_add_estimate)
         scenario_bar.append(self.add_estimate_button)
         self.alter_schedule_button = Gtk.Button(label="Alter baseline…")
+        self.alter_schedule_button.set_sensitive(False)
         self.alter_schedule_button.connect("clicked", self._on_alter_schedule)
         scenario_bar.append(self.alter_schedule_button)
         self.suppress_schedule_button = Gtk.Button(label="Suppress baseline…")
+        self.suppress_schedule_button.set_sensitive(False)
         self.suppress_schedule_button.connect("clicked", self._on_suppress_schedule)
         scenario_bar.append(self.suppress_schedule_button)
         self.scenario_hint = Gtk.Label(xalign=0, wrap=True)
@@ -152,16 +155,24 @@ class PlanView(BaseView):
         finally:
             self._updating_scenarios = False
 
-    def _selected_scenario(self):
+    def _scenario_at_selection(self):
         selected = self.scenario.get_selected()
         if selected == 0 or selected > len(self._scenarios):
             return None
         return self._scenarios[selected - 1]
 
+    def _selected_scenario(self):
+        if self._scenario_handle is None:
+            return None
+        return next(
+            (scenario for scenario in self._scenarios if scenario.handle == self._scenario_handle),
+            None,
+        )
+
     def _on_scenario_changed(self, *_args) -> None:
         if self._updating_scenarios:
             return
-        selected = self._selected_scenario()
+        selected = self._scenario_at_selection()
         self._scenario_handle = selected.handle if selected is not None else None
         self._update_scenario_actions()
         self.schedule_refresh()

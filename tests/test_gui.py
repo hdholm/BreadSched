@@ -1486,6 +1486,38 @@ class TestDerivedPlanView:
         assert view.alter_schedule_button.get_sensitive() is False
         assert view.suppress_schedule_button.get_sensitive() is False
 
+    def test_baseline_actions_stay_disabled_when_saved_scenarios_exist(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Scenario
+
+        app.open_book(populated_book)
+        with app.db.transaction("Add scenario") as txn:
+            app.db.add_scenario(Scenario(name="Alternate future"), txn)
+
+        window.show_category("plan")
+        view = window._views["plan"]
+        assert view.scenario.get_selected() == 0
+        assert view._scenario_handle is None
+        assert view.add_estimate_button.get_sensitive() is False
+        assert view.alter_schedule_button.get_sensitive() is False
+        assert view.suppress_schedule_button.get_sensitive() is False
+
+        selected = next(
+            index
+            for index, scenario in enumerate(view._scenarios, 1)
+            if scenario.name == "Alternate future"
+        )
+        view.scenario.set_selected(selected)
+        assert view.add_estimate_button.get_sensitive() is True
+
+        view.scenario.set_selected(0)
+        view.flush_refresh()
+        assert view._scenario_handle is None
+        assert view.add_estimate_button.get_sensitive() is False
+        assert view.alter_schedule_button.get_sensitive() is False
+        assert view.suppress_schedule_button.get_sensitive() is False
+
     def test_suppressing_a_baseline_schedule_is_scenario_only(
         self, app, window, populated_book
     ):
