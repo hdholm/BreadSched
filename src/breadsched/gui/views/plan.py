@@ -152,7 +152,7 @@ class PlanView(BaseView):
             return
         self._scenarios = list(self.db.iter_scenarios())
         model = Gtk.StringList()
-        model.append("Baseline")
+        model.append("Base scenario")
         selected = 0
         for index, scenario in enumerate(self._scenarios, 1):
             model.append(scenario.name)
@@ -207,24 +207,27 @@ class PlanView(BaseView):
         self.suppress_schedule_button.set_sensitive(enabled)
         if selected is None:
             self.scenario_hint.set_text(
-                "Baseline is unchanged by scenario events. Choose or create a saved scenario "
+                "Base scenario is unchanged by scenario events. Choose or create a saved scenario "
                 "to add, alter, or suppress an event."
             )
         else:
             count = len(selected.schedule_overrides)
             self.scenario_hint.set_text(
-                f"{count} scenario-specific recurring change(s); baseline remains unchanged."
+                f"{count} scenario-specific recurring change(s); Base scenario remains unchanged."
             )
 
     def _on_new_scenario(self, _button) -> None:
         if self.db is None:
             return
-        from ...gen.lib import Scenario
+        from ...gen.lib import Assumptions, Scenario
         from ..dialogs.scenario_dialog import SaveScenarioDialog
 
+        base = baseline_scenario(self.manager)
         scenario = Scenario(
             start=date(self._start_year, 1, 1),
             years=self._end_year - self._start_year + 1,
+            basis=base.basis,
+            assumptions=Assumptions.from_dict(base.assumptions.serialize()),
         )
         SaveScenarioDialog(self.get_root(), self.db, scenario).present()
 
@@ -233,13 +236,13 @@ class PlanView(BaseView):
             return
         from ..dialogs.scenario_manager_dialog import ScenarioManagerDialog
 
-        ScenarioManagerDialog(self.get_root(), self.db).present()
+        ScenarioManagerDialog(self.get_root(), self.db, self.manager).present()
 
     def _require_scenario(self):
         selected = self._selected_scenario()
         if selected is None:
             self.scenario_hint.set_text(
-                "Select a saved scenario first; Baseline itself is never modified by "
+                "Select a saved scenario first; Base scenario itself is never modified by "
                 "scenario events."
             )
         return selected

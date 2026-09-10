@@ -9,6 +9,10 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import AssumptionPeriod, Scenario
 from ...gen.lib.base import create_handle
 from ..gi_setup import Gtk
+from ..planning_context import (
+    baseline_scenario,
+    notify_planning_scenario_changed,
+)
 
 __all__ = ["ScenarioManagerDialog"]
 
@@ -25,9 +29,11 @@ _ASSUMPTIONS = (
 class ScenarioManagerDialog(Gtk.Window):
     """Rename, duplicate, delete, and edit a saved scenario's base assumptions."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(self, parent: Gtk.Window | None, db: DbSQLite, manager) -> None:
         super().__init__(title="Manage scenarios", transient_for=parent, modal=True)
         self.db = db
+        self.manager = manager
+        self._baseline = baseline_scenario(manager)
         self._scenarios: list[Scenario] = []
         self._loading = False
         self.set_default_size(620, 520)
@@ -40,8 +46,9 @@ class ScenarioManagerDialog(Gtk.Window):
         box.append(
             Gtk.Label(
                 label=(
-                    "Saved scenarios change assumptions and future estimated activity without "
-                    "modifying the Baseline plan."
+                    "Base scenario assumptions apply to the default plan. Saved scenarios can "
+                    "override those assumptions and future estimated activity without changing "
+                    "the Base scenario."
                 ),
                 xalign=0,
                 wrap=True,
@@ -119,25 +126,30 @@ class ScenarioManagerDialog(Gtk.Window):
     def _reload(self, select_handle: str | None = None) -> None:
         self._scenarios = list(self.db.iter_scenarios())
         model = Gtk.StringList()
+        model.append("Base scenario")
         selected = 0
-        for index, scenario in enumerate(self._scenarios):
+        for index, scenario in enumerate(self._scenarios, 1):
             model.append(scenario.name)
             if scenario.handle == select_handle:
                 selected = index
         self._loading = True
         try:
             self.picker.set_model(model)
-            if self._scenarios:
-                self.picker.set_selected(selected)
+            self.picker.set_selected(selected)
         finally:
             self._loading = False
         self._load_selected()
 
+    def _base_selected(self) -> bool:
+        return self.picker.get_selected() == 0
+
     def _selected(self) -> Scenario | None:
         selected = self.picker.get_selected()
-        if selected >= len(self._scenarios):
+        if selected == 0:
+            return self._baseline
+        if selected > len(self._scenarios):
             return None
-        return self._scenarios[selected]
+        return self._scenarios[selected - 1]
 
     def _on_selected(self, *_args) -> None:
         if not self._loading:
@@ -146,11 +158,14 @@ class ScenarioManagerDialog(Gtk.Window):
     def _load_selected(self) -> None:
         scenario = self._selected()
         enabled = scenario is not None
+        base = enabled and self._base_selected()
         self.editor.set_sensitive(enabled)
         self.save_button.set_sensitive(enabled)
         self.duplicate_button.set_sensitive(enabled)
-        self.delete_button.set_sensitive(enabled)
-        self.timeline_button.set_sensitive(enabled)
+        self.delete_button.set_sensitive(enabled and not base)
+        self.timeline_button.set_sensitive(enabled and not base)
+        self.name_entry.set_sensitive(enabled and not base)
+        self.description_entry.set_sensitive(enabled and not base)
         if scenario is None:
             self.name_entry.set_text("")
             self.description_entry.set_text("")
@@ -158,25 +173,39 @@ class ScenarioManagerDialog(Gtk.Window):
             self.event_summary.set_text("")
             return
 
-        self.name_entry.set_text(scenario.name)
-        self.description_entry.set_text(scenario.description)
+        self.name_entry.set_text("Base scenario" if base else scenario.name)
+        self.description_entry.set_text("" if base else scenario.description)
         for _label, attribute in _ASSUMPTIONS:
             value = getattr(scenario.assumptions, attribute) * Decimal("100")
             self.rate_controls[attribute].set_value(float(value))
         periods = len(scenario.assumption_periods)
         changes = len(scenario.schedule_overrides)
-        self.timeline_summary.set_text(
-            f"{periods} dated assumption period(s)."
-        )
-        self.event_summary.set_text(
-            f"{changes} scenario-specific recurring event change(s) are preserved here."
-        )
+        if base:
+            self.timeline_summary.set_text(
+                "Dated assumption periods belong to saved scenarios."
+            )
+            self.event_summary.set_text(
+                "Base scenario uses the book's baseline scheduled and estimated activity."
+            )
+        else:
+            self.timeline_summary.set_text(f"{periods} dated assumption period(s).")
+            self.event_summary.set_text(
+                f"{changes} scenario-specific recurring event change(s) are preserved here."
+            )
         self.status.set_text("")
         self.status.remove_css_class("negative")
 
     def _on_save(self, _button) -> None:
         scenario = self._selected()
         if scenario is None:
+            return
+        if self._base_selected():
+            for _label, attribute in _ASSUMPTIONS:
+                value = Decimal(str(self.rate_controls[attribute].get_value())) / Decimal("100")
+                setattr(self._baseline.assumptions, attribute, value)
+            notify_planning_scenario_changed(self.manager)
+            self.status.set_text("Base scenario assumptions updated for this session.")
+            self.status.remove_css_class("negative")
             return
         name = self.name_entry.get_text().strip()
         if not name:
@@ -195,6 +224,7 @@ class ScenarioManagerDialog(Gtk.Window):
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
         self._reload(scenario.handle)
+        notify_planning_scenario_changed(self.manager)
         self.status.set_text("Scenario saved.")
         self.status.remove_css_class("negative")
 
@@ -224,7 +254,7 @@ class ScenarioManagerDialog(Gtk.Window):
 
     def _on_edit_timeline(self, _button) -> None:
         scenario = self._selected()
-        if scenario is None:
+        if scenario is None or self._base_selected():
             return
         AssumptionTimelineDialog(self, self.db, scenario, self._timeline_saved).present()
 
@@ -235,13 +265,13 @@ class ScenarioManagerDialog(Gtk.Window):
 
     def _on_delete(self, _button) -> None:
         scenario = self._selected()
-        if scenario is None:
+        if scenario is None or self._base_selected():
             return
         ScenarioDeleteDialog(self, self.db, scenario, self._after_delete).present()
 
     def _after_delete(self) -> None:
         self._reload()
-        self.status.set_text("Scenario deleted. Baseline was not changed.")
+        self.status.set_text("Scenario deleted. Base scenario was not changed.")
         self.status.remove_css_class("negative")
 
     def _error(self, message: str) -> None:

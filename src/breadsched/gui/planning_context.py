@@ -6,15 +6,20 @@ from datetime import date
 
 from ..gen.lib import ProjectionBasis, Scenario
 
-__all__ = ["baseline_scenario", "selected_scenario_handle", "select_scenario"]
+__all__ = [
+    "baseline_scenario",
+    "notify_planning_scenario_changed",
+    "selected_scenario_handle",
+    "select_scenario",
+]
 
 
 def baseline_scenario(manager) -> Scenario:
-    """Return the session's shared Baseline assumptions."""
+    """Return the session's shared Base scenario assumptions."""
     scenario = getattr(manager, "_planning_baseline_scenario", None)
     if scenario is None:
         scenario = Scenario(
-            name="Baseline",
+            name="Base scenario",
             start=date.today().replace(month=1, day=1),
             years=10,
             basis=ProjectionBasis.SCHEDULED,
@@ -33,6 +38,18 @@ def select_scenario(manager, handle: str | None, *, source=None) -> None:
     if selected_scenario_handle(manager) == handle:
         return
     manager._planning_scenario_handle = handle
+    for name in ("plan", "projection"):
+        view = getattr(manager, "_views", {}).get(name)
+        if view is None or view is source:
+            continue
+        callback = getattr(view, "planning_scenario_changed", None)
+        if callback is not None:
+            callback(handle)
+
+
+def notify_planning_scenario_changed(manager, *, source=None) -> None:
+    """Tell planning views that the currently selected scenario changed in place."""
+    handle = selected_scenario_handle(manager)
     for name in ("plan", "projection"):
         view = getattr(manager, "_views", {}).get(name)
         if view is None or view is source:

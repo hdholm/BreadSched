@@ -23,6 +23,7 @@ from ...gen.utils.logs import get_logger  # noqa: E402
 from ..gi_setup import GLib, Gtk
 from ..planning_context import (
     baseline_scenario,
+    notify_planning_scenario_changed,
     select_scenario,
     selected_scenario_handle,
 )
@@ -226,7 +227,7 @@ class ProjectionView(BaseView):
     def _populate_scenarios(self) -> None:
         self._scenarios = list(self.db.iter_scenarios())
         model = Gtk.StringList()
-        model.append("Baseline")
+        model.append("Base scenario")
         selected = 0
         chosen = None
         for index, scenario in enumerate(self._scenarios, 1):
@@ -237,12 +238,14 @@ class ProjectionView(BaseView):
         if self._scenario_handle is not None and chosen is None:
             self._scenario_handle = None
             select_scenario(self.manager, None, source=self)
-        self.scenario = chosen or self._baseline
+        self.scenario = (
+            Scenario.from_dict(chosen.serialize()) if chosen is not None else self._baseline
+        )
         self.scenario_picker.set_model(model)
         self.scenario_picker.set_selected(selected)
         self._load_scenario_controls()
         self.save_button.set_label(
-            "Save scenario changes" if chosen is not None else "Save as scenario"
+            "Save scenario changes" if chosen is not None else "Save base as scenario"
         )
 
     def _load_scenario_controls(self) -> None:
@@ -277,7 +280,7 @@ class ProjectionView(BaseView):
                 break
 
     def _collect(self) -> Scenario:
-        """Read the controls back into the working scenario."""
+        """Read controls into the selected draft without sharing saved DB objects."""
         self.scenario.years = int(self.years_spin.get_value())
         self.scenario.basis = _BASIS_ORDER[self.basis_picker.get_selected()]
         selected = self.budget_picker.get_selected()
@@ -451,8 +454,12 @@ class ProjectionView(BaseView):
     # ----------------------------------------------------------------- actions
 
     def _on_input_changed(self, *_args) -> None:
-        if not self._updating:
-            self.recompute()
+        if self._updating:
+            return
+        if self._scenario_handle is None:
+            self._collect()
+            notify_planning_scenario_changed(self.manager, source=self)
+        self.recompute()
 
     def _on_scenario_chosen(self, picker, _param) -> None:
         if self._updating or self.db is None:
@@ -461,13 +468,15 @@ class ProjectionView(BaseView):
         chosen = self._scenarios[index - 1] if index > 0 else None
         self._scenario_handle = chosen.handle if chosen is not None else None
         select_scenario(self.manager, self._scenario_handle, source=self)
-        self.scenario = chosen or self._baseline
+        self.scenario = (
+            Scenario.from_dict(chosen.serialize()) if chosen is not None else self._baseline
+        )
         self._updating = True
         try:
             self._load_scenario_controls()
             self._populate_budgets()
             self.save_button.set_label(
-                "Save scenario changes" if chosen is not None else "Save as scenario"
+                "Save scenario changes" if chosen is not None else "Save base as scenario"
             )
         finally:
             self._updating = False
