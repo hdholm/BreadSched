@@ -257,7 +257,7 @@ class CategoryActivity:
 
     @property
     def variance(self) -> list[Money]:
-        return [actual - planned for planned, actual in zip(self.planned, self.actual)]
+        return [actual - planned for planned, actual in zip(self.planned, self.actual, strict=True)]
 
 
 @dataclass(slots=True)
@@ -537,7 +537,7 @@ def build_category_report(
             ):
                 continue
             values = rolled(child, store)
-            result = [left + right for left, right in zip(result, values)]
+            result = [left + right for left, right in zip(result, values, strict=True)]
         return result
 
     rows: list[CategoryActivity] = []
