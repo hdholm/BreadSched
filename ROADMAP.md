@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0120
-(`scheduled: preserve scenario formula fields while editing metadata`).
+Status below is current through patch 0122
+(`scheduled: edit validated scenario formula inputs`).
 
 ## Near-term correctness and daily-use work
 
@@ -129,9 +129,9 @@ Status below is current through patch 0120
 
 ## Scheduled transactions and loans
 
-- Give scenario-owned formula schedules the same validated direct formula/variable
-  editing available to base schedules, preserving scenario source linkage and all
-  protected amount-timeline semantics.
+- Scenario-owned formula schedules support validated direct formula/variable editing
+  while preserving scenario source linkage and protected amount-timeline semantics
+  (0122). Keep this behavior aligned with the base-schedule formula editor.
 - Consider richer formula assistance only on top of the existing safe expression
   language; do not introduce a second formula dialect or use Python ``eval``.
 - Add an approachable loan/amortization creation workflow.

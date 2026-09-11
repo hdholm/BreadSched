@@ -2207,6 +2207,59 @@ class TestDerivedPlanView:
         ]
         assert rebuilt.source_schedule == source.handle
 
+    def test_scenario_formula_schedule_allows_validated_formula_edits(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import (
+            PeriodType,
+            Recurrence,
+            Scenario,
+            ScenarioSchedule,
+            ScheduledSplit,
+            ScheduledTransaction,
+            evaluate,
+        )
+        from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        app.open_book(populated_book)
+        expense = app.db.get_account_by_name("Expenses:Rent")
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        source = ScheduledTransaction(
+            name="Scenario formula fixture",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(expense.handle, formula="base"),
+                ScheduledSplit(checking.handle, formula="-base"),
+            ],
+        )
+        source.variables = {"base": "100"}
+        current = ScenarioSchedule.from_scheduled(source)
+        scenario = Scenario(name="Formula variant", schedule_overrides=[current])
+
+        dialog = ScenarioScheduleDialog(
+            window, app.db, scenario, source=source, current=current
+        )
+        dialog.formula_variables_entry.set_text("base=120; factor=2")
+        dialog._formula_entries[0][1].set_text("base * factor")
+        dialog._formula_entries[1][1].set_text("-(base * factor)")
+        assert dialog.save_button.get_sensitive() is True
+
+        rebuilt = dialog.build()
+        assert rebuilt.variables == {"base": "120", "factor": "2"}
+        assert [split.formula for split in rebuilt.splits] == [
+            "base * factor",
+            "-(base * factor)",
+        ]
+        context = dict(rebuilt.variables)
+        context.update({"period": 1, "i": 1})
+        assert evaluate(rebuilt.splits[0].formula, context) == 240
+        assert rebuilt.source_schedule == source.handle
+
+        dialog._formula_entries[0][1].set_text("unknown_name + 1")
+        dialog._validate()
+        assert dialog.save_button.get_sensitive() is False
+        assert "formula" in dialog.status.get_text().lower()
+
 
 class TestDueReview:
     """Item 6: due occurrences are decided one at a time, not posted for you."""

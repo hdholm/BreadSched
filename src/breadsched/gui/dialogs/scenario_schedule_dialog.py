@@ -7,12 +7,14 @@ and Projection, while actual ledger posting continues to use the baseline book.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
     AccountClass,
+    FormulaError,
     Money,
     PeriodType,
     PlanningFlowKind,
@@ -24,6 +26,7 @@ from ...gen.lib import (
     ScheduledSplit,
     ScheduledTransaction,
     WeekendAdjust,
+    evaluate,
     scheduled_occurrence_preview,
 )
 from ..gi_setup import Gtk
@@ -83,6 +86,9 @@ class ScenarioScheduleDialog(Gtk.Window):
         self._formula_mode = bool(
             initial is not None and any(split.formula for split in initial.splits)
         )
+        self._formula_entries: list[tuple[int, Gtk.Entry]] = []
+        self._formula_originals: list[str] = []
+        self._formula_variables_original = ""
         self.set_default_size(580, 500)
         self._accounts = sorted(
             (
@@ -247,6 +253,10 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.weekend.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="If it falls on a weekend", xalign=0), 0, row, 1, 1)
         grid.attach(self.weekend, 1, row, 1, 1)
+
+        self.formula_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.formula_box.set_visible(False)
+        box.append(self.formula_box)
 
         self.protected_details = Gtk.Label(xalign=0, wrap=True, selectable=True)
         self.protected_details.add_css_class("dim")
@@ -415,7 +425,7 @@ class ScenarioScheduleDialog(Gtk.Window):
     def _protect_formula_fields(
         self, source: ScheduledTransaction | ScenarioSchedule
     ) -> None:
-        """Expose scenario metadata edits without rewriting formula-owned values."""
+        """Protect formula-owned structure while allowing validated formula inputs."""
         protected = (
             self.category,
             self.funding,
@@ -427,17 +437,24 @@ class ScenarioScheduleDialog(Gtk.Window):
         )
         for widget in protected:
             widget.set_sensitive(False)
+        self._build_formula_editor(source)
         lines = [
-            "Formula expressions, variables, split accounts, and formula-derived "
-            "amounts are protected. Name, recurrence, and skipped occurrences may "
-            "be edited without changing them.",
+            "Split accounts and formula-derived amount timelines remain protected. "
+            "Formula expressions and named variables may be edited when the safe "
+            "formula evaluator can validate the revised expressions.",
             "",
             "Protected splits:",
         ]
         for index, split in enumerate(source.splits, 1):
             account = self.db.get_account(split.account)
-            account_name = self.db.full_name(account) if account is not None else split.account
-            value = f"formula {split.formula!r}" if split.formula else str(split.amount or Money(0))
+            account_name = (
+                self.db.full_name(account) if account is not None else split.account
+            )
+            value = (
+                f"formula {split.formula!r}"
+                if split.formula
+                else str(split.amount or Money(0))
+            )
             lines.append(f"  {index}. {account_name}: {value}")
         if source.variables:
             lines.extend(["", "Formula variables:"])
@@ -447,6 +464,92 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.protected_details.set_text("\n".join(lines))
         self.protected_details.set_visible(True)
         self.preview.set_visible(False)
+
+    def _build_formula_editor(
+        self, source: ScheduledTransaction | ScenarioSchedule
+    ) -> None:
+        """Expose formula text and variables without making split accounts editable."""
+        self.formula_box.set_visible(True)
+        heading = Gtk.Label(label="Formula inputs", xalign=0)
+        heading.add_css_class("heading")
+        self.formula_box.append(heading)
+        self._formula_entries = []
+        self._formula_originals = []
+        for index, split in enumerate(source.splits):
+            if not split.formula:
+                continue
+            account = self.db.get_account(split.account)
+            account_name = (
+                self.db.full_name(account) if account is not None else split.account
+            )
+            row = Gtk.Box(spacing=8)
+            label = Gtk.Label(label=account_name, xalign=0)
+            label.set_hexpand(True)
+            entry = Gtk.Entry(text=split.formula)
+            entry.set_hexpand(True)
+            entry.connect("changed", self._validate)
+            row.append(label)
+            row.append(entry)
+            self.formula_box.append(row)
+            self._formula_entries.append((index, entry))
+            self._formula_originals.append(split.formula)
+        self.formula_variables_entry = Gtk.Entry()
+        self.formula_variables_entry.set_placeholder_text("name=value; other=value")
+        variables_text = "; ".join(
+            f"{key}={value}" for key, value in sorted(source.variables.items())
+        )
+        self.formula_variables_entry.set_text(variables_text)
+        self.formula_variables_entry.connect("changed", self._validate)
+        self._formula_variables_original = variables_text
+        variables_row = Gtk.Box(spacing=8)
+        variables_label = Gtk.Label(label="Variables", xalign=0)
+        variables_label.set_hexpand(True)
+        variables_row.append(variables_label)
+        variables_row.append(self.formula_variables_entry)
+        self.formula_box.append(variables_row)
+
+    def _formula_variables(self) -> dict[str, str] | None:
+        """Parse the compact ``name=value`` formula-variable editor."""
+        text = self.formula_variables_entry.get_text().strip()
+        if not text:
+            return {}
+        variables: dict[str, str] = {}
+        for item in text.split(";"):
+            if "=" not in item:
+                return None
+            name, value = (part.strip() for part in item.split("=", 1))
+            if not re.fullmatch(r"[A-Za-z_]\w*", name) or not value:
+                return None
+            try:
+                evaluate(value, {})
+            except FormulaError:
+                return None
+            variables[name] = value
+        return variables
+
+    def _formula_inputs_changed(self) -> bool:
+        formulas = [entry.get_text() for _index, entry in self._formula_entries]
+        return (
+            formulas != self._formula_originals
+            or self.formula_variables_entry.get_text().strip()
+            != self._formula_variables_original
+        )
+
+    def _validate_formula_inputs(self) -> str | None:
+        variables = self._formula_variables()
+        if variables is None:
+            return "check formula variables"
+        context: dict[str, str | int] = dict(variables)
+        context.update({"period": 1, "i": 1})
+        for _index, entry in self._formula_entries:
+            formula = entry.get_text().strip()
+            if not formula:
+                return "formula expressions cannot be blank"
+            try:
+                evaluate(formula, context)
+            except (FormulaError, ValueError, ArithmeticError):
+                return "check formula expressions and variables"
+        return None
 
     def _recurrence(self) -> Recurrence | None:
         try:
@@ -600,6 +703,10 @@ class ScenarioScheduleDialog(Gtk.Window):
             if skipped is not None and adjustments is not None:
                 if set(skipped) & {item.when for item in adjustments}:
                     problems.append("an occurrence cannot be both skipped and overridden")
+        elif self._formula_inputs_changed():
+            formula_problem = self._validate_formula_inputs()
+            if formula_problem:
+                problems.append(formula_problem)
         period = self._frequency_options[self.frequency.get_selected()][1]
         bounded = period is not PeriodType.ONCE
         self.ends.set_sensitive(bounded)
@@ -668,6 +775,12 @@ class ScenarioScheduleDialog(Gtk.Window):
                 change.description = change.name
             change.recurrence = recurrence
             change.skipped = self._skipped(recurrence) or []
+            if self._formula_inputs_changed():
+                variables = self._formula_variables()
+                assert variables is not None
+                for index, entry in self._formula_entries:
+                    change.splits[index].formula = entry.get_text().strip()
+                change.variables = variables
             if self.source is not None:
                 change.source_schedule = self.source.handle
             return change
