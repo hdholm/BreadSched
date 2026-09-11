@@ -160,6 +160,14 @@ class TestItServes:
         assert headers.get("Content-Type", "").startswith("text/html")
         assert b"<html" in body.lower()
 
+    def test_schedule_occurrence_controls_are_structured(self, client):
+        _status, body, _headers = client.raw("/")
+        text = body.decode("utf-8")
+        assert "timelineEditor" in text
+        assert "Add date and amount" in text
+        assert "Add occurrence" in text
+        assert "Future amounts use YYYY-MM-DD=amount" not in text
+
     def test_the_summary_reports_the_book(self, client):
         status, payload = client.get("/api/summary")
         assert status == 200

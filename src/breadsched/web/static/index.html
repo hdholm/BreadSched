@@ -92,6 +92,13 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
 .review-detail { padding: 14px 16px; }
 .review-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
 
+
+.timeline-editor { grid-column: 1 / -1; border:1px solid var(--line); border-radius:6px; padding:8px; }
+.timeline-editor > strong { display:block; margin-bottom:6px; }
+.timeline-row { display:grid; grid-template-columns:minmax(145px,1fr) minmax(110px,1fr) auto; gap:6px; margin:4px 0; }
+.timeline-editor.dates .timeline-row { grid-template-columns:minmax(145px,1fr) auto; }
+.timeline-row input { min-width:0; }
+
 .scenario-panel { padding: 14px 16px; }
 .scenario-editor h3 { margin: 12px 0 8px; }
 .scenario-fields, .assumption-grid {
@@ -211,24 +218,36 @@ function say(text, kind) {
   setTimeout(() => box.classList.add("hidden"), 4000);
 }
 
-function parseAmountChanges(text) {
-  return text.split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
-    const at = part.indexOf("=");
-    if (at < 1) throw new Error("Future amounts use YYYY-MM-DD=amount separated by semicolons.");
-    return {start:part.slice(0, at).trim(), amount:part.slice(at + 1).trim()};
-  });
-}
 
-function parseSkippedOccurrences(text) {
-  return text.split(";").map((part) => part.trim()).filter(Boolean);
-}
-
-function parseOccurrenceAmounts(text) {
-  return text.split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
-    const at = part.indexOf("=");
-    if (at < 1) throw new Error("One-time amounts use YYYY-MM-DD=amount separated by semicolons.");
-    return {when:part.slice(0, at).trim(), amount:part.slice(at + 1).trim()};
-  });
+function timelineEditor(label, initial, withAmount) {
+  const rows = el("div", {});
+  const box = el("div", { class:`timeline-editor${withAmount ? "" : " dates"}` },
+    el("strong", {}, label), rows);
+  const addRow = (item={}) => {
+    const row = el("div", { class:"timeline-row" });
+    const when = el("input", { type:"date", value:item.when || item.start || "" });
+    const amount = withAmount ? el("input", { inputmode:"decimal", placeholder:"Amount", value:item.amount || "" }) : null;
+    const remove = el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove");
+    row.append(when);
+    if (amount) row.append(amount);
+    row.append(remove);
+    rows.append(row);
+  };
+  (initial || []).forEach(addRow);
+  box.append(el("button", { class:"action", type:"button", onclick:()=>addRow() },
+    withAmount ? "Add date and amount" : "Add occurrence"));
+  return {
+    node:box,
+    values:()=>Array.from(rows.children).map((row)=>{
+      const inputs=row.querySelectorAll("input");
+      const when=inputs[0].value;
+      if (!when) throw new Error(`${label}: enter a date or remove the empty row.`);
+      if (!withAmount) return when;
+      const amount=inputs[1].value.trim();
+      if (!amount) throw new Error(`${label}: enter an amount or remove the empty row.`);
+      return {when, amount};
+    }),
+  };
 }
 
 function table(headers, rows) {
@@ -348,9 +367,9 @@ function openScheduledEditor(data, source) {
   const select = (name, items, value) => el("select", { name }, items.map(([key, label]) =>
     el("option", { value: key, selected: key === value ? "selected" : null }, label)));
   const today = new Date().toISOString().slice(0, 10);
-  const changesText = (source?.amount_changes || []).map((c) => `${c.start}=${c.amount}`).join("; ");
-  const skippedText = (source?.skipped || []).join("; ");
-  const occurrenceText = (source?.occurrence_adjustments || []).map((c) => `${c.when}=${c.amount}`).join("; ");
+  const futureEditor = timelineEditor("Future amounts", source?.amount_changes || [], true);
+  const skipEditor = timelineEditor("Skip occurrences", source?.skipped || [], false);
+  const oneTimeEditor = timelineEditor("One-time amounts", source?.occurrence_adjustments || [], true);
   const category = select("category", flowAccounts.map((a) => [a.handle, a.name]), source?.category || flowAccounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
   const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
@@ -362,9 +381,7 @@ function openScheduledEditor(data, source) {
     field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]], source?.placeholder ? "estimate" : "commitment")),
     field("Category", category), field("Paid from / into", funding),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
-    field("Future amounts", el("input", { name:"amount_changes", value:changesText, placeholder:"2030-01-01=1950; 2032-01-01=2100" })),
-    field("Skip occurrences", el("input", { name:"skipped", value:skippedText, placeholder:"2030-03-01; 2030-08-01" })),
-    field("One-time amounts", el("input", { name:"occurrence_adjustments", value:occurrenceText, placeholder:"2030-12-01=2300" })),
+    futureEditor.node, skipEditor.node, oneTimeEditor.node,
     field("Frequency", frequency),
     field("First due", el("input", { name:"start", type:"date", value:source?.start || today, required:"required" })),
     field("End date", el("input", { name:"end", type:"date", value:source?.end || "" })),
@@ -381,9 +398,9 @@ function openScheduledEditor(data, source) {
       await post("/api/scheduled/save", {
         handle: source?.handle || null, name: values.name,
         placeholder: values.kind === "estimate", category: values.category, funding: values.funding,
-        amount: values.amount, amount_changes: parseAmountChanges(values.amount_changes || ""),
-        skipped: parseSkippedOccurrences(values.skipped || ""),
-        occurrence_adjustments: parseOccurrenceAmounts(values.occurrence_adjustments || ""),
+        amount: values.amount,
+        amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
+        skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
         frequency: values.frequency, start: values.start,
         end: values.end || null, count: values.count || null, weekend: values.weekend,
         auto: values.posting === "automatic" && values.kind !== "estimate",
@@ -625,18 +642,16 @@ async function scenarioEventPanel(handle, fromMonth) {
     const sourceSelect = mode.kind === "alter" ? el("select", {name:"source", onchange:e=>{state.scenarioEvent={kind:"alter",source:e.target.value};render();}}, simpleBase.map(x=>el("option",{value:x.handle,selected:x.handle===source?.handle?"selected":null},x.name))) : null;
     const existing = mode.kind === "alter" ? data.changes.find((x)=>x.source_schedule===source?.handle && x.enabled) : null;
     const editSource = existing || source;
-    const changeText = (editSource?.amount_changes || []).map((c)=>`${c.start}=${c.amount}`).join("; ");
-    const skippedText = (editSource?.skipped || []).join("; ");
-    const occurrenceText = (editSource?.occurrence_adjustments || []).map((c)=>`${c.when}=${c.amount}`).join("; ");
-    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=parseAmountChanges(v.amount_changes||""); const skipped=parseSkippedOccurrences(v.skipped||""); const occurrence_adjustments=parseOccurrenceAmounts(v.occurrence_adjustments||""); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, amount:v.amount, amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
+    const futureEditor = timelineEditor("Future amounts", editSource?.amount_changes || [], true);
+    const skipEditor = timelineEditor("Skip occurrences", editSource?.skipped || [], false);
+    const oneTimeEditor = timelineEditor("One-time amounts", editSource?.occurrence_adjustments || [], true);
+    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, amount:v.amount, amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
       el("label", {}, "Income / expense category", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
       el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
       el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
-      el("label", {}, "Future amounts", el("input", {name:"amount_changes", value:changeText, placeholder:"2030-01-01=1950; 2032-01-01=2100"})),
-      el("label", {}, "Skip occurrences", el("input", {name:"skipped", value:skippedText, placeholder:"2030-03-01; 2030-08-01"})),
-      el("label", {}, "One-time amounts", el("input", {name:"occurrence_adjustments", value:occurrenceText, placeholder:"2030-12-01=2300"})),
+      futureEditor.node, skipEditor.node, oneTimeEditor.node,
       el("label", {}, "Frequency", el("select", {name:"frequency"}, [["weekly","Weekly"],["biweekly","Fortnightly"],["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],["semiannual","Twice a year"],["annual","Yearly"],["once","One off"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.frequency||"monthly")?"selected":null},l)))),
       el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:editSource?.start || `${fromMonth}-01`})),
       el("label", {}, "End date (optional)", el("input", {name:"end", type:"date", value:editSource?.end || ""})),

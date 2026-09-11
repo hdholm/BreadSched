@@ -25,6 +25,7 @@ from ...gen.lib import (
     WeekendAdjust,
 )
 from ..gi_setup import Gtk
+from ..widgets.schedule_timeline import DateListEditor, DatedAmountListEditor
 
 __all__ = ["ScenarioScheduleDialog", "ScenarioSchedulePickerDialog"]
 
@@ -135,35 +136,26 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.amount_entry, 1, row, 1, 1)
         row += 1
 
-        self.amount_changes_entry = Gtk.Entry(
-            placeholder_text="2030-01-01=1950; 2032-01-01=2100"
+        self.amount_changes_editor = DatedAmountListEditor(
+            self._validate, "Add future amount"
         )
-        self.amount_changes_entry.set_tooltip_text(
-            "Optional future amounts as YYYY-MM-DD=amount, separated by semicolons."
-        )
-        self.amount_changes_entry.connect("changed", self._validate)
-        grid.attach(Gtk.Label(label="Future amounts", xalign=0), 0, row, 1, 1)
-        grid.attach(self.amount_changes_entry, 1, row, 1, 1)
+        label = Gtk.Label(label="Future amounts", xalign=0, valign=Gtk.Align.START)
+        grid.attach(label, 0, row, 1, 1)
+        grid.attach(self.amount_changes_editor, 1, row, 1, 1)
         row += 1
 
-        self.skipped_entry = Gtk.Entry(placeholder_text="2030-03-01; 2030-08-01")
-        self.skipped_entry.set_tooltip_text(
-            "Occurrence dates to skip, separated by semicolons."
-        )
-        self.skipped_entry.connect("changed", self._validate)
-        grid.attach(Gtk.Label(label="Skip occurrences", xalign=0), 0, row, 1, 1)
-        grid.attach(self.skipped_entry, 1, row, 1, 1)
+        self.skipped_editor = DateListEditor(self._validate, "Add skipped occurrence")
+        label = Gtk.Label(label="Skip occurrences", xalign=0, valign=Gtk.Align.START)
+        grid.attach(label, 0, row, 1, 1)
+        grid.attach(self.skipped_editor, 1, row, 1, 1)
         row += 1
 
-        self.occurrence_adjustments_entry = Gtk.Entry(
-            placeholder_text="2030-12-01=2300"
+        self.occurrence_adjustments_editor = DatedAmountListEditor(
+            self._validate, "Add one-time amount"
         )
-        self.occurrence_adjustments_entry.set_tooltip_text(
-            "One-time occurrence amounts as YYYY-MM-DD=amount, separated by semicolons."
-        )
-        self.occurrence_adjustments_entry.connect("changed", self._validate)
-        grid.attach(Gtk.Label(label="One-time amounts", xalign=0), 0, row, 1, 1)
-        grid.attach(self.occurrence_adjustments_entry, 1, row, 1, 1)
+        label = Gtk.Label(label="One-time amounts", xalign=0, valign=Gtk.Align.START)
+        grid.attach(label, 0, row, 1, 1)
+        grid.attach(self.occurrence_adjustments_editor, 1, row, 1, 1)
         row += 1
 
         self.frequency = Gtk.DropDown.new_from_strings(
@@ -309,20 +301,13 @@ class ScenarioScheduleDialog(Gtk.Window):
         if category is not None:
             amount = amount * category.sign()
         self.amount_entry.set_text(abs(amount).format())
-        self.amount_changes_entry.set_text(
-            "; ".join(
-                f"{item.start.isoformat()}={item.amount.to_decimal()}"
-                for item in source.amount_changes
-            )
+        self.amount_changes_editor.set_values(
+            (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
         )
-        self.skipped_entry.set_text(
-            "; ".join(when.isoformat() for when in source.skipped)
-        )
-        self.occurrence_adjustments_entry.set_text(
-            "; ".join(
-                f"{item.when.isoformat()}={item.amount.to_decimal()}"
-                for item in source.occurrence_adjustments
-            )
+        self.skipped_editor.set_values(source.skipped)
+        self.occurrence_adjustments_editor.set_values(
+            (item.when, str(item.amount.to_decimal()))
+            for item in source.occurrence_adjustments
         )
 
     def _recurrence(self) -> Recurrence | None:
@@ -369,15 +354,14 @@ class ScenarioScheduleDialog(Gtk.Window):
 
 
     def _amount_changes(self) -> list[ScheduledAmountChange] | None:
-        text = self.amount_changes_entry.get_text().strip()
-        if not text:
+        values = self.amount_changes_editor.values()
+        if not values:
             return []
         changes = []
         try:
-            for raw in text.split(";"):
-                when_text, amount_text = raw.strip().split("=", 1)
-                when = date.fromisoformat(when_text.strip())
-                amount = Money(amount_text.strip())
+            for when_text, amount_text in values:
+                when = date.fromisoformat(when_text)
+                amount = Money(amount_text)
                 if amount <= 0:
                     return None
                 changes.append(ScheduledAmountChange(when, amount))
@@ -388,13 +372,13 @@ class ScenarioScheduleDialog(Gtk.Window):
         return sorted(changes, key=lambda item: item.start)
 
     def _skipped(self, recurrence: Recurrence | None) -> list[date] | None:
-        text = self.skipped_entry.get_text().strip()
-        if not text:
+        values = self.skipped_editor.values()
+        if not values:
             return []
         if recurrence is None:
             return None
         try:
-            skipped = [date.fromisoformat(raw.strip()) for raw in text.split(";")]
+            skipped = [date.fromisoformat(raw) for raw in values]
         except ValueError:
             return None
         if len(set(skipped)) != len(skipped):
@@ -406,17 +390,16 @@ class ScenarioScheduleDialog(Gtk.Window):
     def _occurrence_adjustments(
         self, recurrence: Recurrence | None
     ) -> list[ScheduledOccurrenceAdjustment] | None:
-        text = self.occurrence_adjustments_entry.get_text().strip()
-        if not text:
+        values = self.occurrence_adjustments_editor.values()
+        if not values:
             return []
         if recurrence is None:
             return None
         changes = []
         try:
-            for raw in text.split(";"):
-                when_text, amount_text = raw.strip().split("=", 1)
-                when = date.fromisoformat(when_text.strip())
-                amount = Money(amount_text.strip())
+            for when_text, amount_text in values:
+                when = date.fromisoformat(when_text)
+                amount = Money(amount_text)
                 if amount <= 0:
                     return None
                 changes.append(ScheduledOccurrenceAdjustment(when, amount))
