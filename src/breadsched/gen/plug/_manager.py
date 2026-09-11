@@ -94,7 +94,7 @@ class PluginManager:
 def register_builtins(manager: PluginManager) -> None:
     """Register the plugins shipped with the application."""
     from ...plugins.export import csv_export
-    from ...plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml, qif
+    from ...plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml, ofx, qif
 
     manager.register(
         Plugin(
@@ -118,6 +118,17 @@ def register_builtins(manager: PluginManager) -> None:
                         "compressed or plain",
             extensions=[".gnucash", ".xml", ".gnc"],
             sniff=lambda path: gnucash_common.detect_format(path) in ("xml", "xml-gz"),
+        )
+    )
+    manager.register(
+        Plugin(
+            id="ofx",
+            name="Open Financial Exchange (OFX/QFX)",
+            category=IMPORTER,
+            run=ofx.import_book,
+            description="Bank and credit-card statement transactions from OFX/QFX",
+            extensions=[".ofx", ".qfx"],
+            sniff=ofx.sniff,
         )
     )
     manager.register(
