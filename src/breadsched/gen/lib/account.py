@@ -10,6 +10,8 @@ projection hints stored on the account itself.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal
 from enum import Enum
 from typing import Any
@@ -17,7 +19,13 @@ from typing import Any
 from .base import PrimaryObject
 from .money import Money
 
-__all__ = ["AccountType", "AccountClass", "AccountPlanningRole", "Account"]
+__all__ = [
+    "Account",
+    "AccountClass",
+    "AccountPlanningRole",
+    "AccountType",
+    "FsaFundingYear",
+]
 
 
 class AccountClass(str, Enum):
@@ -54,6 +62,44 @@ class AccountPlanningRole(str, Enum):
         if self is AccountPlanningRole.DEBT:
             return account_class is AccountClass.LIABILITY
         return account_class is AccountClass.ASSET
+
+
+@dataclass(frozen=True)
+class FsaFundingYear:
+    """One FSA election period, independent of the custodial ledger balance."""
+
+    start: date
+    through: date
+    election: Money
+    runout_through: date | None = None
+
+    def __post_init__(self) -> None:
+        if self.through < self.start:
+            raise ValueError("FSA funding year through date cannot precede start")
+        if self.election < 0:
+            raise ValueError("FSA election cannot be negative")
+        if self.runout_through is not None and self.runout_through < self.through:
+            raise ValueError("FSA run-out date cannot precede funding-year end")
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "start": self.start.isoformat(),
+            "through": self.through.isoformat(),
+            "election": [self.election.numerator, self.election.denominator],
+            "runout_through": (
+                self.runout_through.isoformat() if self.runout_through else None
+            ),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "FsaFundingYear":
+        raw_runout = data.get("runout_through")
+        return cls(
+            start=date.fromisoformat(str(data["start"])),
+            through=date.fromisoformat(str(data["through"])),
+            election=Money(*data["election"]),
+            runout_through=date.fromisoformat(str(raw_runout)) if raw_runout else None,
+        )
 
 
 class AccountType(str, Enum):
@@ -158,6 +204,7 @@ class Account(PrimaryObject):
         self.hidden = hidden
         self.notes = ""
         self.planning_role = AccountPlanningRole.ORDINARY
+        self.fsa_years: list[FsaFundingYear] = []
 
         # Projection hints.  These are what turn a chart of accounts into a model.
         self.annual_return: Decimal = Decimal("0")   # investment growth, e.g. 0.06
@@ -216,6 +263,7 @@ class Account(PrimaryObject):
             "hidden": self.hidden,
             "notes": self.notes,
             "planning_role": self.planning_role.value,
+            "fsa_years": [year.serialize() for year in self.fsa_years],
             "annual_return": str(self.annual_return),
             "annual_interest": str(self.annual_interest),
             "exclude_from_projection": self.exclude_from_projection,
@@ -240,6 +288,9 @@ class Account(PrimaryObject):
         self.hidden = data.get("hidden", False)
         self.notes = data.get("notes", "")
         self.planning_role = AccountPlanningRole(data.get("planning_role", "ordinary"))
+        self.fsa_years = [
+            FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])
+        ]
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))
         self.exclude_from_projection = data.get("exclude_from_projection", False)

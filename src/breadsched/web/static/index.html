@@ -372,6 +372,51 @@ function table(headers, rows) {
       el("tbody", {}, rows)));
 }
 
+
+function openFsaYearsEditor(account) {
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const rows = el("div", { class:"stack" });
+  const addRow = (year={}) => {
+    const row = el("div", { class:"row" },
+      el("input", { type:"date", value:year.start || "", title:"Funding year start" }),
+      el("input", { type:"date", value:year.through || "", title:"Funding year through" }),
+      el("input", { value:year.election || "", placeholder:"Election" }),
+      el("input", { type:"date", value:year.runout_through || "", title:"Run-out through" }));
+    row.append(el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove"));
+    rows.append(row);
+  };
+  (account.fsa_years || []).forEach(addRow);
+  const save = async () => {
+    const years = Array.from(rows.children).map((row) => {
+      const inputs = row.querySelectorAll("input");
+      return {
+        start: inputs[0].value, through: inputs[1].value,
+        election: inputs[2].value.trim(), runout_through: inputs[3].value,
+      };
+    });
+    await post("/api/account/fsa-years", { handle:account.handle, years });
+    backdrop.remove();
+    say("FSA funding years saved.");
+    render();
+  };
+  const body = el("section", { class:"detail-dialog wide" },
+    el("h2", {}, `FSA funding years — ${account.full_name}`),
+    el("p", { class:"note" },
+      "Election availability is independent of the custodial ledger balance. "
+      + "A run-out date permits explicitly assigned prior-year claims after year-end."),
+    rows,
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:()=>addRow() }, "Add funding year"),
+      el("span", { style:"flex:1" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
+      el("button", { class:"action primary", type:"button", onclick:()=>save().catch((error)=>say(error.message,"error")) }, "Save")));
+  backdrop.append(body);
+  document.body.append(backdrop);
+}
+
 // ------------------------------------------------------------------- views
 
 async function showAccounts() {
@@ -402,6 +447,7 @@ async function showAccounts() {
           handle: account.handle, planning_role: event.target.value,
         });
         account.planning_role = event.target.value;
+        render();
       },
     }, ([
       ["ordinary", "Ordinary"],
@@ -413,13 +459,18 @@ async function showAccounts() {
     ]).map(([value, label]) => el("option", {
       value, selected: account.planning_role === value ? "selected" : null,
     }, label)))),
+    el("td", {}, account.planning_role === "fsa"
+      ? el("button", { class:"action", type:"button", onclick:()=>openFsaYearsEditor(account) },
+          `${(account.fsa_years || []).length} funding year${(account.fsa_years || []).length === 1 ? "" : "s"}…`)
+      : el("span", { class:"muted" }, "—")),
     el("td", { class: cls(account.balance) }, money(account.balance))));
 
   return el("div", {}, cards,
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them."),
-    table(["Account", "Type", "Planning role", { label: "Balance", num: true }], rows));
+    table(["Account", "Type", "Planning role", "FSA years",
+           { label: "Balance", num: true }], rows));
 }
 
 async function showRegister() {
@@ -1694,9 +1745,18 @@ async function showDashboard() {
     b.estimate ? "Estimate" : "Committed",
   ]);
 
+  const fsaRows = (data.fsa || []).map((f) => [
+    f.account, `${f.start} – ${f.through}`, f.phase, money(f.election),
+    money(f.funded), money(f.used), money(f.remaining), money(f.forfeited),
+  ]);
+
   return el("div", {}, cards, controls,
     el("h2", {}, "Balances"),
     groupCards,
+    fsaRows.length ? el("h2", {}, "FSA benefit years") : null,
+    fsaRows.length ? table(["Account", "Funding year", "Status",
+      {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},
+      {label:"Remaining",num:true},{label:"Forfeited",num:true}], fsaRows) : null,
     el("h2", {}, `Pending bills (${data.bills.length})`),
     table(["Bill", "Next due", "Due in", "Cycle",
            { label: "Amount", num: true }, { label: "Monthly", num: true },

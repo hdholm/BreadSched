@@ -1,6 +1,12 @@
 """Domain objects.  Nothing in here knows about storage or about GTK."""
 
-from .account import Account, AccountClass, AccountPlanningRole, AccountType
+from .account import (
+    Account,
+    AccountClass,
+    AccountPlanningRole,
+    AccountType,
+    FsaFundingYear,
+)
 from .base import PrimaryObject, create_handle
 from .budget import Budget, BudgetLine, PeriodKind
 from .commodity import DEFAULT_CURRENCY, Commodity
@@ -33,7 +39,7 @@ from .transaction import (
 )
 
 __all__ = [
-    "Account", "AccountClass", "AccountPlanningRole", "AccountType",
+    "Account", "AccountClass", "AccountPlanningRole", "AccountType", "FsaFundingYear",
     "AssumptionPeriod", "Assumptions",
     "Budget", "BudgetLine",
     "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",

@@ -38,6 +38,7 @@ from ..gen.lib import (
     AccountPlanningRole,
     AssumptionPeriod,
     Assumptions,
+    FsaFundingYear,
     Money,
     PeriodType,
     PlanningFlowKind,
@@ -87,6 +88,7 @@ class Api:
         disagree about a household's position.
         """
         from ..gen.engine import dashboard as engine
+        from ..gen.engine import fsa
 
         config = engine.DashboardConfig.load(self.db)
         if liquidity_days:
@@ -122,6 +124,26 @@ class Api:
                     ],
                 }
                 for group in board.groups
+            ],
+            "fsa": [
+                {
+                    "account": self.db.full_name(status.account),
+                    "account_handle": status.account.handle,
+                    "start": status.year.start.isoformat(),
+                    "through": status.year.through.isoformat(),
+                    "runout_through": (
+                        status.year.runout_through.isoformat()
+                        if status.year.runout_through else None
+                    ),
+                    "election": str(status.year.election.to_decimal()),
+                    "funded": str(status.funded.to_decimal()),
+                    "used": str(status.used.to_decimal()),
+                    "remaining": str(status.remaining.to_decimal()),
+                    "overage": str(status.overage.to_decimal()),
+                    "forfeited": str(status.forfeited.to_decimal()),
+                    "phase": status.phase,
+                }
+                for status in fsa.dashboard_statuses(self.db)
             ],
             "bills": [
                 {
@@ -166,6 +188,18 @@ class Api:
                         "class": account.account_class.value,
                         "placeholder": account.placeholder,
                         "planning_role": account.planning_role.value,
+                        "fsa_years": [
+                            {
+                                "start": year.start.isoformat(),
+                                "through": year.through.isoformat(),
+                                "election": str(year.election.to_decimal()),
+                                "runout_through": (
+                                    year.runout_through.isoformat()
+                                    if year.runout_through else None
+                                ),
+                            }
+                            for year in account.fsa_years
+                        ],
                         "depth": depth,
                         "balance": ledger.balance_recursive(self.db, account.handle),
                         "own_balance": ledger.balance(self.db, account.handle),
@@ -193,6 +227,31 @@ class Api:
         with self.db.transaction(f"Set planning role for {account.name}") as txn:
             self.db.commit_account(account, txn)
         return {"handle": account.handle, "planning_role": account.planning_role.value}
+
+    def account_fsa_years_save(self, payload: dict) -> dict:
+        handle = str(payload.get("handle", ""))
+        account = self.db.get_account(handle)
+        if account is None:
+            raise KeyError(handle)
+        if account.planning_role is not AccountPlanningRole.FSA:
+            raise ValueError("FSA funding years require an FSA planning role")
+        years: list[FsaFundingYear] = []
+        for raw in payload.get("years", []):
+            runout = str(raw.get("runout_through", "")).strip()
+            years.append(FsaFundingYear(
+                start=date.fromisoformat(str(raw["start"])),
+                through=date.fromisoformat(str(raw["through"])),
+                election=Money(str(raw["election"])),
+                runout_through=date.fromisoformat(runout) if runout else None,
+            ))
+        years.sort(key=lambda year: year.start)
+        for earlier, later in zip(years, years[1:], strict=False):
+            if later.start <= earlier.through:
+                raise ValueError("FSA funding years cannot overlap")
+        account.fsa_years = years
+        with self.db.transaction(f"Set FSA funding years for {account.name}") as txn:
+            self.db.commit_account(account, txn)
+        return {"handle": account.handle, "years": [year.serialize() for year in years]}
 
     def register(self, handle: str, limit: int = 250) -> dict:
         account = self.db.get_account(handle)
@@ -2009,6 +2068,7 @@ ROUTES = {
 
 POST_ROUTES = {
     "/api/account/planning-role": lambda a, body: a.account_planning_role_save(body),
+    "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),
     "/api/transaction": lambda a, body: a.add_transaction(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),

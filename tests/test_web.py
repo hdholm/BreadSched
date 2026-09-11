@@ -198,6 +198,31 @@ class TestItServes:
         retirement = next(row for row in accounts if row["name"] == "401(k)")
         assert retirement["planning_role"] == "retirement"
 
+    def test_fsa_funding_years_can_be_configured(self, client):
+        _status, accounts = client.get("/api/accounts")
+        retirement = next(row for row in accounts if row["name"] == "401(k)")
+        client.post(
+            "/api/account/planning-role",
+            {"handle": retirement["handle"], "planning_role": "fsa"},
+        )
+        status, payload = client.post(
+            "/api/account/fsa-years",
+            {
+                "handle": retirement["handle"],
+                "years": [{
+                    "start": "2026-07-01",
+                    "through": "2027-06-30",
+                    "election": "3000.00",
+                    "runout_through": "2027-09-30",
+                }],
+            },
+        )
+        assert status == 200
+        assert payload["years"][0]["start"] == "2026-07-01"
+        _status, accounts = client.get("/api/accounts")
+        fsa_account = next(row for row in accounts if row["name"] == "401(k)")
+        assert fsa_account["fsa_years"][0]["election"] == "3000.00"
+
     def test_the_account_tree_has_one_root(self, client):
         """The two-roots bug would show here as a second top-level branch."""
         _status, payload = client.get("/api/accounts")
@@ -852,7 +877,7 @@ class TestDashboardApi:
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200
-        assert set(payload) == {"summary", "config", "groups", "bills"}
+        assert set(payload) == {"summary", "config", "groups", "fsa", "bills"}
 
     def test_it_reports_the_headline_figures(self, client):
         _status, payload = client.get("/api/dashboard")

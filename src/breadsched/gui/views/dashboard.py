@@ -90,6 +90,16 @@ class DashboardView(BaseView):
             getattr(self.groups, f"set_margin_{side}")(12)
         self.append(self.groups)
 
+        self.fsa_heading = Gtk.Label(label="FSA benefit years", xalign=0)
+        self.fsa_heading.add_css_class("total-row")
+        for side in ("start", "top"):
+            getattr(self.fsa_heading, f"set_margin_{side}")(12)
+        self.append(self.fsa_heading)
+        self.fsa_grid = Gtk.Grid(column_spacing=18, row_spacing=3)
+        for side in ("start", "end"):
+            getattr(self.fsa_grid, f"set_margin_{side}")(12)
+        self.append(self.fsa_grid)
+
         heading = Gtk.Label(label="Pending bills", xalign=0)
         heading.add_css_class("total-row")
         for side in ("start", "top"):
@@ -179,6 +189,7 @@ class DashboardView(BaseView):
         )
         self._render_cards()
         self._render_groups()
+        self._render_fsa()
 
         store = Gio.ListStore.new(Row)
         for bill in self.board.bills:
@@ -250,6 +261,34 @@ class DashboardView(BaseView):
                 Gtk.Label(label=f"{ratio:.1%}" if ratio is not None else "", xalign=1),
                 4, index, 1, 1,
             )
+
+    def _render_fsa(self) -> None:
+        from ...gen.engine import fsa
+
+        _empty(self.fsa_grid)
+        assert self.db is not None
+        statuses = fsa.dashboard_statuses(self.db, as_of=self._today())
+        self.fsa_heading.set_visible(bool(statuses))
+        self.fsa_grid.set_visible(bool(statuses))
+        if not statuses:
+            return
+        headings = ("Account", "Funding year", "Status", "Election", "Funded",
+                    "Used", "Remaining", "Forfeited")
+        for column_index, heading in enumerate(headings):
+            label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
+            label.add_css_class("summary-label")
+            self.fsa_grid.attach(label, column_index, 0, 1, 1)
+        for row_index, status in enumerate(statuses, start=1):
+            values = (
+                self.db.full_name(status.account), status.label, status.phase,
+                status.year.election.format(), status.funded.format(), status.used.format(),
+                status.remaining.format(), status.forfeited.format(),
+            )
+            for column_index, value in enumerate(values):
+                label = Gtk.Label(label=value, xalign=1 if column_index >= 3 else 0)
+                if column_index >= 3:
+                    label.add_css_class("numeric")
+                self.fsa_grid.attach(label, column_index, row_index, 1, 1)
 
     # ----------------------------------------------------------------- actions
 

@@ -84,7 +84,7 @@ class Split:
 
     __slots__ = (
         "handle", "account", "value", "quantity", "memo", "action",
-        "reconcile", "reconcile_date", "planning_flow",
+        "reconcile", "reconcile_date", "planning_flow", "fsa_year_start",
     )
 
     def __init__(
@@ -97,6 +97,7 @@ class Split:
         reconcile: ReconcileState = ReconcileState.NOT_RECONCILED,
         handle: str | None = None,
         planning_flow: PlanningFlowKind | str | None = None,
+        fsa_year_start: date | str | None = None,
     ) -> None:
         self.handle = handle or create_handle()
         self.account = account
@@ -108,6 +109,11 @@ class Split:
         self.action = action
         self.reconcile = reconcile
         self.reconcile_date: date | None = None
+        self.fsa_year_start = (
+            date.fromisoformat(fsa_year_start)
+            if isinstance(fsa_year_start, str)
+            else fsa_year_start
+        )
         self.planning_flow = (
             None
             if planning_flow is None
@@ -131,6 +137,9 @@ class Split:
             "reconcile": self.reconcile.value,
             "reconcile_date": self.reconcile_date.isoformat() if self.reconcile_date else None,
             "planning_flow": self.planning_flow.value if self.planning_flow else None,
+            "fsa_year_start": (
+                self.fsa_year_start.isoformat() if self.fsa_year_start else None
+            ),
         }
 
     @classmethod
@@ -144,6 +153,7 @@ class Split:
             reconcile=ReconcileState(data.get("reconcile", "n")),
             handle=data["handle"],
             planning_flow=data.get("planning_flow"),
+            fsa_year_start=data.get("fsa_year_start"),
         )
         raw = data.get("reconcile_date")
         split.reconcile_date = date.fromisoformat(raw) if raw else None

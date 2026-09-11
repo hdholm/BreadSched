@@ -21,6 +21,7 @@ from ...gen.lib import (
     AccountClass,
     AccountPlanningRole,
     AccountType,
+    FsaFundingYear,
     Money,
     Transaction,
 )
@@ -137,10 +138,32 @@ class AccountDialog(Gtk.Window):
         self.planning_role_picker.set_tooltip_text(
             "Default planning meaning for movements through this account"
         )
-        self.planning_role_picker.connect("notify::selected", self._validate)
+        self.planning_role_picker.connect("notify::selected", self._on_role_changed)
         grid.attach(Gtk.Label(label="Planning role", xalign=0), 0, row, 1, 1)
         grid.attach(self.planning_role_picker, 1, row, 1, 1)
         row += 1
+
+        self.fsa_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.fsa_box.add_css_class("card")
+        self.fsa_rows = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        fsa_heading = Gtk.Label(label="FSA funding years", xalign=0)
+        fsa_heading.add_css_class("summary-label")
+        self.fsa_box.append(fsa_heading)
+        fsa_note = Gtk.Label(
+            label=("Election availability is tracked separately from the ledger balance. "
+                   "Run-out allows explicitly assigned prior-year claims after year-end."),
+            xalign=0, wrap=True,
+        )
+        fsa_note.add_css_class("dim")
+        self.fsa_box.append(fsa_note)
+        self.fsa_box.append(self.fsa_rows)
+        add_fsa = Gtk.Button(label="Add funding year")
+        add_fsa.connect("clicked", lambda *_: self._add_fsa_year_row())
+        self.fsa_box.append(add_fsa)
+        box.append(self.fsa_box)
+        if editing:
+            for funding_year in account.fsa_years:
+                self._add_fsa_year_row(funding_year)
 
         self.placeholder_check = Gtk.CheckButton(label="Placeholder (holds no entries)")
         if editing:
@@ -223,6 +246,56 @@ class AccountDialog(Gtk.Window):
     def selected_type(self) -> AccountType:
         return _TYPES[self.type_picker.get_selected()]
 
+    def _add_fsa_year_row(self, funding_year: FsaFundingYear | None = None) -> None:
+        row = Gtk.Box(spacing=6)
+        start = Gtk.Entry(placeholder_text="Start YYYY-MM-DD")
+        through = Gtk.Entry(placeholder_text="Through YYYY-MM-DD")
+        election = Gtk.Entry(placeholder_text="Election")
+        runout = Gtk.Entry(placeholder_text="Run-out through (optional)")
+        if funding_year is not None:
+            start.set_text(funding_year.start.isoformat())
+            through.set_text(funding_year.through.isoformat())
+            election.set_text(f"{funding_year.election.to_decimal():.2f}")
+            if funding_year.runout_through:
+                runout.set_text(funding_year.runout_through.isoformat())
+        for widget in (start, through, election, runout):
+            widget.connect("changed", self._validate)
+            row.append(widget)
+        remove = Gtk.Button(label="Remove")
+        remove.connect("clicked", lambda *_: (self.fsa_rows.remove(row), self._validate()))
+        row.append(remove)
+        row._fsa_fields = (start, through, election, runout)
+        self.fsa_rows.append(row)
+        self._validate()
+
+    def _fsa_year_values(self) -> list[FsaFundingYear]:
+        from datetime import date
+
+        years: list[FsaFundingYear] = []
+        child = self.fsa_rows.get_first_child()
+        while child is not None:
+            start, through, election, runout = child._fsa_fields
+            years.append(FsaFundingYear(
+                date.fromisoformat(start.get_text().strip()),
+                date.fromisoformat(through.get_text().strip()),
+                Money(election.get_text().strip()),
+                date.fromisoformat(runout.get_text().strip())
+                if runout.get_text().strip() else None,
+            ))
+            child = child.get_next_sibling()
+        years.sort(key=lambda year: year.start)
+        for earlier, later in zip(years, years[1:], strict=False):
+            if later.start <= earlier.through:
+                raise ValueError("FSA funding years cannot overlap")
+        return years
+
+    def _on_role_changed(self, *_args) -> None:
+        if not self._ready:
+            return
+        role = _ROLES[self.planning_role_picker.get_selected()]
+        self.fsa_box.set_visible(role is AccountPlanningRole.FSA)
+        self._validate()
+
     def _on_type_changed(self, *_args) -> None:
         """Only show the fields that mean something for this kind of account."""
         if not self._ready:
@@ -235,6 +308,7 @@ class AccountDialog(Gtk.Window):
         self.loan_box.set_visible(kind.account_class is AccountClass.LIABILITY)
         self.card_box.set_visible(kind is AccountType.CREDIT)
         self._on_card_changed()
+        self._on_role_changed()
         self._validate()
 
     def _on_card_changed(self, *_args) -> None:
@@ -255,6 +329,11 @@ class AccountDialog(Gtk.Window):
         role = _ROLES[self.planning_role_picker.get_selected()]
         if not role.supports(self.selected_type.account_class):
             problems.append("planning role is not valid for this account type")
+        if role is AccountPlanningRole.FSA:
+            try:
+                self._fsa_year_values()
+            except (ValueError, InvalidOperation, ArithmeticError) as exc:
+                problems.append(str(exc))
         self.status.set_text("; ".join(problems).capitalize())
         self.save_button.set_sensitive(not problems)
 
@@ -268,6 +347,8 @@ class AccountDialog(Gtk.Window):
         account.description = self.description_entry.get_text().strip()
         account.group = self.group_entry.get_text().strip()
         account.planning_role = _ROLES[self.planning_role_picker.get_selected()]
+        if account.planning_role is AccountPlanningRole.FSA:
+            account.fsa_years = self._fsa_year_values()
         account.placeholder = self.placeholder_check.get_active()
         if self.parents:
             account.parent = self.parents[self.parent_picker.get_selected()].handle

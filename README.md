@@ -466,32 +466,27 @@ The Gramps-style sidebar switches among the principal book and planning views:
   below it tinted, so a forecast that dips negative reads as a problem rather than
   as a line that happens to be low.
 
-## Forward plan: FSA accounts
+## FSA accounts and remaining work
 
-A future account type will model a flexible spending account (FSA) as a
-plan-year benefit rather than as an ordinary asset balance. Each FSA will have
-one or more funding years, and each year will record its own start/end dates and
-elected funding amount, so the plan year does not have to match the calendar
-year and later years may use different elections.
+Asset accounts can now carry the **FSA / benefit** planning role plus one or more
+funding years. Each funding year records its own start/end dates, election, and
+optional run-out-through date, so plan years need not match calendar years and
+later years may use different elections. GTK and web account editors both expose
+those funding-year definitions.
 
-The spendable amount is the plan-year entitlement less eligible consumption,
-not merely the custodian or payroll-funded cash balance. Claims may therefore
-outpace payroll funding without making the FSA's available benefit negative; the
-benefit is exhausted only when eligible transactions consume that year's elected
-amount. Transactions posted after a funding year ends must be able to apply to
-that prior year, to support a plan's run-out period. After that period, unused
-funds are forfeited rather than carried forward unless a future design explicitly
-models a plan-specific carryover rule.
+FSA benefit availability is deliberately separate from the custodial ledger
+balance. The dashboard reports Election, actual Funded-to-date, Used, Remaining,
+and Forfeited. Claims may therefore outpace payroll funding without reducing the
+available benefit below the unused election. Once the run-out window closes, the
+unused amount becomes forfeited and Remaining becomes zero. Current/run-out years
+and recent closed years remain visible on the dashboard.
 
-The dashboard should treat this similarly to other account-specific financial
-relationships: show the current FSA funding year prominently and retain recent
-prior years while claims can still arrive or their final forfeiture remains
-useful context. At minimum each displayed funding year should distinguish its
-elected amount, consumed amount, remaining available benefit, and forfeited
-amount. The eventual account/editor design should also allow an FSA to be
-associated with the real asset/cash account through which reimbursements or
-funding are recorded without confusing that ledger balance with benefit
-availability.
+Transactions dated inside a funding year are assigned automatically. A split can
+also carry an explicit FSA funding-year start so a claim posted during a later
+run-out window can reduce the prior year's election even when a new funding year
+is already active. A future entry/register UX should expose that assignment
+directly rather than requiring imported/programmatic metadata. Plan-specific
+carryover rules are not yet modeled.
 
 ## Forward plan: planning classifications for balance-sheet flows
 
