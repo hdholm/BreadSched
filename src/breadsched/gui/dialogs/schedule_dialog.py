@@ -127,7 +127,7 @@ class ScheduleDialog(Gtk.Window):
         self.planning_flow = Gtk.DropDown.new_from_strings(
             [label for label, _kind in _PLANNING_FLOWS]
         )
-        grid.attach(Gtk.Label(label="Planning purpose", xalign=0), 0, row, 1, 1)
+        grid.attach(Gtk.Label(label="Planning purpose override", xalign=0), 0, row, 1, 1)
         grid.attach(self.planning_flow, 1, row, 1, 1)
         row += 1
 

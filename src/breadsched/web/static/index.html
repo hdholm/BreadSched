@@ -396,13 +396,30 @@ async function showAccounts() {
             onclick: () => { state.account = account.handle; switchTo("Register"); },
           }, account.name)),
     el("td", { class: "muted" }, account.type),
+    el("td", {}, el("select", {
+      onchange: async (event) => {
+        await post("/api/account/planning-role", {
+          handle: account.handle, planning_role: event.target.value,
+        });
+        account.planning_role = event.target.value;
+      },
+    }, ([
+      ["ordinary", "Ordinary"],
+      ...(account.class === "asset" ? [
+        ["retirement", "Retirement"], ["fsa", "FSA / benefit"],
+        ["investment", "Investment"],
+      ] : []),
+      ...(account.class === "liability" ? [["debt", "Loan / debt"]] : []),
+    ]).map(([value, label]) => el("option", {
+      value, selected: account.planning_role === value ? "selected" : null,
+    }, label)))),
     el("td", { class: cls(account.balance) }, money(account.balance))));
 
   return el("div", {}, cards,
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them."),
-    table(["Account", "Type", { label: "Balance", num: true }], rows));
+    table(["Account", "Type", "Planning role", { label: "Balance", num: true }], rows));
 }
 
 async function showRegister() {
@@ -563,7 +580,7 @@ function openScheduledEditor(data, source) {
     field("Name", el("input", { name:"name", value:source?.name || "", required:"required" })),
     field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]], source?.placeholder ? "estimate" : "commitment")),
     field("Category", category), field("Paid from / into", funding),
-    field("Planning purpose", planningFlow),
+    field("Planning purpose override", planningFlow),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
     additionalSplits.node,
     futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
@@ -894,7 +911,7 @@ async function scenarioEventPanel(handle, fromMonth) {
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
       el("label", {}, "Income / expense category", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
       el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
-      el("label", {}, "Planning purpose", el("select", {name:"planning_flow"},
+      el("label", {}, "Planning purpose override", el("select", {name:"planning_flow"},
         [["","Ordinary transfer"],["retirement_saving","Retirement saving"],
          ["benefit_funding","Benefit / FSA funding"],["debt_principal","Debt principal"],
          ["retirement_income","Retirement distribution"]].map(([value,label])=>

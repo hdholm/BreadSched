@@ -17,7 +17,7 @@ from typing import Any
 from .base import PrimaryObject
 from .money import Money
 
-__all__ = ["AccountType", "AccountClass", "Account"]
+__all__ = ["AccountType", "AccountClass", "AccountPlanningRole", "Account"]
 
 
 class AccountClass(str, Enum):
@@ -27,6 +27,33 @@ class AccountClass(str, Enum):
     EXPENSE = "expense"
     EQUITY = "equity"
     ROOT = "root"
+
+
+class AccountPlanningRole(str, Enum):
+    """Planning meaning inferred from movements through a balance-sheet account."""
+
+    ORDINARY = "ordinary"
+    RETIREMENT = "retirement"
+    FSA = "fsa"
+    DEBT = "debt"
+    INVESTMENT = "investment"
+
+    @property
+    def label(self) -> str:
+        return {
+            AccountPlanningRole.ORDINARY: "Ordinary",
+            AccountPlanningRole.RETIREMENT: "Retirement",
+            AccountPlanningRole.FSA: "FSA / benefit",
+            AccountPlanningRole.DEBT: "Loan / debt",
+            AccountPlanningRole.INVESTMENT: "Investment",
+        }[self]
+
+    def supports(self, account_class: AccountClass) -> bool:
+        if self is AccountPlanningRole.ORDINARY:
+            return True
+        if self is AccountPlanningRole.DEBT:
+            return account_class is AccountClass.LIABILITY
+        return account_class is AccountClass.ASSET
 
 
 class AccountType(str, Enum):
@@ -130,6 +157,7 @@ class Account(PrimaryObject):
         self.placeholder = placeholder
         self.hidden = hidden
         self.notes = ""
+        self.planning_role = AccountPlanningRole.ORDINARY
 
         # Projection hints.  These are what turn a chart of accounts into a model.
         self.annual_return: Decimal = Decimal("0")   # investment growth, e.g. 0.06
@@ -187,6 +215,7 @@ class Account(PrimaryObject):
             "placeholder": self.placeholder,
             "hidden": self.hidden,
             "notes": self.notes,
+            "planning_role": self.planning_role.value,
             "annual_return": str(self.annual_return),
             "annual_interest": str(self.annual_interest),
             "exclude_from_projection": self.exclude_from_projection,
@@ -210,6 +239,7 @@ class Account(PrimaryObject):
         self.placeholder = data.get("placeholder", False)
         self.hidden = data.get("hidden", False)
         self.notes = data.get("notes", "")
+        self.planning_role = AccountPlanningRole(data.get("planning_role", "ordinary"))
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))
         self.exclude_from_projection = data.get("exclude_from_projection", False)

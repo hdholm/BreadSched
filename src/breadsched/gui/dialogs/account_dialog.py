@@ -16,12 +16,20 @@ from __future__ import annotations
 from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib import Account, AccountClass, AccountType, Money, Transaction
+from ...gen.lib import (
+    Account,
+    AccountClass,
+    AccountPlanningRole,
+    AccountType,
+    Money,
+    Transaction,
+)
 from ..gi_setup import Gtk
 
 __all__ = ["AccountDialog"]
 
 _TYPES = [t for t in AccountType if t is not AccountType.ROOT]
+_ROLES = list(AccountPlanningRole)
 
 
 class AccountDialog(Gtk.Window):
@@ -121,6 +129,19 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.group_entry, 1, row, 1, 1)
         row += 1
 
+        self.planning_role_picker = Gtk.DropDown.new_from_strings(
+            [role.label for role in _ROLES]
+        )
+        if editing:
+            self.planning_role_picker.set_selected(_ROLES.index(account.planning_role))
+        self.planning_role_picker.set_tooltip_text(
+            "Default planning meaning for movements through this account"
+        )
+        self.planning_role_picker.connect("notify::selected", self._validate)
+        grid.attach(Gtk.Label(label="Planning role", xalign=0), 0, row, 1, 1)
+        grid.attach(self.planning_role_picker, 1, row, 1, 1)
+        row += 1
+
         self.placeholder_check = Gtk.CheckButton(label="Placeholder (holds no entries)")
         if editing:
             self.placeholder_check.set_active(account.placeholder)
@@ -207,6 +228,10 @@ class AccountDialog(Gtk.Window):
         if not self._ready:
             return
         kind = self.selected_type
+        allowed_roles = [role for role in _ROLES if role.supports(kind.account_class)]
+        selected_role = _ROLES[self.planning_role_picker.get_selected()]
+        if selected_role not in allowed_roles:
+            self.planning_role_picker.set_selected(_ROLES.index(AccountPlanningRole.ORDINARY))
         self.loan_box.set_visible(kind.account_class is AccountClass.LIABILITY)
         self.card_box.set_visible(kind is AccountType.CREDIT)
         self._on_card_changed()
@@ -227,6 +252,9 @@ class AccountDialog(Gtk.Window):
             problems.append("give it a name")
         if not self.parents:
             problems.append("this book has no parent account to hang it from")
+        role = _ROLES[self.planning_role_picker.get_selected()]
+        if not role.supports(self.selected_type.account_class):
+            problems.append("planning role is not valid for this account type")
         self.status.set_text("; ".join(problems).capitalize())
         self.save_button.set_sensitive(not problems)
 
@@ -239,6 +267,7 @@ class AccountDialog(Gtk.Window):
         account.code = self.code_entry.get_text().strip()
         account.description = self.description_entry.get_text().strip()
         account.group = self.group_entry.get_text().strip()
+        account.planning_role = _ROLES[self.planning_role_picker.get_selected()]
         account.placeholder = self.placeholder_check.get_active()
         if self.parents:
             account.parent = self.parents[self.parent_picker.get_selected()].handle

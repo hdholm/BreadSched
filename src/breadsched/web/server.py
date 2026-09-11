@@ -35,6 +35,7 @@ from ..gen.engine import (
 )
 from ..gen.lib import (
     AccountClass,
+    AccountPlanningRole,
     AssumptionPeriod,
     Assumptions,
     Money,
@@ -164,6 +165,7 @@ class Api:
                         "type": account.atype.value,
                         "class": account.account_class.value,
                         "placeholder": account.placeholder,
+                        "planning_role": account.planning_role.value,
                         "depth": depth,
                         "balance": ledger.balance_recursive(self.db, account.handle),
                         "own_balance": ledger.balance(self.db, account.handle),
@@ -174,6 +176,23 @@ class Api:
         root = self.db.root_account()
         walk(root.handle if root else None, 0)
         return rows
+
+
+    def account_planning_role_save(self, payload: dict) -> dict:
+        handle = str(payload.get("handle", ""))
+        account = self.db.get_account(handle)
+        if account is None:
+            raise KeyError(handle)
+        try:
+            role = AccountPlanningRole(str(payload.get("planning_role", "ordinary")))
+        except ValueError:
+            raise ValueError("choose a valid account planning role") from None
+        if not role.supports(account.account_class):
+            raise ValueError("planning role is not valid for this account type")
+        account.planning_role = role
+        with self.db.transaction(f"Set planning role for {account.name}") as txn:
+            self.db.commit_account(account, txn)
+        return {"handle": account.handle, "planning_role": account.planning_role.value}
 
     def register(self, handle: str, limit: int = 250) -> dict:
         account = self.db.get_account(handle)
@@ -1989,6 +2008,7 @@ ROUTES = {
 }
 
 POST_ROUTES = {
+    "/api/account/planning-role": lambda a, body: a.account_planning_role_save(body),
     "/api/transaction": lambda a, body: a.add_transaction(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),

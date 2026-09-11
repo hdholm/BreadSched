@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from enum import Enum
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass
+from ..lib.account import Account, AccountClass, AccountPlanningRole
 from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Scenario
@@ -477,6 +477,44 @@ def explain_category_period(
     )
 
 
+def _inferred_planning_flow(
+    split: PlannedSplit,
+    splits: Iterable[PlannedSplit],
+    accounts: dict[str, Account],
+) -> PlanningFlowKind | None:
+    """Return explicit split purpose or infer one from account role and context."""
+    if split.planning_flow is not None:
+        return split.planning_flow
+    account = accounts.get(split.account)
+    if account is None:
+        return None
+    peers = [
+        accounts.get(item.account)
+        for item in splits
+        if item.account != split.account
+    ]
+    if account.planning_role is AccountPlanningRole.RETIREMENT:
+        if any(
+            peer and peer.planning_role is AccountPlanningRole.RETIREMENT
+            for peer in peers
+        ):
+            return None
+        if split.amount > 0:
+            return PlanningFlowKind.RETIREMENT_SAVING
+        if split.amount < 0:
+            return PlanningFlowKind.RETIREMENT_INCOME
+    if account.planning_role is AccountPlanningRole.FSA and split.amount > 0:
+        return PlanningFlowKind.BENEFIT_FUNDING
+    if account.planning_role is AccountPlanningRole.DEBT and split.amount > 0:
+        if any(
+            peer and peer.planning_role is AccountPlanningRole.DEBT
+            for peer in peers
+        ):
+            return None
+        return PlanningFlowKind.DEBT_PRINCIPAL
+    return None
+
+
 def _sum_money(values: Iterable[Money]) -> Money:
     total = Money(0)
     for value in values:
@@ -704,13 +742,13 @@ def build_category_report(
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
             for planned_split in event.expected_splits:
-                if planned_split.planning_flow is not None:
-                    values = flow_amounts(
-                        flow_planned, planned_split.planning_flow, planned_split.account
-                    )
+                flow_kind = _inferred_planning_flow(
+                    planned_split, event.expected_splits, accounts
+                )
+                if flow_kind is not None:
+                    values = flow_amounts(flow_planned, flow_kind, planned_split.account)
                     values[period_index] = (
-                        values[period_index]
-                        + planned_split.planning_flow.plan_amount(planned_split.amount)
+                        values[period_index] + flow_kind.plan_amount(planned_split.amount)
                     )
                 account = accounts.get(planned_split.account)
                 if account is None:
@@ -724,14 +762,20 @@ def build_category_report(
             transaction = db.get_transaction(actual.transaction)
             if transaction is None:
                 continue
-            for actual_split in transaction.splits:
-                if actual_split.planning_flow is not None:
-                    values = flow_amounts(
-                        flow_actual, actual_split.planning_flow, actual_split.account
-                    )
+            actual_planned_splits = tuple(
+                PlannedSplit(split.account, split.value, split.planning_flow)
+                for split in transaction.splits
+            )
+            for actual_split, planned_view in zip(
+                transaction.splits, actual_planned_splits, strict=True
+            ):
+                flow_kind = _inferred_planning_flow(
+                    planned_view, actual_planned_splits, accounts
+                )
+                if flow_kind is not None:
+                    values = flow_amounts(flow_actual, flow_kind, actual_split.account)
                     values[period_index] = (
-                        values[period_index]
-                        + actual_split.planning_flow.plan_amount(actual_split.value)
+                        values[period_index] + flow_kind.plan_amount(actual_split.value)
                     )
                 account = accounts.get(actual_split.account)
                 if account is None:

@@ -4,6 +4,9 @@ from datetime import date
 
 from breadsched.gen.engine import activity, planning
 from breadsched.gen.lib import (
+    Account,
+    AccountPlanningRole,
+    AccountType,
     Money,
     PeriodType,
     PlanningFlowKind,
@@ -335,6 +338,83 @@ class TestPlanningFlowClassification:
         assert PlanningFlowKind.BENEFIT_FUNDING.ledger_amount(amount) == amount
         assert PlanningFlowKind.DEBT_PRINCIPAL.ledger_amount(amount) == amount
         assert PlanningFlowKind.RETIREMENT_INCOME.ledger_amount(amount) == -amount
+
+
+    def test_account_roles_infer_common_balance_sheet_flows(self, db, book):
+        brokerage = db.get_account(book.brokerage)
+        assert brokerage is not None
+        brokerage.planning_role = AccountPlanningRole.RETIREMENT
+        with db.transaction("mark retirement") as txn:
+            db.commit_account(brokerage, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 1, 15), "401k", book.brokerage, book.checking, "500.00"
+                ),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 1, 20), "distribution", book.checking, book.brokerage, "200.00"
+                ),
+                txn,
+            )
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        flows = {(row.kind, row.account): row.actual[0] for row in report.planning_flows}
+        assert flows[(PlanningFlowKind.RETIREMENT_SAVING, book.brokerage)] == Money("500")
+        assert flows[(PlanningFlowKind.RETIREMENT_INCOME, book.brokerage)] == Money("200")
+
+    def test_fsa_and_debt_roles_infer_funding_and_principal(self, db, book):
+        brokerage = db.get_account(book.brokerage)
+        assert brokerage is not None
+        brokerage.planning_role = AccountPlanningRole.FSA
+        debt = Account(name="Loan", atype=AccountType.LIABILITY, parent=book.root)
+        debt.planning_role = AccountPlanningRole.DEBT
+        with db.transaction("mark benefit and debt") as txn:
+            db.commit_account(brokerage, txn)
+            db.add_account(debt, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 1, 10), "FSA funding", book.brokerage, book.checking, "125"
+                ),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 1, 20), "Loan principal", debt.handle, book.checking, "300"
+                ),
+                txn,
+            )
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        flows = {(row.kind, row.account): row.actual[0] for row in report.planning_flows}
+        assert flows[(PlanningFlowKind.BENEFIT_FUNDING, book.brokerage)] == Money("125")
+        assert flows[(PlanningFlowKind.DEBT_PRINCIPAL, debt.handle)] == Money("300")
+
+    def test_role_inference_keeps_retirement_transfers_neutral(self, db, book):
+        brokerage = db.get_account(book.brokerage)
+        savings = db.get_account(book.savings)
+        assert brokerage is not None and savings is not None
+        brokerage.planning_role = AccountPlanningRole.RETIREMENT
+        savings.planning_role = AccountPlanningRole.RETIREMENT
+        with db.transaction("mark retirement accounts") as txn:
+            db.commit_account(brokerage, txn)
+            db.commit_account(savings, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 1, 15), "rollover", book.savings, book.brokerage, "500.00"
+                ),
+                txn,
+            )
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        assert report.planning_flows == []
 
     def test_classified_balance_sheet_splits_appear_in_plan(self, db, book):
         contribution = ScheduledTransaction(

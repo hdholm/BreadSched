@@ -182,6 +182,22 @@ class TestItServes:
         assert "Checking" in by_name
         assert Money(by_name["Checking"]["balance"]) == Money("2400.00")
 
+    def test_account_planning_role_can_be_changed(self, client):
+        _status, accounts = client.get("/api/accounts")
+        retirement = next(row for row in accounts if row["name"] == "401(k)")
+        assert retirement["planning_role"] == "ordinary"
+
+        status, payload = client.post(
+            "/api/account/planning-role",
+            {"handle": retirement["handle"], "planning_role": "retirement"},
+        )
+        assert status == 200
+        assert payload["planning_role"] == "retirement"
+
+        _status, accounts = client.get("/api/accounts")
+        retirement = next(row for row in accounts if row["name"] == "401(k)")
+        assert retirement["planning_role"] == "retirement"
+
     def test_the_account_tree_has_one_root(self, client):
         """The two-roots bug would show here as a second top-level branch."""
         _status, payload = client.get("/api/accounts")
