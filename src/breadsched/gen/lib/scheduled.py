@@ -16,7 +16,7 @@ from .base import PrimaryObject
 from .formula import FormulaError, evaluate
 from .money import Money
 from .recurrence import Recurrence
-from .transaction import PlanningResolution, Split, Transaction
+from .transaction import PlanningFlowKind, PlanningResolution, Split, Transaction
 
 __all__ = [
     "ScheduledAmountChange",
@@ -135,7 +135,7 @@ def scheduled_occurrence_preview(
 class ScheduledSplit:
     """One leg of a template, with either a fixed amount or a formula."""
 
-    __slots__ = ("account", "amount", "formula", "memo")
+    __slots__ = ("account", "amount", "formula", "memo", "planning_flow")
 
     def __init__(
         self,
@@ -143,6 +143,7 @@ class ScheduledSplit:
         amount: Money | str | int | None = None,
         formula: str = "",
         memo: str = "",
+        planning_flow: PlanningFlowKind | str | None = None,
     ) -> None:
         self.account = account
         self.amount = None if amount is None else (
@@ -150,6 +151,13 @@ class ScheduledSplit:
         )
         self.formula = formula
         self.memo = memo
+        self.planning_flow = (
+            None
+            if planning_flow is None
+            else planning_flow
+            if isinstance(planning_flow, PlanningFlowKind)
+            else PlanningFlowKind(planning_flow)
+        )
 
     def resolve(self, variables: dict[str, Any] | None = None) -> Money:
         """The amount this leg contributes, evaluating a formula if there is one.
@@ -179,6 +187,7 @@ class ScheduledSplit:
             else [self.amount.numerator, self.amount.denominator],
             "formula": self.formula,
             "memo": self.memo,
+            "planning_flow": self.planning_flow.value if self.planning_flow else None,
         }
 
     @classmethod
@@ -189,6 +198,7 @@ class ScheduledSplit:
             amount=Money(*amount) if amount else None,
             formula=data.get("formula", ""),
             memo=data.get("memo", ""),
+            planning_flow=data.get("planning_flow"),
         )
 
 
@@ -387,7 +397,14 @@ class ScheduledTransaction(PrimaryObject):
             if residual and not residual.quantize(100):
                 values[-1] = values[-1] - residual
         for split, value in zip(self.splits, values, strict=False):
-            txn.add_split(Split(split.account, value, memo=split.memo))
+            txn.add_split(
+                Split(
+                    split.account,
+                    value,
+                    memo=split.memo,
+                    planning_flow=split.planning_flow,
+                )
+            )
         if strict:
             txn.validate()
         return txn

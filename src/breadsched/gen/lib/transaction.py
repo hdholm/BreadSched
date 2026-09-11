@@ -15,11 +15,43 @@ from typing import Any
 from .base import PrimaryObject, create_handle
 from .money import Money
 
-__all__ = ["PlanningResolution", "ReconcileState", "Split", "Transaction", "UnbalancedError"]
+__all__ = [
+    "PlanningFlowKind", "PlanningResolution", "ReconcileState", "Split",
+    "Transaction", "UnbalancedError",
+]
 
 
 class UnbalancedError(ValueError):
     """Raised when a transaction's split values do not sum to zero."""
+
+
+class PlanningFlowKind(str, Enum):
+    """Economic purpose for a balance-sheet split shown separately in Plan.
+
+    Ledger account type still controls accounting.  This optional classification
+    only says that an asset/liability movement is meaningful to the financial plan
+    rather than an ordinary transfer.
+    """
+
+    RETIREMENT_SAVING = "retirement_saving"
+    BENEFIT_FUNDING = "benefit_funding"
+    DEBT_PRINCIPAL = "debt_principal"
+    RETIREMENT_INCOME = "retirement_income"
+
+    @property
+    def label(self) -> str:
+        return {
+            PlanningFlowKind.RETIREMENT_SAVING: "Retirement saving",
+            PlanningFlowKind.BENEFIT_FUNDING: "Benefit / FSA funding",
+            PlanningFlowKind.DEBT_PRINCIPAL: "Debt principal",
+            PlanningFlowKind.RETIREMENT_INCOME: "Retirement distributions",
+        }[self]
+
+    def plan_amount(self, value: Money) -> Money:
+        """Return the amount in the positive direction used by Plan."""
+        if self is PlanningFlowKind.RETIREMENT_INCOME:
+            return -value
+        return value
 
 
 class PlanningResolution(str, Enum):
@@ -42,8 +74,10 @@ class ReconcileState(str, Enum):
 class Split:
     """One leg of a transaction: an amount posted against one account."""
 
-    __slots__ = ("handle", "account", "value", "quantity", "memo", "action",
-                 "reconcile", "reconcile_date")
+    __slots__ = (
+        "handle", "account", "value", "quantity", "memo", "action",
+        "reconcile", "reconcile_date", "planning_flow",
+    )
 
     def __init__(
         self,
@@ -54,6 +88,7 @@ class Split:
         action: str = "",
         reconcile: ReconcileState = ReconcileState.NOT_RECONCILED,
         handle: str | None = None,
+        planning_flow: PlanningFlowKind | str | None = None,
     ) -> None:
         self.handle = handle or create_handle()
         self.account = account
@@ -65,6 +100,13 @@ class Split:
         self.action = action
         self.reconcile = reconcile
         self.reconcile_date: date | None = None
+        self.planning_flow = (
+            None
+            if planning_flow is None
+            else planning_flow
+            if isinstance(planning_flow, PlanningFlowKind)
+            else PlanningFlowKind(planning_flow)
+        )
 
     @property
     def is_debit(self) -> bool:
@@ -80,6 +122,7 @@ class Split:
             "action": self.action,
             "reconcile": self.reconcile.value,
             "reconcile_date": self.reconcile_date.isoformat() if self.reconcile_date else None,
+            "planning_flow": self.planning_flow.value if self.planning_flow else None,
         }
 
     @classmethod
@@ -92,6 +135,7 @@ class Split:
             action=data.get("action", ""),
             reconcile=ReconcileState(data.get("reconcile", "n")),
             handle=data["handle"],
+            planning_flow=data.get("planning_flow"),
         )
         raw = data.get("reconcile_date")
         split.reconcile_date = date.fromisoformat(raw) if raw else None

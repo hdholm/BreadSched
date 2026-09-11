@@ -15,6 +15,7 @@ from ...gen.lib import (
     AccountClass,
     Money,
     PeriodType,
+    PlanningFlowKind,
     Recurrence,
     Scenario,
     ScenarioSchedule,
@@ -45,6 +46,14 @@ _WEEKEND = [
     ("Leave on the day", WeekendAdjust.NONE),
     ("Move to the Friday before", WeekendAdjust.PREVIOUS),
     ("Move to the Monday after", WeekendAdjust.NEXT),
+]
+
+_PLANNING_FLOWS = [
+    ("Ordinary transfer", None),
+    ("Retirement saving", PlanningFlowKind.RETIREMENT_SAVING),
+    ("Benefit / FSA funding", PlanningFlowKind.BENEFIT_FUNDING),
+    ("Debt principal", PlanningFlowKind.DEBT_PRINCIPAL),
+    ("Retirement distribution", PlanningFlowKind.RETIREMENT_INCOME),
 ]
 
 
@@ -129,6 +138,13 @@ class ScenarioScheduleDialog(Gtk.Window):
             self.funding.set_selected(1)
         grid.attach(Gtk.Label(label="Paid from / into", xalign=0), 0, row, 1, 1)
         grid.attach(self.funding, 1, row, 1, 1)
+        row += 1
+
+        self.planning_flow = Gtk.DropDown.new_from_strings(
+            [label for label, _kind in _PLANNING_FLOWS]
+        )
+        grid.attach(Gtk.Label(label="Planning purpose", xalign=0), 0, row, 1, 1)
+        grid.attach(self.planning_flow, 1, row, 1, 1)
         row += 1
 
         self.amount_entry = Gtk.Entry(placeholder_text="0.00")
@@ -302,6 +318,16 @@ class ScenarioScheduleDialog(Gtk.Window):
             self.category.set_selected(category_index)
         if funding_index is not None:
             self.funding.set_selected(funding_index)
+        self.planning_flow.set_selected(
+            next(
+                (
+                    index
+                    for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
+                    if kind is other_split.planning_flow
+                ),
+                0,
+            )
+        )
         category = self.db.get_account(flow_split.account)
         amount = flow_split.resolve(source.variables)
         if category is not None:
@@ -511,7 +537,13 @@ class ScenarioScheduleDialog(Gtk.Window):
             recurrence=recurrence,
             splits=[
                 ScheduledSplit(category.handle, signed),
-                ScheduledSplit(funding.handle, -signed),
+                ScheduledSplit(
+                    funding.handle,
+                    -signed,
+                    planning_flow=_PLANNING_FLOWS[
+                        self.planning_flow.get_selected()
+                    ][1],
+                ),
             ],
             source_schedule=self.source.handle if self.source is not None else None,
             enabled=True,

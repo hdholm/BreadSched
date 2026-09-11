@@ -39,6 +39,7 @@ from ..gen.lib import (
     Assumptions,
     Money,
     PeriodType,
+    PlanningFlowKind,
     PlanningResolution,
     ProjectionBasis,
     Recurrence,
@@ -285,6 +286,7 @@ class Api:
                     "simple": simple is not None and frequency is not None,
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
+                    "planning_flow": simple["planning_flow"] if simple else None,
                     "start": item.recurrence.start.isoformat(),
                     "end": (
                         item.recurrence.end.isoformat()
@@ -594,6 +596,9 @@ class Api:
             "category": flow.account,
             "funding": other.account,
             "amount": str(abs(amount).to_decimal()),
+            "planning_flow": (
+                other.planning_flow.value if other.planning_flow is not None else None
+            ),
         }
 
     @staticmethod
@@ -629,6 +634,7 @@ class Api:
             "category": simple["category"] if simple else None,
             "funding": simple["funding"] if simple else None,
             "amount": simple["amount"] if simple else None,
+            "planning_flow": simple["planning_flow"] if simple else None,
             "frequency": self._frequency_key(item.recurrence),
             "start": item.recurrence.start.isoformat(),
             "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
@@ -846,12 +852,21 @@ class Api:
         if set(skipped) & {item.when for item in adjustments}:
             raise ValueError("an occurrence cannot be both skipped and overridden")
         signed = amount * category.sign()
+        planning_flow_raw = str(payload.get("planning_flow") or "").strip()
+        try:
+            planning_flow = (
+                PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
+            )
+        except ValueError:
+            raise ValueError("choose a valid planning purpose") from None
         change = ScenarioSchedule(
             name=name,
             recurrence=recurrence,
             splits=[
                 ScheduledSplit(category.handle, signed),
-                ScheduledSplit(funding.handle, -signed),
+                ScheduledSplit(
+                    funding.handle, -signed, planning_flow=planning_flow
+                ),
             ],
             source_schedule=source_handle,
             enabled=True,
@@ -965,6 +980,7 @@ class Api:
                 self.db, start, end, period=grouping, scenario=compare_scenario
             )
             compare_rows = {row.account: row for row in compare_report.categories}
+            compare_flows = {row.kind: row for row in compare_report.planning_flows}
             comparison = {
                 "handle": compare_identity,
                 "name": compare_name,
@@ -985,6 +1001,7 @@ class Api:
                     ),
                 },
                 "categories": [],
+                "planning_flows": [],
             }
             for row in report.categories:
                 other = compare_rows.get(row.account)
@@ -997,6 +1014,44 @@ class Api:
                 comparison["categories"].append(
                     {
                         "account": row.account,
+                        "planned": other_planned,
+                        "actual": other_actual,
+                        "variance": other_variance,
+                        "planned_delta": [
+                            value - alternate
+                            for value, alternate in zip(
+                                row.planned, other_planned, strict=True
+                            )
+                        ],
+                        "actual_delta": [
+                            value - alternate
+                            for value, alternate in zip(
+                                row.actual, other_actual, strict=True
+                            )
+                        ],
+                        "variance_delta": [
+                            (
+                                value - alternate
+                                if value is not None and alternate is not None
+                                else None
+                            )
+                            for value, alternate in zip(
+                                row.variance, other_variance, strict=True
+                            )
+                        ],
+                    }
+                )
+            for row in report.planning_flows:
+                other = compare_flows.get(row.kind)
+                zeroes = [Money(0) for _ in row.planned]
+                other_planned = other.planned if other is not None else zeroes
+                other_actual = other.actual if other is not None else zeroes
+                other_variance: list[Money | None] = (
+                    other.variance if other is not None else list(zeroes)
+                )
+                comparison["planning_flows"].append(
+                    {
+                        "kind": row.kind.value,
                         "planned": other_planned,
                         "actual": other_actual,
                         "variance": other_variance,
@@ -1069,6 +1124,16 @@ class Api:
                     "variance": row.variance,
                 }
                 for row in report.categories
+            ],
+            "planning_flows": [
+                {
+                    "kind": row.kind.value,
+                    "name": row.name,
+                    "planned": row.planned,
+                    "actual": row.actual,
+                    "variance": row.variance,
+                }
+                for row in report.planning_flows
             ],
         }
 
@@ -1718,10 +1783,17 @@ class Api:
         if existing is None or item.description == old_name:
             item.description = name
         signed = amount * category.sign()
+        planning_flow_raw = str(payload.get("planning_flow") or "").strip()
+        try:
+            planning_flow = (
+                PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
+            )
+        except ValueError:
+            raise ValueError("choose a valid planning purpose") from None
         item.recurrence = recurrence
         item.splits = [
             ScheduledSplit(category.handle, signed),
-            ScheduledSplit(funding.handle, -signed),
+            ScheduledSplit(funding.handle, -signed, planning_flow=planning_flow),
         ]
         item.placeholder = bool(payload.get("placeholder", False))
         item.amount_changes = amount_changes

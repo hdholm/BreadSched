@@ -499,7 +499,10 @@ Plan currently derives its category view primarily from Income and Expense accou
 splits. That remains correct for ordinary income and spending, but it does not fully
 express economically meaningful scheduled flows whose ledger destination or source
 is an Asset or Liability. Future planning work should add an explicit planning
-classification layer without changing the underlying double-entry splits.
+classification layer without changing the underlying double-entry splits. The first
+stage now stores an optional planning purpose on transaction/scheduled-transaction
+splits and reports classified retirement saving, benefit/FSA funding, debt principal,
+and retirement distributions in a separate Plan section.
 
 Examples include payroll contributions into 401(k) or other retirement assets, FSA
 elections/funding, loan and liability payments whose principal reduces debt while

@@ -23,13 +23,20 @@ from .scheduled import (
     ScheduledTransaction,
     scheduled_occurrence_preview,
 )
-from .transaction import PlanningResolution, ReconcileState, Split, Transaction, UnbalancedError
+from .transaction import (
+    PlanningFlowKind,
+    PlanningResolution,
+    ReconcileState,
+    Split,
+    Transaction,
+    UnbalancedError,
+)
 
 __all__ = [
     "Account", "AccountClass", "AccountType", "AssumptionPeriod", "Assumptions",
     "Budget", "BudgetLine",
     "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",
-    "PeriodType", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
+    "PeriodType", "PlanningFlowKind", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
     "ReconcileState", "Recurrence",
     "Scenario", "ScenarioSchedule", "ScheduledAmountChange", "ScheduledMonthAmount",
     "ScheduledOccurrenceAdjustment", "ScheduledSplit", "ScheduledTransaction", "Split",

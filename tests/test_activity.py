@@ -6,6 +6,7 @@ from breadsched.gen.engine import activity, planning
 from breadsched.gen.lib import (
     Money,
     PeriodType,
+    PlanningFlowKind,
     Recurrence,
     Scenario,
     ScenarioSchedule,
@@ -325,3 +326,121 @@ class TestCategoryPlanning:
         assert detail.planned == Money("100.00")
         assert detail.actual == Money(0)
         assert detail.variance is None
+
+
+class TestPlanningFlowClassification:
+    def test_classified_balance_sheet_splits_appear_in_plan(self, db, book):
+        contribution = ScheduledTransaction(
+            name="401k contribution",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-1000.00")),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("1000.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+            ],
+        )
+        with db.transaction("plan retirement contribution") as txn:
+            db.add_scheduled(contribution, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+
+        assert len(report.planning_flows) == 1
+        flow = report.planning_flows[0]
+        assert flow.kind is PlanningFlowKind.RETIREMENT_SAVING
+        assert flow.planned == [Money("1000.00")]
+        assert flow.actual == [Money(0)]
+        assert flow.variance == [Money("-1000.00")]
+
+    def test_instantiated_schedule_preserves_planning_flow_for_actuals(self, db, book):
+        contribution = ScheduledTransaction(
+            name="401k contribution",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-1000.00")),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("1000.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+            ],
+        )
+        actual = contribution.instantiate(date(2026, 1, 15))
+        with db.transaction("realize retirement contribution") as txn:
+            db.add_scheduled(contribution, txn)
+            db.add_transaction(actual, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+
+        flow = report.planning_flows[0]
+        assert flow.planned == [Money("1000.00")]
+        assert flow.actual == [Money("1000.00")]
+        assert flow.variance == [Money(0)]
+        stored = db.get_transaction(actual.handle)
+        assert stored is not None
+        assert stored.splits[1].planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+
+    def test_retirement_distribution_reverses_asset_sign_for_plan(self, db, book):
+        withdrawal = Transaction.simple(
+            date(2026, 1, 20),
+            "Retirement distribution",
+            book.checking,
+            book.brokerage,
+            "750.00",
+        )
+        withdrawal.splits[1].planning_flow = PlanningFlowKind.RETIREMENT_INCOME
+        with db.transaction("retirement income") as txn:
+            db.add_transaction(withdrawal, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+
+        flow = report.planning_flows[0]
+        assert flow.kind is PlanningFlowKind.RETIREMENT_INCOME
+        assert flow.actual == [Money("750.00")]
+
+    def test_matching_actual_inherits_planning_flow_classification(self, db, book):
+        contribution = ScheduledTransaction(
+            name="401k contribution",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-1000.00")),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("1000.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+            ],
+        )
+        with db.transaction("plan contribution") as txn:
+            db.add_scheduled(contribution, txn)
+        event = planning.event_by_key(
+            db, contribution.occurrence_key(date(2026, 1, 15))
+        )
+        assert event is not None
+        actual = Transaction.simple(
+            date(2026, 1, 15),
+            "401k actual",
+            book.brokerage,
+            book.salary,
+            "1000.00",
+        )
+        planning.actualize_transaction(actual, event)
+        with db.transaction("match contribution") as txn:
+            db.add_transaction(actual, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+
+        flow = report.planning_flows[0]
+        assert flow.planned == [Money("1000.00")]
+        assert flow.actual == [Money("1000.00")]
+        assert flow.variance == [Money(0)]

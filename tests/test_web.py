@@ -279,6 +279,7 @@ class TestItServes:
                 "placeholder": True,
                 "category": category["handle"],
                 "funding": funding["handle"],
+                "planning_flow": "benefit_funding",
                 "amount": "110.00",
                 "amount_changes": [
                     {"start": "2026-05-15", "amount": "125.00"},
@@ -305,6 +306,7 @@ class TestItServes:
         assert item["count"] == 6
         assert item["end"] is None
         assert item["weekend"] == "previous"
+        assert item["planning_flow"] == "benefit_funding"
         assert item["amount_changes"] == [
             {"start": "2026-05-15", "amount": "125.00"},
             {"start": "2026-07-15", "amount": "140.00"},
@@ -313,6 +315,14 @@ class TestItServes:
         assert item["occurrence_adjustments"] == [
             {"when": "2026-04-15", "amount": "150.00"}
         ]
+        _status, plan = client.get(
+            "/api/plan?from=2026-01&through=2026-12&period=month"
+        )
+        benefit = next(
+            row for row in plan["planning_flows"]
+            if row["kind"] == "benefit_funding"
+        )
+        assert Money(benefit["planned"][1]) == Money("-110.00")
 
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")
@@ -512,7 +522,8 @@ class TestPlanApi:
         status, payload = client.get("/api/plan")
         assert status == 200
         assert set(payload) == {
-            "controls", "periods", "summary", "comparison", "categories"
+            "controls", "periods", "summary", "comparison", "categories",
+            "planning_flows",
         }
         by_name = {row["full_name"]: row for row in payload["categories"]}
         assert "Income:Salary" in by_name
@@ -1069,6 +1080,7 @@ class TestScenarioEventWebParity:
                 "name": "Lower rent estimate",
                 "category": rent["handle"],
                 "funding": bank["handle"],
+                "planning_flow": "debt_principal",
                 "amount": "1500.00",
                 "frequency": "monthly",
                 "start": "2026-03-01",
@@ -1078,6 +1090,7 @@ class TestScenarioEventWebParity:
         assert len(saved["changes"]) == 1
         assert saved["changes"][0]["source_schedule"] is None
         assert saved["changes"][0]["amount"] == "1500.00"
+        assert saved["changes"][0]["planning_flow"] == "debt_principal"
 
     def test_scenario_estimate_can_skip_and_override_occurrences(
         self, scenario_event_client

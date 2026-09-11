@@ -19,7 +19,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.money import Money
 from ..lib.scenario import OneOff, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction
-from ..lib.transaction import PlanningResolution, Transaction
+from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
 
 __all__ = [
     "EventSource",
@@ -60,9 +60,16 @@ class PlannedSplit:
 
     account: str
     amount: Money
+    planning_flow: PlanningFlowKind | None = None
 
     def as_dict(self) -> dict[str, object]:
-        return {"account": self.account, "amount": self.amount}
+        return {
+            "account": self.account,
+            "amount": self.amount,
+            "planning_flow": (
+                self.planning_flow.value if self.planning_flow is not None else None
+            ),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,7 +169,10 @@ def _positive_total(splits: tuple[PlannedSplit, ...]) -> Money:
 
 
 def _transaction_splits(transaction: Transaction) -> tuple[PlannedSplit, ...]:
-    return tuple(PlannedSplit(split.account, split.value) for split in transaction.splits)
+    return tuple(
+        PlannedSplit(split.account, split.value, split.planning_flow)
+        for split in transaction.splits
+    )
 
 
 def _linked_actuals(db: DbSQLite) -> dict[str, Transaction]:
@@ -185,8 +195,10 @@ def _scheduled_event(
     actual: Transaction | None,
 ) -> PlannedEvent:
     expected = tuple(
-        PlannedSplit(account, amount)
-        for account, amount in schedule.resolved_splits(when=when)
+        PlannedSplit(account, amount, split.planning_flow)
+        for split, (account, amount) in zip(
+            schedule.splits, schedule.resolved_splits(when=when), strict=True
+        )
     )
     expected_amount = _positive_total(expected)
     if actual is None:
@@ -263,7 +275,10 @@ def _scenario_schedule_event(
     actual: Transaction | None,
 ) -> PlannedEvent:
     expected = tuple(
-        PlannedSplit(account, amount) for account, amount in schedule.resolved_splits(when)
+        PlannedSplit(account, amount, split.planning_flow)
+        for split, (account, amount) in zip(
+            schedule.splits, schedule.resolved_splits(when), strict=True
+        )
     )
     expected_amount = _positive_total(expected)
     key = schedule.occurrence_key(scenario.handle, when)
@@ -407,6 +422,14 @@ def actualize_transaction(transaction: Transaction, event: PlannedEvent) -> Tran
     transaction.planned_amount = event.expected_amount
     transaction.planning_resolution = PlanningResolution.MATCHED
     transaction.rejected_plan_occurrences.clear()
+    planned_flows = {
+        split.account: split.planning_flow
+        for split in event.expected_splits
+        if split.planning_flow is not None
+    }
+    for split in transaction.splits:
+        if split.planning_flow is None and split.account in planned_flows:
+            split.planning_flow = planned_flows[split.account]
     if event.source is EventSource.SCHEDULED:
         transaction.scheduled_from = event.source_handle
     return transaction

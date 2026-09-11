@@ -19,6 +19,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
     Money,
     PeriodType,
+    PlanningFlowKind,
     Recurrence,
     ScheduledAmountChange,
     ScheduledOccurrenceAdjustment,
@@ -47,6 +48,14 @@ _WEEKEND = [
     ("Leave on the day", WeekendAdjust.NONE),
     ("Move to the Friday before", WeekendAdjust.PREVIOUS),
     ("Move to the Monday after", WeekendAdjust.NEXT),
+]
+
+_PLANNING_FLOWS = [
+    ("Ordinary transfer", None),
+    ("Retirement saving", PlanningFlowKind.RETIREMENT_SAVING),
+    ("Benefit / FSA funding", PlanningFlowKind.BENEFIT_FUNDING),
+    ("Debt principal", PlanningFlowKind.DEBT_PRINCIPAL),
+    ("Retirement distribution", PlanningFlowKind.RETIREMENT_INCOME),
 ]
 
 
@@ -109,6 +118,13 @@ class ScheduleDialog(Gtk.Window):
             self.funding.set_selected(1)
         grid.attach(Gtk.Label(label="Paid from / into", xalign=0), 0, row, 1, 1)
         grid.attach(self.funding, 1, row, 1, 1)
+        row += 1
+
+        self.planning_flow = Gtk.DropDown.new_from_strings(
+            [label for label, _kind in _PLANNING_FLOWS]
+        )
+        grid.attach(Gtk.Label(label="Planning purpose", xalign=0), 0, row, 1, 1)
+        grid.attach(self.planning_flow, 1, row, 1, 1)
         row += 1
 
         self.amount_entry = Gtk.Entry(placeholder_text="0.00")
@@ -247,6 +263,17 @@ class ScheduleDialog(Gtk.Window):
                 )
                 self.category.set_selected(category_index)
                 self.funding.set_selected(funding_index)
+                planning_kind = other[1].planning_flow
+                self.planning_flow.set_selected(
+                    next(
+                        (
+                            index
+                            for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
+                            if kind is planning_kind
+                        ),
+                        0,
+                    )
+                )
                 amount = abs(flow_split.resolve(source.variables) * flow_account.sign())
                 self.amount_entry.set_text(str(amount.to_decimal()))
 
@@ -468,9 +495,14 @@ class ScheduleDialog(Gtk.Window):
         if self.source is None or schedule.description == old_name:
             schedule.description = schedule.name
         schedule.recurrence = recurrence
+        planning_kind = _PLANNING_FLOWS[self.planning_flow.get_selected()][1]
         schedule.splits = [
             ScheduledSplit(category.handle, amount * category.sign()),
-            ScheduledSplit(funding.handle, -(amount * category.sign())),
+            ScheduledSplit(
+                funding.handle,
+                -(amount * category.sign()),
+                planning_flow=planning_kind,
+            ),
         ]
         schedule.auto_create = self.auto_check.get_active()
         schedule.placeholder = self.kind.get_selected() == 1

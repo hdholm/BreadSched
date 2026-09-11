@@ -19,7 +19,7 @@ from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
-from ..lib.transaction import PlanningResolution, Transaction
+from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
 from .planning import (
     EventStatus,
     PlannedEvent,
@@ -37,6 +37,7 @@ __all__ = [
     "CategoryPeriodDetail",
     "CategoryPlannedDetail",
     "CategoryReport",
+    "PlanningFlowActivity",
     "PeriodActivity",
     "ReportingPeriod",
     "build_activity_report",
@@ -327,11 +328,23 @@ class CategoryPeriodDetail:
 
 
 @dataclass(slots=True)
+class PlanningFlowActivity:
+    """One economically meaningful balance-sheet flow across display periods."""
+
+    kind: PlanningFlowKind
+    name: str
+    planned: list[Money]
+    actual: list[Money]
+    variance: list[Money | None]
+
+
+@dataclass(slots=True)
 class CategoryReport:
-    """Income/expense hierarchy derived from exact-dated events and actuals."""
+    """Income/expense hierarchy plus classified balance-sheet planning flows."""
 
     activity: ActivityReport
     categories: list[CategoryActivity]
+    planning_flows: list[PlanningFlowActivity]
     as_of: date
 
     @property
@@ -672,13 +685,26 @@ def build_category_report(
     periods = activity.periods
     direct_planned: dict[str, list[Money]] = {}
     direct_actual: dict[str, list[Money]] = {}
+    flow_planned: dict[PlanningFlowKind, list[Money]] = {}
+    flow_actual: dict[PlanningFlowKind, list[Money]] = {}
 
     def amounts(store: dict[str, list[Money]], handle: str) -> list[Money]:
         return store.setdefault(handle, [Money(0) for _ in periods])
 
+    def flow_amounts(
+        store: dict[PlanningFlowKind, list[Money]], kind: PlanningFlowKind
+    ) -> list[Money]:
+        return store.setdefault(kind, [Money(0) for _ in periods])
+
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
             for planned_split in event.expected_splits:
+                if planned_split.planning_flow is not None:
+                    values = flow_amounts(flow_planned, planned_split.planning_flow)
+                    values[period_index] = (
+                        values[period_index]
+                        + planned_split.planning_flow.plan_amount(planned_split.amount)
+                    )
                 account = accounts.get(planned_split.account)
                 if account is None:
                     continue
@@ -692,6 +718,12 @@ def build_category_report(
             if transaction is None:
                 continue
             for actual_split in transaction.splits:
+                if actual_split.planning_flow is not None:
+                    values = flow_amounts(flow_actual, actual_split.planning_flow)
+                    values[period_index] = (
+                        values[period_index]
+                        + actual_split.planning_flow.plan_amount(actual_split.value)
+                    )
                 account = accounts.get(actual_split.account)
                 if account is None:
                     continue
@@ -760,6 +792,30 @@ def build_category_report(
             )
         )
     rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
+    flow_rows: list[PlanningFlowActivity] = []
+    active_flows = set(flow_planned) | set(flow_actual)
+    for kind in PlanningFlowKind:
+        if kind not in active_flows:
+            continue
+        planned_values = flow_planned.get(kind, [Money(0) for _ in periods])
+        actual_values = flow_actual.get(kind, [Money(0) for _ in periods])
+        flow_rows.append(
+            PlanningFlowActivity(
+                kind=kind,
+                name=kind.label,
+                planned=list(planned_values),
+                actual=list(actual_values),
+                variance=[
+                    actual - planned if bucket.start <= effective_as_of else None
+                    for planned, actual, bucket in zip(
+                        planned_values, actual_values, periods, strict=True
+                    )
+                ],
+            )
+        )
     return CategoryReport(
-        activity=activity, categories=rows, as_of=effective_as_of
+        activity=activity,
+        categories=rows,
+        planning_flows=flow_rows,
+        as_of=effective_as_of,
     )

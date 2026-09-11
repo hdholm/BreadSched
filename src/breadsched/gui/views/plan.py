@@ -579,6 +579,32 @@ class PlanView(BaseView):
                     self.grid.attach(button, col, row_index, 1, 1)
                 row_index += 1
 
+        if self._report.planning_flows:
+            section = Gtk.Label(label="Planning flows", xalign=0)
+            section.add_css_class("heading")
+            self.grid.attach(section, 0, row_index, 1, 1)
+            row_index += 1
+            for flow in self._report.planning_flows:
+                name = Gtk.Label(label=flow.name, xalign=0)
+                name.set_tooltip_text(
+                    "Economically meaningful balance-sheet movement"
+                )
+                self.grid.attach(name, 0, row_index, 1, 1)
+                values = (flow.planned, flow.actual, flow.variance)[
+                    self._measure_index
+                ]
+                for col, value in enumerate(values, 1):
+                    label = Gtk.Label(
+                        label=(
+                            value.format(parens_negative=True)
+                            if value is not None
+                            else "—"
+                        ),
+                        xalign=1,
+                    )
+                    self.grid.attach(label, col, row_index, 1, 1)
+                row_index += 1
+
     def _on_plan_cell_clicked(self, _button, category, period) -> None:
         if self.db is None:
             return
