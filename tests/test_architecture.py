@@ -76,7 +76,7 @@ class TestLayering:
             "__future__", "abc", "argparse", "ast", "bisect", "calendar", "configparser", "csv",
             "dataclasses",
             "datetime", "decimal", "enum", "gzip", "json", "logging", "math",
-            "numbers", "operator", "pathlib", "sqlite3", "sys", "time", "typing",
+            "numbers", "operator", "pathlib", "sqlite3", "statistics", "sys", "time", "typing",
             "uuid", "weakref", "xml", "breadsched", "IO", "collections", "functools",
             "inspect", "itertools", "os", "re", "shutil", "tempfile", "textwrap", "threading",
         }
