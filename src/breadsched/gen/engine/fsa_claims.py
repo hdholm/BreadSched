@@ -153,8 +153,8 @@ def claim_summary(
         if account is None:
             raise ValueError("claim allocation account no longer exists")
         year = _allocation_year(db, allocation)
-        status = fsa.year_status(db, account, year, as_of=when)
-        available = available + status.remaining
+        year_status = fsa.year_status(db, account, year, as_of=when)
+        available = available + year_status.remaining
         reimbursed = reimbursed + _sum_links(db, allocation.reimbursements)
         if allocation.target is not None:
             has_targets = True
