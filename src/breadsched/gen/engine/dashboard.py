@@ -358,10 +358,6 @@ class Dashboard:
     income_per_month: Money = field(default_factory=lambda: Money(0))
     next_income: date | None = None
     liquid: Money = field(default_factory=lambda: Money(0))
-    #: The budget these bills were drawn from, so the view can say which plan it
-    #: is showing rather than implying there is only one.
-    budget_name: str | None = None
-
     # -------------------------------------------------------------- aggregates
 
     def group(self, name: str) -> GroupResult | None:
@@ -475,7 +471,6 @@ class Dashboard:
             "annual_outgoings": self.annual_outgoings,
             "income_per_month": self.income_per_month,
             "next_income": self.next_income,
-            "budget": self.budget_name,
             "bills": len(self.bills),
         }
 
@@ -500,13 +495,7 @@ def build(
             board.groups.append(result)
 
     board.liquid = _liquid_total(db, config, today)
-    from . import budgeting
-
-    budget = budgeting.current_budget(db)
-    board.budget_name = budget.name if budget else None
-    bills, income_per_month, next_income = _bills_and_income(
-        db, today, horizon_days, budget.handle if budget else None
-    )
+    bills, income_per_month, next_income = _bills_and_income(db, today, horizon_days)
     board.bills = bills
     board.income_per_month = income_per_month
     board.next_income = next_income
@@ -680,7 +669,6 @@ def _bills_and_income(
     db: DbSQLite,
     today: date,
     horizon_days: int,
-    budget_handle: str | None = None,
 ) -> tuple[list[BillRow], Money, date | None]:
     """Split the schedules into outflows and income, normalising both.
 
@@ -695,7 +683,7 @@ def _bills_and_income(
     next_income: date | None = None
 
     for sched in db.iter_scheduled():
-        if not sched.enabled or not sched.in_budget(budget_handle):
+        if not sched.enabled:
             continue
         upcoming = sched.recurrence.occurrences(horizon, since=today)
         when = upcoming[0] if upcoming else sched.recurrence.next_after(today)

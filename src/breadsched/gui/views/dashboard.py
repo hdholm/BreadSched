@@ -43,15 +43,10 @@ class DashboardView(BaseView):
         for side in ("top", "bottom", "start", "end"):
             getattr(bar, f"set_margin_{side}")(8)
 
-        self.budget_label = Gtk.Label(xalign=0)
-        self.budget_label.add_css_class("dim")
-
         title = Gtk.Label(label="Dashboard", xalign=0)
         title.add_css_class("category-title")
-        title.set_hexpand(False)
+        title.set_hexpand(True)
         bar.append(title)
-        self.budget_label.set_hexpand(True)
-        bar.append(self.budget_label)
 
         bar.append(Gtk.Label(label="Liquid for"))
         self.liquidity_spin = Gtk.SpinButton.new_with_range(7, 365, 1)
@@ -196,10 +191,6 @@ class DashboardView(BaseView):
             self._updating = False
 
         self.board = engine.build(self.db, self.config)
-        self.budget_label.set_text(
-            f"following budget: {self.board.budget_name}"
-            if self.board.budget_name else "no budget selected"
-        )
         self._render_cards()
         self._render_groups()
         self._render_fsa()

@@ -2192,13 +2192,15 @@ class TestDashboardBillsLinkToSchedules:
         view._on_bill_activated(view.bills_view, 0)
         assert window.stack.get_visible_child_name() == "scheduled"
 
-    def test_the_dashboard_names_the_budget_it_follows(
+    def test_the_dashboard_uses_plan_schedules_without_a_budget_selector(
         self, app, window, populated_book
     ):
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        assert "budget" in view.budget_label.get_text()
+        assert not hasattr(view, "budget_label")
+        assert view.board is not None
+        assert view.board.bills
 
 
 class TestAccountDialogConstruction:

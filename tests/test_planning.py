@@ -835,6 +835,81 @@ class TestHistoricalEstimateProposals:
         assert saved.amount(when=date(2026, 4, 10)) == Money("100.00")
         assert saved.amount(when=date(2026, 7, 10)) == Money("240.00")
 
+    def test_accepted_base_estimate_is_subtracted_on_reanalysis(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        with db.transaction("History") as txn:
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 5),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        "25",
+                    ),
+                    txn,
+                )
+
+        first = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.groceries
+        )
+        assert first.amount == Money("25.00")
+        estimates.accept_historical_estimate(db, first)
+
+        second = estimates.propose_historical_estimates(
+            db, as_of=date(2026, 4, 20), months=3
+        )
+        assert all(item.category != book.groceries for item in second)
+
+    def test_accepted_scenario_estimate_is_subtracted_only_in_that_scenario(
+        self, db, book
+    ):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Scenario, Transaction
+
+        with db.transaction("History and scenario") as txn:
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 5),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        "25",
+                    ),
+                    txn,
+                )
+            scenario = Scenario(name="Alternative")
+            db.add_scenario(scenario, txn)
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.groceries
+        )
+        estimates.accept_historical_estimate(
+            db, proposal, scenario_handle=scenario.handle
+        )
+
+        base = estimates.propose_historical_estimates(
+            db, as_of=date(2026, 4, 20), months=3
+        )
+        alternate = estimates.propose_historical_estimates(
+            db, as_of=date(2026, 4, 20), months=3, scenario_handle=scenario.handle
+        )
+        assert next(item for item in base if item.category == book.groceries).amount == Money(
+            "25.00"
+        )
+        assert all(item.category != book.groceries for item in alternate)
+
     def test_accepts_proposal_into_base_as_estimate(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import Transaction

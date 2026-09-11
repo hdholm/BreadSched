@@ -112,8 +112,11 @@ def _scheduled_category_totals(
     end: date,
     scenario_handle: str | None,
 ) -> dict[tuple[str, date], Money]:
+    """Historical committed activity, excluding planning-only estimates."""
     totals: dict[tuple[str, date], Money] = {}
     for event in _target_events(db, start, end, scenario_handle):
+        if event.placeholder:
+            continue
         month = _month_start(event.planned_date)
         for split in event.expected_splits:
             account = db.get_account(split.account)
@@ -122,6 +125,35 @@ def _scheduled_category_totals(
             ):
                 continue
             key = (account.handle, month)
+            totals[key] = totals.get(key, Money(0)) + split.amount * account.sign()
+    return totals
+
+
+def _planned_estimate_profiles(
+    db: DbSQLite,
+    start: date,
+    scenario_handle: str | None,
+) -> dict[tuple[str, int], Money]:
+    """Expected estimate amount by category and month-of-year.
+
+    Historical suggestions create schedules beginning in the current planning
+    period.  Looking only for occurrences inside the historical sample therefore
+    forgets an estimate immediately after it is accepted.  Instead, sample the
+    next twelve planning months and use that future plan as the amount already
+    accounted for when re-analysing history.
+    """
+    end = _add_months(start, 12) - timedelta(days=1)
+    totals: dict[tuple[str, int], Money] = {}
+    for event in _target_events(db, start, end, scenario_handle):
+        if not event.placeholder:
+            continue
+        for split in event.expected_splits:
+            account = db.get_account(split.account)
+            if account is None or account.account_class not in (
+                AccountClass.INCOME, AccountClass.EXPENSE
+            ):
+                continue
+            key = (account.handle, event.planned_date.month)
             totals[key] = totals.get(key, Money(0)) + split.amount * account.sign()
     return totals
 
@@ -258,6 +290,7 @@ def propose_historical_estimates(
     scheduled_totals = _scheduled_category_totals(
         db, history_start, history_end, scenario_handle
     )
+    estimate_profiles = _planned_estimate_profiles(db, current_month, scenario_handle)
 
     for account in db.iter_accounts():
         if account.is_root or account.placeholder:
@@ -279,6 +312,9 @@ def propose_historical_estimates(
                     total = total + value
                     txn_count += 1
             scheduled = scheduled_totals.get((account.handle, start), Money(0))
+            scheduled = scheduled + estimate_profiles.get(
+                (account.handle, start.month), Money(0)
+            )
             residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
             applied_scheduled_total = applied_scheduled_total + applied_scheduled
             if residual:

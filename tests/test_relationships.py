@@ -357,7 +357,9 @@ class TestMultipleBudgets:
         finally:
             db.close()
 
-    def test_the_dashboard_follows_the_current_budget(self, budgeted, capsys):
+    def test_the_dashboard_uses_the_plan_not_legacy_budget_selection(
+        self, budgeted, capsys
+    ):
         from breadsched.gen.engine import dashboard
 
         cli(["budget-clone", str(budgeted), "Base", "Tighter"])
@@ -369,8 +371,8 @@ class TestMultipleBudgets:
         db = open_book(budgeted)
         try:
             board = dashboard.build(db, as_of=date(2026, 6, 1))
-            assert board.budget_name == "Tighter"
-            assert "Groceries" not in [bill.name for bill in board.bills]
+            assert "Groceries" in [bill.name for bill in board.bills]
+            assert "budget" not in board.summary()
         finally:
             db.close()
 
