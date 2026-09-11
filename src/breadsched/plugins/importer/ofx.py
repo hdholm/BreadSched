@@ -9,11 +9,11 @@ legacy files still downloaded from many financial institutions.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-import re
 from uuid import NAMESPACE_URL, uuid5
 
 from ...gen.db.sqlite import DbSQLite

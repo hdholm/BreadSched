@@ -570,17 +570,18 @@ def explain_planning_flow_period(
             if value == Money(0):
                 continue
             actual_total = actual_total + value
-            expected: Money | None = None
+            matched_expected: Money | None = None
             if actual.planned_occurrence:
                 matched = event_by_key(db, actual.planned_occurrence)
                 if matched is not None:
-                    expected = flow_amount(matched.expected_splits)
+                    matched_expected = flow_amount(matched.expected_splits)
             actual_rows.append(CategoryActualDetail(
                 transaction=actual.transaction, post_date=actual.post_date,
                 description=actual.description, amount=value,
                 resolution=actual.planning_resolution,
                 planned_occurrence=actual.planned_occurrence, planned_for=actual.planned_for,
-                expected=expected, variance=value - expected if expected is not None else None,
+                expected=matched_expected,
+                variance=value - matched_expected if matched_expected is not None else None,
                 date_variance_days=actual.date_variance_days,
             ))
 
