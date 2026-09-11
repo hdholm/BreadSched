@@ -286,8 +286,11 @@ async function showScheduled() {
     el("td", {}, s.name),
     el("td", { class: "muted" }, s.frequency),
     el("td", { class: "num" }, money(s.amount)),
-    el("td", { class: "muted" }, s.placeholder ? "budget only" : (s.auto ? "automatic" : "manual")),
-    el("td", { class: "muted" }, s.enabled ? "enabled" : "disabled")));
+    el("td", { class: "muted" }, s.placeholder ? "estimate" : (s.auto ? "automatic" : "manual")),
+    el("td", { class: "muted" }, s.enabled ? "enabled" : "disabled"),
+    el("td", {}, s.simple ? el("button", {
+      class: "action", type: "button", onclick: () => openScheduledEditor(data, s),
+    }, "Edit…") : el("span", { class: "muted" }, "Complex"))));
 
   const upcoming = data.upcoming.map((o) => el("tr", {},
     el("td", {}, o.date), el("td", {}, o.name),
@@ -295,6 +298,8 @@ async function showScheduled() {
 
   return el("div", {},
     el("div", { class: "toolbar" },
+      el("button", { class: "action", type: "button",
+        onclick: () => openScheduledEditor(data, null) }, "New scheduled…"),
       el("button", {
         class: "action primary",
         onclick: async () => {
@@ -306,12 +311,61 @@ async function showScheduled() {
         },
       }, "Post due transactions")),
     el("p", { class: "note" },
-      "Placeholder schedules describe budget expectations and are never posted."),
+      "Estimates shape Plan and Projection but are never posted. Complex/formula schedules remain read-only here."),
     el("h3", {}, "Upcoming"),
     table(["Due", "Schedule", { label: "Amount", num: true }], upcoming),
     el("h3", {}, "Definitions"),
-    table(["Name", "Frequency", { label: "Amount", num: true }, "Posting", "State"],
+    table(["Name", "Frequency", { label: "Amount", num: true }, "Posting", "State", ""],
       definitions));
+}
+
+function openScheduledEditor(data, source) {
+  const flowAccounts = data.accounts.filter((a) => a.class === "income" || a.class === "expense");
+  const accounts = data.accounts;
+  const backdrop = el("div", { class: "detail-backdrop" });
+  const form = el("form", { class: "entry" });
+  const field = (label, control) => el("label", {}, label, control);
+  const select = (name, items, value) => el("select", { name }, items.map(([key, label]) =>
+    el("option", { value: key, selected: key === value ? "selected" : null }, label)));
+  const today = new Date().toISOString().slice(0, 10);
+  const category = select("category", flowAccounts.map((a) => [a.handle, a.name]), source?.category || flowAccounts[0]?.handle);
+  const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
+  const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
+    ["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],
+    ["semiannual","Twice a year"],["annual","Yearly"],["once","One off"]], source?.frequency_key || "monthly");
+  const weekend = select("weekend", [["none","Leave on the day"],["previous","Friday before"],["next","Monday after"]], source?.weekend || "none");
+  form.append(
+    field("Name", el("input", { name:"name", value:source?.name || "", required:"required" })),
+    field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]], source?.placeholder ? "estimate" : "commitment")),
+    field("Category", category), field("Paid from / into", funding),
+    field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
+    field("Frequency", frequency),
+    field("First due", el("input", { name:"start", type:"date", value:source?.start || today, required:"required" })),
+    field("End date", el("input", { name:"end", type:"date", value:source?.end || "" })),
+    field("Occurrences", el("input", { name:"count", type:"number", min:"1", value:source?.count || "" })),
+    field("Weekend", weekend),
+    field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]], source?.auto ? "automatic" : "manual")));
+  form.append(el("div", { class:"toolbar" },
+    el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
+    el("button", { class:"action primary", type:"submit" }, "Save")));
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(form).entries());
+    try {
+      await post("/api/scheduled/save", {
+        handle: source?.handle || null, name: values.name,
+        placeholder: values.kind === "estimate", category: values.category, funding: values.funding,
+        amount: values.amount, frequency: values.frequency, start: values.start,
+        end: values.end || null, count: values.count || null, weekend: values.weekend,
+        auto: values.posting === "automatic" && values.kind !== "estimate",
+      });
+      backdrop.remove(); say(source ? "Scheduled transaction updated." : "Scheduled transaction added."); render();
+    } catch (error) { say(error.message, "error"); }
+  });
+  backdrop.append(el("section", { class:"detail-dialog" },
+    el("div", { class:"detail-heading" }, el("h2", {}, source ? "Edit scheduled transaction" : "New scheduled transaction")),
+    el("p", { class:"note" }, "Simple two-split schedules only. Use one bound: an end date or an occurrence count."), form));
+  document.body.append(backdrop);
 }
 
 async function showPlan() {

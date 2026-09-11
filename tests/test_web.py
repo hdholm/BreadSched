@@ -190,7 +190,56 @@ class TestItServes:
     def test_scheduled_transactions_are_listed(self, client):
         status, payload = client.get("/api/scheduled")
         assert status == 200
-        assert set(payload) == {"definitions", "upcoming"}
+        assert set(payload) == {"definitions", "accounts", "upcoming"}
+
+    def test_simple_scheduled_transaction_can_be_created_and_edited(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        status, created = client.post(
+            "/api/scheduled/save",
+            {
+                "name": "Internet",
+                "placeholder": False,
+                "category": category["handle"],
+                "funding": funding["handle"],
+                "amount": "95.00",
+                "frequency": "monthly",
+                "start": "2026-02-15",
+                "end": "2026-12-31",
+                "weekend": "next",
+                "auto": False,
+            },
+        )
+        assert status == 200
+        handle = created["handle"]
+
+        status, _updated = client.post(
+            "/api/scheduled/save",
+            {
+                "handle": handle,
+                "name": "Internet service",
+                "placeholder": True,
+                "category": category["handle"],
+                "funding": funding["handle"],
+                "amount": "110.00",
+                "frequency": "monthly",
+                "start": "2026-02-15",
+                "count": "6",
+                "weekend": "previous",
+                "auto": True,
+            },
+        )
+        assert status == 200
+        _status, refreshed = client.get("/api/scheduled")
+        item = next(row for row in refreshed["definitions"] if row["handle"] == handle)
+        assert item["name"] == "Internet service"
+        assert Money(item["amount"]) == Money("110.00")
+        assert item["placeholder"] is True
+        assert item["auto"] is False
+        assert item["count"] == 6
+        assert item["end"] is None
+        assert item["weekend"] == "previous"
 
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")

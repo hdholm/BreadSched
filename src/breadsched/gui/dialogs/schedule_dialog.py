@@ -49,11 +49,21 @@ _WEEKEND = [
 class ScheduleDialog(Gtk.Window):
     """Enter a recurring transaction."""
 
-    def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
+    def __init__(
+        self,
+        parent: Gtk.Window | None,
+        db: DbSQLite,
+        source: ScheduledTransaction | None = None,
+    ) -> None:
         super().__init__(
-            title="New scheduled transaction", transient_for=parent, modal=True
+            title=(
+                "Edit scheduled transaction" if source else "New scheduled transaction"
+            ),
+            transient_for=parent,
+            modal=True,
         )
         self.db = db
+        self.source = source
         self.set_default_size(560, 520)
         self._accounts = sorted(
             (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
@@ -168,7 +178,66 @@ class ScheduleDialog(Gtk.Window):
         buttons.append(self.save_button)
         box.append(buttons)
 
+        if source is not None:
+            self._load_source(source)
         self._validate()
+
+    def _load_source(self, source: ScheduledTransaction) -> None:
+        """Populate the simple editor from an existing two-split schedule."""
+        self.name_entry.set_text(source.name)
+        self.kind.set_selected(1 if source.placeholder else 0)
+        parts = []
+        for split in source.splits:
+            account = self.db.get_account(split.account)
+            if account is None or split.formula:
+                continue
+            parts.append((account, split))
+        flow = next(
+            (
+                item
+                for item in parts
+                if item[0].account_class.value in {"income", "expense"}
+            ),
+            None,
+        )
+        if flow is not None:
+            other = next((item for item in parts if item is not flow), None)
+            if other is not None:
+                flow_account, flow_split = flow
+                category_index = next(
+                    index
+                    for index, account in enumerate(self._accounts)
+                    if account.handle == flow_account.handle
+                )
+                funding_index = next(
+                    index
+                    for index, account in enumerate(self._accounts)
+                    if account.handle == other[0].handle
+                )
+                self.category.set_selected(category_index)
+                self.funding.set_selected(funding_index)
+                amount = abs(flow_split.resolve(source.variables) * flow_account.sign())
+                self.amount_entry.set_text(str(amount.to_decimal()))
+
+        for index, (_label, period, interval) in enumerate(_FREQUENCIES):
+            if (
+                source.recurrence.period is period
+                and source.recurrence.interval == interval
+            ):
+                self.frequency.set_selected(index)
+                break
+        self.start_entry.set_text(source.recurrence.start.isoformat())
+        if source.recurrence.end is not None:
+            self.ends.set_selected(1)
+            self.end_entry.set_text(source.recurrence.end.isoformat())
+        elif source.recurrence.count is not None:
+            self.ends.set_selected(2)
+            self.count_entry.set_text(str(source.recurrence.count))
+        for index, (_label, adjustment) in enumerate(_WEEKEND):
+            if source.recurrence.weekend_adjust is adjustment:
+                self.weekend.set_selected(index)
+                break
+        self.auto_check.set_active(source.auto_create)
 
     # ------------------------------------------------------------- validation
 
@@ -256,20 +325,29 @@ class ScheduleDialog(Gtk.Window):
         recurrence = self._recurrence()
         assert recurrence is not None
 
-        schedule = ScheduledTransaction(
-            name=self.name_entry.get_text().strip(),
-            recurrence=recurrence,
-            splits=[
-                ScheduledSplit(category.handle, amount * category.sign()),
-                ScheduledSplit(funding.handle, -(amount * category.sign())),
-            ],
-            auto_create=self.auto_check.get_active(),
-        )
+        if self.source is None:
+            schedule = ScheduledTransaction()
+        else:
+            schedule = ScheduledTransaction.from_dict(self.source.serialize())
+        old_name = schedule.name
+        schedule.name = self.name_entry.get_text().strip()
+        if self.source is None or schedule.description == old_name:
+            schedule.description = schedule.name
+        schedule.recurrence = recurrence
+        schedule.splits = [
+            ScheduledSplit(category.handle, amount * category.sign()),
+            ScheduledSplit(funding.handle, -(amount * category.sign())),
+        ]
+        schedule.auto_create = self.auto_check.get_active()
         schedule.placeholder = self.kind.get_selected() == 1
         return schedule
 
     def _on_save(self, _button) -> None:
         schedule = self.build()
-        with self.db.transaction(f"Add scheduled {schedule.name}") as txn:
-            self.db.add_scheduled(schedule, txn)
+        action = "Update" if self.source is not None else "Add"
+        with self.db.transaction(f"{action} scheduled {schedule.name}") as txn:
+            if self.source is None:
+                self.db.add_scheduled(schedule, txn)
+            else:
+                self.db.commit_scheduled(schedule, txn)
         self.close()

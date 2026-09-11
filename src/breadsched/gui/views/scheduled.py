@@ -17,6 +17,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from ...gen.engine import schedule
+from ...gen.lib import PeriodType
 from ...gen.lib.money import Money
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap
@@ -88,6 +89,14 @@ class ScheduledView(BaseView):
         new_button.set_tooltip_text("Create a scheduled transaction or an estimate")
         new_button.connect("clicked", self._on_new_clicked)
         bar.append(new_button)
+
+        self.edit_button = Gtk.Button(label="Edit…")
+        self.edit_button.set_tooltip_text(
+            "Edit the selected simple scheduled transaction"
+        )
+        self.edit_button.set_sensitive(False)
+        self.edit_button.connect("clicked", self._on_edit_clicked)
+        bar.append(self.edit_button)
 
         loan_button = Gtk.Button(label="New loan…")
         loan_button.set_tooltip_text("Set up a loan with calculated interest")
@@ -246,6 +255,51 @@ class ScheduledView(BaseView):
             if tree_row is None or tree_row.get_depth() != 0:
                 continue
             tree_row.set_expanded(index == position)
+        selected = selection.get_selected_item()
+        payload = unwrap(selected) if selected is not None else None
+        self.edit_button.set_sensitive(self._simple_editable(payload))
+
+    def _simple_editable(self, sched) -> bool:
+        if sched is None or _is_split(sched) or len(getattr(sched, "splits", [])) != 2:
+            return False
+        if any(split.formula for split in sched.splits):
+            return False
+        supported = {
+            (PeriodType.WEEK, 1),
+            (PeriodType.WEEK, 2),
+            (PeriodType.SEMI_MONTH, 1),
+            (PeriodType.MONTH, 1),
+            (PeriodType.MONTH, 3),
+            (PeriodType.MONTH, 6),
+            (PeriodType.YEAR, 1),
+            (PeriodType.ONCE, 1),
+        }
+        if (sched.recurrence.period, sched.recurrence.interval) not in supported:
+            return False
+        classes = []
+        for split in sched.splits:
+            account = (
+                self.db.get_account(split.account) if self.db is not None else None
+            )
+            classes.append(account.account_class.value if account is not None else "")
+        return sum(value in {"income", "expense"} for value in classes) == 1
+
+    def _on_edit_clicked(self, _button) -> None:
+        if self.db is None:
+            return
+        selection = self.definitions_view.get_model()
+        selected = selection.get_selected_item() if selection is not None else None
+        sched = unwrap(selected) if selected is not None else None
+        if not self._simple_editable(sched):
+            self.status.set_text(
+                "Complex and formula schedules are not editable in the simple editor."
+            )
+            return
+        from ..dialogs.schedule_dialog import ScheduleDialog
+
+        dialog = ScheduleDialog(self.get_root(), self.db, source=sched)
+        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.present()
 
     def _on_new_clicked(self, _button) -> None:
         if self.db is None:

@@ -44,6 +44,7 @@ from ..gen.lib import (
     Scenario,
     ScenarioSchedule,
     ScheduledSplit,
+    ScheduledTransaction,
     Split,
     Transaction,
     WeekendAdjust,
@@ -192,18 +193,50 @@ class Api:
 
     def scheduled(self, days: int = 60) -> dict:
         occurrences = schedule.due_occurrences(self.db, horizon_days=days)
-        return {
-            "definitions": [
+        accounts = sorted(
+            (
+                account
+                for account in self.db.iter_accounts()
+                if not account.is_root and not account.placeholder
+            ),
+            key=self.db.full_name,
+        )
+        definitions = []
+        for item in self.db.iter_scheduled():
+            simple = self._simple_schedule_parts(item)
+            frequency = self._frequency_key(item.recurrence)
+            definitions.append(
                 {
-                    "handle": s.handle,
-                    "name": s.name,
-                    "frequency": s.recurrence.describe(),
-                    "amount": s.amount(),
-                    "enabled": s.enabled,
-                    "placeholder": s.placeholder,
-                    "auto": s.auto_create,
+                    "handle": item.handle,
+                    "name": item.name,
+                    "frequency": item.recurrence.describe(),
+                    "frequency_key": frequency,
+                    "amount": item.amount(),
+                    "enabled": item.enabled,
+                    "placeholder": item.placeholder,
+                    "auto": item.auto_create,
+                    "simple": simple is not None and frequency is not None,
+                    "category": simple["category"] if simple else None,
+                    "funding": simple["funding"] if simple else None,
+                    "start": item.recurrence.start.isoformat(),
+                    "end": (
+                        item.recurrence.end.isoformat()
+                        if item.recurrence.end is not None
+                        else None
+                    ),
+                    "count": item.recurrence.count,
+                    "weekend": self._weekend_key(item.recurrence.weekend_adjust),
                 }
-                for s in self.db.iter_scheduled()
+            )
+        return {
+            "definitions": definitions,
+            "accounts": [
+                {
+                    "handle": account.handle,
+                    "name": self.db.full_name(account),
+                    "class": account.account_class.value,
+                }
+                for account in accounts
             ],
             "upcoming": [
                 {"date": o.when, "name": o.name, "amount": o.amount}
@@ -1328,6 +1361,113 @@ class Api:
             "resolution": transaction.planning_resolution.value,
         }
 
+    def scheduled_save(self, payload: dict) -> dict:
+        """Create or update a simple two-split baseline schedule."""
+        handle = str(payload.get("handle") or "").strip()
+        existing = self.db.get_scheduled(handle) if handle else None
+        if handle and existing is None:
+            raise KeyError(handle)
+        if existing is not None and (
+            self._simple_schedule_parts(existing) is None
+            or self._frequency_key(existing.recurrence) is None
+        ):
+            raise ValueError("complex schedules cannot be edited in the simple editor")
+
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("schedule name is required")
+        category_handle = str(payload.get("category") or "").strip()
+        funding_handle = str(payload.get("funding") or "").strip()
+        if (
+            not category_handle
+            or not funding_handle
+            or category_handle == funding_handle
+        ):
+            raise ValueError("choose two different accounts")
+        category = self.db.get_account(category_handle)
+        funding = self.db.get_account(funding_handle)
+        if category is None or funding is None:
+            raise ValueError("scheduled account no longer exists")
+        if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
+            raise ValueError("category must be an income or expense account")
+
+        try:
+            amount = Money(str(payload.get("amount") or "0"))
+        except (ValueError, ArithmeticError) as exc:
+            raise ValueError("amount must be a valid number") from exc
+        if amount <= 0:
+            raise ValueError("amount must be greater than zero")
+        frequency = str(payload.get("frequency") or "monthly")
+        if frequency not in self._SCENARIO_FREQUENCIES:
+            raise ValueError("unsupported schedule frequency")
+        period, interval = self._SCENARIO_FREQUENCIES[frequency]
+        try:
+            start = date.fromisoformat(str(payload.get("start") or ""))
+        except ValueError as exc:
+            raise ValueError("first due date is invalid") from exc
+        end = None
+        raw_end = str(payload.get("end") or "").strip()
+        if raw_end:
+            try:
+                end = date.fromisoformat(raw_end)
+            except ValueError as exc:
+                raise ValueError("end date is invalid") from exc
+            if end < start:
+                raise ValueError("end date cannot precede first due date")
+        count = None
+        raw_count = payload.get("count")
+        if raw_count not in (None, ""):
+            try:
+                count = int(raw_count)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("occurrence count must be a whole number") from exc
+            if count < 1:
+                raise ValueError("occurrence count must be positive")
+        if end is not None and count is not None:
+            raise ValueError("choose an end date or occurrence count, not both")
+        if period is PeriodType.ONCE:
+            end = None
+            count = None
+        weekend_key = str(payload.get("weekend") or "none")
+        if weekend_key not in self._SCENARIO_WEEKENDS:
+            raise ValueError("unsupported weekend adjustment")
+        recurrence = Recurrence(
+            period=period,
+            interval=interval,
+            start=start,
+            end=end,
+            count=count,
+            weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
+        )
+
+        item = (
+            ScheduledTransaction.from_dict(existing.serialize())
+            if existing is not None
+            else ScheduledTransaction()
+        )
+        old_name = item.name
+        item.name = name
+        if existing is None or item.description == old_name:
+            item.description = name
+        signed = amount * category.sign()
+        item.recurrence = recurrence
+        item.splits = [
+            ScheduledSplit(category.handle, signed),
+            ScheduledSplit(funding.handle, -signed),
+        ]
+        item.placeholder = bool(payload.get("placeholder", False))
+        item.auto_create = bool(payload.get("auto", False))
+        if item.placeholder:
+            item.auto_create = False
+
+        action = "Update" if existing is not None else "Add"
+        with self.db.transaction(f"{action} scheduled {item.name}") as txn:
+            if existing is None:
+                self.db.add_scheduled(item, txn)
+            else:
+                self.db.commit_scheduled(item, txn)
+        return {"handle": item.handle, "name": item.name}
+
     def post_scheduled(self) -> dict:
         posted = schedule.post_due(self.db, only_auto=False)
         return {
@@ -1406,6 +1546,7 @@ ROUTES = {
 POST_ROUTES = {
     "/api/transaction": lambda a, body: a.add_transaction(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
+    "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),
     "/api/review/unexpected": lambda a, body: a.review_unexpected(body),

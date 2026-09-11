@@ -1071,10 +1071,44 @@ class TestScheduleEntry:
         assert built.recurrence.count == 6
         assert built.recurrence.end is None
 
+    def test_existing_simple_schedule_can_be_edited_in_place(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Checking")
+        rent = app.db.get_account_by_name("Rent")
+        assert bank is not None and rent is not None
+        source = ScheduledTransaction(
+            name="Rent plan",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(rent.handle, Money("1800.00")),
+                ScheduledSplit(bank.handle, Money("-1800.00")),
+            ],
+        )
+        with app.db.transaction("add editable schedule") as txn:
+            app.db.add_scheduled(source, txn)
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        dialog.name_entry.set_text("Rent revised")
+        dialog.amount_entry.set_text("1850.00")
+        dialog._on_save(None)
+        edited = app.db.get_scheduled(source.handle)
+        assert edited is not None
+        assert edited.name == "Rent revised"
+        assert edited.amount() == Money("1850.00")
+        same_handle = [
+            item for item in app.db.iter_scheduled() if item.handle == source.handle
+        ]
+        assert len(same_handle) == 1
+
     def test_the_scheduled_view_offers_the_dialog(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("scheduled")
-        assert hasattr(window._views["scheduled"], "_on_new_clicked")
+        view = window._views["scheduled"]
+        assert hasattr(view, "_on_new_clicked")
+        assert hasattr(view, "_on_edit_clicked")
 
 
 class TestScheduledIsSplitInTwo:
