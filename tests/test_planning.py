@@ -583,6 +583,42 @@ class TestHistoricalEstimateProposals:
         assert groceries.recurrence.start == date(2026, 5, 1)
         assert groceries.active_months == 4
 
+    def test_preserves_reverse_flow_direction(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        with db.transaction("Reverse history") as txn:
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 5),
+                        "Expense reversal",
+                        book.card,
+                        book.groceries,
+                        "75",
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.groceries
+        )
+        assert proposal.amount == Money("-75.00")
+        assert proposal.display_amount == Money("75.00")
+        assert proposal.source_name == "Expenses:Groceries"
+        assert proposal.destination_name == "Liabilities:Credit Card"
+
+        handle = estimates.accept_historical_estimate(db, proposal)
+        saved = db.get_scheduled(handle)
+        assert saved is not None
+        values = {split.account: split.amount for split in saved.splits}
+        assert values[book.groceries] == Money("-75.00")
+        assert values[book.card] == Money("75.00")
+
     def test_accepts_proposal_into_base_as_estimate(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import Transaction

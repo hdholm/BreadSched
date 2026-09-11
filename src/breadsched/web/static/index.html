@@ -449,7 +449,7 @@ async function openHistoricalEstimateDialog() {
       }, item.name)));
       const rows = data.proposals.map((item) => el("tr", {},
         el("td", {}, item.category_name),
-        el("td", {}, item.funding_name),
+        el("td", {}, `${item.source_name} → ${item.destination_name}`),
         el("td", { class:"num" }, money(item.amount)),
         el("td", { class:"muted" }, `${item.active_months}/${data.months} months`),
         el("td", { class:"muted" }, `${Math.round(item.confidence * 100)}%`),
@@ -466,7 +466,7 @@ async function openHistoricalEstimateDialog() {
         el("p", { class:"note" }, data.proposals.length
           ? "Proposals use the median of active completed months and become ordinary monthly estimates when accepted."
           : "No categories have enough completed historical activity for a proposal."),
-        table(["Category", "Funding account", {label:"Monthly estimate", num:true},
+        table(["Category", "Direction", {label:"Monthly estimate", num:true},
           "Evidence", "Confidence", ""], rows));
     } catch (error) { say(error.message, "error"); }
   };

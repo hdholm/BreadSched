@@ -42,6 +42,21 @@ class HistoricalEstimateProposal:
     confidence: float
     reason: str
 
+    @property
+    def source_name(self) -> str:
+        """Display name of the account money historically flowed from."""
+        return self.funding_name if self.amount >= 0 else self.category_name
+
+    @property
+    def destination_name(self) -> str:
+        """Display name of the account money historically flowed to."""
+        return self.category_name if self.amount >= 0 else self.funding_name
+
+    @property
+    def display_amount(self) -> Money:
+        """Unsigned amount for UIs that display direction separately."""
+        return abs(self.amount)
+
 
 def _month_start(when: date) -> date:
     return when.replace(day=1)
@@ -111,7 +126,7 @@ def propose_historical_estimates(
             for txn in db.iter_transactions(account=account.handle, start=start, end=end):
                 value = txn.value_for(account.handle) * account.sign()
                 if value:
-                    total = total + abs(value)
+                    total = total + value
                     txn_count += 1
             if total:
                 monthly.append(total)

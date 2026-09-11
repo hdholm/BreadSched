@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ...gen.engine import estimates
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine import estimates
 from ..gi_setup import Gtk
 
 __all__ = ["HistoricalEstimatesDialog"]
@@ -91,8 +91,9 @@ class HistoricalEstimatesDialog(Gtk.Window):
             row = Gtk.Box(spacing=10)
             label = Gtk.Label(
                 label=(
-                    f"{proposal.category_name}: {proposal.amount.format()} monthly\n"
-                    f"from {proposal.funding_name} — {proposal.reason}; "
+                    f"{proposal.display_amount.format()} monthly: "
+                    f"{proposal.source_name} → {proposal.destination_name}\n"
+                    f"{proposal.reason}; "
                     f"confidence {proposal.confidence:.0%}"
                 ),
                 xalign=0,
