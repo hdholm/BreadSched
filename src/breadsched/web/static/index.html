@@ -925,7 +925,19 @@ async function showReview() {
                 render();
               } catch (error) { say(error.message, "error"); }
             },
-          }, "Reject candidate"))));
+          }, "Reject candidate"),
+          el("button", {
+            class: "action", type: "button",
+            onclick: async () => {
+              try {
+                await post("/api/review/skip", {
+                  transaction: selected.handle, occurrence: candidate.key,
+                });
+                say("Scheduled occurrence skipped.");
+                render();
+              } catch (error) { say(error.message, "error"); }
+            },
+          }, "Skip scheduled occurrence"))));
   });
 
   const detail = el("div", { class: "panel review-detail" },

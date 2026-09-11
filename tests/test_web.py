@@ -773,6 +773,25 @@ class TestReviewApi:
         )
         assert review["candidates"] == []
 
+    def test_skipping_a_candidate_updates_schedule_but_keeps_actual_unresolved(
+        self, review_client
+    ):
+        status, payload = review_client.post(
+            "/api/review/skip",
+            {
+                "transaction": review_client.actual_handle,
+                "occurrence": review_client.occurrence,
+            },
+        )
+        assert status == 200
+        assert payload["skipped"] == review_client.occurrence
+        _status, review = review_client.get(
+            "/api/review?"
+            + urllib.parse.urlencode({"transaction": review_client.actual_handle})
+        )
+        assert review["selected"]["handle"] == review_client.actual_handle
+        assert review["candidates"] == []
+
     def test_matching_removes_the_actual_from_the_review_queue(self, review_client):
         status, payload = review_client.post(
             "/api/review/match",

@@ -103,6 +103,9 @@ class ResolutionView(BaseView):
         self.reject_button = Gtk.Button(label="Reject candidate")
         self.reject_button.connect("clicked", self._on_reject)
         buttons.append(self.reject_button)
+        self.skip_button = Gtk.Button(label="Skip scheduled occurrence")
+        self.skip_button.connect("clicked", self._on_skip)
+        buttons.append(self.skip_button)
         self.unexpected_button = Gtk.Button(label="Mark unexpected")
         self.unexpected_button.connect("clicked", self._on_unexpected)
         buttons.append(self.unexpected_button)
@@ -244,6 +247,7 @@ class ResolutionView(BaseView):
         has_candidate = self._candidate_key is not None
         self.match_button.set_sensitive(has_actual and has_candidate)
         self.reject_button.set_sensitive(has_actual and has_candidate)
+        self.skip_button.set_sensitive(has_candidate)
         self.unexpected_button.set_sensitive(has_actual)
 
     def _selected_transaction_and_event(self):
@@ -274,6 +278,14 @@ class ResolutionView(BaseView):
         planning.reject_candidate(transaction, event)
         with self.db.transaction("Reject planned occurrence candidate") as txn:
             self.db.commit_transaction(transaction, txn)
+        self._candidate_key = None
+        self._refresh_candidates()
+
+    def _on_skip(self, _button) -> None:
+        _transaction, event = self._selected_transaction_and_event()
+        if event is None or self.db is None:
+            return
+        planning.skip_occurrence(self.db, event)
         self._candidate_key = None
         self._refresh_candidates()
 

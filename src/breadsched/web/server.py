@@ -1466,6 +1466,18 @@ class Api:
             "rejected": event.key,
         }
 
+    def review_skip(self, payload: dict) -> dict:
+        transaction = self.db.get_transaction(str(payload["transaction"]))
+        if transaction is None:
+            raise KeyError(str(payload["transaction"]))
+        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
+            raise ValueError("transaction is no longer awaiting review")
+        event = planning.event_by_key(self.db, str(payload["occurrence"]))
+        if event is None:
+            raise ValueError("planned occurrence does not exist")
+        planning.skip_occurrence(self.db, event)
+        return {"transaction": transaction.handle, "skipped": event.key}
+
     def review_unexpected(self, payload: dict) -> dict:
         transaction = self.db.get_transaction(str(payload["transaction"]))
         if transaction is None:
@@ -1676,6 +1688,7 @@ POST_ROUTES = {
     "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),
+    "/api/review/skip": lambda a, body: a.review_skip(body),
     "/api/review/unexpected": lambda a, body: a.review_unexpected(body),
     "/api/scenario/save": lambda a, body: a.scenario_save(body),
     "/api/scenario/duplicate": lambda a, body: a.scenario_duplicate(body),

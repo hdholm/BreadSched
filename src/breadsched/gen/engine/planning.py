@@ -32,6 +32,7 @@ __all__ = [
     "mark_unexpected",
     "match_candidates",
     "reject_candidate",
+    "skip_occurrence",
     "unresolved_events",
     "scenario_events",
     "scheduled_events",
@@ -416,6 +417,40 @@ def reject_candidate(transaction: Transaction, event: PlannedEvent) -> Transacti
     if event.key not in transaction.rejected_plan_occurrences:
         transaction.rejected_plan_occurrences.append(event.key)
     return transaction
+
+
+def skip_occurrence(db: DbSQLite, event: PlannedEvent) -> PlannedEvent:
+    """Persist a per-occurrence skip on the event's owning schedule.
+
+    Baseline scheduled events are updated in place. Scenario events are resolved
+    by scenario and schedule handle so an alternate never mutates Base.
+    """
+    when = event.planned_date
+    if event.source is EventSource.SCHEDULED:
+        if event.source_handle is None:
+            raise ValueError("scheduled event has no source handle")
+        schedule = db.get_scheduled(event.source_handle)
+        if schedule is None:
+            raise ValueError("scheduled transaction no longer exists")
+        schedule.skip(when)
+        with db.transaction("Skip scheduled occurrence") as txn:
+            db.commit_scheduled(schedule, txn)
+        return event
+
+    if event.source is EventSource.SCENARIO_SCHEDULE:
+        for scenario in db.iter_scenarios():
+            for schedule in scenario.schedule_overrides:
+                if schedule.handle != event.source_handle:
+                    continue
+                if when not in schedule.skipped:
+                    schedule.skipped.append(when)
+                    schedule.skipped.sort()
+                with db.transaction("Skip scenario scheduled occurrence") as txn:
+                    db.commit_scenario(scenario, txn)
+                return event
+        raise ValueError("scenario scheduled transaction no longer exists")
+
+    raise ValueError("this planned event cannot be skipped")
 
 
 def mark_unexpected(transaction: Transaction) -> Transaction:
