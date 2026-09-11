@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0116 (`scheduled: edit fixed multi-leg balance-sheet transfers`).
+Status below is current through patch 0117 (`scheduled: preserve opposite-direction fixed legs`).
 
 ## Near-term correctness and daily-use work
 
@@ -33,11 +33,12 @@ Status below is current through patch 0116 (`scheduled: edit fixed multi-leg bal
   Patch 0115 extends the same lossless model to fixed two-account asset/liability
   and liability/liability transfers by preserving the positive ledger leg rather
   than inferring direction from an account's normal balance. Patch 0116 extends
-  this to multi-leg fixed balance-sheet transfers when there is exactly one positive
-  ledger leg and at most one remaining leg whose direction cannot be represented as
-  a normal additional split; that exceptional leg is retained as the balancing
-  funding leg. Continue with other fixed balance-sheet shapes only where direction
-  and meaning can be preserved without guessing.
+  this to multi-leg fixed balance-sheet transfers. Patch 0117 adds an explicit
+  normal/opposite ledger-direction control for additional fixed legs, so imported
+  loan/principal-style and other balance-sheet splits that intentionally run against
+  an account's normal balance direction can be round-tripped without being forced
+  into the balancing funding leg. Continue with other fixed balance-sheet shapes
+  only where direction and meaning can be preserved without guessing.
 - Preserve unsupported formula/custom recurrence data rather than enabling an
   editor that would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including

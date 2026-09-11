@@ -209,6 +209,7 @@ class PlanningSplitListEditor(_ListEditor):
         amount: str = "",
         purpose_index: int = 0,
         memo: str = "",
+        direction_index: int = 0,
     ) -> None:
         row = Gtk.Box(spacing=6)
         account = Gtk.DropDown.new_from_strings(self._account_names)
@@ -218,11 +219,20 @@ class PlanningSplitListEditor(_ListEditor):
         value.set_text(amount)
         purpose = Gtk.DropDown.new_from_strings(self._purpose_labels)
         purpose.set_selected(purpose_index)
+        direction = Gtk.DropDown.new_from_strings(
+            ["Normal direction", "Opposite direction"]
+        )
+        direction.set_selected(direction_index)
+        direction.set_tooltip_text(
+            "Use opposite direction only when the stored ledger leg intentionally runs "
+            "against this account's normal balance direction."
+        )
         memo_entry = Gtk.Entry(placeholder_text="Memo", hexpand=True)
         memo_entry.set_text(memo)
         account.connect("notify::selected", self._on_changed)
         value.connect("changed", self._on_changed)
         purpose.connect("notify::selected", self._on_changed)
+        direction.connect("notify::selected", self._on_changed)
         memo_entry.connect("changed", self._on_changed)
         remove = Gtk.Button(icon_name="list-remove-symbolic")
         remove.set_tooltip_text("Remove")
@@ -231,26 +241,28 @@ class PlanningSplitListEditor(_ListEditor):
         row.append(account)
         row.append(value)
         row.append(purpose)
+        row.append(direction)
         row.append(memo_entry)
         row.append(remove)
         self._rows.append(row)
-        self._row_data.append((row, account, value, purpose, memo_entry))
+        self._row_data.append((row, account, value, purpose, direction, memo_entry))
         self._on_changed()
 
-    def set_values(self, values: Iterable[tuple[int, str, int, str]]) -> None:
+    def set_values(self, values: Iterable[tuple[int, str, int, str, int]]) -> None:
         while child := self._rows.get_first_child():
             self._rows.remove(child)
         self._row_data.clear()
-        for account_index, amount, purpose_index, memo in values:
-            self.add_row(account_index, amount, purpose_index, memo)
+        for account_index, amount, purpose_index, memo, direction_index in values:
+            self.add_row(account_index, amount, purpose_index, memo, direction_index)
 
-    def values(self) -> list[tuple[int, str, int, str]]:
+    def values(self) -> list[tuple[int, str, int, str, int]]:
         return [
             (
                 account.get_selected(),
                 value.get_text().strip(),
                 purpose.get_selected(),
                 memo.get_text().strip(),
+                direction.get_selected(),
             )
-            for _row, account, value, purpose, memo in self._row_data
+            for _row, account, value, purpose, direction, memo in self._row_data
         ]

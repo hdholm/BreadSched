@@ -335,15 +335,9 @@ class ScheduledView(BaseView):
                 resolved = [split.resolve(sched.variables) for split in sched.splits]
                 positives = [value for value in resolved if value > 0]
                 negatives = [value for value in resolved if value < 0]
-                abnormal_negative_legs = 0
-                for split, value in zip(sched.splits, resolved, strict=True):
-                    account = self.db.get_account(split.account) if self.db else None
-                    if value < 0 and account is not None and value * account.sign() <= 0:
-                        abnormal_negative_legs += 1
                 ordinary_balance_transfer = (
                     len(positives) == 1
                     and bool(negatives)
-                    and abnormal_negative_legs <= 1
                     and sum(resolved, Money(0)) == Money(0)
                 )
         if (
