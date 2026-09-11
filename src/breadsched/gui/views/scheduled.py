@@ -342,12 +342,12 @@ class ScheduledView(BaseView):
                 )
         if (
             not has_income_expense
-            and planning_flow_splits != 1
+            and planning_flow_splits < 1
             and not ordinary_balance_transfer
         ):
             return (
-                "This schedule has neither an Income/Expense leg, exactly one "
-                "explicit planning-purpose leg, nor an unambiguous fixed balance-sheet "
+                "This schedule has neither an Income/Expense leg, an explicit "
+                "planning-purpose leg, nor an unambiguous fixed balance-sheet "
                 "transfer that the schedule editor can use as its primary amount."
             )
         if funding_candidates < 1:

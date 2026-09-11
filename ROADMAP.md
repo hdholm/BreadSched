@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0117 (`scheduled: preserve opposite-direction fixed legs`).
+Status below is current through patch 0118 (`scheduled: edit multiple planning-purpose legs`).
 
 ## Near-term correctness and daily-use work
 
@@ -37,8 +37,11 @@ Status below is current through patch 0117 (`scheduled: preserve opposite-direct
   normal/opposite ledger-direction control for additional fixed legs, so imported
   loan/principal-style and other balance-sheet splits that intentionally run against
   an account's normal balance direction can be round-tripped without being forced
-  into the balancing funding leg. Continue with other fixed balance-sheet shapes
-  only where direction and meaning can be preserved without guessing.
+  into the balancing funding leg. Patch 0118 allows fixed schedules with multiple
+  explicit planning-purpose legs to remain editable: one planning leg is the primary
+  amount and the others remain explicit additional planning legs, with an ordinary
+  balancing funding split. Continue with other fixed shapes only where direction and
+  meaning can be preserved without guessing.
 - Preserve unsupported formula/custom recurrence data rather than enabling an
   editor that would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including
@@ -292,3 +295,6 @@ regress them:
 - Fixed balance-sheet schedules with exactly one explicit planning-purpose leg and
   an ordinary funding leg can be edited without requiring a synthetic Income/Expense
   category; the planning purpose remains attached to the original split.
+- Fixed schedules may contain multiple explicit planning-purpose legs; those legs
+  now remain independently classified and editable while an ordinary balancing split
+  continues to fund the combined transaction.

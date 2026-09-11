@@ -1219,6 +1219,72 @@ class TestScheduleEntry:
             (bank.handle, Money("-150.00"), None),
         ]
 
+    def test_fixed_multiple_planning_purpose_legs_are_editable(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType, PlanningFlowKind
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        assert bank is not None
+        with app.db.transaction("add planning accounts") as txn:
+            first = Account(
+                name="Planning destination A",
+                atype=AccountType.ASSET,
+                parent=app.db.root_account().handle,
+            )
+            second = Account(
+                name="Planning destination B",
+                atype=AccountType.ASSET,
+                parent=app.db.root_account().handle,
+            )
+            app.db.add_account(first, txn)
+            app.db.add_account(second, txn)
+        source = ScheduledTransaction(
+            name="Combined planned transfer",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(
+                    first.handle,
+                    Money("100.00"),
+                    memo="component A",
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+                ScheduledSplit(
+                    second.handle,
+                    Money("50.00"),
+                    memo="component B",
+                    planning_flow=PlanningFlowKind.BENEFIT_FUNDING,
+                ),
+                ScheduledSplit(bank.handle, Money("-150.00"), memo="funding"),
+            ],
+        )
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+        assert [
+            (split.account, split.amount, split.memo, split.planning_flow)
+            for split in rebuilt.splits
+        ] == [
+            (
+                first.handle,
+                Money("100.00"),
+                "component A",
+                PlanningFlowKind.RETIREMENT_SAVING,
+            ),
+            (
+                second.handle,
+                Money("50.00"),
+                "component B",
+                PlanningFlowKind.BENEFIT_FUNDING,
+            ),
+            (bank.handle, Money("-150.00"), "funding", None),
+        ]
+
     def test_fixed_asset_transfer_without_flow_category_is_editable(
         self, app, window, populated_book
     ):

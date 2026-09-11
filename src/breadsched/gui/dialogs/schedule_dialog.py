@@ -404,8 +404,10 @@ class ScheduleDialog(Gtk.Window):
             None,
         )
         if flow is None:
-            planning_flows = [item for item in parts if item[1].planning_flow is not None]
-            if len(planning_flows) == 1:
+            planning_flows = [
+                item for item in parts if item[1].planning_flow is not None
+            ]
+            if planning_flows:
                 flow = planning_flows[0]
         if flow is None:
             ordinary_balance_splits = [
