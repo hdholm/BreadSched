@@ -18,7 +18,6 @@ from pathlib import Path  # noqa: E402
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.plug import IMPORTER, PluginManager  # noqa: E402
 from ...gen.utils import logs  # noqa: E402
-from ...plugins.importer import gnucash_common  # noqa: E402
 from ..gi_setup import GLib, Gtk, Pango
 
 __all__ = ["ImportDialog"]
@@ -28,19 +27,11 @@ LOG = logs.get_logger(__name__)
 #: How many warnings the dialog shows before summarising the rest.
 WARNING_LIMIT = 50
 
-_FORMAT_NAMES = {
-    "sqlite": "GnuCash book (SQLite)",
-    "xml": "GnuCash book (XML)",
-    "xml-gz": "GnuCash book (compressed XML)",
-    "unknown": "Not recognised",
-}
-
-
 class ImportDialog(Gtk.Window):
     """Choose a GnuCash file, check what it is, then import it."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
-        super().__init__(title="Import GnuCash book", transient_for=parent, modal=True)
+        super().__init__(title="Import financial data", transient_for=parent, modal=True)
         self.db = db
         self.path: str | None = None
         self.set_default_size(820, 640)
@@ -51,8 +42,10 @@ class ImportDialog(Gtk.Window):
         self.set_child(box)
 
         box.append(Gtk.Label(
-            label="Accounts, transactions and scheduled transactions are copied into "
-                  "this book. The GnuCash file is opened read-only and never changed.",
+            label=(
+                "Accounts and transactions are copied into this book. Supported import "
+                "files are opened read-only and never changed."
+            ),
             xalign=0, wrap=True,
         ))
 
@@ -71,7 +64,7 @@ class ImportDialog(Gtk.Window):
         box.append(self.detected_label)
 
         self.scheduled_check = Gtk.CheckButton(
-            label="Import scheduled transactions", active=True
+            label="Import scheduled transactions when supported", active=True
         )
         box.append(self.scheduled_check)
 
@@ -113,7 +106,7 @@ class ImportDialog(Gtk.Window):
     # ---------------------------------------------------------------- choosing
 
     def _on_choose(self, _button) -> None:
-        dialog = Gtk.FileDialog(title="Choose a GnuCash book")
+        dialog = Gtk.FileDialog(title="Choose a financial-data file")
         dialog.open(self, None, self._on_chosen)
 
     def _on_chosen(self, dialog, result) -> None:
@@ -134,17 +127,10 @@ class ImportDialog(Gtk.Window):
         self.path_label.remove_css_class("dim")
         self._clear_result()
 
-        try:
-            detected = gnucash_common.detect_format(path)
-        except OSError as exc:
-            self.detected_label.set_text(f"Could not read the file: {exc}")
-            self.detected_label.add_css_class("negative")
-            self.import_button.set_sensitive(False)
-            self._plugin = None
-            return
-
         plugin = PluginManager.instance().for_file(path, IMPORTER)
-        self.detected_label.set_text(f"Detected: {_FORMAT_NAMES.get(detected, detected)}")
+        self.detected_label.set_text(
+            f"Detected: {plugin.name}" if plugin is not None else "Not recognised"
+        )
         if plugin is None:
             self.detected_label.add_css_class("negative")
             self.import_button.set_sensitive(False)

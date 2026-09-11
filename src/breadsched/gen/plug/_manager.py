@@ -94,7 +94,7 @@ class PluginManager:
 def register_builtins(manager: PluginManager) -> None:
     """Register the plugins shipped with the application."""
     from ...plugins.export import csv_export
-    from ...plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
+    from ...plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml, qif
 
     manager.register(
         Plugin(
@@ -118,6 +118,17 @@ def register_builtins(manager: PluginManager) -> None:
                         "compressed or plain",
             extensions=[".gnucash", ".xml", ".gnc"],
             sniff=lambda path: gnucash_common.detect_format(path) in ("xml", "xml-gz"),
+        )
+    )
+    manager.register(
+        Plugin(
+            id="qif",
+            name="Quicken Interchange Format (QIF)",
+            category=IMPORTER,
+            run=qif.import_book,
+            description="Bank, cash and credit-card accounts and transactions from QIF",
+            extensions=[".qif"],
+            sniff=qif.sniff,
         )
     )
     manager.register(
