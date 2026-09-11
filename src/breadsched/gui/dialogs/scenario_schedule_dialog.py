@@ -23,6 +23,7 @@ from ...gen.lib import (
     ScheduledSplit,
     ScheduledTransaction,
     WeekendAdjust,
+    scheduled_occurrence_preview,
 )
 from ..gi_setup import Gtk
 from ..widgets.schedule_timeline import DatedAmountListEditor, DateListEditor
@@ -476,9 +477,21 @@ class ScenarioScheduleDialog(Gtk.Window):
         if problems:
             self.preview.set_text("")
         elif recurrence is not None:
-            end = date(recurrence.start.year + 1, recurrence.start.month, 1)
-            upcoming = recurrence.occurrences(end)[:4]
-            self.preview.set_text("Next: " + ", ".join(item.isoformat() for item in upcoming))
+            assert amount is not None
+            rows = scheduled_occurrence_preview(
+                recurrence,
+                amount,
+                amount_changes or [],
+                skipped or [],
+                adjustments or [],
+            )
+            self.preview.set_text(
+                "Upcoming:\n"
+                + "\n".join(
+                    f"{when.isoformat()}   {value.format()}   {status}"
+                    for when, value, status in rows
+                )
+            )
 
     def build(self) -> ScenarioSchedule:
         """Build the scenario-owned recurring estimate described by the form."""

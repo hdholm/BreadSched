@@ -50,6 +50,7 @@ from ..gen.lib import (
     Split,
     Transaction,
     WeekendAdjust,
+    scheduled_occurrence_preview,
 )
 from ..gen.lib.base import create_handle
 from ..gen.utils.logs import get_logger
@@ -1534,9 +1535,29 @@ class Api:
             weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
         )
         horizon = date(min(start.year + 10, 9999), 12, 31)
-        return {
+        result = {
             "occurrences": [item.isoformat() for item in recurrence.occurrences(horizon)[:500]]
         }
+        raw_amount = str(payload.get("amount") or "").strip()
+        if raw_amount:
+            try:
+                amount = abs(Money(raw_amount))
+            except (ValueError, ArithmeticError) as exc:
+                raise ValueError("amount must be a valid number") from exc
+            if not amount:
+                raise ValueError("amount must be greater than zero")
+            amount_changes = self._parse_amount_changes(payload, start)
+            skipped = self._parse_skipped(payload, recurrence)
+            adjustments = self._parse_occurrence_adjustments(payload, recurrence)
+            if set(skipped) & {item.when for item in adjustments}:
+                raise ValueError("an occurrence cannot be both skipped and overridden")
+            result["preview"] = [
+                {"when": when, "amount": value, "status": status}
+                for when, value, status in scheduled_occurrence_preview(
+                    recurrence, amount, amount_changes, skipped, adjustments
+                )
+            ]
+        return result
 
     def scheduled_save(self, payload: dict) -> dict:
         """Create or update a simple two-split baseline schedule."""

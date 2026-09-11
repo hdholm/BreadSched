@@ -22,6 +22,7 @@ __all__ = [
     "ScheduledAmountChange",
     "ScheduledOccurrenceAdjustment",
     "ScheduledSplit",
+    "scheduled_occurrence_preview",
     "ScheduledTransaction",
 ]
 
@@ -70,6 +71,40 @@ class ScheduledOccurrenceAdjustment:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ScheduledOccurrenceAdjustment:
         return cls(date.fromisoformat(data["when"]), Money(*data["amount"]))
+
+
+def scheduled_occurrence_preview(
+    recurrence: Recurrence,
+    base_amount: Money,
+    amount_changes: list[ScheduledAmountChange],
+    skipped: list[date],
+    occurrence_adjustments: list[ScheduledOccurrenceAdjustment],
+    *,
+    limit: int = 8,
+) -> list[tuple[date, Money, str]]:
+    """Return upcoming occurrence dates with effective amount and exception state."""
+    horizon = date(min(recurrence.start.year + 10, 9999), 12, 31)
+    skipped_dates = set(skipped)
+    adjustments = {item.when: item.amount for item in occurrence_adjustments}
+    changes = sorted(amount_changes, key=lambda item: item.start)
+    rows: list[tuple[date, Money, str]] = []
+    for when in recurrence.occurrences(horizon):
+        amount = base_amount
+        status = "Normal"
+        for change in changes:
+            if change.start > when:
+                break
+            amount = change.amount
+            status = "Future amount"
+        if when in adjustments:
+            amount = adjustments[when]
+            status = "One-time amount"
+        if when in skipped_dates:
+            status = "Skipped"
+        rows.append((when, amount, status))
+        if len(rows) >= limit:
+            break
+    return rows
 
 
 class ScheduledSplit:

@@ -20,6 +20,7 @@ from .scheduled import (
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    scheduled_occurrence_preview,
 )
 from .transaction import PlanningResolution, ReconcileState, Split, Transaction, UnbalancedError
 
@@ -31,6 +32,7 @@ __all__ = [
     "ReconcileState", "Recurrence",
     "Scenario", "ScenarioSchedule", "ScheduledAmountChange",
     "ScheduledOccurrenceAdjustment", "ScheduledSplit", "ScheduledTransaction", "Split",
+    "scheduled_occurrence_preview",
     "Transaction",
     "UnbalancedError", "WeekendAdjust", "ZERO", "add_months", "create_handle", "evaluate",
 ]

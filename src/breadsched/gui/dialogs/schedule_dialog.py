@@ -25,6 +25,7 @@ from ...gen.lib import (
     ScheduledSplit,
     ScheduledTransaction,
     WeekendAdjust,
+    scheduled_occurrence_preview,
 )
 from ..gi_setup import Gtk
 from ..widgets.schedule_timeline import DatedAmountListEditor, DateListEditor
@@ -428,12 +429,21 @@ class ScheduleDialog(Gtk.Window):
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
 
         if recurrence is not None and not problems:
-            upcoming = recurrence.occurrences(
-                date(recurrence.start.year + 1, recurrence.start.month, 1)
-            )[:4]
+            amount = self._amount()
+            assert amount is not None
+            rows = scheduled_occurrence_preview(
+                recurrence,
+                amount,
+                amount_changes or [],
+                skipped or [],
+                adjustments or [],
+            )
             self.preview.set_text(
-                "Next: " + ", ".join(d.isoformat() for d in upcoming)
-                if upcoming else ""
+                "Upcoming:\n"
+                + "\n".join(
+                    f"{when.isoformat()}   {value.format()}   {status}"
+                    for when, value, status in rows
+                )
             )
         else:
             self.preview.set_text("")

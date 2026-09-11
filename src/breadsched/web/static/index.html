@@ -98,6 +98,9 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
 .timeline-row { display:grid; grid-template-columns:minmax(145px,1fr) minmax(110px,1fr) auto; gap:6px; margin:4px 0; }
 .timeline-editor.dates .timeline-row { grid-template-columns:minmax(145px,1fr) auto; }
 .timeline-row input { min-width:0; }
+.schedule-preview { margin-top:8px; display:grid; gap:4px; }
+.preview-row { display:grid; grid-template-columns:minmax(110px,1fr) minmax(90px,.7fr) minmax(120px,1fr); gap:10px; }
+.preview-row .num { text-align:right; font-variant-numeric:tabular-nums; }
 
 .scenario-panel { padding: 14px 16px; }
 .scenario-editor h3 { margin: 12px 0 8px; }
@@ -219,7 +222,7 @@ function say(text, kind) {
 }
 
 
-function timelineEditor(label, initial, withAmount) {
+function timelineEditor(label, initial, withAmount, onChanged=()=>{}) {
   const rows = el("div", {});
   const box = el("div", { class:`timeline-editor${withAmount ? "" : " dates"}` },
     el("strong", {}, label), rows);
@@ -227,14 +230,16 @@ function timelineEditor(label, initial, withAmount) {
     const row = el("div", { class:"timeline-row" });
     const when = el("input", { type:"date", value:item.when || item.start || "" });
     const amount = withAmount ? el("input", { inputmode:"decimal", placeholder:"Amount", value:item.amount || "" }) : null;
-    const remove = el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove");
+    const remove = el("button", { class:"action", type:"button", onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
     row.append(when);
     if (amount) row.append(amount);
     row.append(remove);
     rows.append(row);
+    when.addEventListener("change", onChanged);
+    if (amount) amount.addEventListener("change", onChanged);
   };
   (initial || []).forEach(addRow);
-  box.append(el("button", { class:"action", type:"button", onclick:()=>addRow() },
+  box.append(el("button", { class:"action", type:"button", onclick:()=>{ addRow(); onChanged(); } },
     withAmount ? "Add date and amount" : "Add occurrence"));
   return {
     node:box,
@@ -250,7 +255,7 @@ function timelineEditor(label, initial, withAmount) {
   };
 }
 
-function occurrenceTimelineEditor(label, initial, withAmount) {
+function occurrenceTimelineEditor(label, initial, withAmount, onChanged=()=>{}) {
   const rows = el("div", {});
   let options = [];
   const addButton = el("button", { class:"action", type:"button" },
@@ -272,13 +277,15 @@ function occurrenceTimelineEditor(label, initial, withAmount) {
     const amount = withAmount
       ? el("input", { inputmode:"decimal", placeholder:"Amount", value:item.amount || "" })
       : null;
-    const remove = el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove");
+    const remove = el("button", { class:"action", type:"button", onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
     row.append(when);
     if (amount) row.append(amount);
     row.append(remove);
     rows.append(row);
+    when.addEventListener("change", onChanged);
+    if (amount) amount.addEventListener("change", onChanged);
   };
-  addButton.onclick = () => addRow();
+  addButton.onclick = () => { addRow(); onChanged(); };
   (initial || []).forEach(addRow);
   return {
     node:box,
@@ -299,6 +306,23 @@ function occurrenceTimelineEditor(label, initial, withAmount) {
       if (!amount) throw new Error(`${label}: enter an amount or remove the row.`);
       return {when, amount};
     }),
+  };
+}
+
+function schedulePreviewNode() {
+  const body = el("div", { class:"schedule-preview" });
+  const node = el("div", { class:"panel compact" },
+    el("strong", {}, "Upcoming occurrences"), body);
+  return {
+    node,
+    show:(items)=>{
+      body.replaceChildren(...((items || []).length
+        ? items.map((item)=>el("div", { class:"preview-row" },
+            el("span", {}, item.when),
+            el("span", { class:"num" }, money(item.amount)),
+            el("span", {}, item.status)))
+        : [el("p", { class:"note" }, "No upcoming occurrences.")]));
+    },
   };
 }
 
@@ -419,11 +443,15 @@ function openScheduledEditor(data, source) {
   const select = (name, items, value) => el("select", { name }, items.map(([key, label]) =>
     el("option", { value: key, selected: key === value ? "selected" : null }, label)));
   const today = new Date().toISOString().slice(0, 10);
-  const futureEditor = timelineEditor("Future amounts", source?.amount_changes || [], true);
+  let refreshTimeline = () => {};
+  const changed = () => refreshTimeline();
+  const futureEditor = timelineEditor(
+    "Future amounts", source?.amount_changes || [], true, changed);
   const skipEditor = occurrenceTimelineEditor(
-    "Skip occurrences", source?.skipped || [], false);
+    "Skip occurrences", source?.skipped || [], false, changed);
   const oneTimeEditor = occurrenceTimelineEditor(
-    "One-time amounts", source?.occurrence_adjustments || [], true);
+    "One-time amounts", source?.occurrence_adjustments || [], true, changed);
+  const preview = schedulePreviewNode();
   const category = select("category", flowAccounts.map((a) => [a.handle, a.name]), source?.category || flowAccounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
   const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
@@ -435,7 +463,7 @@ function openScheduledEditor(data, source) {
     field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]], source?.placeholder ? "estimate" : "commitment")),
     field("Category", category), field("Paid from / into", funding),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
-    futureEditor.node, skipEditor.node, oneTimeEditor.node,
+    futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
     field("Frequency", frequency),
     field("First due", el("input", { name:"start", type:"date", value:source?.start || today, required:"required" })),
     field("End date", el("input", { name:"end", type:"date", value:source?.end || "" })),
@@ -449,12 +477,20 @@ function openScheduledEditor(data, source) {
     const values = Object.fromEntries(new FormData(form).entries());
     if (!values.start) return;
     try {
-      const result = await post("/api/scheduled/occurrences", {
+      const payload = {
         frequency:values.frequency, start:values.start, end:values.end || null,
-        count:values.count || null, weekend:values.weekend,
-      });
+        count:values.count || null, weekend:values.weekend, amount:values.amount,
+      };
+      try {
+        payload.amount_changes = futureEditor.values().map(
+          (item)=>({start:item.when, amount:item.amount}));
+        payload.skipped = skipEditor.values();
+        payload.occurrence_adjustments = oneTimeEditor.values();
+      } catch (_error) {}
+      const result = await post("/api/scheduled/occurrences", payload);
       skipEditor.setOptions(result.occurrences);
       oneTimeEditor.setOptions(result.occurrences);
+      preview.show(result.preview || []);
     } catch (_error) {
       skipEditor.setOptions([]);
       oneTimeEditor.setOptions([]);
@@ -463,6 +499,8 @@ function openScheduledEditor(data, source) {
   [frequency, form.elements.start, form.elements.end, form.elements.count, weekend]
     .forEach((control)=>control.addEventListener("change", refreshOccurrenceOptions));
   form.elements.start.addEventListener("input", refreshOccurrenceOptions);
+  refreshTimeline = refreshOccurrenceOptions;
+  form.elements.amount.addEventListener("change", refreshOccurrenceOptions);
   refreshOccurrenceOptions();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -715,18 +753,22 @@ async function scenarioEventPanel(handle, fromMonth) {
     const sourceSelect = mode.kind === "alter" ? el("select", {name:"source", onchange:e=>{state.scenarioEvent={kind:"alter",source:e.target.value};render();}}, simpleBase.map(x=>el("option",{value:x.handle,selected:x.handle===source?.handle?"selected":null},x.name))) : null;
     const existing = mode.kind === "alter" ? data.changes.find((x)=>x.source_schedule===source?.handle && x.enabled) : null;
     const editSource = existing || source;
-    const futureEditor = timelineEditor("Future amounts", editSource?.amount_changes || [], true);
+    let refreshTimeline = () => {};
+    const changed = () => refreshTimeline();
+    const futureEditor = timelineEditor(
+      "Future amounts", editSource?.amount_changes || [], true, changed);
     const skipEditor = occurrenceTimelineEditor(
-      "Skip occurrences", editSource?.skipped || [], false);
+      "Skip occurrences", editSource?.skipped || [], false, changed);
     const oneTimeEditor = occurrenceTimelineEditor(
-      "One-time amounts", editSource?.occurrence_adjustments || [], true);
+      "One-time amounts", editSource?.occurrence_adjustments || [], true, changed);
+    const preview = schedulePreviewNode();
     const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, amount:v.amount, amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
       el("label", {}, "Income / expense category", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
       el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
       el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
-      futureEditor.node, skipEditor.node, oneTimeEditor.node,
+      futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
       el("label", {}, "Frequency", el("select", {name:"frequency"}, [["weekly","Weekly"],["biweekly","Fortnightly"],["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],["semiannual","Twice a year"],["annual","Yearly"],["once","One off"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.frequency||"monthly")?"selected":null},l)))),
       el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:editSource?.start || `${fromMonth}-01`})),
       el("label", {}, "End date (optional)", el("input", {name:"end", type:"date", value:editSource?.end || ""})),
@@ -738,12 +780,20 @@ async function scenarioEventPanel(handle, fromMonth) {
       const values = Object.fromEntries(new FormData(form).entries());
       if (!values.start) return;
       try {
-        const result = await post("/api/scheduled/occurrences", {
+        const payload = {
           frequency:values.frequency, start:values.start, end:values.end || null,
-          count:values.count || null, weekend:values.weekend,
-        });
+          count:values.count || null, weekend:values.weekend, amount:values.amount,
+        };
+        try {
+          payload.amount_changes = futureEditor.values().map(
+            (item)=>({start:item.when, amount:item.amount}));
+          payload.skipped = skipEditor.values();
+          payload.occurrence_adjustments = oneTimeEditor.values();
+        } catch (_error) {}
+        const result = await post("/api/scheduled/occurrences", payload);
         skipEditor.setOptions(result.occurrences);
         oneTimeEditor.setOptions(result.occurrences);
+        preview.show(result.preview || []);
       } catch (_error) {
         skipEditor.setOptions([]);
         oneTimeEditor.setOptions([]);
@@ -753,6 +803,8 @@ async function scenarioEventPanel(handle, fromMonth) {
       form.elements.count, form.elements.weekend]
       .forEach((control)=>control.addEventListener("change", refreshOccurrenceOptions));
     form.elements.start.addEventListener("input", refreshOccurrenceOptions);
+    refreshTimeline = refreshOccurrenceOptions;
+    form.elements.amount.addEventListener("change", refreshOccurrenceOptions);
     refreshOccurrenceOptions();
     editor = form;
   }

@@ -219,6 +219,36 @@ class TestItServes:
             "2026-04-15",
         ]
 
+    def test_occurrence_options_can_preview_effective_amounts_and_exceptions(
+        self, client
+    ):
+        status, payload = client.post(
+            "/api/scheduled/occurrences",
+            {
+                "frequency": "monthly",
+                "start": "2026-01-15",
+                "count": "5",
+                "weekend": "none",
+                "amount": "1800.00",
+                "amount_changes": [{"start": "2026-03-01", "amount": "1950.00"}],
+                "skipped": ["2026-04-15"],
+                "occurrence_adjustments": [
+                    {"when": "2026-05-15", "amount": "2300.00"}
+                ],
+            },
+        )
+        assert status == 200
+        assert [
+            (row["when"], row["amount"], row["status"])
+            for row in payload["preview"]
+        ] == [
+            ("2026-01-15", "1800.00", "Normal"),
+            ("2026-02-15", "1800.00", "Normal"),
+            ("2026-03-15", "1950.00", "Future amount"),
+            ("2026-04-15", "1950.00", "Skipped"),
+            ("2026-05-15", "2300.00", "One-time amount"),
+        ]
+
     def test_simple_scheduled_transaction_can_be_created_and_edited(self, client):
         _status, data = client.get("/api/scheduled")
         category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
