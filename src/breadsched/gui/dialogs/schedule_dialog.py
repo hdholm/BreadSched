@@ -428,7 +428,7 @@ class ScheduleDialog(Gtk.Window):
                 self.funding_memo_entry.set_text(funding_item[1].memo or "")
                 extra_values = []
                 for account, split in others:
-                    if split is funding_item:
+                    if split is funding_item[1]:
                         continue
                     account_index = next(
                         index

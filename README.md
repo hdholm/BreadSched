@@ -11,12 +11,16 @@ and register interface follow
 follows [gnucash-cli](https://github.com/loftx/gnucash-cli), but without needing
 GnuCash's Python bindings installed.
 
-## Development roadmap
+## Development roadmap and contributing
 
 The canonical list of pending work is [`ROADMAP.md`](ROADMAP.md). Future-work
 decisions belong there rather than only in issue/chat history, and patches that
 complete, change, discover, or reprioritize roadmap work should update it in the
 same change.
+
+Development and patch-submission expectations are documented in
+[`CONTRIBUTING.md`](CONTRIBUTING.md). They apply equally to human-authored and
+assistant-generated patches.
 
 ```
 pip install -e ".[gui,dev]"     # GUI extra needs PyGObject and a GTK 4 runtime

@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0109 (`scheduled: edit fixed duplicate-account splits`).
+Status below is current through patch 0110 (`scheduled: fix duplicate-split round trip`).
 
 ## Near-term correctness and daily-use work
 
@@ -21,8 +21,8 @@ Status below is current through patch 0109 (`scheduled: edit fixed duplicate-acc
   disabled.
 - Distinguish genuinely unsupported schedule shapes from schedules that are merely
   imported from GnuCash or represented differently internally. Fixed schedules may
-  legitimately contain repeated account legs; patch 0109 makes those editable and
-  preserves per-split memos instead of treating account uniqueness as a requirement.
+  legitimately contain repeated account legs; patches 0109-0110 make those editable,
+  preserve per-split memos, and round-trip the designated funding leg only once.
 - Expand the schedule editor so every fixed schedule that can be represented safely
   by BreadSched can be edited without losing recurrence, split, formula, override,
   or import metadata.
