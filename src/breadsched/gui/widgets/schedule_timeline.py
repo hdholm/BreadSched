@@ -25,10 +25,16 @@ class _ListEditor(Gtk.Box):
 
 
 class DatedAmountListEditor(_ListEditor):
-    """Edit a list of date/amount pairs without exposing serialization syntax."""
+    """Edit date/amount pairs, optionally selecting from valid occurrence dates."""
 
-    def __init__(self, on_changed: Callable[..., None], add_label: str) -> None:
+    def __init__(
+        self,
+        on_changed: Callable[..., None],
+        add_label: str,
+        date_choices: Callable[[], Iterable[date]] | None = None,
+    ) -> None:
         super().__init__(on_changed)
+        self._date_choices = date_choices
         add = Gtk.Button(label=add_label, halign=Gtk.Align.START)
         add.add_css_class("flat")
         add.connect("clicked", lambda *_: self.add_row())
@@ -36,13 +42,14 @@ class DatedAmountListEditor(_ListEditor):
 
     def add_row(self, when: date | None = None, amount: str = "") -> None:
         row = Gtk.Box(spacing=6)
-        date_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD", hexpand=True)
+        date_entry = self._make_date_control(when)
         amount_entry = Gtk.Entry(placeholder_text="Amount", hexpand=True)
-        if when is not None:
-            date_entry.set_text(when.isoformat())
         if amount:
             amount_entry.set_text(amount)
-        date_entry.connect("changed", self._on_changed)
+        if self._date_choices is None:
+            date_entry.connect("changed", self._on_changed)
+        else:
+            date_entry.connect("notify::selected", self._on_changed)
         amount_entry.connect("changed", self._on_changed)
         remove = Gtk.Button(icon_name="list-remove-symbolic")
         remove.set_tooltip_text("Remove")
@@ -55,6 +62,40 @@ class DatedAmountListEditor(_ListEditor):
         self._row_data.append((row, date_entry, amount_entry))
         self._on_changed()
 
+    def _make_date_control(self, when: date | None) -> Gtk.Widget:
+        if self._date_choices is None:
+            entry = Gtk.Entry(placeholder_text="YYYY-MM-DD", hexpand=True)
+            if when is not None:
+                entry.set_text(when.isoformat())
+            return entry
+        choices = [item.isoformat() for item in self._date_choices()]
+        current = when.isoformat() if when is not None else None
+        if current is not None and current not in choices:
+            choices.insert(0, current)
+        dropdown = Gtk.DropDown.new_from_strings(choices or ["(no occurrences)"])
+        dropdown.set_hexpand(True)
+        if current in choices:
+            dropdown.set_selected(choices.index(current))
+        return dropdown
+
+    def _date_value(self, control: Gtk.Widget) -> str:
+        if self._date_choices is None:
+            return control.get_text().strip()
+        item = control.get_selected_item()
+        return item.get_string() if item is not None else ""
+
+    def refresh_date_choices(self) -> None:
+        if self._date_choices is None:
+            return
+        values = []
+        for when_text, amount in self.values():
+            try:
+                when = date.fromisoformat(when_text)
+            except ValueError:
+                continue
+            values.append((when, amount))
+        self.set_values(values)
+
     def set_values(self, values: Iterable[tuple[date, str]]) -> None:
         while child := self._rows.get_first_child():
             self._rows.remove(child)
@@ -64,16 +105,22 @@ class DatedAmountListEditor(_ListEditor):
 
     def values(self) -> list[tuple[str, str]]:
         return [
-            (date_entry.get_text().strip(), amount_entry.get_text().strip())
+            (self._date_value(date_entry), amount_entry.get_text().strip())
             for _row, date_entry, amount_entry in self._row_data
         ]
 
 
 class DateListEditor(_ListEditor):
-    """Edit a list of occurrence dates."""
+    """Edit occurrence dates, optionally selected from generated valid dates."""
 
-    def __init__(self, on_changed: Callable[..., None], add_label: str) -> None:
+    def __init__(
+        self,
+        on_changed: Callable[..., None],
+        add_label: str,
+        date_choices: Callable[[], Iterable[date]] | None = None,
+    ) -> None:
         super().__init__(on_changed)
+        self._date_choices = date_choices
         add = Gtk.Button(label=add_label, halign=Gtk.Align.START)
         add.add_css_class("flat")
         add.connect("clicked", lambda *_: self.add_row())
@@ -81,10 +128,25 @@ class DateListEditor(_ListEditor):
 
     def add_row(self, when: date | None = None) -> None:
         row = Gtk.Box(spacing=6)
-        date_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD", hexpand=True)
-        if when is not None:
-            date_entry.set_text(when.isoformat())
-        date_entry.connect("changed", self._on_changed)
+        choices = (
+            [item.isoformat() for item in self._date_choices()]
+            if self._date_choices
+            else []
+        )
+        current = when.isoformat() if when is not None else None
+        if self._date_choices is None:
+            date_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD", hexpand=True)
+            if current is not None:
+                date_entry.set_text(current)
+            date_entry.connect("changed", self._on_changed)
+        else:
+            if current is not None and current not in choices:
+                choices.insert(0, current)
+            date_entry = Gtk.DropDown.new_from_strings(choices or ["(no occurrences)"])
+            date_entry.set_hexpand(True)
+            if current in choices:
+                date_entry.set_selected(choices.index(current))
+            date_entry.connect("notify::selected", self._on_changed)
         remove = Gtk.Button(icon_name="list-remove-symbolic")
         remove.set_tooltip_text("Remove")
         remove.add_css_class("flat")
@@ -95,6 +157,17 @@ class DateListEditor(_ListEditor):
         self._row_data.append((row, date_entry))
         self._on_changed()
 
+    def refresh_date_choices(self) -> None:
+        if self._date_choices is None:
+            return
+        values = []
+        for raw in self.values():
+            try:
+                values.append(date.fromisoformat(raw))
+            except ValueError:
+                continue
+        self.set_values(values)
+
     def set_values(self, values: Iterable[date]) -> None:
         while child := self._rows.get_first_child():
             self._rows.remove(child)
@@ -103,4 +176,11 @@ class DateListEditor(_ListEditor):
             self.add_row(when)
 
     def values(self) -> list[str]:
-        return [date_entry.get_text().strip() for _row, date_entry in self._row_data]
+        values = []
+        for _row, date_control in self._row_data:
+            if self._date_choices is None:
+                values.append(date_control.get_text().strip())
+                continue
+            item = date_control.get_selected_item()
+            values.append(item.get_string() if item is not None else "")
+        return values

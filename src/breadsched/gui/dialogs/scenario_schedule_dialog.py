@@ -25,7 +25,7 @@ from ...gen.lib import (
     WeekendAdjust,
 )
 from ..gi_setup import Gtk
-from ..widgets.schedule_timeline import DateListEditor, DatedAmountListEditor
+from ..widgets.schedule_timeline import DatedAmountListEditor, DateListEditor
 
 __all__ = ["ScenarioScheduleDialog", "ScenarioSchedulePickerDialog"]
 
@@ -144,14 +144,18 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.amount_changes_editor, 1, row, 1, 1)
         row += 1
 
-        self.skipped_editor = DateListEditor(self._validate, "Add skipped occurrence")
+        self.skipped_editor = DateListEditor(
+            self._validate, "Add skipped occurrence", self._occurrence_options
+        )
         label = Gtk.Label(label="Skip occurrences", xalign=0, valign=Gtk.Align.START)
         grid.attach(label, 0, row, 1, 1)
         grid.attach(self.skipped_editor, 1, row, 1, 1)
         row += 1
 
         self.occurrence_adjustments_editor = DatedAmountListEditor(
-            self._validate, "Add one-time amount"
+            self._validate,
+            "Add one-time amount",
+            self._occurrence_options,
         )
         label = Gtk.Label(label="One-time amounts", xalign=0, valign=Gtk.Align.START)
         grid.attach(label, 0, row, 1, 1)
@@ -170,13 +174,13 @@ class ScenarioScheduleDialog(Gtk.Window):
             0,
         )
         self.frequency.set_selected(default_frequency)
-        self.frequency.connect("notify::selected", self._validate)
+        self.frequency.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Frequency", xalign=0), 0, row, 1, 1)
         grid.attach(self.frequency, 1, row, 1, 1)
         row += 1
 
         self.start_entry = Gtk.Entry(text=date.today().replace(day=1).isoformat())
-        self.start_entry.connect("changed", self._validate)
+        self.start_entry.connect("changed", self._recurrence_changed)
         grid.attach(Gtk.Label(label="First occurrence", xalign=0), 0, row, 1, 1)
         grid.attach(self.start_entry, 1, row, 1, 1)
         row += 1
@@ -184,24 +188,25 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.ends = Gtk.DropDown.new_from_strings(
             ["Never", "On date", "After occurrences"]
         )
-        self.ends.connect("notify::selected", self._validate)
+        self.ends.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Ends", xalign=0), 0, row, 1, 1)
         grid.attach(self.ends, 1, row, 1, 1)
         row += 1
 
         self.end_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
-        self.end_entry.connect("changed", self._validate)
+        self.end_entry.connect("changed", self._recurrence_changed)
         grid.attach(Gtk.Label(label="End date", xalign=0), 0, row, 1, 1)
         grid.attach(self.end_entry, 1, row, 1, 1)
         row += 1
 
         self.count_entry = Gtk.Entry(placeholder_text="12")
-        self.count_entry.connect("changed", self._validate)
+        self.count_entry.connect("changed", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Occurrences", xalign=0), 0, row, 1, 1)
         grid.attach(self.count_entry, 1, row, 1, 1)
         row += 1
 
         self.weekend = Gtk.DropDown.new_from_strings([item[0] for item in _WEEKEND])
+        self.weekend.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="If it falls on a weekend", xalign=0), 0, row, 1, 1)
         grid.attach(self.weekend, 1, row, 1, 1)
 
@@ -341,6 +346,18 @@ class ScenarioScheduleDialog(Gtk.Window):
             count=count,
             weekend_adjust=_WEEKEND[self.weekend.get_selected()][1],
         )
+
+    def _occurrence_options(self) -> list[date]:
+        recurrence = self._recurrence()
+        if recurrence is None:
+            return []
+        horizon = date(min(recurrence.start.year + 10, 9999), 12, 31)
+        return recurrence.occurrences(horizon)[:500]
+
+    def _recurrence_changed(self, *_args) -> None:
+        self.skipped_editor.refresh_date_choices()
+        self.occurrence_adjustments_editor.refresh_date_choices()
+        self._validate()
 
     def _amount(self) -> Money | None:
         text = self.amount_entry.get_text().strip()

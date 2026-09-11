@@ -1492,6 +1492,52 @@ class Api:
             "resolution": transaction.planning_resolution.value,
         }
 
+    def scheduled_occurrence_options(self, payload: dict) -> dict:
+        """Return selectable occurrence dates for schedule exception editors."""
+        frequency = str(payload.get("frequency") or "monthly")
+        if frequency not in self._SCENARIO_FREQUENCIES:
+            raise ValueError("unsupported schedule frequency")
+        period, interval = self._SCENARIO_FREQUENCIES[frequency]
+        try:
+            start = date.fromisoformat(str(payload.get("start") or ""))
+        except ValueError as exc:
+            raise ValueError("first due date is invalid") from exc
+        end = None
+        raw_end = str(payload.get("end") or "").strip()
+        raw_count = str(payload.get("count") or "").strip()
+        if raw_end and raw_count:
+            raise ValueError("choose an end date or occurrence count, not both")
+        if period is not PeriodType.ONCE and raw_end:
+            try:
+                end = date.fromisoformat(raw_end)
+            except ValueError as exc:
+                raise ValueError("end date is invalid") from exc
+            if end < start:
+                raise ValueError("end date cannot precede first due date")
+        count = None
+        if period is not PeriodType.ONCE and raw_count:
+            try:
+                count = int(raw_count)
+            except ValueError as exc:
+                raise ValueError("occurrence count must be a whole number") from exc
+            if count < 1:
+                raise ValueError("occurrence count must be positive")
+        weekend_key = str(payload.get("weekend") or "none")
+        if weekend_key not in self._SCENARIO_WEEKENDS:
+            raise ValueError("unsupported weekend adjustment")
+        recurrence = Recurrence(
+            period=period,
+            interval=interval,
+            start=start,
+            end=end,
+            count=count,
+            weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
+        )
+        horizon = date(min(start.year + 10, 9999), 12, 31)
+        return {
+            "occurrences": [item.isoformat() for item in recurrence.occurrences(horizon)[:500]]
+        }
+
     def scheduled_save(self, payload: dict) -> dict:
         """Create or update a simple two-split baseline schedule."""
         handle = str(payload.get("handle") or "").strip()
@@ -1685,6 +1731,7 @@ ROUTES = {
 POST_ROUTES = {
     "/api/transaction": lambda a, body: a.add_transaction(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
+    "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),
     "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),

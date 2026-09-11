@@ -164,8 +164,10 @@ class TestItServes:
         _status, body, _headers = client.raw("/")
         text = body.decode("utf-8")
         assert "timelineEditor" in text
+        assert "occurrenceTimelineEditor" in text
         assert "Add date and amount" in text
-        assert "Add occurrence" in text
+        assert "Add skipped occurrence" in text
+        assert "Add occurrence amount" in text
         assert "Future amounts use YYYY-MM-DD=amount" not in text
 
     def test_the_summary_reports_the_book(self, client):
@@ -199,6 +201,23 @@ class TestItServes:
         status, payload = client.get("/api/scheduled")
         assert status == 200
         assert set(payload) == {"definitions", "accounts", "upcoming"}
+
+    def test_occurrence_options_follow_recurrence_and_weekend_adjustment(self, client):
+        status, payload = client.post(
+            "/api/scheduled/occurrences",
+            {
+                "frequency": "monthly",
+                "start": "2026-02-15",
+                "count": "3",
+                "weekend": "previous",
+            },
+        )
+        assert status == 200
+        assert payload["occurrences"] == [
+            "2026-02-13",
+            "2026-03-13",
+            "2026-04-15",
+        ]
 
     def test_simple_scheduled_transaction_can_be_created_and_edited(self, client):
         _status, data = client.get("/api/scheduled")

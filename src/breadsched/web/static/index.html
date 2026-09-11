@@ -250,6 +250,58 @@ function timelineEditor(label, initial, withAmount) {
   };
 }
 
+function occurrenceTimelineEditor(label, initial, withAmount) {
+  const rows = el("div", {});
+  let options = [];
+  const addButton = el("button", { class:"action", type:"button" },
+    withAmount ? "Add occurrence amount" : "Add skipped occurrence");
+  const box = el("div", { class:`timeline-editor${withAmount ? "" : " dates"}` },
+    el("strong", {}, label), rows, addButton);
+
+  const fillSelect = (select, current) => {
+    const choices = [...options];
+    if (current && !choices.includes(current)) choices.unshift(current);
+    select.replaceChildren(...(choices.length
+      ? choices.map((when) => el("option", { value:when, selected:when===current ? "selected" : null }, when))
+      : [el("option", { value:"" }, "No occurrences available")]));
+  };
+  const addRow = (item={}) => {
+    const row = el("div", { class:"timeline-row" });
+    const when = el("select", {});
+    fillSelect(when, item.when || item.start || options[0] || "");
+    const amount = withAmount
+      ? el("input", { inputmode:"decimal", placeholder:"Amount", value:item.amount || "" })
+      : null;
+    const remove = el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove");
+    row.append(when);
+    if (amount) row.append(amount);
+    row.append(remove);
+    rows.append(row);
+  };
+  addButton.onclick = () => addRow();
+  (initial || []).forEach(addRow);
+  return {
+    node:box,
+    setOptions:(values)=>{
+      options = values || [];
+      Array.from(rows.children).forEach((row)=>{
+        const select=row.querySelector("select");
+        fillSelect(select, select.value);
+      });
+      addButton.disabled = options.length === 0;
+    },
+    values:()=>Array.from(rows.children).map((row)=>{
+      const select=row.querySelector("select");
+      const when=select.value;
+      if (!when) throw new Error(`${label}: choose an occurrence or remove the row.`);
+      if (!withAmount) return when;
+      const amount=row.querySelector("input").value.trim();
+      if (!amount) throw new Error(`${label}: enter an amount or remove the row.`);
+      return {when, amount};
+    }),
+  };
+}
+
 function table(headers, rows) {
   return el("div", { class: "panel" },
     el("table", {},
@@ -368,8 +420,10 @@ function openScheduledEditor(data, source) {
     el("option", { value: key, selected: key === value ? "selected" : null }, label)));
   const today = new Date().toISOString().slice(0, 10);
   const futureEditor = timelineEditor("Future amounts", source?.amount_changes || [], true);
-  const skipEditor = timelineEditor("Skip occurrences", source?.skipped || [], false);
-  const oneTimeEditor = timelineEditor("One-time amounts", source?.occurrence_adjustments || [], true);
+  const skipEditor = occurrenceTimelineEditor(
+    "Skip occurrences", source?.skipped || [], false);
+  const oneTimeEditor = occurrenceTimelineEditor(
+    "One-time amounts", source?.occurrence_adjustments || [], true);
   const category = select("category", flowAccounts.map((a) => [a.handle, a.name]), source?.category || flowAccounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
   const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
@@ -391,6 +445,25 @@ function openScheduledEditor(data, source) {
   form.append(el("div", { class:"toolbar" },
     el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
     el("button", { class:"action primary", type:"submit" }, "Save")));
+  const refreshOccurrenceOptions = async () => {
+    const values = Object.fromEntries(new FormData(form).entries());
+    if (!values.start) return;
+    try {
+      const result = await post("/api/scheduled/occurrences", {
+        frequency:values.frequency, start:values.start, end:values.end || null,
+        count:values.count || null, weekend:values.weekend,
+      });
+      skipEditor.setOptions(result.occurrences);
+      oneTimeEditor.setOptions(result.occurrences);
+    } catch (_error) {
+      skipEditor.setOptions([]);
+      oneTimeEditor.setOptions([]);
+    }
+  };
+  [frequency, form.elements.start, form.elements.end, form.elements.count, weekend]
+    .forEach((control)=>control.addEventListener("change", refreshOccurrenceOptions));
+  form.elements.start.addEventListener("input", refreshOccurrenceOptions);
+  refreshOccurrenceOptions();
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(form).entries());
@@ -643,8 +716,10 @@ async function scenarioEventPanel(handle, fromMonth) {
     const existing = mode.kind === "alter" ? data.changes.find((x)=>x.source_schedule===source?.handle && x.enabled) : null;
     const editSource = existing || source;
     const futureEditor = timelineEditor("Future amounts", editSource?.amount_changes || [], true);
-    const skipEditor = timelineEditor("Skip occurrences", editSource?.skipped || [], false);
-    const oneTimeEditor = timelineEditor("One-time amounts", editSource?.occurrence_adjustments || [], true);
+    const skipEditor = occurrenceTimelineEditor(
+      "Skip occurrences", editSource?.skipped || [], false);
+    const oneTimeEditor = occurrenceTimelineEditor(
+      "One-time amounts", editSource?.occurrence_adjustments || [], true);
     const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, amount:v.amount, amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
@@ -659,6 +734,26 @@ async function scenarioEventPanel(handle, fromMonth) {
       el("p", {class:"note"}, "Use either an end date or an occurrence count, not both."),
       el("label", {}, "Weekend", el("select", {name:"weekend"}, [["none","Leave on the day"],["previous","Move to Friday before"],["next","Move to Monday after"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.weekend||"none")?"selected":null},l)))),
       el("div", {class:"toolbar"}, el("button",{class:"action primary"},"Save scenario change"), el("button",{class:"action",type:"button",onclick:()=>{state.scenarioEvent=null;render();}},"Cancel")));
+    const refreshOccurrenceOptions = async () => {
+      const values = Object.fromEntries(new FormData(form).entries());
+      if (!values.start) return;
+      try {
+        const result = await post("/api/scheduled/occurrences", {
+          frequency:values.frequency, start:values.start, end:values.end || null,
+          count:values.count || null, weekend:values.weekend,
+        });
+        skipEditor.setOptions(result.occurrences);
+        oneTimeEditor.setOptions(result.occurrences);
+      } catch (_error) {
+        skipEditor.setOptions([]);
+        oneTimeEditor.setOptions([]);
+      }
+    };
+    [form.elements.frequency, form.elements.start, form.elements.end,
+      form.elements.count, form.elements.weekend]
+      .forEach((control)=>control.addEventListener("change", refreshOccurrenceOptions));
+    form.elements.start.addEventListener("input", refreshOccurrenceOptions);
+    refreshOccurrenceOptions();
     editor = form;
   }
   const changes = data.changes.length ? table(["Change","Baseline","State"], data.changes.map(c=>[c.name,c.source_name||"Scenario-only estimate",c.enabled?"Active":"Suppressed"])) : el("p",{class:"note"},"No scenario-specific recurring changes yet.");
