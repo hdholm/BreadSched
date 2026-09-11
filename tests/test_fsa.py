@@ -205,3 +205,45 @@ def test_claim_waits_for_eob_and_closes_when_no_fsa_funds_remain(db, book):
     claim.eob_responsibility = Money("450.00")
     closed = fsa_claims.claim_summary(db, claim, as_of=date(2027, 10, 1))
     assert closed.status is fsa_claims.FsaClaimStatus.CLOSED_NO_FUNDS
+
+
+def test_claim_refunds_reduce_net_paid_and_rejections_do_not_reimburse(db, book):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import (
+        FsaClaim,
+        FsaClaimAllocation,
+        FsaClaimRejection,
+        FsaClaimSplitLink,
+    )
+
+    account = _fsa_account(db, book)
+    payment = Transaction.simple(
+        date(2026, 4, 1), "Medical payment", book.groceries, book.checking, "500.00"
+    )
+    refund = Transaction.simple(
+        date(2026, 4, 20), "Provider refund", book.checking, book.groceries, "100.00"
+    )
+    with db.transaction("Claim adjustment") as txn:
+        db.add_transaction(payment, txn)
+        db.add_transaction(refund, txn)
+    claim = FsaClaim(
+        service_date=date(2026, 3, 15),
+        provider="Clinic",
+        eob_responsibility=Money("450.00"),
+        payments=[FsaClaimSplitLink(payment.handle, payment.splits[0].handle)],
+        refunds=[FsaClaimSplitLink(refund.handle, refund.splits[1].handle)],
+        allocations=[FsaClaimAllocation(
+            account.handle,
+            account.fsa_years[0].start,
+            rejections=[FsaClaimRejection(date(2026, 4, 10), Money("200.00"), "Denied")],
+        )],
+    )
+    fsa_claims.save_claim(db, claim)
+    summary = fsa_claims.claim_summary(db, claim, as_of=date(2026, 4, 21))
+    assert summary.paid == Money("500.00")
+    assert summary.refunds == Money("100.00")
+    assert summary.net_paid == Money("400.00")
+    assert summary.reimbursable == Money("400.00")
+    assert summary.rejected == Money("200.00")
+    assert summary.reimbursed == Money(0)
+    assert summary.status is fsa_claims.FsaClaimStatus.OPEN

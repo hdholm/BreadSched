@@ -1513,3 +1513,46 @@ def test_fsa_claim_can_use_multiple_allocations(client):
     assert claim["reimbursed"] == "300.00"
     assert claim["remaining"] == "200.00"
     assert claim["status"] == "partial"
+
+    client.post(
+        "/api/transaction",
+        {
+            "date": "2026-02-25",
+            "description": "Dental provider refund",
+            "to": "Assets:Checking",
+            "from": "Expenses:Rent",
+            "amount": "50.00",
+        },
+    )
+    _status, refreshed = client.get("/api/fsa/claims")
+    refund = next(
+        item for item in refreshed["candidates"]["refunds"]
+        if item["description"] == "Dental provider refund"
+    )
+    allocation = claim["allocations"][0]
+    allocation["rejections"] = [{
+        "attempted_on": "2026-02-15",
+        "amount": [10000, 100],
+        "reason": "Receipt required",
+    }]
+    status, _saved = client.post(
+        "/api/fsa/claim/save",
+        {
+            "handle": claim["handle"],
+            "service_date": claim["service_date"],
+            "provider": "Dentist updated",
+            "eob_responsibility": "450.00",
+            "payments": claim["payments"],
+            "refunds": [{
+                "transaction": refund["transaction"], "split": refund["split"],
+            }],
+            "allocations": [allocation],
+        },
+    )
+    assert status == 200
+    _status, edited = client.get("/api/fsa/claims")
+    claim = edited["claims"][0]
+    assert claim["provider"] == "Dentist updated"
+    assert claim["provider_refunds"] == "50.00"
+    assert claim["net_paid"] == "450.00"
+    assert claim["rejected"] == "100.00"

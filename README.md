@@ -494,9 +494,10 @@ link multiple reimbursement splits, so one service can be partially reimbursed f
 multiple FSAs. The underlying payments and reimbursements remain ordinary ledger
 transactions with their real posting dates. Claim state is derived as Waiting for
 EOB, Open, Partially reimbursed, Fully reimbursed, Closed — no funds, or Needs review.
-The web dashboard includes claim management from existing ledger splits; GTK shows
-open-claim status on Dashboard. Richer GTK claim editing, provider refunds, rejected
-claims, and plan-specific carryover rules remain future work.
+Both web and GTK now include claim maintenance from existing ledger splits. Claims
+can be edited in place, provider refunds/credits reduce net paid, and rejected or
+failed reimbursement attempts can be recorded without creating ledger activity.
+Plan-specific carryover rules and richer claim/import automation remain future work.
 
 ## Forward plan: planning classifications for balance-sheet flows
 

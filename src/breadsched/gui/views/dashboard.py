@@ -77,6 +77,9 @@ class DashboardView(BaseView):
         configure.set_tooltip_text("Choose which accounts each group contains")
         configure.connect("clicked", self._on_configure)
         bar.append(configure)
+        claims = Gtk.Button(label="FSA claims…")
+        claims.connect("clicked", self._on_fsa_claims)
+        bar.append(claims)
         self._bar = bar
         self.append(bar)
 
@@ -318,7 +321,10 @@ class DashboardView(BaseView):
         self.fsa_claim_grid.set_visible(bool(summaries))
         if not summaries:
             return
-        headings = ("Service date", "Provider", "Status", "Paid", "Reimbursed", "Remaining")
+        headings = (
+            "Service date", "Provider", "Status", "Net paid", "Reimbursed",
+            "Rejected", "Remaining",
+        )
         for column_index, heading in enumerate(headings):
             label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
             label.add_css_class("summary-label")
@@ -328,8 +334,9 @@ class DashboardView(BaseView):
                 summary.claim.service_date.isoformat(),
                 summary.claim.provider,
                 summary.status.label,
-                summary.paid.format(),
+                summary.net_paid.format(),
                 summary.reimbursed.format(),
+                summary.rejected.format(),
                 summary.remaining_reimbursable.format(),
             )
             for column_index, value in enumerate(values):
@@ -339,6 +346,13 @@ class DashboardView(BaseView):
                 self.fsa_claim_grid.attach(label, column_index, row_index, 1, 1)
 
     # ----------------------------------------------------------------- actions
+
+
+    def _on_fsa_claims(self, _button) -> None:
+        from ..dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+        assert self.db is not None
+        FsaClaimsDialog(self.get_root(), self.db).present()
 
     def _on_bill_activated(self, _view, position: int) -> None:
         selection = self.bills_view.get_model()

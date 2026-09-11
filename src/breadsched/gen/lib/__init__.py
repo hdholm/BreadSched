@@ -11,7 +11,12 @@ from .base import PrimaryObject, create_handle
 from .budget import Budget, BudgetLine, PeriodKind
 from .commodity import DEFAULT_CURRENCY, Commodity
 from .formula import FormulaError, evaluate
-from .fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+from .fsa_claim import (
+    FsaClaim,
+    FsaClaimAllocation,
+    FsaClaimRejection,
+    FsaClaimSplitLink,
+)
 from .money import ZERO, Money
 from .recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
 from .scenario import (
@@ -41,7 +46,7 @@ from .transaction import (
 
 __all__ = [
     "Account", "AccountClass", "AccountPlanningRole", "AccountType", "FsaClaim",
-    "FsaClaimAllocation", "FsaClaimSplitLink", "FsaFundingYear",
+    "FsaClaimAllocation", "FsaClaimRejection", "FsaClaimSplitLink", "FsaFundingYear",
     "AssumptionPeriod", "Assumptions",
     "Budget", "BudgetLine",
     "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",

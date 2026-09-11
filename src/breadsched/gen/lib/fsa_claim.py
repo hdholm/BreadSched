@@ -9,7 +9,12 @@ from typing import Any
 from .base import create_handle
 from .money import Money
 
-__all__ = ["FsaClaim", "FsaClaimAllocation", "FsaClaimSplitLink"]
+__all__ = [
+    "FsaClaim",
+    "FsaClaimAllocation",
+    "FsaClaimRejection",
+    "FsaClaimSplitLink",
+]
 
 
 @dataclass(frozen=True)
@@ -27,6 +32,30 @@ class FsaClaimSplitLink:
         return cls(transaction=str(data["transaction"]), split=str(data["split"]))
 
 
+@dataclass(frozen=True)
+class FsaClaimRejection:
+    """A rejected or failed reimbursement attempt with no ledger posting."""
+
+    attempted_on: date
+    amount: Money
+    reason: str = ""
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "attempted_on": self.attempted_on.isoformat(),
+            "amount": [self.amount.numerator, self.amount.denominator],
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FsaClaimRejection:
+        return cls(
+            attempted_on=date.fromisoformat(str(data["attempted_on"])),
+            amount=Money(*data["amount"]),
+            reason=str(data.get("reason", "")),
+        )
+
+
 @dataclass
 class FsaClaimAllocation:
     """One FSA funding source participating in a healthcare claim."""
@@ -35,6 +64,7 @@ class FsaClaimAllocation:
     funding_year_start: date
     target: Money | None = None
     reimbursements: list[FsaClaimSplitLink] = field(default_factory=list)
+    rejections: list[FsaClaimRejection] = field(default_factory=list)
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -45,6 +75,7 @@ class FsaClaimAllocation:
                 if self.target is not None else None
             ),
             "reimbursements": [link.serialize() for link in self.reimbursements],
+            "rejections": [item.serialize() for item in self.rejections],
         }
 
     @classmethod
@@ -58,6 +89,10 @@ class FsaClaimAllocation:
                 FsaClaimSplitLink.from_dict(item)
                 for item in data.get("reimbursements", [])
             ],
+            rejections=[
+                FsaClaimRejection.from_dict(item)
+                for item in data.get("rejections", [])
+            ],
         )
 
 
@@ -70,6 +105,7 @@ class FsaClaim:
     description: str = ""
     eob_responsibility: Money | None = None
     payments: list[FsaClaimSplitLink] = field(default_factory=list)
+    refunds: list[FsaClaimSplitLink] = field(default_factory=list)
     allocations: list[FsaClaimAllocation] = field(default_factory=list)
     handle: str = field(default_factory=create_handle)
 
@@ -84,6 +120,7 @@ class FsaClaim:
                 if self.eob_responsibility is not None else None
             ),
             "payments": [link.serialize() for link in self.payments],
+            "refunds": [link.serialize() for link in self.refunds],
             "allocations": [allocation.serialize() for allocation in self.allocations],
         }
 
@@ -97,6 +134,7 @@ class FsaClaim:
             description=str(data.get("description", "")),
             eob_responsibility=Money(*raw_eob) if raw_eob is not None else None,
             payments=[FsaClaimSplitLink.from_dict(item) for item in data.get("payments", [])],
+            refunds=[FsaClaimSplitLink.from_dict(item) for item in data.get("refunds", [])],
             allocations=[
                 FsaClaimAllocation.from_dict(item) for item in data.get("allocations", [])
             ],

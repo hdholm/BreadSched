@@ -135,8 +135,9 @@ class Api:
                     "service_date": summary.claim.service_date.isoformat(),
                     "provider": summary.claim.provider,
                     "status": summary.status.label,
-                    "paid": str(summary.paid.to_decimal()),
+                    "paid": str(summary.net_paid.to_decimal()),
                     "reimbursed": str(summary.reimbursed.to_decimal()),
+                    "rejected": str(summary.rejected.to_decimal()),
                     "remaining": str(summary.remaining_reimbursable.to_decimal()),
                 }
                 for claim in fsa_claims.iter_claims(self.db)
@@ -287,11 +288,15 @@ class Api:
                     if claim.eob_responsibility is not None else None
                 ),
                 "paid": str(summary.paid.to_decimal()),
+                "provider_refunds": str(summary.refunds.to_decimal()),
+                "net_paid": str(summary.net_paid.to_decimal()),
                 "reimbursed": str(summary.reimbursed.to_decimal()),
+                "rejected": str(summary.rejected.to_decimal()),
                 "remaining": str(summary.remaining_reimbursable.to_decimal()),
                 "status": summary.status.value,
                 "status_label": summary.status.label,
                 "payments": [link.serialize() for link in claim.payments],
+                "refunds": [link.serialize() for link in claim.refunds],
                 "allocations": [
                     {
                         **allocation.serialize(),
@@ -307,6 +312,7 @@ class Api:
 
     def fsa_claim_candidates(self) -> dict:
         payments = []
+        refunds = []
         reimbursements = []
         for transaction in self.db.iter_transactions():
             for split in transaction.splits:
@@ -324,6 +330,8 @@ class Api:
                 }
                 if account.account_class is AccountClass.EXPENSE and split.value > 0:
                     payments.append(row)
+                if account.account_class is AccountClass.EXPENSE and split.value < 0:
+                    refunds.append(row)
                 if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
                     reimbursements.append(row)
         fsa_accounts = [
@@ -337,6 +345,7 @@ class Api:
         ]
         return {
             "payments": payments[-250:],
+            "refunds": refunds[-250:],
             "reimbursements": reimbursements[-250:],
             "fsa_accounts": fsa_accounts,
         }
@@ -350,6 +359,7 @@ class Api:
             description=str(payload.get("description", "")).strip(),
             eob_responsibility=Money(eob) if eob else None,
             payments=[FsaClaimSplitLink.from_dict(item) for item in payload.get("payments", [])],
+            refunds=[FsaClaimSplitLink.from_dict(item) for item in payload.get("refunds", [])],
             allocations=[
                 FsaClaimAllocation.from_dict(item)
                 for item in payload.get("allocations", [])

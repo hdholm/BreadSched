@@ -48,9 +48,12 @@ class FsaClaimStatus(str, Enum):
 class FsaClaimSummary:
     claim: FsaClaim
     paid: Money
+    refunds: Money
+    net_paid: Money
     eob_responsibility: Money | None
     reimbursable: Money
     reimbursed: Money
+    rejected: Money
     remaining_reimbursable: Money
     available_fsa: Money
     status: FsaClaimStatus
@@ -93,10 +96,20 @@ def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
     seen_reimbursements: set[tuple[str, str]] = set()
     for link in claim.payments:
         _resolve_link(db, link)
+    for link in claim.refunds:
+        _resolve_link(db, link)
     for allocation in claim.allocations:
         year = _allocation_year(db, allocation)
         if allocation.target is not None and allocation.target < 0:
             raise ValueError("FSA allocation target must not be negative")
+        runout = year.runout_through or year.through
+        for rejection in allocation.rejections:
+            if rejection.amount < 0:
+                raise ValueError("rejected reimbursement amount must not be negative")
+            if rejection.attempted_on > runout:
+                raise ValueError(
+                    "rejected reimbursement is after the funding year's run-out window"
+                )
         for link in allocation.reimbursements:
             key = (link.transaction, link.split)
             if key in seen_reimbursements:
@@ -105,7 +118,6 @@ def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
             transaction, split = _resolve_link(db, link)
             if split.account != allocation.account:
                 raise ValueError("reimbursement split does not belong to allocation FSA")
-            runout = year.runout_through or year.through
             if transaction.post_date > runout:
                 raise ValueError("reimbursement is after the funding year's run-out window")
             if split.fsa_year_start != year.start:
@@ -144,7 +156,10 @@ def claim_summary(
 ) -> FsaClaimSummary:
     when = as_of or date.today()
     paid = _sum_links(db, claim.payments)
+    refunds = _sum_links(db, claim.refunds)
+    net_paid = paid - refunds
     reimbursed = Money(0)
+    rejected = Money(0)
     available = Money(0)
     target_total = Money(0)
     has_targets = False
@@ -156,15 +171,22 @@ def claim_summary(
         year_status = fsa.year_status(db, account, year, as_of=when)
         available = available + year_status.remaining
         reimbursed = reimbursed + _sum_links(db, allocation.reimbursements)
+        for rejection in allocation.rejections:
+            if rejection.amount < 0:
+                raise ValueError("rejected reimbursement amount must not be negative")
+            rejected = rejected + rejection.amount
         if allocation.target is not None:
             has_targets = True
             target_total = target_total + allocation.target
 
-    if claim.eob_responsibility is None:
-        reimbursable = paid
+    if net_paid < 0:
+        reimbursable = Money(0)
+        status = FsaClaimStatus.NEEDS_REVIEW
+    elif claim.eob_responsibility is None:
+        reimbursable = net_paid
         status = FsaClaimStatus.WAITING_EOB
     else:
-        reimbursable = min(paid, claim.eob_responsibility)
+        reimbursable = min(net_paid, claim.eob_responsibility)
         if has_targets and target_total > reimbursable:
             status = FsaClaimStatus.NEEDS_REVIEW
         elif reimbursed > reimbursable:
@@ -181,9 +203,12 @@ def claim_summary(
     return FsaClaimSummary(
         claim=claim,
         paid=paid,
+        refunds=refunds,
+        net_paid=net_paid,
         eob_responsibility=claim.eob_responsibility,
         reimbursable=reimbursable,
         reimbursed=reimbursed,
+        rejected=rejected,
         remaining_reimbursable=remaining,
         available_fsa=available,
         status=status,

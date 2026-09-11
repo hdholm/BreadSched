@@ -425,21 +425,7 @@ async function openFsaClaimsEditor() {
     onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
   });
   const list = el("div", { class:"stack" });
-  const renderList = () => {
-    const claimRows = data.claims.length ? data.claims.map((claim) =>
-      el("div", { class:"card" },
-        el("strong", {}, `${claim.service_date} ${claim.provider || "FSA claim"}`),
-        el("span", {}, ` ${claim.status_label} — paid ${money(claim.paid)}, `
-          + `reimbursed ${money(claim.reimbursed)}, remaining ${money(claim.remaining)}`),
-        el("button", { class:"action", type:"button", onclick:async()=>{
-          await post("/api/fsa/claim/delete", { handle:claim.handle });
-          data.claims = data.claims.filter((item)=>item.handle !== claim.handle);
-          renderList();
-        }}, "Delete"))) : [el("p", { class:"note" }, "No FSA claims yet.")];
-    list.replaceChildren(...claimRows);
-  };
-  renderList();
-
+  let editingHandle = null;
   const service = el("input", { type:"date" });
   const provider = el("input", { placeholder:"Provider" });
   const description = el("input", { placeholder:"Description" });
@@ -448,83 +434,150 @@ async function openFsaClaimsEditor() {
     data.candidates.payments.map((item) => el("option", {
       value:JSON.stringify({transaction:item.transaction, split:item.split}),
     }, `${item.date} ${item.description} — ${item.account_name} ${money(item.amount)}`)));
+  const refundSelect = el("select", { multiple:"multiple", size:"4" },
+    data.candidates.refunds.map((item) => el("option", {
+      value:JSON.stringify({transaction:item.transaction, split:item.split}),
+    }, `${item.date} ${item.description} — ${item.account_name} ${money(item.amount)}`)));
   const allocations = el("div", { class:"stack" });
-  const addAllocation = () => {
+
+  const selectLinks = (select, links) => {
+    const wanted = new Set((links || []).map((link)=>JSON.stringify(link)));
+    Array.from(select.options).forEach((option)=>{ option.selected = wanted.has(option.value); });
+  };
+  const addAllocation = (initial=null) => {
     const accountSelect = el("select", {}, data.candidates.fsa_accounts.map((account) =>
       el("option", { value:account.handle }, account.name)));
     const yearSelect = el("select");
     const reimburse = el("select", { multiple:"multiple", size:"4" });
     const target = el("input", { placeholder:"Target amount (optional)" });
+    const rejections = el("div", { class:"stack" });
+    const addRejection = (value=null) => {
+      const attempted = el("input", { type:"date", value:value?.attempted_on || "" });
+      const amount = el("input", { placeholder:"Rejected amount",
+        value:value?.amount ? money(value.amount[0] / value.amount[1]) : "" });
+      const reason = el("input", { placeholder:"Reason", value:value?.reason || "" });
+      const row = el("div", { class:"row" }, attempted, amount, reason,
+        el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove"));
+      row._rejectionFields = { attempted, amount, reason };
+      rejections.append(row);
+    };
     const refresh = () => {
       const account = data.candidates.fsa_accounts.find(
         (item)=>item.handle === accountSelect.value);
+      const wantedYear = initial?.funding_year_start || yearSelect.value;
       yearSelect.replaceChildren(...((account?.years || []).map((year) =>
         el("option", { value:year.start }, `${year.start} – ${year.through}`))));
+      if (wantedYear) yearSelect.value = wantedYear;
       reimburse.replaceChildren(...data.candidates.reimbursements
         .filter((item)=>item.account === accountSelect.value)
         .map((item)=>el("option", {
           value:JSON.stringify({transaction:item.transaction, split:item.split}),
         }, `${item.date} ${item.description} — ${money(item.amount)}`)));
+      if (initial) selectLinks(reimburse, initial.reimbursements);
     };
-    accountSelect.onchange = refresh;
+    accountSelect.onchange = ()=>{ initial = null; refresh(); };
     const row = el("div", { class:"card" },
       el("div", { class:"row" }, accountSelect, yearSelect, target,
         el("button", { class:"action", type:"button", onclick:()=>row.remove() },
           "Remove allocation")),
-      el("label", {}, "Reimbursement/payment splits"), reimburse);
-    row._claimFields = { accountSelect, yearSelect, target, reimburse };
+      el("label", {}, "Reimbursement/payment splits"), reimburse,
+      el("strong", {}, "Rejected/failed reimbursement attempts"), rejections,
+      el("button", { class:"action", type:"button", onclick:()=>addRejection() },
+        "Add rejected attempt"));
+    row._claimFields = { accountSelect, yearSelect, target, reimburse, rejections };
     allocations.append(row);
+    if (initial) {
+      accountSelect.value = initial.account;
+      if (initial.target) target.value = String(initial.target[0] / initial.target[1]);
+      (initial.rejections || []).forEach(addRejection);
+    }
     refresh();
+  };
+  const clearForm = () => {
+    editingHandle = null;
+    service.value = ""; provider.value = ""; description.value = ""; eob.value = "";
+    selectLinks(paymentSelect, []); selectLinks(refundSelect, []);
+    allocations.replaceChildren();
+  };
+  const loadClaim = (claim) => {
+    clearForm(); editingHandle = claim.handle;
+    service.value = claim.service_date; provider.value = claim.provider || "";
+    description.value = claim.description || "";
+    eob.value = claim.eob_responsibility || "";
+    selectLinks(paymentSelect, claim.payments); selectLinks(refundSelect, claim.refunds);
+    (claim.allocations || []).forEach((allocation)=>addAllocation(allocation));
+  };
+  const renderList = () => {
+    const claimRows = data.claims.length ? data.claims.map((claim) =>
+      el("div", { class:"card" },
+        el("strong", {}, `${claim.service_date} ${claim.provider || "FSA claim"}`),
+        el("span", {}, ` ${claim.status_label} — paid ${money(claim.net_paid)}, `
+          + `reimbursed ${money(claim.reimbursed)}, rejected ${money(claim.rejected)}, `
+          + `remaining ${money(claim.remaining)}`),
+        el("div", { class:"row" },
+          el("button", { class:"action", type:"button", onclick:()=>loadClaim(claim) }, "Edit"),
+          el("button", { class:"action", type:"button", onclick:async()=>{
+            await post("/api/fsa/claim/delete", { handle:claim.handle });
+            data.claims = data.claims.filter((item)=>item.handle !== claim.handle);
+            if (editingHandle === claim.handle) clearForm();
+            renderList();
+          }}, "Delete")))) : [el("p", { class:"note" }, "No FSA claims yet.")];
+    list.replaceChildren(...claimRows);
   };
   const save = async () => {
     const payments = Array.from(paymentSelect.selectedOptions).map(
+      (option)=>JSON.parse(option.value));
+    const refunds = Array.from(refundSelect.selectedOptions).map(
       (option)=>JSON.parse(option.value));
     const allocationPayload = Array.from(allocations.children).map((row) => {
       const fields = row._claimFields;
       const targetValue = fields.target.value.trim();
       const targetMoney = targetValue ? Math.round(Number(targetValue) * 100) : null;
+      const rejections = Array.from(fields.rejections.children).map((rejectionRow) => {
+        const r = rejectionRow._rejectionFields;
+        const cents = Math.round(Number(r.amount.value) * 100);
+        return { attempted_on:r.attempted.value, amount:[cents, 100], reason:r.reason.value.trim() };
+      });
       return {
         account:fields.accountSelect.value,
         funding_year_start:fields.yearSelect.value,
         target:targetMoney === null ? null : [targetMoney, 100],
         reimbursements:Array.from(fields.reimburse.selectedOptions).map(
           (option)=>JSON.parse(option.value)),
+        rejections,
       };
     });
     await post("/api/fsa/claim/save", {
+      handle:editingHandle,
       service_date:service.value,
       provider:provider.value.trim(),
       description:description.value.trim(),
-      eob_responsibility:eob.value.trim(),
-      payments,
-      allocations:allocationPayload,
+      eob_responsibility:eob.value.trim(), payments, refunds, allocations:allocationPayload,
     });
-    backdrop.remove();
-    say("FSA claim saved.");
-    render();
+    backdrop.remove(); say(editingHandle ? "FSA claim updated." : "FSA claim saved."); render();
   };
+  renderList();
   const form = el("section", { class:"detail-dialog wide" },
     el("h2", {}, "FSA claims"), list,
-    el("h3", {}, "New claim / service episode"),
+    el("h3", {}, "Claim / service episode"),
     el("p", { class:"note" },
-      "Service and EOB information is tracked separately from ledger dates. "
-      + "A claim may use more than one FSA account or funding year."),
+      "Service and EOB information is separate from ledger dates. Provider refunds reduce "
+      + "the net amount paid; rejected reimbursement attempts are tracked without creating ledger activity."),
     el("div", { class:"row" }, service, provider, description, eob),
     el("label", {}, "Healthcare payments"), paymentSelect,
+    el("label", {}, "Provider refunds / credits"), refundSelect,
     el("h3", {}, "FSA allocations"), allocations,
     el("div", { class:"toolbar" },
-      el("button", { class:"action", type:"button", onclick:addAllocation },
+      el("button", { class:"action", type:"button", onclick:()=>addAllocation() },
         "Add FSA allocation"),
+      el("button", { class:"action", type:"button", onclick:clearForm }, "New claim"),
       el("span", { style:"flex:1" }),
-      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() },
-        "Close"),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"),
       el("button", { class:"action primary", type:"button",
         onclick:()=>save().catch((error)=>say(error.message,"error")) }, "Save claim")));
-  backdrop.append(form);
-  document.body.append(backdrop);
+  backdrop.append(form); document.body.append(backdrop);
 }
 
-// ------------------------------------------------------------------- views
 
 async function showAccounts() {
   const [summary, accounts] = await Promise.all([
