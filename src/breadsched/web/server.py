@@ -287,6 +287,9 @@ class Api:
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
                     "planning_flow": simple["planning_flow"] if simple else None,
+                    "additional_splits": (
+                        simple["additional_splits"] if simple else []
+                    ),
                     "start": item.recurrence.start.isoformat(),
                     "end": (
                         item.recurrence.end.isoformat()
@@ -571,12 +574,9 @@ class Api:
         return scenario
 
     def _simple_schedule_parts(self, scheduled) -> dict | None:
-        if len(scheduled.splits) != 2 or any(
-            split.formula for split in scheduled.splits
-        ):
+        if len(scheduled.splits) < 2 or any(split.formula for split in scheduled.splits):
             return None
         flow = None
-        other = None
         for split in scheduled.splits:
             account = self.db.get_account(split.account)
             if account is not None and account.account_class in (
@@ -586,19 +586,58 @@ class Api:
                 break
         if flow is None:
             return None
-        other = next((split for split in scheduled.splits if split is not flow), None)
-        if other is None:
+        others = [split for split in scheduled.splits if split is not flow]
+        funding = next(
+            (
+                split
+                for split in others
+                if (account := self.db.get_account(split.account)) is not None
+                and account.account_class not in (
+                    AccountClass.INCOME, AccountClass.EXPENSE
+                )
+                and split.planning_flow is None
+            ),
+            others[-1] if others else None,
+        )
+        if funding is None:
             return None
         account = self.db.get_account(flow.account)
         assert account is not None
         amount = flow.resolve(scheduled.variables) * account.sign()
+        additional = []
+        for split in others:
+            if split is funding:
+                continue
+            extra_account = self.db.get_account(split.account)
+            if extra_account is None:
+                return None
+            resolved = split.resolve(scheduled.variables)
+            normal_amount = (
+                split.planning_flow.plan_amount(resolved)
+                if split.planning_flow is not None
+                else resolved * extra_account.sign()
+            )
+            if normal_amount <= 0:
+                return None
+            additional.append(
+                {
+                    "account": split.account,
+                    "amount": str(normal_amount.to_decimal()),
+                    "planning_flow": (
+                        split.planning_flow.value
+                        if split.planning_flow is not None
+                        else None
+                    ),
+                }
+            )
         return {
             "category": flow.account,
-            "funding": other.account,
+            "funding": funding.account,
             "amount": str(abs(amount).to_decimal()),
             "planning_flow": (
-                other.planning_flow.value if other.planning_flow is not None else None
+                funding.planning_flow.value if funding.planning_flow is not None else None
             ),
+            "additional_splits": additional,
         }
 
     @staticmethod
@@ -635,6 +674,7 @@ class Api:
             "funding": simple["funding"] if simple else None,
             "amount": simple["amount"] if simple else None,
             "planning_flow": simple["planning_flow"] if simple else None,
+            "additional_splits": simple["additional_splits"] if simple else [],
             "frequency": self._frequency_key(item.recurrence),
             "start": item.recurrence.start.isoformat(),
             "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
@@ -779,6 +819,43 @@ class Api:
             changes.append(ScheduledOccurrenceAdjustment(when, amount))
         return sorted(changes, key=lambda item: item.when)
 
+    def _parse_additional_splits(
+        self, payload: dict, excluded: set[str]
+    ) -> tuple[list[ScheduledSplit], Money]:
+        raw_splits = payload.get("additional_splits") or []
+        if not isinstance(raw_splits, list):
+            raise ValueError("additional splits must be a list")
+        splits: list[ScheduledSplit] = []
+        total = Money(0)
+        used = set(excluded)
+        for raw in raw_splits:
+            if not isinstance(raw, dict):
+                raise ValueError("additional split entry is invalid")
+            handle = str(raw.get("account") or "").strip()
+            account = self.db.get_account(handle) if handle else None
+            if account is None or handle in used:
+                raise ValueError("each additional split needs a different account")
+            try:
+                amount = Money(str(raw.get("amount") or "0"))
+            except (ValueError, ArithmeticError) as exc:
+                raise ValueError("additional split amount must be a valid number") from exc
+            if amount <= 0:
+                raise ValueError("additional split amount must be greater than zero")
+            raw_purpose = str(raw.get("planning_flow") or "").strip()
+            try:
+                purpose = PlanningFlowKind(raw_purpose) if raw_purpose else None
+            except ValueError:
+                raise ValueError("choose a valid planning purpose") from None
+            value = (
+                purpose.ledger_amount(amount)
+                if purpose is not None
+                else amount * account.sign()
+            )
+            splits.append(ScheduledSplit(handle, value, planning_flow=purpose))
+            total = total + value
+            used.add(handle)
+        return splits, total
+
     def scenario_event_save(self, payload: dict) -> dict:
         scenario = self._scenario_for_events(payload.get("handle"))
         source_handle = str(payload.get("source_schedule") or "").strip() or None
@@ -859,13 +936,19 @@ class Api:
             )
         except ValueError:
             raise ValueError("choose a valid planning purpose") from None
+        additional_splits, additional_total = self._parse_additional_splits(
+            payload, {category.handle, funding.handle}
+        )
         change = ScenarioSchedule(
             name=name,
             recurrence=recurrence,
             splits=[
                 ScheduledSplit(category.handle, signed),
+                *additional_splits,
                 ScheduledSplit(
-                    funding.handle, -signed, planning_flow=planning_flow
+                    funding.handle,
+                    -(signed + additional_total),
+                    planning_flow=planning_flow,
                 ),
             ],
             source_schedule=source_handle,
@@ -1690,7 +1773,7 @@ class Api:
         return result
 
     def scheduled_save(self, payload: dict) -> dict:
-        """Create or update a simple two-split baseline schedule."""
+        """Create or update a fixed-split baseline schedule."""
         handle = str(payload.get("handle") or "").strip()
         existing = self.db.get_scheduled(handle) if handle else None
         if handle and existing is None:
@@ -1699,7 +1782,7 @@ class Api:
             self._simple_schedule_parts(existing) is None
             or self._frequency_key(existing.recurrence) is None
         ):
-            raise ValueError("complex schedules cannot be edited in the simple editor")
+            raise ValueError("formula schedules cannot be edited in the fixed-split editor")
 
         name = str(payload.get("name") or "").strip()
         if not name:
@@ -1790,10 +1873,18 @@ class Api:
             )
         except ValueError:
             raise ValueError("choose a valid planning purpose") from None
+        additional_splits, additional_total = self._parse_additional_splits(
+            payload, {category.handle, funding.handle}
+        )
         item.recurrence = recurrence
         item.splits = [
             ScheduledSplit(category.handle, signed),
-            ScheduledSplit(funding.handle, -signed, planning_flow=planning_flow),
+            *additional_splits,
+            ScheduledSplit(
+                funding.handle,
+                -(signed + additional_total),
+                planning_flow=planning_flow,
+            ),
         ]
         item.placeholder = bool(payload.get("placeholder", False))
         item.amount_changes = amount_changes

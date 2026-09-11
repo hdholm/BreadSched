@@ -7,7 +7,7 @@ from datetime import date
 
 from ..gi_setup import Gtk
 
-__all__ = ["DateListEditor", "DatedAmountListEditor"]
+__all__ = ["DateListEditor", "DatedAmountListEditor", "PlanningSplitListEditor"]
 
 
 class _ListEditor(Gtk.Box):
@@ -184,3 +184,64 @@ class DateListEditor(_ListEditor):
             item = date_control.get_selected_item()
             values.append(item.get_string() if item is not None else "")
         return values
+
+
+class PlanningSplitListEditor(_ListEditor):
+    """Edit additional fixed split legs for a simple scheduled transaction."""
+
+    def __init__(
+        self,
+        on_changed: Callable[..., None],
+        account_names: list[str],
+        purpose_labels: list[str],
+    ) -> None:
+        super().__init__(on_changed)
+        self._account_names = account_names
+        self._purpose_labels = purpose_labels
+        add = Gtk.Button(label="Add split", halign=Gtk.Align.START)
+        add.add_css_class("flat")
+        add.connect("clicked", lambda *_: self.add_row())
+        self.append(add)
+
+    def add_row(
+        self, account_index: int = 0, amount: str = "", purpose_index: int = 0
+    ) -> None:
+        row = Gtk.Box(spacing=6)
+        account = Gtk.DropDown.new_from_strings(self._account_names)
+        account.set_hexpand(True)
+        account.set_selected(account_index)
+        value = Gtk.Entry(placeholder_text="Amount")
+        value.set_text(amount)
+        purpose = Gtk.DropDown.new_from_strings(self._purpose_labels)
+        purpose.set_selected(purpose_index)
+        account.connect("notify::selected", self._on_changed)
+        value.connect("changed", self._on_changed)
+        purpose.connect("notify::selected", self._on_changed)
+        remove = Gtk.Button(icon_name="list-remove-symbolic")
+        remove.set_tooltip_text("Remove")
+        remove.add_css_class("flat")
+        remove.connect("clicked", lambda *_: self._remove(row))
+        row.append(account)
+        row.append(value)
+        row.append(purpose)
+        row.append(remove)
+        self._rows.append(row)
+        self._row_data.append((row, account, value, purpose))
+        self._on_changed()
+
+    def set_values(self, values: Iterable[tuple[int, str, int]]) -> None:
+        while child := self._rows.get_first_child():
+            self._rows.remove(child)
+        self._row_data.clear()
+        for account_index, amount, purpose_index in values:
+            self.add_row(account_index, amount, purpose_index)
+
+    def values(self) -> list[tuple[int, str, int]]:
+        return [
+            (
+                account.get_selected(),
+                value.get_text().strip(),
+                purpose.get_selected(),
+            )
+            for _row, account, value, purpose in self._row_data
+        ]

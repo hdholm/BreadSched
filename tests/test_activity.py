@@ -329,6 +329,13 @@ class TestCategoryPlanning:
 
 
 class TestPlanningFlowClassification:
+    def test_planning_purpose_maps_positive_economic_amounts_to_ledger_signs(self):
+        amount = Money("250.00")
+        assert PlanningFlowKind.RETIREMENT_SAVING.ledger_amount(amount) == amount
+        assert PlanningFlowKind.BENEFIT_FUNDING.ledger_amount(amount) == amount
+        assert PlanningFlowKind.DEBT_PRINCIPAL.ledger_amount(amount) == amount
+        assert PlanningFlowKind.RETIREMENT_INCOME.ledger_amount(amount) == -amount
+
     def test_classified_balance_sheet_splits_appear_in_plan(self, db, book):
         contribution = ScheduledTransaction(
             name="401k contribution",

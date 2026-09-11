@@ -48,10 +48,18 @@ class PlanningFlowKind(str, Enum):
         }[self]
 
     def plan_amount(self, value: Money) -> Money:
-        """Return the amount in the positive direction used by Plan."""
+        """Return the amount in the positive economic direction used by Plan."""
         if self is PlanningFlowKind.RETIREMENT_INCOME:
             return -value
         return value
+
+    def ledger_amount(self, amount: Money) -> Money:
+        """Return the ledger split for a positive amount of this planning purpose."""
+        if amount < 0:
+            raise ValueError("planning-purpose amount must not be negative")
+        if self is PlanningFlowKind.RETIREMENT_INCOME:
+            return -amount
+        return amount
 
 
 class PlanningResolution(str, Enum):

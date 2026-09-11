@@ -40,6 +40,7 @@ def book_path(tmp_path, capsys):
             ("root", "Root Account", "ROOT", None, 0),
             ("assets", "Assets", "ASSET", "root", 1),
             ("bank", "Checking", "BANK", "assets", 0),
+            ("retirement", "401(k)", "ASSET", "assets", 0),
             ("income", "Income", "INCOME", "root", 1),
             ("wages", "Salary", "INCOME", "income", 0),
             ("expenses", "Expenses", "EXPENSE", "root", 1),
@@ -323,6 +324,71 @@ class TestItServes:
             if row["kind"] == "benefit_funding"
         )
         assert Money(benefit["planned"][1]) == Money("-110.00")
+
+    def test_fixed_multisplit_schedule_balances_payroll_and_classifies_saving(
+        self, client
+    ):
+        _status, data = client.get("/api/scheduled")
+        salary = next(a for a in data["accounts"] if a["name"].endswith(":Salary"))
+        rent = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        checking = next(
+            a for a in data["accounts"] if a["name"].endswith(":Checking")
+        )
+        retirement = next(
+            a for a in data["accounts"] if a["name"].endswith(":401(k)")
+        )
+        status, created = client.post(
+            "/api/scheduled/save",
+            {
+                "name": "Payroll plan",
+                "placeholder": True,
+                "category": salary["handle"],
+                "funding": checking["handle"],
+                "amount": "5000.00",
+                "additional_splits": [
+                    {
+                        "account": rent["handle"],
+                        "amount": "1000.00",
+                        "planning_flow": None,
+                    },
+                    {
+                        "account": retirement["handle"],
+                        "amount": "500.00",
+                        "planning_flow": "retirement_saving",
+                    },
+                ],
+                "frequency": "monthly",
+                "start": "2026-02-01",
+                "count": "2",
+                "weekend": "none",
+            },
+        )
+        assert status == 200
+        handle = created["handle"]
+        _status, refreshed = client.get("/api/scheduled")
+        item = next(row for row in refreshed["definitions"] if row["handle"] == handle)
+        assert item["simple"] is True
+        assert item["additional_splits"] == [
+            {
+                "account": rent["handle"],
+                "amount": "1000.00",
+                "planning_flow": None,
+            },
+            {
+                "account": retirement["handle"],
+                "amount": "500.00",
+                "planning_flow": "retirement_saving",
+            },
+        ]
+
+        _status, plan = client.get(
+            "/api/plan?from=2026-02&through=2026-03&period=month"
+        )
+        retirement_flow = next(
+            row for row in plan["planning_flows"]
+            if row["kind"] == "retirement_saving"
+        )
+        assert Money(retirement_flow["planned"][0]) == Money("500.00")
 
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")
@@ -1091,6 +1157,70 @@ class TestScenarioEventWebParity:
         assert saved["changes"][0]["source_schedule"] is None
         assert saved["changes"][0]["amount"] == "1500.00"
         assert saved["changes"][0]["planning_flow"] == "debt_principal"
+
+    def test_scenario_estimate_can_carry_fixed_multisplit_classifications(
+        self, scenario_event_client
+    ):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?"
+            + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        salary = next(
+            account for account in events["accounts"]
+            if account["name"].endswith("Salary")
+        )
+        rent = next(
+            account for account in events["accounts"] if account["name"].endswith("Rent")
+        )
+        bank = next(
+            account for account in events["accounts"]
+            if account["name"].endswith("Checking")
+        )
+        retirement = next(
+            account for account in events["accounts"]
+            if account["name"].endswith("401(k)")
+        )
+        status, saved = scenario_event_client.post(
+            "/api/scenario/event/save",
+            {
+                "handle": scenario["handle"],
+                "name": "Alternate payroll",
+                "category": salary["handle"],
+                "funding": bank["handle"],
+                "amount": "5000.00",
+                "additional_splits": [
+                    {
+                        "account": rent["handle"],
+                        "amount": "1000.00",
+                        "planning_flow": None,
+                    },
+                    {
+                        "account": retirement["handle"],
+                        "amount": "600.00",
+                        "planning_flow": "retirement_saving",
+                    },
+                ],
+                "frequency": "monthly",
+                "start": "2026-03-01",
+                "weekend": "none",
+            },
+        )
+        assert status == 200
+        change = saved["changes"][0]
+        assert change["simple"] is True
+        assert change["additional_splits"] == [
+            {
+                "account": rent["handle"],
+                "amount": "1000.00",
+                "planning_flow": None,
+            },
+            {
+                "account": retirement["handle"],
+                "amount": "600.00",
+                "planning_flow": "retirement_saving",
+            },
+        ]
 
     def test_scenario_estimate_can_skip_and_override_occurrences(
         self, scenario_event_client

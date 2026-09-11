@@ -509,9 +509,11 @@ elections/funding, loan and liability payments whose principal reduces debt whil
 interest remains an expense, and retirement distributions whose source is an
 investment asset but whose planning purpose is retirement income. The classification
 should let Plan report these purposes alongside Income/Expense flows while keeping
-ordinary transfers such as Checking -> Savings neutral. Multi-split payroll should
-be able to expose salary, taxes/expenses, retirement saving, FSA funding, and net
-cash as parts of one scheduled transaction without double counting.
+ordinary transfers such as Checking -> Savings neutral. Fixed multi-split scheduled
+transactions can now expose salary, taxes/expenses, retirement saving, FSA funding,
+and automatically balanced net cash as parts of one transaction without double
+counting. Formula-driven payroll/loan schedules and richer per-leg amount timelines
+remain future work.
 
 The same classifications must feed Plan, Projection explanation, scenario comparison,
 and the dashboard. FSA classifications should integrate with the dedicated plan-year

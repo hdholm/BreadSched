@@ -27,7 +27,11 @@ from ...gen.lib import (
     scheduled_occurrence_preview,
 )
 from ..gi_setup import Gtk
-from ..widgets.schedule_timeline import DatedAmountListEditor, DateListEditor
+from ..widgets.schedule_timeline import (
+    DatedAmountListEditor,
+    DateListEditor,
+    PlanningSplitListEditor,
+)
 
 __all__ = ["ScenarioScheduleDialog", "ScenarioSchedulePickerDialog"]
 
@@ -151,6 +155,20 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.amount_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Amount", xalign=0), 0, row, 1, 1)
         grid.attach(self.amount_entry, 1, row, 1, 1)
+        row += 1
+
+        self.additional_splits = PlanningSplitListEditor(
+            self._validate,
+            self._names,
+            [label for label, _kind in _PLANNING_FLOWS],
+        )
+        label = Gtk.Label(label="Additional splits", xalign=0, valign=Gtk.Align.START)
+        label.set_tooltip_text(
+            "Add fixed payroll deductions, retirement/FSA funding, debt principal, "
+            "or other legs. The paid-from/into split is balanced automatically."
+        )
+        grid.attach(label, 0, row, 1, 1)
+        grid.attach(self.additional_splits, 1, row, 1, 1)
         row += 1
 
         self.amount_changes_editor = DatedAmountListEditor(
@@ -283,7 +301,6 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.weekend.set_selected(weekend_index)
 
         flow_split = None
-        other_split = None
         for split in source.splits:
             account = self.db.get_account(split.account)
             if account is not None and account.account_class in (
@@ -292,28 +309,32 @@ class ScenarioScheduleDialog(Gtk.Window):
             ):
                 flow_split = split
                 break
-        if flow_split is not None:
-            other_split = next(
-                (split for split in source.splits if split is not flow_split),
-                None,
-            )
-        if (
-            flow_split is None
-            or other_split is None
-            or len(source.splits) != 2
-            or any(split.formula for split in source.splits)
-        ):
+        if flow_split is None or any(split.formula for split in source.splits):
             self.status.set_text(
-                "This schedule has a complex split structure. Suppression is supported, "
-                "but the simple alternate editor currently requires exactly one income or "
-                "expense split and one funding split."
+                "This schedule uses formulas or has no income/expense anchor. "
+                "Suppression is supported, but this fixed-split editor cannot rewrite it."
             )
             self.status.add_css_class("negative")
             self.save_button.set_sensitive(False)
             return
+        others = [split for split in source.splits if split is not flow_split]
+        funding_split = next(
+            (
+                split
+                for split in others
+                if (account := self.db.get_account(split.account)) is not None
+                and account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
+                and split.planning_flow is None
+            ),
+            others[-1] if others else None,
+        )
+        if funding_split is None:
+            self.status.set_text("This schedule has no identifiable funding/net-cash split.")
+            self.save_button.set_sensitive(False)
+            return
 
         category_index = self._account_index(flow_split.account)
-        funding_index = self._account_index(other_split.account)
+        funding_index = self._account_index(funding_split.account)
         if category_index is not None:
             self.category.set_selected(category_index)
         if funding_index is not None:
@@ -323,7 +344,7 @@ class ScenarioScheduleDialog(Gtk.Window):
                 (
                     index
                     for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
-                    if kind is other_split.planning_flow
+                    if kind is funding_split.planning_flow
                 ),
                 0,
             )
@@ -333,6 +354,32 @@ class ScenarioScheduleDialog(Gtk.Window):
         if category is not None:
             amount = amount * category.sign()
         self.amount_entry.set_text(abs(amount).format())
+        extra_values = []
+        for split in others:
+            if split is funding_split:
+                continue
+            account = self.db.get_account(split.account)
+            account_index = self._account_index(split.account)
+            if account is None or account_index is None:
+                continue
+            purpose_index = next(
+                (
+                    index
+                    for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
+                    if kind is split.planning_flow
+                ),
+                0,
+            )
+            resolved = split.resolve(source.variables)
+            normal_amount = (
+                split.planning_flow.plan_amount(resolved)
+                if split.planning_flow is not None
+                else resolved * account.sign()
+            )
+            extra_values.append(
+                (account_index, str(normal_amount.to_decimal()), purpose_index)
+            )
+        self.additional_splits.set_values(extra_values)
         self.amount_changes_editor.set_values(
             (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
         )
@@ -493,10 +540,22 @@ class ScenarioScheduleDialog(Gtk.Window):
         if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
             problems.append("choose an income or expense category")
         initial = self.current or self.source
-        if initial is not None and (
-            len(initial.splits) != 2 or any(split.formula for split in initial.splits)
-        ):
-            problems.append("complex schedules can only be suppressed for now")
+        if initial is not None and any(split.formula for split in initial.splits):
+            problems.append("formula schedules can only be suppressed for now")
+        selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
+        for account_index, raw_amount, _purpose_index in self.additional_splits.values():
+            if account_index in selected_accounts:
+                problems.append("each additional split needs a different account")
+                break
+            selected_accounts.add(account_index)
+            try:
+                extra_amount = Money(raw_amount)
+            except (ValueError, ArithmeticError):
+                problems.append("check additional split amounts")
+                break
+            if extra_amount <= 0:
+                problems.append("additional split amounts must be greater than zero")
+                break
 
         self.save_button.set_sensitive(not problems)
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
@@ -527,6 +586,22 @@ class ScenarioScheduleDialog(Gtk.Window):
         category = self._accounts[self.category.get_selected()]
         funding = self._accounts[self.funding.get_selected()]
         signed = amount * category.sign()
+        extra_splits = []
+        extra_total = Money(0)
+        for account_index, raw_amount, purpose_index in self.additional_splits.values():
+            account = self._accounts[account_index]
+            extra_amount = Money(raw_amount)
+            purpose = _PLANNING_FLOWS[purpose_index][1]
+            value = (
+                purpose.ledger_amount(extra_amount)
+                if purpose is not None
+                else extra_amount * account.sign()
+            )
+            extra_total = extra_total + value
+            extra_splits.append(
+                ScheduledSplit(account.handle, value, planning_flow=purpose)
+            )
+        funding_value = -(signed + extra_total)
         placeholder = True
         if self.current is not None:
             placeholder = self.current.placeholder
@@ -537,9 +612,10 @@ class ScenarioScheduleDialog(Gtk.Window):
             recurrence=recurrence,
             splits=[
                 ScheduledSplit(category.handle, signed),
+                *extra_splits,
                 ScheduledSplit(
                     funding.handle,
-                    -signed,
+                    funding_value,
                     planning_flow=_PLANNING_FLOWS[
                         self.planning_flow.get_selected()
                     ][1],

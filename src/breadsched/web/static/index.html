@@ -309,6 +309,44 @@ function occurrenceTimelineEditor(label, initial, withAmount, onChanged=()=>{}) 
   };
 }
 
+function planningSplitEditor(accounts, initial, onChanged=()=>{}) {
+  const rows = el("div", {});
+  const purposes = [
+    ["", "Ordinary account flow"],
+    ["retirement_saving", "Retirement saving"],
+    ["benefit_funding", "Benefit / FSA funding"],
+    ["debt_principal", "Debt principal"],
+    ["retirement_income", "Retirement distribution"],
+  ];
+  const box = el("div", { class:"timeline-editor planning-splits" },
+    el("strong", {}, "Additional splits"), rows);
+  const addRow = (item={}) => {
+    const row = el("div", { class:"timeline-row" });
+    const account = el("select", {}, accounts.map((entry)=>
+      el("option", { value:entry.handle, selected:entry.handle===item.account ? "selected" : null }, entry.name)));
+    const amount = el("input", { inputmode:"decimal", placeholder:"Amount", value:item.amount || "" });
+    const purpose = el("select", {}, purposes.map(([value,label])=>
+      el("option", { value, selected:value===(item.planning_flow || "") ? "selected" : null }, label)));
+    const remove = el("button", { class:"action", type:"button", onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
+    row.append(account, amount, purpose, remove);
+    rows.append(row);
+    [account, amount, purpose].forEach((control)=>control.addEventListener("change", onChanged));
+  };
+  (initial || []).forEach(addRow);
+  box.append(el("p", { class:"note" },
+    "Use positive economic amounts. Debt principal reduces the liability; retirement distributions flow out of the investment account. Net paid-from/into cash is balanced automatically."));
+  box.append(el("button", { class:"action", type:"button", onclick:()=>{ addRow(); onChanged(); } }, "Add split"));
+  return {
+    node:box,
+    values:()=>Array.from(rows.children).map((row)=>{
+      const selects=row.querySelectorAll("select");
+      const amount=row.querySelector("input").value.trim();
+      if (!amount) throw new Error("Additional splits: enter an amount or remove the empty row.");
+      return {account:selects[0].value, amount, planning_flow:selects[1].value || null};
+    }),
+  };
+}
+
 function schedulePreviewNode() {
   const body = el("div", { class:"schedule-preview" });
   const node = el("div", { class:"panel compact" },
@@ -506,6 +544,8 @@ function openScheduledEditor(data, source) {
   const oneTimeEditor = occurrenceTimelineEditor(
     "One-time amounts", source?.occurrence_adjustments || [], true, changed);
   const preview = schedulePreviewNode();
+  const additionalSplits = planningSplitEditor(
+    accounts, source?.additional_splits || [], changed);
   const category = select("category", flowAccounts.map((a) => [a.handle, a.name]), source?.category || flowAccounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
   const planningFlow = select("planning_flow", [
@@ -525,6 +565,7 @@ function openScheduledEditor(data, source) {
     field("Category", category), field("Paid from / into", funding),
     field("Planning purpose", planningFlow),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
+    additionalSplits.node,
     futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
     field("Frequency", frequency),
     field("First due", el("input", { name:"start", type:"date", value:source?.start || today, required:"required" })),
@@ -572,6 +613,7 @@ function openScheduledEditor(data, source) {
         handle: source?.handle || null, name: values.name,
         placeholder: values.kind === "estimate", category: values.category, funding: values.funding,
         planning_flow: values.planning_flow || null, amount: values.amount,
+        additional_splits: additionalSplits.values(),
         amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
         skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
         frequency: values.frequency, start: values.start,
@@ -583,7 +625,7 @@ function openScheduledEditor(data, source) {
   });
   backdrop.append(el("section", { class:"detail-dialog" },
     el("div", { class:"detail-heading" }, el("h2", {}, source ? "Edit scheduled transaction" : "New scheduled transaction")),
-    el("p", { class:"note" }, "Simple two-split schedules only. Skip dates and one-time amounts must be actual occurrence dates; an occurrence cannot use both."), form));
+    el("p", { class:"note" }, "Fixed-split schedules are editable. Additional splits can represent payroll deductions, retirement/FSA funding, debt principal, and similar plan flows. Formula schedules remain read-only."), form));
   document.body.append(backdrop);
 }
 
@@ -845,7 +887,9 @@ async function scenarioEventPanel(handle, fromMonth) {
     const oneTimeEditor = occurrenceTimelineEditor(
       "One-time amounts", editSource?.occurrence_adjustments || [], true, changed);
     const preview = schedulePreviewNode();
-    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, amount:v.amount, amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
+    const additionalSplits = planningSplitEditor(
+      data.accounts, editSource?.additional_splits || [], changed);
+    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
       el("label", {}, "Income / expense category", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
@@ -856,6 +900,7 @@ async function scenarioEventPanel(handle, fromMonth) {
          ["retirement_income","Retirement distribution"]].map(([value,label])=>
           el("option",{value,selected:value===planningFlow?"selected":null},label)))),
       el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
+      additionalSplits.node,
       futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
       el("label", {}, "Frequency", el("select", {name:"frequency"}, [["weekly","Weekly"],["biweekly","Fortnightly"],["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],["semiannual","Twice a year"],["annual","Yearly"],["once","One off"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.frequency||"monthly")?"selected":null},l)))),
       el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:editSource?.start || `${fromMonth}-01`})),

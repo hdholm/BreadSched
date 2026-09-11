@@ -267,7 +267,7 @@ class ScheduledView(BaseView):
         self.edit_button.set_sensitive(self._simple_editable(payload))
 
     def _simple_editable(self, sched) -> bool:
-        if sched is None or _is_split(sched) or len(getattr(sched, "splits", [])) != 2:
+        if sched is None or _is_split(sched) or len(getattr(sched, "splits", [])) < 2:
             return False
         if any(split.formula for split in sched.splits):
             return False
@@ -284,12 +284,22 @@ class ScheduledView(BaseView):
         if (sched.recurrence.period, sched.recurrence.interval) not in supported:
             return False
         classes = []
+        funding_candidates = 0
         for split in sched.splits:
             account = (
                 self.db.get_account(split.account) if self.db is not None else None
             )
-            classes.append(account.account_class.value if account is not None else "")
-        return sum(value in {"income", "expense"} for value in classes) == 1
+            account_class = account.account_class.value if account is not None else ""
+            classes.append(account_class)
+            if (
+                account_class not in {"income", "expense"}
+                and split.planning_flow is None
+            ):
+                funding_candidates += 1
+        return (
+            sum(value in {"income", "expense"} for value in classes) == 1
+            and funding_candidates >= 1
+        )
 
     def _on_edit_clicked(self, _button) -> None:
         if self.db is None:
@@ -299,7 +309,7 @@ class ScheduledView(BaseView):
         sched = unwrap(selected) if selected is not None else None
         if not self._simple_editable(sched):
             self.status.set_text(
-                "Complex and formula schedules are not editable in the simple editor."
+                "Formula schedules are not editable in the fixed-split editor."
             )
             return
         from ..dialogs.schedule_dialog import ScheduleDialog
