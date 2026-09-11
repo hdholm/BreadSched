@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib import AssumptionPeriod, Scenario
+from ...gen.lib import AccountClass, AssumptionPeriod, Scenario
 from ...gen.lib.base import create_handle
 from ..gi_setup import Gtk
 from ..planning_context import (
@@ -37,6 +37,7 @@ class ScenarioManagerDialog(Gtk.Window):
         self._baseline = baseline_scenario(manager, db)
         self._scenarios: list[Scenario] = []
         self._loading = False
+        self._account_rates: dict[str, Decimal] = {}
         self.set_default_size(620, 520)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -94,6 +95,16 @@ class ScenarioManagerDialog(Gtk.Window):
             rates.attach(Gtk.Label(label="%", xalign=0), 2, row, 1, 1)
             self.rate_controls[attribute] = control
         self.editor.append(rates)
+
+        account_row = Gtk.Box(spacing=8)
+        self.account_summary = Gtk.Label(xalign=0, wrap=True)
+        self.account_summary.add_css_class("dim")
+        self.account_summary.set_hexpand(True)
+        account_row.append(self.account_summary)
+        self.account_button = Gtk.Button(label="Edit account-specific rates…")
+        self.account_button.connect("clicked", self._on_edit_account_rates)
+        account_row.append(self.account_button)
+        self.editor.append(account_row)
 
         timeline_row = Gtk.Box(spacing=8)
         self.timeline_summary = Gtk.Label(xalign=0, wrap=True)
@@ -171,6 +182,7 @@ class ScenarioManagerDialog(Gtk.Window):
             self.name_entry.set_text("")
             self.description_entry.set_text("")
             self.timeline_summary.set_text("No saved scenarios yet.")
+            self.account_summary.set_text("")
             self.event_summary.set_text("")
             return
 
@@ -179,6 +191,8 @@ class ScenarioManagerDialog(Gtk.Window):
         for _label, attribute in _ASSUMPTIONS:
             value = getattr(scenario.assumptions, attribute) * Decimal("100")
             self.rate_controls[attribute].set_value(float(value))
+        self._account_rates = dict(scenario.assumptions.per_account)
+        self._update_account_summary()
         periods = len(scenario.assumption_periods)
         changes = len(scenario.schedule_overrides)
         if base:
@@ -204,6 +218,7 @@ class ScenarioManagerDialog(Gtk.Window):
             for _label, attribute in _ASSUMPTIONS:
                 value = Decimal(str(self.rate_controls[attribute].get_value())) / Decimal("100")
                 setattr(self._baseline.assumptions, attribute, value)
+            self._baseline.assumptions.per_account = dict(self._account_rates)
             persist_baseline_assumptions(self.manager, self.db)
             notify_planning_scenario_changed(self.manager)
             self.status.set_text("Base scenario assumptions saved in this book.")
@@ -223,12 +238,41 @@ class ScenarioManagerDialog(Gtk.Window):
         for _label, attribute in _ASSUMPTIONS:
             value = Decimal(str(self.rate_controls[attribute].get_value())) / Decimal("100")
             setattr(scenario.assumptions, attribute, value)
+        scenario.assumptions.per_account = dict(self._account_rates)
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
         self._reload(scenario.handle)
         notify_planning_scenario_changed(self.manager)
         self.status.set_text("Scenario saved.")
         self.status.remove_css_class("negative")
+
+    def _projection_accounts(self):
+        accounts = []
+        for account in self.db.iter_accounts():
+            if account.account_class is AccountClass.LIABILITY or (
+                account.account_class is AccountClass.ASSET
+                and account.atype.is_investment
+            ):
+                accounts.append(account)
+        return sorted(accounts, key=lambda item: self.db.full_name(item).casefold())
+
+    def _update_account_summary(self) -> None:
+        count = len(self._account_rates)
+        self.account_summary.set_text(
+            f"{count} account-specific projection rate override(s)."
+            if count
+            else "No account-specific projection rate overrides."
+        )
+
+    def _on_edit_account_rates(self, _button) -> None:
+        AccountAssumptionsDialog(
+            self, self.db, self._projection_accounts(), self._account_rates,
+            self._account_rates_saved,
+        ).present()
+
+    def _account_rates_saved(self, values: dict[str, Decimal]) -> None:
+        self._account_rates = dict(values)
+        self._update_account_summary()
 
     def _on_duplicate(self, _button) -> None:
         scenario = self._selected()
@@ -279,6 +323,74 @@ class ScenarioManagerDialog(Gtk.Window):
     def _error(self, message: str) -> None:
         self.status.set_text(message)
         self.status.add_css_class("negative")
+
+
+class AccountAssumptionsDialog(Gtk.Window):
+    """Edit optional annual Projection rates for individual accounts."""
+
+    def __init__(self, parent, db, accounts, values, callback) -> None:
+        super().__init__(
+            title="Account-specific projection rates", transient_for=parent, modal=True
+        )
+        self.db = db
+        self.accounts = accounts
+        self.callback = callback
+        self.entries: dict[str, Gtk.Entry] = {}
+        self.set_default_size(620, 480)
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(outer, f"set_margin_{side}")(16)
+        self.set_child(outer)
+        outer.append(Gtk.Label(
+            label=(
+                "Blank values inherit the account's own annual rate when present, then "
+                "the scenario's investment or liability default."
+            ),
+            xalign=0, wrap=True,
+        ))
+        grid = Gtk.Grid(column_spacing=12, row_spacing=6)
+        for row, account in enumerate(accounts):
+            grid.attach(Gtk.Label(label=db.full_name(account), xalign=0), 0, row, 1, 1)
+            entry = Gtk.Entry(placeholder_text="inherit")
+            if account.handle in values:
+                entry.set_text(str(values[account.handle] * Decimal("100")))
+            grid.attach(entry, 1, row, 1, 1)
+            grid.attach(Gtk.Label(label="%", xalign=0), 2, row, 1, 1)
+            self.entries[account.handle] = entry
+        scroll = Gtk.ScrolledWindow(child=grid)
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+        outer.append(scroll)
+        self.status = Gtk.Label(xalign=0, wrap=True)
+        outer.append(self.status)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: self.close())
+        buttons.append(cancel)
+        save = Gtk.Button(label="Use these rates")
+        save.add_css_class("suggested-action")
+        save.connect("clicked", self._on_save)
+        buttons.append(save)
+        outer.append(buttons)
+
+    def _on_save(self, _button) -> None:
+        values: dict[str, Decimal] = {}
+        try:
+            for handle, entry in self.entries.items():
+                raw = entry.get_text().strip()
+                if not raw:
+                    continue
+                rate = Decimal(raw) / Decimal("100")
+                if rate < Decimal("-1") or rate > Decimal("1"):
+                    raise ValueError("Rates must be between -100% and 100%.")
+                values[handle] = rate
+        except (InvalidOperation, ValueError) as error:
+            self.status.set_text(str(error) or "Enter valid annual percentages.")
+            self.status.add_css_class("negative")
+            return
+        self.callback(values)
+        self.close()
 
 
 class AssumptionTimelineDialog(Gtk.Window):

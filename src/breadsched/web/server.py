@@ -602,16 +602,37 @@ class Api:
     def scenarios(self) -> dict:
         """Base and saved planning scenarios for the management surface."""
         base = self._management_base_scenario()
+        projection_accounts = []
+        for account in self.db.iter_accounts():
+            if not (
+                account.account_class is AccountClass.LIABILITY
+                or (
+                    account.account_class is AccountClass.ASSET
+                    and account.atype.is_investment
+                )
+            ):
+                continue
+            projection_accounts.append({
+                "handle": account.handle,
+                "name": self.db.full_name(account),
+                "class": account.account_class.value,
+                "account_rate": (
+                    account.annual_interest
+                    if account.account_class is AccountClass.LIABILITY
+                    else account.annual_return
+                ),
+            })
+        projection_accounts.sort(key=lambda item: item["name"].casefold())
         return {
             "scenarios": [
                 self._scenario_payload(base, base=True),
                 *(self._scenario_payload(item) for item in self.db.iter_scenarios()),
-            ]
+            ],
+            "projection_accounts": projection_accounts,
         }
 
-    @staticmethod
     def _assumptions_from_payload(
-        payload: object, existing: Assumptions | None = None
+        self, payload: object, existing: Assumptions | None = None
     ) -> Assumptions:
         if not isinstance(payload, dict):
             raise ValueError("assumptions must be an object")
@@ -630,7 +651,36 @@ class Api:
             if value < Decimal("-1") or value > Decimal("1"):
                 raise ValueError(f"{field} must be between -1 and 1")
             values[field] = value
-        values["per_account"] = dict(existing.per_account) if existing is not None else {}
+        if "per_account" in payload:
+            raw_per_account = payload.get("per_account")
+            if not isinstance(raw_per_account, dict):
+                raise ValueError("per_account assumptions must be an object")
+            per_account: dict[str, Decimal] = {}
+            for handle, raw_rate in raw_per_account.items():
+                account = self.db.get_account(str(handle))
+                if account is None:
+                    raise ValueError(f"unknown account assumption: {handle}")
+                if not (
+                    account.account_class is AccountClass.LIABILITY
+                    or (
+                        account.account_class is AccountClass.ASSET
+                        and account.atype.is_investment
+                    )
+                ):
+                    raise ValueError(
+                        f"account-specific projection rate is not valid for {self.db.full_name(account)}"
+                    )
+                if raw_rate is None or str(raw_rate).strip() == "":
+                    continue
+                rate = Decimal(str(raw_rate))
+                if rate < Decimal("-1") or rate > Decimal("1"):
+                    raise ValueError("account-specific rates must be between -1 and 1")
+                per_account[account.handle] = rate
+            values["per_account"] = per_account
+        else:
+            values["per_account"] = (
+                dict(existing.per_account) if existing is not None else {}
+            )
         return Assumptions(**values)
 
     def scenario_save(self, payload: dict) -> dict:

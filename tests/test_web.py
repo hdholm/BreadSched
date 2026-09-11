@@ -1025,6 +1025,25 @@ class TestScenarioManagementApi:
         assert base["name"] == "Base scenario"
         assert base["assumptions"]["investment_return"] == "0.0475"
 
+    def test_account_specific_projection_rates_can_be_saved(self, client):
+        _status, listing = client.get("/api/scenarios")
+        account = listing["projection_accounts"][0]
+        assumptions = self.assumptions()
+        assumptions["per_account"] = {account["handle"]: "0.0825"}
+
+        status, payload = client.post(
+            "/api/scenario/save", {"handle": None, "assumptions": assumptions}
+        )
+
+        assert status == 200
+        assert payload["assumptions"]["per_account"] == {
+            account["handle"]: "0.0825"
+        }
+        _status, reopened = client.get("/api/scenarios")
+        assert reopened["scenarios"][0]["assumptions"]["per_account"] == {
+            account["handle"]: "0.0825"
+        }
+
     def test_base_can_be_duplicated_into_an_independent_saved_scenario(self, client):
         client.post(
             "/api/scenario/save",

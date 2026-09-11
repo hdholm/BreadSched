@@ -1257,6 +1257,31 @@ function readAssumptions(form, prefix = "") {
     [field, percentToRate(values.get(`${prefix}${field}`))]));
 }
 
+function accountAssumptionInputs(accounts, assumptions) {
+  const overrides = assumptions.per_account || {};
+  if (!accounts.length) return el("p", {class:"note"},
+    "No investment or liability accounts are available for account-specific rates.");
+  return el("div", {class:"assumption-grid"}, accounts.map((account) => {
+    const inherited = account.class === "liability" ? "liability default" : "investment default";
+    return el("label", {}, account.name,
+      el("span", {class:"rate-input"},
+        el("input", {
+          type:"number", min:"-100", max:"100", step:"0.01",
+          name:`account_rate_${account.handle}`,
+          value: rateToPercent(overrides[account.handle] ?? ""),
+          placeholder: inherited,
+        }),
+        el("span", {class:"muted"}, "%")));
+  }));
+}
+
+function readAccountAssumptions(form, accounts) {
+  const values = new FormData(form);
+  return Object.fromEntries(accounts.map((account) => [
+    account.handle, percentToRate(values.get(`account_rate_${account.handle}`)),
+  ]).filter(([, value]) => value !== ""));
+}
+
 async function showScenarios() {
   const data = await get("/api/scenarios");
   const requested = state.scenarioManager || "";
@@ -1282,11 +1307,14 @@ async function showScenarios() {
     event.preventDefault();
     const values = new FormData(event.target);
     try {
+      const assumptions = readAssumptions(event.target);
+      assumptions.per_account = readAccountAssumptions(
+        event.target, data.projection_accounts || []);
       const saved = await post("/api/scenario/save", {
         handle: selected.handle,
         name: values.get("name"),
         description: values.get("description"),
-        assumptions: readAssumptions(event.target),
+        assumptions,
       });
       state.scenarioManager = saved.handle || "";
       say(base ? "Base scenario assumptions saved in this book." : "Scenario saved.");
@@ -1302,6 +1330,11 @@ async function showScenarios() {
       }))),
     el("h3", {}, "Base annual assumptions"),
     assumptionInputs(selected.assumptions),
+    el("details", {class:"panel"},
+      el("summary", {}, "Account-specific projection rates"),
+      el("p", {class:"note"},
+        "Optional overrides take precedence over the account's own rate and the scenario default."),
+      accountAssumptionInputs(data.projection_accounts || [], selected.assumptions)),
     el("div", { class: "toolbar" },
       el("button", { class: "action primary", type: "submit" }, "Save changes"),
       el("button", {
