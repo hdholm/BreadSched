@@ -361,7 +361,6 @@ class ScheduledTransaction(PrimaryObject):
         that refuses to run because one schedule's formulas disagree is less useful
         than one that runs and says which schedule is wrong.
         """
-        merged = self.context(when, variables)
         txn = Transaction(
             post_date=when,
             description=self.description,
