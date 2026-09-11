@@ -1219,6 +1219,43 @@ class TestScheduleEntry:
             (bank.handle, Money("-150.00"), None),
         ]
 
+    def test_fixed_asset_transfer_without_flow_category_is_editable(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        assert bank is not None
+        with app.db.transaction("add reserve account") as txn:
+            reserve = Account(
+                name="Reserve",
+                atype=AccountType.BANK,
+                parent=bank.parent,
+            )
+            app.db.add_account(reserve, txn)
+        source = ScheduledTransaction(
+            name="Reserve transfer",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(bank.handle, Money("-125.00"), memo="source"),
+                ScheduledSplit(reserve.handle, Money("125.00"), memo="destination"),
+            ],
+        )
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+        assert [
+            (split.account, split.amount, split.memo) for split in rebuilt.splits
+        ] == [
+            (reserve.handle, Money("125.00"), "destination"),
+            (bank.handle, Money("-125.00"), "source"),
+        ]
+
     def test_an_unsupported_formula_schedule_is_still_viewable(
         self, app, window, populated_book
     ):

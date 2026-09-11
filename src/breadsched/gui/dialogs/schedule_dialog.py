@@ -406,6 +406,26 @@ class ScheduleDialog(Gtk.Window):
             planning_flows = [item for item in parts if item[1].planning_flow is not None]
             if len(planning_flows) == 1:
                 flow = planning_flows[0]
+        if flow is None and len(parts) == 2:
+            ordinary_assets = [
+                item
+                for item in parts
+                if item[0].account_class.value == "asset"
+                and item[1].planning_flow is None
+            ]
+            if len(ordinary_assets) == 2:
+                positives = [
+                    item
+                    for item in ordinary_assets
+                    if item[1].resolve(source.variables) > 0
+                ]
+                negatives = [
+                    item
+                    for item in ordinary_assets
+                    if item[1].resolve(source.variables) < 0
+                ]
+                if len(positives) == 1 and len(negatives) == 1:
+                    flow = positives[0]
         if flow is not None:
             flow_account, flow_split = flow
             others = [item for item in parts if item is not flow]
