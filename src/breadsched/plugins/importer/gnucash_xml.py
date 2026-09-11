@@ -239,6 +239,7 @@ class _AccountRow(TypedDict):
     parent: str | None
     code: str
     description: str
+    notes: str
     commodity: str
     namespace: str
     placeholder: bool
@@ -259,6 +260,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
                 "parent": _text(element, "act:parent") or None,
                 "code": _text(element, "act:code"),
                 "description": _text(element, "act:description"),
+                "notes": _slot_value(element, "notes") or "",
                 "commodity": _text(element, "act:commodity/cmdty:id"),
                 "namespace": _text(element, "act:commodity/cmdty:space", "CURRENCY"),
                 "placeholder": (_slot_value(element, "placeholder") or "").lower() == "true",
@@ -297,6 +299,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
             commodity=commodity,
             code=row["code"],
             description=row["description"],
+            notes=row["notes"],
             placeholder=row["placeholder"],
             hidden=row["hidden"],
         )

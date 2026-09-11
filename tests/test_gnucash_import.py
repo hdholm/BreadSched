@@ -83,6 +83,7 @@ class TestSqliteImport:
         assert account.atype is AccountType.BANK
         assert account.code == "1010"
         assert account.description == "Everyday account"
+        assert account.notes == "Generic account note"
 
     def test_placeholders_survive(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
@@ -216,7 +217,9 @@ class TestXmlImport:
     def test_account_tree_is_rebuilt(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         assert db.full_name(gnucash_xml_path.ids.bank) == "Current Account"
-        assert db.get_account(gnucash_xml_path.ids.bank).code == "1200"
+        account = db.get_account(gnucash_xml_path.ids.bank)
+        assert account.code == "1200"
+        assert account.notes == "Generic XML account note"
 
     def test_reconcile_state_survives(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)

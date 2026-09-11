@@ -160,6 +160,24 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.description_entry, 1, row, 1, 1)
         row += 1
 
+        self.notes_view = Gtk.TextView()
+        self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.notes_view.set_size_request(-1, 72)
+        self.notes_view.set_tooltip_text(
+            "Imported or local notes attached to this account"
+        )
+        if editing and account.notes:
+            self.notes_view.get_buffer().set_text(account.notes)
+        notes_scroll = Gtk.ScrolledWindow()
+        notes_scroll.set_min_content_height(72)
+        notes_scroll.set_child(self.notes_view)
+        grid.attach(
+            Gtk.Label(label="Notes", xalign=0, valign=Gtk.Align.START),
+            0, row, 1, 1,
+        )
+        grid.attach(notes_scroll, 1, row, 1, 1)
+        row += 1
+
         self.group_entry = Gtk.Entry(placeholder_text="Home Easton")
         self.group_entry.set_tooltip_text("The dashboard group this account joins")
         if editing:
@@ -392,6 +410,9 @@ class AccountDialog(Gtk.Window):
         account.atype = self.selected_type
         account.code = self.code_entry.get_text().strip()
         account.description = self.description_entry.get_text().strip()
+        notes_buffer = self.notes_view.get_buffer()
+        notes_start, notes_end = notes_buffer.get_bounds()
+        account.notes = notes_buffer.get_text(notes_start, notes_end, True).strip()
         commodity_index = self.commodity_picker.get_selected()
         account.commodity = self.commodity_handles[commodity_index]
         account.group = self.group_entry.get_text().strip()

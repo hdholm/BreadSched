@@ -327,6 +327,15 @@ def _import_accounts(conn: sqlite3.Connection, sink: ImportSink) -> None:
                     source["namespace"], source["mnemonic"],
                     source["fullname"] or "", source["fraction"] or 100,
                 )
+        notes = ""
+        if _table_exists(conn, "slots"):
+            note_row = conn.execute(
+                "SELECT string_val FROM slots "
+                "WHERE obj_guid = ? AND name = 'notes' ORDER BY id LIMIT 1",
+                (row["guid"],),
+            ).fetchone()
+            if note_row is not None and note_row["string_val"]:
+                notes = note_row["string_val"]
         LOG.debug(
             "account %s (%s) parent=%s",
             row["name"], row["account_type"], (row.get("parent_guid") or "-")[:8],
@@ -339,6 +348,7 @@ def _import_accounts(conn: sqlite3.Connection, sink: ImportSink) -> None:
             commodity=commodity,
             code=(row.get("code") or "") if "code" in columns else "",
             description=(row.get("description") or "") if "description" in columns else "",
+            notes=notes,
             placeholder=bool(row.get("placeholder")),
             hidden=bool(row.get("hidden")),
         )

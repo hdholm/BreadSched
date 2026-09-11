@@ -260,6 +260,10 @@ def gnucash_sqlite_path(tmp_path):
     write_account(conn, ids.assets, "Assets", "ASSET", ids.root, usd, placeholder=1)
     write_account(conn, ids.checking, "Checking Account", "BANK", ids.assets, usd,
                  code="1010", description="Everyday account")
+    conn.execute(
+        "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+        (ids.checking, "notes", 4, "Generic account note"),
+    )
     write_account(conn, ids.card, "Credit Card", "CREDIT", ids.root, usd)
     write_account(conn, ids.income, "Income", "INCOME", ids.root, usd, placeholder=1)
     write_account(conn, ids.salary, "Salary", "INCOME", ids.income, usd)
@@ -353,6 +357,12 @@ GNUCASH_XML = """<?xml version="1.0" encoding="utf-8" ?>
     <act:code>1200</act:code>
     <act:description>Day to day</act:description>
     <act:parent type="guid">{root}</act:parent>
+    <act:slots>
+      <slot>
+        <slot:key>notes</slot:key>
+        <slot:value type="string">Generic XML account note</slot:value>
+      </slot>
+    </act:slots>
   </gnc:account>
   <gnc:account version="2.0.0">
     <act:name>Wages</act:name>

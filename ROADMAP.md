@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0123
-(`accounts: expose planning role and sortable names`).
+Status below is current through patch 0125
+(`accounts: preserve imported account notes`).
 
 ## Near-term correctness and daily-use work
 
@@ -43,11 +43,12 @@ Status below is current through patch 0123
   amount and the others remain explicit additional planning legs, with an ordinary
   balancing funding split. Continue with other fixed shapes only where direction and
   meaning can be preserved without guessing.
-- Formula schedules support protected metadata editing. Base schedules additionally
-  support validated direct editing of formula expressions and named scalar variables
-  through the existing safe evaluator (0121), while split accounts and amount
-  timelines remain protected. Scenario-owned formula schedules still use protected
-  metadata editing and should gain equivalent direct formula/variable editing next.
+- Formula schedules support protected metadata editing. Base schedules support
+  validated direct editing of formula expressions and named scalar variables through
+  the existing safe evaluator (0121), and scenario-owned formula schedules gained the
+  equivalent validated editing in 0122. Split accounts and amount timelines remain
+  protected; expand formula editing further only where imported semantics can be
+  preserved and validated safely.
 - Preserve unsupported custom recurrence data rather than enabling an editor that
   would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including
@@ -69,8 +70,10 @@ Status below is current through patch 0123
 - As of 0124, the account editor preserves ordinary non-placeholder parents,
   imported commodities/securities, and the GnuCash hidden flag. Parent choices
   exclude the edited account and its descendants so imported hierarchies can be
-  retained without permitting cycles. Continue exposing remaining imported account
-  metadata and semantics losslessly rather than silently resetting them on save.
+  retained without permitting cycles. Patch 0125 imports and exposes GnuCash account
+  notes in both XML and SQLite books and round-trips them through the GTK editor.
+  Continue exposing remaining imported account metadata and semantics losslessly
+  rather than silently resetting them on save.
 - Improve account relationship editing and explanations as additional planning,
   investment, debt, FSA, commodity, and imported-account semantics are exposed.
 

@@ -233,6 +233,7 @@ class ImportSink:
         commodity: str | None = None,
         code: str = "",
         description: str = "",
+        notes: str = "",
         placeholder: bool = False,
         hidden: bool = False,
     ) -> Account:
@@ -274,6 +275,7 @@ class ImportSink:
             placeholder=placeholder,
             hidden=hidden,
         )
+        account.notes = notes
         self.db.add_account(account, self.txn)
         self._known_accounts.add(guid)
         self.result.accounts += 1

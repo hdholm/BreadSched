@@ -2665,6 +2665,7 @@ class TestAccountEditor:
                 commodity=commodity.handle,
                 hidden=True,
             )
+            child.notes = "Generic imported account note"
             app.db.add_account(child, txn)
 
         dialog = self._dialog(accounts_view, child)
@@ -2675,11 +2676,18 @@ class TestAccountEditor:
             dialog.commodity_handles[dialog.commodity_picker.get_selected()]
             == commodity.handle
         )
+        notes_buffer = dialog.notes_view.get_buffer()
+        notes_start, notes_end = notes_buffer.get_bounds()
+        assert (
+            notes_buffer.get_text(notes_start, notes_end, True)
+            == "Generic imported account note"
+        )
 
         rebuilt = dialog.build()
         assert rebuilt.parent == parent.handle
         assert rebuilt.hidden is True
         assert rebuilt.commodity == commodity.handle
+        assert rebuilt.notes == "Generic imported account note"
 
     def test_loan_fields_only_show_for_a_liability(self, accounts_view, app):
         from breadsched.gen.lib import AccountType
