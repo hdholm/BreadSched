@@ -443,15 +443,20 @@ async function openHistoricalEstimateDialog() {
   const target = el("select", {});
   const load = async () => {
     try {
-      const data = await get(`/api/historical-estimates?months=${encodeURIComponent(months.value)}`);
+      const selectedTarget = target.value;
+      const data = await get(`/api/historical-estimates?months=${encodeURIComponent(months.value)}&scenario=${encodeURIComponent(selectedTarget)}`);
       target.replaceChildren(...data.targets.map((item) => el("option", {
         value:item.handle || "",
       }, item.name)));
+      if ([...target.options].some((option) => option.value === selectedTarget)) {
+        target.value = selectedTarget;
+      }
       const rows = data.proposals.map((item) => el("tr", {},
         el("td", {}, item.category_name),
         el("td", {}, `${item.source_name} → ${item.destination_name}`),
+        el("td", {}, item.frequency),
         el("td", { class:"num" }, money(item.amount)),
-        el("td", { class:"muted" }, `${item.active_months}/${data.months} months`),
+        el("td", { class:"muted" }, `${item.active_months}/${data.months} months; ${money(item.scheduled_amount)} scheduled`),
         el("td", { class:"muted" }, `${Math.round(item.confidence * 100)}%`),
         el("td", {}, el("button", { class:"action", type:"button", onclick:async()=>{
           try {
@@ -466,10 +471,11 @@ async function openHistoricalEstimateDialog() {
         el("p", { class:"note" }, data.proposals.length
           ? "Proposals use the median of active completed months and become ordinary monthly estimates when accepted."
           : "No categories have enough completed historical activity for a proposal."),
-        table(["Category", "Direction", {label:"Monthly estimate", num:true},
+        table(["Category", "Direction", "Cadence", {label:"Estimate", num:true},
           "Evidence", "Confidence", ""], rows));
     } catch (error) { say(error.message, "error"); }
   };
+  target.onchange = load;
   const controls = el("div", { class:"toolbar" },
     el("label", {}, "History months ", months),
     el("label", {}, "Add to ", target),

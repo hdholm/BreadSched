@@ -619,6 +619,130 @@ class TestHistoricalEstimateProposals:
         assert values[book.groceries] == Money("-75.00")
         assert values[book.card] == Money("75.00")
 
+    def test_subtracts_existing_scheduled_activity_for_selected_target(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Scenario, ScenarioSchedule, Transaction
+
+        schedule = ScheduledTransaction(
+            name="Known rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 10)),
+            splits=[
+                ScheduledSplit(book.rent, Money("1000.00")),
+                ScheduledSplit(book.checking, Money("-1000.00")),
+            ],
+        )
+        scenario = Scenario(
+            name="Without known rent",
+            schedule_overrides=[ScenarioSchedule.from_scheduled(schedule, enabled=False)],
+        )
+        with db.transaction("History and known schedule") as txn:
+            db.add_scheduled(schedule, txn)
+            db.add_scenario(scenario, txn)
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 10),
+                        "Rent",
+                        book.rent,
+                        book.checking,
+                        "1800",
+                    ),
+                    txn,
+                )
+
+        base = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.rent
+        )
+        alternate = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db,
+                as_of=date(2026, 4, 20),
+                months=3,
+                scenario_handle=scenario.handle,
+            )
+            if item.category == book.rent
+        )
+
+        assert base.amount == Money("800.00")
+        assert base.scheduled_amount == Money("3000.00")
+        assert alternate.amount == Money("1800.00")
+        assert alternate.scheduled_amount == Money("0.00")
+
+    def test_scheduled_activity_does_not_create_reverse_residual(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        schedule = ScheduledTransaction(
+            name="Known rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 10)),
+            splits=[
+                ScheduledSplit(book.rent, Money("1000.00")),
+                ScheduledSplit(book.checking, Money("-1000.00")),
+            ],
+        )
+        with db.transaction("Known schedule") as txn:
+            db.add_scheduled(schedule, txn)
+
+        proposals = estimates.propose_historical_estimates(
+            db, as_of=date(2026, 4, 20), months=3, min_active_months=1
+        )
+        assert all(item.category != book.rent for item in proposals)
+
+    def test_detects_weekly_residual_cadence(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        with db.transaction("Weekly groceries") as txn:
+            for day in (2, 9, 16, 23, 30):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 1, day),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        "100",
+                    ),
+                    txn,
+                )
+            for day in (6, 13, 20, 27):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 2, day),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        "100",
+                    ),
+                    txn,
+                )
+            for day in (6, 13, 20, 27):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 3, day),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        "100",
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.groceries
+        )
+        assert proposal.recurrence.period is PeriodType.WEEK
+        assert proposal.recurrence.interval == 1
+        assert Money("90") <= proposal.amount <= Money("110")
+        assert "weekly" in proposal.reason
+
     def test_accepts_proposal_into_base_as_estimate(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import Transaction

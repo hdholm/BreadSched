@@ -38,6 +38,7 @@ class HistoricalEstimatesDialog(Gtk.Window):
         )
         controls.append(Gtk.Label(label="Add to", xalign=0))
         controls.append(self.target)
+        self.target.connect("notify::selected", self._on_target_changed)
 
         analyze = Gtk.Button(label="Analyze")
         analyze.connect("clicked", self._on_analyze)
@@ -81,7 +82,9 @@ class HistoricalEstimatesDialog(Gtk.Window):
     def _reload(self) -> None:
         self._clear_rows()
         proposals = estimates.propose_historical_estimates(
-            self.db, months=self.months.get_value_as_int()
+            self.db,
+            months=self.months.get_value_as_int(),
+            scenario_handle=self._scenario_handle(),
         )
         if not proposals:
             self.status.set_text("No categories have enough completed history yet.")
@@ -91,7 +94,8 @@ class HistoricalEstimatesDialog(Gtk.Window):
             row = Gtk.Box(spacing=10)
             label = Gtk.Label(
                 label=(
-                    f"{proposal.display_amount.format()} monthly: "
+                    f"{proposal.display_amount.format()} "
+                    f"{proposal.recurrence.describe()}: "
                     f"{proposal.source_name} → {proposal.destination_name}\n"
                     f"{proposal.reason}; "
                     f"confidence {proposal.confidence:.0%}"
@@ -107,6 +111,9 @@ class HistoricalEstimatesDialog(Gtk.Window):
             self.rows.append(row)
 
     def _on_analyze(self, _button) -> None:
+        self._reload()
+
+    def _on_target_changed(self, *_args) -> None:
         self._reload()
 
     def _on_add(self, button, proposal) -> None:

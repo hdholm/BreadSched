@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
+from decimal import Decimal
 from statistics import median
 
 from ..db.sqlite import DbSQLite
@@ -18,6 +19,7 @@ from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scenario import ScenarioSchedule
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
+from . import planning
 
 __all__ = [
     "HistoricalEstimateProposal",
@@ -41,6 +43,7 @@ class HistoricalEstimateProposal:
     transaction_count: int
     confidence: float
     reason: str
+    scheduled_amount: Money = Money(0)
 
     @property
     def source_name(self) -> str:
@@ -85,20 +88,109 @@ def _funding_account(db: DbSQLite, category: str, start: date, end: date) -> str
     return counts.most_common(1)[0][0] if counts else None
 
 
+
+def _target_events(
+    db: DbSQLite,
+    start: date,
+    end: date,
+    scenario_handle: str | None,
+) -> list[planning.PlannedEvent]:
+    if scenario_handle is None:
+        return planning.scheduled_events(db, start, end)
+    scenario = db.get_scenario(scenario_handle)
+    if scenario is None:
+        raise ValueError("saved scenario no longer exists")
+    return planning.scenario_events(db, scenario, start, end)
+
+
+def _scheduled_category_totals(
+    db: DbSQLite,
+    start: date,
+    end: date,
+    scenario_handle: str | None,
+) -> dict[tuple[str, date], Money]:
+    totals: dict[tuple[str, date], Money] = {}
+    for event in _target_events(db, start, end, scenario_handle):
+        month = _month_start(event.planned_date)
+        for split in event.expected_splits:
+            account = db.get_account(split.account)
+            if account is None or account.account_class not in (
+                AccountClass.INCOME, AccountClass.EXPENSE
+            ):
+                continue
+            key = (account.handle, month)
+            totals[key] = totals.get(key, Money(0)) + split.amount * account.sign()
+    return totals
+
+
+def _residual_after_scheduled(actual: Money, scheduled: Money) -> tuple[Money, Money]:
+    """Return residual history and the scheduled amount that actually covered it."""
+    if actual > 0 and scheduled > 0:
+        residual = max(actual - scheduled, Money(0))
+    elif actual < 0 and scheduled < 0:
+        residual = min(actual - scheduled, Money(0))
+    else:
+        residual = actual
+    return residual, actual - residual
+
+
+def _unscheduled_dates(
+    db: DbSQLite, category: str, start: date, end: date
+) -> list[date]:
+    dates: list[date] = []
+    for txn in db.iter_transactions(account=category, start=start, end=end):
+        if txn.planned_occurrence:
+            continue
+        if txn.value_for(category):
+            dates.append(txn.post_date)
+    return sorted(dates)
+
+
+def _infer_recurrence(
+    dates: list[date], start: date
+) -> tuple[Recurrence, str, Decimal]:
+    if len(dates) < 2:
+        return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
+    gaps = [
+        (later - earlier).days
+        for earlier, later in zip(dates[:-1], dates[1:], strict=True)
+    ]
+    typical_gap = float(median(gaps))
+    if 5 <= typical_gap <= 9:
+        return (
+            Recurrence(PeriodType.WEEK, start=start),
+            "weekly",
+            Decimal(52) / Decimal(12),
+        )
+    if 11 <= typical_gap <= 17:
+        return (
+            Recurrence(PeriodType.WEEK, interval=2, start=start),
+            "fortnightly",
+            Decimal(26) / Decimal(12),
+        )
+    if 300 <= typical_gap <= 430:
+        return (
+            Recurrence(PeriodType.YEAR, start=start),
+            "annual",
+            Decimal(1) / Decimal(12),
+        )
+    return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
+
+
 def propose_historical_estimates(
     db: DbSQLite,
     *,
     as_of: date | None = None,
     months: int = 12,
     min_active_months: int = 3,
+    scenario_handle: str | None = None,
 ) -> list[HistoricalEstimateProposal]:
-    """Propose monthly category estimates from completed historical months.
+    """Propose residual category estimates from completed historical months.
 
-    This first conservative pass uses the median total of active months rather
-    than a mean, which keeps one exceptional month from dominating the estimate.
-    Categories need activity in at least ``min_active_months`` and a recognizable
-    non-flow funding account. The proposal date is the first day of the next open
-    month; users may refine recurrence and timing in the normal schedule editor.
+    Existing planned activity for the selected target is subtracted before a
+    proposal is formed. The remaining history is summarized with a median and a
+    conservative cadence detector; users may refine the result in the normal
+    schedule editor before relying on it.
     """
     if months < 1:
         raise ValueError("months of history must be positive")
@@ -110,6 +202,9 @@ def propose_historical_estimates(
     history_start = _add_months(current_month, -months)
     history_end = current_month - timedelta(days=1)
     proposals: list[HistoricalEstimateProposal] = []
+    scheduled_totals = _scheduled_category_totals(
+        db, history_start, history_end, scenario_handle
+    )
 
     for account in db.iter_accounts():
         if account.is_root or account.placeholder:
@@ -119,6 +214,7 @@ def propose_historical_estimates(
 
         monthly: list[Money] = []
         txn_count = 0
+        applied_scheduled_total = Money(0)
         for offset in range(months):
             start = _add_months(history_start, offset)
             end = _add_months(start, 1) - timedelta(days=1)
@@ -128,8 +224,11 @@ def propose_historical_estimates(
                 if value:
                     total = total + value
                     txn_count += 1
-            if total:
-                monthly.append(total)
+            scheduled = scheduled_totals.get((account.handle, start), Money(0))
+            residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
+            applied_scheduled_total = applied_scheduled_total + applied_scheduled
+            if residual:
+                monthly.append(residual)
 
         if len(monthly) < min_active_months:
             continue
@@ -138,9 +237,15 @@ def propose_historical_estimates(
         if funding_account is None:
             continue
 
-        amount = _typical_amount(monthly)
+        monthly_residual = _typical_amount(monthly)
+        recurrence, cadence, occurrences_per_month = _infer_recurrence(
+            _unscheduled_dates(db, account.handle, history_start, history_end),
+            current_month,
+        )
+        amount = (monthly_residual / occurrences_per_month).quantize(100)
         active_ratio = len(monthly) / months
         confidence = min(0.95, 0.45 + active_ratio * 0.5)
+        scheduled_total = applied_scheduled_total
         proposals.append(
             HistoricalEstimateProposal(
                 category=account.handle,
@@ -148,15 +253,17 @@ def propose_historical_estimates(
                 funding=funding_account.handle,
                 funding_name=db.full_name(funding_account),
                 amount=amount,
-                recurrence=Recurrence(PeriodType.MONTH, start=current_month),
+                recurrence=recurrence,
                 sample_months=months,
                 active_months=len(monthly),
                 transaction_count=txn_count,
                 confidence=confidence,
                 reason=(
-                    f"median of {len(monthly)} active month(s) across "
-                    f"{months} completed month(s)"
+                    f"{cadence}; median residual of {len(monthly)} active month(s) "
+                    f"across {months} completed month(s) after subtracting "
+                    f"{scheduled_total.format()} of scheduled category activity"
                 ),
+                scheduled_amount=scheduled_total,
             )
         )
 

@@ -196,11 +196,17 @@ class Api:
         }
 
     def historical_estimates(
-        self, months: int = 12, min_active_months: int = 3
+        self,
+        months: int = 12,
+        min_active_months: int = 3,
+        scenario_handle: str | None = None,
     ) -> dict:
         """Return reviewable category estimates inferred from closed history."""
         proposals = estimates.propose_historical_estimates(
-            self.db, months=months, min_active_months=min_active_months
+            self.db,
+            months=months,
+            min_active_months=min_active_months,
+            scenario_handle=scenario_handle,
         )
         return {
             "months": months,
@@ -214,6 +220,8 @@ class Api:
                     "source_name": item.source_name,
                     "destination_name": item.destination_name,
                     "start": item.recurrence.start,
+                    "frequency": item.recurrence.describe(),
+                    "scheduled_amount": item.scheduled_amount,
                     "active_months": item.active_months,
                     "transaction_count": item.transaction_count,
                     "confidence": item.confidence,
@@ -235,13 +243,16 @@ class Api:
         months = int(payload.get("months") or 12)
         minimum = int(payload.get("min_active_months") or 3)
         category = str(payload.get("category") or "")
+        scenario = str(payload.get("scenario") or "").strip() or None
         proposals = estimates.propose_historical_estimates(
-            self.db, months=months, min_active_months=minimum
+            self.db,
+            months=months,
+            min_active_months=minimum,
+            scenario_handle=scenario,
         )
         proposal = next((item for item in proposals if item.category == category), None)
         if proposal is None:
             raise ValueError("historical estimate proposal is no longer available")
-        scenario = str(payload.get("scenario") or "").strip() or None
         handle = estimates.accept_historical_estimate(
             self.db, proposal, scenario_handle=scenario
         )
@@ -1781,6 +1792,7 @@ ROUTES = {
     "/api/historical-estimates": lambda a, q: a.historical_estimates(
         int(q.get("months", ["12"])[0]),
         int(q.get("min_active_months", ["3"])[0]),
+        q.get("scenario", [None])[0] or None,
     ),
     "/api/plan": lambda a, q: a.plan(
         q.get("from", [None])[0],
