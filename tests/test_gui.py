@@ -44,7 +44,15 @@ pytestmark = [
 
 from breadsched import APP_ID  # noqa: E402
 from breadsched.gen.db.sqlite import DbSQLite  # noqa: E402
-from breadsched.gen.lib import Budget, Money, Transaction  # noqa: E402
+from breadsched.gen.lib import (  # noqa: E402
+    Budget,
+    Money,
+    PeriodType,
+    Recurrence,
+    ScheduledSplit,
+    ScheduledTransaction,
+    Transaction,
+)
 from breadsched.gui.app import BreadSchedApplication  # noqa: E402
 from breadsched.gui.viewmanager import CATEGORIES, ViewManager  # noqa: E402
 from breadsched.gui.views._base import unwrap  # noqa: E402
