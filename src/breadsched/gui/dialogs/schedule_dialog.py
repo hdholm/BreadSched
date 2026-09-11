@@ -87,6 +87,19 @@ class ScheduleDialog(Gtk.Window):
         self.db = db
         self.source = source
         self.read_only_reason = read_only_reason
+        self._frequencies = list(_FREQUENCIES)
+        if source is not None and not any(
+            period is source.recurrence.period
+            and interval == source.recurrence.interval
+            for _label, period, interval in self._frequencies
+        ):
+            self._frequencies.append(
+                (
+                    f"{source.recurrence.describe()} (imported rule)",
+                    source.recurrence.period,
+                    source.recurrence.interval,
+                )
+            )
         self.set_default_size(560, 520)
         self._accounts = sorted(
             (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
@@ -194,7 +207,9 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.occurrence_adjustments_editor, 1, row, 1, 1)
         row += 1
 
-        self.frequency = Gtk.DropDown.new_from_strings([f[0] for f in _FREQUENCIES])
+        self.frequency = Gtk.DropDown.new_from_strings(
+            [item[0] for item in self._frequencies]
+        )
         self.frequency.set_selected(3)
         self.frequency.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Frequency", xalign=0), 0, row, 1, 1)
@@ -459,7 +474,7 @@ class ScheduleDialog(Gtk.Window):
                     )
                 self.additional_splits.set_values(extra_values)
 
-        for index, (_label, period, interval) in enumerate(_FREQUENCIES):
+        for index, (_label, period, interval) in enumerate(self._frequencies):
             if (
                 source.recurrence.period is period
                 and source.recurrence.interval == interval
@@ -494,7 +509,7 @@ class ScheduleDialog(Gtk.Window):
             start = date.fromisoformat(self.start_entry.get_text().strip())
         except ValueError:
             return None
-        _label, period, interval = _FREQUENCIES[self.frequency.get_selected()]
+        _label, period, interval = self._frequencies[self.frequency.get_selected()]
         end = None
         count = None
         if period is not PeriodType.ONCE:
@@ -512,12 +527,27 @@ class ScheduleDialog(Gtk.Window):
                     return None
                 if count < 1:
                     return None
+        day_of_month = None
+        second_day_of_month = None
+        if (
+            self.source is not None
+            and period is self.source.recurrence.period
+            and interval == self.source.recurrence.interval
+        ):
+            # Imported GnuCash rules can carry recurrence details that are not
+            # separate controls in the simple editor (notably end-of-month and
+            # semi-month firing days).  Preserve them whenever the user keeps the
+            # same recurrence kind so editing another field is lossless.
+            day_of_month = self.source.recurrence.day_of_month
+            second_day_of_month = self.source.recurrence.second_day_of_month
         return Recurrence(
             period=period,
             interval=interval,
             start=start,
             end=end,
             count=count,
+            day_of_month=day_of_month,
+            second_day_of_month=second_day_of_month,
             weekend_adjust=_WEEKEND[self.weekend.get_selected()][1],
         )
 
@@ -624,7 +654,7 @@ class ScheduleDialog(Gtk.Window):
         if skipped is not None and adjustments is not None:
             if set(skipped) & {item.when for item in adjustments}:
                 problems.append("an occurrence cannot be both skipped and overridden")
-        period = _FREQUENCIES[self.frequency.get_selected()][1]
+        period = self._frequencies[self.frequency.get_selected()][1]
         bounded = period is not PeriodType.ONCE
         self.ends.set_sensitive(bounded)
         self.end_entry.set_sensitive(bounded and self.ends.get_selected() == 1)

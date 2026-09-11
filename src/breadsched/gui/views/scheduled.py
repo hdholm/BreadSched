@@ -291,17 +291,15 @@ class ScheduledView(BaseView):
                 "imported formulas but cannot yet round-trip them safely in the fixed "
                 "schedule editor."
             )
-        supported = {
-            (PeriodType.WEEK, 1),
-            (PeriodType.WEEK, 2),
-            (PeriodType.SEMI_MONTH, 1),
-            (PeriodType.MONTH, 1),
-            (PeriodType.MONTH, 3),
-            (PeriodType.MONTH, 6),
-            (PeriodType.YEAR, 1),
-            (PeriodType.ONCE, 1),
+        supported_periods = {
+            PeriodType.DAY,
+            PeriodType.WEEK,
+            PeriodType.SEMI_MONTH,
+            PeriodType.MONTH,
+            PeriodType.YEAR,
+            PeriodType.ONCE,
         }
-        if (sched.recurrence.period, sched.recurrence.interval) not in supported:
+        if sched.recurrence.period not in supported_periods:
             return (
                 "This schedule uses a recurrence that the fixed schedule editor "
                 "cannot yet reproduce without changing its meaning."

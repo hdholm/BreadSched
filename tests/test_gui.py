@@ -1143,6 +1143,36 @@ class TestScheduleEntry:
             (bank.handle, Money("-200.00"), ""),
         ]
 
+    def test_imported_fixed_custom_recurrence_round_trips(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        expense = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and expense is not None
+        source = ScheduledTransaction(
+            name="Periodic service",
+            recurrence=Recurrence(
+                PeriodType.MONTH,
+                interval=2,
+                start=date(2025, 1, 31),
+                day_of_month=-1,
+            ),
+            splits=[
+                ScheduledSplit(expense.handle, Money("75.00")),
+                ScheduledSplit(bank.handle, Money("-75.00")),
+            ],
+        )
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+        assert rebuilt.recurrence.serialize() == source.recurrence.serialize()
+
     def test_an_unsupported_formula_schedule_is_still_viewable(
         self, app, window, populated_book
     ):

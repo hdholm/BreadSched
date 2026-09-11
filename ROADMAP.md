@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0111 (`scheduled: synchronize initial selection state`).
+Status below is current through patch 0112 (`scheduled: preserve imported fixed recurrence`).
 
 ## Near-term correctness and daily-use work
 
@@ -18,7 +18,9 @@ Status below is current through patch 0111 (`scheduled: synchronize initial sele
 - Continue expanding schedule editing beyond the fixed shapes BreadSched can
   currently round-trip safely. Unsupported schedules must remain fully inspectable
   in a read-only detail view rather than becoming inaccessible because **Edit** is
-  disabled.
+  disabled. Imported fixed daily/weekly/monthly/yearly/semi-monthly rules with
+  uncommon multipliers can now retain their exact recurrence while other fields are
+  edited; keep extending this approach where a rule can be round-tripped losslessly.
 - Distinguish genuinely unsupported schedule shapes from schedules that are merely
   imported from GnuCash or represented differently internally. Fixed schedules may
   legitimately contain repeated account legs; patches 0109-0110 make those editable,
@@ -112,7 +114,9 @@ Status below is current through patch 0111 (`scheduled: synchronize initial sele
 - Add an approachable loan/amortization creation workflow.
 - Support per-leg amount timelines in fixed multi-split schedules.
 - Support additional advanced/custom recurrence patterns where they can be modeled
-  deterministically.
+  deterministically. Preserve imported fixed recurrence multipliers and hidden
+  recurrence details (such as end-of-month firing) when they are not explicitly
+  changed in the editor.
 - Add payroll templates and richer payroll editing.
 - Continue recurrence testing across month ends, leap years, bounded schedules,
   business-day behavior, skips, one-time overrides, and future-effective changes.
@@ -271,3 +275,6 @@ regress them:
   legs and remain editable; per-split memos are preserved through the GTK editor.
 - The GTK Scheduled view synchronizes its initially visible selection with action
   sensitivity, so **View / Edit…** is immediately available for the selected row.
+- Imported fixed schedules with uncommon recurrence multipliers can remain editable;
+  when the recurrence kind is retained, hidden GnuCash recurrence details such as
+  end-of-month or semi-month firing days are preserved rather than normalized away.
