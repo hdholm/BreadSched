@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0122
-(`scheduled: edit validated scenario formula inputs`).
+Status below is current through patch 0123
+(`accounts: expose planning role and sortable names`).
 
 ## Near-term correctness and daily-use work
 
@@ -61,10 +61,11 @@ Status below is current through patch 0122
   inspectable and editable without destructive normalization or loss of imported
   semantics.  Add representative GnuCash fixtures and round-trip/regression tests
   as the supported surface grows.
-- Add **Planning role** as a visible Accounts-view column.
-- Keep the hierarchical chart of accounts collapsible while also supporting useful
-  column sorting.  Sorting must preserve parent/child structure rather than flatten
-  the account tree accidentally.
+- The Accounts view exposes **Planning role** as a visible column as of 0123.
+  Account, Type, Planning role, Description, and Balance are sortable while the
+  tree-list sorter keeps children within their parent rather than flattening the
+  chart of accounts. Preserve that hierarchy-aware behavior as more account columns
+  are added.
 - Improve account relationship editing and explanations as additional planning,
   investment, debt, FSA, commodity, and imported-account semantics are exposed.
 

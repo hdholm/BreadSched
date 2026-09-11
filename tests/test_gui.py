@@ -927,8 +927,17 @@ class TestColumnBehaviour:
     def test_account_columns_resize_and_sort(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("accounts")
-        for column in self._columns(window._views["accounts"]):
+        columns = self._columns(window._views["accounts"])
+        assert [column.get_title() for column in columns] == [
+            "Account",
+            "Type",
+            "Planning role",
+            "Description",
+            "Balance",
+        ]
+        for column in columns:
             assert column.get_resizable() is True
+            assert column.get_sorter() is not None
 
     def test_scheduled_columns_resize_and_sort(self, app, window, populated_book):
         app.open_book(populated_book)

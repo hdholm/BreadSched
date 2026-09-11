@@ -15,7 +15,15 @@ from ...gen.engine import ledger  # noqa: E402
 from ...gen.lib.account import AccountClass  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
 from ..gi_setup import Gio, Gtk
-from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap  # noqa: E402
+from ._base import (
+    BaseView,
+    Row,
+    _compare_by,
+    column,
+    column_menu,
+    sorted_model,
+    unwrap,
+)  # noqa: E402
 
 __all__ = ["AccountTreeView"]
 
@@ -73,6 +81,13 @@ class AccountTreeView(BaseView):
         self.column_view.append_column(self._name_column())
         self.column_view.append_column(column("Type", lambda a: a.atype.value))
         self.column_view.append_column(
+            column(
+                "Planning role",
+                lambda a: a.planning_role.label,
+                sort_key=lambda a: a.planning_role.label.casefold(),
+            )
+        )
+        self.column_view.append_column(
             column("Description", lambda a: a.description, expand=True)
         )
         self.column_view.append_column(
@@ -122,6 +137,11 @@ class AccountTreeView(BaseView):
         col = Gtk.ColumnViewColumn(title="Account", factory=factory)
         col.set_expand(True)
         col.set_resizable(True)
+        col.set_sorter(
+            Gtk.CustomSorter.new(
+                _compare_by(lambda account: account.name.casefold(), None, False)
+            )
+        )
         return col
 
     def _format_balance(self, account) -> str:
