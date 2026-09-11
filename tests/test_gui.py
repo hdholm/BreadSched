@@ -1111,6 +1111,38 @@ class TestScheduleEntry:
         ]
         assert len(same_handle) == 1
 
+    def test_fixed_schedule_with_duplicate_expense_account_is_editable(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        expense = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and expense is not None
+        source = ScheduledTransaction(
+            name="Shared insurance",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2025, 12, 3)),
+            splits=[
+                ScheduledSplit(expense.handle, Money("120.00"), memo="component A"),
+                ScheduledSplit(bank.handle, Money("-200.00")),
+                ScheduledSplit(expense.handle, Money("80.00"), memo="component B"),
+            ],
+        )
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+        assert [
+            (split.account, split.amount, split.memo) for split in rebuilt.splits
+        ] == [
+            (expense.handle, Money("120.00"), "component A"),
+            (expense.handle, Money("80.00"), "component B"),
+            (bank.handle, Money("-200.00"), ""),
+        ]
+
     def test_an_unsupported_formula_schedule_is_still_viewable(
         self, app, window, populated_book
     ):

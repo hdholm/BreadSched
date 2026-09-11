@@ -9,8 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0108 (`scheduled: surface unsupported details
-safely`).
+Status below is current through patch 0109 (`scheduled: edit fixed duplicate-account splits`).
 
 ## Near-term correctness and daily-use work
 
@@ -21,7 +20,9 @@ safely`).
   in a read-only detail view rather than becoming inaccessible because **Edit** is
   disabled.
 - Distinguish genuinely unsupported schedule shapes from schedules that are merely
-  imported from GnuCash or represented differently internally.
+  imported from GnuCash or represented differently internally. Fixed schedules may
+  legitimately contain repeated account legs; patch 0109 makes those editable and
+  preserves per-split memos instead of treating account uniqueness as a requirement.
 - Expand the schedule editor so every fixed schedule that can be represented safely
   by BreadSched can be edited without losing recurrence, split, formula, override,
   or import metadata.
@@ -266,3 +267,5 @@ regress them:
 - Every scheduled transaction can be opened from the GTK Scheduled view. Schedules
   that the fixed editor cannot safely round-trip are shown in a read-only detail
   view with recurrence, splits/accounts, formulas, variables, and overrides intact.
+- Fixed multi-split schedules can use the same Income/Expense account on multiple
+  legs and remain editable; per-split memos are preserved through the GTK editor.

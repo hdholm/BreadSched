@@ -143,6 +143,16 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.amount_entry, 1, row, 1, 1)
         row += 1
 
+        self.category_memo_entry = Gtk.Entry(placeholder_text="Optional memo")
+        grid.attach(Gtk.Label(label="Category memo", xalign=0), 0, row, 1, 1)
+        grid.attach(self.category_memo_entry, 1, row, 1, 1)
+        row += 1
+
+        self.funding_memo_entry = Gtk.Entry(placeholder_text="Optional memo")
+        grid.attach(Gtk.Label(label="Funding memo", xalign=0), 0, row, 1, 1)
+        grid.attach(self.funding_memo_entry, 1, row, 1, 1)
+        row += 1
+
         self.additional_splits = PlanningSplitListEditor(
             self._validate,
             self._names,
@@ -414,6 +424,8 @@ class ScheduleDialog(Gtk.Window):
                 )
                 amount = abs(flow_split.resolve(source.variables) * flow_account.sign())
                 self.amount_entry.set_text(str(amount.to_decimal()))
+                self.category_memo_entry.set_text(flow_split.memo or "")
+                self.funding_memo_entry.set_text(funding_item[1].memo or "")
                 extra_values = []
                 for account, split in others:
                     if split is funding_item:
@@ -438,7 +450,12 @@ class ScheduleDialog(Gtk.Window):
                         else resolved * account.sign()
                     )
                     extra_values.append(
-                        (account_index, str(normal_amount.to_decimal()), purpose_index)
+                        (
+                            account_index,
+                            str(normal_amount.to_decimal()),
+                            purpose_index,
+                            split.memo or "",
+                        )
                     )
                 self.additional_splits.set_values(extra_values)
 
@@ -616,12 +633,7 @@ class ScheduleDialog(Gtk.Window):
             problems.append("check the schedule dates/count")
         if self.category.get_selected() == self.funding.get_selected():
             problems.append("choose two different accounts")
-        selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
-        for account_index, raw_amount, _purpose_index in self.additional_splits.values():
-            if account_index in selected_accounts:
-                problems.append("each additional split needs a different account")
-                break
-            selected_accounts.add(account_index)
+        for _account_index, raw_amount, _purpose_index, _memo in self.additional_splits.values():
             try:
                 extra_amount = Money(raw_amount)
             except (ValueError, ArithmeticError):
@@ -678,7 +690,7 @@ class ScheduleDialog(Gtk.Window):
         category_value = amount * category.sign()
         extra_splits = []
         extra_total = Money(0)
-        for account_index, raw_amount, purpose_index in self.additional_splits.values():
+        for account_index, raw_amount, purpose_index, memo in self.additional_splits.values():
             account = self._accounts[account_index]
             extra_amount = Money(raw_amount)
             purpose = _PLANNING_FLOWS[purpose_index][1]
@@ -689,15 +701,20 @@ class ScheduleDialog(Gtk.Window):
             )
             extra_total = extra_total + value
             extra_splits.append(
-                ScheduledSplit(account.handle, value, planning_flow=purpose)
+                ScheduledSplit(account.handle, value, memo=memo, planning_flow=purpose)
             )
         funding_value = -(category_value + extra_total)
         schedule.splits = [
-            ScheduledSplit(category.handle, category_value),
+            ScheduledSplit(
+                category.handle,
+                category_value,
+                memo=self.category_memo_entry.get_text().strip(),
+            ),
             *extra_splits,
             ScheduledSplit(
                 funding.handle,
                 funding_value,
+                memo=self.funding_memo_entry.get_text().strip(),
                 planning_flow=planning_kind,
             ),
         ]

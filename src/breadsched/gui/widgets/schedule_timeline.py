@@ -204,7 +204,11 @@ class PlanningSplitListEditor(_ListEditor):
         self.append(add)
 
     def add_row(
-        self, account_index: int = 0, amount: str = "", purpose_index: int = 0
+        self,
+        account_index: int = 0,
+        amount: str = "",
+        purpose_index: int = 0,
+        memo: str = "",
     ) -> None:
         row = Gtk.Box(spacing=6)
         account = Gtk.DropDown.new_from_strings(self._account_names)
@@ -214,9 +218,12 @@ class PlanningSplitListEditor(_ListEditor):
         value.set_text(amount)
         purpose = Gtk.DropDown.new_from_strings(self._purpose_labels)
         purpose.set_selected(purpose_index)
+        memo_entry = Gtk.Entry(placeholder_text="Memo", hexpand=True)
+        memo_entry.set_text(memo)
         account.connect("notify::selected", self._on_changed)
         value.connect("changed", self._on_changed)
         purpose.connect("notify::selected", self._on_changed)
+        memo_entry.connect("changed", self._on_changed)
         remove = Gtk.Button(icon_name="list-remove-symbolic")
         remove.set_tooltip_text("Remove")
         remove.add_css_class("flat")
@@ -224,24 +231,26 @@ class PlanningSplitListEditor(_ListEditor):
         row.append(account)
         row.append(value)
         row.append(purpose)
+        row.append(memo_entry)
         row.append(remove)
         self._rows.append(row)
-        self._row_data.append((row, account, value, purpose))
+        self._row_data.append((row, account, value, purpose, memo_entry))
         self._on_changed()
 
-    def set_values(self, values: Iterable[tuple[int, str, int]]) -> None:
+    def set_values(self, values: Iterable[tuple[int, str, int, str]]) -> None:
         while child := self._rows.get_first_child():
             self._rows.remove(child)
         self._row_data.clear()
-        for account_index, amount, purpose_index in values:
-            self.add_row(account_index, amount, purpose_index)
+        for account_index, amount, purpose_index, memo in values:
+            self.add_row(account_index, amount, purpose_index, memo)
 
-    def values(self) -> list[tuple[int, str, int]]:
+    def values(self) -> list[tuple[int, str, int, str]]:
         return [
             (
                 account.get_selected(),
                 value.get_text().strip(),
                 purpose.get_selected(),
+                memo.get_text().strip(),
             )
-            for _row, account, value, purpose in self._row_data
+            for _row, account, value, purpose, memo in self._row_data
         ]

@@ -377,7 +377,12 @@ class ScenarioScheduleDialog(Gtk.Window):
                 else resolved * account.sign()
             )
             extra_values.append(
-                (account_index, str(normal_amount.to_decimal()), purpose_index)
+                (
+                    account_index,
+                    str(normal_amount.to_decimal()),
+                    purpose_index,
+                    split.memo or "",
+                )
             )
         self.additional_splits.set_values(extra_values)
         self.amount_changes_editor.set_values(
@@ -543,7 +548,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         if initial is not None and any(split.formula for split in initial.splits):
             problems.append("formula schedules can only be suppressed for now")
         selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
-        for account_index, raw_amount, _purpose_index in self.additional_splits.values():
+        for account_index, raw_amount, _purpose_index, _memo in self.additional_splits.values():
             if account_index in selected_accounts:
                 problems.append("each additional split needs a different account")
                 break
@@ -588,7 +593,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         signed = amount * category.sign()
         extra_splits = []
         extra_total = Money(0)
-        for account_index, raw_amount, purpose_index in self.additional_splits.values():
+        for account_index, raw_amount, purpose_index, memo in self.additional_splits.values():
             account = self._accounts[account_index]
             extra_amount = Money(raw_amount)
             purpose = _PLANNING_FLOWS[purpose_index][1]
@@ -599,7 +604,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             )
             extra_total = extra_total + value
             extra_splits.append(
-                ScheduledSplit(account.handle, value, planning_flow=purpose)
+                ScheduledSplit(account.handle, value, memo=memo, planning_flow=purpose)
             )
         funding_value = -(signed + extra_total)
         placeholder = True

@@ -320,10 +320,10 @@ class ScheduledView(BaseView):
                 and split.planning_flow is None
             ):
                 funding_candidates += 1
-        if sum(value in {"income", "expense"} for value in classes) != 1:
+        if not any(value in {"income", "expense"} for value in classes):
             return (
-                "This schedule's account structure is not yet reproducible by the "
-                "fixed schedule editor."
+                "This schedule has no Income/Expense leg that the fixed schedule "
+                "editor can use as its primary amount."
             )
         if funding_candidates < 1:
             return (
