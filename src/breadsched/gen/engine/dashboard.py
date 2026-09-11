@@ -37,7 +37,7 @@ from decimal import Decimal
 from typing import Any
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass, AccountPlanningRole
+from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType
 from ..lib.scheduled import ScheduledTransaction
@@ -172,23 +172,16 @@ def default_config(db: DbSQLite) -> DashboardConfig:
     A first view that shows real numbers is worth more than an empty one with an
     invitation to configure it.
     """
-    liquid, retirement, fsa_accounts, investments = [], [], [], []
-    liabilities, other_assets = [], []
+    liquid, retirement, liabilities, other_assets = [], [], [], []
     for account in db.iter_accounts():
         if account.is_root or account.placeholder or account.exclude_from_projection:
             continue
-        if account.planning_role is AccountPlanningRole.RETIREMENT:
-            retirement.append(account.handle)
-        elif account.planning_role is AccountPlanningRole.FSA:
-            fsa_accounts.append(account.handle)
-        elif account.planning_role is AccountPlanningRole.INVESTMENT:
-            investments.append(account.handle)
-        elif account.account_class is AccountClass.LIABILITY:
-            liabilities.append(account.handle)
-        elif account.atype.is_cash_like:
+        if account.atype.is_cash_like:
             liquid.append(account.handle)
         elif account.atype.is_investment:
             retirement.append(account.handle)
+        elif account.account_class is AccountClass.LIABILITY:
+            liabilities.append(account.handle)
         elif account.account_class is AccountClass.ASSET:
             other_assets.append(account.handle)
 
@@ -218,8 +211,6 @@ def default_config(db: DbSQLite) -> DashboardConfig:
 
     liquid = [h for h in liquid if h not in paired]
     retirement = [h for h in retirement if h not in paired]
-    fsa_accounts = [h for h in fsa_accounts if h not in paired]
-    investments = [h for h in investments if h not in paired]
     liabilities = [h for h in liabilities if h not in paired]
     other_assets = [h for h in other_assets if h not in paired]
 
@@ -228,9 +219,7 @@ def default_config(db: DbSQLite) -> DashboardConfig:
     # mentions every account, and a field that only applied to unmentioned ones
     # would never do anything.
     named: dict[str, GroupConfig] = {}
-    for bucket in (
-        liquid, retirement, fsa_accounts, investments, other_assets, liabilities
-    ):
+    for bucket in (liquid, retirement, other_assets, liabilities):
         for handle in list(bucket):
             named_account = db.get_account(handle)
             if named_account is None or not named_account.group:
@@ -250,10 +239,6 @@ def default_config(db: DbSQLite) -> DashboardConfig:
         groups.append(GroupConfig("Cash", liquid, "liquid"))
     if retirement:
         groups.append(GroupConfig("Retirement", retirement, "retirement"))
-    if fsa_accounts:
-        groups.append(GroupConfig("FSA / benefits", fsa_accounts, "asset"))
-    if investments:
-        groups.append(GroupConfig("Investments", investments, "asset"))
     if other_assets:
         groups.append(GroupConfig("Other assets", other_assets, "asset"))
     if liabilities:
@@ -617,19 +602,12 @@ def _pairs_a_loan(db: DbSQLite, group: GroupConfig) -> bool:
 
 
 def _kind_for(account: Account) -> str:
-    if account.planning_role is AccountPlanningRole.RETIREMENT:
-        return "retirement"
-    if account.planning_role in {
-        AccountPlanningRole.FSA,
-        AccountPlanningRole.INVESTMENT,
-    }:
-        return "asset"
-    if account.account_class is AccountClass.LIABILITY:
-        return "liability"
     if account.atype.is_cash_like:
         return "liquid"
     if account.atype.is_investment:
         return "retirement"
+    if account.account_class is AccountClass.LIABILITY:
+        return "liability"
     return "asset"
 
 
