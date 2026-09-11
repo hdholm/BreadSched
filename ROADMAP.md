@@ -9,14 +9,17 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0106 (`planning: make accepted estimates
-idempotent`).
+Status below is current through patch 0108 (`scheduled: surface unsupported details
+safely`).
 
 ## Near-term correctness and daily-use work
 
 ### Scheduled-transaction editing
 
-- Investigate schedules for which the GTK **Edit** button remains disabled.
+- Continue expanding schedule editing beyond the fixed shapes BreadSched can
+  currently round-trip safely. Unsupported schedules must remain fully inspectable
+  in a read-only detail view rather than becoming inaccessible because **Edit** is
+  disabled.
 - Distinguish genuinely unsupported schedule shapes from schedules that are merely
   imported from GnuCash or represented differently internally.
 - Expand the schedule editor so every fixed schedule that can be represented safely
@@ -207,6 +210,25 @@ This remains one of the largest functional gaps.
 - Keep long-running operations responsive with clear progress/cancellation where
   appropriate.
 
+## In-application help and documentation
+
+- Add discoverable in-application help that explains normal BreadSched operation,
+  terminology, and the relationship among Accounts, Scheduled transactions, Plan,
+  Review/Actuals, Projection, scenarios, planning roles, and imports.
+- Include practical walk-throughs for a generic household that build a comprehensive
+  chart of accounts and cash-flow plan from scratch, then create and compare multiple
+  scenarios with different income, expense, retirement, debt, and investment
+  assumptions.
+- Explain the application's important design choices in user terms. In particular,
+  document why a cash-flow plan is derived from exact-dated actual, scheduled, and
+  estimated transactions rather than stored as isolated monthly budget numbers, and
+  how posted actuals relate back to the scheduled/planned activity they resolve.
+- Document commitments versus estimates, residual historical estimates, planning
+  roles, scenario overrides, reconciliation, imports, and Projection explanations
+  with short examples and links from the relevant screens.
+- Keep help content versioned with the application and covered by navigation/link
+  tests so documentation does not silently drift away from the implemented model.
+
 ## Packaging and release quality
 
 - Finish cross-platform packaging and reproducible release workflows, with Linux
@@ -241,3 +263,6 @@ regress them:
   rerun.
 - Dashboard account grouping honors planning roles, and scheduled bills no longer
   depend on a hidden legacy current-budget selection.
+- Every scheduled transaction can be opened from the GTK Scheduled view. Schedules
+  that the fixed editor cannot safely round-trip are shown in a read-only detail
+  view with recurrence, splits/accounts, formulas, variables, and overrides intact.

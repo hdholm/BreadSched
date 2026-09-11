@@ -1111,6 +1111,38 @@ class TestScheduleEntry:
         ]
         assert len(same_handle) == 1
 
+    def test_an_unsupported_formula_schedule_is_still_viewable(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and rent is not None
+        source = ScheduledTransaction(
+            name="Imported formula payment",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(rent.handle, formula="payment"),
+                ScheduledSplit(bank.handle, formula="-payment"),
+            ],
+        )
+        source.variables = {"payment": "1800"}
+        dialog = ScheduleDialog(
+            window,
+            app.db,
+            source=source,
+            read_only_reason="Formula schedules cannot yet be reproduced safely.",
+        )
+        text = dialog.details.get_text()
+        assert dialog.save_button.get_visible() is False
+        assert "Imported formula payment" in text
+        assert "Assets:Checking Account" in text
+        assert "Expenses:Rent" in text
+        assert "formula 'payment'" in text
+        assert "payment = 1800" in text
+
     def test_the_scheduled_view_offers_the_dialog(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("scheduled")

@@ -71,16 +71,22 @@ class ScheduleDialog(Gtk.Window):
         parent: Gtk.Window | None,
         db: DbSQLite,
         source: ScheduledTransaction | None = None,
+        read_only_reason: str | None = None,
     ) -> None:
         super().__init__(
             title=(
-                "Edit scheduled transaction" if source else "New scheduled transaction"
+                "Scheduled transaction details"
+                if source is not None and read_only_reason
+                else "Edit scheduled transaction"
+                if source
+                else "New scheduled transaction"
             ),
             transient_for=parent,
             modal=True,
         )
         self.db = db
         self.source = source
+        self.read_only_reason = read_only_reason
         self.set_default_size(560, 520)
         self._accounts = sorted(
             (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
@@ -226,6 +232,10 @@ class ScheduleDialog(Gtk.Window):
         )
         grid.attach(self.auto_check, 1, row, 1, 1)
 
+        self.details = Gtk.Label(xalign=0, yalign=0, wrap=True, selectable=True)
+        self.details.set_visible(False)
+        box.append(self.details)
+
         self.preview = Gtk.Label(xalign=0, wrap=True)
         self.preview.add_css_class("dim")
         box.append(self.preview)
@@ -234,7 +244,7 @@ class ScheduleDialog(Gtk.Window):
         box.append(self.status)
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        cancel = Gtk.Button(label="Cancel")
+        cancel = Gtk.Button(label="Close" if read_only_reason else "Cancel")
         cancel.connect("clicked", lambda *_: self.close())
         buttons.append(cancel)
         self.save_button = Gtk.Button(label="Save")
@@ -244,9 +254,109 @@ class ScheduleDialog(Gtk.Window):
         buttons.append(self.save_button)
         box.append(buttons)
 
-        if source is not None:
-            self._load_source(source)
-        self._validate()
+        if source is not None and read_only_reason:
+            grid.set_visible(False)
+            self.preview.set_visible(False)
+            self.details.set_text(self._detail_text(source, read_only_reason))
+            self.details.set_visible(True)
+            self.save_button.set_visible(False)
+            self.status.set_text(
+                "Read-only: this schedule is preserved exactly as imported/stored."
+            )
+        else:
+            if source is not None:
+                self._load_source(source)
+            self._validate()
+
+    def _detail_text(
+        self, source: ScheduledTransaction, reason: str
+    ) -> str:
+        """Return a lossless human-readable summary for an unsupported schedule."""
+        recurrence = source.recurrence
+        lines = [
+            reason,
+            "",
+            f"Name: {source.name}",
+            f"Description: {source.description}",
+            f"Kind: {'Estimate' if source.placeholder else 'Commitment'}",
+            f"Enabled: {'yes' if source.enabled else 'no'}",
+            f"Automatic posting: {'yes' if source.auto_create else 'no'}",
+            f"Advance notice: {source.advance_days} day(s)",
+            f"Currency: {source.currency or '(book/default)'}",
+            f"Recurrence: {recurrence.describe()}",
+            f"First due: {recurrence.start.isoformat()}",
+            f"End date: {recurrence.end.isoformat() if recurrence.end else '(none)'}",
+            (
+                "Occurrence limit: "
+                f"{recurrence.count if recurrence.count is not None else '(none)'}"
+            ),
+            (
+                "Day of month: "
+                f"{recurrence.day_of_month if recurrence.day_of_month is not None else '(default)'}"
+            ),
+            (
+                "Second day of month: "
+                + (
+                    str(recurrence.second_day_of_month)
+                    if recurrence.second_day_of_month is not None
+                    else "(none)"
+                )
+            ),
+            f"Weekend adjustment: {recurrence.weekend_adjust.value}",
+            (
+                "Last posted: "
+                f"{source.last_posted.isoformat() if source.last_posted else '(none)'}"
+            ),
+            "",
+            "Splits:",
+        ]
+        for index, split in enumerate(source.splits, 1):
+            account = self.db.get_account(split.account)
+            account_name = (
+                self.db.full_name(account) if account is not None else split.account
+            )
+            value = (
+                f"formula {split.formula!r}"
+                if split.formula
+                else str(split.amount or Money(0))
+            )
+            purpose = (
+                split.planning_flow.label
+                if split.planning_flow is not None
+                else "(none)"
+            )
+            memo = split.memo or "(none)"
+            lines.append(
+                f"  {index}. {account_name}: {value}; planning purpose {purpose}; memo {memo}"
+            )
+        if source.variables:
+            lines.extend(["", "Formula variables:"])
+            lines.extend(
+                f"  {key} = {value}"
+                for key, value in sorted(source.variables.items())
+            )
+        if source.amount_changes:
+            lines.extend(["", "Future amount changes:"])
+            lines.extend(
+                f"  {item.start.isoformat()}: {item.amount}"
+                for item in source.amount_changes
+            )
+        if source.seasonal_amounts:
+            lines.extend(["", "Seasonal month amounts:"])
+            lines.extend(
+                f"  month {item.month}: {item.amount}"
+                for item in source.seasonal_amounts
+            )
+        if source.skipped:
+            lines.extend(["", "Skipped occurrences:"])
+            lines.extend(f"  {when.isoformat()}" for when in source.skipped)
+        if source.occurrence_adjustments:
+            lines.extend(["", "One-time occurrence amounts:"])
+            lines.extend(
+                f"  {item.when.isoformat()}: {item.amount}"
+                for item in source.occurrence_adjustments
+            )
+        return "\n".join(lines)
 
     def _load_source(self, source: ScheduledTransaction) -> None:
         """Populate the simple editor from an existing two-split schedule."""

@@ -97,9 +97,9 @@ class ScheduledView(BaseView):
         suggest_button.connect("clicked", self._on_suggest_clicked)
         bar.append(suggest_button)
 
-        self.edit_button = Gtk.Button(label="Edit…")
+        self.edit_button = Gtk.Button(label="View / Edit…")
         self.edit_button.set_tooltip_text(
-            "Edit the selected simple scheduled transaction"
+            "View the selected schedule; edit it when BreadSched can preserve it safely"
         )
         self.edit_button.set_sensitive(False)
         self.edit_button.connect("clicked", self._on_edit_clicked)
@@ -274,13 +274,19 @@ class ScheduledView(BaseView):
             tree_row.set_expanded(index == position)
         selected = selection.get_selected_item()
         payload = unwrap(selected) if selected is not None else None
-        self.edit_button.set_sensitive(self._simple_editable(payload))
+        self.edit_button.set_sensitive(
+            payload is not None and not _is_split(payload)
+        )
 
-    def _simple_editable(self, sched) -> bool:
-        if sched is None or _is_split(sched) or len(getattr(sched, "splits", [])) < 2:
-            return False
+    def _editability_reason(self, sched) -> str:
+        if sched is None or _is_split(sched):
+            return "No scheduled transaction is selected."
         if any(split.formula for split in sched.splits):
-            return False
+            return (
+                "This schedule contains formula splits. BreadSched can display the "
+                "imported formulas but cannot yet round-trip them safely in the fixed "
+                "schedule editor."
+            )
         supported = {
             (PeriodType.WEEK, 1),
             (PeriodType.WEEK, 2),
@@ -292,7 +298,15 @@ class ScheduledView(BaseView):
             (PeriodType.ONCE, 1),
         }
         if (sched.recurrence.period, sched.recurrence.interval) not in supported:
-            return False
+            return (
+                "This schedule uses a recurrence that the fixed schedule editor "
+                "cannot yet reproduce without changing its meaning."
+            )
+        if len(getattr(sched, "splits", [])) < 2:
+            return (
+                "This imported schedule does not have enough split information for "
+                "the fixed schedule editor to reproduce it safely."
+            )
         classes = []
         funding_candidates = 0
         for split in sched.splits:
@@ -306,10 +320,17 @@ class ScheduledView(BaseView):
                 and split.planning_flow is None
             ):
                 funding_candidates += 1
-        return (
-            sum(value in {"income", "expense"} for value in classes) == 1
-            and funding_candidates >= 1
-        )
+        if sum(value in {"income", "expense"} for value in classes) != 1:
+            return (
+                "This schedule's account structure is not yet reproducible by the "
+                "fixed schedule editor."
+            )
+        if funding_candidates < 1:
+            return (
+                "This schedule has no ordinary funding split that the fixed schedule "
+                "editor can preserve."
+            )
+        return ""
 
     def _on_edit_clicked(self, _button) -> None:
         if self.db is None:
@@ -317,14 +338,17 @@ class ScheduledView(BaseView):
         selection = self.definitions_view.get_model()
         selected = selection.get_selected_item() if selection is not None else None
         sched = unwrap(selected) if selected is not None else None
-        if not self._simple_editable(sched):
-            self.status.set_text(
-                "Formula schedules are not editable in the fixed-split editor."
-            )
+        if sched is None or _is_split(sched):
             return
         from ..dialogs.schedule_dialog import ScheduleDialog
 
-        dialog = ScheduleDialog(self.get_root(), self.db, source=sched)
+        reason = self._editability_reason(sched)
+        dialog = ScheduleDialog(
+            self.get_root(),
+            self.db,
+            source=sched,
+            read_only_reason=reason or None,
+        )
         dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
         dialog.present()
 
