@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0114 (`scheduled: edit fixed asset transfers`).
+Status below is current through patch 0115 (`scheduled: edit fixed balance-sheet transfers`).
 
 ## Near-term correctness and daily-use work
 
@@ -29,9 +29,12 @@ Status below is current through patch 0114 (`scheduled: edit fixed asset transfe
   by BreadSched can be edited without losing recurrence, split, formula, override,
   or import metadata. Fixed balance-sheet transfers with exactly one explicit
   planning-purpose leg and an ordinary funding leg are editable as of 0113.
-  Unambiguous two-account asset-to-asset transfers are editable as of 0114;
-  continue with other fixed balance-sheet shapes only where direction and meaning
-  can be preserved without guessing.
+  Unambiguous two-account asset-to-asset transfers are editable as of 0114.
+  Patch 0115 extends the same lossless model to fixed two-account asset/liability
+  and liability/liability transfers by preserving the positive ledger leg rather
+  than inferring direction from an account's normal balance. Continue with other
+  fixed balance-sheet shapes only where direction and meaning can be preserved
+  without guessing.
 - Preserve unsupported formula/custom recurrence data rather than enabling an
   editor that would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including

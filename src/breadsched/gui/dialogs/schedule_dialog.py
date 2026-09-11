@@ -88,6 +88,7 @@ class ScheduleDialog(Gtk.Window):
         self.source = source
         self.read_only_reason = read_only_reason
         self._category_planning_flow = None
+        self._category_ledger_direction: int | None = None
         self._frequencies = list(_FREQUENCIES)
         if source is not None and not any(
             period is source.recurrence.period
@@ -407,25 +408,26 @@ class ScheduleDialog(Gtk.Window):
             if len(planning_flows) == 1:
                 flow = planning_flows[0]
         if flow is None and len(parts) == 2:
-            ordinary_assets = [
+            ordinary_balance_splits = [
                 item
                 for item in parts
-                if item[0].account_class.value == "asset"
+                if item[0].account_class.value in {"asset", "liability"}
                 and item[1].planning_flow is None
             ]
-            if len(ordinary_assets) == 2:
+            if len(ordinary_balance_splits) == 2:
                 positives = [
                     item
-                    for item in ordinary_assets
+                    for item in ordinary_balance_splits
                     if item[1].resolve(source.variables) > 0
                 ]
                 negatives = [
                     item
-                    for item in ordinary_assets
+                    for item in ordinary_balance_splits
                     if item[1].resolve(source.variables) < 0
                 ]
                 if len(positives) == 1 and len(negatives) == 1:
                     flow = positives[0]
+                    self._category_ledger_direction = 1
         if flow is not None:
             flow_account, flow_split = flow
             others = [item for item in parts if item is not flow]
@@ -747,11 +749,12 @@ class ScheduleDialog(Gtk.Window):
             schedule.description = schedule.name
         schedule.recurrence = recurrence
         planning_kind = _PLANNING_FLOWS[self.planning_flow.get_selected()][1]
-        category_value = (
-            self._category_planning_flow.ledger_amount(amount)
-            if self._category_planning_flow is not None
-            else amount * category.sign()
-        )
+        if self._category_planning_flow is not None:
+            category_value = self._category_planning_flow.ledger_amount(amount)
+        elif self._category_ledger_direction is not None:
+            category_value = amount * self._category_ledger_direction
+        else:
+            category_value = amount * category.sign()
         extra_splits = []
         extra_total = Money(0)
         for account_index, raw_amount, purpose_index, memo in self.additional_splits.values():

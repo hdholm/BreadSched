@@ -326,12 +326,14 @@ class ScheduledView(BaseView):
             ):
                 funding_candidates += 1
         has_income_expense = any(value in {"income", "expense"} for value in classes)
-        ordinary_asset_transfer = False
+        ordinary_balance_transfer = False
         if not has_income_expense and planning_flow_splits == 0 and len(sched.splits) == 2:
-            ordinary_asset_transfer = all(value == "asset" for value in classes)
-            if ordinary_asset_transfer:
+            ordinary_balance_transfer = all(
+                value in {"asset", "liability"} for value in classes
+            )
+            if ordinary_balance_transfer:
                 resolved = [split.resolve(sched.variables) for split in sched.splits]
-                ordinary_asset_transfer = (
+                ordinary_balance_transfer = (
                     any(value > 0 for value in resolved)
                     and any(value < 0 for value in resolved)
                     and sum(resolved, Money(0)) == Money(0)
@@ -339,11 +341,11 @@ class ScheduledView(BaseView):
         if (
             not has_income_expense
             and planning_flow_splits != 1
-            and not ordinary_asset_transfer
+            and not ordinary_balance_transfer
         ):
             return (
                 "This schedule has neither an Income/Expense leg, exactly one "
-                "explicit planning-purpose leg, nor an unambiguous fixed asset "
+                "explicit planning-purpose leg, nor an unambiguous fixed balance-sheet "
                 "transfer that the schedule editor can use as its primary amount."
             )
         if funding_candidates < 1:

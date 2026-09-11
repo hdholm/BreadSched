@@ -1256,6 +1256,43 @@ class TestScheduleEntry:
             (bank.handle, Money("-125.00"), "source"),
         ]
 
+    def test_fixed_asset_liability_transfer_is_editable(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        assert bank is not None
+        with app.db.transaction("add liability account") as txn:
+            liability = Account(
+                name="Installment liability",
+                atype=AccountType.LIABILITY,
+                parent=app.db.root_account().handle,
+            )
+            app.db.add_account(liability, txn)
+        source = ScheduledTransaction(
+            name="Principal transfer",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(bank.handle, Money("-90.00"), memo="funding"),
+                ScheduledSplit(liability.handle, Money("90.00"), memo="principal"),
+            ],
+        )
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+        assert [
+            (split.account, split.amount, split.memo) for split in rebuilt.splits
+        ] == [
+            (liability.handle, Money("90.00"), "principal"),
+            (bank.handle, Money("-90.00"), "funding"),
+        ]
+
     def test_an_unsupported_formula_schedule_is_still_viewable(
         self, app, window, populated_book
     ):
