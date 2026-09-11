@@ -443,6 +443,37 @@ class TestPlanningFlowClassification:
         assert flow.actual == [Money(0)]
         assert flow.variance == [Money("-1000.00")]
 
+    def test_planning_flow_period_detail_reconciles_planned_occurrence(self, db, book):
+        contribution = ScheduledTransaction(
+            name="401k contribution",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-500.00")),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("500.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+            ],
+        )
+        with db.transaction("plan retirement contribution") as txn:
+            db.add_scheduled(contribution, txn)
+
+        detail = activity.explain_planning_flow_period(
+            db,
+            PlanningFlowKind.RETIREMENT_SAVING,
+            book.brokerage,
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            as_of=date(2026, 1, 31),
+        )
+
+        assert detail.planned == Money("500.00")
+        assert detail.actual == Money(0)
+        assert len(detail.planned_events) == 1
+        assert detail.planned_events[0].description == "401k contribution"
+        assert detail.planned_events[0].expected == Money("500.00")
+
     def test_planning_flows_remain_distinct_by_destination_account(self, db, book):
         contribution = ScheduledTransaction(
             name="Split retirement contribution",

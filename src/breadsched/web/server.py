@@ -1439,8 +1439,9 @@ class Api:
         start_value: str,
         end_value: str,
         scenario_handle: str | None = None,
+        flow_kind: str | None = None,
     ) -> dict:
-        """Explain one Plan category/period cell from its exact-dated activity."""
+        """Explain one Plan category/planning-flow cell from exact-dated activity."""
         start = date.fromisoformat(start_value)
         end = date.fromisoformat(end_value)
         scenarios = list(self.db.iter_scenarios())
@@ -1455,16 +1456,30 @@ class Api:
             scenario = self._base_scenario(start, end)
             scenario_name = "Base scenario"
 
-        detail = activity.explain_category_period(
-            self.db, account_handle, start, end, scenario=scenario
-        )
-        return {
-            "category": {
+        if flow_kind:
+            kind = PlanningFlowKind(flow_kind)
+            detail = activity.explain_planning_flow_period(
+                self.db, kind, account_handle, start, end, scenario=scenario
+            )
+            category = {
+                "account": detail.account,
+                "name": detail.name,
+                "full_name": detail.full_name,
+                "class": "planning_flow",
+                "kind": kind.value,
+            }
+        else:
+            detail = activity.explain_category_period(
+                self.db, account_handle, start, end, scenario=scenario
+            )
+            category = {
                 "account": detail.account,
                 "name": detail.name,
                 "full_name": detail.full_name,
                 "class": detail.account_class.value,
-            },
+            }
+        return {
+            "category": category,
             "period": {"start": detail.start, "end": detail.end},
             "scenario": {"handle": scenario_handle, "name": scenario_name},
             "summary": {
@@ -2246,6 +2261,7 @@ ROUTES = {
         q.get("start", [""])[0],
         q.get("end", [""])[0],
         q.get("scenario", [None])[0],
+        q.get("flow_kind", [None])[0],
     ),
     "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
     "/api/scenarios": lambda a, q: a.scenarios(),

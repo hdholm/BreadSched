@@ -36,6 +36,7 @@ __all__ = [
     "CategoryActualDetail",
     "CategoryPeriodDetail",
     "CategoryPlannedDetail",
+    "PlanningFlowPeriodDetail",
     "CategoryReport",
     "PlanningFlowActivity",
     "PeriodActivity",
@@ -43,6 +44,7 @@ __all__ = [
     "build_activity_report",
     "build_category_report",
     "explain_category_period",
+    "explain_planning_flow_period",
 ]
 
 
@@ -327,6 +329,29 @@ class CategoryPeriodDetail:
         return self.actual - self.planned
 
 
+@dataclass(frozen=True, slots=True)
+class PlanningFlowPeriodDetail:
+    """Explanation of one classified planning-flow value for one period."""
+
+    kind: PlanningFlowKind
+    account: str
+    name: str
+    full_name: str
+    start: date
+    end: date
+    planned: Money
+    actual: Money
+    planned_events: tuple[CategoryPlannedDetail, ...]
+    actual_transactions: tuple[CategoryActualDetail, ...]
+    as_of: date
+
+    @property
+    def variance(self) -> Money | None:
+        if self.start > self.as_of:
+            return None
+        return self.actual - self.planned
+
+
 @dataclass(slots=True)
 class PlanningFlowActivity:
     """One economically meaningful balance-sheet flow across display periods."""
@@ -473,6 +498,97 @@ def explain_category_period(
         account_class=account.account_class, start=start, end=end,
         planned=planned_total, actual=actual_total, planned_events=tuple(planned_rows),
         actual_transactions=tuple(actual_rows),
+        as_of=as_of or date.today(),
+    )
+
+
+def explain_planning_flow_period(
+    db: DbSQLite,
+    kind: PlanningFlowKind,
+    account_handle: str,
+    start: date,
+    end: date,
+    *,
+    scenario: Scenario | None = None,
+    as_of: date | None = None,
+) -> PlanningFlowPeriodDetail:
+    """Explain one classified balance-sheet Plan cell from exact-dated activity."""
+    if end < start:
+        raise ValueError("Plan detail end date precedes its start date.")
+    account = db.get_account(account_handle)
+    if account is None:
+        raise KeyError(account_handle)
+    accounts = {item.handle: item for item in db.iter_accounts()}
+
+    def flow_amount(splits: Iterable[PlannedSplit]) -> Money:
+        split_tuple = tuple(splits)
+        total = Money(0)
+        for split in split_tuple:
+            if split.account != account_handle:
+                continue
+            inferred = _inferred_planning_flow(split, split_tuple, accounts)
+            if inferred is kind:
+                total = total + kind.plan_amount(split.amount)
+        return total
+
+    report = build_activity_report(
+        db, start, end, period=ReportingPeriod.MONTH, scenario=scenario
+    )
+    planned_rows: list[CategoryPlannedDetail] = []
+    actual_rows: list[CategoryActualDetail] = []
+    planned_total = Money(0)
+    actual_total = Money(0)
+
+    for bucket in report.periods:
+        for event in bucket.planned_events:
+            expected = flow_amount(event.expected_splits)
+            if expected == Money(0):
+                continue
+            actual_value = (
+                flow_amount(event.actual_splits)
+                if event.actual_transaction is not None
+                else None
+            )
+            planned_total = planned_total + expected
+            planned_rows.append(CategoryPlannedDetail(
+                occurrence=event.key, planned_date=event.planned_date,
+                description=event.description, source=event.source.value,
+                status=event.status.value, expected=expected, actual=actual_value,
+                variance=actual_value - expected if actual_value is not None else None,
+                actual_transaction=event.actual_transaction, actual_date=event.actual_date,
+            ))
+
+        for actual in bucket.actual_transactions:
+            transaction = db.get_transaction(actual.transaction)
+            if transaction is None:
+                continue
+            splits = tuple(
+                PlannedSplit(split.account, split.value, split.planning_flow)
+                for split in transaction.splits
+            )
+            value = flow_amount(splits)
+            if value == Money(0):
+                continue
+            actual_total = actual_total + value
+            expected: Money | None = None
+            if actual.planned_occurrence:
+                matched = event_by_key(db, actual.planned_occurrence)
+                if matched is not None:
+                    expected = flow_amount(matched.expected_splits)
+            actual_rows.append(CategoryActualDetail(
+                transaction=actual.transaction, post_date=actual.post_date,
+                description=actual.description, amount=value,
+                resolution=actual.planning_resolution,
+                planned_occurrence=actual.planned_occurrence, planned_for=actual.planned_for,
+                expected=expected, variance=value - expected if expected is not None else None,
+                date_variance_days=actual.date_variance_days,
+            ))
+
+    return PlanningFlowPeriodDetail(
+        kind=kind, account=account.handle, name=f"{kind.label} — {db.full_name(account)}",
+        full_name=db.full_name(account), start=start, end=end,
+        planned=planned_total, actual=actual_total,
+        planned_events=tuple(planned_rows), actual_transactions=tuple(actual_rows),
         as_of=as_of or date.today(),
     )
 

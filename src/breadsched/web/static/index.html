@@ -1032,12 +1032,19 @@ async function showPlan() {
         (row) => row.kind === flow.kind && row.account === flow.account);
       const deltas = compared ? compared[`${currentPlan.measure}_delta`] : null;
       const cells = flow[currentPlan.measure].map((value, index) =>
-        el("td", { class: value == null ? "num muted" : cls(value) },
-          value == null ? "—" : money(value),
-          deltas && deltas[index] != null ? el("span", {
-            class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
-            title: `Active scenario minus ${comparison.name}`,
-          }, `Δ ${money(deltas[index])}`) : null));
+        el("td", { class: `${value == null ? "num muted" : cls(value)} plan-cell` },
+          el("button", {
+            class: "plan-cell-button", type: "button",
+            title: `Explain ${flow.name} — ${data.periods[index].label}`,
+            "aria-label": `Explain ${flow.name} — ${data.periods[index].label}: ${value == null ? "not applicable" : money(value)}`,
+            onclick: () => openPlanDetail(
+              flow, data.periods[index], currentPlan.scenario,
+              data.periods[index].label, flow.kind),
+          }, value == null ? "—" : money(value),
+            deltas && deltas[index] != null ? el("span", {
+              class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
+              title: `Active scenario minus ${comparison.name}`,
+            }, `Δ ${money(deltas[index])}`) : null)));
       rows.push(el("tr", {},
         el("td", { title: flow.full_name }, flow.name),
         ...cells));
@@ -1059,11 +1066,12 @@ async function showPlan() {
     eventPanel, planTable);
 }
 
-async function openPlanDetail(category, period, scenarioHandle, periodLabel) {
+async function openPlanDetail(category, period, scenarioHandle, periodLabel, flowKind=null) {
   const params = new URLSearchParams({
     account: category.account, start: period.start, end: period.end,
   });
   if (scenarioHandle) params.set("scenario", scenarioHandle);
+  if (flowKind) params.set("flow_kind", flowKind);
   try {
     const data = await get(`/api/plan/detail?${params}`);
     const sourceName = (value) => ({

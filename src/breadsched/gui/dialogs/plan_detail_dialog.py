@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.activity import CategoryPeriodDetail
+from ...gen.engine.activity import CategoryPeriodDetail, PlanningFlowPeriodDetail
 from ..gi_setup import Gtk
 
 __all__ = ["PlanDetailDialog"]
@@ -23,7 +23,7 @@ class PlanDetailDialog(Gtk.Window):
         self,
         parent: Gtk.Window | None,
         db: DbSQLite,
-        detail: CategoryPeriodDetail,
+        detail: CategoryPeriodDetail | PlanningFlowPeriodDetail,
         *,
         period_label: str,
         scenario_name: str,
@@ -101,7 +101,9 @@ class PlanDetailDialog(Gtk.Window):
         scroll.set_vexpand(True)
         return scroll
 
-    def _planned_page(self, detail: CategoryPeriodDetail) -> Gtk.Widget:
+    def _planned_page(
+        self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail
+    ) -> Gtk.Widget:
         rows = [
             (
                 item.planned_date.isoformat(),
@@ -121,7 +123,9 @@ class PlanDetailDialog(Gtk.Window):
             rows,
         )
 
-    def _actual_page(self, detail: CategoryPeriodDetail) -> Gtk.Widget:
+    def _actual_page(
+        self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail
+    ) -> Gtk.Widget:
         rows = [
             (
                 item.post_date.isoformat(),
