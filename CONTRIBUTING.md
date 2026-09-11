@@ -18,6 +18,10 @@ an AI assistant.
 - Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog. A
   patch that completes, changes, discovers, splits, or reprioritizes roadmap work
   must update the roadmap in the same patch.
+- Keep documentation roles distinct: `README.md` is the user-facing overview and
+  entry point; `DESIGN.md` records current architecture and rationale; `ROADMAP.md`
+  is the only future-work list. Update the appropriate document when a patch changes
+  behavior, design, or pending work rather than letting those descriptions drift.
 
 ## Tests are part of the change
 

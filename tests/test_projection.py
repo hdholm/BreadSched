@@ -15,6 +15,7 @@ from breadsched.gen.lib import (
     ScenarioSchedule,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduleGrowthPolicy,
     Transaction,
 )
 
@@ -757,6 +758,82 @@ class TestMonthlyStateLedger:
 
         with pytest.raises(IndexError):
             projection.explain_month(db, result, 12)
+
+class TestScheduledGrowthPolicy:
+    def test_mixed_payroll_grows_with_income_in_auto_mode(self, db, book):
+        with db.transaction("Add payroll") as txn:
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Payroll",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+                    splits=[
+                        ScheduledSplit(book.salary, Money("-100.00")),
+                        ScheduledSplit(book.rent, Money("20.00")),
+                        ScheduledSplit(book.checking, Money("80.00")),
+                    ],
+                ),
+                txn,
+            )
+
+        scenario = Scenario(
+            name="Income growth",
+            start=date(2026, 1, 1),
+            years=2,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(income_growth="0.10"),
+        )
+        result = projection.project(db, scenario)
+
+        assert result.rows[0].income == Money("100.00")
+        assert result.rows[0].expense == Money("20.00")
+        assert result.rows[12].income == Money("110.00")
+        assert result.rows[12].expense == Money("22.00")
+        assert result.rows[12].cash_close - result.rows[11].cash_close == Money("88.00")
+
+    def test_explicit_none_disables_automatic_expense_inflation(self, db, book):
+        with db.transaction("Add fixed expense") as txn:
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Fixed fee",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+                    splits=[
+                        ScheduledSplit(book.rent, Money("25.00")),
+                        ScheduledSplit(book.checking, Money("-25.00")),
+                    ],
+                    growth_policy=ScheduleGrowthPolicy.NONE,
+                ),
+                txn,
+            )
+
+        scenario = Scenario(
+            name="Inflation",
+            start=date(2026, 1, 1),
+            years=2,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(expense_inflation="0.10"),
+        )
+        result = projection.project(db, scenario)
+
+        assert result.rows[0].expense == Money("25.00")
+        assert result.rows[12].expense == Money("25.00")
+
+    def test_scenario_override_preserves_growth_policy(self, db, book):
+        source = ScheduledTransaction(
+            name="Salary",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-100.00")),
+                ScheduledSplit(book.checking, Money("100.00")),
+            ],
+            growth_policy=ScheduleGrowthPolicy.INCOME,
+        )
+
+        copied = ScenarioSchedule.from_scheduled(source)
+        reloaded = ScenarioSchedule.from_dict(copied.serialize())
+
+        assert copied.growth_policy is ScheduleGrowthPolicy.INCOME
+        assert reloaded.growth_policy is ScheduleGrowthPolicy.INCOME
+
 
 class TestEventProjectionScaling:
     def test_assumption_resolution_is_cached_across_many_events(

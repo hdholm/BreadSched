@@ -27,6 +27,7 @@ from .scheduled import (
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduleGrowthPolicy,
 )
 
 __all__ = [
@@ -109,6 +110,7 @@ class ScenarioSchedule:
         seasonal_amounts: list[ScheduledMonthAmount] | None = None,
         skipped: list[date] | None = None,
         occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
+        growth_policy: ScheduleGrowthPolicy | str = ScheduleGrowthPolicy.AUTO,
     ) -> None:
         self.handle = handle or create_handle()
         self.name = name
@@ -118,6 +120,7 @@ class ScenarioSchedule:
         self.source_schedule = source_schedule
         self.enabled = enabled
         self.placeholder = placeholder
+        self.growth_policy = ScheduleGrowthPolicy(growth_policy)
         self.variables = dict(variables or {})
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
         self.seasonal_amounts = sorted(
@@ -144,6 +147,7 @@ class ScenarioSchedule:
             source_schedule=schedule.handle,
             enabled=enabled,
             placeholder=schedule.placeholder,
+            growth_policy=schedule.growth_policy,
             variables=dict(schedule.variables),
             amount_changes=[
                 ScheduledAmountChange.from_dict(item.serialize())
@@ -212,6 +216,7 @@ class ScenarioSchedule:
             "source_schedule": self.source_schedule,
             "enabled": self.enabled,
             "placeholder": self.placeholder,
+            "growth_policy": self.growth_policy.value,
             "variables": dict(self.variables),
             "amount_changes": [item.serialize() for item in self.amount_changes],
             "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
@@ -232,6 +237,7 @@ class ScenarioSchedule:
             source_schedule=data.get("source_schedule"),
             enabled=data.get("enabled", True),
             placeholder=data.get("placeholder", True),
+            growth_policy=data.get("growth_policy", "auto"),
             variables=data.get("variables", {}),
             amount_changes=[
                 ScheduledAmountChange.from_dict(item)

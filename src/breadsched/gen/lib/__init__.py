@@ -33,6 +33,7 @@ from .scheduled import (
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduleGrowthPolicy,
     scheduled_occurrence_preview,
 )
 from .transaction import (
@@ -53,7 +54,8 @@ __all__ = [
     "PeriodType", "PlanningFlowKind", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
     "ReconcileState", "Recurrence",
     "Scenario", "ScenarioSchedule", "ScheduledAmountChange", "ScheduledMonthAmount",
-    "ScheduledOccurrenceAdjustment", "ScheduledSplit", "ScheduledTransaction", "Split",
+    "ScheduleGrowthPolicy", "ScheduledOccurrenceAdjustment", "ScheduledSplit",
+    "ScheduledTransaction", "Split",
     "scheduled_occurrence_preview",
     "Transaction",
     "UnbalancedError", "WeekendAdjust", "ZERO", "add_months", "create_handle", "evaluate",

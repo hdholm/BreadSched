@@ -23,7 +23,7 @@ from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, ProjectionBasis, Scenario, ScenarioSchedule
-from ..lib.scheduled import ScheduledTransaction
+from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
 from . import ledger, planning, schedule
 
 __all__ = [
@@ -720,6 +720,7 @@ def _event_escalation_factor(
     timeline: _AssumptionTimeline,
     event: planning.PlannedEvent,
     accounts: dict[str, Account],
+    schedule_growth_policies: dict[str, ScheduleGrowthPolicy],
     formula_schedule_handles: set[str],
 ) -> Decimal:
     """Return the scenario escalation applied to one unresolved schedule event.
@@ -733,7 +734,21 @@ def _event_escalation_factor(
         event.source
         not in (planning.EventSource.SCHEDULED, planning.EventSource.SCENARIO_SCHEDULE)
         or event.status is planning.EventStatus.ACTUALIZED
-        or event.source_handle in formula_schedule_handles
+    ):
+        return _ONE
+
+    source_handle = event.source_handle
+    if source_handle is None:
+        return _ONE
+
+    policy = schedule_growth_policies.get(
+        source_handle, ScheduleGrowthPolicy.AUTO
+    )
+    if policy is ScheduleGrowthPolicy.NONE:
+        return _ONE
+    if (
+        policy is ScheduleGrowthPolicy.AUTO
+        and source_handle in formula_schedule_handles
     ):
         return _ONE
 
@@ -742,9 +757,16 @@ def _event_escalation_factor(
         for split in event.expected_splits
         if (account := accounts.get(split.account)) is not None
     }
-    if AccountClass.INCOME in classes and AccountClass.EXPENSE not in classes:
+    if policy is ScheduleGrowthPolicy.INCOME:
         field: Literal["income_growth", "expense_inflation"] = "income_growth"
-    elif AccountClass.EXPENSE in classes and AccountClass.INCOME not in classes:
+    elif policy is ScheduleGrowthPolicy.INFLATION:
+        field = "expense_inflation"
+    elif AccountClass.INCOME in classes:
+        # Gross-to-net payroll has both income and expense legs.  In automatic
+        # mode the presence of income makes the whole balanced event grow with
+        # income, including withholding and the net deposit.
+        field = "income_growth"
+    elif AccountClass.EXPENSE in classes:
         field = "expense_inflation"
     else:
         return _ONE
@@ -764,12 +786,14 @@ def _apply_event(
     holdings: dict[str, Money],
     debts: dict[str, Money],
     flows: _EventMonthFlows,
+    schedule_growth_policies: dict[str, ScheduleGrowthPolicy],
     formula_schedule_handles: set[str],
 ) -> Money:
     """Apply one event's effective splits to financial state on its exact date."""
     flows.events.append(event)
     factor = _event_escalation_factor(
-        scenario, timeline, event, accounts, formula_schedule_handles
+        scenario, timeline, event, accounts, schedule_growth_policies,
+        formula_schedule_handles
     )
     for planned_split in event.splits:
         account = accounts.get(planned_split.account)
@@ -847,11 +871,13 @@ def _project_events(
             debts[account.handle] = opening
 
     formula_schedule_handles: set[str] = set()
+    schedule_growth_policies: dict[str, ScheduleGrowthPolicy] = {}
     schedule_driven_liabilities: set[str] = set()
 
     def record_formula_schedule(
         scheduled_tx: ScheduledTransaction | ScenarioSchedule,
     ) -> None:
+        schedule_growth_policies[scheduled_tx.handle] = scheduled_tx.growth_policy
         if not any(split.formula for split in scheduled_tx.splits):
             return
         formula_schedule_handles.add(scheduled_tx.handle)
@@ -907,7 +933,7 @@ def _project_events(
             )
             cash = _apply_event(
                 scenario, timeline, event, accounts, cash, holdings, debts, flows,
-                formula_schedule_handles,
+                schedule_growth_policies, formula_schedule_handles,
             )
             cursor = event.when
 

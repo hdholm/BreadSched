@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0127
-(`hardening: keep formula loans economically consistent`).
+Status below is current through patch 0128
+(`projection: add schedule growth policy`).
 
 ## Product direction and current hardening phase
 
@@ -44,7 +44,9 @@ roughly in this order:
 1. Projection/loan economic correctness: formula loans must not be inflated by
    generic expense inflation or separately charged generic liability interest; add
    explicit schedule growth policy so multi-split payroll can receive income growth;
-   then fix recurrence period numbering and start-of-period loan mathematics.
+   then fix recurrence period numbering and start-of-period loan mathematics. The
+   domain/engine growth-policy foundation is implemented in 0128; expose it in
+   GTK/web editors next.
 2. Harden the formula evaluator: correct fractional powers and GnuCash argument/
    grouping parsing, bound expression complexity/powers, and convert evaluator
    failures consistently to ``FormulaError``.
@@ -242,9 +244,11 @@ This remains one of the largest functional gaps.
   0127, and liabilities whose interest is represented by a formula schedule no
   longer also accrue the scenario's generic liability rate. Preserve the economic
   regression that compares projected loan balance to the amortisation table.
-- Add an explicit per-schedule growth policy (none, income growth, expense inflation,
-  or custom) so multi-split payroll and other mixed Income/Expense schedules grow
-  intentionally rather than being silently excluded by account-shape heuristics.
+- 0128 adds persisted per-schedule growth policy values ``auto``, ``none``,
+  ``income``, and ``inflation``. Automatic mode now treats mixed gross-to-net
+  payroll as income growth while formula schedules remain fixed by default. Add
+  GTK and web controls for choosing the policy explicitly, and later add a custom
+  per-schedule rate only if the scenario-assumption model can explain it cleanly.
 - Improve projection caching/reuse without making saved scenarios store stale
   calculated results.
 - Add cancellation/progress reporting for expensive projections.
@@ -317,22 +321,40 @@ This remains one of the largest functional gaps.
 
 ## In-application help and documentation
 
-- Add discoverable in-application help that explains normal BreadSched operation,
-  terminology, and the relationship among Accounts, Scheduled transactions, Plan,
-  Review/Actuals, Projection, scenarios, planning roles, and imports.
-- Include practical walk-throughs for a generic household that build a comprehensive
-  chart of accounts and cash-flow plan from scratch, then create and compare multiple
-  scenarios with different income, expense, retirement, debt, and investment
-  assumptions.
-- Explain the application's important design choices in user terms. In particular,
-  document why a cash-flow plan is derived from exact-dated actual, scheduled, and
-  estimated transactions rather than stored as isolated monthly budget numbers, and
-  how posted actuals relate back to the scheduled/planned activity they resolve.
-- Document commitments versus estimates, residual historical estimates, planning
-  roles, scenario overrides, reconciliation, imports, and Projection explanations
-  with short examples and links from the relevant screens.
-- Keep help content versioned with the application and covered by navigation/link
-  tests so documentation does not silently drift away from the implemented model.
+Documentation responsibilities are intentionally separated:
+
+- `README.md` is the concise user-facing overview and first operational entry point.
+  Keep current behavior there; do not accumulate design essays or future-work lists.
+- `DESIGN.md` records current architecture, rationale, and durable design decisions.
+  Update it when implementation changes an architectural contract or an important
+  design choice.
+- **This file (`ROADMAP.md`) is the sole authoritative source for future work.**
+  README/design documents may link here but must not maintain competing TODO lists.
+
+Build out full user documentation and in-application help that explains:
+
+- Accounts, registers, Scheduled transactions, Plan, Review/Actuals, Projection,
+  scenarios, planning roles, imports, reconciliation, and backup/recovery.
+- A generic-household walkthrough that creates a comprehensive chart of accounts,
+  recurring income and expenses, savings/debt/retirement flows, and a complete Base
+  plan.
+- A scenario walkthrough that duplicates the Base plan and compares multiple saved
+  assumptions and alternate scheduled estimates.
+- Why BreadSched treats budgets as dated planned events rather than arbitrary monthly
+  cells, including annual/weekly/twice-monthly examples.
+- How actual transactions resolve scheduled/planned occurrences while preserving the
+  original expected date/amount for variance history.
+- The distinction between commitments and estimates, how accepted historical
+  estimates become planned activity, and why rerunning estimation should converge.
+- How account planning roles and explicit split purposes affect Plan and Projection.
+- Imported-GnuCash compatibility and the transition toward a standalone household
+  ledger without business-accounting scope.
+- Projection assumptions, growth policies, formula schedules, and how to inspect an
+  explanation for a projected value.
+
+Prefer documentation that is versioned with the application and can be surfaced in
+GTK and web from the same source where practical. Add smoke/link tests so shipped help
+does not silently point at removed views or stale terminology.
 
 ## Packaging and release quality
 

@@ -9,6 +9,7 @@ evaluated with :mod:`decimal`, never with :func:`eval`.
 from __future__ import annotations
 
 from datetime import date
+from enum import Enum
 from typing import Any
 
 from ..utils.logs import get_logger
@@ -19,6 +20,7 @@ from .recurrence import Recurrence
 from .transaction import PlanningFlowKind, PlanningResolution, Split, Transaction
 
 __all__ = [
+    "ScheduleGrowthPolicy",
     "ScheduledAmountChange",
     "ScheduledMonthAmount",
     "ScheduledOccurrenceAdjustment",
@@ -28,6 +30,14 @@ __all__ = [
 ]
 
 LOG = get_logger(__name__)
+
+class ScheduleGrowthPolicy(str, Enum):
+    """How projection assumptions escalate a scheduled transaction."""
+
+    AUTO = "auto"
+    NONE = "none"
+    INCOME = "income"
+    INFLATION = "inflation"
 
 
 class ScheduledAmountChange:
@@ -227,6 +237,7 @@ class ScheduledTransaction(PrimaryObject):
         seasonal_amounts: list[ScheduledMonthAmount] | None = None,
         skipped: list[date] | None = None,
         occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
+        growth_policy: ScheduleGrowthPolicy | str = ScheduleGrowthPolicy.AUTO,
     ) -> None:
         super().__init__(handle)
         self.name = name
@@ -239,6 +250,7 @@ class ScheduledTransaction(PrimaryObject):
         #: How many days ahead to surface the occurrence in the "due" list.
         self.advance_days = advance_days
         self.currency = currency
+        self.growth_policy = ScheduleGrowthPolicy(growth_policy)
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
         self.seasonal_amounts = sorted(
             list(seasonal_amounts or []), key=lambda item: item.month
@@ -473,6 +485,7 @@ class ScheduledTransaction(PrimaryObject):
             "auto_create": self.auto_create,
             "advance_days": self.advance_days,
             "currency": self.currency,
+            "growth_policy": self.growth_policy.value,
             "amount_changes": [item.serialize() for item in self.amount_changes],
             "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
             "occurrence_adjustments": [
@@ -495,6 +508,7 @@ class ScheduledTransaction(PrimaryObject):
         self.auto_create = data.get("auto_create", False)
         self.advance_days = data.get("advance_days", 0)
         self.currency = data.get("currency")
+        self.growth_policy = ScheduleGrowthPolicy(data.get("growth_policy", "auto"))
         self.amount_changes = sorted(
             [ScheduledAmountChange.from_dict(item) for item in data.get("amount_changes", [])],
             key=lambda item: item.start,
