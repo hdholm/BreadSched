@@ -11,6 +11,13 @@ and register interface follow
 follows [gnucash-cli](https://github.com/loftx/gnucash-cli), but without needing
 GnuCash's Python bindings installed.
 
+## Development roadmap
+
+The canonical list of pending work is [`ROADMAP.md`](ROADMAP.md). Future-work
+decisions belong there rather than only in issue/chat history, and patches that
+complete, change, discover, or reprioritize roadmap work should update it in the
+same change.
+
 ```
 pip install -e ".[gui,dev]"     # GUI extra needs PyGObject and a GTK 4 runtime
 pytest                          # full suite; GUI tests skip without a GTK display
