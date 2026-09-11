@@ -1226,3 +1226,30 @@ class TestScenarioEventWebParity:
         assert '"Add estimate…"' in page
         assert '"Alter baseline…"' in page
         assert '"Suppress baseline…"' in page
+
+
+def test_historical_estimate_proposals_and_acceptance(client):
+    status, data = client.get(
+        "/api/historical-estimates?months=12&min_active_months=1"
+    )
+    assert status == 200
+    rent = next(item for item in data["proposals"] if item["category_name"].endswith("Rent"))
+    assert rent["funding_name"].endswith("Checking")
+    assert Money(rent["amount"]) == Money("1800.00")
+    assert data["targets"][0]["name"] == "Base"
+
+    status, result = client.post(
+        "/api/historical-estimate/accept",
+        {
+            "category": rent["category"],
+            "months": 12,
+            "min_active_months": 1,
+            "scenario": None,
+        },
+    )
+    assert status == 200
+    assert result["category"].endswith("Rent")
+    _status, scheduled = client.get("/api/scheduled")
+    accepted = next(item for item in scheduled["definitions"] if item["handle"] == result["handle"])
+    assert accepted["placeholder"] is True
+    assert Money(accepted["amount"]) == Money("1800.00")

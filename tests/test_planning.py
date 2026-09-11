@@ -556,3 +556,93 @@ class TestActualResolutionWorkflow:
         assert actual.rejected_plan_occurrences == []
         assert actual.planned_occurrence == event.key
         assert planning.event_by_key(db, event.key) is not None
+
+class TestHistoricalEstimateProposals:
+    def test_proposes_median_monthly_category_estimate(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        with db.transaction("History") as txn:
+            for month, amount in [(1, "100"), (2, "120"), (3, "500"), (4, "110")]:
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 10),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        amount,
+                    ),
+                    txn,
+                )
+        proposals = estimates.propose_historical_estimates(
+            db, as_of=date(2026, 5, 15), months=4
+        )
+        groceries = next(item for item in proposals if item.category == book.groceries)
+        assert groceries.amount == Money("115.00")
+        assert groceries.funding == book.checking
+        assert groceries.recurrence.start == date(2026, 5, 1)
+        assert groceries.active_months == 4
+
+    def test_accepts_proposal_into_base_as_estimate(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        with db.transaction("History") as txn:
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 5),
+                        "Rent",
+                        book.rent,
+                        book.checking,
+                        "1800",
+                    ),
+                    txn,
+                )
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.rent
+        )
+        handle = estimates.accept_historical_estimate(db, proposal)
+        saved = db.get_scheduled(handle)
+        assert saved is not None
+        assert saved.placeholder is True
+        assert saved.auto_create is False
+        assert saved.amount() == Money("1800.00")
+
+    def test_accepts_proposal_into_saved_scenario_only(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Scenario, Transaction
+
+        with db.transaction("History and scenario") as txn:
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 5),
+                        "Rent",
+                        book.rent,
+                        book.checking,
+                        "1800",
+                    ),
+                    txn,
+                )
+            scenario = Scenario(name="Alternative")
+            db.add_scenario(scenario, txn)
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.rent
+        )
+        estimates.accept_historical_estimate(
+            db, proposal, scenario_handle=scenario.handle
+        )
+        assert list(db.iter_scheduled()) == []
+        saved = db.get_scenario(scenario.handle)
+        assert saved is not None
+        assert len(saved.schedule_overrides) == 1
+        assert saved.schedule_overrides[0].placeholder is True

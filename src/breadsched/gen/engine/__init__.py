@@ -5,6 +5,7 @@ from . import (
     budgeting,
     cashflow,
     dashboard,
+    estimates,
     inference,
     ledger,
     loans,
@@ -14,6 +15,15 @@ from . import (
 )
 
 __all__ = [
-    "activity", "budgeting", "cashflow", "dashboard", "inference", "ledger", "loans",
-    "planning", "projection", "schedule",
+    "activity",
+    "budgeting",
+    "cashflow",
+    "dashboard",
+    "estimates",
+    "inference",
+    "ledger",
+    "loans",
+    "planning",
+    "projection",
+    "schedule",
 ]

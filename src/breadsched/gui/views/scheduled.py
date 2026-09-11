@@ -90,6 +90,13 @@ class ScheduledView(BaseView):
         new_button.connect("clicked", self._on_new_clicked)
         bar.append(new_button)
 
+        suggest_button = Gtk.Button(label="Suggest from history…")
+        suggest_button.set_tooltip_text(
+            "Propose planning estimates from completed category history"
+        )
+        suggest_button.connect("clicked", self._on_suggest_clicked)
+        bar.append(suggest_button)
+
         self.edit_button = Gtk.Button(label="Edit…")
         self.edit_button.set_tooltip_text(
             "Edit the selected simple scheduled transaction"
@@ -307,6 +314,15 @@ class ScheduledView(BaseView):
         from ..dialogs.schedule_dialog import ScheduleDialog
 
         dialog = ScheduleDialog(self.get_root(), self.db)
+        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.present()
+
+    def _on_suggest_clicked(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.historical_estimates_dialog import HistoricalEstimatesDialog
+
+        dialog = HistoricalEstimatesDialog(self.get_root(), self.db)
         dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
         dialog.present()
 

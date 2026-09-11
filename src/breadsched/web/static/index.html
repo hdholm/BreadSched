@@ -415,6 +415,8 @@ async function showScheduled() {
     el("div", { class: "toolbar" },
       el("button", { class: "action", type: "button",
         onclick: () => openScheduledEditor(data, null) }, "New scheduled…"),
+      el("button", { class: "action", type: "button",
+        onclick: () => openHistoricalEstimateDialog() }, "Suggest from history…"),
       el("button", {
         class: "action primary",
         onclick: async () => {
@@ -432,6 +434,52 @@ async function showScheduled() {
     el("h3", {}, "Definitions"),
     table(["Name", "Frequency", { label: "Amount", num: true }, "Posting", "State", ""],
       definitions));
+}
+
+async function openHistoricalEstimateDialog() {
+  const backdrop = el("div", { class: "detail-backdrop" });
+  const body = el("div", {});
+  const months = el("input", { type:"number", min:"3", max:"120", value:"12" });
+  const target = el("select", {});
+  const load = async () => {
+    try {
+      const data = await get(`/api/historical-estimates?months=${encodeURIComponent(months.value)}`);
+      target.replaceChildren(...data.targets.map((item) => el("option", {
+        value:item.handle || "",
+      }, item.name)));
+      const rows = data.proposals.map((item) => el("tr", {},
+        el("td", {}, item.category_name),
+        el("td", {}, item.funding_name),
+        el("td", { class:"num" }, money(item.amount)),
+        el("td", { class:"muted" }, `${item.active_months}/${data.months} months`),
+        el("td", { class:"muted" }, `${Math.round(item.confidence * 100)}%`),
+        el("td", {}, el("button", { class:"action", type:"button", onclick:async()=>{
+          try {
+            await post("/api/historical-estimate/accept", {
+              category:item.category, months:data.months, scenario:target.value || null,
+            });
+            say(`Added estimate for ${item.category_name}.`);
+            await load();
+          } catch (error) { say(error.message, "error"); }
+        }}, "Add"))));
+      body.replaceChildren(
+        el("p", { class:"note" }, data.proposals.length
+          ? "Proposals use the median of active completed months and become ordinary monthly estimates when accepted."
+          : "No categories have enough completed historical activity for a proposal."),
+        table(["Category", "Funding account", {label:"Monthly estimate", num:true},
+          "Evidence", "Confidence", ""], rows));
+    } catch (error) { say(error.message, "error"); }
+  };
+  const controls = el("div", { class:"toolbar" },
+    el("label", {}, "History months ", months),
+    el("label", {}, "Add to ", target),
+    el("button", { class:"action", type:"button", onclick:load }, "Analyze"),
+    el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"));
+  backdrop.append(el("section", { class:"detail-dialog wide" },
+    el("div", { class:"detail-heading" }, el("h2", {}, "Suggest estimates from history")),
+    controls, body));
+  document.body.append(backdrop);
+  await load();
 }
 
 function openScheduledEditor(data, source) {

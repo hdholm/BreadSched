@@ -26,6 +26,7 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
     budgeting,
+    estimates,
     cashflow,
     ledger,
     planning,
@@ -193,6 +194,56 @@ class Api:
                 for row in rows
             ],
         }
+
+    def historical_estimates(
+        self, months: int = 12, min_active_months: int = 3
+    ) -> dict:
+        """Return reviewable category estimates inferred from closed history."""
+        proposals = estimates.propose_historical_estimates(
+            self.db, months=months, min_active_months=min_active_months
+        )
+        return {
+            "months": months,
+            "proposals": [
+                {
+                    "category": item.category,
+                    "category_name": item.category_name,
+                    "funding": item.funding,
+                    "funding_name": item.funding_name,
+                    "amount": item.amount,
+                    "start": item.recurrence.start,
+                    "active_months": item.active_months,
+                    "transaction_count": item.transaction_count,
+                    "confidence": item.confidence,
+                    "reason": item.reason,
+                }
+                for item in proposals
+            ],
+            "targets": [
+                {"handle": None, "name": "Base"},
+                *[
+                    {"handle": scenario.handle, "name": scenario.name}
+                    for scenario in self.db.iter_scenarios()
+                ],
+            ],
+        }
+
+    def historical_estimate_accept(self, payload: dict) -> dict:
+        """Accept one historical proposal as a normal planning estimate."""
+        months = int(payload.get("months") or 12)
+        minimum = int(payload.get("min_active_months") or 3)
+        category = str(payload.get("category") or "")
+        proposals = estimates.propose_historical_estimates(
+            self.db, months=months, min_active_months=minimum
+        )
+        proposal = next((item for item in proposals if item.category == category), None)
+        if proposal is None:
+            raise ValueError("historical estimate proposal is no longer available")
+        scenario = str(payload.get("scenario") or "").strip() or None
+        handle = estimates.accept_historical_estimate(
+            self.db, proposal, scenario_handle=scenario
+        )
+        return {"handle": handle, "category": proposal.category_name}
 
     def scheduled(self, days: int = 60) -> dict:
         occurrences = schedule.due_occurrences(self.db, horizon_days=days)
@@ -1725,6 +1776,10 @@ ROUTES = {
         q.get("account", [""])[0], int(q.get("limit", ["250"])[0])
     ),
     "/api/scheduled": lambda a, q: a.scheduled(int(q.get("days", ["60"])[0])),
+    "/api/historical-estimates": lambda a, q: a.historical_estimates(
+        int(q.get("months", ["12"])[0]),
+        int(q.get("min_active_months", ["3"])[0]),
+    ),
     "/api/plan": lambda a, q: a.plan(
         q.get("from", [None])[0],
         q.get("through", [None])[0],
@@ -1754,6 +1809,7 @@ POST_ROUTES = {
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),
     "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
+    "/api/historical-estimate/accept": lambda a, body: a.historical_estimate_accept(body),
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),
     "/api/review/skip": lambda a, body: a.review_skip(body),
