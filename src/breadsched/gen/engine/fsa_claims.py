@@ -11,7 +11,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass, AccountPlanningRole, FsaFundingYear
 from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
 from ..lib.money import Money
-from ..lib.transaction import Transaction
+from ..lib.transaction import Split, Transaction
 from . import fsa
 
 __all__ = [
@@ -33,6 +33,8 @@ _METADATA_KEY = "fsa_claims"
 @dataclass(frozen=True)
 class FsaClaimSuggestion:
     claim: FsaClaim
+    role: str
+    split_handle: str
     score: int
     reason: str
 
@@ -70,83 +72,100 @@ def _transaction_words(transaction: Transaction) -> set[str]:
 def suggest_claims_for_transaction(
     db: DbSQLite, transaction: Transaction
 ) -> list[FsaClaimSuggestion]:
-    """Rank open claims that plausibly correspond to one ledger transaction."""
-    eligible_splits = []
-    reimbursement_accounts: set[str] = set()
+    """Rank claims and explain the most likely attachment role for one transaction."""
+    eligible: list[tuple[str, Split, str | None]] = []
     for split in transaction.splits:
         account = db.get_account(split.account)
         if account is None:
             continue
-        if account.account_class is AccountClass.EXPENSE and split.value != 0:
-            eligible_splits.append(split)
+        if account.account_class is AccountClass.EXPENSE and split.value > 0:
+            eligible.append(("payment", split, None))
+        elif account.account_class is AccountClass.EXPENSE and split.value < 0:
+            eligible.append(("refund", split, None))
         if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
-            eligible_splits.append(split)
-            reimbursement_accounts.add(account.handle)
-    if not eligible_splits:
+            eligible.append(("reimbursement", split, account.handle))
+    if not eligible:
         return []
 
     txn_words = _transaction_words(transaction)
-    amount = max((abs(split.value) for split in eligible_splits), default=Money(0))
     suggestions: list[FsaClaimSuggestion] = []
     for claim in iter_claims(db):
         summary = claim_summary(db, claim)
         if summary.status is FsaClaimStatus.FULLY_REIMBURSED:
             continue
 
-        if reimbursement_accounts:
-            compatible = False
-            for handle in reimbursement_accounts:
-                account = db.get_account(handle)
+        best: FsaClaimSuggestion | None = None
+        for role, split, reimbursement_account in eligible:
+            if role == "refund" and summary.net_paid <= 0:
+                continue
+            if role == "reimbursement":
+                account = db.get_account(reimbursement_account or "")
                 if account is None:
                     continue
-                for year in account.fsa_years:
-                    runout = year.runout_through or year.through
-                    if (
-                        year.start <= claim.service_date <= year.through
-                        and transaction.post_date <= runout
-                    ):
-                        compatible = True
-                        break
-                if compatible:
-                    break
-            if not compatible:
-                continue
+                compatible = any(
+                    year.start <= claim.service_date <= year.through
+                    and transaction.post_date <= (year.runout_through or year.through)
+                    for year in account.fsa_years
+                )
+                if not compatible:
+                    continue
 
-        score = 0
-        reasons: list[str] = []
-        distance = abs((transaction.post_date - claim.service_date).days)
-        if distance <= 14:
-            score += 35
-            reasons.append("near service date")
-        elif distance <= 60:
-            score += 25
-            reasons.append("close to service date")
-        elif distance <= 180:
-            score += 10
-        if transaction.post_date < claim.service_date:
-            score -= 5
-
-        overlap = txn_words & _claim_words(claim)
-        if overlap:
-            score += min(30, 10 * len(overlap))
-            reasons.append("description match")
-
-        remaining = summary.remaining_reimbursable
-        if amount > 0 and remaining > 0:
-            difference = abs(amount - remaining)
-            if difference <= Money("1.00"):
+            score = 0
+            reasons: list[str] = []
+            distance = abs((transaction.post_date - claim.service_date).days)
+            if distance <= 14:
+                score += 35
+                reasons.append("near service date")
+            elif distance <= 60:
                 score += 25
-                reasons.append("amount match")
-            elif difference <= remaining / 10:
-                score += 15
-                reasons.append("similar amount")
+                reasons.append("close to service date")
+            elif distance <= 180:
+                score += 10
+            if transaction.post_date < claim.service_date:
+                score -= 5
 
-        if reimbursement_accounts:
-            score += 20
-            reasons.append("compatible FSA year")
-        suggestions.append(FsaClaimSuggestion(
-            claim=claim, score=score, reason=", ".join(reasons) or "open claim"
-        ))
+            overlap = txn_words & _claim_words(claim)
+            if overlap:
+                score += min(30, 10 * len(overlap))
+                reasons.append("description match")
+
+            amount = abs(split.value)
+            if role == "payment":
+                target = claim.eob_responsibility or summary.remaining_reimbursable
+                role_label = "provider payment"
+            elif role == "refund":
+                target = summary.net_paid
+                role_label = "provider refund"
+                if {"refund", "credit"} & txn_words:
+                    score += 15
+                    reasons.append("refund/credit description")
+            else:
+                target = summary.remaining_reimbursable
+                role_label = "FSA reimbursement"
+                score += 20
+                reasons.append("compatible FSA year")
+
+            if amount > 0 and target > 0:
+                difference = abs(amount - target)
+                if difference <= Money("1.00"):
+                    score += 25
+                    reasons.append("amount match")
+                elif difference <= target / 10:
+                    score += 15
+                    reasons.append("similar amount")
+
+            reason = f"likely {role_label}"
+            if reasons:
+                reason += ": " + ", ".join(reasons)
+            candidate = FsaClaimSuggestion(
+                claim=claim, role=role, split_handle=split.handle,
+                score=score, reason=reason,
+            )
+            if best is None or candidate.score > best.score:
+                best = candidate
+        if best is not None:
+            suggestions.append(best)
+
     suggestions.sort(
         key=lambda item: (
             -item.score, -item.claim.service_date.toordinal(), item.claim.handle

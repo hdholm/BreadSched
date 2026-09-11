@@ -1548,6 +1548,8 @@ class Api:
                 "remaining": summary.remaining_reimbursable,
                 "score": suggestion.score,
                 "reason": suggestion.reason,
+                "suggested_role": suggestion.role,
+                "suggested_split": suggestion.split_handle,
             })
         return {"roles": roles, "claims": claims}
 

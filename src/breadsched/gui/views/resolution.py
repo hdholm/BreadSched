@@ -387,6 +387,18 @@ class ResolutionView(BaseView):
             dialog.close()
             self.refresh()
 
+        def apply_suggested_role(*_args) -> None:
+            selected = claim_pick.get_selected()
+            if selected >= len(claims):
+                return
+            suggestion = claims[selected]
+            for index, (role, split, _account, _years) in enumerate(roles):
+                if role == suggestion.role and split == suggestion.split_handle:
+                    role_pick.set_selected(index)
+                    break
+
+        claim_pick.connect("notify::selected", apply_suggested_role)
+        apply_suggested_role()
         attach.connect("clicked", do_attach)
         dialog.present()
 

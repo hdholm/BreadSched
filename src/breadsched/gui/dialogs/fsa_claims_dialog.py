@@ -143,7 +143,9 @@ class _AllocationRow(Gtk.Frame):
 class FsaClaimsDialog(Gtk.Window):
     """GTK maintenance surface for FSA claims and reconciliation links."""
 
-    def __init__(self, parent: Gtk.Window, db: DbSQLite) -> None:
+    def __init__(
+        self, parent: Gtk.Window, db: DbSQLite, claim_handle: str | None = None
+    ) -> None:
         super().__init__(title="FSA claims", transient_for=parent)
         self.db = db
         self.set_default_size(860, 700)
@@ -218,7 +220,18 @@ class FsaClaimsDialog(Gtk.Window):
         close.connect("clicked", lambda *_: self.close())
         actions.append(close)
         outer.append(actions)
-        self._load(self.claims[0] if self.claims else None)
+        selected = 0
+        if claim_handle is not None:
+            selected = next(
+                (index for index, claim in enumerate(self.claims)
+                 if claim.handle == claim_handle),
+                0,
+            )
+        if self.claims:
+            self.claim_select.set_selected(selected)
+            self._load(self.claims[selected])
+        else:
+            self._load(None)
 
     def _candidates(self):
         payments, refunds, reimbursements = [], [], []

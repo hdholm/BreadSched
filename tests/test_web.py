@@ -1592,7 +1592,11 @@ def test_review_can_attach_actual_to_existing_fsa_claim(client):
         },
     )
     _status, review = client.get(f"/api/review?transaction={txn['handle']}")
-    assert review["selected"]["fsa"]["claims"][0]["handle"] == saved["handle"]
+    suggestion = review["selected"]["fsa"]["claims"][0]
+    assert suggestion["handle"] == saved["handle"]
+    assert suggestion["suggested_role"] == "payment"
+    assert suggestion["suggested_split"]
+    assert "likely provider payment" in suggestion["reason"]
     role = next(item for item in review["selected"]["fsa"]["roles"]
                 if item["role"] == "payment")
     status, result = client.post(

@@ -323,7 +323,7 @@ class DashboardView(BaseView):
             return
         headings = (
             "Service date", "Provider", "Status", "Net paid", "Reimbursed",
-            "Rejected", "Remaining",
+            "Rejected", "Remaining", "Action",
         )
         for column_index, heading in enumerate(headings):
             label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
@@ -344,15 +344,24 @@ class DashboardView(BaseView):
                 if column_index >= 3:
                     label.add_css_class("numeric")
                 self.fsa_claim_grid.attach(label, column_index, row_index, 1, 1)
+            review = Gtk.Button(label="Review claim")
+            review.connect(
+                "clicked",
+                lambda _button, handle=summary.claim.handle: self._open_fsa_claim(handle),
+            )
+            self.fsa_claim_grid.attach(review, 7, row_index, 1, 1)
 
     # ----------------------------------------------------------------- actions
 
 
-    def _on_fsa_claims(self, _button) -> None:
+    def _open_fsa_claim(self, claim_handle: str | None = None) -> None:
         from ..dialogs.fsa_claims_dialog import FsaClaimsDialog
 
         assert self.db is not None
-        FsaClaimsDialog(self.get_root(), self.db).present()
+        FsaClaimsDialog(self.get_root(), self.db, claim_handle=claim_handle).present()
+
+    def _on_fsa_claims(self, _button) -> None:
+        self._open_fsa_claim()
 
     def _on_bill_activated(self, _view, position: int) -> None:
         selection = self.bills_view.get_model()

@@ -310,5 +310,8 @@ def test_claim_suggestions_rank_service_context(db, book):
     suggestions = fsa_claims.suggest_claims_for_transaction(db, payment)
 
     assert suggestions[0].claim.handle == close.handle
+    assert suggestions[0].role == "payment"
+    assert suggestions[0].split_handle == payment.splits[0].handle
     assert suggestions[0].score > suggestions[1].score
+    assert "likely provider payment" in suggestions[0].reason
     assert "description match" in suggestions[0].reason

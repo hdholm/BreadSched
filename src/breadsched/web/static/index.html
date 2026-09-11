@@ -418,7 +418,7 @@ function openFsaYearsEditor(account) {
 }
 
 
-async function openFsaClaimsEditor() {
+async function openFsaClaimsEditor(initialHandle=null) {
   const data = await get("/api/fsa/claims");
   const backdrop = el("div", {
     class:"detail-backdrop",
@@ -596,6 +596,10 @@ async function openFsaClaimsEditor() {
   };
   refreshClaimCandidates([], []);
   renderList();
+  if (initialHandle) {
+    const initial = data.claims.find((claim)=>claim.handle === initialHandle);
+    if (initial) loadClaim(initial);
+  }
   const form = el("section", { class:"detail-dialog wide" },
     el("h2", {}, "FSA claims"), list,
     el("h3", {}, "Claim / service episode"),
@@ -1519,7 +1523,19 @@ async function showReview() {
       yearSelect.replaceChildren(el("option", { value: "" }, "Auto funding year"),
         ...years.map((year) => el("option", { value: year }, year)));
     };
-    roleSelect.onchange = refreshYears; refreshYears();
+    const applySuggestedRole = () => {
+      const claim = fsaOptions.claims.find((item)=>item.handle === claimSelect.value);
+      if (!claim) return;
+      const option = Array.from(roleSelect.options).find((item)=> {
+        const [role, split] = item.value.split("|");
+        return role === claim.suggested_role && split === claim.suggested_split;
+      });
+      if (option) roleSelect.value = option.value;
+      refreshYears();
+    };
+    roleSelect.onchange = refreshYears;
+    claimSelect.onchange = applySuggestedRole;
+    applySuggestedRole();
     fsaAttach = el("div", { class: "panel", style: "padding:10px;margin-top:10px" },
       el("strong", {}, "FSA claim"),
       el("div", { class: "review-actions" }, claimSelect, roleSelect, yearSelect,
@@ -1997,6 +2013,9 @@ async function showDashboard() {
   const fsaClaimRows = (data.fsa_claims || []).map((claim) => [
     claim.service_date, claim.provider, claim.status, money(claim.paid),
     money(claim.reimbursed), money(claim.remaining),
+    el("button", { class:"action", type:"button", onclick:()=>
+      openFsaClaimsEditor(claim.handle).catch((error)=>say(error.message,"error")) },
+    "Review claim"),
   ]);
 
   return el("div", {}, cards, controls,
@@ -2013,7 +2032,7 @@ async function showDashboard() {
     fsaClaimRows.length ? el("h2", {}, "Open FSA claims") : null,
     fsaClaimRows.length ? table(["Service date", "Provider", "Status",
       {label:"Paid",num:true},{label:"Reimbursed",num:true},
-      {label:"Remaining",num:true}], fsaClaimRows) : null,
+      {label:"Remaining",num:true}, "Action"], fsaClaimRows) : null,
     el("h2", {}, `Pending bills (${data.bills.length})`),
     table(["Bill", "Next due", "Due in", "Cycle",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
