@@ -526,16 +526,25 @@ and the dashboard. FSA classifications should integrate with the dedicated plan-
 benefit model described above rather than treating the custodian balance as the
 available benefit.
 
-## Forward plan: QIF and OFX imports
+## QIF and OFX imports
 
-Add Quicken QIF and OFX as supported historical-data import formats. The importer
-should feed the same validated import/domain pipeline as the existing GnuCash
-paths so account mapping, transaction invariants, historical planning status, and
-duplicate/re-import safeguards remain consistent. Before adding dependencies,
-evaluate Quiffen (https://quiffen.readthedocs.io/) and Ofxparse for license
-compatibility, maintenance status, supported Python versions, fidelity, and
-security. If they are not suitable dependencies, implement BreadSched-native
-parsers from the published formats and other legally usable format references.
+The first native QIF and OFX/QFX import paths are implemented and feed the same
+validated `ImportSink` pipeline as GnuCash, including historical planning status,
+transaction invariants, stable source identities, and re-import behavior. QIF now
+handles bank/cash/credit-card accounts, categories, transfers, and split
+transactions. OFX/QFX handles bank and credit-card statement transactions from
+both legacy SGML-style and XML-style statement files, using FITID when available
+and deterministic content identities otherwise. Uncategorized OFX activity is
+kept explicit rather than guessed into spending categories.
+
+Quiffen was evaluated but its GPLv3+ licensing would add an unnecessary licensing
+constraint for this parser path. Ofxparse is MIT-licensed, but its age and external
+parser dependencies make it a poor fit for BreadSched's Python 3.14/std-lib-first
+import architecture. BreadSched therefore uses native deterministic parsers.
+Investment transactions in QIF/OFX remain future work and are reported rather than
+flattened into ordinary cash transactions. Further import hardening should cover
+cross-file duplicate heuristics, richer transfer/category mapping, commodity and
+investment edge cases, and additional real-world bank-format deviations.
 
 ## Forward plan: estimates from historical activity
 

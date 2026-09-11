@@ -183,6 +183,7 @@ def import_book(
         source_account = _source_account(
             sink, db, account_id, account_type, institution, commodity
         )
+        fallback_counts: dict[tuple[object, ...], int] = {}
         for index, block in enumerate(transaction_blocks, 1):
             report(index)
             try:
@@ -196,9 +197,16 @@ def import_book(
             memo = _tag(block, "MEMO")
             description = name or memo or _tag(block, "TRNTYPE") or "OFX transaction"
             counter = _counter_account(sink, db, amount)
-            identity = fitid or _stable_handle(
-                "fallback", account_id, post_date.isoformat(), str(amount), description, index
-            )
+            if fitid:
+                identity = fitid
+            else:
+                fallback = (
+                    account_id, post_date.isoformat(), str(amount), description, memo,
+                    _tag(block, "CHECKNUM"),
+                )
+                occurrence = fallback_counts.get(fallback, 0) + 1
+                fallback_counts[fallback] = occurrence
+                identity = _stable_handle("fallback", *fallback, occurrence)
             sink.transaction(
                 _stable_handle("transaction", account_id, identity),
                 post_date,

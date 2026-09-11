@@ -207,6 +207,7 @@ def import_book(
     with db.transaction(message or f"Import {source.name}", batch=True) as txn:
         sink = ImportSink(db, txn, result)
         done = 0
+        identity_counts: dict[tuple[object, ...], int] = {}
         for record in records:
             if not record:
                 continue
@@ -271,12 +272,18 @@ def import_book(
                     sink, db, fields.get("L", "Uncategorized"), amount
                 )
                 raw_splits.append({"account": target, "value": -amount})
+            split_identity = tuple(
+                (item["account"], str(item["value"]), item.get("memo", ""))
+                for item in raw_splits
+            )
             identity = (
                 current_name, post_date.isoformat(), str(amount), fields.get("P", ""),
-                fields.get("M", ""), fields.get("N", ""), done,
+                fields.get("M", ""), fields.get("N", ""), split_identity,
             )
+            occurrence = identity_counts.get(identity, 0) + 1
+            identity_counts[identity] = occurrence
             sink.transaction(
-                _stable_handle("transaction", *identity),
+                _stable_handle("transaction", *identity, occurrence),
                 post_date,
                 fields.get("P", "").strip() or fields.get("M", "").strip() or "QIF transaction",
                 None,

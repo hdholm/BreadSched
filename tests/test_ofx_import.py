@@ -69,3 +69,19 @@ def test_ofx_fitid_makes_reimport_idempotent(db, book, tmp_path):
     assert first.transactions == 2
     assert second.transactions == 2
     assert len(list(db.iter_transactions())) == 2
+
+
+def test_ofx_without_fitid_uses_content_stable_fallback(db, book, tmp_path):
+    path = tmp_path / "statement.ofx"
+    without_fitid = _SAMPLE.replace("<FITID>txn-1", "").replace("<FITID>txn-2", "")
+    path.write_text(without_fitid)
+    ofx.import_book(db, path)
+
+    extra = (
+        "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260110120000"
+        "<TRNAMT>-10.00<NAME>Coffee</STMTTRN>"
+    )
+    path.write_text(without_fitid.replace("<BANKTRANLIST>", f"<BANKTRANLIST>{extra}"))
+    ofx.import_book(db, path)
+
+    assert len(list(db.iter_transactions())) == 3

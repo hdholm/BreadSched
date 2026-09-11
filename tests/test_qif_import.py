@@ -72,3 +72,24 @@ def test_qif_split_transaction_stays_balanced(db, book, tmp_path):
     transaction = next(db.iter_transactions())
     assert transaction.imbalance() == Money(0)
     assert len(transaction.splits) == 3
+
+
+def test_qif_reimport_survives_unrelated_record_insertion(db, book, tmp_path):
+    path = tmp_path / "checking.qif"
+    original = (
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D01/15/2026\nT-45.67\nPGrocery Store\nLGroceries\n^\n"
+        "D01/25/2026\nT2000.00\nPEmployer\nLSalary\n^\n"
+    )
+    path.write_text(original)
+    qif.import_book(db, path)
+
+    inserted = (
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D01/10/2026\nT-10.00\nPCoffee\nLGroceries\n^\n"
+        + original.split("!Type:Bank\n", 1)[1]
+    )
+    path.write_text(inserted)
+    qif.import_book(db, path)
+
+    assert len(list(db.iter_transactions())) == 3
