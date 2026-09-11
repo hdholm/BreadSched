@@ -131,6 +131,16 @@ class ScheduledView(BaseView):
         )
         self.definitions_view.append_column(
             column(
+                "Planning purpose",
+                lambda s: (
+                    s.split.planning_flow.label
+                    if _is_split(s) and s.split.planning_flow is not None
+                    else ""
+                ),
+            )
+        )
+        self.definitions_view.append_column(
+            column(
                 "Automatic",
                 lambda s: "" if _is_split(s) else ("yes" if s.auto_create else "no"),
             )

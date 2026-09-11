@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 
 from breadsched.gen.engine.loans import LoanTerms, build_schedule, create_loan
-from breadsched.gen.lib import Money
+from breadsched.gen.lib import Money, PlanningFlowKind, ScheduledSplit
 from breadsched.gen.lib.finance import amortisation_schedule, fv, ipmt, nper, pmt, ppmt, pv
 from breadsched.gen.lib.formula import FormulaError, evaluate, normalise
 
@@ -144,6 +144,24 @@ class TestLoanSetup:
         assert any(split.formula for split in schedule.splits)
         assert "ppmt" in " ".join(s.formula for s in schedule.splits)
 
+    def test_principal_formula_is_classified_as_debt_service(self, terms):
+        schedule = build_schedule(terms)
+        principal = next(split for split in schedule.splits if "ppmt" in split.formula)
+        interest = next(split for split in schedule.splits if "ipmt" in split.formula)
+        assert principal.planning_flow is PlanningFlowKind.DEBT_PRINCIPAL
+        assert interest.planning_flow is None
+
+    def test_legacy_ppmt_split_infers_debt_principal_classification(self):
+        split = ScheduledSplit.from_dict(
+            {
+                "account": "loan",
+                "amount": None,
+                "formula": "ppmt(rate : i : periods : principal)",
+                "memo": "Principal",
+            }
+        )
+        assert split.planning_flow is PlanningFlowKind.DEBT_PRINCIPAL
+
     def test_every_occurrence_balances(self, terms):
         schedule = build_schedule(terms)
         for when in (date(2026, 1, 1), date(2030, 6, 1), date(2050, 12, 1)):
@@ -189,6 +207,23 @@ class TestLoanSetup:
         result = projection.project(db, scenario)
         assert result.rows[-1].liabilities < result.rows[0].liabilities
         assert not any("does not balance" in w for w in result.warnings)
+
+    def test_plan_separates_interest_expense_from_debt_principal(self, db, terms):
+        from breadsched.gen.engine import activity
+
+        create_loan(db, terms, opening_balance=False)
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+
+        interest = next(row for row in report.categories if row.account == terms.interest_account)
+        principal = next(
+            row
+            for row in report.planning_flows
+            if row.kind is PlanningFlowKind.DEBT_PRINCIPAL
+        )
+        assert interest.planned == [Money("1000.00")]
+        assert principal.planned[0].quantize(100) == Money("199.10")
 
 
 class TestGnuCashMortgageFormulas:

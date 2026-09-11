@@ -25,6 +25,7 @@ from ..lib.finance import amortisation_schedule, pmt
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
+from ..lib.transaction import PlanningFlowKind
 
 __all__ = ["LoanTerms", "build_schedule", "create_loan", "schedule_preview"]
 
@@ -114,6 +115,7 @@ def build_schedule(terms: LoanTerms) -> ScheduledTransaction:
             terms.liability,
             formula="ppmt(rate, period, periods, principal)",
             memo="Principal",
+            planning_flow=PlanningFlowKind.DEBT_PRINCIPAL,
         ),
         ScheduledSplit(
             terms.interest_account,

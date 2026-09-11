@@ -151,8 +151,13 @@ class ScheduledSplit:
         )
         self.formula = formula
         self.memo = memo
+        inferred_flow = (
+            PlanningFlowKind.DEBT_PRINCIPAL
+            if planning_flow is None and "ppmt(" in formula.lower().replace(" ", "")
+            else None
+        )
         self.planning_flow = (
-            None
+            inferred_flow
             if planning_flow is None
             else planning_flow
             if isinstance(planning_flow, PlanningFlowKind)
