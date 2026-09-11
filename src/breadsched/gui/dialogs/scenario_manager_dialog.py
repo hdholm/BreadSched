@@ -488,13 +488,13 @@ class AssumptionTimelineDialog(Gtk.Window):
         return index if index < len(self._periods) else None
 
     def _on_add(self, _button) -> None:
-        AssumptionPeriodDialog(self, None, self._save_new).present()
+        AssumptionPeriodDialog(self, self.db, None, self._save_new).present()
 
     def _on_edit(self, _button) -> None:
         index = self._selected_index()
         if index is None:
             return
-        AssumptionPeriodDialog(self, self._periods[index], self._save_edit).present()
+        AssumptionPeriodDialog(self, self.db, self._periods[index], self._save_edit).present()
 
     def _save_new(self, period: AssumptionPeriod) -> None:
         self.scenario.assumption_periods.append(period)
@@ -528,14 +528,18 @@ class AssumptionTimelineDialog(Gtk.Window):
 class AssumptionPeriodDialog(Gtk.Window):
     """Edit one dated set of optional annual-rate overrides."""
 
-    def __init__(self, parent: Gtk.Window, period: AssumptionPeriod | None, callback) -> None:
+    def __init__(
+        self, parent: Gtk.Window, db: DbSQLite, period: AssumptionPeriod | None, callback
+    ) -> None:
         super().__init__(
             title="Edit dated assumptions" if period is not None else "Add dated assumptions",
             transient_for=parent,
             modal=True,
         )
+        self.db = db
         self.period = period
         self.callback = callback
+        self._account_rates = dict(period.per_account) if period is not None else {}
         self.set_default_size(520, -1)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
@@ -568,6 +572,17 @@ class AssumptionPeriodDialog(Gtk.Window):
             grid.attach(entry, 1, row, 1, 1)
             self.rate_entries[attribute] = entry
 
+        account_row = Gtk.Box(spacing=8)
+        self.account_summary = Gtk.Label(xalign=0, wrap=True)
+        self.account_summary.add_css_class("dim")
+        self.account_summary.set_hexpand(True)
+        account_row.append(self.account_summary)
+        account_button = Gtk.Button(label="Edit dated account rates…")
+        account_button.connect("clicked", self._on_edit_account_rates)
+        account_row.append(account_button)
+        box.append(account_row)
+        self._update_account_summary()
+
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
@@ -579,6 +594,34 @@ class AssumptionPeriodDialog(Gtk.Window):
         save.connect("clicked", self._on_save)
         buttons.append(save)
         box.append(buttons)
+
+    def _projection_accounts(self):
+        accounts = []
+        for account in self.db.iter_accounts():
+            if account.account_class is AccountClass.LIABILITY or (
+                account.account_class is AccountClass.ASSET
+                and account.atype.is_investment
+            ):
+                accounts.append(account)
+        return sorted(accounts, key=lambda item: self.db.full_name(item).casefold())
+
+    def _update_account_summary(self) -> None:
+        count = len(self._account_rates)
+        self.account_summary.set_text(
+            f"{count} dated account-rate override(s)."
+            if count
+            else "No dated account-rate overrides."
+        )
+
+    def _on_edit_account_rates(self, _button) -> None:
+        AccountAssumptionsDialog(
+            self, self.db, self._projection_accounts(), self._account_rates,
+            self._account_rates_saved,
+        ).present()
+
+    def _account_rates_saved(self, values: dict[str, Decimal]) -> None:
+        self._account_rates = dict(values)
+        self._update_account_summary()
 
     def _on_save(self, _button) -> None:
         try:
@@ -600,6 +643,7 @@ class AssumptionPeriodDialog(Gtk.Window):
                 investment_return=values["investment_return"],
                 cash_interest=values["cash_interest"],
                 liability_interest=values["liability_interest"],
+                per_account=dict(self._account_rates),
             )
         except (ValueError, InvalidOperation) as exc:
             self.status.set_text(f"Check the dates and percentages: {exc}")

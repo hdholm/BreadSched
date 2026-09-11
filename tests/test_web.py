@@ -1066,6 +1066,31 @@ class TestScenarioManagementApi:
         assert base["assumptions"]["income_growth"] == "0.041"
         assert retire["assumptions"]["income_growth"] == "0.01"
 
+    def test_dated_account_specific_projection_rates_can_be_saved(self, client):
+        _status, listing = client.get("/api/scenarios")
+        account = listing["projection_accounts"][0]
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+
+        status, saved = client.post(
+            "/api/scenario/period/save",
+            {
+                "handle": scenario["handle"],
+                "start": "2035-01-01",
+                "end": "",
+                "description": "Account return change",
+                "investment_return": "",
+                "expense_inflation": "",
+                "income_growth": "",
+                "cash_interest": "",
+                "liability_interest": "",
+                "per_account": {account["handle"]: "0.035"},
+            },
+        )
+
+        assert status == 200
+        period = saved["periods"][0]
+        assert period["per_account"] == {account["handle"]: "0.035"}
+
     def test_dated_assumptions_can_be_added_edited_and_deleted(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
         handle = scenario["handle"]

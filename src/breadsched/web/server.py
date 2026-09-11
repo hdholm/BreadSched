@@ -631,6 +631,37 @@ class Api:
             "projection_accounts": projection_accounts,
         }
 
+    def _per_account_rates(
+        self, payload: object, existing: dict[str, Decimal] | None = None
+    ) -> dict[str, Decimal]:
+        if payload is None:
+            return dict(existing or {})
+        if not isinstance(payload, dict):
+            raise ValueError("per_account assumptions must be an object")
+        per_account: dict[str, Decimal] = {}
+        for handle, raw_rate in payload.items():
+            account = self.db.get_account(str(handle))
+            if account is None:
+                raise ValueError(f"unknown account assumption: {handle}")
+            if not (
+                account.account_class is AccountClass.LIABILITY
+                or (
+                    account.account_class is AccountClass.ASSET
+                    and account.atype.is_investment
+                )
+            ):
+                raise ValueError(
+                    "account-specific projection rate is not valid for "
+                    f"{self.db.full_name(account)}"
+                )
+            if raw_rate is None or str(raw_rate).strip() == "":
+                continue
+            rate = Decimal(str(raw_rate))
+            if rate < Decimal("-1") or rate > Decimal("1"):
+                raise ValueError("account-specific rates must be between -1 and 1")
+            per_account[account.handle] = rate
+        return per_account
+
     def _assumptions_from_payload(
         self, payload: object, existing: Assumptions | None = None
     ) -> Assumptions:
@@ -651,36 +682,10 @@ class Api:
             if value < Decimal("-1") or value > Decimal("1"):
                 raise ValueError(f"{field} must be between -1 and 1")
             values[field] = value
-        if "per_account" in payload:
-            raw_per_account = payload.get("per_account")
-            if not isinstance(raw_per_account, dict):
-                raise ValueError("per_account assumptions must be an object")
-            per_account: dict[str, Decimal] = {}
-            for handle, raw_rate in raw_per_account.items():
-                account = self.db.get_account(str(handle))
-                if account is None:
-                    raise ValueError(f"unknown account assumption: {handle}")
-                if not (
-                    account.account_class is AccountClass.LIABILITY
-                    or (
-                        account.account_class is AccountClass.ASSET
-                        and account.atype.is_investment
-                    )
-                ):
-                    raise ValueError(
-                        f"account-specific projection rate is not valid for {self.db.full_name(account)}"
-                    )
-                if raw_rate is None or str(raw_rate).strip() == "":
-                    continue
-                rate = Decimal(str(raw_rate))
-                if rate < Decimal("-1") or rate > Decimal("1"):
-                    raise ValueError("account-specific rates must be between -1 and 1")
-                per_account[account.handle] = rate
-            values["per_account"] = per_account
-        else:
-            values["per_account"] = (
-                dict(existing.per_account) if existing is not None else {}
-            )
+        values["per_account"] = self._per_account_rates(
+            payload.get("per_account") if "per_account" in payload else None,
+            existing.per_account if existing is not None else None,
+        )
         return Assumptions(**values)
 
     def scenario_save(self, payload: dict) -> dict:
@@ -781,7 +786,10 @@ class Api:
             investment_return=self._optional_rate(payload.get("investment_return")),
             cash_interest=self._optional_rate(payload.get("cash_interest")),
             liability_interest=self._optional_rate(payload.get("liability_interest")),
-            per_account=dict(existing_period.per_account) if existing_period is not None else {},
+            per_account=self._per_account_rates(
+                payload.get("per_account") if "per_account" in payload else None,
+                existing_period.per_account if existing_period is not None else None,
+            ),
         )
         if existing_period is None:
             scenario.assumption_periods.append(period)

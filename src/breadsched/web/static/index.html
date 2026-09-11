@@ -1415,6 +1415,8 @@ async function showScenarios() {
             index: editing ? editing.index : null,
             start: values.get("start"), end: values.get("end"),
             description: values.get("description"), ...rates,
+            per_account: readAccountAssumptions(
+              event.target, data.projection_accounts || []),
           });
           state.scenarioPeriod = null;
           say("Dated assumptions saved.");
@@ -1436,6 +1438,13 @@ async function showScenarios() {
             name: "description", value: editing ? (editing.description || "") : "",
           }))),
         assumptionInputs(assumptions, "period_"),
+        el("details", {class:"panel"},
+          el("summary", {}, "Dated account-specific projection rates"),
+          el("p", {class:"note"},
+            "Blank values inherit the account rate already in force for this date."),
+          accountAssumptionInputs(
+            data.projection_accounts || [],
+            {per_account: editing ? (editing.per_account || {}) : {}})),
         el("div", { class: "toolbar" },
           el("button", { class: "action primary", type: "submit" }, "Save dated assumptions"),
           el("button", {
