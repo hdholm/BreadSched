@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0110 (`scheduled: fix duplicate-split round trip`).
+Status below is current through patch 0111 (`scheduled: synchronize initial selection state`).
 
 ## Near-term correctness and daily-use work
 
@@ -269,3 +269,5 @@ regress them:
   view with recurrence, splits/accounts, formulas, variables, and overrides intact.
 - Fixed multi-split schedules can use the same Income/Expense account on multiple
   legs and remain editable; per-split memos are preserved through the GTK editor.
+- The GTK Scheduled view synchronizes its initially visible selection with action
+  sensitivity, so **View / Edit…** is immediately available for the selected row.

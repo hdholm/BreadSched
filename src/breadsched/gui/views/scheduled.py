@@ -218,6 +218,10 @@ class ScheduledView(BaseView):
         )
         selection.connect("notify::selected", self._on_selected)
         self.definitions_view.set_model(selection)
+        # Gtk.SingleSelection auto-selects the first row before our notify handler
+        # is connected.  Synchronize action sensitivity and expansion explicitly so
+        # the visibly selected row is also the application's selected row.
+        self._on_selected(selection, None)
 
         estimates = sum(1 for s in schedules if s.placeholder)
         self.status.set_text(

@@ -1175,6 +1175,17 @@ class TestScheduleEntry:
         assert "formula 'payment'" in text
         assert "payment = 1800" in text
 
+    def test_initial_schedule_selection_enables_view_edit(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        selection = view.definitions_view.get_model()
+        assert selection is not None
+        assert selection.get_selected_item() is not None
+        assert view.edit_button.get_sensitive() is True
+
     def test_the_scheduled_view_offers_the_dialog(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("scheduled")
