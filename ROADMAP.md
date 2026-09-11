@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0115 (`scheduled: edit fixed balance-sheet transfers`).
+Status below is current through patch 0116 (`scheduled: edit fixed multi-leg balance-sheet transfers`).
 
 ## Near-term correctness and daily-use work
 
@@ -32,9 +32,12 @@ Status below is current through patch 0115 (`scheduled: edit fixed balance-sheet
   Unambiguous two-account asset-to-asset transfers are editable as of 0114.
   Patch 0115 extends the same lossless model to fixed two-account asset/liability
   and liability/liability transfers by preserving the positive ledger leg rather
-  than inferring direction from an account's normal balance. Continue with other
-  fixed balance-sheet shapes only where direction and meaning can be preserved
-  without guessing.
+  than inferring direction from an account's normal balance. Patch 0116 extends
+  this to multi-leg fixed balance-sheet transfers when there is exactly one positive
+  ledger leg and at most one remaining leg whose direction cannot be represented as
+  a normal additional split; that exceptional leg is retained as the balancing
+  funding leg. Continue with other fixed balance-sheet shapes only where direction
+  and meaning can be preserved without guessing.
 - Preserve unsupported formula/custom recurrence data rather than enabling an
   editor that would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including

@@ -407,14 +407,14 @@ class ScheduleDialog(Gtk.Window):
             planning_flows = [item for item in parts if item[1].planning_flow is not None]
             if len(planning_flows) == 1:
                 flow = planning_flows[0]
-        if flow is None and len(parts) == 2:
+        if flow is None:
             ordinary_balance_splits = [
                 item
                 for item in parts
                 if item[0].account_class.value in {"asset", "liability"}
                 and item[1].planning_flow is None
             ]
-            if len(ordinary_balance_splits) == 2:
+            if len(ordinary_balance_splits) == len(parts):
                 positives = [
                     item
                     for item in ordinary_balance_splits
@@ -425,20 +425,36 @@ class ScheduleDialog(Gtk.Window):
                     for item in ordinary_balance_splits
                     if item[1].resolve(source.variables) < 0
                 ]
-                if len(positives) == 1 and len(negatives) == 1:
+                abnormal_negatives = [
+                    item
+                    for item in negatives
+                    if item[1].resolve(source.variables) * item[0].sign() <= 0
+                ]
+                if len(positives) == 1 and negatives and len(abnormal_negatives) <= 1:
                     flow = positives[0]
                     self._category_ledger_direction = 1
         if flow is not None:
             flow_account, flow_split = flow
             others = [item for item in parts if item is not flow]
-            funding_item = next(
-                (
-                    item
-                    for item in others
-                    if item[0].account_class.value not in {"income", "expense"}
-                    and item[1].planning_flow is None
-                ),
-                others[-1] if others else None,
+            funding_options = [
+                item
+                for item in others
+                if item[0].account_class.value not in {"income", "expense"}
+                and item[1].planning_flow is None
+            ]
+            abnormal_funding = [
+                item
+                for item in funding_options
+                if item[1].resolve(source.variables) * item[0].sign() <= 0
+            ]
+            funding_item = (
+                abnormal_funding[0]
+                if len(abnormal_funding) == 1
+                else funding_options[-1]
+                if funding_options
+                else others[-1]
+                if others
+                else None
             )
             if funding_item is not None:
                 category_index = next(

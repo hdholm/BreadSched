@@ -1293,6 +1293,51 @@ class TestScheduleEntry:
             (bank.handle, Money("-90.00"), "funding"),
         ]
 
+    def test_fixed_multi_leg_balance_sheet_transfer_is_editable(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        assert bank is not None
+        with app.db.transaction("add balance-sheet accounts") as txn:
+            primary = Account(
+                name="Primary liability",
+                atype=AccountType.LIABILITY,
+                parent=app.db.root_account().handle,
+            )
+            secondary = Account(
+                name="Secondary liability",
+                atype=AccountType.LIABILITY,
+                parent=app.db.root_account().handle,
+            )
+            app.db.add_account(primary, txn)
+            app.db.add_account(secondary, txn)
+        source = ScheduledTransaction(
+            name="Balance-sheet transfer",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(primary.handle, Money("150.00"), memo="primary"),
+                ScheduledSplit(secondary.handle, Money("-50.00"), memo="secondary"),
+                ScheduledSplit(bank.handle, Money("-100.00"), memo="funding"),
+            ],
+        )
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+        assert [
+            (split.account, split.amount, split.memo) for split in rebuilt.splits
+        ] == [
+            (primary.handle, Money("150.00"), "primary"),
+            (secondary.handle, Money("-50.00"), "secondary"),
+            (bank.handle, Money("-100.00"), "funding"),
+        ]
+
     def test_an_unsupported_formula_schedule_is_still_viewable(
         self, app, window, populated_book
     ):

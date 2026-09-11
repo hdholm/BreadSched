@@ -327,15 +327,23 @@ class ScheduledView(BaseView):
                 funding_candidates += 1
         has_income_expense = any(value in {"income", "expense"} for value in classes)
         ordinary_balance_transfer = False
-        if not has_income_expense and planning_flow_splits == 0 and len(sched.splits) == 2:
+        if not has_income_expense and planning_flow_splits == 0:
             ordinary_balance_transfer = all(
                 value in {"asset", "liability"} for value in classes
             )
             if ordinary_balance_transfer:
                 resolved = [split.resolve(sched.variables) for split in sched.splits]
+                positives = [value for value in resolved if value > 0]
+                negatives = [value for value in resolved if value < 0]
+                abnormal_negative_legs = 0
+                for split, value in zip(sched.splits, resolved, strict=True):
+                    account = self.db.get_account(split.account) if self.db else None
+                    if value < 0 and account is not None and value * account.sign() <= 0:
+                        abnormal_negative_legs += 1
                 ordinary_balance_transfer = (
-                    any(value > 0 for value in resolved)
-                    and any(value < 0 for value in resolved)
+                    len(positives) == 1
+                    and bool(negatives)
+                    and abnormal_negative_legs <= 1
                     and sum(resolved, Money(0)) == Money(0)
                 )
         if (
