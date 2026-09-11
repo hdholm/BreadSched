@@ -182,27 +182,27 @@ def accept_historical_estimate(
     name = f"Estimated {proposal.category_name}"
 
     if scenario_handle is None:
-        schedule = ScheduledTransaction(
+        baseline_schedule = ScheduledTransaction(
             name=name,
             recurrence=proposal.recurrence,
             splits=splits,
             auto_create=False,
         )
-        schedule.placeholder = True
+        baseline_schedule.placeholder = True
         with db.transaction(f"Add historical estimate {proposal.category_name}") as txn:
-            db.add_scheduled(schedule, txn)
-        return schedule.handle
+            db.add_scheduled(baseline_schedule, txn)
+        return baseline_schedule.handle
 
     scenario = db.get_scenario(scenario_handle)
     if scenario is None:
         raise ValueError("saved scenario no longer exists")
-    schedule = ScenarioSchedule(
+    scenario_schedule = ScenarioSchedule(
         name=name,
         recurrence=proposal.recurrence,
         splits=splits,
         placeholder=True,
     )
-    scenario.schedule_overrides.append(schedule)
+    scenario.schedule_overrides.append(scenario_schedule)
     with db.transaction(f"Add historical estimate to {scenario.name}") as txn:
         db.commit_scenario(scenario, txn)
-    return schedule.handle
+    return scenario_schedule.handle
