@@ -9,7 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0118 (`scheduled: edit multiple planning-purpose legs`).
+Status below is current through patch 0119
+(`scheduled: preserve formula-owned fields while editing metadata`).
 
 ## Near-term correctness and daily-use work
 
@@ -42,8 +43,14 @@ Status below is current through patch 0118 (`scheduled: edit multiple planning-p
   amount and the others remain explicit additional planning legs, with an ordinary
   balancing funding split. Continue with other fixed shapes only where direction and
   meaning can be preserved without guessing.
-- Preserve unsupported formula/custom recurrence data rather than enabling an
-  editor that would silently simplify it.
+- Formula schedules now support a protected metadata-editing mode (0119): name,
+  kind, recurrence, skipped occurrences, and automatic-posting behavior can be
+  changed while formula expressions, variables, split accounts, amount timelines,
+  and formula-derived values remain visible and preserved exactly. Continue toward
+  direct formula editing only when the expression/variable model can be round-tripped
+  safely; scenario-owned formula schedules still need the same protected treatment.
+- Preserve unsupported custom recurrence data rather than enabling an editor that
+  would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including
   single-split-looking and multi-split schedules, formula schedules, recurrence
   variants, overrides, and bounded schedules.
@@ -123,8 +130,9 @@ Status below is current through patch 0118 (`scheduled: edit multiple planning-p
 
 ## Scheduled transactions and loans
 
-- Extend formula-schedule editing beyond classification while preserving the
-  original formulas and recurrence semantics.
+- Extend formula-schedule editing beyond the protected metadata mode introduced in
+  0119 while preserving the original formulas, variables, and recurrence semantics.
+  Add safe variable/formula editing only with validation and lossless round trips.
 - Add an approachable loan/amortization creation workflow.
 - Support per-leg amount timelines in fixed multi-split schedules.
 - Support additional advanced/custom recurrence patterns where they can be modeled

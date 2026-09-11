@@ -285,12 +285,7 @@ class ScheduledView(BaseView):
     def _editability_reason(self, sched) -> str:
         if sched is None or _is_split(sched):
             return "No scheduled transaction is selected."
-        if any(split.formula for split in sched.splits):
-            return (
-                "This schedule contains formula splits. BreadSched can display the "
-                "imported formulas but cannot yet round-trip them safely in the fixed "
-                "schedule editor."
-            )
+        has_formula = any(split.formula for split in sched.splits)
         supported_periods = {
             PeriodType.DAY,
             PeriodType.WEEK,
@@ -304,6 +299,10 @@ class ScheduledView(BaseView):
                 "This schedule uses a recurrence that the fixed schedule editor "
                 "cannot yet reproduce without changing its meaning."
             )
+        if has_formula:
+            # Formula expressions and variables stay protected, but the schedule's
+            # metadata/recurrence can be edited without reconstructing those splits.
+            return ""
         if len(getattr(sched, "splits", [])) < 2:
             return (
                 "This imported schedule does not have enough split information for "

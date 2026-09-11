@@ -87,6 +87,11 @@ class ScheduleDialog(Gtk.Window):
         self.db = db
         self.source = source
         self.read_only_reason = read_only_reason
+        self._formula_mode = bool(
+            source is not None
+            and read_only_reason is None
+            and any(split.formula for split in source.splits)
+        )
         self._category_planning_flow = None
         self._category_ledger_direction: int | None = None
         self._frequencies = list(_FREQUENCIES)
@@ -292,7 +297,11 @@ class ScheduleDialog(Gtk.Window):
             )
         else:
             if source is not None:
-                self._load_source(source)
+                if self._formula_mode:
+                    self._load_formula_source(source)
+                    self._protect_formula_fields(source)
+                else:
+                    self._load_source(source)
             self._validate()
 
     def _detail_text(
@@ -384,6 +393,58 @@ class ScheduleDialog(Gtk.Window):
                 for item in source.occurrence_adjustments
             )
         return "\n".join(lines)
+
+
+    def _load_formula_source(self, source: ScheduledTransaction) -> None:
+        """Load editable schedule metadata while preserving formula-owned values."""
+        self.name_entry.set_text(source.name)
+        self.kind.set_selected(1 if source.placeholder else 0)
+        for index, (_label, period, interval) in enumerate(self._frequencies):
+            if (
+                source.recurrence.period is period
+                and source.recurrence.interval == interval
+            ):
+                self.frequency.set_selected(index)
+                break
+        self.start_entry.set_text(source.recurrence.start.isoformat())
+        if source.recurrence.end is not None:
+            self.ends.set_selected(1)
+            self.end_entry.set_text(source.recurrence.end.isoformat())
+        elif source.recurrence.count is not None:
+            self.ends.set_selected(2)
+            self.count_entry.set_text(str(source.recurrence.count))
+        for index, (_label, adjustment) in enumerate(_WEEKEND):
+            if source.recurrence.weekend_adjust is adjustment:
+                self.weekend.set_selected(index)
+                break
+        self.auto_check.set_active(source.auto_create)
+        self.skipped_editor.set_values(source.skipped)
+
+    def _protect_formula_fields(self, source: ScheduledTransaction) -> None:
+        """Keep formula-owned split/amount fields visible but non-destructive."""
+        protected = (
+            self.category,
+            self.funding,
+            self.planning_flow,
+            self.amount_entry,
+            self.category_memo_entry,
+            self.funding_memo_entry,
+            self.additional_splits,
+            self.amount_changes_editor,
+            self.occurrence_adjustments_editor,
+        )
+        for widget in protected:
+            widget.set_sensitive(False)
+        self.preview.set_visible(False)
+        self.details.set_text(
+            self._detail_text(
+                source,
+                "Formula expressions, variables, split accounts, and formula-derived "
+                "amounts are protected. Name, kind, recurrence, skipped occurrences, "
+                "and automatic-posting behavior may be edited without changing them.",
+            )
+        )
+        self.details.set_visible(True)
 
     def _load_source(self, source: ScheduledTransaction) -> None:
         """Populate the simple editor from an existing two-split schedule."""
@@ -690,21 +751,7 @@ class ScheduleDialog(Gtk.Window):
         problems = []
         if not self.name_entry.get_text().strip():
             problems.append("give it a name")
-        if self._amount() is None:
-            problems.append("enter an amount")
-        amount_changes = self._amount_changes()
-        if amount_changes is None:
-            problems.append("check future amounts")
         recurrence = self._recurrence()
-        skipped = self._skipped(recurrence)
-        if skipped is None:
-            problems.append("check skipped occurrence dates")
-        adjustments = self._occurrence_adjustments(recurrence)
-        if adjustments is None:
-            problems.append("check one-time amounts")
-        if skipped is not None and adjustments is not None:
-            if set(skipped) & {item.when for item in adjustments}:
-                problems.append("an occurrence cannot be both skipped and overridden")
         period = self._frequencies[self.frequency.get_selected()][1]
         bounded = period is not PeriodType.ONCE
         self.ends.set_sensitive(bounded)
@@ -712,6 +759,26 @@ class ScheduleDialog(Gtk.Window):
         self.count_entry.set_sensitive(bounded and self.ends.get_selected() == 2)
         if recurrence is None:
             problems.append("check the schedule dates/count")
+        skipped = self._skipped(recurrence)
+        if skipped is None:
+            problems.append("check skipped occurrence dates")
+        if self._formula_mode:
+            self.save_button.set_sensitive(not problems)
+            self.status.set_text(
+                "; ".join(problems).capitalize() if problems else ""
+            )
+            return
+        if self._amount() is None:
+            problems.append("enter an amount")
+        amount_changes = self._amount_changes()
+        if amount_changes is None:
+            problems.append("check future amounts")
+        adjustments = self._occurrence_adjustments(recurrence)
+        if adjustments is None:
+            problems.append("check one-time amounts")
+        if skipped is not None and adjustments is not None:
+            if set(skipped) & {item.when for item in adjustments}:
+                problems.append("an occurrence cannot be both skipped and overridden")
         if self.category.get_selected() == self.funding.get_selected():
             problems.append("choose two different accounts")
         for (
@@ -753,12 +820,25 @@ class ScheduleDialog(Gtk.Window):
 
     def build(self) -> ScheduledTransaction:
         """The schedule the current form describes."""
+        recurrence = self._recurrence()
+        assert recurrence is not None
+        if self._formula_mode:
+            assert self.source is not None
+            schedule = ScheduledTransaction.from_dict(self.source.serialize())
+            old_name = schedule.name
+            schedule.name = self.name_entry.get_text().strip()
+            if schedule.description == old_name:
+                schedule.description = schedule.name
+            schedule.recurrence = recurrence
+            schedule.auto_create = self.auto_check.get_active()
+            schedule.placeholder = self.kind.get_selected() == 1
+            schedule.skipped = self._skipped(recurrence) or []
+            return schedule
+
         amount = self._amount()
         assert amount is not None
         category = self._accounts[self.category.get_selected()]
         funding = self._accounts[self.funding.get_selected()]
-        recurrence = self._recurrence()
-        assert recurrence is not None
 
         if self.source is None:
             schedule = ScheduledTransaction()

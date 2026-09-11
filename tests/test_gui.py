@@ -1449,37 +1449,47 @@ class TestScheduleEntry:
             (bank.handle, Money("-125.00"), "funding"),
         ]
 
-    def test_an_unsupported_formula_schedule_is_still_viewable(
+    def test_formula_schedule_metadata_is_editable_without_rewriting_formulas(
         self, app, window, populated_book
     ):
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
         app.open_book(populated_book)
         bank = app.db.get_account_by_name("Assets:Checking Account")
-        rent = app.db.get_account_by_name("Expenses:Rent")
-        assert bank is not None and rent is not None
+        expense = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and expense is not None
         source = ScheduledTransaction(
-            name="Imported formula payment",
+            name="Synthetic formula schedule",
             recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
             splits=[
-                ScheduledSplit(rent.handle, formula="payment"),
-                ScheduledSplit(bank.handle, formula="-payment"),
+                ScheduledSplit(expense.handle, formula="base"),
+                ScheduledSplit(bank.handle, formula="-base"),
             ],
         )
-        source.variables = {"payment": "1800"}
-        dialog = ScheduleDialog(
-            window,
-            app.db,
-            source=source,
-            read_only_reason="Formula schedules cannot yet be reproduced safely.",
-        )
-        text = dialog.details.get_text()
-        assert dialog.save_button.get_visible() is False
-        assert "Imported formula payment" in text
-        assert "Assets:Checking Account" in text
-        assert "Expenses:Rent" in text
-        assert "formula 'payment'" in text
-        assert "payment = 1800" in text
+        source.variables = {"base": "250"}
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        assert dialog.save_button.get_visible() is True
+        assert dialog.save_button.get_sensitive() is True
+        assert dialog.amount_entry.get_sensitive() is False
+        assert dialog.category.get_sensitive() is False
+        assert "formula 'base'" in dialog.details.get_text()
+        assert "base = 250" in dialog.details.get_text()
+
+        dialog.name_entry.set_text("Updated formula schedule")
+        dialog.start_entry.set_text("2026-02-01")
+        dialog.auto_check.set_active(True)
+        rebuilt = dialog.build()
+        assert rebuilt.name == "Updated formula schedule"
+        assert rebuilt.recurrence.start == date(2026, 2, 1)
+        assert rebuilt.auto_create is True
+        assert rebuilt.variables == source.variables
+        assert [split.serialize() for split in rebuilt.splits] == [
+            split.serialize() for split in source.splits
+        ]
 
     def test_initial_schedule_selection_enables_view_edit(
         self, app, window, populated_book
