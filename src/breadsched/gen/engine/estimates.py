@@ -18,7 +18,7 @@ from ..lib.account import AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scenario import ScenarioSchedule
-from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
+from ..lib.scheduled import ScheduledMonthAmount, ScheduledSplit, ScheduledTransaction
 from . import planning
 
 __all__ = [
@@ -46,6 +46,7 @@ class HistoricalEstimateProposal:
     scheduled_amount: Money = Money(0)
     seasonal: bool = False
     trend: str | None = None
+    seasonal_amounts: tuple[ScheduledMonthAmount, ...] = ()
 
     @property
     def source_name(self) -> str:
@@ -214,6 +215,21 @@ def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> bool:
         return False
     return max(magnitudes) >= middle * Decimal("1.35")
 
+
+def _seasonal_amounts(
+    monthly_by_month: dict[int, list[Money]],
+) -> tuple[ScheduledMonthAmount, ...]:
+    """Return repeated month-of-year magnitudes supported by at least two years."""
+    result: list[ScheduledMonthAmount] = []
+    for month in range(1, 13):
+        values = monthly_by_month.get(month, [])
+        if len(values) < 2:
+            continue
+        typical = _typical_amount(values)
+        if typical:
+            result.append(ScheduledMonthAmount(month, abs(typical)))
+    return tuple(result)
+
 def propose_historical_estimates(
     db: DbSQLite,
     *,
@@ -284,6 +300,11 @@ def propose_historical_estimates(
             current_month,
         )
         amount = (monthly_residual / occurrences_per_month).quantize(100)
+        seasonal_amounts = (
+            _seasonal_amounts(monthly_by_month)
+            if seasonal and recurrence.period is PeriodType.MONTH
+            else ()
+        )
         active_ratio = len(monthly) / months
         confidence = min(0.95, 0.45 + active_ratio * 0.5)
         scheduled_total = applied_scheduled_total
@@ -309,6 +330,7 @@ def propose_historical_estimates(
                 scheduled_amount=scheduled_total,
                 seasonal=seasonal,
                 trend=trend,
+                seasonal_amounts=seasonal_amounts,
             )
         )
 
@@ -339,6 +361,7 @@ def accept_historical_estimate(
             recurrence=proposal.recurrence,
             splits=splits,
             auto_create=False,
+            seasonal_amounts=list(proposal.seasonal_amounts),
         )
         baseline_schedule.placeholder = True
         with db.transaction(f"Add historical estimate {proposal.category_name}") as txn:
@@ -353,6 +376,7 @@ def accept_historical_estimate(
         recurrence=proposal.recurrence,
         splits=splits,
         placeholder=True,
+        seasonal_amounts=list(proposal.seasonal_amounts),
     )
     scenario.schedule_overrides.append(scenario_schedule)
     with db.transaction(f"Add historical estimate to {scenario.name}") as txn:

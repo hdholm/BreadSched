@@ -517,6 +517,11 @@ class ScenarioScheduleDialog(Gtk.Window):
             enabled=True,
             placeholder=placeholder,
             amount_changes=self._amount_changes() or [],
+            seasonal_amounts=list(
+                self.current.seasonal_amounts
+                if self.current is not None
+                else self.source.seasonal_amounts if self.source is not None else []
+            ),
             skipped=self._skipped(recurrence) or [],
             occurrence_adjustments=self._occurrence_adjustments(recurrence) or [],
         )

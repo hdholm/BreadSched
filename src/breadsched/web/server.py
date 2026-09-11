@@ -857,6 +857,7 @@ class Api:
             enabled=True,
             placeholder=source.placeholder if source is not None else True,
             amount_changes=self._parse_amount_changes(payload, start),
+            seasonal_amounts=list(source.seasonal_amounts) if source is not None else [],
             skipped=skipped,
             occurrence_adjustments=adjustments,
         )

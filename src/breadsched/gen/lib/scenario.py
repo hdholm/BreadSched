@@ -23,6 +23,7 @@ from .money import Money
 from .recurrence import Recurrence
 from .scheduled import (
     ScheduledAmountChange,
+    ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
@@ -105,6 +106,7 @@ class ScenarioSchedule:
         placeholder: bool = True,
         variables: dict[str, str] | None = None,
         amount_changes: list[ScheduledAmountChange] | None = None,
+        seasonal_amounts: list[ScheduledMonthAmount] | None = None,
         skipped: list[date] | None = None,
         occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
     ) -> None:
@@ -118,6 +120,9 @@ class ScenarioSchedule:
         self.placeholder = placeholder
         self.variables = dict(variables or {})
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
+        self.seasonal_amounts = sorted(
+            list(seasonal_amounts or []), key=lambda item: item.month
+        )
         self.skipped = sorted(set(skipped or []))
         self.occurrence_adjustments = sorted(
             list(occurrence_adjustments or []), key=lambda item: item.when
@@ -144,6 +149,10 @@ class ScenarioSchedule:
                 ScheduledAmountChange.from_dict(item.serialize())
                 for item in schedule.amount_changes
             ],
+            seasonal_amounts=[
+                ScheduledMonthAmount.from_dict(item.serialize())
+                for item in schedule.seasonal_amounts
+            ],
             skipped=list(schedule.skipped),
             occurrence_adjustments=[
                 ScheduledOccurrenceAdjustment.from_dict(item.serialize())
@@ -165,6 +174,10 @@ class ScenarioSchedule:
             if adjustment.when > when:
                 break
         effective = None
+        for item in self.seasonal_amounts:
+            if item.month == when.month:
+                effective = item.amount
+                break
         for change in self.amount_changes:
             if change.start > when:
                 break
@@ -201,6 +214,7 @@ class ScenarioSchedule:
             "placeholder": self.placeholder,
             "variables": dict(self.variables),
             "amount_changes": [item.serialize() for item in self.amount_changes],
+            "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
             "skipped": [when.isoformat() for when in self.skipped],
             "occurrence_adjustments": [
                 item.serialize() for item in self.occurrence_adjustments
@@ -222,6 +236,10 @@ class ScenarioSchedule:
             amount_changes=[
                 ScheduledAmountChange.from_dict(item)
                 for item in data.get("amount_changes", [])
+            ],
+            seasonal_amounts=[
+                ScheduledMonthAmount.from_dict(item)
+                for item in data.get("seasonal_amounts", [])
             ],
             skipped=[date.fromisoformat(item) for item in data.get("skipped", [])],
             occurrence_adjustments=[

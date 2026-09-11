@@ -47,8 +47,8 @@ class HistoricalEstimatesDialog(Gtk.Window):
 
         note = Gtk.Label(
             label=(
-                "Suggestions use the median of active completed months. "
-                "Accepting one creates an ordinary monthly estimate."
+                "Suggestions use completed historical activity after known schedules. "
+                "Accepting one creates an ordinary editable estimate."
             ),
             xalign=0,
             wrap=True,

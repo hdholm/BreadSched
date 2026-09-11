@@ -13,6 +13,7 @@ from breadsched.gen.lib import (
     Scenario,
     ScenarioSchedule,
     ScheduledAmountChange,
+    ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
@@ -103,6 +104,30 @@ class TestEventDomain:
         assert clone.amount(when=date(2029, 12, 1)) == Money("1800")
         assert clone.amount(when=date(2030, 1, 1)) == Money("1950")
 
+
+
+    def test_seasonal_amount_profile_round_trips_and_posts_resolved_amount(self):
+        schedule = ScheduledTransaction(
+            name="Seasonal utilities",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 10)),
+            splits=[
+                ScheduledSplit("expense", Money("100")),
+                ScheduledSplit("cash", Money("-100")),
+            ],
+            seasonal_amounts=[
+                ScheduledMonthAmount(1, Money("240")),
+                ScheduledMonthAmount(7, Money("240")),
+            ],
+        )
+
+        clone = ScheduledTransaction.from_dict(schedule.serialize())
+
+        assert clone.amount(when=date(2026, 1, 10)) == Money("240")
+        assert clone.amount(when=date(2026, 4, 10)) == Money("100")
+        assert clone.amount(when=date(2026, 7, 10)) == Money("240")
+        posted = clone.instantiate(date(2026, 7, 10))
+        assert posted.value_for("expense") == Money("240")
+        assert posted.value_for("cash") == Money("-240")
 
     def test_occurrence_exceptions_skip_and_override_exact_dates(self, db, book):
         rent = ScheduledTransaction(
@@ -801,6 +826,14 @@ class TestHistoricalEstimateProposals:
         )
         assert proposal.seasonal is True
         assert "seasonal variation detected" in proposal.reason
+        assert len(proposal.seasonal_amounts) == 12
+
+        handle = estimates.accept_historical_estimate(db, proposal)
+        saved = db.get_scheduled(handle)
+        assert saved is not None
+        assert saved.amount(when=date(2026, 1, 10)) == Money("240.00")
+        assert saved.amount(when=date(2026, 4, 10)) == Money("100.00")
+        assert saved.amount(when=date(2026, 7, 10)) == Money("240.00")
 
     def test_accepts_proposal_into_base_as_estimate(self, db, book):
         from breadsched.gen.engine import estimates

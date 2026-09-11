@@ -493,6 +493,28 @@ associated with the real asset/cash account through which reimbursements or
 funding are recorded without confusing that ledger balance with benefit
 availability.
 
+## Forward plan: planning classifications for balance-sheet flows
+
+Plan currently derives its category view primarily from Income and Expense account
+splits. That remains correct for ordinary income and spending, but it does not fully
+express economically meaningful scheduled flows whose ledger destination or source
+is an Asset or Liability. Future planning work should add an explicit planning
+classification layer without changing the underlying double-entry splits.
+
+Examples include payroll contributions into 401(k) or other retirement assets, FSA
+elections/funding, loan and liability payments whose principal reduces debt while
+interest remains an expense, and retirement distributions whose source is an
+investment asset but whose planning purpose is retirement income. The classification
+should let Plan report these purposes alongside Income/Expense flows while keeping
+ordinary transfers such as Checking -> Savings neutral. Multi-split payroll should
+be able to expose salary, taxes/expenses, retirement saving, FSA funding, and net
+cash as parts of one scheduled transaction without double counting.
+
+The same classifications must feed Plan, Projection explanation, scenario comparison,
+and the dashboard. FSA classifications should integrate with the dedicated plan-year
+benefit model described above rather than treating the custodian balance as the
+available benefit.
+
 ## Forward plan: QIF and OFX imports
 
 Add Quicken QIF and OFX as supported historical-data import formats. The importer

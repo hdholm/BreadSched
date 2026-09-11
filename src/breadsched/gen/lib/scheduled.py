@@ -20,6 +20,7 @@ from .transaction import PlanningResolution, Split, Transaction
 
 __all__ = [
     "ScheduledAmountChange",
+    "ScheduledMonthAmount",
     "ScheduledOccurrenceAdjustment",
     "ScheduledSplit",
     "scheduled_occurrence_preview",
@@ -49,6 +50,30 @@ class ScheduledAmountChange:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ScheduledAmountChange:
         return cls(date.fromisoformat(data["start"]), Money(*data["amount"]))
+
+
+class ScheduledMonthAmount:
+    """Recurring month-of-year amount for a simple monthly schedule."""
+
+    __slots__ = ("month", "amount")
+
+    def __init__(self, month: int, amount: Money | str | int) -> None:
+        if not 1 <= month <= 12:
+            raise ValueError("seasonal month must be between 1 and 12")
+        self.month = month
+        self.amount = amount if isinstance(amount, Money) else Money(amount)
+        if self.amount <= 0:
+            raise ValueError("seasonal amount must be greater than zero")
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "month": self.month,
+            "amount": [self.amount.numerator, self.amount.denominator],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScheduledMonthAmount:
+        return cls(int(data["month"]), Money(*data["amount"]))
 
 
 class ScheduledOccurrenceAdjustment:
@@ -184,6 +209,7 @@ class ScheduledTransaction(PrimaryObject):
         advance_days: int = 0,
         currency: str | None = None,
         amount_changes: list[ScheduledAmountChange] | None = None,
+        seasonal_amounts: list[ScheduledMonthAmount] | None = None,
         skipped: list[date] | None = None,
         occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
     ) -> None:
@@ -199,6 +225,9 @@ class ScheduledTransaction(PrimaryObject):
         self.advance_days = advance_days
         self.currency = currency
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
+        self.seasonal_amounts = sorted(
+            list(seasonal_amounts or []), key=lambda item: item.month
+        )
         self.occurrence_adjustments = sorted(
             list(occurrence_adjustments or []), key=lambda item: item.when
         )
@@ -257,6 +286,10 @@ class ScheduledTransaction(PrimaryObject):
             if adjustment.when > when:
                 break
         effective = None
+        for item in self.seasonal_amounts:
+            if item.month == when.month:
+                effective = item.amount
+                break
         for change in self.amount_changes:
             if change.start > when:
                 break
@@ -343,7 +376,8 @@ class ScheduledTransaction(PrimaryObject):
         # cents; ppmt and ipmt sum to pmt to thirty digits, not to two. Round each
         # leg to the currency's smallest unit and give the last leg the remainder,
         # so the stored transaction balances exactly rather than by a hair.
-        values = [split.resolve(merged).quantize(100) for split in self.splits]
+        resolved = self.resolved_splits(variables=variables, when=when)
+        values = [value.quantize(100) for _account, value in resolved]
         if values:
             residual = Money(0)
             for value in values:
@@ -419,6 +453,7 @@ class ScheduledTransaction(PrimaryObject):
             "advance_days": self.advance_days,
             "currency": self.currency,
             "amount_changes": [item.serialize() for item in self.amount_changes],
+            "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
             "occurrence_adjustments": [
                 item.serialize() for item in self.occurrence_adjustments
             ],
@@ -442,6 +477,13 @@ class ScheduledTransaction(PrimaryObject):
         self.amount_changes = sorted(
             [ScheduledAmountChange.from_dict(item) for item in data.get("amount_changes", [])],
             key=lambda item: item.start,
+        )
+        self.seasonal_amounts = sorted(
+            [
+                ScheduledMonthAmount.from_dict(item)
+                for item in data.get("seasonal_amounts", [])
+            ],
+            key=lambda item: item.month,
         )
         self.occurrence_adjustments = sorted(
             [

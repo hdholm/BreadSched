@@ -17,6 +17,7 @@ from .scenario import (
 )
 from .scheduled import (
     ScheduledAmountChange,
+    ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
@@ -30,7 +31,7 @@ __all__ = [
     "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",
     "PeriodType", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
     "ReconcileState", "Recurrence",
-    "Scenario", "ScenarioSchedule", "ScheduledAmountChange",
+    "Scenario", "ScenarioSchedule", "ScheduledAmountChange", "ScheduledMonthAmount",
     "ScheduledOccurrenceAdjustment", "ScheduledSplit", "ScheduledTransaction", "Split",
     "scheduled_occurrence_preview",
     "Transaction",
