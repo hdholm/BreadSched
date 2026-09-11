@@ -1556,3 +1556,81 @@ def test_fsa_claim_can_use_multiple_allocations(client):
     assert claim["provider_refunds"] == "50.00"
     assert claim["net_paid"] == "450.00"
     assert claim["rejected"] == "100.00"
+
+
+def test_review_can_attach_actual_to_existing_fsa_claim(client):
+    _status, accounts = client.get("/api/accounts")
+    fsa_account = next(row for row in accounts if row["name"] == "401(k)")
+    client.post(
+        "/api/account/planning-role",
+        {"handle": fsa_account["handle"], "planning_role": "fsa"},
+    )
+    client.post(
+        "/api/account/fsa-years",
+        {
+            "handle": fsa_account["handle"],
+            "years": [{
+                "start": "2026-01-01", "through": "2026-12-31",
+                "election": "3000.00", "runout_through": "2027-03-31",
+            }],
+        },
+    )
+    _status, saved = client.post(
+        "/api/fsa/claim/save",
+        {
+            "service_date": "2026-04-01",
+            "provider": "Clinic",
+            "eob_responsibility": "250.00",
+            "payments": [], "allocations": [],
+        },
+    )
+    _status, txn = client.post(
+        "/api/transaction",
+        {
+            "date": "2026-04-02", "description": "Clinic payment",
+            "to": "Expenses:Rent", "from": "Assets:Checking", "amount": "250.00",
+        },
+    )
+    _status, review = client.get(f"/api/review?transaction={txn['handle']}")
+    assert review["selected"]["fsa"]["claims"][0]["handle"] == saved["handle"]
+    role = next(item for item in review["selected"]["fsa"]["roles"]
+                if item["role"] == "payment")
+    status, result = client.post(
+        "/api/review/fsa-attach",
+        {
+            "transaction": txn["handle"], "claim": saved["handle"],
+            "role": "payment", "split": role["split"],
+        },
+    )
+    assert status == 200
+    assert result["claim"] == saved["handle"]
+    _status, claims = client.get("/api/fsa/claims")
+    claim = next(item for item in claims["claims"] if item["handle"] == saved["handle"])
+    assert claim["paid"] == "250.00"
+    assert claim["remaining"] == "250.00"
+
+
+def test_entry_can_attach_new_healthcare_payment_to_fsa_claim(client):
+    _status, saved = client.post(
+        "/api/fsa/claim/save",
+        {
+            "service_date": "2026-06-01",
+            "provider": "Physical therapy",
+            "eob_responsibility": "120.00",
+            "payments": [], "allocations": [],
+        },
+    )
+    status, txn = client.post(
+        "/api/transaction",
+        {
+            "date": "2026-06-02", "description": "PT payment",
+            "to": "Expenses:Rent", "from": "Assets:Checking", "amount": "120.00",
+            "fsa_claim": saved["handle"], "fsa_role": "payment",
+        },
+    )
+    assert status == 200
+    assert txn["handle"]
+    _status, claims = client.get("/api/fsa/claims")
+    claim = next(item for item in claims["claims"] if item["handle"] == saved["handle"])
+    assert claim["paid"] == "120.00"
+    assert claim["remaining"] == "120.00"

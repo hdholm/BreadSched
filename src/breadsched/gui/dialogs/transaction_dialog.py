@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine import fsa_claims
 from ...gen.lib import Money, ReconcileState, Split, Transaction, UnbalancedError
 from ..gi_setup import Gtk
 
@@ -153,6 +154,30 @@ class TransactionDialog(Gtk.Window):
         scroller = Gtk.ScrolledWindow(child=self.split_box)
         scroller.set_vexpand(True)
         box.append(scroller)
+
+        self.fsa_claims = [
+            claim for claim in fsa_claims.iter_claims(db)
+            if fsa_claims.claim_summary(db, claim).status
+            is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
+        ]
+        self.fsa_claim = None
+        self.fsa_role = None
+        if self.fsa_claims and not editing:
+            fsa_row = Gtk.Box(spacing=8)
+            fsa_row.append(Gtk.Label(label="FSA claim (optional)", xalign=0))
+            self.fsa_claim = Gtk.DropDown.new_from_strings(
+                ["Do not attach"]
+                + [
+                    f"{claim.service_date} {claim.provider or claim.description or 'FSA claim'}"
+                    for claim in self.fsa_claims
+                ]
+            )
+            fsa_row.append(self.fsa_claim)
+            self.fsa_role = Gtk.DropDown.new_from_strings(
+                ["Healthcare payment", "Provider refund", "FSA reimbursement"]
+            )
+            fsa_row.append(self.fsa_role)
+            box.append(fsa_row)
 
         self.status = Gtk.Label(xalign=0)
         box.append(self.status)
@@ -318,6 +343,20 @@ class TransactionDialog(Gtk.Window):
             self.status.set_text(str(exc))
             self.status.add_css_class("negative")
             return
+        if self.fsa_claim is not None and self.fsa_claim.get_selected() > 0:
+            claim = self.fsa_claims[self.fsa_claim.get_selected() - 1]
+            roles = ("payment", "refund", "reimbursement")
+            role = roles[self.fsa_role.get_selected()]
+            try:
+                fsa_claims.attach_transaction_to_claim(
+                    self.db, claim.handle, target.handle, role=role
+                )
+            except (KeyError, ValueError) as exc:
+                self.transaction = target
+                self.editing = True
+                self.status.set_text(f"Transaction saved; FSA claim not attached: {exc}")
+                self.status.add_css_class("negative")
+                return
         self.close()
 
     def _on_delete(self, _button) -> None:

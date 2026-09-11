@@ -1463,10 +1463,44 @@ async function showReview() {
           }, "Skip scheduled occurrence"))));
   });
 
+  const fsaOptions = selected.fsa || { claims: [], roles: [] };
+  let fsaAttach = null;
+  if (fsaOptions.claims.length && fsaOptions.roles.length) {
+    const claimSelect = el("select", {},
+      fsaOptions.claims.map((claim) => el("option", { value: claim.handle },
+        `${claim.label} · remaining ${money(claim.remaining)}`)));
+    const roleSelect = el("select", {},
+      fsaOptions.roles.map((role) => el("option", {
+        value: `${role.role}|${role.split}|${(role.years || []).join(",")}`,
+      }, `${role.role.replace("_", " ")} · ${role.account}`)));
+    const yearSelect = el("select", {}, el("option", { value: "" }, "Auto funding year"));
+    const refreshYears = () => {
+      const parts = roleSelect.value.split("|");
+      const years = (parts[2] || "").split(",").filter(Boolean);
+      yearSelect.replaceChildren(el("option", { value: "" }, "Auto funding year"),
+        ...years.map((year) => el("option", { value: year }, year)));
+    };
+    roleSelect.onchange = refreshYears; refreshYears();
+    fsaAttach = el("div", { class: "panel", style: "padding:10px;margin-top:10px" },
+      el("strong", {}, "FSA claim"),
+      el("div", { class: "review-actions" }, claimSelect, roleSelect, yearSelect,
+        el("button", { class: "action", type: "button", onclick: async () => {
+          const [role, split] = roleSelect.value.split("|");
+          try {
+            await post("/api/review/fsa-attach", {
+              transaction: selected.handle, claim: claimSelect.value, role, split,
+              funding_year: yearSelect.value,
+            });
+            say("Transaction attached to FSA claim."); render();
+          } catch (error) { say(error.message, "error"); }
+        }}, "Attach to claim")));
+  }
+
   const detail = el("div", { class: "panel review-detail" },
     el("h2", {}, "Resolve actual"),
     el("p", {}, `${selected.date} · ${selected.description}`),
     el("p", { class: "note" }, `Actual amount: ${money(selected.amount)}`),
+    fsaAttach,
     data.candidates.length
       ? table(["Planned", "Description", { label: "Expected", num: true },
                { label: "Amount variance", num: true }, { label: "Date variance", num: true },
@@ -1814,6 +1848,8 @@ async function openProjectionDetail(index) {
 
 async function showEntry() {
   if (!state.accounts.length) state.accounts = await get("/api/accounts");
+  const claimData = await get("/api/fsa/claims");
+  const openClaims = (claimData.claims || []).filter((claim) => claim.status !== "fully_reimbursed");
   const usable = state.accounts.filter((a) => !a.placeholder && a.depth > 0);
   const options = (name) => el("select", { name },
     usable.map((a) => el("option", { value: a.full_name }, a.full_name)));
@@ -1833,6 +1869,16 @@ async function showEntry() {
     el("label", {}, "From (money leaves)", options("from")),
     el("label", {}, "To (money arrives)", options("to")),
     el("label", {}, "Amount", el("input", { name: "amount", required: "required", placeholder: "0.00" })),
+    openClaims.length ? el("label", {}, "FSA claim (optional)",
+      el("select", { name: "fsa_claim" },
+        el("option", { value: "" }, "Do not attach"),
+        openClaims.map((claim) => el("option", { value: claim.handle },
+          `${claim.service_date} ${claim.provider || claim.description || "FSA claim"}`)))) : null,
+    openClaims.length ? el("label", {}, "FSA claim role",
+      el("select", { name: "fsa_role" },
+        el("option", { value: "payment" }, "Healthcare payment"),
+        el("option", { value: "refund" }, "Provider refund"),
+        el("option", { value: "reimbursement" }, "FSA reimbursement"))) : null,
     el("button", { class: "action primary", type: "submit" }, "Post"));
 
   return el("div", {},

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from ...gen.engine import planning
+from ...gen.engine import fsa_claims, planning
+from ...gen.lib import AccountClass, AccountPlanningRole
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import PlanningResolution
 from ..gi_setup import Gtk, Pango
@@ -106,6 +107,9 @@ class ResolutionView(BaseView):
         self.skip_button = Gtk.Button(label="Skip scheduled occurrence")
         self.skip_button.connect("clicked", self._on_skip)
         buttons.append(self.skip_button)
+        self.fsa_button = Gtk.Button(label="Attach to FSA claim…")
+        self.fsa_button.connect("clicked", self._on_fsa_attach)
+        buttons.append(self.fsa_button)
         self.unexpected_button = Gtk.Button(label="Mark unexpected")
         self.unexpected_button.connect("clicked", self._on_unexpected)
         buttons.append(self.unexpected_button)
@@ -248,6 +252,11 @@ class ResolutionView(BaseView):
         self.match_button.set_sensitive(has_actual and has_candidate)
         self.reject_button.set_sensitive(has_actual and has_candidate)
         self.skip_button.set_sensitive(has_candidate)
+        has_fsa = False
+        if has_actual and self.db is not None and self._transaction_handle is not None:
+            transaction = self.db.get_transaction(self._transaction_handle)
+            has_fsa = transaction is not None and bool(self._fsa_options(transaction)[1])
+        self.fsa_button.set_sensitive(has_fsa)
         self.unexpected_button.set_sensitive(has_actual)
 
     def _selected_transaction_and_event(self):
@@ -288,6 +297,98 @@ class ResolutionView(BaseView):
         planning.skip_occurrence(self.db, event)
         self._candidate_key = None
         self._refresh_candidates()
+
+    def _fsa_options(self, transaction):
+        claims = []
+        for claim in fsa_claims.iter_claims(self.db):
+            summary = fsa_claims.claim_summary(self.db, claim)
+            if summary.status is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED:
+                claims.append(claim)
+        roles = []
+        for split in transaction.splits:
+            account = self.db.get_account(split.account)
+            if account is None:
+                continue
+            if account.account_class is AccountClass.EXPENSE and split.value > 0:
+                roles.append(("payment", split.handle, self.db.full_name(account), []))
+            if account.account_class is AccountClass.EXPENSE and split.value < 0:
+                roles.append(("refund", split.handle, self.db.full_name(account), []))
+            if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+                years = [
+                    year.start
+                    for year in account.fsa_years
+                    if transaction.post_date <= (year.runout_through or year.through)
+                ]
+                roles.append(("reimbursement", split.handle, self.db.full_name(account), years))
+        return claims, roles
+
+    def _on_fsa_attach(self, _button) -> None:
+        if self.db is None or self._transaction_handle is None:
+            return
+        transaction = self.db.get_transaction(self._transaction_handle)
+        if transaction is None:
+            return
+        claims, roles = self._fsa_options(transaction)
+        if not claims or not roles:
+            return
+        dialog = Gtk.Window(
+            title="Attach to FSA claim", transient_for=self.get_root(), modal=True
+        )
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(12)
+        dialog.set_child(box)
+        claim_pick = Gtk.DropDown.new_from_strings([
+            f"{claim.service_date} {claim.provider or claim.description or 'FSA claim'}"
+            for claim in claims
+        ])
+        role_pick = Gtk.DropDown.new_from_strings([
+            f"{role.replace('_', ' ').title()} · {account}"
+            for role, _split, account, _years in roles
+        ])
+        year_pick = Gtk.DropDown.new_from_strings(["Auto funding year"] + sorted({
+            year.isoformat() for _role, _split, _account, years in roles for year in years
+        }))
+        rows = (("Claim", claim_pick), ("As", role_pick), ("Funding year", year_pick))
+        for label, widget in rows:
+            row = Gtk.Box(spacing=8)
+            row.append(Gtk.Label(label=label, xalign=0))
+            row.append(widget)
+            box.append(row)
+        status = Gtk.Label(xalign=0, wrap=True)
+        box.append(status)
+        actions = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: dialog.close())
+        actions.append(cancel)
+        attach = Gtk.Button(label="Attach")
+        attach.add_css_class("suggested-action")
+        actions.append(attach)
+        box.append(actions)
+
+        def do_attach(_button) -> None:
+            claim = claims[claim_pick.get_selected()]
+            role, split, _account, _years = roles[role_pick.get_selected()]
+            selected_year = year_pick.get_selected()
+            year = None
+            if selected_year > 0:
+                model = year_pick.get_model()
+                item = model.get_string(selected_year)
+                from datetime import date as _date
+                year = _date.fromisoformat(item)
+            try:
+                fsa_claims.attach_transaction_to_claim(
+                    self.db, claim.handle, transaction.handle, role=role,
+                    split_handle=split, funding_year_start=year,
+                )
+            except (KeyError, ValueError) as exc:
+                status.set_text(str(exc))
+                return
+            dialog.close()
+            self.refresh()
+
+        attach.connect("clicked", do_attach)
+        dialog.present()
 
     def _on_unexpected(self, _button) -> None:
         if self.db is None or self._transaction_handle is None:

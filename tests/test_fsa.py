@@ -247,3 +247,41 @@ def test_claim_refunds_reduce_net_paid_and_rejections_do_not_reimburse(db, book)
     assert summary.rejected == Money("200.00")
     assert summary.reimbursed == Money(0)
     assert summary.status is fsa_claims.FsaClaimStatus.OPEN
+
+
+def test_review_attachment_links_payment_and_reimbursement_to_claim(db, book):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import FsaClaim
+
+    account = _fsa_account(db, book)
+    payment = Transaction.simple(
+        date(2026, 5, 2), "Medical payment", book.groceries, book.checking, "300.00"
+    )
+    reimbursement = Transaction.simple(
+        date(2026, 5, 10), "FSA reimbursement", book.checking, account.handle, "200.00"
+    )
+    with db.transaction("Claim activity") as txn:
+        db.add_transaction(payment, txn)
+        db.add_transaction(reimbursement, txn)
+    claim = FsaClaim(
+        service_date=date(2026, 5, 1),
+        provider="Clinic",
+        eob_responsibility=Money("300.00"),
+    )
+    fsa_claims.save_claim(db, claim)
+
+    fsa_claims.attach_transaction_to_claim(
+        db, claim.handle, payment.handle, role="payment"
+    )
+    fsa_claims.attach_transaction_to_claim(
+        db, claim.handle, reimbursement.handle, role="reimbursement"
+    )
+
+    stored = fsa_claims.iter_claims(db)[0]
+    assert stored.payments[0].transaction == payment.handle
+    assert stored.allocations[0].account == account.handle
+    assert stored.allocations[0].reimbursements[0].transaction == reimbursement.handle
+    summary = fsa_claims.claim_summary(db, stored, as_of=date(2026, 5, 11))
+    assert summary.paid == Money("300.00")
+    assert summary.reimbursed == Money("200.00")
+    assert summary.remaining_reimbursable == Money("100.00")

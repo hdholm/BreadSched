@@ -1503,6 +1503,44 @@ class Api:
                 total = total + split.value
         return total
 
+    def _review_fsa_options(self, transaction: Transaction) -> dict:
+        roles = []
+        for split in transaction.splits:
+            account = self.db.get_account(split.account)
+            if account is None:
+                continue
+            if account.account_class is AccountClass.EXPENSE and split.value > 0:
+                roles.append({
+                    "role": "payment", "split": split.handle,
+                    "account": self.db.full_name(account),
+                })
+            if account.account_class is AccountClass.EXPENSE and split.value < 0:
+                roles.append({
+                    "role": "refund", "split": split.handle,
+                    "account": self.db.full_name(account),
+                })
+            if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+                roles.append({
+                    "role": "reimbursement", "split": split.handle,
+                    "account": self.db.full_name(account),
+                    "years": [year.start.isoformat() for year in account.fsa_years
+                              if transaction.post_date <= (year.runout_through or year.through)],
+                })
+        claims = []
+        for claim in fsa_claims.iter_claims(self.db):
+            summary = fsa_claims.claim_summary(self.db, claim)
+            if summary.status is fsa_claims.FsaClaimStatus.FULLY_REIMBURSED:
+                continue
+            claims.append({
+                "handle": claim.handle,
+                "label": (
+                    f"{claim.service_date.isoformat()} "
+                    f"{claim.provider or claim.description or 'FSA claim'}"
+                ),
+                "remaining": summary.remaining_reimbursable,
+            })
+        return {"roles": roles, "claims": claims}
+
     def review(self, transaction_handle: str | None = None) -> dict:
         """Unresolved actuals and candidate plan occurrences for Review."""
         transactions = sorted(
@@ -1537,6 +1575,7 @@ class Api:
                 "date": transaction.post_date,
                 "description": transaction.description,
                 "amount": actual_amount,
+                "fsa": self._review_fsa_options(transaction),
             }
             for candidate in planning.match_candidates(self.db, transaction):
                 event = candidate.event
@@ -1847,6 +1886,14 @@ class Api:
         txn.add_split(Split(credit.handle, -amount, memo=memo))
         with self.db.transaction(f"Add {txn.description}") as batch:
             self.db.add_transaction(txn, batch)
+        claim_handle = str(payload.get("fsa_claim") or "").strip()
+        claim_role = str(payload.get("fsa_role") or "").strip()
+        if claim_handle and claim_role:
+            funding_year = str(payload.get("fsa_year") or "").strip()
+            fsa_claims.attach_transaction_to_claim(
+                self.db, claim_handle, txn.handle, role=claim_role,
+                funding_year_start=(date.fromisoformat(funding_year) if funding_year else None),
+            )
         return {"handle": txn.handle, "date": when, "amount": amount}
 
     def review_match(self, payload: dict) -> dict:
@@ -1895,6 +1942,18 @@ class Api:
             raise ValueError("planned occurrence does not exist")
         planning.skip_occurrence(self.db, event)
         return {"transaction": transaction.handle, "skipped": event.key}
+
+    def review_fsa_attach(self, payload: dict) -> dict:
+        funding_year = str(payload.get("funding_year") or "").strip()
+        claim = fsa_claims.attach_transaction_to_claim(
+            self.db,
+            str(payload["claim"]),
+            str(payload["transaction"]),
+            role=str(payload["role"]),
+            split_handle=str(payload.get("split") or "") or None,
+            funding_year_start=date.fromisoformat(funding_year) if funding_year else None,
+        )
+        return {"claim": claim.handle, "transaction": str(payload["transaction"])}
 
     def review_unexpected(self, payload: dict) -> dict:
         transaction = self.db.get_transaction(str(payload["transaction"]))
@@ -2200,6 +2259,7 @@ POST_ROUTES = {
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),
     "/api/review/skip": lambda a, body: a.review_skip(body),
+    "/api/review/fsa-attach": lambda a, body: a.review_fsa_attach(body),
     "/api/review/unexpected": lambda a, body: a.review_unexpected(body),
     "/api/scenario/save": lambda a, body: a.scenario_save(body),
     "/api/scenario/duplicate": lambda a, body: a.scenario_duplicate(body),
