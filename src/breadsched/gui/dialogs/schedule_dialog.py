@@ -13,10 +13,12 @@ cash-flow forecast is actually sensitive to.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
+    FormulaError,
     Money,
     PeriodType,
     PlanningFlowKind,
@@ -26,6 +28,7 @@ from ...gen.lib import (
     ScheduledSplit,
     ScheduledTransaction,
     WeekendAdjust,
+    evaluate,
     scheduled_occurrence_preview,
 )
 from ..gi_setup import Gtk
@@ -92,6 +95,9 @@ class ScheduleDialog(Gtk.Window):
             and read_only_reason is None
             and any(split.formula for split in source.splits)
         )
+        self._formula_entries: list[tuple[int, Gtk.Entry]] = []
+        self._formula_originals: list[str] = []
+        self._formula_variables_original = ""
         self._category_planning_flow = None
         self._category_ledger_direction: int | None = None
         self._frequencies = list(_FREQUENCIES)
@@ -264,6 +270,10 @@ class ScheduleDialog(Gtk.Window):
         )
         grid.attach(self.auto_check, 1, row, 1, 1)
 
+        self.formula_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.formula_box.set_visible(False)
+        box.append(self.formula_box)
+
         self.details = Gtk.Label(xalign=0, yalign=0, wrap=True, selectable=True)
         self.details.set_visible(False)
         box.append(self.details)
@@ -421,7 +431,7 @@ class ScheduleDialog(Gtk.Window):
         self.skipped_editor.set_values(source.skipped)
 
     def _protect_formula_fields(self, source: ScheduledTransaction) -> None:
-        """Keep formula-owned split/amount fields visible but non-destructive."""
+        """Protect formula accounts/amount mechanics while allowing validated formulas."""
         protected = (
             self.category,
             self.funding,
@@ -436,15 +446,98 @@ class ScheduleDialog(Gtk.Window):
         for widget in protected:
             widget.set_sensitive(False)
         self.preview.set_visible(False)
+        self._build_formula_editor(source)
         self.details.set_text(
             self._detail_text(
                 source,
-                "Formula expressions, variables, split accounts, and formula-derived "
-                "amounts are protected. Name, kind, recurrence, skipped occurrences, "
-                "and automatic-posting behavior may be edited without changing them.",
+                "Split accounts and formula-derived amount timelines remain protected. "
+                "Formula expressions and named variables may be edited when the safe "
+                "formula evaluator can validate the revised expressions.",
             )
         )
         self.details.set_visible(True)
+
+    def _build_formula_editor(self, source: ScheduledTransaction) -> None:
+        """Expose formula text and named variables without making split accounts editable."""
+        self.formula_box.set_visible(True)
+        heading = Gtk.Label(label="Formula inputs", xalign=0)
+        heading.add_css_class("heading")
+        self.formula_box.append(heading)
+        self._formula_entries = []
+        self._formula_originals = []
+        for index, split in enumerate(source.splits):
+            if not split.formula:
+                continue
+            account = self.db.get_account(split.account)
+            account_name = self.db.full_name(account) if account is not None else split.account
+            row = Gtk.Box(spacing=8)
+            label = Gtk.Label(label=account_name, xalign=0)
+            label.set_hexpand(True)
+            entry = Gtk.Entry(text=split.formula)
+            entry.set_hexpand(True)
+            entry.connect("changed", self._validate)
+            row.append(label)
+            row.append(entry)
+            self.formula_box.append(row)
+            self._formula_entries.append((index, entry))
+            self._formula_originals.append(split.formula)
+        self.formula_variables_entry = Gtk.Entry()
+        self.formula_variables_entry.set_placeholder_text("name=value; other=value")
+        variables_text = "; ".join(
+            f"{key}={value}" for key, value in sorted(source.variables.items())
+        )
+        self.formula_variables_entry.set_text(variables_text)
+        self.formula_variables_entry.connect("changed", self._validate)
+        self._formula_variables_original = variables_text
+        variables_row = Gtk.Box(spacing=8)
+        variables_label = Gtk.Label(label="Variables", xalign=0)
+        variables_label.set_hexpand(True)
+        variables_row.append(variables_label)
+        variables_row.append(self.formula_variables_entry)
+        self.formula_box.append(variables_row)
+
+    def _formula_variables(self) -> dict[str, str] | None:
+        """Parse the compact ``name=value`` formula-variable editor."""
+        text = self.formula_variables_entry.get_text().strip()
+        if not text:
+            return {}
+        variables: dict[str, str] = {}
+        for item in text.split(";"):
+            if "=" not in item:
+                return None
+            name, value = (part.strip() for part in item.split("=", 1))
+            if not re.fullmatch(r"[A-Za-z_]\w*", name) or not value:
+                return None
+            try:
+                evaluate(value, {})
+            except FormulaError:
+                return None
+            variables[name] = value
+        return variables
+
+    def _formula_inputs_changed(self) -> bool:
+        formulas = [entry.get_text() for _index, entry in self._formula_entries]
+        return (
+            formulas != self._formula_originals
+            or self.formula_variables_entry.get_text().strip()
+            != self._formula_variables_original
+        )
+
+    def _validate_formula_inputs(self) -> str | None:
+        variables = self._formula_variables()
+        if variables is None:
+            return "check formula variables"
+        context: dict[str, str | int] = dict(variables)
+        context.update({"period": 1, "i": 1})
+        for _index, entry in self._formula_entries:
+            formula = entry.get_text().strip()
+            if not formula:
+                return "formula expressions cannot be blank"
+            try:
+                evaluate(formula, context)
+            except (FormulaError, ValueError, ArithmeticError):
+                return "check formula expressions and variables"
+        return None
 
     def _load_source(self, source: ScheduledTransaction) -> None:
         """Populate the simple editor from an existing two-split schedule."""
@@ -763,6 +856,10 @@ class ScheduleDialog(Gtk.Window):
         if skipped is None:
             problems.append("check skipped occurrence dates")
         if self._formula_mode:
+            if self._formula_inputs_changed():
+                formula_problem = self._validate_formula_inputs()
+                if formula_problem:
+                    problems.append(formula_problem)
             self.save_button.set_sensitive(not problems)
             self.status.set_text(
                 "; ".join(problems).capitalize() if problems else ""
@@ -833,6 +930,12 @@ class ScheduleDialog(Gtk.Window):
             schedule.auto_create = self.auto_check.get_active()
             schedule.placeholder = self.kind.get_selected() == 1
             schedule.skipped = self._skipped(recurrence) or []
+            if self._formula_inputs_changed():
+                variables = self._formula_variables()
+                assert variables is not None
+                schedule.variables = variables
+                for split_index, entry in self._formula_entries:
+                    schedule.splits[split_index].formula = entry.get_text().strip()
             return schedule
 
         amount = self._amount()

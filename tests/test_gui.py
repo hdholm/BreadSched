@@ -1491,6 +1491,47 @@ class TestScheduleEntry:
             split.serialize() for split in source.splits
         ]
 
+    def test_formula_schedule_allows_validated_formula_and_variable_edits(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        expense = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and expense is not None
+        source = ScheduledTransaction(
+            name="Formula fixture",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(expense.handle, formula="base"),
+                ScheduledSplit(bank.handle, formula="-base"),
+            ],
+        )
+        source.variables = {"base": "100"}
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        assert len(dialog._formula_entries) == 2
+        dialog.formula_variables_entry.set_text("base=120; factor=2")
+        dialog._formula_entries[0][1].set_text("base * factor")
+        dialog._formula_entries[1][1].set_text("-(base * factor)")
+        assert dialog.save_button.get_sensitive() is True
+
+        rebuilt = dialog.build()
+        assert rebuilt.variables == {"base": "120", "factor": "2"}
+        assert [split.formula for split in rebuilt.splits] == [
+            "base * factor",
+            "-(base * factor)",
+        ]
+        assert rebuilt.resolved_splits(when=date(2026, 1, 1)) == [
+            (expense.handle, Money("240")),
+            (bank.handle, Money("-240")),
+        ]
+
+        dialog._formula_entries[0][1].set_text("unknown_name + 1")
+        assert dialog.save_button.get_sensitive() is False
+        assert "formula" in dialog.status.get_text().lower()
+
     def test_initial_schedule_selection_enables_view_edit(
         self, app, window, populated_book
     ):

@@ -43,14 +43,11 @@ Status below is current through patch 0120
   amount and the others remain explicit additional planning legs, with an ordinary
   balancing funding split. Continue with other fixed shapes only where direction and
   meaning can be preserved without guessing.
-- Formula schedules now support a protected metadata-editing mode (0119): name,
-  kind, recurrence, skipped occurrences, and automatic-posting behavior can be
-  changed while formula expressions, variables, split accounts, amount timelines,
-  and formula-derived values remain visible and preserved exactly. Patch 0120 gives
-  scenario-owned formula schedules the corresponding protected mode for name,
-  recurrence, and skipped-occurrence edits while preserving scenario formula fields
-  and source linkage. Continue toward direct formula editing only when the
-  expression/variable model can be round-tripped safely.
+- Formula schedules support protected metadata editing. Base schedules additionally
+  support validated direct editing of formula expressions and named scalar variables
+  through the existing safe evaluator (0121), while split accounts and amount
+  timelines remain protected. Scenario-owned formula schedules still use protected
+  metadata editing and should gain equivalent direct formula/variable editing next.
 - Preserve unsupported custom recurrence data rather than enabling an editor that
   would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including
@@ -132,9 +129,11 @@ Status below is current through patch 0120
 
 ## Scheduled transactions and loans
 
-- Extend formula-schedule editing beyond the protected metadata mode introduced in
-  0119 while preserving the original formulas, variables, and recurrence semantics.
-  Add safe variable/formula editing only with validation and lossless round trips.
+- Give scenario-owned formula schedules the same validated direct formula/variable
+  editing available to base schedules, preserving scenario source linkage and all
+  protected amount-timeline semantics.
+- Consider richer formula assistance only on top of the existing safe expression
+  language; do not introduce a second formula dialect or use Python ``eval``.
 - Add an approachable loan/amortization creation workflow.
 - Support per-leg amount timelines in fixed multi-split schedules.
 - Support additional advanced/custom recurrence patterns where they can be modeled
@@ -308,3 +307,6 @@ regress them:
 - Fixed schedules may contain multiple explicit planning-purpose legs; those legs
   now remain independently classified and editable while an ordinary balancing split
   continues to fund the combined transaction.
+- Base formula schedules permit validated direct editing of formula expressions and
+  named scalar variables; unchanged imported formulas that BreadSched cannot itself
+  resolve remain preservable for metadata-only edits.
