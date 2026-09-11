@@ -517,7 +517,7 @@ class PlanView(BaseView):
         self.summary.set_text(
             f"Planned cash {activity.planned_cash_change.format(parens_negative=True)}   ·   "
             f"Actual cash {activity.actual_cash_change.format(parens_negative=True)}   ·   "
-            f"Variance {activity.cash_variance.format(parens_negative=True)}   ·   "
+            f"Variance {self._report.cash_variance.format(parens_negative=True)}   ·   "
             f"{activity.unresolved_count} expected unresolved   ·   "
             f"{activity.unresolved_actual_count} actuals to review"
         )
@@ -560,7 +560,14 @@ class PlanView(BaseView):
                 ]
                 for col, value in enumerate(values, 1):
                     period = periods[col - 1]
-                    label = Gtk.Label(label=value.format(parens_negative=True), xalign=1)
+                    label = Gtk.Label(
+                        label=(
+                            value.format(parens_negative=True)
+                            if value is not None
+                            else "—"
+                        ),
+                        xalign=1,
+                    )
                     button = Gtk.Button()
                     button.set_child(label)
                     button.set_tooltip_text(

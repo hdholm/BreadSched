@@ -792,7 +792,7 @@ class Api:
                 "summary": {
                     "planned_cash": compare_report.activity.planned_cash_change,
                     "actual_cash": compare_report.activity.actual_cash_change,
-                    "variance": compare_report.activity.cash_variance,
+                    "variance": compare_report.cash_variance,
                     "planned_cash_delta": (
                         totals.planned_cash_change
                         - compare_report.activity.planned_cash_change
@@ -802,7 +802,7 @@ class Api:
                         - compare_report.activity.actual_cash_change
                     ),
                     "variance_delta": (
-                        totals.cash_variance - compare_report.activity.cash_variance
+                        report.cash_variance - compare_report.cash_variance
                     ),
                 },
                 "categories": [],
@@ -812,7 +812,9 @@ class Api:
                 zeroes = [Money(0) for _ in row.planned]
                 other_planned = other.planned if other is not None else zeroes
                 other_actual = other.actual if other is not None else zeroes
-                other_variance = other.variance if other is not None else zeroes
+                other_variance: list[Money | None] = (
+                    other.variance if other is not None else list(zeroes)
+                )
                 comparison["categories"].append(
                     {
                         "account": row.account,
@@ -832,7 +834,11 @@ class Api:
                             )
                         ],
                         "variance_delta": [
-                            value - alternate
+                            (
+                                value - alternate
+                                if value is not None and alternate is not None
+                                else None
+                            )
                             for value, alternate in zip(
                                 row.variance, other_variance, strict=True
                             )
@@ -867,7 +873,7 @@ class Api:
             "summary": {
                 "planned_cash": totals.planned_cash_change,
                 "actual_cash": totals.actual_cash_change,
-                "variance": totals.cash_variance,
+                "variance": report.cash_variance,
                 "unresolved_expected": totals.unresolved_count,
                 "unresolved_actuals": totals.unresolved_actual_count,
             },

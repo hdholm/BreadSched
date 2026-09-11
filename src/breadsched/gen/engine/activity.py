@@ -266,10 +266,7 @@ class CategoryActivity:
     depth: int
     planned: list[Money]
     actual: list[Money]
-
-    @property
-    def variance(self) -> list[Money]:
-        return [actual - planned for planned, actual in zip(self.planned, self.actual, strict=True)]
+    variance: list[Money | None]
 
 
 
@@ -320,9 +317,12 @@ class CategoryPeriodDetail:
     actual: Money
     planned_events: tuple[CategoryPlannedDetail, ...]
     actual_transactions: tuple[CategoryActualDetail, ...]
+    as_of: date
 
     @property
-    def variance(self) -> Money:
+    def variance(self) -> Money | None:
+        if self.start > self.as_of:
+            return None
         return self.actual - self.planned
 
 
@@ -332,6 +332,16 @@ class CategoryReport:
 
     activity: ActivityReport
     categories: list[CategoryActivity]
+    as_of: date
+
+    @property
+    def cash_variance(self) -> Money:
+        """Actual minus planned cash only through the current reporting period."""
+        return _sum_money(
+            period.cash_variance
+            for period in self.activity.periods
+            if period.start <= self.as_of
+        )
 
     @property
     def income(self) -> tuple[CategoryActivity, ...]:
@@ -353,6 +363,7 @@ def explain_category_period(
     end: date,
     *,
     scenario: Scenario | None = None,
+    as_of: date | None = None,
 ) -> CategoryPeriodDetail:
     """Explain one category-period value from the same exact-dated activity stream."""
     if end < start:
@@ -446,6 +457,7 @@ def explain_category_period(
         account_class=account.account_class, start=start, end=end,
         planned=planned_total, actual=actual_total, planned_events=tuple(planned_rows),
         actual_transactions=tuple(actual_rows),
+        as_of=as_of or date.today(),
     )
 
 
@@ -646,6 +658,7 @@ def build_category_report(
     *,
     period: ReportingPeriod | str = ReportingPeriod.MONTH,
     scenario: Scenario | None = None,
+    as_of: date | None = None,
 ) -> CategoryReport:
     """Derive category-period values from planned occurrences and actual splits.
 
@@ -654,6 +667,7 @@ def build_category_report(
     Parent category rows are roll-ups of their descendants.
     """
     activity = build_activity_report(db, start, end, period=period, scenario=scenario)
+    effective_as_of = as_of or date.today()
     accounts = {account.handle: account for account in db.iter_accounts()}
     periods = activity.periods
     direct_planned: dict[str, list[Money]] = {}
@@ -734,7 +748,18 @@ def build_category_report(
                 depth=depth,
                 planned=rolled(handle, direct_planned),
                 actual=rolled(handle, direct_actual),
+                variance=[
+                    actual - planned if bucket.start <= effective_as_of else None
+                    for planned, actual, bucket in zip(
+                        rolled(handle, direct_planned),
+                        rolled(handle, direct_actual),
+                        periods,
+                        strict=True,
+                    )
+                ],
             )
         )
     rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
-    return CategoryReport(activity=activity, categories=rows)
+    return CategoryReport(
+        activity=activity, categories=rows, as_of=effective_as_of
+    )

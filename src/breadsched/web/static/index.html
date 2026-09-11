@@ -476,16 +476,16 @@ async function showPlan() {
           title: category.full_name,
         }, category.name),
         category[currentPlan.measure].map((value, index) =>
-          el("td", { class: `${cls(value)} plan-cell` },
+          el("td", { class: `${value == null ? "num muted" : cls(value)} plan-cell` },
             el("button", {
               class: "plan-cell-button",
               type: "button",
               title: `Explain ${category.full_name} — ${data.periods[index].label}`,
-              "aria-label": `Explain ${category.full_name} — ${data.periods[index].label}: ${money(value)}`,
+              "aria-label": `Explain ${category.full_name} — ${data.periods[index].label}: ${value == null ? "not applicable" : money(value)}`,
               onclick: () => openPlanDetail(
                 category, data.periods[index], currentPlan.scenario, data.periods[index].label),
-            }, money(value),
-              deltas ? el("span", {
+            }, value == null ? "—" : money(value),
+              deltas && deltas[index] != null ? el("span", {
                 class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
                 title: `Active scenario minus ${comparison.name}`,
               }, `Δ ${money(deltas[index])}`) : null)))));
@@ -556,7 +556,8 @@ async function openPlanDetail(category, period, scenarioHandle, periodLabel) {
         [["Plan", summary.planned], ["Actual", summary.actual], ["Variance", summary.variance]]
           .map(([label, value]) => el("div", { class: "card" },
             el("div", { class: "label" }, label),
-            el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` }, money(value))))),
+            el("div", { class: `value ${value != null && Number(value) < 0 ? "neg" : ""}` },
+              value == null ? "—" : money(value))))),
       el("h3", {}, "Planned occurrences"),
       plannedRows.length
         ? table(["Planned", "Description", "Source", "Status",

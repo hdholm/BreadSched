@@ -49,11 +49,16 @@ class PlanDetailDialog(Gtk.Window):
                 xalign=0,
             )
         )
+        variance = (
+            detail.variance.format(parens_negative=True)
+            if detail.variance is not None
+            else "—"
+        )
         summary = Gtk.Label(
             label=(
                 f"Plan {detail.planned.format(parens_negative=True)}   ·   "
                 f"Actual {detail.actual.format(parens_negative=True)}   ·   "
-                f"Variance {detail.variance.format(parens_negative=True)}"
+                f"Variance {variance}"
             ),
             xalign=0,
         )

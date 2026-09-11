@@ -280,3 +280,48 @@ class TestCategoryPlanning:
         utility = next(item for item in report.expenses if item.account == book.utilities)
         assert parent.planned == [Money("125.00")]
         assert utility.planned == [Money("125.00")]
+
+    def test_future_period_variance_is_not_applicable_but_actual_is_retained(
+        self, db, book
+    ):
+        bill = _monthly_bill(book, start=date(2026, 1, 7), amount="100.00")
+        future_actual = Transaction.simple(
+            date(2026, 3, 7),
+            "Future-dated electric",
+            book.utilities,
+            book.checking,
+            "90.00",
+        )
+        with db.transaction("future plan and actual") as txn:
+            db.add_scheduled(bill, txn)
+            db.add_transaction(future_actual, txn)
+
+        report = activity.build_category_report(
+            db,
+            date(2026, 1, 1),
+            date(2026, 3, 31),
+            as_of=date(2026, 2, 15),
+        )
+        row = next(item for item in report.expenses if item.account == book.utilities)
+
+        assert row.planned == [Money("100.00"), Money("100.00"), Money("100.00")]
+        assert row.actual == [Money(0), Money(0), Money("90.00")]
+        assert row.variance == [Money("-100.00"), Money("-100.00"), None]
+        assert report.cash_variance == Money("200.00")
+
+    def test_future_period_detail_variance_is_not_applicable(self, db, book):
+        bill = _monthly_bill(book, start=date(2026, 3, 7), amount="100.00")
+        with db.transaction("future plan") as txn:
+            db.add_scheduled(bill, txn)
+
+        detail = activity.explain_category_period(
+            db,
+            book.utilities,
+            date(2026, 3, 1),
+            date(2026, 3, 31),
+            as_of=date(2026, 2, 15),
+        )
+
+        assert detail.planned == Money("100.00")
+        assert detail.actual == Money(0)
+        assert detail.variance is None
