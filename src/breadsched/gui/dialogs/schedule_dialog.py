@@ -87,6 +87,7 @@ class ScheduleDialog(Gtk.Window):
         self.db = db
         self.source = source
         self.read_only_reason = read_only_reason
+        self._category_planning_flow = None
         self._frequencies = list(_FREQUENCIES)
         if source is not None and not any(
             period is source.recurrence.period
@@ -401,6 +402,10 @@ class ScheduleDialog(Gtk.Window):
             ),
             None,
         )
+        if flow is None:
+            planning_flows = [item for item in parts if item[1].planning_flow is not None]
+            if len(planning_flows) == 1:
+                flow = planning_flows[0]
         if flow is not None:
             flow_account, flow_split = flow
             others = [item for item in parts if item is not flow]
@@ -437,7 +442,12 @@ class ScheduleDialog(Gtk.Window):
                         0,
                     )
                 )
-                amount = abs(flow_split.resolve(source.variables) * flow_account.sign())
+                resolved_flow = flow_split.resolve(source.variables)
+                if flow_split.planning_flow is not None:
+                    self._category_planning_flow = flow_split.planning_flow
+                    amount = flow_split.planning_flow.plan_amount(resolved_flow)
+                else:
+                    amount = abs(resolved_flow * flow_account.sign())
                 self.amount_entry.set_text(str(amount.to_decimal()))
                 self.category_memo_entry.set_text(flow_split.memo or "")
                 self.funding_memo_entry.set_text(funding_item[1].memo or "")
@@ -717,7 +727,11 @@ class ScheduleDialog(Gtk.Window):
             schedule.description = schedule.name
         schedule.recurrence = recurrence
         planning_kind = _PLANNING_FLOWS[self.planning_flow.get_selected()][1]
-        category_value = amount * category.sign()
+        category_value = (
+            self._category_planning_flow.ledger_amount(amount)
+            if self._category_planning_flow is not None
+            else amount * category.sign()
+        )
         extra_splits = []
         extra_total = Money(0)
         for account_index, raw_amount, purpose_index, memo in self.additional_splits.values():
@@ -739,6 +753,7 @@ class ScheduleDialog(Gtk.Window):
                 category.handle,
                 category_value,
                 memo=self.category_memo_entry.get_text().strip(),
+                planning_flow=self._category_planning_flow,
             ),
             *extra_splits,
             ScheduledSplit(

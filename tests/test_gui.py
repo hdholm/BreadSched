@@ -1173,6 +1173,52 @@ class TestScheduleEntry:
         rebuilt = dialog.build()
         assert rebuilt.recurrence.serialize() == source.recurrence.serialize()
 
+    def test_fixed_planning_transfer_without_income_expense_is_editable(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType, PlanningFlowKind
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        assert bank is not None
+        with app.db.transaction("add planning account") as txn:
+            planning_account = Account(
+                name="Planning account",
+                atype=AccountType.ASSET,
+                parent=app.db.root_account().handle,
+            )
+            app.db.add_account(planning_account, txn)
+        source = ScheduledTransaction(
+            name="Planned transfer",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(
+                    planning_account.handle,
+                    Money("150.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+                ScheduledSplit(bank.handle, Money("-150.00")),
+            ],
+        )
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+        assert view._editability_reason(source) == ""
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+        assert [
+            (split.account, split.amount, split.planning_flow)
+            for split in rebuilt.splits
+        ] == [
+            (
+                planning_account.handle,
+                Money("150.00"),
+                PlanningFlowKind.RETIREMENT_SAVING,
+            ),
+            (bank.handle, Money("-150.00"), None),
+        ]
+
     def test_an_unsupported_formula_schedule_is_still_viewable(
         self, app, window, populated_book
     ):

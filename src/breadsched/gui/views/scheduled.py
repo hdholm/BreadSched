@@ -311,21 +311,26 @@ class ScheduledView(BaseView):
             )
         classes = []
         funding_candidates = 0
+        planning_flow_splits = 0
         for split in sched.splits:
             account = (
                 self.db.get_account(split.account) if self.db is not None else None
             )
             account_class = account.account_class.value if account is not None else ""
             classes.append(account_class)
+            if split.planning_flow is not None:
+                planning_flow_splits += 1
             if (
                 account_class not in {"income", "expense"}
                 and split.planning_flow is None
             ):
                 funding_candidates += 1
-        if not any(value in {"income", "expense"} for value in classes):
+        has_income_expense = any(value in {"income", "expense"} for value in classes)
+        if not has_income_expense and planning_flow_splits != 1:
             return (
-                "This schedule has no Income/Expense leg that the fixed schedule "
-                "editor can use as its primary amount."
+                "This schedule has neither an Income/Expense leg nor exactly one "
+                "explicit planning-purpose leg that the fixed schedule editor can "
+                "use as its primary amount."
             )
         if funding_candidates < 1:
             return (

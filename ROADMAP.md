@@ -9,7 +9,7 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0112 (`scheduled: preserve imported fixed recurrence`).
+Status below is current through patch 0113 (`scheduled: edit fixed planning transfers`).
 
 ## Near-term correctness and daily-use work
 
@@ -27,7 +27,9 @@ Status below is current through patch 0112 (`scheduled: preserve imported fixed 
   preserve per-split memos, and round-trip the designated funding leg only once.
 - Expand the schedule editor so every fixed schedule that can be represented safely
   by BreadSched can be edited without losing recurrence, split, formula, override,
-  or import metadata.
+  or import metadata. Fixed balance-sheet transfers with exactly one explicit
+  planning-purpose leg and an ordinary funding leg are editable as of 0113; continue
+  with other unambiguous fixed shapes.
 - Preserve unsupported formula/custom recurrence data rather than enabling an
   editor that would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including
@@ -278,3 +280,6 @@ regress them:
 - Imported fixed schedules with uncommon recurrence multipliers can remain editable;
   when the recurrence kind is retained, hidden GnuCash recurrence details such as
   end-of-month or semi-month firing days are preserved rather than normalized away.
+- Fixed balance-sheet schedules with exactly one explicit planning-purpose leg and
+  an ordinary funding leg can be edited without requiring a synthetic Income/Expense
+  category; the planning purpose remains attached to the original split.
