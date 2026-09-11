@@ -22,7 +22,8 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import add_months
-from ..lib.scenario import Assumptions, ProjectionBasis, Scenario
+from ..lib.scenario import Assumptions, ProjectionBasis, Scenario, ScenarioSchedule
+from ..lib.scheduled import ScheduledTransaction
 from . import ledger, planning, schedule
 
 __all__ = [
@@ -512,8 +513,24 @@ def explain_month(
 # ---------------------------------------------------------------------- rates
 
 
-def _resolve_rate(assumptions: Assumptions, account: Account) -> Decimal:
-    """Per-account override, then the account's own rate, then the global default."""
+def _resolve_rate(
+    assumptions: Assumptions,
+    account: Account,
+    *,
+    schedule_driven_liabilities: set[str] | None = None,
+) -> Decimal:
+    """Resolve one account's projection rate.
+
+    A liability whose interest is already represented by a formula schedule must
+    not also accrue the scenario's generic liability rate.  This matters both for
+    loans created by BreadSched and imported GnuCash loans.
+    """
+    if (
+        account.account_class is AccountClass.LIABILITY
+        and schedule_driven_liabilities
+        and account.handle in schedule_driven_liabilities
+    ):
+        return Decimal(0)
     if account.handle in assumptions.per_account:
         return assumptions.per_account[account.handle]
     if account.account_class is AccountClass.LIABILITY:
@@ -637,6 +654,7 @@ def _advance_event_state(
     holdings: dict[str, Money],
     debts: dict[str, Money],
     flows: _EventMonthFlows,
+    schedule_driven_liabilities: set[str],
 ) -> Money:
     """Accrue state from one event date to the next without inventing cash events."""
     points = [start, *timeline.boundaries_between(start, end), end]
@@ -657,7 +675,14 @@ def _advance_event_state(
 
         for handle, balance in list(holdings.items()):
             account = accounts[handle]
-            rate = _period_growth_rate(_resolve_rate(assumptions, account), days)
+            rate = _period_growth_rate(
+                _resolve_rate(
+                    assumptions,
+                    account,
+                    schedule_driven_liabilities=schedule_driven_liabilities,
+                ),
+                days,
+            )
             growth = (
                 (balance * Money(rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
                 if rate
@@ -670,7 +695,14 @@ def _advance_event_state(
 
         for handle, owed in list(debts.items()):
             account = accounts[handle]
-            rate = _period_growth_rate(_resolve_rate(assumptions, account), days)
+            rate = _period_growth_rate(
+                _resolve_rate(
+                    assumptions,
+                    account,
+                    schedule_driven_liabilities=schedule_driven_liabilities,
+                ),
+                days,
+            )
             charge = (
                 (owed * Money(rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
                 if (rate and owed > 0)
@@ -688,6 +720,7 @@ def _event_escalation_factor(
     timeline: _AssumptionTimeline,
     event: planning.PlannedEvent,
     accounts: dict[str, Account],
+    formula_schedule_handles: set[str],
 ) -> Decimal:
     """Return the scenario escalation applied to one unresolved schedule event.
 
@@ -700,6 +733,7 @@ def _event_escalation_factor(
         event.source
         not in (planning.EventSource.SCHEDULED, planning.EventSource.SCENARIO_SCHEDULE)
         or event.status is planning.EventStatus.ACTUALIZED
+        or event.source_handle in formula_schedule_handles
     ):
         return _ONE
 
@@ -730,10 +764,13 @@ def _apply_event(
     holdings: dict[str, Money],
     debts: dict[str, Money],
     flows: _EventMonthFlows,
+    formula_schedule_handles: set[str],
 ) -> Money:
     """Apply one event's effective splits to financial state on its exact date."""
     flows.events.append(event)
-    factor = _event_escalation_factor(scenario, timeline, event, accounts)
+    factor = _event_escalation_factor(
+        scenario, timeline, event, accounts, formula_schedule_handles
+    )
     for planned_split in event.splits:
         account = accounts.get(planned_split.account)
         if account is None or account.exclude_from_projection:
@@ -809,6 +846,28 @@ def _project_events(
         elif account.account_class is AccountClass.LIABILITY:
             debts[account.handle] = opening
 
+    formula_schedule_handles: set[str] = set()
+    schedule_driven_liabilities: set[str] = set()
+
+    def record_formula_schedule(
+        scheduled_tx: ScheduledTransaction | ScenarioSchedule,
+    ) -> None:
+        if not any(split.formula for split in scheduled_tx.splits):
+            return
+        formula_schedule_handles.add(scheduled_tx.handle)
+        for split in scheduled_tx.splits:
+            liability_account = accounts.get(split.account)
+            if (
+                liability_account is not None
+                and liability_account.account_class is AccountClass.LIABILITY
+            ):
+                schedule_driven_liabilities.add(liability_account.handle)
+
+    for scheduled_tx in db.iter_scheduled():
+        record_formula_schedule(scheduled_tx)
+    for scenario_schedule in scenario.schedule_overrides:
+        record_formula_schedule(scenario_schedule)
+
     _report_progress(progress, start, start, end, "Preparing events")
     all_events = planning.scenario_events(db, scenario, start, end)
     for event in all_events:
@@ -843,15 +902,18 @@ def _project_events(
         for event in events_by_month.get((month.year, month.month), []):
             _report_progress(progress, event.when, start, end, "Applying scheduled events")
             cash = _advance_event_state(
-                timeline, accounts, cursor, event.when, cash, holdings, debts, flows
+                timeline, accounts, cursor, event.when, cash, holdings, debts, flows,
+                schedule_driven_liabilities,
             )
             cash = _apply_event(
-                scenario, timeline, event, accounts, cash, holdings, debts, flows
+                scenario, timeline, event, accounts, cash, holdings, debts, flows,
+                formula_schedule_handles,
             )
             cursor = event.when
 
         cash = _advance_event_state(
-            timeline, accounts, cursor, next_month, cash, holdings, debts, flows
+            timeline, accounts, cursor, next_month, cash, holdings, debts, flows,
+            schedule_driven_liabilities,
         )
 
         month_ledger = MonthLedger(

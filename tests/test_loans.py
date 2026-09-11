@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 
 from breadsched.gen.engine.loans import LoanTerms, build_schedule, create_loan
-from breadsched.gen.lib import Money, PlanningFlowKind, ScheduledSplit
+from breadsched.gen.lib import Assumptions, Money, PlanningFlowKind, ScheduledSplit
 from breadsched.gen.lib.finance import amortisation_schedule, fv, ipmt, nper, pmt, ppmt, pv
 from breadsched.gen.lib.formula import FormulaError, evaluate, normalise
 
@@ -207,6 +207,37 @@ class TestLoanSetup:
         result = projection.project(db, scenario)
         assert result.rows[-1].liabilities < result.rows[0].liabilities
         assert not any("does not balance" in w for w in result.warnings)
+
+    def test_formula_loan_projection_follows_its_amortisation_table(self, db, terms):
+        from breadsched.gen.engine import projection
+        from breadsched.gen.lib import ProjectionBasis, Scenario
+
+        create_loan(db, terms)
+        scenario = Scenario(
+            name="Economic consistency",
+            start=date(2026, 1, 1),
+            years=5,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=Assumptions(
+                income_growth="0.04",
+                expense_inflation="0.03",
+                investment_return="0",
+                cash_interest="0",
+                liability_interest="0.07",
+            ),
+        )
+
+        result = projection.project(db, scenario)
+        expected = amortisation_schedule(
+            terms.period_rate, terms.periods, terms.principal.rate()
+        )[59]["balance"]
+
+        assert abs(result.rows[-1].liabilities.to_decimal() - expected) < Decimal("0.05")
+        first_payment = result.rows[0].expense + result.rows[0].debt_payments
+        later_payment = result.rows[12].expense + result.rows[12].debt_payments
+        assert first_payment == terms.payment()
+        assert later_payment == terms.payment()
+        assert result.rows[-1].liabilities > Money(0)
 
     def test_plan_separates_interest_expense_from_debt_principal(self, db, terms):
         from breadsched.gen.engine import activity

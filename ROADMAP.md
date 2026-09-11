@@ -9,8 +9,66 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0126
-(`accounts: preserve imported account precision`).
+Status below is current through patch 0127
+(`hardening: keep formula loans economically consistent`).
+
+## Product direction and current hardening phase
+
+BreadSched is intended to become a **household-finance replacement for GnuCash**
+over the longer term, not a business-accounting clone.  It should eventually cover
+the household workflows needed for day-to-day use -- accounts/registers,
+reconciliation, scheduled transactions, planning, scenarios, projection,
+investments/retirement, and common household imports -- while deliberately leaving
+GnuCash's business-oriented accounting features out of scope.
+
+Until that household feature set is sufficiently complete, **GnuCash compatibility
+is a first-class requirement**.  Users must be able to keep GnuCash as the ledger
+system of record while using BreadSched's planning, scenario, projection, FSA, and
+analysis features without losing imported semantics or BreadSched-owned planning
+work on re-import.  Compatibility is therefore transitional architecture, not an
+indication that BreadSched will permanently remain only a GnuCash companion.
+
+**Interface decision:** GTK4 is the canonical/reference interface and Linux is the
+primary native desktop target.  The web interface remains a supported parity
+interface for financial behavior and major workflows.  Windows and macOS may
+eventually be served either by packaged GTK4 or by a web-based desktop/view layer,
+but that must not demote GTK4 or permit the two interfaces to implement different
+financial semantics.
+
+The immediate development priority is an **architecture-hardening phase** before
+more broad feature expansion.  Findings from an independent repository review
+identified correctness, security, atomicity, and realistic-book performance issues
+that are more urgent than additional UI breadth.  Work in this phase should proceed
+roughly in this order:
+
+1. Projection/loan economic correctness: formula loans must not be inflated by
+   generic expense inflation or separately charged generic liability interest; add
+   explicit schedule growth policy so multi-split payroll can receive income growth;
+   then fix recurrence period numbering and start-of-period loan mathematics.
+2. Harden the formula evaluator: correct fractional powers and GnuCash argument/
+   grouping parsing, bound expression complexity/powers, and convert evaluator
+   failures consistently to ``FormulaError``.
+3. Harden the web parity surface: validate Host and Origin, require JSON for writes,
+   and use an unguessable per-server token (or an equivalently strong same-origin
+   design) with regression tests for hostile requests.
+4. Preserve BreadSched-owned planning/classification/claim state across GnuCash
+   re-import.  Longer term, move planning resolutions/classifications out of ledger
+   objects where that materially simplifies safe synchronization.
+5. Replace O(book) verification on every write with changed-record/incremental
+   verification while retaining full ``verify`` for diagnostics, migrations, and
+   tests.  Add a realistic-book performance gate.
+6. Close transaction/undo holes around metadata and move financial records such as
+   FSA claims into normal transactional persistence rather than an unversioned
+   metadata blob.
+7. Expand quality gates: mypy across CLI/web and then GUI with an explicit baseline,
+   ``ruff format --check``, security regressions, recurrence property tests, and
+   realistic projection/storage benchmarks.
+8. Finish the deliberate legacy Budget-domain migration, then return to register,
+   reconciliation, investment/retirement, and other daily-use feature work.
+
+Cross-cutting workflow logic should increasingly move into application/service
+operations shared by GTK, web, and CLI.  UI parity means sharing use cases and
+financial semantics, not duplicating business rules in two presentation layers.
 
 ## Near-term correctness and daily-use work
 
@@ -180,6 +238,13 @@ This remains one of the largest functional gaps.
 
 ## Projection and scenarios
 
+- Formula-driven schedules are exempt from generic income/expense escalation as of
+  0127, and liabilities whose interest is represented by a formula schedule no
+  longer also accrue the scenario's generic liability rate. Preserve the economic
+  regression that compares projected loan balance to the amortisation table.
+- Add an explicit per-schedule growth policy (none, income growth, expense inflation,
+  or custom) so multi-split payroll and other mixed Income/Expense schedules grow
+  intentionally rather than being silently excluded by account-shape heuristics.
 - Improve projection caching/reuse without making saved scenarios store stale
   calculated results.
 - Add cancellation/progress reporting for expensive projections.
@@ -322,3 +387,7 @@ regress them:
 - Base formula schedules permit validated direct editing of formula expressions and
   named scalar variables; unchanged imported formulas that BreadSched cannot itself
   resolve remain preservable for metadata-only edits.
+- Formula-driven loan schedules are not escalated by generic expense inflation and
+  their liabilities do not receive a second generic liability-interest accrual; an
+  economic-sense projection test anchors the resulting balance to the amortisation
+  table.
