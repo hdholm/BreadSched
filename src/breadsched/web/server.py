@@ -314,7 +314,16 @@ class Api:
         payments = []
         refunds = []
         reimbursements = []
+        fsa_years = [
+            year
+            for account in self.db.iter_accounts()
+            if account.planning_role is AccountPlanningRole.FSA
+            for year in account.fsa_years
+        ]
+        candidate_start = min((year.start for year in fsa_years), default=None)
         for transaction in self.db.iter_transactions():
+            if candidate_start is not None and transaction.post_date < candidate_start:
+                continue
             for split in transaction.splits:
                 account = self.db.get_account(split.account)
                 if account is None:
@@ -344,9 +353,9 @@ class Api:
             if account.planning_role is AccountPlanningRole.FSA
         ]
         return {
-            "payments": payments[-250:],
-            "refunds": refunds[-250:],
-            "reimbursements": reimbursements[-250:],
+            "payments": payments,
+            "refunds": refunds,
+            "reimbursements": reimbursements,
             "fsa_accounts": fsa_accounts,
         }
 
@@ -1527,10 +1536,9 @@ class Api:
                               if transaction.post_date <= (year.runout_through or year.through)],
                 })
         claims = []
-        for claim in fsa_claims.iter_claims(self.db):
+        for suggestion in fsa_claims.suggest_claims_for_transaction(self.db, transaction):
+            claim = suggestion.claim
             summary = fsa_claims.claim_summary(self.db, claim)
-            if summary.status is fsa_claims.FsaClaimStatus.FULLY_REIMBURSED:
-                continue
             claims.append({
                 "handle": claim.handle,
                 "label": (
@@ -1538,6 +1546,8 @@ class Api:
                     f"{claim.provider or claim.description or 'FSA claim'}"
                 ),
                 "remaining": summary.remaining_reimbursable,
+                "score": suggestion.score,
+                "reason": suggestion.reason,
             })
         return {"roles": roles, "claims": claims}
 

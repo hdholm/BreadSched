@@ -285,3 +285,30 @@ def test_review_attachment_links_payment_and_reimbursement_to_claim(db, book):
     assert summary.paid == Money("300.00")
     assert summary.reimbursed == Money("200.00")
     assert summary.remaining_reimbursable == Money("100.00")
+
+
+def test_claim_suggestions_rank_service_context(db, book):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import FsaClaim
+
+    close = FsaClaim(
+        service_date=date(2026, 5, 1),
+        provider="Easton Dental",
+        description="Crown",
+    )
+    distant = FsaClaim(
+        service_date=date(2026, 1, 1),
+        provider="Unrelated clinic",
+    )
+    fsa_claims.save_claim(db, close)
+    fsa_claims.save_claim(db, distant)
+    payment = Transaction.simple(
+        date(2026, 5, 3), "Easton Dental crown payment",
+        book.groceries, book.checking, "400.00"
+    )
+
+    suggestions = fsa_claims.suggest_claims_for_transaction(db, payment)
+
+    assert suggestions[0].claim.handle == close.handle
+    assert suggestions[0].score > suggestions[1].score
+    assert "description match" in suggestions[0].reason

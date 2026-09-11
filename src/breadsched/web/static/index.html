@@ -430,20 +430,51 @@ async function openFsaClaimsEditor() {
   const provider = el("input", { placeholder:"Provider" });
   const description = el("input", { placeholder:"Description" });
   const eob = el("input", { placeholder:"EOB patient responsibility" });
-  const paymentSelect = el("select", { multiple:"multiple", size:"5" },
-    data.candidates.payments.map((item) => el("option", {
-      value:JSON.stringify({transaction:item.transaction, split:item.split}),
-    }, `${item.date} ${item.description} — ${item.account_name} ${money(item.amount)}`)));
-  const refundSelect = el("select", { multiple:"multiple", size:"4" },
-    data.candidates.refunds.map((item) => el("option", {
-      value:JSON.stringify({transaction:item.transaction, split:item.split}),
-    }, `${item.date} ${item.description} — ${item.account_name} ${money(item.amount)}`)));
+  const paymentSelect = el("select", { multiple:"multiple", size:"5" });
+  const refundSelect = el("select", { multiple:"multiple", size:"4" });
   const allocations = el("div", { class:"stack" });
 
+  const linkValue = (item) => JSON.stringify({
+    transaction:item.transaction, split:item.split,
+  });
   const selectLinks = (select, links) => {
     const wanted = new Set((links || []).map((link)=>JSON.stringify(link)));
     Array.from(select.options).forEach((option)=>{ option.selected = wanted.has(option.value); });
   };
+  const claimWindow = () => {
+    if (!service.value) return null;
+    const years = data.candidates.fsa_accounts.flatMap((account) =>
+      (account.years || []).filter((year) =>
+        year.start <= service.value && service.value <= year.through));
+    if (!years.length) return null;
+    return { start:years.map((year)=>year.start).sort()[0] };
+  };
+  const focusCandidateDate = (select) => {
+    if (!service.value) return;
+    requestAnimationFrame(() => {
+      const option = Array.from(select.options).find(
+        (item)=>item.dataset.date >= service.value);
+      if (option) option.scrollIntoView({ block:"start" });
+    });
+  };
+  const candidateOptions = (rows) => rows.map((item) => el("option", {
+    value:linkValue(item), "data-date":item.date,
+  }, `${item.date} ${item.description} — ${item.account_name} ${money(item.amount)}`));
+  const refreshClaimCandidates = (paymentLinks=null, refundLinks=null) => {
+    const window = claimWindow();
+    const within = (item) => !window || window.start <= item.date;
+    const currentPayments = paymentLinks || Array.from(paymentSelect.selectedOptions).map(
+      (option)=>JSON.parse(option.value));
+    const currentRefunds = refundLinks || Array.from(refundSelect.selectedOptions).map(
+      (option)=>JSON.parse(option.value));
+    paymentSelect.replaceChildren(...candidateOptions(data.candidates.payments.filter(within)));
+    refundSelect.replaceChildren(...candidateOptions(data.candidates.refunds.filter(within)));
+    selectLinks(paymentSelect, currentPayments);
+    selectLinks(refundSelect, currentRefunds);
+    focusCandidateDate(paymentSelect);
+    focusCandidateDate(refundSelect);
+  };
+  service.addEventListener("change", ()=>refreshClaimCandidates());
   const addAllocation = (initial=null) => {
     const accountSelect = el("select", {}, data.candidates.fsa_accounts.map((account) =>
       el("option", { value:account.handle }, account.name)));
@@ -468,14 +499,21 @@ async function openFsaClaimsEditor() {
       yearSelect.replaceChildren(...((account?.years || []).map((year) =>
         el("option", { value:year.start }, `${year.start} – ${year.through}`))));
       if (wantedYear) yearSelect.value = wantedYear;
+      const selectedYear = (account?.years || []).find(
+        (year)=>year.start === yearSelect.value);
       reimburse.replaceChildren(...data.candidates.reimbursements
         .filter((item)=>item.account === accountSelect.value)
+        .filter((item)=>!selectedYear || (
+          selectedYear.start <= item.date
+          && item.date <= (selectedYear.runout_through || selectedYear.through)))
         .map((item)=>el("option", {
-          value:JSON.stringify({transaction:item.transaction, split:item.split}),
+          value:linkValue(item), "data-date":item.date,
         }, `${item.date} ${item.description} — ${money(item.amount)}`)));
       if (initial) selectLinks(reimburse, initial.reimbursements);
+      focusCandidateDate(reimburse);
     };
     accountSelect.onchange = ()=>{ initial = null; refresh(); };
+    yearSelect.onchange = ()=>{ initial = null; refresh(); };
     const row = el("div", { class:"card" },
       el("div", { class:"row" }, accountSelect, yearSelect, target,
         el("button", { class:"action", type:"button", onclick:()=>row.remove() },
@@ -496,7 +534,7 @@ async function openFsaClaimsEditor() {
   const clearForm = () => {
     editingHandle = null;
     service.value = ""; provider.value = ""; description.value = ""; eob.value = "";
-    selectLinks(paymentSelect, []); selectLinks(refundSelect, []);
+    refreshClaimCandidates([], []);
     allocations.replaceChildren();
   };
   const loadClaim = (claim) => {
@@ -504,7 +542,7 @@ async function openFsaClaimsEditor() {
     service.value = claim.service_date; provider.value = claim.provider || "";
     description.value = claim.description || "";
     eob.value = claim.eob_responsibility || "";
-    selectLinks(paymentSelect, claim.payments); selectLinks(refundSelect, claim.refunds);
+    refreshClaimCandidates(claim.payments, claim.refunds);
     (claim.allocations || []).forEach((allocation)=>addAllocation(allocation));
   };
   const renderList = () => {
@@ -556,6 +594,7 @@ async function openFsaClaimsEditor() {
     });
     backdrop.remove(); say(editingHandle ? "FSA claim updated." : "FSA claim saved."); render();
   };
+  refreshClaimCandidates([], []);
   renderList();
   const form = el("section", { class:"detail-dialog wide" },
     el("h2", {}, "FSA claims"), list,
@@ -1467,8 +1506,8 @@ async function showReview() {
   let fsaAttach = null;
   if (fsaOptions.claims.length && fsaOptions.roles.length) {
     const claimSelect = el("select", {},
-      fsaOptions.claims.map((claim) => el("option", { value: claim.handle },
-        `${claim.label} · remaining ${money(claim.remaining)}`)));
+      fsaOptions.claims.map((claim, index) => el("option", { value: claim.handle },
+        `${index === 0 ? "Suggested · " : ""}${claim.label} · remaining ${money(claim.remaining)} · ${claim.reason}`)));
     const roleSelect = el("select", {},
       fsaOptions.roles.map((role) => el("option", {
         value: `${role.role}|${role.split}|${(role.years || []).join(",")}`,

@@ -15,27 +15,45 @@ from ...gen.lib import (
     FsaClaimSplitLink,
     Money,
 )
-from ..gi_setup import Gtk
+from ..gi_setup import GLib, Gtk
 
 __all__ = ["FsaClaimsDialog"]
 
 
 class _LinkList(Gtk.Box):
-    def __init__(self, candidates: list[tuple[str, str, str]]) -> None:
+    def __init__(self, candidates: list[tuple[str, str, date, str]]) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        self._checks: list[tuple[Gtk.CheckButton, FsaClaimSplitLink]] = []
-        for transaction, split, label in candidates:
+        self._checks: list[tuple[Gtk.CheckButton, FsaClaimSplitLink, date]] = []
+        self.set_candidates(candidates)
+
+    def set_candidates(self, candidates: list[tuple[str, str, date, str]]) -> None:
+        child = self.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            self.remove(child)
+            child = following
+        self._checks.clear()
+        for transaction, split, when, label in candidates:
             check = Gtk.CheckButton(label=label)
             self.append(check)
-            self._checks.append((check, FsaClaimSplitLink(transaction, split)))
+            self._checks.append((check, FsaClaimSplitLink(transaction, split), when))
 
     def set_links(self, links: list[FsaClaimSplitLink]) -> None:
         selected = {(item.transaction, item.split) for item in links}
-        for check, link in self._checks:
+        for check, link, _when in self._checks:
             check.set_active((link.transaction, link.split) in selected)
 
     def links(self) -> list[FsaClaimSplitLink]:
-        return [link for check, link in self._checks if check.get_active()]
+        return [link for check, link, _when in self._checks if check.get_active()]
+
+    def index_on_or_after(self, when: date) -> int:
+        for index, (_check, _link, candidate_date) in enumerate(self._checks):
+            if candidate_date >= when:
+                return index
+        return max(0, len(self._checks) - 1)
+
+    def __len__(self) -> int:
+        return len(self._checks)
 
 
 class _AllocationRow(Gtk.Frame):
@@ -165,13 +183,22 @@ class FsaClaimsDialog(Gtk.Window):
         outer.append(fields)
 
         payments, refunds, reimbursements = self._candidates()
+        self._payment_candidates = payments
+        self._refund_candidates = refunds
+        self.reimbursement_candidates = reimbursements
         outer.append(Gtk.Label(label="Healthcare payments", xalign=0))
         self.payments = _LinkList(payments)
-        outer.append(Gtk.ScrolledWindow(child=self.payments, min_content_height=90))
+        self.payments_scroll = Gtk.ScrolledWindow(
+            child=self.payments, min_content_height=90
+        )
+        outer.append(self.payments_scroll)
         outer.append(Gtk.Label(label="Provider refunds / credits", xalign=0))
         self.refunds = _LinkList(refunds)
-        outer.append(Gtk.ScrolledWindow(child=self.refunds, min_content_height=75))
-        self.reimbursement_candidates = reimbursements
+        self.refunds_scroll = Gtk.ScrolledWindow(
+            child=self.refunds, min_content_height=75
+        )
+        outer.append(self.refunds_scroll)
+        self.service.connect("changed", self._service_changed)
 
         allocation_bar = Gtk.Box(spacing=6)
         allocation_bar.append(Gtk.Label(label="FSA allocations", xalign=0))
@@ -195,21 +222,72 @@ class FsaClaimsDialog(Gtk.Window):
 
     def _candidates(self):
         payments, refunds, reimbursements = [], [], []
+        fsa_years = [
+            year
+            for account in self.db.iter_accounts()
+            if account.planning_role is AccountPlanningRole.FSA
+            for year in account.fsa_years
+        ]
+        candidate_start = min((year.start for year in fsa_years), default=None)
         for transaction in self.db.iter_transactions():
+            if candidate_start is not None and transaction.post_date < candidate_start:
+                continue
             for split in transaction.splits:
                 account = self.db.get_account(split.account)
                 if account is None:
                     continue
                 amount = abs(split.value).format()
                 label = f"{transaction.post_date} {transaction.description} — {amount}"
-                item = (transaction.handle, split.handle, label)
+                item = (transaction.handle, split.handle, transaction.post_date, label)
                 if account.account_class is AccountClass.EXPENSE and split.value > 0:
                     payments.append(item)
                 if account.account_class is AccountClass.EXPENSE and split.value < 0:
                     refunds.append(item)
                 if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
                     reimbursements.append(item)
-        return payments[-250:], refunds[-250:], reimbursements[-250:]
+        return payments, refunds, reimbursements
+
+    def _claim_candidates(
+        self,
+        candidates: list[tuple[str, str, date, str]],
+        service_date: date,
+        selected: list[FsaClaimSplitLink],
+    ) -> list[tuple[str, str, date, str]]:
+        window = fsa_claims.claim_year_window(self.db, service_date)
+        if window is None:
+            return candidates
+        start, _through = window
+        selected_keys = {(item.transaction, item.split) for item in selected}
+        return [
+            item
+            for item in candidates
+            if start <= item[2] or (item[0], item[1]) in selected_keys
+        ]
+
+    def _refresh_claim_candidates(
+        self,
+        service_date: date,
+        payments: list[FsaClaimSplitLink],
+        refunds: list[FsaClaimSplitLink],
+    ) -> None:
+        self.payments.set_candidates(
+            self._claim_candidates(self._payment_candidates, service_date, payments)
+        )
+        self.refunds.set_candidates(
+            self._claim_candidates(self._refund_candidates, service_date, refunds)
+        )
+        self.payments.set_links(payments)
+        self.refunds.set_links(refunds)
+        self._scroll_candidates_to(service_date)
+
+    def _service_changed(self, _entry) -> None:
+        try:
+            service_date = date.fromisoformat(self.service.get_text().strip())
+        except ValueError:
+            return
+        self._refresh_claim_candidates(
+            service_date, self.payments.links(), self.refunds.links()
+        )
 
     def _clear_allocations(self) -> None:
         child = self.allocations.get_first_child()
@@ -228,6 +306,22 @@ class FsaClaimsDialog(Gtk.Window):
         if self.claims:
             self._load(self.claims[self.claim_select.get_selected()])
 
+    def _scroll_candidates_to(self, when: date) -> None:
+        def scroll() -> bool:
+            for links, window in (
+                (self.payments, self.payments_scroll),
+                (self.refunds, self.refunds_scroll),
+            ):
+                if len(links) < 2:
+                    continue
+                index = links.index_on_or_after(when)
+                adjustment = window.get_vadjustment()
+                span = max(0.0, adjustment.get_upper() - adjustment.get_page_size())
+                adjustment.set_value(span * index / (len(links) - 1))
+            return False
+
+        GLib.idle_add(scroll)
+
     def _load(self, claim: FsaClaim | None) -> None:
         self.current = claim
         self.service.set_text(claim.service_date.isoformat() if claim else date.today().isoformat())
@@ -237,8 +331,10 @@ class FsaClaimsDialog(Gtk.Window):
             str(claim.eob_responsibility.to_decimal())
             if claim and claim.eob_responsibility is not None else ""
         )
-        self.payments.set_links(claim.payments if claim else [])
-        self.refunds.set_links(claim.refunds if claim else [])
+        service_date = claim.service_date if claim else date.fromisoformat(self.service.get_text())
+        self._refresh_claim_candidates(
+            service_date, claim.payments if claim else [], claim.refunds if claim else []
+        )
         self._clear_allocations()
         if claim:
             for allocation in claim.allocations:

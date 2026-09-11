@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
@@ -10,19 +11,148 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass, AccountPlanningRole, FsaFundingYear
 from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
 from ..lib.money import Money
+from ..lib.transaction import Transaction
 from . import fsa
 
 __all__ = [
     "FsaClaimStatus",
+    "FsaClaimSuggestion",
     "FsaClaimSummary",
     "attach_transaction_to_claim",
     "claim_summary",
+    "claim_year_window",
     "delete_claim",
     "iter_claims",
     "save_claim",
+    "suggest_claims_for_transaction",
 ]
 
 _METADATA_KEY = "fsa_claims"
+
+
+@dataclass(frozen=True)
+class FsaClaimSuggestion:
+    claim: FsaClaim
+    score: int
+    reason: str
+
+
+def claim_year_window(db: DbSQLite, service_date: date) -> tuple[date, date] | None:
+    """Return the combined FSA plan-year/run-out window containing a service date."""
+    matches: list[FsaFundingYear] = []
+    for account in db.iter_accounts():
+        if account.planning_role is not AccountPlanningRole.FSA:
+            continue
+        matches.extend(
+            year for year in account.fsa_years
+            if year.start <= service_date <= year.through
+        )
+    if not matches:
+        return None
+    return (
+        min(year.start for year in matches),
+        max((year.runout_through or year.through) for year in matches),
+    )
+
+
+def _claim_words(claim: FsaClaim) -> set[str]:
+    text = f"{claim.provider} {claim.description}".lower()
+    return {word for word in re.findall(r"[a-z0-9]+", text) if len(word) > 2}
+
+
+def _transaction_words(transaction: Transaction) -> set[str]:
+    return {
+        word for word in re.findall(r"[a-z0-9]+", transaction.description.lower())
+        if len(word) > 2
+    }
+
+
+def suggest_claims_for_transaction(
+    db: DbSQLite, transaction: Transaction
+) -> list[FsaClaimSuggestion]:
+    """Rank open claims that plausibly correspond to one ledger transaction."""
+    eligible_splits = []
+    reimbursement_accounts: set[str] = set()
+    for split in transaction.splits:
+        account = db.get_account(split.account)
+        if account is None:
+            continue
+        if account.account_class is AccountClass.EXPENSE and split.value != 0:
+            eligible_splits.append(split)
+        if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+            eligible_splits.append(split)
+            reimbursement_accounts.add(account.handle)
+    if not eligible_splits:
+        return []
+
+    txn_words = _transaction_words(transaction)
+    amount = max((abs(split.value) for split in eligible_splits), default=Money(0))
+    suggestions: list[FsaClaimSuggestion] = []
+    for claim in iter_claims(db):
+        summary = claim_summary(db, claim)
+        if summary.status is FsaClaimStatus.FULLY_REIMBURSED:
+            continue
+
+        if reimbursement_accounts:
+            compatible = False
+            for handle in reimbursement_accounts:
+                account = db.get_account(handle)
+                if account is None:
+                    continue
+                for year in account.fsa_years:
+                    runout = year.runout_through or year.through
+                    if (
+                        year.start <= claim.service_date <= year.through
+                        and transaction.post_date <= runout
+                    ):
+                        compatible = True
+                        break
+                if compatible:
+                    break
+            if not compatible:
+                continue
+
+        score = 0
+        reasons: list[str] = []
+        distance = abs((transaction.post_date - claim.service_date).days)
+        if distance <= 14:
+            score += 35
+            reasons.append("near service date")
+        elif distance <= 60:
+            score += 25
+            reasons.append("close to service date")
+        elif distance <= 180:
+            score += 10
+        if transaction.post_date < claim.service_date:
+            score -= 5
+
+        overlap = txn_words & _claim_words(claim)
+        if overlap:
+            score += min(30, 10 * len(overlap))
+            reasons.append("description match")
+
+        remaining = summary.remaining_reimbursable
+        if amount > 0 and remaining > 0:
+            difference = abs(amount - remaining)
+            if difference <= Money("1.00"):
+                score += 25
+                reasons.append("amount match")
+            elif difference <= remaining / 10:
+                score += 15
+                reasons.append("similar amount")
+
+        if reimbursement_accounts:
+            score += 20
+            reasons.append("compatible FSA year")
+        suggestions.append(FsaClaimSuggestion(
+            claim=claim, score=score, reason=", ".join(reasons) or "open claim"
+        ))
+    suggestions.sort(
+        key=lambda item: (
+            -item.score, -item.claim.service_date.toordinal(), item.claim.handle
+        )
+    )
+    return suggestions
 
 
 class FsaClaimStatus(str, Enum):

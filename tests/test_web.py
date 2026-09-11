@@ -1634,3 +1634,77 @@ def test_entry_can_attach_new_healthcare_payment_to_fsa_claim(client):
     claim = next(item for item in claims["claims"] if item["handle"] == saved["handle"])
     assert claim["paid"] == "120.00"
     assert claim["remaining"] == "120.00"
+
+
+def test_fsa_claim_candidates_share_funding_year_window(client):
+    _status, accounts = client.get("/api/accounts")
+    fsa_account = next(row for row in accounts if row["name"] == "401(k)")
+    client.post(
+        "/api/account/planning-role",
+        {"handle": fsa_account["handle"], "planning_role": "fsa"},
+    )
+    client.post(
+        "/api/account/fsa-years",
+        {
+            "handle": fsa_account["handle"],
+            "years": [{
+                "start": "2026-01-01", "through": "2026-12-31",
+                "election": "3000.00", "runout_through": "2027-03-31",
+            }],
+        },
+    )
+    for when, description, to_name, from_name in (
+        ("2025-12-15", "Old medical payment", "Expenses:Rent", "Assets:Checking"),
+        ("2025-12-20", "Old provider refund", "Assets:Checking", "Expenses:Rent"),
+        ("2026-02-10", "Current medical payment", "Expenses:Rent", "Assets:Checking"),
+        ("2026-02-20", "Current provider refund", "Assets:Checking", "Expenses:Rent"),
+        ("2027-04-15", "Late provider refund", "Assets:Checking", "Expenses:Rent"),
+    ):
+        client.post(
+            "/api/transaction",
+            {
+                "date": when, "description": description,
+                "to": to_name, "from": from_name, "amount": "50.00",
+            },
+        )
+
+    _status, payload = client.get("/api/fsa/claims")
+    payment_names = {item["description"] for item in payload["candidates"]["payments"]}
+    refund_names = {item["description"] for item in payload["candidates"]["refunds"]}
+
+    assert "Old medical payment" not in payment_names
+    assert "Old provider refund" not in refund_names
+    assert "Current medical payment" in payment_names
+    assert "Current provider refund" in refund_names
+    assert "Late provider refund" in refund_names
+
+
+def test_review_ranks_likely_fsa_claim_first(client):
+    _status, close = client.post(
+        "/api/fsa/claim/save",
+        {
+            "service_date": "2026-07-01", "provider": "Easton Dental",
+            "description": "Crown", "payments": [], "allocations": [],
+        },
+    )
+    client.post(
+        "/api/fsa/claim/save",
+        {
+            "service_date": "2026-01-01", "provider": "Other clinic",
+            "payments": [], "allocations": [],
+        },
+    )
+    _status, txn = client.post(
+        "/api/transaction",
+        {
+            "date": "2026-07-03", "description": "Easton Dental crown payment",
+            "to": "Expenses:Rent", "from": "Assets:Checking", "amount": "400.00",
+        },
+    )
+
+    _status, review = client.get(f"/api/review?transaction={txn['handle']}")
+    claims = review["selected"]["fsa"]["claims"]
+
+    assert claims[0]["handle"] == close["handle"]
+    assert claims[0]["score"] > claims[1]["score"]
+    assert "description match" in claims[0]["reason"]
