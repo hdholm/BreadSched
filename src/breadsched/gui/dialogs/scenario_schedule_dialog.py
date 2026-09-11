@@ -18,6 +18,7 @@ from ...gen.lib import (
     Recurrence,
     Scenario,
     ScenarioSchedule,
+    ScheduledAmountChange,
     ScheduledSplit,
     ScheduledTransaction,
     WeekendAdjust,
@@ -131,6 +132,17 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.amount_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Amount", xalign=0), 0, row, 1, 1)
         grid.attach(self.amount_entry, 1, row, 1, 1)
+        row += 1
+
+        self.amount_changes_entry = Gtk.Entry(
+            placeholder_text="2030-01-01=1950; 2032-01-01=2100"
+        )
+        self.amount_changes_entry.set_tooltip_text(
+            "Optional future amounts as YYYY-MM-DD=amount, separated by semicolons."
+        )
+        self.amount_changes_entry.connect("changed", self._validate)
+        grid.attach(Gtk.Label(label="Future amounts", xalign=0), 0, row, 1, 1)
+        grid.attach(self.amount_changes_entry, 1, row, 1, 1)
         row += 1
 
         self.frequency = Gtk.DropDown.new_from_strings(
@@ -276,6 +288,12 @@ class ScenarioScheduleDialog(Gtk.Window):
         if category is not None:
             amount = amount * category.sign()
         self.amount_entry.set_text(abs(amount).format())
+        self.amount_changes_entry.set_text(
+            "; ".join(
+                f"{item.start.isoformat()}={item.amount.to_decimal()}"
+                for item in source.amount_changes
+            )
+        )
 
     def _recurrence(self) -> Recurrence | None:
         try:
@@ -319,6 +337,26 @@ class ScenarioScheduleDialog(Gtk.Window):
             return None
         return abs(amount) if amount else None
 
+
+    def _amount_changes(self) -> list[ScheduledAmountChange] | None:
+        text = self.amount_changes_entry.get_text().strip()
+        if not text:
+            return []
+        changes = []
+        try:
+            for raw in text.split(";"):
+                when_text, amount_text = raw.strip().split("=", 1)
+                when = date.fromisoformat(when_text.strip())
+                amount = Money(amount_text.strip())
+                if amount <= 0:
+                    return None
+                changes.append(ScheduledAmountChange(when, amount))
+        except (ValueError, ArithmeticError):
+            return None
+        if len({item.start for item in changes}) != len(changes):
+            return None
+        return sorted(changes, key=lambda item: item.start)
+
     def _validate(self, *_args) -> None:
         if self._constructing:
             return
@@ -328,6 +366,9 @@ class ScenarioScheduleDialog(Gtk.Window):
         amount = self._amount()
         if amount is None:
             problems.append("enter an amount")
+        amount_changes = self._amount_changes()
+        if amount_changes is None:
+            problems.append("check future amounts")
         recurrence = self._recurrence()
         period = self._frequency_options[self.frequency.get_selected()][1]
         bounded = period is not PeriodType.ONCE
@@ -379,6 +420,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             source_schedule=self.source.handle if self.source is not None else None,
             enabled=True,
             placeholder=placeholder,
+            amount_changes=self._amount_changes() or [],
         )
 
     def _on_save(self, _button) -> None:

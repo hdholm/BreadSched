@@ -20,6 +20,7 @@ from ...gen.lib import (
     Money,
     PeriodType,
     Recurrence,
+    ScheduledAmountChange,
     ScheduledSplit,
     ScheduledTransaction,
     WeekendAdjust,
@@ -111,6 +112,17 @@ class ScheduleDialog(Gtk.Window):
         self.amount_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Amount", xalign=0), 0, row, 1, 1)
         grid.attach(self.amount_entry, 1, row, 1, 1)
+        row += 1
+
+        self.amount_changes_entry = Gtk.Entry(
+            placeholder_text="2030-01-01=1950; 2032-01-01=2100"
+        )
+        self.amount_changes_entry.set_tooltip_text(
+            "Optional future amounts as YYYY-MM-DD=amount, separated by semicolons."
+        )
+        self.amount_changes_entry.connect("changed", self._validate)
+        grid.attach(Gtk.Label(label="Future amounts", xalign=0), 0, row, 1, 1)
+        grid.attach(self.amount_changes_entry, 1, row, 1, 1)
         row += 1
 
         self.frequency = Gtk.DropDown.new_from_strings([f[0] for f in _FREQUENCIES])
@@ -238,6 +250,12 @@ class ScheduleDialog(Gtk.Window):
                 self.weekend.set_selected(index)
                 break
         self.auto_check.set_active(source.auto_create)
+        self.amount_changes_entry.set_text(
+            "; ".join(
+                f"{item.start.isoformat()}={item.amount.to_decimal()}"
+                for item in source.amount_changes
+            )
+        )
 
     # ------------------------------------------------------------- validation
 
@@ -283,12 +301,35 @@ class ScheduleDialog(Gtk.Window):
             return None
         return value if value else None
 
+
+    def _amount_changes(self) -> list[ScheduledAmountChange] | None:
+        text = self.amount_changes_entry.get_text().strip()
+        if not text:
+            return []
+        changes = []
+        try:
+            for raw in text.split(";"):
+                when_text, amount_text = raw.strip().split("=", 1)
+                when = date.fromisoformat(when_text.strip())
+                amount = Money(amount_text.strip())
+                if amount <= 0:
+                    return None
+                changes.append(ScheduledAmountChange(when, amount))
+        except (ValueError, ArithmeticError):
+            return None
+        if len({item.start for item in changes}) != len(changes):
+            return None
+        return sorted(changes, key=lambda item: item.start)
+
     def _validate(self, *_args) -> None:
         problems = []
         if not self.name_entry.get_text().strip():
             problems.append("give it a name")
         if self._amount() is None:
             problems.append("enter an amount")
+        amount_changes = self._amount_changes()
+        if amount_changes is None:
+            problems.append("check future amounts")
         recurrence = self._recurrence()
         period = _FREQUENCIES[self.frequency.get_selected()][1]
         bounded = period is not PeriodType.ONCE
@@ -340,6 +381,7 @@ class ScheduleDialog(Gtk.Window):
         ]
         schedule.auto_create = self.auto_check.get_active()
         schedule.placeholder = self.kind.get_selected() == 1
+        schedule.amount_changes = self._amount_changes() or []
         return schedule
 
     def _on_save(self, _button) -> None:

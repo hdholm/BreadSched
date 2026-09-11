@@ -43,6 +43,7 @@ from ..gen.lib import (
     Recurrence,
     Scenario,
     ScenarioSchedule,
+    ScheduledAmountChange,
     ScheduledSplit,
     ScheduledTransaction,
     Split,
@@ -226,6 +227,10 @@ class Api:
                     ),
                     "count": item.recurrence.count,
                     "weekend": self._weekend_key(item.recurrence.weekend_adjust),
+                    "amount_changes": [
+                        {"start": change.start.isoformat(), "amount": change.amount}
+                        for change in item.amount_changes
+                    ],
                 }
             )
         return {
@@ -558,6 +563,10 @@ class Api:
             "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
             "count": item.recurrence.count,
             "weekend": self._weekend_key(item.recurrence.weekend_adjust),
+            "amount_changes": [
+                {"start": change.start.isoformat(), "amount": change.amount}
+                for change in item.amount_changes
+            ],
         }
 
     def scenario_events(self, handle: str | None) -> dict:
@@ -602,6 +611,33 @@ class Api:
                 self._scenario_event_payload(item) for item in scenario.schedule_overrides
             ],
         }
+
+    @staticmethod
+    def _parse_amount_changes(payload: dict, schedule_start: date) -> list[ScheduledAmountChange]:
+        raw_changes = payload.get("amount_changes") or []
+        if not isinstance(raw_changes, list):
+            raise ValueError("future amounts must be a list")
+        changes = []
+        seen = set()
+        for raw in raw_changes:
+            if not isinstance(raw, dict):
+                raise ValueError("future amount entry is invalid")
+            try:
+                when = date.fromisoformat(str(raw.get("start") or ""))
+                amount = abs(Money(str(raw.get("amount") or "")))
+            except (ValueError, ArithmeticError):
+                raise ValueError(
+                    "future amounts require YYYY-MM-DD dates and valid amounts"
+                ) from None
+            if when < schedule_start:
+                raise ValueError("future amount date cannot precede first occurrence")
+            if not amount:
+                raise ValueError("future amount must be greater than zero")
+            if when in seen:
+                raise ValueError("future amount dates must be unique")
+            seen.add(when)
+            changes.append(ScheduledAmountChange(when, amount))
+        return sorted(changes, key=lambda item: item.start)
 
     def scenario_event_save(self, payload: dict) -> dict:
         scenario = self._scenario_for_events(payload.get("handle"))
@@ -681,6 +717,7 @@ class Api:
             source_schedule=source_handle,
             enabled=True,
             placeholder=source.placeholder if source is not None else True,
+            amount_changes=self._parse_amount_changes(payload, start),
         )
         if source_handle:
             scenario.schedule_overrides = [
@@ -1445,6 +1482,7 @@ class Api:
             count=count,
             weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
         )
+        amount_changes = self._parse_amount_changes(payload, start)
 
         item = (
             ScheduledTransaction.from_dict(existing.serialize())
@@ -1462,6 +1500,7 @@ class Api:
             ScheduledSplit(funding.handle, -signed),
         ]
         item.placeholder = bool(payload.get("placeholder", False))
+        item.amount_changes = amount_changes
         item.auto_create = bool(payload.get("auto", False))
         if item.placeholder:
             item.auto_create = False

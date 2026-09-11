@@ -21,7 +21,7 @@ from typing import Any
 from .base import PrimaryObject, create_handle
 from .money import Money
 from .recurrence import Recurrence
-from .scheduled import ScheduledSplit, ScheduledTransaction
+from .scheduled import ScheduledAmountChange, ScheduledSplit, ScheduledTransaction
 
 __all__ = [
     "ProjectionBasis",
@@ -99,6 +99,7 @@ class ScenarioSchedule:
         enabled: bool = True,
         placeholder: bool = True,
         variables: dict[str, str] | None = None,
+        amount_changes: list[ScheduledAmountChange] | None = None,
     ) -> None:
         self.handle = handle or create_handle()
         self.name = name
@@ -109,6 +110,7 @@ class ScenarioSchedule:
         self.enabled = enabled
         self.placeholder = placeholder
         self.variables = dict(variables or {})
+        self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
 
     @classmethod
     def from_scheduled(
@@ -127,6 +129,10 @@ class ScenarioSchedule:
             enabled=enabled,
             placeholder=schedule.placeholder,
             variables=dict(schedule.variables),
+            amount_changes=[
+                ScheduledAmountChange.from_dict(item.serialize())
+                for item in schedule.amount_changes
+            ],
         )
 
     def context(self, when: date) -> dict[str, Any]:
@@ -136,9 +142,28 @@ class ScenarioSchedule:
         context.setdefault("i", index)
         return context
 
+    def effective_amount(self, when: date) -> Money | None:
+        effective = None
+        for change in self.amount_changes:
+            if change.start > when:
+                break
+            effective = change.amount
+        return effective
+
     def resolved_splits(self, when: date) -> list[tuple[str, Money]]:
         context = self.context(when)
-        return [(split.account, split.resolve(context)) for split in self.splits]
+        values = [(split.account, split.resolve(context)) for split in self.splits]
+        target = self.effective_amount(when)
+        if target is None:
+            return values
+        positive = Money(0)
+        for _account, value in values:
+            if value > 0:
+                positive = positive + value
+        if not positive:
+            return values
+        scale = target / positive
+        return [(account, value * scale) for account, value in values]
 
     def occurrence_key(self, scenario_handle: str, when: date) -> str:
         return f"scenario:{scenario_handle}:{self.handle}:{when.isoformat()}"
@@ -154,6 +179,7 @@ class ScenarioSchedule:
             "enabled": self.enabled,
             "placeholder": self.placeholder,
             "variables": dict(self.variables),
+            "amount_changes": [item.serialize() for item in self.amount_changes],
         }
 
     @classmethod
@@ -168,6 +194,10 @@ class ScenarioSchedule:
             enabled=data.get("enabled", True),
             placeholder=data.get("placeholder", True),
             variables=data.get("variables", {}),
+            amount_changes=[
+                ScheduledAmountChange.from_dict(item)
+                for item in data.get("amount_changes", [])
+            ],
         )
 
 

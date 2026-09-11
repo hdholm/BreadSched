@@ -18,9 +18,31 @@ from .money import Money
 from .recurrence import Recurrence
 from .transaction import PlanningResolution, Split, Transaction
 
-__all__ = ["ScheduledSplit", "ScheduledTransaction"]
+__all__ = ["ScheduledAmountChange", "ScheduledSplit", "ScheduledTransaction"]
 
 LOG = get_logger(__name__)
+
+
+class ScheduledAmountChange:
+    """An effective-dated amount for a simple fixed scheduled transaction."""
+
+    __slots__ = ("start", "amount")
+
+    def __init__(self, start: date, amount: Money | str | int) -> None:
+        self.start = start
+        self.amount = amount if isinstance(amount, Money) else Money(amount)
+        if self.amount <= 0:
+            raise ValueError("scheduled amount change must be greater than zero")
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "start": self.start.isoformat(),
+            "amount": [self.amount.numerator, self.amount.denominator],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScheduledAmountChange:
+        return cls(date.fromisoformat(data["start"]), Money(*data["amount"]))
 
 
 class ScheduledSplit:
@@ -99,6 +121,7 @@ class ScheduledTransaction(PrimaryObject):
         auto_create: bool = False,
         advance_days: int = 0,
         currency: str | None = None,
+        amount_changes: list[ScheduledAmountChange] | None = None,
     ) -> None:
         super().__init__(handle)
         self.name = name
@@ -111,6 +134,7 @@ class ScheduledTransaction(PrimaryObject):
         #: How many days ahead to surface the occurrence in the "due" list.
         self.advance_days = advance_days
         self.currency = currency
+        self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
         self.last_posted: date | None = None
         self.variables: dict[str, str] = {}
         #: A budget-only item: a planning figure rather than a commitment. It shapes
@@ -149,14 +173,23 @@ class ScheduledTransaction(PrimaryObject):
         variables: dict[str, Any] | None = None,
         when: date | None = None,
     ) -> Money:
-        """Absolute size of the movement, taken from the positive splits."""
-        merged = self.context(when, variables)
+        """Absolute size of the movement, including effective-dated changes."""
         total = Money(0)
-        for split in self.splits:
-            value = split.resolve(merged)
+        for _account, value in self.resolved_splits(variables=variables, when=when):
             if value > 0:
                 total = total + value
         return total
+
+    def effective_amount(self, when: date | None) -> Money | None:
+        """Latest explicit amount in force at ``when``, if one has begun."""
+        if when is None:
+            return None
+        effective = None
+        for change in self.amount_changes:
+            if change.start > when:
+                break
+            effective = change.amount
+        return effective
 
     def context(
         self, when: date | None = None, variables: dict[str, Any] | None = None
@@ -184,7 +217,18 @@ class ScheduledTransaction(PrimaryObject):
     ) -> list[tuple[str, Money]]:
         """Each leg as ``(account, amount)``, with formulas evaluated."""
         merged = self.context(when, variables)
-        return [(split.account, split.resolve(merged)) for split in self.splits]
+        values = [(split.account, split.resolve(merged)) for split in self.splits]
+        target = self.effective_amount(when)
+        if target is None:
+            return values
+        positive = Money(0)
+        for _account, value in values:
+            if value > 0:
+                positive = positive + value
+        if not positive:
+            return values
+        scale = target / positive
+        return [(account, value * scale) for account, value in values]
 
     def imbalance(self, variables: dict[str, Any] | None = None) -> Money:
         """How far the resolved legs are from summing to zero.
@@ -302,6 +346,7 @@ class ScheduledTransaction(PrimaryObject):
             "auto_create": self.auto_create,
             "advance_days": self.advance_days,
             "currency": self.currency,
+            "amount_changes": [item.serialize() for item in self.amount_changes],
             "last_posted": self.last_posted.isoformat() if self.last_posted else None,
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
@@ -319,6 +364,10 @@ class ScheduledTransaction(PrimaryObject):
         self.auto_create = data.get("auto_create", False)
         self.advance_days = data.get("advance_days", 0)
         self.currency = data.get("currency")
+        self.amount_changes = sorted(
+            [ScheduledAmountChange.from_dict(item) for item in data.get("amount_changes", [])],
+            key=lambda item: item.start,
+        )
         raw = data.get("last_posted")
         self.last_posted = date.fromisoformat(raw) if raw else None
         self.variables = dict(data.get("variables", {}))

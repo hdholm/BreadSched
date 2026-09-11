@@ -223,6 +223,10 @@ class TestItServes:
                 "category": category["handle"],
                 "funding": funding["handle"],
                 "amount": "110.00",
+                "amount_changes": [
+                    {"start": "2026-05-15", "amount": "125.00"},
+                    {"start": "2026-07-15", "amount": "140.00"},
+                ],
                 "frequency": "monthly",
                 "start": "2026-02-15",
                 "count": "6",
@@ -240,6 +244,10 @@ class TestItServes:
         assert item["count"] == 6
         assert item["end"] is None
         assert item["weekend"] == "previous"
+        assert item["amount_changes"] == [
+            {"start": "2026-05-15", "amount": "125.00"},
+            {"start": "2026-07-15", "amount": "140.00"},
+        ]
 
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")

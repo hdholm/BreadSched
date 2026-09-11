@@ -12,6 +12,7 @@ from breadsched.gen.lib import (
     Recurrence,
     Scenario,
     ScenarioSchedule,
+    ScheduledAmountChange,
     ScheduledSplit,
     ScheduledTransaction,
     Transaction,
@@ -56,6 +57,50 @@ class TestEventDomain:
             date(2026, 1, 30),
         ]
         assert all(event.key.startswith(f"scheduled:{payday.handle}:") for event in events)
+
+
+    def test_future_amount_changes_flow_into_exact_dated_events(self, db, book):
+        rent = ScheduledTransaction(
+            name="Rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.rent, Money("1800.00")),
+                ScheduledSplit(book.checking, Money("-1800.00")),
+            ],
+            amount_changes=[
+                ScheduledAmountChange(date(2026, 7, 1), Money("1950.00")),
+                ScheduledAmountChange(date(2027, 1, 1), Money("2100.00")),
+            ],
+        )
+        with db.transaction("rent schedule") as txn:
+            db.add_scheduled(rent, txn)
+
+        events = planning.scheduled_events(
+            db, date(2026, 6, 1), date(2027, 1, 31)
+        )
+
+        by_date = {event.planned_date: event.expected_amount for event in events}
+        assert by_date[date(2026, 6, 1)] == Money("1800.00")
+        assert by_date[date(2026, 7, 1)] == Money("1950.00")
+        assert by_date[date(2026, 12, 1)] == Money("1950.00")
+        assert by_date[date(2027, 1, 1)] == Money("2100.00")
+
+    def test_future_amount_changes_round_trip_with_schedule(self):
+        schedule = ScheduledTransaction(
+            name="Rent",
+            splits=[
+                ScheduledSplit("expense", Money("1800")),
+                ScheduledSplit("cash", Money("-1800")),
+            ],
+            amount_changes=[
+                ScheduledAmountChange(date(2030, 1, 1), Money("1950"))
+            ],
+        )
+
+        clone = ScheduledTransaction.from_dict(schedule.serialize())
+
+        assert clone.amount(when=date(2029, 12, 1)) == Money("1800")
+        assert clone.amount(when=date(2030, 1, 1)) == Money("1950")
 
     def test_scenario_can_replace_a_baseline_schedule_without_mutating_it(self, db, book):
         salary = ScheduledTransaction(

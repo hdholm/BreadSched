@@ -15,7 +15,7 @@ from .scenario import (
     Scenario,
     ScenarioSchedule,
 )
-from .scheduled import ScheduledSplit, ScheduledTransaction
+from .scheduled import ScheduledAmountChange, ScheduledSplit, ScheduledTransaction
 from .transaction import PlanningResolution, ReconcileState, Split, Transaction, UnbalancedError
 
 __all__ = [
@@ -24,7 +24,7 @@ __all__ = [
     "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",
     "PeriodType", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
     "ReconcileState", "Recurrence",
-    "Scenario", "ScenarioSchedule", "ScheduledSplit", "ScheduledTransaction", "Split",
+    "Scenario", "ScenarioSchedule", "ScheduledAmountChange", "ScheduledSplit", "ScheduledTransaction", "Split",
     "Transaction",
     "UnbalancedError", "WeekendAdjust", "ZERO", "add_months", "create_handle", "evaluate",
 ]
