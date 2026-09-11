@@ -1063,7 +1063,9 @@ class Api:
                 self.db, start, end, period=grouping, scenario=compare_scenario
             )
             compare_rows = {row.account: row for row in compare_report.categories}
-            compare_flows = {row.kind: row for row in compare_report.planning_flows}
+            compare_flows = {
+                (row.kind, row.account): row for row in compare_report.planning_flows
+            }
             comparison = {
                 "handle": compare_identity,
                 "name": compare_name,
@@ -1125,7 +1127,7 @@ class Api:
                     }
                 )
             for row in report.planning_flows:
-                other = compare_flows.get(row.kind)
+                other = compare_flows.get((row.kind, row.account))
                 zeroes = [Money(0) for _ in row.planned]
                 other_planned = other.planned if other is not None else zeroes
                 other_actual = other.actual if other is not None else zeroes
@@ -1135,6 +1137,7 @@ class Api:
                 comparison["planning_flows"].append(
                     {
                         "kind": row.kind.value,
+                        "account": row.account,
                         "planned": other_planned,
                         "actual": other_actual,
                         "variance": other_variance,
@@ -1211,6 +1214,9 @@ class Api:
             "planning_flows": [
                 {
                     "kind": row.kind.value,
+                    "account": row.account,
+                    "account_name": row.account_name,
+                    "full_name": row.full_name,
                     "name": row.name,
                     "planned": row.planned,
                     "actual": row.actual,

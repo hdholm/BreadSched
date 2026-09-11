@@ -758,7 +758,7 @@ async function showPlan() {
       el("td", { colspan: String(headers.length) }, "Planning flows")));
     for (const flow of data.planning_flows) {
       const compared = comparison?.planning_flows?.find(
-        (row) => row.kind === flow.kind);
+        (row) => row.kind === flow.kind && row.account === flow.account);
       const deltas = compared ? compared[`${currentPlan.measure}_delta`] : null;
       const cells = flow[currentPlan.measure].map((value, index) =>
         el("td", { class: value == null ? "num muted" : cls(value) },
@@ -768,7 +768,7 @@ async function showPlan() {
             title: `Active scenario minus ${comparison.name}`,
           }, `Δ ${money(deltas[index])}`) : null));
       rows.push(el("tr", {},
-        el("td", { title: "Economically meaningful balance-sheet flow" }, flow.name),
+        el("td", { title: flow.full_name }, flow.name),
         ...cells));
     }
   }

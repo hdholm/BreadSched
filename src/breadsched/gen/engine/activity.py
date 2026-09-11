@@ -332,6 +332,9 @@ class PlanningFlowActivity:
     """One economically meaningful balance-sheet flow across display periods."""
 
     kind: PlanningFlowKind
+    account: str
+    account_name: str
+    full_name: str
     name: str
     planned: list[Money]
     actual: list[Money]
@@ -685,22 +688,26 @@ def build_category_report(
     periods = activity.periods
     direct_planned: dict[str, list[Money]] = {}
     direct_actual: dict[str, list[Money]] = {}
-    flow_planned: dict[PlanningFlowKind, list[Money]] = {}
-    flow_actual: dict[PlanningFlowKind, list[Money]] = {}
+    flow_planned: dict[tuple[PlanningFlowKind, str], list[Money]] = {}
+    flow_actual: dict[tuple[PlanningFlowKind, str], list[Money]] = {}
 
     def amounts(store: dict[str, list[Money]], handle: str) -> list[Money]:
         return store.setdefault(handle, [Money(0) for _ in periods])
 
     def flow_amounts(
-        store: dict[PlanningFlowKind, list[Money]], kind: PlanningFlowKind
+        store: dict[tuple[PlanningFlowKind, str], list[Money]],
+        kind: PlanningFlowKind,
+        account: str,
     ) -> list[Money]:
-        return store.setdefault(kind, [Money(0) for _ in periods])
+        return store.setdefault((kind, account), [Money(0) for _ in periods])
 
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
             for planned_split in event.expected_splits:
                 if planned_split.planning_flow is not None:
-                    values = flow_amounts(flow_planned, planned_split.planning_flow)
+                    values = flow_amounts(
+                        flow_planned, planned_split.planning_flow, planned_split.account
+                    )
                     values[period_index] = (
                         values[period_index]
                         + planned_split.planning_flow.plan_amount(planned_split.amount)
@@ -719,7 +726,9 @@ def build_category_report(
                 continue
             for actual_split in transaction.splits:
                 if actual_split.planning_flow is not None:
-                    values = flow_amounts(flow_actual, actual_split.planning_flow)
+                    values = flow_amounts(
+                        flow_actual, actual_split.planning_flow, actual_split.account
+                    )
                     values[period_index] = (
                         values[period_index]
                         + actual_split.planning_flow.plan_amount(actual_split.value)
@@ -794,15 +803,24 @@ def build_category_report(
     rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
     flow_rows: list[PlanningFlowActivity] = []
     active_flows = set(flow_planned) | set(flow_actual)
-    for kind in PlanningFlowKind:
-        if kind not in active_flows:
+    for kind, handle in active_flows:
+        account = accounts.get(handle)
+        if account is None:
             continue
-        planned_values = flow_planned.get(kind, [Money(0) for _ in periods])
-        actual_values = flow_actual.get(kind, [Money(0) for _ in periods])
+        planned_values = flow_planned.get(
+            (kind, handle), [Money(0) for _ in periods]
+        )
+        actual_values = flow_actual.get(
+            (kind, handle), [Money(0) for _ in periods]
+        )
+        full_name = db.full_name(account)
         flow_rows.append(
             PlanningFlowActivity(
                 kind=kind,
-                name=kind.label,
+                account=handle,
+                account_name=account.name,
+                full_name=full_name,
+                name=f"{kind.label} — {full_name}",
                 planned=list(planned_values),
                 actual=list(actual_values),
                 variance=[
@@ -813,6 +831,7 @@ def build_category_report(
                 ],
             )
         )
+    flow_rows.sort(key=lambda row: (row.kind.value, row.full_name.casefold()))
     return CategoryReport(
         activity=activity,
         categories=rows,

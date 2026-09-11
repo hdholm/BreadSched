@@ -363,6 +363,41 @@ class TestPlanningFlowClassification:
         assert flow.actual == [Money(0)]
         assert flow.variance == [Money("-1000.00")]
 
+    def test_planning_flows_remain_distinct_by_destination_account(self, db, book):
+        contribution = ScheduledTransaction(
+            name="Split retirement contribution",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-1000.00")),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("600.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+                ScheduledSplit(
+                    book.savings,
+                    Money("400.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+                ),
+            ],
+        )
+        with db.transaction("plan split contribution") as txn:
+            db.add_scheduled(contribution, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+
+        assert len(report.planning_flows) == 2
+        amounts = {row.account: row.planned[0] for row in report.planning_flows}
+        assert amounts == {
+            book.brokerage: Money("600.00"),
+            book.savings: Money("400.00"),
+        }
+        names = {row.account: row.name for row in report.planning_flows}
+        assert names[book.brokerage].endswith("Assets:Brokerage")
+        assert names[book.savings].endswith("Assets:Savings")
+
     def test_instantiated_schedule_preserves_planning_flow_for_actuals(self, db, book):
         contribution = ScheduledTransaction(
             name="401k contribution",
