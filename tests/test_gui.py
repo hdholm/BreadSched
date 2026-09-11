@@ -2640,6 +2640,47 @@ class TestAccountEditor:
         dialog._on_save(None)
         assert app.db.get_account(account.handle).group == "Cash"
 
+    def test_imported_account_parent_hidden_and_commodity_round_trip(
+        self, accounts_view, app
+    ):
+        from breadsched.gen.lib import Account, AccountType, Commodity
+
+        root = app.db.root_account()
+        with app.db.transaction("add imported-style account structure") as txn:
+            commodity = Commodity(
+                namespace="FUND", mnemonic="GENERIC", fullname="Generic security"
+            )
+            app.db.add_commodity(commodity, txn)
+            parent = Account(
+                name="Ordinary parent",
+                atype=AccountType.ASSET,
+                parent=root.handle,
+                placeholder=False,
+            )
+            app.db.add_account(parent, txn)
+            child = Account(
+                name="Imported child",
+                atype=AccountType.MUTUAL,
+                parent=parent.handle,
+                commodity=commodity.handle,
+                hidden=True,
+            )
+            app.db.add_account(child, txn)
+
+        dialog = self._dialog(accounts_view, child)
+        selected_parent = dialog.parents[dialog.parent_picker.get_selected()]
+        assert selected_parent.handle == parent.handle
+        assert dialog.hidden_check.get_active() is True
+        assert (
+            dialog.commodity_handles[dialog.commodity_picker.get_selected()]
+            == commodity.handle
+        )
+
+        rebuilt = dialog.build()
+        assert rebuilt.parent == parent.handle
+        assert rebuilt.hidden is True
+        assert rebuilt.commodity == commodity.handle
+
     def test_loan_fields_only_show_for_a_liability(self, accounts_view, app):
         from breadsched.gen.lib import AccountType
         from breadsched.gui.dialogs.account_dialog import _TYPES

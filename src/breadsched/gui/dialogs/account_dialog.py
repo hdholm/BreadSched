@@ -52,10 +52,29 @@ class AccountDialog(Gtk.Window):
         self.db = db
         self.account = account
         self.editing = editing
-        self.set_default_size(560, 620)
+        self.set_default_size(600, 700)
 
-        self.parents = [a for a in db.iter_accounts() if a.placeholder or a.is_root]
+        all_accounts = list(db.iter_accounts())
+        blocked_parents: set[str] = set()
+        if account is not None:
+            blocked_parents.add(account.handle)
+            changed = True
+            while changed:
+                changed = False
+                for candidate in all_accounts:
+                    if (
+                        candidate.handle not in blocked_parents
+                        and candidate.parent in blocked_parents
+                    ):
+                        blocked_parents.add(candidate.handle)
+                        changed = True
+        self.parents = [a for a in all_accounts if a.handle not in blocked_parents]
         self.parents.sort(key=db.full_name)
+        self.commodities = list(db.iter_commodities())
+        self.commodities.sort(key=lambda item: (item.namespace, item.mnemonic))
+        self.commodity_handles: list[str | None] = [None] + [
+            commodity.handle for commodity in self.commodities
+        ]
         self.assets = [
             a for a in db.iter_accounts()
             if a.account_class is AccountClass.ASSET
@@ -94,6 +113,25 @@ class AccountDialog(Gtk.Window):
         self.type_picker.connect("notify::selected", self._on_type_changed)
         grid.attach(Gtk.Label(label="Type", xalign=0), 0, row, 1, 1)
         grid.attach(self.type_picker, 1, row, 1, 1)
+        row += 1
+
+        commodity_labels = ["(book/default)"] + [
+            f"{commodity.mnemonic} ({commodity.namespace})"
+            for commodity in self.commodities
+        ]
+        if editing and account.commodity not in self.commodity_handles:
+            commodity_labels.append(f"Imported commodity ({account.commodity})")
+            self.commodity_handles.append(account.commodity)
+        self.commodity_picker = Gtk.DropDown.new_from_strings(commodity_labels)
+        if editing and account.commodity:
+            self.commodity_picker.set_selected(
+                self.commodity_handles.index(account.commodity)
+            )
+        self.commodity_picker.set_tooltip_text(
+            "Currency or security associated with this account"
+        )
+        grid.attach(Gtk.Label(label="Commodity", xalign=0), 0, row, 1, 1)
+        grid.attach(self.commodity_picker, 1, row, 1, 1)
         row += 1
 
         self.parent_picker = Gtk.DropDown.new_from_strings(
@@ -169,6 +207,15 @@ class AccountDialog(Gtk.Window):
         if editing:
             self.placeholder_check.set_active(account.placeholder)
         grid.attach(self.placeholder_check, 1, row, 1, 1)
+        row += 1
+
+        self.hidden_check = Gtk.CheckButton(label="Hidden")
+        self.hidden_check.set_tooltip_text(
+            "Hide this account from normal account lists unless hidden accounts are shown"
+        )
+        if editing:
+            self.hidden_check.set_active(account.hidden)
+        grid.attach(self.hidden_check, 1, row, 1, 1)
         row += 1
 
         self.opening_entry = Gtk.Entry(placeholder_text="0.00")
@@ -345,11 +392,14 @@ class AccountDialog(Gtk.Window):
         account.atype = self.selected_type
         account.code = self.code_entry.get_text().strip()
         account.description = self.description_entry.get_text().strip()
+        commodity_index = self.commodity_picker.get_selected()
+        account.commodity = self.commodity_handles[commodity_index]
         account.group = self.group_entry.get_text().strip()
         account.planning_role = _ROLES[self.planning_role_picker.get_selected()]
         if account.planning_role is AccountPlanningRole.FSA:
             account.fsa_years = self._fsa_year_values()
         account.placeholder = self.placeholder_check.get_active()
+        account.hidden = self.hidden_check.get_active()
         if self.parents:
             account.parent = self.parents[self.parent_picker.get_selected()].handle
 

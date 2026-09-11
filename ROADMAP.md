@@ -66,6 +66,11 @@ Status below is current through patch 0123
   tree-list sorter keeps children within their parent rather than flattening the
   chart of accounts. Preserve that hierarchy-aware behavior as more account columns
   are added.
+- As of 0124, the account editor preserves ordinary non-placeholder parents,
+  imported commodities/securities, and the GnuCash hidden flag. Parent choices
+  exclude the edited account and its descendants so imported hierarchies can be
+  retained without permitting cycles. Continue exposing remaining imported account
+  metadata and semantics losslessly rather than silently resetting them on save.
 - Improve account relationship editing and explanations as additional planning,
   investment, debt, FSA, commodity, and imported-account semantics are exposed.
 
