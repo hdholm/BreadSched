@@ -1083,8 +1083,8 @@ class TestScheduleEntry:
         self, app, window, populated_book
     ):
         app.open_book(populated_book)
-        bank = app.db.get_account_by_name("Checking")
-        rent = app.db.get_account_by_name("Rent")
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
         assert bank is not None and rent is not None
         source = ScheduledTransaction(
             name="Rent plan",
