@@ -44,6 +44,8 @@ class HistoricalEstimateProposal:
     confidence: float
     reason: str
     scheduled_amount: Money = Money(0)
+    seasonal: bool = False
+    trend: str | None = None
 
     @property
     def source_name(self) -> str:
@@ -177,6 +179,41 @@ def _infer_recurrence(
     return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
 
 
+
+def _trend_summary(values: list[Money]) -> tuple[list[Money], str | None]:
+    """Return the sample to use and a conservative trend label."""
+    if len(values) < 6:
+        return values, None
+    split = len(values) // 2
+    earlier = _typical_amount(values[:split])
+    later = _typical_amount(values[split:])
+    if not earlier or earlier * later <= 0:
+        return values, None
+    change = (later.to_decimal() - earlier.to_decimal()) / abs(earlier.to_decimal())
+    if abs(change) < Decimal("0.10"):
+        return values, None
+    recent = values[-min(3, len(values)):]
+    direction = "upward" if change > 0 else "downward"
+    return recent, f"{direction} trend ({abs(change) * Decimal(100):.1f}%)"
+
+
+def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> bool:
+    """Detect a repeated month-of-year pattern without overfitting one year."""
+    medians = [
+        _typical_amount(values)
+        for values in monthly_by_month.values()
+        if len(values) >= 2 and any(values)
+    ]
+    if len(medians) < 4:
+        return False
+    magnitudes = [abs(value.to_decimal()) for value in medians if value]
+    if len(magnitudes) < 4:
+        return False
+    middle = median(magnitudes)
+    if not middle:
+        return False
+    return max(magnitudes) >= middle * Decimal("1.35")
+
 def propose_historical_estimates(
     db: DbSQLite,
     *,
@@ -213,6 +250,7 @@ def propose_historical_estimates(
             continue
 
         monthly: list[Money] = []
+        monthly_by_month: dict[int, list[Money]] = {}
         txn_count = 0
         applied_scheduled_total = Money(0)
         for offset in range(months):
@@ -229,6 +267,7 @@ def propose_historical_estimates(
             applied_scheduled_total = applied_scheduled_total + applied_scheduled
             if residual:
                 monthly.append(residual)
+                monthly_by_month.setdefault(start.month, []).append(residual)
 
         if len(monthly) < min_active_months:
             continue
@@ -237,7 +276,9 @@ def propose_historical_estimates(
         if funding_account is None:
             continue
 
-        monthly_residual = _typical_amount(monthly)
+        trend_sample, trend = _trend_summary(monthly)
+        monthly_residual = _typical_amount(trend_sample)
+        seasonal = _has_seasonality(monthly_by_month)
         recurrence, cadence, occurrences_per_month = _infer_recurrence(
             _unscheduled_dates(db, account.handle, history_start, history_end),
             current_month,
@@ -262,8 +303,12 @@ def propose_historical_estimates(
                     f"{cadence}; median residual of {len(monthly)} active month(s) "
                     f"across {months} completed month(s) after subtracting "
                     f"{scheduled_total.format()} of scheduled category activity"
+                    + (f"; {trend}, using recent median" if trend else "")
+                    + ("; recurring seasonal variation detected" if seasonal else "")
                 ),
                 scheduled_amount=scheduled_total,
+                seasonal=seasonal,
+                trend=trend,
             )
         )
 

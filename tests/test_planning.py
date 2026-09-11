@@ -743,6 +743,65 @@ class TestHistoricalEstimateProposals:
         assert Money("90") <= proposal.amount <= Money("110")
         assert "weekly" in proposal.reason
 
+    def test_detects_upward_trend_and_uses_recent_residual(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        amounts = ["100", "105", "110", "150", "155", "160"]
+        with db.transaction("Trending groceries") as txn:
+            for month, amount in enumerate(amounts, start=1):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 10),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        amount,
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 7, 20), months=6
+            )
+            if item.category == book.groceries
+        )
+        assert proposal.trend is not None
+        assert "upward trend" in proposal.trend
+        assert proposal.amount == Money("155.00")
+        assert "using recent median" in proposal.reason
+
+    def test_detects_repeated_month_of_year_seasonality(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        with db.transaction("Seasonal utilities") as txn:
+            for year in (2024, 2025):
+                for month in range(1, 13):
+                    amount = "240" if month in (1, 2, 7, 8) else "100"
+                    db.add_transaction(
+                        Transaction.simple(
+                            date(year, month, 10),
+                            "Utilities",
+                            book.utilities,
+                            book.checking,
+                            amount,
+                        ),
+                        txn,
+                    )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 1, 20), months=24
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.seasonal is True
+        assert "seasonal variation detected" in proposal.reason
+
     def test_accepts_proposal_into_base_as_estimate(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import Transaction
