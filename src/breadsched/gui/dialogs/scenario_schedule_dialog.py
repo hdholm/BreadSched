@@ -80,6 +80,9 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.current = current
         self._constructing = True
         initial = current or source
+        self._formula_mode = bool(
+            initial is not None and any(split.formula for split in initial.splits)
+        )
         self.set_default_size(580, 500)
         self._accounts = sorted(
             (
@@ -245,6 +248,11 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(Gtk.Label(label="If it falls on a weekend", xalign=0), 0, row, 1, 1)
         grid.attach(self.weekend, 1, row, 1, 1)
 
+        self.protected_details = Gtk.Label(xalign=0, wrap=True, selectable=True)
+        self.protected_details.add_css_class("dim")
+        self.protected_details.set_visible(False)
+        box.append(self.protected_details)
+
         self.preview = Gtk.Label(xalign=0, wrap=True)
         self.preview.add_css_class("dim")
         box.append(self.preview)
@@ -299,6 +307,11 @@ class ScenarioScheduleDialog(Gtk.Window):
             0,
         )
         self.weekend.set_selected(weekend_index)
+
+        if self._formula_mode:
+            self.skipped_editor.set_values(source.skipped)
+            self._protect_formula_fields(source)
+            return
 
         flow_split = None
         for split in source.splits:
@@ -398,6 +411,43 @@ class ScenarioScheduleDialog(Gtk.Window):
             for item in source.occurrence_adjustments
         )
 
+
+    def _protect_formula_fields(
+        self, source: ScheduledTransaction | ScenarioSchedule
+    ) -> None:
+        """Expose scenario metadata edits without rewriting formula-owned values."""
+        protected = (
+            self.category,
+            self.funding,
+            self.planning_flow,
+            self.amount_entry,
+            self.additional_splits,
+            self.amount_changes_editor,
+            self.occurrence_adjustments_editor,
+        )
+        for widget in protected:
+            widget.set_sensitive(False)
+        lines = [
+            "Formula expressions, variables, split accounts, and formula-derived "
+            "amounts are protected. Name, recurrence, and skipped occurrences may "
+            "be edited without changing them.",
+            "",
+            "Protected splits:",
+        ]
+        for index, split in enumerate(source.splits, 1):
+            account = self.db.get_account(split.account)
+            account_name = self.db.full_name(account) if account is not None else split.account
+            value = f"formula {split.formula!r}" if split.formula else str(split.amount or Money(0))
+            lines.append(f"  {index}. {account_name}: {value}")
+        if source.variables:
+            lines.extend(["", "Formula variables:"])
+            lines.extend(
+                f"  {key} = {value}" for key, value in sorted(source.variables.items())
+            )
+        self.protected_details.set_text("\n".join(lines))
+        self.protected_details.set_visible(True)
+        self.preview.set_visible(False)
+
     def _recurrence(self) -> Recurrence | None:
         try:
             start = date.fromisoformat(self.start_entry.get_text().strip())
@@ -421,12 +471,24 @@ class ScenarioScheduleDialog(Gtk.Window):
                     return None
                 if count < 1:
                     return None
+        day_of_month = None
+        second_day_of_month = None
+        initial = self.current or self.source
+        if (
+            initial is not None
+            and period is initial.recurrence.period
+            and interval == initial.recurrence.interval
+        ):
+            day_of_month = initial.recurrence.day_of_month
+            second_day_of_month = initial.recurrence.second_day_of_month
         return Recurrence(
             period=period,
             interval=interval,
             start=start,
             end=end,
             count=count,
+            day_of_month=day_of_month,
+            second_day_of_month=second_day_of_month,
             weekend_adjust=_WEEKEND[self.weekend.get_selected()][1],
         )
 
@@ -521,21 +583,23 @@ class ScenarioScheduleDialog(Gtk.Window):
         if not self.name_entry.get_text().strip():
             problems.append("give it a name")
         amount = self._amount()
-        if amount is None:
-            problems.append("enter an amount")
         amount_changes = self._amount_changes()
-        if amount_changes is None:
-            problems.append("check future amounts")
+        if not self._formula_mode:
+            if amount is None:
+                problems.append("enter an amount")
+            if amount_changes is None:
+                problems.append("check future amounts")
         recurrence = self._recurrence()
         skipped = self._skipped(recurrence)
         if skipped is None:
             problems.append("check skipped occurrence dates")
         adjustments = self._occurrence_adjustments(recurrence)
-        if adjustments is None:
-            problems.append("check one-time amounts")
-        if skipped is not None and adjustments is not None:
-            if set(skipped) & {item.when for item in adjustments}:
-                problems.append("an occurrence cannot be both skipped and overridden")
+        if not self._formula_mode:
+            if adjustments is None:
+                problems.append("check one-time amounts")
+            if skipped is not None and adjustments is not None:
+                if set(skipped) & {item.when for item in adjustments}:
+                    problems.append("an occurrence cannot be both skipped and overridden")
         period = self._frequency_options[self.frequency.get_selected()][1]
         bounded = period is not PeriodType.ONCE
         self.ends.set_sensitive(bounded)
@@ -543,34 +607,32 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.count_entry.set_sensitive(bounded and self.ends.get_selected() == 2)
         if recurrence is None:
             problems.append("check the schedule dates/count")
-        if self.category.get_selected() == self.funding.get_selected():
-            problems.append("choose two different accounts")
-        category = self._accounts[self.category.get_selected()]
-        if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
-            problems.append("choose an income or expense category")
-        initial = self.current or self.source
-        if initial is not None and any(split.formula for split in initial.splits):
-            problems.append("formula schedules can only be suppressed for now")
-        selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
-        for (
-            account_index, raw_amount, _purpose_index, _memo, _direction
-        ) in self.additional_splits.values():
-            if account_index in selected_accounts:
-                problems.append("each additional split needs a different account")
-                break
-            selected_accounts.add(account_index)
-            try:
-                extra_amount = Money(raw_amount)
-            except (ValueError, ArithmeticError):
-                problems.append("check additional split amounts")
-                break
-            if extra_amount <= 0:
-                problems.append("additional split amounts must be greater than zero")
-                break
+        if not self._formula_mode:
+            if self.category.get_selected() == self.funding.get_selected():
+                problems.append("choose two different accounts")
+            category = self._accounts[self.category.get_selected()]
+            if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
+                problems.append("choose an income or expense category")
+            selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
+            for (
+                account_index, raw_amount, _purpose_index, _memo, _direction
+            ) in self.additional_splits.values():
+                if account_index in selected_accounts:
+                    problems.append("each additional split needs a different account")
+                    break
+                selected_accounts.add(account_index)
+                try:
+                    extra_amount = Money(raw_amount)
+                except (ValueError, ArithmeticError):
+                    problems.append("check additional split amounts")
+                    break
+                if extra_amount <= 0:
+                    problems.append("additional split amounts must be greater than zero")
+                    break
 
         self.save_button.set_sensitive(not problems)
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
-        if problems:
+        if problems or self._formula_mode:
             self.preview.set_text("")
         elif recurrence is not None:
             assert amount is not None
@@ -591,9 +653,27 @@ class ScenarioScheduleDialog(Gtk.Window):
 
     def build(self) -> ScenarioSchedule:
         """Build the scenario-owned recurring estimate described by the form."""
-        amount = self._amount()
         recurrence = self._recurrence()
-        assert amount is not None and recurrence is not None
+        assert recurrence is not None
+        if self._formula_mode:
+            initial = self.current or self.source
+            assert initial is not None
+            if isinstance(initial, ScenarioSchedule):
+                change = ScenarioSchedule.from_dict(initial.serialize())
+            else:
+                change = ScenarioSchedule.from_scheduled(initial)
+            old_name = change.name
+            change.name = self.name_entry.get_text().strip()
+            if change.description == old_name:
+                change.description = change.name
+            change.recurrence = recurrence
+            change.skipped = self._skipped(recurrence) or []
+            if self.source is not None:
+                change.source_schedule = self.source.handle
+            return change
+
+        amount = self._amount()
+        assert amount is not None
         category = self._accounts[self.category.get_selected()]
         funding = self._accounts[self.funding.get_selected()]
         signed = amount * category.sign()

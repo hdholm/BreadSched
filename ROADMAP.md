@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0119
-(`scheduled: preserve formula-owned fields while editing metadata`).
+Status below is current through patch 0120
+(`scheduled: preserve scenario formula fields while editing metadata`).
 
 ## Near-term correctness and daily-use work
 
@@ -46,9 +46,11 @@ Status below is current through patch 0119
 - Formula schedules now support a protected metadata-editing mode (0119): name,
   kind, recurrence, skipped occurrences, and automatic-posting behavior can be
   changed while formula expressions, variables, split accounts, amount timelines,
-  and formula-derived values remain visible and preserved exactly. Continue toward
-  direct formula editing only when the expression/variable model can be round-tripped
-  safely; scenario-owned formula schedules still need the same protected treatment.
+  and formula-derived values remain visible and preserved exactly. Patch 0120 gives
+  scenario-owned formula schedules the corresponding protected mode for name,
+  recurrence, and skipped-occurrence edits while preserving scenario formula fields
+  and source linkage. Continue toward direct formula editing only when the
+  expression/variable model can be round-tripped safely.
 - Preserve unsupported custom recurrence data rather than enabling an editor that
   would silently simplify it.
 - Add fixture/regression coverage for native and imported schedules, including

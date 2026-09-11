@@ -2106,6 +2106,66 @@ class TestDerivedPlanView:
         assert saved.schedule_overrides[0].splits[0].amount == Money("2100.00")
         assert baseline.splits[0].amount == Money("1800.00")
 
+    def test_scenario_formula_schedule_preserves_protected_fields(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import (
+            Money,
+            PeriodType,
+            Recurrence,
+            Scenario,
+            ScenarioSchedule,
+            ScheduledAmountChange,
+            ScheduledOccurrenceAdjustment,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+        from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        app.open_book(populated_book)
+        expense = app.db.get_account_by_name("Expenses:Rent")
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        source = ScheduledTransaction(
+            name="Formula fixture",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(expense.handle, formula="base"),
+                ScheduledSplit(checking.handle, formula="-base"),
+            ],
+            amount_changes=[ScheduledAmountChange(date(2027, 1, 1), Money("130"))],
+            occurrence_adjustments=[
+                ScheduledOccurrenceAdjustment(date(2026, 3, 1), Money("140"))
+            ],
+        )
+        source.variables = {"base": "125"}
+        current = ScenarioSchedule.from_scheduled(source)
+        scenario = Scenario(name="Formula scenario", schedule_overrides=[current])
+
+        dialog = ScenarioScheduleDialog(
+            window, app.db, scenario, source=source, current=current
+        )
+        assert dialog.save_button.get_sensitive() is True
+        assert dialog.amount_entry.get_sensitive() is False
+        assert "formula 'base'" in dialog.protected_details.get_text()
+
+        dialog.name_entry.set_text("Updated formula fixture")
+        dialog.start_entry.set_text("2026-02-01")
+        rebuilt = dialog.build()
+
+        assert rebuilt.name == "Updated formula fixture"
+        assert rebuilt.recurrence.start == date(2026, 2, 1)
+        assert [split.serialize() for split in rebuilt.splits] == [
+            split.serialize() for split in current.splits
+        ]
+        assert rebuilt.variables == current.variables
+        assert [item.serialize() for item in rebuilt.amount_changes] == [
+            item.serialize() for item in current.amount_changes
+        ]
+        assert [item.serialize() for item in rebuilt.occurrence_adjustments] == [
+            item.serialize() for item in current.occurrence_adjustments
+        ]
+        assert rebuilt.source_schedule == source.handle
+
 
 class TestDueReview:
     """Item 6: due occurrences are decided one at a time, not posted for you."""
