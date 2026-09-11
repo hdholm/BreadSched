@@ -484,9 +484,19 @@ and recent closed years remain visible on the dashboard.
 Transactions dated inside a funding year are assigned automatically. A split can
 also carry an explicit FSA funding-year start so a claim posted during a later
 run-out window can reduce the prior year's election even when a new funding year
-is already active. A future entry/register UX should expose that assignment
-directly rather than requiring imported/programmatic metadata. Plan-specific
-carryover rules are not yet modeled.
+is already active.
+
+FSA healthcare activity can now be grouped into financial **claim/service episode**
+records. A claim carries its service date, provider/description, optional EOB patient
+responsibility, one or more linked healthcare-payment splits, and any number of FSA
+allocations. Each allocation identifies its own FSA account and funding year and may
+link multiple reimbursement splits, so one service can be partially reimbursed from
+multiple FSAs. The underlying payments and reimbursements remain ordinary ledger
+transactions with their real posting dates. Claim state is derived as Waiting for
+EOB, Open, Partially reimbursed, Fully reimbursed, Closed — no funds, or Needs review.
+The web dashboard includes claim management from existing ledger splits; GTK shows
+open-claim status on Dashboard. Richer GTK claim editing, provider refunds, rejected
+claims, and plan-specific carryover rules remain future work.
 
 ## Forward plan: planning classifications for balance-sheet flows
 

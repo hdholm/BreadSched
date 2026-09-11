@@ -100,6 +100,16 @@ class DashboardView(BaseView):
             getattr(self.fsa_grid, f"set_margin_{side}")(12)
         self.append(self.fsa_grid)
 
+        self.fsa_claim_heading = Gtk.Label(label="Open FSA claims", xalign=0)
+        self.fsa_claim_heading.add_css_class("total-row")
+        for side in ("start", "top"):
+            getattr(self.fsa_claim_heading, f"set_margin_{side}")(12)
+        self.append(self.fsa_claim_heading)
+        self.fsa_claim_grid = Gtk.Grid(column_spacing=18, row_spacing=3)
+        for side in ("start", "end"):
+            getattr(self.fsa_claim_grid, f"set_margin_{side}")(12)
+        self.append(self.fsa_claim_grid)
+
         heading = Gtk.Label(label="Pending bills", xalign=0)
         heading.add_css_class("total-row")
         for side in ("start", "top"):
@@ -190,6 +200,7 @@ class DashboardView(BaseView):
         self._render_cards()
         self._render_groups()
         self._render_fsa()
+        self._render_fsa_claims()
 
         store = Gio.ListStore.new(Row)
         for bill in self.board.bills:
@@ -289,6 +300,43 @@ class DashboardView(BaseView):
                 if column_index >= 3:
                     label.add_css_class("numeric")
                 self.fsa_grid.attach(label, column_index, row_index, 1, 1)
+
+    def _render_fsa_claims(self) -> None:
+        from ...gen.engine import fsa_claims
+
+        _empty(self.fsa_claim_grid)
+        assert self.db is not None
+        summaries = [
+            fsa_claims.claim_summary(self.db, claim, as_of=self._today())
+            for claim in fsa_claims.iter_claims(self.db)
+        ]
+        summaries = [
+            summary for summary in summaries
+            if summary.status is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
+        ]
+        self.fsa_claim_heading.set_visible(bool(summaries))
+        self.fsa_claim_grid.set_visible(bool(summaries))
+        if not summaries:
+            return
+        headings = ("Service date", "Provider", "Status", "Paid", "Reimbursed", "Remaining")
+        for column_index, heading in enumerate(headings):
+            label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
+            label.add_css_class("summary-label")
+            self.fsa_claim_grid.attach(label, column_index, 0, 1, 1)
+        for row_index, summary in enumerate(summaries, start=1):
+            values = (
+                summary.claim.service_date.isoformat(),
+                summary.claim.provider,
+                summary.status.label,
+                summary.paid.format(),
+                summary.reimbursed.format(),
+                summary.remaining_reimbursable.format(),
+            )
+            for column_index, value in enumerate(values):
+                label = Gtk.Label(label=value, xalign=1 if column_index >= 3 else 0)
+                if column_index >= 3:
+                    label.add_css_class("numeric")
+                self.fsa_claim_grid.attach(label, column_index, row_index, 1, 1)
 
     # ----------------------------------------------------------------- actions
 

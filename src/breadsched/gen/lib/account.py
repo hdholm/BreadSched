@@ -92,7 +92,7 @@ class FsaFundingYear:
         }
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> "FsaFundingYear":
+    def from_dict(cls, data: dict[str, Any]) -> FsaFundingYear:
         raw_runout = data.get("runout_through")
         return cls(
             start=date.fromisoformat(str(data["start"])),

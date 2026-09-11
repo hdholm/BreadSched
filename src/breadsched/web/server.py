@@ -28,6 +28,7 @@ from ..gen.engine import (
     budgeting,
     cashflow,
     estimates,
+    fsa_claims,
     ledger,
     planning,
     projection,
@@ -38,6 +39,9 @@ from ..gen.lib import (
     AccountPlanningRole,
     AssumptionPeriod,
     Assumptions,
+    FsaClaim,
+    FsaClaimAllocation,
+    FsaClaimSplitLink,
     FsaFundingYear,
     Money,
     PeriodType,
@@ -124,6 +128,22 @@ class Api:
                     ],
                 }
                 for group in board.groups
+            ],
+            "fsa_claims": [
+                {
+                    "handle": summary.claim.handle,
+                    "service_date": summary.claim.service_date.isoformat(),
+                    "provider": summary.claim.provider,
+                    "status": summary.status.label,
+                    "paid": str(summary.paid.to_decimal()),
+                    "reimbursed": str(summary.reimbursed.to_decimal()),
+                    "remaining": str(summary.remaining_reimbursable.to_decimal()),
+                }
+                for claim in fsa_claims.iter_claims(self.db)
+                for summary in [fsa_claims.claim_summary(self.db, claim)]
+                if summary.status not in {
+                    fsa_claims.FsaClaimStatus.FULLY_REIMBURSED,
+                }
             ],
             "fsa": [
                 {
@@ -252,6 +272,96 @@ class Api:
         with self.db.transaction(f"Set FSA funding years for {account.name}") as txn:
             self.db.commit_account(account, txn)
         return {"handle": account.handle, "years": [year.serialize() for year in years]}
+
+    def fsa_claims(self) -> dict:
+        rows = []
+        for claim in fsa_claims.iter_claims(self.db):
+            summary = fsa_claims.claim_summary(self.db, claim)
+            rows.append({
+                "handle": claim.handle,
+                "service_date": claim.service_date.isoformat(),
+                "provider": claim.provider,
+                "description": claim.description,
+                "eob_responsibility": (
+                    str(claim.eob_responsibility.to_decimal())
+                    if claim.eob_responsibility is not None else None
+                ),
+                "paid": str(summary.paid.to_decimal()),
+                "reimbursed": str(summary.reimbursed.to_decimal()),
+                "remaining": str(summary.remaining_reimbursable.to_decimal()),
+                "status": summary.status.value,
+                "status_label": summary.status.label,
+                "payments": [link.serialize() for link in claim.payments],
+                "allocations": [
+                    {
+                        **allocation.serialize(),
+                        "account_name": (
+                            self.db.full_name(allocation.account)
+                            if self.db.get_account(allocation.account) else allocation.account
+                        ),
+                    }
+                    for allocation in claim.allocations
+                ],
+            })
+        return {"claims": rows, "candidates": self.fsa_claim_candidates()}
+
+    def fsa_claim_candidates(self) -> dict:
+        payments = []
+        reimbursements = []
+        for transaction in self.db.iter_transactions():
+            for split in transaction.splits:
+                account = self.db.get_account(split.account)
+                if account is None:
+                    continue
+                row = {
+                    "transaction": transaction.handle,
+                    "split": split.handle,
+                    "date": transaction.post_date.isoformat(),
+                    "description": transaction.description,
+                    "account": account.handle,
+                    "account_name": self.db.full_name(account),
+                    "amount": str(abs(split.value).to_decimal()),
+                }
+                if account.account_class is AccountClass.EXPENSE and split.value > 0:
+                    payments.append(row)
+                if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+                    reimbursements.append(row)
+        fsa_accounts = [
+            {
+                "handle": account.handle,
+                "name": self.db.full_name(account),
+                "years": [year.serialize() for year in account.fsa_years],
+            }
+            for account in self.db.iter_accounts()
+            if account.planning_role is AccountPlanningRole.FSA
+        ]
+        return {
+            "payments": payments[-250:],
+            "reimbursements": reimbursements[-250:],
+            "fsa_accounts": fsa_accounts,
+        }
+
+    def fsa_claim_save(self, payload: dict) -> dict:
+        eob = str(payload.get("eob_responsibility", "")).strip()
+        claim = FsaClaim(
+            handle=str(payload.get("handle") or create_handle()),
+            service_date=date.fromisoformat(str(payload["service_date"])),
+            provider=str(payload.get("provider", "")).strip(),
+            description=str(payload.get("description", "")).strip(),
+            eob_responsibility=Money(eob) if eob else None,
+            payments=[FsaClaimSplitLink.from_dict(item) for item in payload.get("payments", [])],
+            allocations=[
+                FsaClaimAllocation.from_dict(item)
+                for item in payload.get("allocations", [])
+            ],
+        )
+        fsa_claims.save_claim(self.db, claim)
+        return {"handle": claim.handle}
+
+    def fsa_claim_delete(self, payload: dict) -> dict:
+        handle = str(payload.get("handle", ""))
+        fsa_claims.delete_claim(self.db, handle)
+        return {"handle": handle}
 
     def register(self, handle: str, limit: int = 250) -> dict:
         account = self.db.get_account(handle)
@@ -2033,6 +2143,7 @@ ROUTES = {
     ),
     "/api/summary": lambda a, q: a.summary(),
     "/api/accounts": lambda a, q: a.accounts(),
+    "/api/fsa/claims": lambda a, q: a.fsa_claims(),
     "/api/register": lambda a, q: a.register(
         q.get("account", [""])[0], int(q.get("limit", ["250"])[0])
     ),
@@ -2069,6 +2180,8 @@ ROUTES = {
 POST_ROUTES = {
     "/api/account/planning-role": lambda a, body: a.account_planning_role_save(body),
     "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),
+    "/api/fsa/claim/save": lambda a, body: a.fsa_claim_save(body),
+    "/api/fsa/claim/delete": lambda a, body: a.fsa_claim_delete(body),
     "/api/transaction": lambda a, body: a.add_transaction(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),

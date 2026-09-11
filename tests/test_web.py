@@ -877,7 +877,7 @@ class TestDashboardApi:
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200
-        assert set(payload) == {"summary", "config", "groups", "fsa", "bills"}
+        assert set(payload) == {"summary", "config", "groups", "fsa", "fsa_claims", "bills"}
 
     def test_it_reports_the_headline_figures(self, client):
         _status, payload = client.get("/api/dashboard")
@@ -1437,3 +1437,79 @@ def test_historical_estimate_proposals_and_acceptance(client):
     accepted = next(item for item in scheduled["definitions"] if item["handle"] == result["handle"])
     assert accepted["placeholder"] is True
     assert Money(accepted["amount"]) == Money("1800.00")
+
+
+def test_fsa_claim_can_use_multiple_allocations(client):
+    _status, accounts = client.get("/api/accounts")
+    fsa_account = next(row for row in accounts if row["name"] == "401(k)")
+    client.post(
+        "/api/account/planning-role",
+        {"handle": fsa_account["handle"], "planning_role": "fsa"},
+    )
+    client.post(
+        "/api/account/fsa-years",
+        {
+            "handle": fsa_account["handle"],
+            "years": [{
+                "start": "2026-01-01",
+                "through": "2026-12-31",
+                "election": "3000.00",
+                "runout_through": "2027-03-31",
+            }],
+        },
+    )
+    client.post(
+        "/api/transaction",
+        {
+            "date": "2026-02-10",
+            "description": "Dental service",
+            "to": "Expenses:Rent",
+            "from": "Assets:Checking",
+            "amount": "500.00",
+        },
+    )
+    client.post(
+        "/api/transaction",
+        {
+            "date": "2026-02-20",
+            "description": "FSA reimbursement",
+            "to": "Assets:Checking",
+            "from": "Assets:401(k)",
+            "amount": "300.00",
+        },
+    )
+    status, payload = client.get("/api/fsa/claims")
+    assert status == 200
+    payment = next(item for item in payload["candidates"]["payments"]
+                   if item["description"] == "Dental service")
+    reimbursement = next(item for item in payload["candidates"]["reimbursements"]
+                         if item["description"] == "FSA reimbursement")
+    status, saved = client.post(
+        "/api/fsa/claim/save",
+        {
+            "service_date": "2026-02-01",
+            "provider": "Dentist",
+            "eob_responsibility": "500.00",
+            "payments": [{
+                "transaction": payment["transaction"], "split": payment["split"],
+            }],
+            "allocations": [{
+                "account": fsa_account["handle"],
+                "funding_year_start": "2026-01-01",
+                "target": [50000, 100],
+                "reimbursements": [{
+                    "transaction": reimbursement["transaction"],
+                    "split": reimbursement["split"],
+                }],
+            }],
+        },
+    )
+    assert status == 200
+    assert saved["handle"]
+    _status, claims = client.get("/api/fsa/claims")
+    claim = claims["claims"][0]
+    assert claim["provider"] == "Dentist"
+    assert claim["paid"] == "500.00"
+    assert claim["reimbursed"] == "300.00"
+    assert claim["remaining"] == "200.00"
+    assert claim["status"] == "partial"

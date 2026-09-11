@@ -417,6 +417,113 @@ function openFsaYearsEditor(account) {
   document.body.append(backdrop);
 }
 
+
+async function openFsaClaimsEditor() {
+  const data = await get("/api/fsa/claims");
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const list = el("div", { class:"stack" });
+  const renderList = () => {
+    const claimRows = data.claims.length ? data.claims.map((claim) =>
+      el("div", { class:"card" },
+        el("strong", {}, `${claim.service_date} ${claim.provider || "FSA claim"}`),
+        el("span", {}, ` ${claim.status_label} — paid ${money(claim.paid)}, `
+          + `reimbursed ${money(claim.reimbursed)}, remaining ${money(claim.remaining)}`),
+        el("button", { class:"action", type:"button", onclick:async()=>{
+          await post("/api/fsa/claim/delete", { handle:claim.handle });
+          data.claims = data.claims.filter((item)=>item.handle !== claim.handle);
+          renderList();
+        }}, "Delete"))) : [el("p", { class:"note" }, "No FSA claims yet.")];
+    list.replaceChildren(...claimRows);
+  };
+  renderList();
+
+  const service = el("input", { type:"date" });
+  const provider = el("input", { placeholder:"Provider" });
+  const description = el("input", { placeholder:"Description" });
+  const eob = el("input", { placeholder:"EOB patient responsibility" });
+  const paymentSelect = el("select", { multiple:"multiple", size:"5" },
+    data.candidates.payments.map((item) => el("option", {
+      value:JSON.stringify({transaction:item.transaction, split:item.split}),
+    }, `${item.date} ${item.description} — ${item.account_name} ${money(item.amount)}`)));
+  const allocations = el("div", { class:"stack" });
+  const addAllocation = () => {
+    const accountSelect = el("select", {}, data.candidates.fsa_accounts.map((account) =>
+      el("option", { value:account.handle }, account.name)));
+    const yearSelect = el("select");
+    const reimburse = el("select", { multiple:"multiple", size:"4" });
+    const target = el("input", { placeholder:"Target amount (optional)" });
+    const refresh = () => {
+      const account = data.candidates.fsa_accounts.find(
+        (item)=>item.handle === accountSelect.value);
+      yearSelect.replaceChildren(...((account?.years || []).map((year) =>
+        el("option", { value:year.start }, `${year.start} – ${year.through}`))));
+      reimburse.replaceChildren(...data.candidates.reimbursements
+        .filter((item)=>item.account === accountSelect.value)
+        .map((item)=>el("option", {
+          value:JSON.stringify({transaction:item.transaction, split:item.split}),
+        }, `${item.date} ${item.description} — ${money(item.amount)}`)));
+    };
+    accountSelect.onchange = refresh;
+    const row = el("div", { class:"card" },
+      el("div", { class:"row" }, accountSelect, yearSelect, target,
+        el("button", { class:"action", type:"button", onclick:()=>row.remove() },
+          "Remove allocation")),
+      el("label", {}, "Reimbursement/payment splits"), reimburse);
+    row._claimFields = { accountSelect, yearSelect, target, reimburse };
+    allocations.append(row);
+    refresh();
+  };
+  const save = async () => {
+    const payments = Array.from(paymentSelect.selectedOptions).map(
+      (option)=>JSON.parse(option.value));
+    const allocationPayload = Array.from(allocations.children).map((row) => {
+      const fields = row._claimFields;
+      const targetValue = fields.target.value.trim();
+      const targetMoney = targetValue ? Math.round(Number(targetValue) * 100) : null;
+      return {
+        account:fields.accountSelect.value,
+        funding_year_start:fields.yearSelect.value,
+        target:targetMoney === null ? null : [targetMoney, 100],
+        reimbursements:Array.from(fields.reimburse.selectedOptions).map(
+          (option)=>JSON.parse(option.value)),
+      };
+    });
+    await post("/api/fsa/claim/save", {
+      service_date:service.value,
+      provider:provider.value.trim(),
+      description:description.value.trim(),
+      eob_responsibility:eob.value.trim(),
+      payments,
+      allocations:allocationPayload,
+    });
+    backdrop.remove();
+    say("FSA claim saved.");
+    render();
+  };
+  const form = el("section", { class:"detail-dialog wide" },
+    el("h2", {}, "FSA claims"), list,
+    el("h3", {}, "New claim / service episode"),
+    el("p", { class:"note" },
+      "Service and EOB information is tracked separately from ledger dates. "
+      + "A claim may use more than one FSA account or funding year."),
+    el("div", { class:"row" }, service, provider, description, eob),
+    el("label", {}, "Healthcare payments"), paymentSelect,
+    el("h3", {}, "FSA allocations"), allocations,
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:addAllocation },
+        "Add FSA allocation"),
+      el("span", { style:"flex:1" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() },
+        "Close"),
+      el("button", { class:"action primary", type:"button",
+        onclick:()=>save().catch((error)=>say(error.message,"error")) }, "Save claim")));
+  backdrop.append(form);
+  document.body.append(backdrop);
+}
+
 // ------------------------------------------------------------------- views
 
 async function showAccounts() {
@@ -1749,6 +1856,10 @@ async function showDashboard() {
     f.account, `${f.start} – ${f.through}`, f.phase, money(f.election),
     money(f.funded), money(f.used), money(f.remaining), money(f.forfeited),
   ]);
+  const fsaClaimRows = (data.fsa_claims || []).map((claim) => [
+    claim.service_date, claim.provider, claim.status, money(claim.paid),
+    money(claim.reimbursed), money(claim.remaining),
+  ]);
 
   return el("div", {}, cards, controls,
     el("h2", {}, "Balances"),
@@ -1757,6 +1868,14 @@ async function showDashboard() {
     fsaRows.length ? table(["Account", "Funding year", "Status",
       {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},
       {label:"Remaining",num:true},{label:"Forfeited",num:true}], fsaRows) : null,
+    (fsaRows.length || fsaClaimRows.length) ? el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:()=>
+        openFsaClaimsEditor().catch((error)=>say(error.message,"error")) },
+      "Manage FSA claims…")) : null,
+    fsaClaimRows.length ? el("h2", {}, "Open FSA claims") : null,
+    fsaClaimRows.length ? table(["Service date", "Provider", "Status",
+      {label:"Paid",num:true},{label:"Reimbursed",num:true},
+      {label:"Remaining",num:true}], fsaClaimRows) : null,
     el("h2", {}, `Pending bills (${data.bills.length})`),
     table(["Bill", "Next due", "Due in", "Cycle",
            { label: "Amount", num: true }, { label: "Monthly", num: true },

@@ -103,3 +103,105 @@ def test_fsa_years_round_trip_with_account_serialization():
     ]
     restored = Account.from_dict(account.serialize())
     assert restored.fsa_years == account.fsa_years
+
+
+def _second_fsa_account(db, book):
+    account = Account(
+        name="Spouse FSA",
+        atype=AccountType.ASSET,
+        parent=book.assets,
+    )
+    account.planning_role = AccountPlanningRole.FSA
+    account.fsa_years = [
+        FsaFundingYear(
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            Money("2000.00"),
+            date(2027, 3, 31),
+        )
+    ]
+    with db.transaction("Add second FSA") as txn:
+        db.add_account(account, txn)
+    return account
+
+
+def test_claim_can_coordinate_multiple_fsa_funding_sources(db, book):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+
+    primary = _fsa_account(db, book)
+    secondary = _second_fsa_account(db, book)
+    payment = Transaction.simple(
+        date(2026, 8, 5), "Orthodontist", book.groceries, book.checking, "900.00"
+    )
+    reimbursement_one = Transaction.simple(
+        date(2026, 8, 15), "Primary FSA", book.checking, primary.handle, "500.00"
+    )
+    reimbursement_two = Transaction.simple(
+        date(2026, 8, 20), "Spouse FSA", book.checking, secondary.handle, "300.00"
+    )
+    with db.transaction("Claim activity") as txn:
+        db.add_transaction(payment, txn)
+        db.add_transaction(reimbursement_one, txn)
+        db.add_transaction(reimbursement_two, txn)
+
+    claim = FsaClaim(
+        service_date=date(2026, 8, 1),
+        provider="Orthodontist",
+        eob_responsibility=Money("900.00"),
+        payments=[FsaClaimSplitLink(payment.handle, payment.splits[0].handle)],
+        allocations=[
+            FsaClaimAllocation(
+                primary.handle,
+                primary.fsa_years[0].start,
+                Money("500.00"),
+                [FsaClaimSplitLink(
+                    reimbursement_one.handle, reimbursement_one.splits[1].handle
+                )],
+            ),
+            FsaClaimAllocation(
+                secondary.handle,
+                secondary.fsa_years[0].start,
+                Money("400.00"),
+                [FsaClaimSplitLink(
+                    reimbursement_two.handle, reimbursement_two.splits[1].handle
+                )],
+            ),
+        ],
+    )
+
+    fsa_claims.save_claim(db, claim)
+    summary = fsa_claims.claim_summary(db, claim, as_of=date(2026, 8, 21))
+
+    assert summary.paid == Money("900.00")
+    assert summary.reimbursed == Money("800.00")
+    assert summary.remaining_reimbursable == Money("100.00")
+    assert summary.status is fsa_claims.FsaClaimStatus.PARTIAL
+    stored = fsa_claims.iter_claims(db)[0]
+    assert len(stored.allocations) == 2
+
+
+def test_claim_waits_for_eob_and_closes_when_no_fsa_funds_remain(db, book):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+
+    account = _fsa_account(db, book)
+    payment = Transaction.simple(
+        date(2027, 8, 5), "Dental service", book.groceries, book.checking, "450.00"
+    )
+    with db.transaction("Claim payment") as txn:
+        db.add_transaction(payment, txn)
+    claim = FsaClaim(
+        service_date=date(2027, 6, 20),
+        provider="Dentist",
+        payments=[FsaClaimSplitLink(payment.handle, payment.splits[0].handle)],
+        allocations=[FsaClaimAllocation(account.handle, account.fsa_years[0].start)],
+    )
+    fsa_claims.save_claim(db, claim)
+
+    waiting = fsa_claims.claim_summary(db, claim, as_of=date(2027, 8, 6))
+    assert waiting.status is fsa_claims.FsaClaimStatus.WAITING_EOB
+
+    claim.eob_responsibility = Money("450.00")
+    closed = fsa_claims.claim_summary(db, claim, as_of=date(2027, 10, 1))
+    assert closed.status is fsa_claims.FsaClaimStatus.CLOSED_NO_FUNDS
