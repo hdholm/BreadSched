@@ -44,6 +44,7 @@ from ..gen.lib import (
     Scenario,
     ScenarioSchedule,
     ScheduledAmountChange,
+    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
     Split,
@@ -230,6 +231,11 @@ class Api:
                     "amount_changes": [
                         {"start": change.start.isoformat(), "amount": change.amount}
                         for change in item.amount_changes
+                    ],
+                    "skipped": [when.isoformat() for when in item.skipped],
+                    "occurrence_adjustments": [
+                        {"when": change.when.isoformat(), "amount": change.amount}
+                        for change in item.occurrence_adjustments
                     ],
                 }
             )
@@ -567,6 +573,11 @@ class Api:
                 {"start": change.start.isoformat(), "amount": change.amount}
                 for change in item.amount_changes
             ],
+            "skipped": [when.isoformat() for when in item.skipped],
+            "occurrence_adjustments": [
+                {"when": change.when.isoformat(), "amount": change.amount}
+                for change in item.occurrence_adjustments
+            ],
         }
 
     def scenario_events(self, handle: str | None) -> dict:
@@ -604,6 +615,15 @@ class Api:
                     "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
                     "count": item.recurrence.count,
                     "weekend": self._weekend_key(item.recurrence.weekend_adjust),
+                    "amount_changes": [
+                        {"start": change.start.isoformat(), "amount": change.amount}
+                        for change in item.amount_changes
+                    ],
+                    "skipped": [when.isoformat() for when in item.skipped],
+                    "occurrence_adjustments": [
+                        {"when": change.when.isoformat(), "amount": change.amount}
+                        for change in item.occurrence_adjustments
+                    ],
                 }
                 for item in schedules
             ],
@@ -638,6 +658,55 @@ class Api:
             seen.add(when)
             changes.append(ScheduledAmountChange(when, amount))
         return sorted(changes, key=lambda item: item.start)
+
+    @staticmethod
+    def _parse_skipped(payload: dict, recurrence: Recurrence) -> list[date]:
+        raw_skipped = payload.get("skipped") or []
+        if not isinstance(raw_skipped, list):
+            raise ValueError("skipped occurrences must be a list")
+        skipped = []
+        seen = set()
+        for raw in raw_skipped:
+            try:
+                when = date.fromisoformat(str(raw))
+            except ValueError:
+                raise ValueError("skipped occurrences require YYYY-MM-DD dates") from None
+            if when in seen:
+                raise ValueError("skipped occurrence dates must be unique")
+            if when not in recurrence.occurrences(when, since=when):
+                raise ValueError(f"{when.isoformat()} is not an occurrence of this schedule")
+            seen.add(when)
+            skipped.append(when)
+        return sorted(skipped)
+
+    @staticmethod
+    def _parse_occurrence_adjustments(
+        payload: dict, recurrence: Recurrence
+    ) -> list[ScheduledOccurrenceAdjustment]:
+        raw_changes = payload.get("occurrence_adjustments") or []
+        if not isinstance(raw_changes, list):
+            raise ValueError("one-time amounts must be a list")
+        changes = []
+        seen = set()
+        for raw in raw_changes:
+            if not isinstance(raw, dict):
+                raise ValueError("one-time amount entry is invalid")
+            try:
+                when = date.fromisoformat(str(raw.get("when") or ""))
+                amount = abs(Money(str(raw.get("amount") or "")))
+            except (ValueError, ArithmeticError):
+                raise ValueError(
+                    "one-time amounts require YYYY-MM-DD dates and valid amounts"
+                ) from None
+            if not amount:
+                raise ValueError("one-time amount must be greater than zero")
+            if when in seen:
+                raise ValueError("one-time amount dates must be unique")
+            if when not in recurrence.occurrences(when, since=when):
+                raise ValueError(f"{when.isoformat()} is not an occurrence of this schedule")
+            seen.add(when)
+            changes.append(ScheduledOccurrenceAdjustment(when, amount))
+        return sorted(changes, key=lambda item: item.when)
 
     def scenario_event_save(self, payload: dict) -> dict:
         scenario = self._scenario_for_events(payload.get("handle"))
@@ -703,13 +772,18 @@ class Api:
                     raise ValueError("occurrence count must be a whole number") from None
                 if count < 1:
                     raise ValueError("occurrence count must be at least 1")
+        recurrence = Recurrence(
+            period=period, interval=interval, start=start, end=end, count=count,
+            weekend_adjust=self._SCENARIO_WEEKENDS[weekend],
+        )
+        skipped = self._parse_skipped(payload, recurrence)
+        adjustments = self._parse_occurrence_adjustments(payload, recurrence)
+        if set(skipped) & {item.when for item in adjustments}:
+            raise ValueError("an occurrence cannot be both skipped and overridden")
         signed = amount * category.sign()
         change = ScenarioSchedule(
             name=name,
-            recurrence=Recurrence(
-                period=period, interval=interval, start=start, end=end, count=count,
-                weekend_adjust=self._SCENARIO_WEEKENDS[weekend],
-            ),
+            recurrence=recurrence,
             splits=[
                 ScheduledSplit(category.handle, signed),
                 ScheduledSplit(funding.handle, -signed),
@@ -718,6 +792,8 @@ class Api:
             enabled=True,
             placeholder=source.placeholder if source is not None else True,
             amount_changes=self._parse_amount_changes(payload, start),
+            skipped=skipped,
+            occurrence_adjustments=adjustments,
         )
         if source_handle:
             scenario.schedule_overrides = [
@@ -1483,6 +1559,10 @@ class Api:
             weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
         )
         amount_changes = self._parse_amount_changes(payload, start)
+        skipped = self._parse_skipped(payload, recurrence)
+        adjustments = self._parse_occurrence_adjustments(payload, recurrence)
+        if set(skipped) & {change.when for change in adjustments}:
+            raise ValueError("an occurrence cannot be both skipped and overridden")
 
         item = (
             ScheduledTransaction.from_dict(existing.serialize())
@@ -1501,6 +1581,8 @@ class Api:
         ]
         item.placeholder = bool(payload.get("placeholder", False))
         item.amount_changes = amount_changes
+        item.skipped = skipped
+        item.occurrence_adjustments = adjustments
         item.auto_create = bool(payload.get("auto", False))
         if item.placeholder:
             item.auto_create = False

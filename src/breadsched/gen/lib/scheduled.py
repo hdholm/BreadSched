@@ -18,7 +18,12 @@ from .money import Money
 from .recurrence import Recurrence
 from .transaction import PlanningResolution, Split, Transaction
 
-__all__ = ["ScheduledAmountChange", "ScheduledSplit", "ScheduledTransaction"]
+__all__ = [
+    "ScheduledAmountChange",
+    "ScheduledOccurrenceAdjustment",
+    "ScheduledSplit",
+    "ScheduledTransaction",
+]
 
 LOG = get_logger(__name__)
 
@@ -43,6 +48,28 @@ class ScheduledAmountChange:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ScheduledAmountChange:
         return cls(date.fromisoformat(data["start"]), Money(*data["amount"]))
+
+
+class ScheduledOccurrenceAdjustment:
+    """A one-time amount override for one scheduled occurrence date."""
+
+    __slots__ = ("when", "amount")
+
+    def __init__(self, when: date, amount: Money | str | int) -> None:
+        self.when = when
+        self.amount = amount if isinstance(amount, Money) else Money(amount)
+        if self.amount <= 0:
+            raise ValueError("scheduled occurrence amount must be greater than zero")
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "when": self.when.isoformat(),
+            "amount": [self.amount.numerator, self.amount.denominator],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScheduledOccurrenceAdjustment:
+        return cls(date.fromisoformat(data["when"]), Money(*data["amount"]))
 
 
 class ScheduledSplit:
@@ -122,6 +149,8 @@ class ScheduledTransaction(PrimaryObject):
         advance_days: int = 0,
         currency: str | None = None,
         amount_changes: list[ScheduledAmountChange] | None = None,
+        skipped: list[date] | None = None,
+        occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
     ) -> None:
         super().__init__(handle)
         self.name = name
@@ -135,6 +164,9 @@ class ScheduledTransaction(PrimaryObject):
         self.advance_days = advance_days
         self.currency = currency
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
+        self.occurrence_adjustments = sorted(
+            list(occurrence_adjustments or []), key=lambda item: item.when
+        )
         self.last_posted: date | None = None
         self.variables: dict[str, str] = {}
         #: A budget-only item: a planning figure rather than a commitment. It shapes
@@ -146,7 +178,7 @@ class ScheduledTransaction(PrimaryObject):
         #: Occurrences the user chose not to post and does not want asked about
         #: again. Recorded per date rather than by moving ``last_posted``, because
         #: skipping March must not also dismiss February.
-        self.skipped: list[date] = []
+        self.skipped: list[date] = sorted(set(skipped or []))
         #: Budgets this flow is part of, by budget handle.
         self.budgets: list[str] = []
         #: Whether membership has ever been decided for this flow. Until it has,
@@ -181,9 +213,14 @@ class ScheduledTransaction(PrimaryObject):
         return total
 
     def effective_amount(self, when: date | None) -> Money | None:
-        """Latest explicit amount in force at ``when``, if one has begun."""
+        """One-time override, or latest effective-dated amount in force."""
         if when is None:
             return None
+        for adjustment in self.occurrence_adjustments:
+            if adjustment.when == when:
+                return adjustment.amount
+            if adjustment.when > when:
+                break
         effective = None
         for change in self.amount_changes:
             if change.start > when:
@@ -347,6 +384,9 @@ class ScheduledTransaction(PrimaryObject):
             "advance_days": self.advance_days,
             "currency": self.currency,
             "amount_changes": [item.serialize() for item in self.amount_changes],
+            "occurrence_adjustments": [
+                item.serialize() for item in self.occurrence_adjustments
+            ],
             "last_posted": self.last_posted.isoformat() if self.last_posted else None,
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
@@ -367,6 +407,13 @@ class ScheduledTransaction(PrimaryObject):
         self.amount_changes = sorted(
             [ScheduledAmountChange.from_dict(item) for item in data.get("amount_changes", [])],
             key=lambda item: item.start,
+        )
+        self.occurrence_adjustments = sorted(
+            [
+                ScheduledOccurrenceAdjustment.from_dict(item)
+                for item in data.get("occurrence_adjustments", [])
+            ],
+            key=lambda item: item.when,
         )
         raw = data.get("last_posted")
         self.last_posted = date.fromisoformat(raw) if raw else None

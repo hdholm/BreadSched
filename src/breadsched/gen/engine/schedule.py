@@ -165,5 +165,7 @@ def forecast_occurrences(
         if not sched.enabled and not include_disabled:
             continue
         for when in sched.recurrence.occurrences(end, since=start):
+            if when in sched.skipped:
+                continue
             found.append(Occurrence(sched, when, sched.amount(when=when)))
     return sorted(found, key=lambda o: (o.when, o.name))

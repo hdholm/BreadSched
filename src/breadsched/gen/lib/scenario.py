@@ -21,7 +21,12 @@ from typing import Any
 from .base import PrimaryObject, create_handle
 from .money import Money
 from .recurrence import Recurrence
-from .scheduled import ScheduledAmountChange, ScheduledSplit, ScheduledTransaction
+from .scheduled import (
+    ScheduledAmountChange,
+    ScheduledOccurrenceAdjustment,
+    ScheduledSplit,
+    ScheduledTransaction,
+)
 
 __all__ = [
     "ProjectionBasis",
@@ -100,6 +105,8 @@ class ScenarioSchedule:
         placeholder: bool = True,
         variables: dict[str, str] | None = None,
         amount_changes: list[ScheduledAmountChange] | None = None,
+        skipped: list[date] | None = None,
+        occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
     ) -> None:
         self.handle = handle or create_handle()
         self.name = name
@@ -111,6 +118,10 @@ class ScenarioSchedule:
         self.placeholder = placeholder
         self.variables = dict(variables or {})
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
+        self.skipped = sorted(set(skipped or []))
+        self.occurrence_adjustments = sorted(
+            list(occurrence_adjustments or []), key=lambda item: item.when
+        )
 
     @classmethod
     def from_scheduled(
@@ -133,6 +144,11 @@ class ScenarioSchedule:
                 ScheduledAmountChange.from_dict(item.serialize())
                 for item in schedule.amount_changes
             ],
+            skipped=list(schedule.skipped),
+            occurrence_adjustments=[
+                ScheduledOccurrenceAdjustment.from_dict(item.serialize())
+                for item in schedule.occurrence_adjustments
+            ],
         )
 
     def context(self, when: date) -> dict[str, Any]:
@@ -143,6 +159,11 @@ class ScenarioSchedule:
         return context
 
     def effective_amount(self, when: date) -> Money | None:
+        for adjustment in self.occurrence_adjustments:
+            if adjustment.when == when:
+                return adjustment.amount
+            if adjustment.when > when:
+                break
         effective = None
         for change in self.amount_changes:
             if change.start > when:
@@ -180,6 +201,10 @@ class ScenarioSchedule:
             "placeholder": self.placeholder,
             "variables": dict(self.variables),
             "amount_changes": [item.serialize() for item in self.amount_changes],
+            "skipped": [when.isoformat() for when in self.skipped],
+            "occurrence_adjustments": [
+                item.serialize() for item in self.occurrence_adjustments
+            ],
         }
 
     @classmethod
@@ -197,6 +222,11 @@ class ScenarioSchedule:
             amount_changes=[
                 ScheduledAmountChange.from_dict(item)
                 for item in data.get("amount_changes", [])
+            ],
+            skipped=[date.fromisoformat(item) for item in data.get("skipped", [])],
+            occurrence_adjustments=[
+                ScheduledOccurrenceAdjustment.from_dict(item)
+                for item in data.get("occurrence_adjustments", [])
             ],
         )
 

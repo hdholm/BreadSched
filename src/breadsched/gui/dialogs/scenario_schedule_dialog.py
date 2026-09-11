@@ -19,6 +19,7 @@ from ...gen.lib import (
     Scenario,
     ScenarioSchedule,
     ScheduledAmountChange,
+    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
     WeekendAdjust,
@@ -143,6 +144,26 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.amount_changes_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Future amounts", xalign=0), 0, row, 1, 1)
         grid.attach(self.amount_changes_entry, 1, row, 1, 1)
+        row += 1
+
+        self.skipped_entry = Gtk.Entry(placeholder_text="2030-03-01; 2030-08-01")
+        self.skipped_entry.set_tooltip_text(
+            "Occurrence dates to skip, separated by semicolons."
+        )
+        self.skipped_entry.connect("changed", self._validate)
+        grid.attach(Gtk.Label(label="Skip occurrences", xalign=0), 0, row, 1, 1)
+        grid.attach(self.skipped_entry, 1, row, 1, 1)
+        row += 1
+
+        self.occurrence_adjustments_entry = Gtk.Entry(
+            placeholder_text="2030-12-01=2300"
+        )
+        self.occurrence_adjustments_entry.set_tooltip_text(
+            "One-time occurrence amounts as YYYY-MM-DD=amount, separated by semicolons."
+        )
+        self.occurrence_adjustments_entry.connect("changed", self._validate)
+        grid.attach(Gtk.Label(label="One-time amounts", xalign=0), 0, row, 1, 1)
+        grid.attach(self.occurrence_adjustments_entry, 1, row, 1, 1)
         row += 1
 
         self.frequency = Gtk.DropDown.new_from_strings(
@@ -294,6 +315,15 @@ class ScenarioScheduleDialog(Gtk.Window):
                 for item in source.amount_changes
             )
         )
+        self.skipped_entry.set_text(
+            "; ".join(when.isoformat() for when in source.skipped)
+        )
+        self.occurrence_adjustments_entry.set_text(
+            "; ".join(
+                f"{item.when.isoformat()}={item.amount.to_decimal()}"
+                for item in source.occurrence_adjustments
+            )
+        )
 
     def _recurrence(self) -> Recurrence | None:
         try:
@@ -357,6 +387,50 @@ class ScenarioScheduleDialog(Gtk.Window):
             return None
         return sorted(changes, key=lambda item: item.start)
 
+    def _skipped(self, recurrence: Recurrence | None) -> list[date] | None:
+        text = self.skipped_entry.get_text().strip()
+        if not text:
+            return []
+        if recurrence is None:
+            return None
+        try:
+            skipped = [date.fromisoformat(raw.strip()) for raw in text.split(";")]
+        except ValueError:
+            return None
+        if len(set(skipped)) != len(skipped):
+            return None
+        if any(when not in recurrence.occurrences(when, since=when) for when in skipped):
+            return None
+        return sorted(skipped)
+
+    def _occurrence_adjustments(
+        self, recurrence: Recurrence | None
+    ) -> list[ScheduledOccurrenceAdjustment] | None:
+        text = self.occurrence_adjustments_entry.get_text().strip()
+        if not text:
+            return []
+        if recurrence is None:
+            return None
+        changes = []
+        try:
+            for raw in text.split(";"):
+                when_text, amount_text = raw.strip().split("=", 1)
+                when = date.fromisoformat(when_text.strip())
+                amount = Money(amount_text.strip())
+                if amount <= 0:
+                    return None
+                changes.append(ScheduledOccurrenceAdjustment(when, amount))
+        except (ValueError, ArithmeticError):
+            return None
+        if len({item.when for item in changes}) != len(changes):
+            return None
+        if any(
+            item.when not in recurrence.occurrences(item.when, since=item.when)
+            for item in changes
+        ):
+            return None
+        return sorted(changes, key=lambda item: item.when)
+
     def _validate(self, *_args) -> None:
         if self._constructing:
             return
@@ -370,6 +444,15 @@ class ScenarioScheduleDialog(Gtk.Window):
         if amount_changes is None:
             problems.append("check future amounts")
         recurrence = self._recurrence()
+        skipped = self._skipped(recurrence)
+        if skipped is None:
+            problems.append("check skipped occurrence dates")
+        adjustments = self._occurrence_adjustments(recurrence)
+        if adjustments is None:
+            problems.append("check one-time amounts")
+        if skipped is not None and adjustments is not None:
+            if set(skipped) & {item.when for item in adjustments}:
+                problems.append("an occurrence cannot be both skipped and overridden")
         period = self._frequency_options[self.frequency.get_selected()][1]
         bounded = period is not PeriodType.ONCE
         self.ends.set_sensitive(bounded)
@@ -421,6 +504,8 @@ class ScenarioScheduleDialog(Gtk.Window):
             enabled=True,
             placeholder=placeholder,
             amount_changes=self._amount_changes() or [],
+            skipped=self._skipped(recurrence) or [],
+            occurrence_adjustments=self._occurrence_adjustments(recurrence) or [],
         )
 
     def _on_save(self, _button) -> None:

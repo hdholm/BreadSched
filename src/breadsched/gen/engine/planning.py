@@ -311,6 +311,8 @@ def _scenario_scheduled_events(
         if not schedule.enabled:
             continue
         for when in schedule.recurrence.occurrences(end, since=start):
+            if when in schedule.skipped:
+                continue
             key = schedule.occurrence_key(scenario.handle, when)
             found.append(_scenario_schedule_event(scenario, schedule, when, linked.get(key)))
     return found

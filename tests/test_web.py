@@ -227,6 +227,10 @@ class TestItServes:
                     {"start": "2026-05-15", "amount": "125.00"},
                     {"start": "2026-07-15", "amount": "140.00"},
                 ],
+                "skipped": ["2026-03-13"],
+                "occurrence_adjustments": [
+                    {"when": "2026-04-15", "amount": "150.00"}
+                ],
                 "frequency": "monthly",
                 "start": "2026-02-15",
                 "count": "6",
@@ -247,6 +251,10 @@ class TestItServes:
         assert item["amount_changes"] == [
             {"start": "2026-05-15", "amount": "125.00"},
             {"start": "2026-07-15", "amount": "140.00"},
+        ]
+        assert item["skipped"] == ["2026-03-13"]
+        assert item["occurrence_adjustments"] == [
+            {"when": "2026-04-15", "amount": "150.00"}
         ]
 
     def test_a_projection_is_computed(self, client):
@@ -994,6 +1002,46 @@ class TestScenarioEventWebParity:
         assert len(saved["changes"]) == 1
         assert saved["changes"][0]["source_schedule"] is None
         assert saved["changes"][0]["amount"] == "1500.00"
+
+    def test_scenario_estimate_can_skip_and_override_occurrences(
+        self, scenario_event_client
+    ):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?"
+            + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        rent = next(
+            account for account in events["accounts"] if account["name"].endswith("Rent")
+        )
+        bank = next(
+            account
+            for account in events["accounts"]
+            if account["name"].endswith("Checking")
+        )
+        status, saved = scenario_event_client.post(
+            "/api/scenario/event/save",
+            {
+                "handle": scenario["handle"],
+                "name": "Flexible rent estimate",
+                "category": rent["handle"],
+                "funding": bank["handle"],
+                "amount": "1500.00",
+                "frequency": "monthly",
+                "start": "2026-03-01",
+                "skipped": ["2026-05-01"],
+                "occurrence_adjustments": [
+                    {"when": "2026-06-01", "amount": "1750.00"}
+                ],
+                "weekend": "none",
+            },
+        )
+        assert status == 200
+        change = saved["changes"][0]
+        assert change["skipped"] == ["2026-05-01"]
+        assert change["occurrence_adjustments"] == [
+            {"when": "2026-06-01", "amount": "1750.00"}
+        ]
 
     def test_scenario_estimate_can_end_after_occurrence_count(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)

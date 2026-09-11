@@ -13,6 +13,7 @@ from breadsched.gen.lib import (
     Scenario,
     ScenarioSchedule,
     ScheduledAmountChange,
+    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
     Transaction,
@@ -101,6 +102,91 @@ class TestEventDomain:
 
         assert clone.amount(when=date(2029, 12, 1)) == Money("1800")
         assert clone.amount(when=date(2030, 1, 1)) == Money("1950")
+
+
+    def test_occurrence_exceptions_skip_and_override_exact_dates(self, db, book):
+        rent = ScheduledTransaction(
+            name="Rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.rent, Money("1800.00")),
+                ScheduledSplit(book.checking, Money("-1800.00")),
+            ],
+            skipped=[date(2026, 3, 1)],
+            occurrence_adjustments=[
+                ScheduledOccurrenceAdjustment(date(2026, 4, 1), Money("2300.00"))
+            ],
+        )
+        with db.transaction("rent schedule") as txn:
+            db.add_scheduled(rent, txn)
+
+        events = planning.scheduled_events(
+            db, date(2026, 1, 1), date(2026, 4, 30)
+        )
+
+        by_date = {event.planned_date: event.expected_amount for event in events}
+        assert date(2026, 3, 1) not in by_date
+        assert by_date[date(2026, 2, 1)] == Money("1800.00")
+        assert by_date[date(2026, 4, 1)] == Money("2300.00")
+
+        forecast = schedule.forecast_occurrences(
+            db, date(2026, 1, 1), date(2026, 4, 30)
+        )
+        assert date(2026, 3, 1) not in {item.when for item in forecast}
+        assert next(
+            item.amount for item in forecast if item.when == date(2026, 4, 1)
+        ) == Money("2300.00")
+
+    def test_occurrence_exceptions_round_trip_with_schedule(self):
+        source = ScheduledTransaction(
+            name="Rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit("expense", Money("1800")),
+                ScheduledSplit("cash", Money("-1800")),
+            ],
+            skipped=[date(2026, 3, 1)],
+            occurrence_adjustments=[
+                ScheduledOccurrenceAdjustment(date(2026, 4, 1), Money("2300"))
+            ],
+        )
+
+        clone = ScheduledTransaction.from_dict(source.serialize())
+
+        assert clone.skipped == [date(2026, 3, 1)]
+        assert clone.amount(when=date(2026, 4, 1)) == Money("2300")
+
+    def test_scenario_occurrence_exceptions_are_scenario_only(self, db, book):
+        salary = ScheduledTransaction(
+            name="Salary",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 5)),
+            splits=[
+                ScheduledSplit(book.checking, Money("1000.00")),
+                ScheduledSplit(book.salary, Money("-1000.00")),
+            ],
+        )
+        with db.transaction("salary") as txn:
+            db.add_scheduled(salary, txn)
+
+        alternate = ScenarioSchedule.from_scheduled(salary)
+        alternate.skipped = [date(2026, 2, 5)]
+        alternate.occurrence_adjustments = [
+            ScheduledOccurrenceAdjustment(date(2026, 3, 5), Money("1400.00"))
+        ]
+        scenario = Scenario(name="Alternate", schedule_overrides=[alternate])
+        events = planning.scenario_events(
+            db, scenario, date(2026, 1, 1), date(2026, 3, 31)
+        )
+
+        by_date = {event.planned_date: event.expected_amount for event in events}
+        assert date(2026, 2, 5) not in by_date
+        assert by_date[date(2026, 3, 5)] == Money("1400.00")
+        baseline = planning.scheduled_events(
+            db, date(2026, 1, 1), date(2026, 3, 31)
+        )
+        assert {event.planned_date for event in baseline} == {
+            date(2026, 1, 5), date(2026, 2, 5), date(2026, 3, 5)
+        }
 
     def test_scenario_can_replace_a_baseline_schedule_without_mutating_it(self, db, book):
         salary = ScheduledTransaction(
