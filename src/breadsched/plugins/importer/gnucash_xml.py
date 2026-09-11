@@ -201,8 +201,18 @@ def _snapshot_account(element: ET.Element) -> ET.Element:
     """Deep-copy the parts of an account element we need before it is cleared."""
     copy = ET.Element(element.tag)
     for child in element:
-        if child.tag.endswith(("}name", "}id", "}type", "}parent", "}code",
-                               "}description", "}commodity")):
+        if child.tag.endswith(
+            (
+                "}name",
+                "}id",
+                "}type",
+                "}parent",
+                "}code",
+                "}description",
+                "}commodity",
+                "}commodity-scu",
+            )
+        ):
             new = ET.SubElement(copy, child.tag)
             new.text = child.text
             for grand in child:
@@ -244,6 +254,7 @@ class _AccountRow(TypedDict):
     namespace: str
     placeholder: bool
     hidden: bool
+    commodity_scu: int | None
 
 
 def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
@@ -252,6 +263,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
         guid = _text(element, "act:id")
         if not guid:
             continue
+        scu_text = _text(element, "act:commodity-scu")
         parsed.append(
             {
                 "guid": guid,
@@ -265,6 +277,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
                 "namespace": _text(element, "act:commodity/cmdty:space", "CURRENCY"),
                 "placeholder": (_slot_value(element, "placeholder") or "").lower() == "true",
                 "hidden": (_slot_value(element, "hidden") or "").lower() == "true",
+                "commodity_scu": int(scu_text) if scu_text.isdigit() else None,
             }
         )
 
@@ -302,6 +315,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
             notes=row["notes"],
             placeholder=row["placeholder"],
             hidden=row["hidden"],
+            commodity_scu=row["commodity_scu"],
         )
 
 

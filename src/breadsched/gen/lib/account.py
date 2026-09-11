@@ -192,6 +192,7 @@ class Account(PrimaryObject):
         description: str = "",
         placeholder: bool = False,
         hidden: bool = False,
+        commodity_scu: int | None = None,
     ) -> None:
         super().__init__(handle)
         self.name = name
@@ -202,6 +203,7 @@ class Account(PrimaryObject):
         self.description = description
         self.placeholder = placeholder
         self.hidden = hidden
+        self.commodity_scu = commodity_scu
         self.notes = ""
         self.planning_role = AccountPlanningRole.ORDINARY
         self.fsa_years: list[FsaFundingYear] = []
@@ -261,6 +263,7 @@ class Account(PrimaryObject):
             "description": self.description,
             "placeholder": self.placeholder,
             "hidden": self.hidden,
+            "commodity_scu": self.commodity_scu,
             "notes": self.notes,
             "planning_role": self.planning_role.value,
             "fsa_years": [year.serialize() for year in self.fsa_years],
@@ -286,6 +289,8 @@ class Account(PrimaryObject):
         self.description = data.get("description", "")
         self.placeholder = data.get("placeholder", False)
         self.hidden = data.get("hidden", False)
+        raw_scu = data.get("commodity_scu")
+        self.commodity_scu = int(raw_scu) if raw_scu is not None else None
         self.notes = data.get("notes", "")
         self.planning_role = AccountPlanningRole(data.get("planning_role", "ordinary"))
         self.fsa_years = [

@@ -134,6 +134,18 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.commodity_picker, 1, row, 1, 1)
         row += 1
 
+        self.commodity_scu_entry = Gtk.Entry(placeholder_text="Commodity default")
+        self.commodity_scu_entry.set_tooltip_text(
+            "GnuCash account-specific smallest commodity unit (SCU); "
+            "leave blank for the commodity default"
+        )
+        if editing and account.commodity_scu is not None:
+            self.commodity_scu_entry.set_text(str(account.commodity_scu))
+        self.commodity_scu_entry.connect("changed", self._validate)
+        grid.attach(Gtk.Label(label="Commodity SCU", xalign=0), 0, row, 1, 1)
+        grid.attach(self.commodity_scu_entry, 1, row, 1, 1)
+        row += 1
+
         self.parent_picker = Gtk.DropDown.new_from_strings(
             [db.full_name(a) or a.name for a in self.parents] or ["(none)"]
         )
@@ -391,6 +403,13 @@ class AccountDialog(Gtk.Window):
             problems.append("give it a name")
         if not self.parents:
             problems.append("this book has no parent account to hang it from")
+        scu_text = self.commodity_scu_entry.get_text().strip()
+        if scu_text:
+            try:
+                if int(scu_text) <= 0:
+                    problems.append("commodity SCU must be a positive integer")
+            except ValueError:
+                problems.append("commodity SCU must be a positive integer")
         role = _ROLES[self.planning_role_picker.get_selected()]
         if not role.supports(self.selected_type.account_class):
             problems.append("planning role is not valid for this account type")
@@ -415,6 +434,8 @@ class AccountDialog(Gtk.Window):
         account.notes = notes_buffer.get_text(notes_start, notes_end, True).strip()
         commodity_index = self.commodity_picker.get_selected()
         account.commodity = self.commodity_handles[commodity_index]
+        scu_text = self.commodity_scu_entry.get_text().strip()
+        account.commodity_scu = int(scu_text) if scu_text else None
         account.group = self.group_entry.get_text().strip()
         account.planning_role = _ROLES[self.planning_role_picker.get_selected()]
         if account.planning_role is AccountPlanningRole.FSA:

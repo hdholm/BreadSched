@@ -351,6 +351,11 @@ def _import_accounts(conn: sqlite3.Connection, sink: ImportSink) -> None:
             notes=notes,
             placeholder=bool(row.get("placeholder")),
             hidden=bool(row.get("hidden")),
+            commodity_scu=(
+                int(row["commodity_scu"])
+                if "commodity_scu" in columns and row.get("commodity_scu") is not None
+                else None
+            ),
         )
 
 

@@ -236,6 +236,7 @@ class ImportSink:
         notes: str = "",
         placeholder: bool = False,
         hidden: bool = False,
+        commodity_scu: int | None = None,
     ) -> Account:
         """Add an account, or adopt one the book already has in that position.
 
@@ -274,6 +275,7 @@ class ImportSink:
             description=description,
             placeholder=placeholder,
             hidden=hidden,
+            commodity_scu=commodity_scu,
         )
         account.notes = notes
         self.db.add_account(account, self.txn)

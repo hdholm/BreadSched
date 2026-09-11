@@ -2664,6 +2664,7 @@ class TestAccountEditor:
                 parent=parent.handle,
                 commodity=commodity.handle,
                 hidden=True,
+                commodity_scu=1000,
             )
             child.notes = "Generic imported account note"
             app.db.add_account(child, txn)
@@ -2672,6 +2673,7 @@ class TestAccountEditor:
         selected_parent = dialog.parents[dialog.parent_picker.get_selected()]
         assert selected_parent.handle == parent.handle
         assert dialog.hidden_check.get_active() is True
+        assert dialog.commodity_scu_entry.get_text() == "1000"
         assert (
             dialog.commodity_handles[dialog.commodity_picker.get_selected()]
             == commodity.handle
@@ -2687,6 +2689,7 @@ class TestAccountEditor:
         assert rebuilt.parent == parent.handle
         assert rebuilt.hidden is True
         assert rebuilt.commodity == commodity.handle
+        assert rebuilt.commodity_scu == 1000
         assert rebuilt.notes == "Generic imported account note"
 
     def test_loan_fields_only_show_for_a_liability(self, accounts_view, app):

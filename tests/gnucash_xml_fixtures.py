@@ -57,6 +57,7 @@ XML_WITH_SCHEDULE = """<?xml version="1.0" encoding="utf-8" ?>
     <act:name>Checking</act:name>
     <act:id type="guid">{bank}</act:id>
     <act:type>BANK</act:type>
+    <act:commodity-scu>1000</act:commodity-scu>
     <act:parent type="guid">{assets}</act:parent>
   </gnc:account>
   <gnc:account version="2.0.0">

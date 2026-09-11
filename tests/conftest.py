@@ -353,6 +353,7 @@ GNUCASH_XML = """<?xml version="1.0" encoding="utf-8" ?>
     <act:name>Current Account</act:name>
     <act:id type="guid">{bank}</act:id>
     <act:type>BANK</act:type>
+    <act:commodity-scu>1000</act:commodity-scu>
     <act:commodity><cmdty:space>CURRENCY</cmdty:space><cmdty:id>GBP</cmdty:id></act:commodity>
     <act:code>1200</act:code>
     <act:description>Day to day</act:description>
