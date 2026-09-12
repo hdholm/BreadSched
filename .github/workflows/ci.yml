@@ -36,8 +36,8 @@ jobs:
       - name: Type check
         run: mypy src/breadsched/gen src/breadsched/plugins
 
-      - name: Test
-        run: pytest --cov=breadsched --cov-report=term-missing
+      - name: Test core in parallel
+        run: pytest -n auto -m "not gui" --cov=breadsched --cov-report=term-missing
 
       - name: Run the demo end to end
         run: python examples/demo.py

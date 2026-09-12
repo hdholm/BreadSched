@@ -87,6 +87,12 @@ skips, amount changes, and formula-driven splits are part of the schedule semant
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 
+A recurrence occurrence has both a nominal date and an adjusted cash date, plus a
+stable one-based occurrence number. Weekend/business-day adjustment may move the
+cash date across a month boundary, but it must never change that ordinal. Formula
+period variables such as ``period`` and GnuCash-compatible ``i`` use the recurrence
+ordinal, not a number reconstructed from the adjusted calendar date.
+
 The formula language is parsed through a restricted evaluator, never Python
 `eval()`. Formula expressions are treated as untrusted imported/user input and must
 have bounded, predictable evaluation behavior.

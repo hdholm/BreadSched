@@ -18,11 +18,12 @@ from __future__ import annotations
 
 import calendar
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import date, timedelta
 from enum import Enum
 from typing import Any
 
-__all__ = ["PeriodType", "WeekendAdjust", "Recurrence", "add_months"]
+__all__ = ["PeriodType", "WeekendAdjust", "RecurrenceOccurrence", "Recurrence", "add_months"]
 
 
 class PeriodType(str, Enum):
@@ -53,6 +54,15 @@ def add_months(anchor: date, months: int, day: int | None = None) -> date:
     if wanted == -1:
         wanted = last
     return date(year, month, min(wanted, last))
+
+
+@dataclass(frozen=True, slots=True)
+class RecurrenceOccurrence:
+    """One numbered recurrence firing before and after weekend adjustment."""
+
+    number: int
+    nominal: date
+    adjusted: date
 
 
 class Recurrence:
@@ -96,33 +106,14 @@ class Recurrence:
         return when + timedelta(days=7 - when.weekday())
 
     def _raw_occurrences(self, start_index: int = 0) -> Iterator[date]:
-        """Unadjusted firing dates, ascending and unbounded (caller must stop).
-
-        ``start_index`` is an occurrence ordinal for the simple recurrence types.
-        It lets long-range forecasts jump over historical occurrences instead of
-        replaying them from the schedule origin.  Semi-monthly rules retain their
-        small month-step generator because their first month can contain only one
-        valid firing, making the raw ordinal less direct.
-        """
+        """Unadjusted firing dates for simple recurrence types."""
         if self.period is PeriodType.ONCE:
             if start_index == 0:
                 yield self.start
             return
 
         if self.period is PeriodType.SEMI_MONTH:
-            # The first month may omit one firing before self.start, so an
-            # arithmetic raw-occurrence index is deliberately not used here.
-            first = self.day_of_month or self.start.day
-            second = self.second_day_of_month or 15
-            step = 0
-            while True:
-                base = add_months(self.start, step * self.interval, day=1)
-                for day in sorted((first, second), key=lambda d: 32 if d == -1 else d):
-                    when = add_months(base, 0, day=day)
-                    if when >= self.start:
-                        yield when
-                step += 1
-            # unreachable
+            raise ValueError("semi-monthly occurrences need their own generator")
 
         index = max(0, start_index)
         while True:
@@ -133,8 +124,9 @@ class Recurrence:
             elif self.period is PeriodType.MONTH:
                 yield add_months(self.start, index * self.interval, day=self.day_of_month)
             elif self.period is PeriodType.YEAR:
-                shifted = add_months(self.start, index * 12 * self.interval, day=self.day_of_month)
-                yield shifted
+                yield add_months(
+                    self.start, index * 12 * self.interval, day=self.day_of_month
+                )
             else:  # pragma: no cover - exhaustive
                 raise ValueError(f"unhandled period {self.period}")
             index += 1
@@ -143,8 +135,6 @@ class Recurrence:
         """Return a conservative raw index near ``since`` for simple rules."""
         if since is None or since <= self.start:
             return 0
-        # Weekend adjustment moves a firing by at most two days.  Seven days is a
-        # deliberately conservative cushion that keeps this arithmetic simple.
         target = since - timedelta(days=7)
         if target <= self.start:
             return 0
@@ -160,74 +150,102 @@ class Recurrence:
             return max(0, years // self.interval - 1)
         return 0
 
-    def occurrences(self, until: date, since: date | None = None) -> list[date]:
-        """Every firing date in ``[since, until]``, honouring end date and count.
+    def _semi_month_start_step_near(self, since: date | None) -> int:
+        if since is None or since <= self.start:
+            return 0
+        target = since - timedelta(days=7)
+        months = (target.year - self.start.year) * 12 + target.month - self.start.month
+        return max(0, months // self.interval - 1)
 
-        Daily, weekly, monthly and yearly rules jump close to ``since`` before
-        iterating.  This makes projecting an old schedule into a distant horizon
-        proportional to occurrences *inside* the horizon, not the age of the rule.
-        """
-        results: list[date] = []
+    def _semi_month_days(self, base: date) -> list[date]:
+        first = self.day_of_month or self.start.day
+        second = self.second_day_of_month or 15
+        return [
+            add_months(base, 0, day=day)
+            for day in sorted((first, second), key=lambda value: 32 if value == -1 else value)
+        ]
+
+    def _semi_month_first_count(self) -> int:
+        base = add_months(self.start, 0, day=1)
+        return sum(1 for when in self._semi_month_days(base) if when >= self.start)
+
+    def _numbered_raw_occurrences(
+        self, since: date | None = None
+    ) -> Iterator[tuple[int, date]]:
+        """Yield ``(occurrence number, nominal date)`` without losing ordinals."""
+        if self.period is PeriodType.SEMI_MONTH:
+            first_count = self._semi_month_first_count()
+            step = self._semi_month_start_step_near(since)
+            while True:
+                base = add_months(self.start, step * self.interval, day=1)
+                valid = [
+                    when
+                    for when in self._semi_month_days(base)
+                    if step > 0 or when >= self.start
+                ]
+                before = 0 if step == 0 else first_count + (step - 1) * 2
+                for offset, when in enumerate(valid, start=1):
+                    yield before + offset, when
+                step += 1
+            # unreachable
+
         start_index = self._start_index_near(since)
-        fired = start_index
-        for raw in self._raw_occurrences(start_index):
-            if self.count is not None and fired >= self.count:
+        yield from enumerate(
+            self._raw_occurrences(start_index), start=start_index + 1
+        )
+
+    def occurrence_details(
+        self, until: date, since: date | None = None
+    ) -> list[RecurrenceOccurrence]:
+        """Numbered nominal/adjusted firings in ``[since, until]``.
+
+        The occurrence number belongs to the nominal recurrence sequence. Weekend
+        adjustment may move the cash date across a month boundary, but must never
+        change the period number used by loan formulas.
+        """
+        results: list[RecurrenceOccurrence] = []
+        for number, raw in self._numbered_raw_occurrences(since):
+            if self.count is not None and number > self.count:
                 break
             if self.end and raw > self.end:
                 break
-            if raw > until and (self.weekend_adjust is WeekendAdjust.NONE):
+            if raw > until and self.weekend_adjust is WeekendAdjust.NONE:
                 break
             if raw > until + timedelta(days=7):
                 break
-            fired += 1
-            when = self._adjust(raw)
-            if when > until:
+            adjusted = self._adjust(raw)
+            if adjusted > until:
                 continue
-            if since and when < since:
+            if since and adjusted < since:
                 continue
-            results.append(when)
-        return sorted(results)
+            results.append(RecurrenceOccurrence(number, raw, adjusted))
+        return sorted(results, key=lambda item: (item.adjusted, item.number))
+
+    def occurrences(self, until: date, since: date | None = None) -> list[date]:
+        """Every adjusted firing date in ``[since, until]``."""
+        return [item.adjusted for item in self.occurrence_details(until, since)]
 
     def next_after(self, moment: date) -> date | None:
         """First firing strictly after ``moment``, or ``None`` if the rule is spent."""
-        fired = 0
-        for raw in self._raw_occurrences():
-            if self.count is not None and fired >= self.count:
+        since = moment + timedelta(days=1)
+        for number, raw in self._numbered_raw_occurrences(since):
+            if self.count is not None and number > self.count:
                 return None
             if self.end and raw > self.end:
                 return None
-            fired += 1
-            when = self._adjust(raw)
-            if when > moment:
-                return when
-            if fired > 10_000:  # pragma: no cover - runaway guard
-                return None
+            adjusted = self._adjust(raw)
+            if adjusted > moment:
+                return adjusted
         return None
 
     def index_of(self, when: date) -> int:
-        """Which occurrence ``when`` is, counting the first as 1.
-
-        Loan formulas need the period number to work out how much of that payment
-        is interest. Computed arithmetically rather than by counting occurrences,
-        because a projection asks this once per payment per month and counting
-        would make a thirty-year mortgage quadratic.
-        """
-        if self.period is PeriodType.ONCE:
-            return 1
-        elapsed_days = (when - self.start).days
-        if self.period is PeriodType.DAY:
-            steps = elapsed_days // self.interval
-        elif self.period is PeriodType.WEEK:
-            steps = elapsed_days // (7 * self.interval)
-        elif self.period is PeriodType.SEMI_MONTH:
-            months = (when.year - self.start.year) * 12 + (when.month - self.start.month)
-            steps = months * 2 + (1 if when.day >= 15 else 0)
-        elif self.period is PeriodType.MONTH:
-            months = (when.year - self.start.year) * 12 + (when.month - self.start.month)
-            steps = months // self.interval
-        else:  # YEAR
-            steps = (when.year - self.start.year) // self.interval
-        return max(1, steps + 1)
+        """Which adjusted occurrence ``when`` is, counting the first as 1."""
+        window_start = when - timedelta(days=7)
+        window_end = when + timedelta(days=7)
+        for occurrence in self.occurrence_details(window_end, since=window_start):
+            if occurrence.adjusted == when:
+                return occurrence.number
+        raise ValueError(f"{when.isoformat()} is not an occurrence of this recurrence")
 
     def describe(self) -> str:
         if self.period is PeriodType.ONCE:

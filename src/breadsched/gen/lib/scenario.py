@@ -166,9 +166,10 @@ class ScenarioSchedule:
 
     def context(self, when: date) -> dict[str, Any]:
         context: dict[str, Any] = dict(self.variables)
-        index = self.recurrence.index_of(when)
-        context["period"] = index
-        context.setdefault("i", index)
+        if any(split.formula for split in self.splits):
+            index = self.recurrence.index_of(when)
+            context["period"] = index
+            context.setdefault("i", index)
         return context
 
     def effective_amount(self, when: date) -> Money | None:

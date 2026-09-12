@@ -333,7 +333,7 @@ class ScheduledTransaction(PrimaryObject):
         never falls.
         """
         merged: dict[str, Any] = dict(self.variables)
-        if when is not None:
+        if when is not None and any(split.formula for split in self.splits):
             index = self.recurrence.index_of(when)
             merged["period"] = index
             # GnuCash's loan assistant writes the period as `i`. Both names are

@@ -40,6 +40,12 @@ When a bug is specific to imported structure, use synthetic or deliberately
 sanitized fixture data that reproduces the relevant format semantics without
 embedding personal financial information.
 
+Core tests may run concurrently under pytest-xdist. Tests must therefore use
+pytest-provided temporary paths or other worker-local resources and must not assume
+exclusive ownership of fixed ports, filenames, environment state, or process-global
+mutable objects. GTK runtime tests remain serial until the roadmap explicitly moves
+them to a parallel-safe stage.
+
 ## Patch workflow
 
 BreadSched development uses sequential `git am` mailbox patches.

@@ -2,17 +2,24 @@
 # Preserve any caller-provided PYTHONPATH entries after the local src directory.
 export PYTHONPATH := $(CURDIR)/src$(if $(PYTHONPATH),:$(PYTHONPATH))
 
-.PHONY: install test test-ordered lint fmt typecheck build check demo cov all
+.PHONY: install test test-core test-gui test-ordered lint fmt typecheck build check demo cov all
 
 install:
 	pip install -e ".[dev]"
 
-test:
-	pytest
+PYTEST_XDIST_WORKERS ?= auto
+
+test: test-core test-gui
+
+test-core:
+	pytest -n $(PYTEST_XDIST_WORKERS) -m "not gui"
+
+test-gui:
+	pytest -m gui
 
 # Deterministic order, for bisecting a failure found by the randomised run.
 test-ordered:
-	pytest -p no:randomly
+	pytest -n 0 -p no:randomly
 
 cov:
 	pytest --cov=breadsched --cov-report=term-missing

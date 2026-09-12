@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0129
-(`projection: expose schedule growth policy in GTK and web`).
+Status below is current through patch 0130
+(`hardening: preserve recurrence occurrence numbers`).
 
 ## Product direction and current hardening phase
 
@@ -46,7 +46,10 @@ roughly in this order:
    explicit schedule growth policy so multi-split payroll can receive income growth;
    then fix recurrence period numbering and start-of-period loan mathematics. The
    domain/engine growth-policy foundation is implemented in 0128 and exposed in
-   both GTK and web schedule/scenario editors in 0129.
+   both GTK and web schedule/scenario editors in 0129. Patch 0130 carries the
+   nominal occurrence number alongside adjusted recurrence dates so weekend and
+   semi-monthly adjustments cannot corrupt loan formula periods; start-of-period
+   loan mathematics remains the next loan-correctness item.
 2. Harden the formula evaluator: correct fractional powers and GnuCash argument/
    grouping parsing, bound expression complexity/powers, and convert evaluator
    failures consistently to ``FormulaError``.
@@ -64,7 +67,11 @@ roughly in this order:
    metadata blob.
 7. Expand quality gates: mypy across CLI/web and then GUI with an explicit baseline,
    ``ruff format --check``, security regressions, recurrence property tests, and
-   realistic projection/storage benchmarks.
+   realistic projection/storage benchmarks. The first pytest-xdist stage lands in
+   0130: core/non-GTK tests run with 12 workers in the Makefile and core CI while
+   GTK remains serial. Keep a serial deterministic diagnostic path, audit tests for
+   shared ports/files/process-global state, and only consider parallel GTK after a
+   sustained clean run history.
 8. Finish the deliberate legacy Budget-domain migration, then return to register,
    reconciliation, investment/retirement, and other daily-use feature work.
 
@@ -215,6 +222,9 @@ financial semantics, not duplicating business rules in two presentation layers.
 - Add payroll templates and richer payroll editing.
 - Continue recurrence testing across month ends, leap years, bounded schedules,
   business-day behavior, skips, one-time overrides, and future-effective changes.
+  Patch 0130 makes occurrence ordinals part of recurrence generation so adjusted
+  dates and semi-monthly rules retain the correct formula period; add property-based
+  recurrence tests as a later quality-gate stage, including collision/edge cases.
 
 ## Investment and retirement modeling
 
@@ -364,7 +374,9 @@ does not silently point at removed views or stale terminology.
 - Improve backup/restore, crash recovery, diagnostic logging, and privacy-safe
   error reporting.
 - Keep Ruff, mypy, randomized tests, GTK runtime tests, end-to-end demo, and package
-  build/install checks as release gates.
+  build/install checks as release gates. Core/non-GTK tests run under pytest-xdist
+  with 12 workers as of 0130; keep GTK serial initially and preserve ``make
+  test-ordered`` as a single-process diagnostic path.
 - Add property-based tests for recurrence and monetary arithmetic and fuzz-style
   tests for malformed import data where they provide useful additional coverage.
 - Keep documentation, versioning, and release notes synchronized with actual

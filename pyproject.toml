@@ -25,6 +25,7 @@ gui = ["PyGObject>=3.46", "pycairo>=1.25"]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
+    "pytest-xdist>=3.5",
     # Shuffles test order every run and prints the seed. Order-dependent tests
     # otherwise pass on the machine that wrote them and fail on the next one.
     "pytest-randomly>=3.15",

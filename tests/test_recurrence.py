@@ -124,6 +124,103 @@ class TestWeekendAdjustment:
         assert rule.occurrences(date(2026, 8, 31)) == [date(2026, 8, 5)]
 
 
+class TestOccurrenceNumbering:
+    @pytest.mark.parametrize(
+        "rule,until",
+        [
+            (
+                Recurrence(
+                    PeriodType.MONTH,
+                    start=date(2026, 1, 31),
+                    day_of_month=31,
+                    weekend_adjust=WeekendAdjust.NEXT,
+                ),
+                date(2028, 12, 31),
+            ),
+            (
+                Recurrence(
+                    PeriodType.MONTH,
+                    start=date(2026, 1, 1),
+                    day_of_month=1,
+                    weekend_adjust=WeekendAdjust.PREVIOUS,
+                ),
+                date(2028, 12, 31),
+            ),
+            (
+                Recurrence(
+                    PeriodType.WEEK,
+                    start=date(2026, 1, 3),
+                    weekend_adjust=WeekendAdjust.PREVIOUS,
+                ),
+                date(2026, 6, 30),
+            ),
+            (
+                Recurrence(
+                    PeriodType.SEMI_MONTH,
+                    start=date(2026, 1, 15),
+                    day_of_month=15,
+                    second_day_of_month=-1,
+                ),
+                date(2026, 12, 31),
+            ),
+            (
+                Recurrence(
+                    PeriodType.SEMI_MONTH,
+                    start=date(2026, 1, 15),
+                    day_of_month=1,
+                    second_day_of_month=15,
+                ),
+                date(2026, 12, 31),
+            ),
+        ],
+    )
+    def test_adjusted_dates_keep_their_sequence_number(self, rule, until):
+        occurrences = rule.occurrences(until)
+
+        assert occurrences
+        for expected, when in enumerate(occurrences, start=1):
+            assert rule.index_of(when) == expected
+
+    def test_details_keep_nominal_and_adjusted_dates_together(self):
+        rule = Recurrence(
+            PeriodType.MONTH,
+            start=date(2026, 8, 1),
+            weekend_adjust=WeekendAdjust.PREVIOUS,
+        )
+
+        first = rule.occurrence_details(date(2026, 8, 31))[0]
+
+        assert first.number == 1
+        assert first.nominal == date(2026, 8, 1)
+        assert first.adjusted == date(2026, 7, 31)
+
+    def test_old_daily_schedule_still_has_a_next_occurrence(self):
+        rule = Recurrence(PeriodType.DAY, start=date(1995, 1, 1))
+
+        assert rule.next_after(date(2026, 9, 11)) == date(2026, 9, 12)
+
+    def test_formula_schedule_receives_adjusted_occurrence_number(self):
+        from breadsched.gen.lib import ScheduledSplit, ScheduledTransaction
+
+        rule = Recurrence(
+            PeriodType.MONTH,
+            start=date(2026, 1, 1),
+            weekend_adjust=WeekendAdjust.PREVIOUS,
+        )
+        schedule = ScheduledTransaction(
+            name="Indexed fixture",
+            recurrence=rule,
+            splits=[
+                ScheduledSplit("asset", formula="i"),
+                ScheduledSplit("funding", formula="-i"),
+            ],
+        )
+
+        for expected, when in enumerate(rule.occurrences(date(2027, 12, 31)), start=1):
+            resolved = dict(schedule.resolved_splits(when=when))
+            assert resolved["asset"] == expected
+
+
 class TestSerialisation:
     def test_round_trip(self):
         rule = Recurrence(

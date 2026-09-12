@@ -50,10 +50,12 @@ For a pre-submit development check, run:
 make check
 ```
 
-The Makefile checks the local `src/` tree with Ruff, mypy, a randomized test run,
-the end-to-end demo, and source/wheel builds. CI repeats core checks across the
-supported Python versions and operating systems, while GTK runtime behavior is
-validated on Linux.
+The Makefile checks the local `src/` tree with Ruff, mypy, randomized core tests
+using pytest-xdist (`-n auto` by default), serial GTK runtime tests, the end-to-end
+demo, and source/wheel builds. Set `PYTEST_XDIST_WORKERS` to override the local core
+worker count. `make test-ordered` remains the serial deterministic diagnostic path.
+CI repeats parallel core checks across the supported Python versions and operating
+systems, while GTK runtime behavior is validated serially on Linux.
 
 ## Core concepts
 
