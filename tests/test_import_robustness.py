@@ -27,9 +27,7 @@ CHART = [
     ("wages", "Salary", "INCOME", "root", 0),
 ]
 
-HEALTHY = (
-    date(2026, 1, 5), "Weekly shop", [("food", 7250, 100, ""), ("bank", -7250, 100, "")]
-)
+HEALTHY = (date(2026, 1, 5), "Weekly shop", [("food", 7250, 100, ""), ("bank", -7250, 100, "")])
 
 
 def add_raw_transaction(book, description: str, splits: list[tuple]) -> str:
@@ -37,7 +35,11 @@ def add_raw_transaction(book, description: str, splits: list[tuple]) -> str:
     conn = sqlite3.connect(book.path)
     guid = new_guid()
     write_transaction(
-        conn, guid, book.currency, date(2026, 2, 2), description,
+        conn,
+        guid,
+        book.currency,
+        date(2026, 2, 2),
+        description,
         [(getattr(book, key), num, denom, memo) for key, num, denom, memo in splits],
     )
     conn.commit()
@@ -97,8 +99,7 @@ class TestOtherDefects:
         conn = sqlite3.connect(book.path)
         conn.execute(
             "INSERT INTO transactions VALUES (?,?,?,?,?,?)",
-            (new_guid(), book.currency, "", "20260303120000", "20260303120000",
-             "No splits at all"),
+            (new_guid(), book.currency, "", "20260303120000", "20260303120000", "No splits at all"),
         )
         conn.commit()
         conn.close()
@@ -138,8 +139,11 @@ class TestNothingIsLost:
     def test_one_bad_record_does_not_roll_back_the_batch(self, db, tmp_path):
         """The original failure: the whole import was discarded."""
         transactions = [
-            (date(2026, 1, day), f"Shop {day}",
-             [("food", 1000 * day, 100, ""), ("bank", -1000 * day, 100, "")])
+            (
+                date(2026, 1, day),
+                f"Shop {day}",
+                [("food", 1000 * day, 100, ""), ("bank", -1000 * day, 100, "")],
+            )
             for day in range(1, 6)
         ]
         book = create_book(tmp_path / "mixed.gnucash", CHART, transactions)
@@ -168,9 +172,7 @@ class TestLogging:
         assert breadsched_logs.containing("Weekly shop")
         assert breadsched_logs.containing("2 split(s)")
 
-    def test_capture_survives_a_logger_left_unpropagating(
-        self, db, tmp_path, breadsched_logs
-    ):
+    def test_capture_survives_a_logger_left_unpropagating(self, db, tmp_path, breadsched_logs):
         """The order dependence that failed on one machine and not another.
 
         Once any test configures logging, records stop reaching the root logger,

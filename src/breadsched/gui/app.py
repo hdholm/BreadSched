@@ -134,8 +134,7 @@ class BreadSchedApplication(Gtk.Application):
         # A widget bound to an action takes its sensitivity from that action and
         # ignores set_sensitive(), so undo/redo availability must be expressed here
         # rather than on the button.
-        for name in ("undo", "redo", "import", "export", "post-scheduled",
-                     "new-transaction"):
+        for name in ("undo", "redo", "import", "export", "post-scheduled", "new-transaction"):
             self.actions[name].set_enabled(False)
 
     # ------------------------------------------------------------------- book
@@ -336,8 +335,7 @@ class BreadSchedApplication(Gtk.Application):
     def on_export(self, *_args) -> None:
         if self.db is None:
             return
-        dialog = Gtk.FileDialog(title="Export transactions",
-                                initial_name="transactions.csv")
+        dialog = Gtk.FileDialog(title="Export transactions", initial_name="transactions.csv")
 
         def on_saved(file_dialog, result) -> None:
             try:
@@ -362,7 +360,6 @@ class BreadSchedApplication(Gtk.Application):
 
         TransactionDialog(self.props.active_window, self.db).present()
 
-
     def on_about(self, *_args) -> None:
         about = Gtk.AboutDialog(
             transient_for=self.props.active_window,
@@ -370,7 +367,7 @@ class BreadSchedApplication(Gtk.Application):
             program_name=APP_NAME,
             version=__version__,
             comments="Plan cash flow from scheduled financial events and compare "
-                     "the plan with actual activity.",
+            "the plan with actual activity.",
             license_type=Gtk.License.AGPL_3_0,
         )
         about.present()

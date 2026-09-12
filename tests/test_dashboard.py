@@ -41,17 +41,29 @@ def household(db, book):
         db.add_account(mortgage, txn)
 
         db.add_transaction(
-            Transaction.simple(date(2026, 1, 1), "Opening", book.checking,
-                               book.opening, "20000.00"), txn)
+            Transaction.simple(
+                date(2026, 1, 1), "Opening", book.checking, book.opening, "20000.00"
+            ),
+            txn,
+        )
         db.add_transaction(
-            Transaction.simple(date(2026, 1, 1), "Opening", book.brokerage,
-                               book.opening, "175000.00"), txn)
+            Transaction.simple(
+                date(2026, 1, 1), "Opening", book.brokerage, book.opening, "175000.00"
+            ),
+            txn,
+        )
         db.add_transaction(
-            Transaction.simple(date(2026, 1, 1), "Opening", house.handle,
-                               book.opening, "490200.00"), txn)
+            Transaction.simple(
+                date(2026, 1, 1), "Opening", house.handle, book.opening, "490200.00"
+            ),
+            txn,
+        )
         db.add_transaction(
-            Transaction.simple(date(2026, 1, 1), "Opening", book.opening,
-                               mortgage.handle, "385938.50"), txn)
+            Transaction.simple(
+                date(2026, 1, 1), "Opening", book.opening, mortgage.handle, "385938.50"
+            ),
+            txn,
+        )
 
         def schedule(name, account, amount, period, interval, start, estimate=False):
             sched = ScheduledTransaction(
@@ -67,12 +79,17 @@ def household(db, book):
 
         schedule("Rent", book.rent, "1800.00", PeriodType.MONTH, 1, date(2026, 10, 1))
         schedule("HOA", book.utilities, "619.00", PeriodType.MONTH, 3, date(2026, 10, 1))
-        schedule("Insurance", book.utilities, "385.00", PeriodType.YEAR, 1,
-                 date(2026, 11, 1))
-        schedule("Daycare", book.groceries, "88.00", PeriodType.WEEK, 2,
-                 date(2026, 9, 22))
-        schedule("Groceries", book.groceries, "600.00", PeriodType.MONTH, 1,
-                 date(2026, 9, 15), estimate=True)
+        schedule("Insurance", book.utilities, "385.00", PeriodType.YEAR, 1, date(2026, 11, 1))
+        schedule("Daycare", book.groceries, "88.00", PeriodType.WEEK, 2, date(2026, 9, 22))
+        schedule(
+            "Groceries",
+            book.groceries,
+            "600.00",
+            PeriodType.MONTH,
+            1,
+            date(2026, 9, 15),
+            estimate=True,
+        )
 
         pay = ScheduledTransaction(
             name="Pay",
@@ -88,9 +105,7 @@ def household(db, book):
         groups=[
             dashboard.GroupConfig("Cash", [book.checking], "liquid"),
             dashboard.GroupConfig("Retirement", [book.brokerage], "retirement"),
-            dashboard.GroupConfig(
-                "Home Easton", [house.handle, mortgage.handle], "property"
-            ),
+            dashboard.GroupConfig("Home Easton", [house.handle, mortgage.handle], "property"),
         ],
         liquidity_days=30,
         emergency_months=6,
@@ -113,9 +128,7 @@ class TestGroups:
         assert household.group("Retirement").loan_to_value is None
 
     def test_group_totals_list_their_accounts(self, household):
-        assert household.group("Cash").accounts == [
-            ("Assets:Checking", Money("20000.00"))
-        ]
+        assert household.group("Cash").accounts == [("Assets:Checking", Money("20000.00"))]
 
     def test_net_worth_counts_equity_not_the_gross_value(self, household):
         # 20,000 cash + 175,000 retirement + 104,261.50 equity.
@@ -167,32 +180,34 @@ class TestHold:
     def test_a_bill_just_paid_holds_nothing(self, household):
         """A yearly bill due in eleven months has barely begun accruing."""
         bill = dashboard.BillRow(
-            name="Annual", next_due=date(2027, 8, 1), amount=Money("1200.00"),
+            name="Annual",
+            next_due=date(2027, 8, 1),
+            amount=Money("1200.00"),
             cycle_days=dashboard.DAYS_PER_YEAR,
         )
         assert bill.hold(TODAY) < Money("200.00")
 
     def test_a_bill_due_tomorrow_is_nearly_fully_held(self, household):
         bill = dashboard.BillRow(
-            name="Monthly", next_due=date(2026, 9, 10), amount=Money("300.00"),
+            name="Monthly",
+            next_due=date(2026, 9, 10),
+            amount=Money("300.00"),
             cycle_days=dashboard.DAYS_PER_MONTH,
         )
         assert bill.hold(TODAY) > Money("280.00")
 
     def test_an_overdue_bill_is_held_in_full(self, household):
         bill = dashboard.BillRow(
-            name="Late", next_due=date(2026, 8, 1), amount=Money("300.00"),
+            name="Late",
+            next_due=date(2026, 8, 1),
+            amount=Money("300.00"),
             cycle_days=dashboard.DAYS_PER_MONTH,
         )
         assert bill.hold(TODAY) == Money("300.00")
 
     def test_the_hold_accrues_across_the_cycle(self, household):
-        early = dashboard.BillRow(
-            "A", date(2027, 6, 1), Money("1200.00"), dashboard.DAYS_PER_YEAR
-        )
-        late = dashboard.BillRow(
-            "B", date(2026, 11, 1), Money("1200.00"), dashboard.DAYS_PER_YEAR
-        )
+        early = dashboard.BillRow("A", date(2027, 6, 1), Money("1200.00"), dashboard.DAYS_PER_YEAR)
+        late = dashboard.BillRow("B", date(2026, 11, 1), Money("1200.00"), dashboard.DAYS_PER_YEAR)
         assert late.hold(TODAY) > early.hold(TODAY)
 
 
@@ -213,9 +228,7 @@ class TestLiquidityAndEmergencyFund:
         )
 
     def test_the_emergency_fund_is_months_of_outgoings(self, household):
-        assert household.emergency_fund == (
-            household.monthly_outgoings * 6
-        ).quantize(100)
+        assert household.emergency_fund == (household.monthly_outgoings * 6).quantize(100)
 
     def test_the_horizon_is_configurable(self, db, household):
         config = dashboard.DashboardConfig.load(db)
@@ -224,9 +237,9 @@ class TestLiquidityAndEmergencyFund:
         assert doubled.emergency_fund == (household.emergency_fund * 2).quantize(100)
 
     def test_months_covered_reads_as_a_duration(self, household):
-        expected = (
-            household.liquid.rate() / household.monthly_outgoings.rate()
-        ).quantize(Decimal("0.01"))
+        expected = (household.liquid.rate() / household.monthly_outgoings.rate()).quantize(
+            Decimal("0.01")
+        )
         assert household.months_covered == expected
 
     def test_liquidity_and_the_fund_are_separate_questions(self, household):
@@ -277,8 +290,7 @@ class TestConfiguration:
 
 
 class TestCli:
-    def test_the_dashboard_command_reports_the_headline(self, db, household, capsys,
-                                                        tmp_path):
+    def test_the_dashboard_command_reports_the_headline(self, db, household, capsys, tmp_path):
         from breadsched.cli.main import main as cli
 
         path = tmp_path / "dash.breadsched"
@@ -329,21 +341,26 @@ class TestLoansPairWithTheirAssets:
         from breadsched.gen.lib import Account, AccountType
 
         with db.transaction("property") as txn:
-            house = Account(
-                name="Home Easton", atype=AccountType.ASSET, parent=book.assets
-            )
+            house = Account(name="Home Easton", atype=AccountType.ASSET, parent=book.assets)
             mortgage = Account(
-                name="Mortgage Easton", atype=AccountType.LIABILITY,
+                name="Mortgage Easton",
+                atype=AccountType.LIABILITY,
                 parent=book.liabilities,
             )
             db.add_account(house, txn)
             db.add_account(mortgage, txn)
             db.add_transaction(
-                Transaction.simple(date(2026, 1, 1), "Value", house.handle,
-                                   book.opening, "490200.00"), txn)
+                Transaction.simple(
+                    date(2026, 1, 1), "Value", house.handle, book.opening, "490200.00"
+                ),
+                txn,
+            )
             db.add_transaction(
-                Transaction.simple(date(2026, 1, 1), "Borrowed", book.opening,
-                                   mortgage.handle, "385938.50"), txn)
+                Transaction.simple(
+                    date(2026, 1, 1), "Borrowed", book.opening, mortgage.handle, "385938.50"
+                ),
+                txn,
+            )
             mortgage.linked_asset = house.handle
             db.commit_account(mortgage, txn)
         return house, mortgage
@@ -367,9 +384,7 @@ class TestLoansPairWithTheirAssets:
         """A house in both a property line and an asset total inflates net worth."""
         board = dashboard.build(db, as_of=TODAY)
         appearances = [
-            group.name for group in board.groups
-            for handle, _balance in group.accounts
-            if handle
+            group.name for group in board.groups for handle, _balance in group.accounts if handle
         ]
         assert len(appearances) == len(set(appearances)) or True
         # 490,200 of house less 385,938.50 of mortgage, and nothing else in the book.
@@ -379,19 +394,13 @@ class TestLoansPairWithTheirAssets:
         config = dashboard.default_config(db)
         property_groups = [g for g in config.groups if g.kind == "property"]
         assert len(property_groups) == 1
-        assert set(property_groups[0].accounts) == {
-            linked[0].handle, linked[1].handle
-        }
+        assert set(property_groups[0].accounts) == {linked[0].handle, linked[1].handle}
 
     def test_an_explicit_group_still_wins(self, db, linked):
         """A configuration that already pairs them must not be duplicated."""
         house, mortgage = linked
         config = dashboard.DashboardConfig(
-            groups=[
-                dashboard.GroupConfig(
-                    "The house", [house.handle, mortgage.handle], "property"
-                )
-            ]
+            groups=[dashboard.GroupConfig("The house", [house.handle, mortgage.handle], "property")]
         )
         board = dashboard.build(db, config, as_of=TODAY)
         names = [group.name for group in board.groups]
@@ -409,11 +418,7 @@ class TestLoansPairWithTheirAssets:
         """Whatever the group is called, a value against a debt has an LTV."""
         house, mortgage = linked
         config = dashboard.DashboardConfig(
-            groups=[
-                dashboard.GroupConfig(
-                    "Anything", [house.handle, mortgage.handle], "asset"
-                )
-            ]
+            groups=[dashboard.GroupConfig("Anything", [house.handle, mortgage.handle], "asset")]
         )
         group = dashboard.build(db, config, as_of=TODAY).group("Anything")
         assert group.loan_to_value == Decimal("0.7873")
@@ -430,11 +435,17 @@ class TestAccountGroupField:
                 account.group = name
                 db.commit_account(account, txn)
             db.add_transaction(
-                Transaction.simple(date(2026, 1, 1), "Opening", book.checking,
-                                   book.opening, "1000.00"), txn)
+                Transaction.simple(
+                    date(2026, 1, 1), "Opening", book.checking, book.opening, "1000.00"
+                ),
+                txn,
+            )
             db.add_transaction(
-                Transaction.simple(date(2026, 1, 1), "Opening", book.savings,
-                                   book.opening, "2500.00"), txn)
+                Transaction.simple(
+                    date(2026, 1, 1), "Opening", book.savings, book.opening, "2500.00"
+                ),
+                txn,
+            )
         return book
 
     def test_accounts_naming_a_group_are_gathered_into_it(self, db, grouped):
@@ -495,23 +506,27 @@ class TestSeveralLoansOnOneAsset:
                 db.add_account(account, txn)
                 made[name] = account
                 db.add_transaction(
-                    Transaction.simple(date(2026, 1, 1), "Value", account.handle,
-                                       book.opening, value), txn)
+                    Transaction.simple(
+                        date(2026, 1, 1), "Value", account.handle, book.opening, value
+                    ),
+                    txn,
+                )
 
             for name, asset, owed in (
                 ("Mortgage A1", "Home A", "300000.00"),
                 ("Mortgage A2", "Home A", "85000.00"),
                 ("Mortgage B", "Home B", "217386.69"),
             ):
-                loan = Account(
-                    name=name, atype=AccountType.LIABILITY, parent=book.liabilities
-                )
+                loan = Account(name=name, atype=AccountType.LIABILITY, parent=book.liabilities)
                 loan.linked_asset = made[asset].handle
                 db.add_account(loan, txn)
                 made[name] = loan
                 db.add_transaction(
-                    Transaction.simple(date(2026, 1, 1), "Borrowed", book.opening,
-                                       loan.handle, owed), txn)
+                    Transaction.simple(
+                        date(2026, 1, 1), "Borrowed", book.opening, loan.handle, owed
+                    ),
+                    txn,
+                )
         return made
 
     def test_two_loans_on_one_asset_make_one_line(self, db, houses):
@@ -535,9 +550,7 @@ class TestSeveralLoansOnOneAsset:
         assert group.value == Money("500000.00")
         assert group.debt == Money("217386.69")
 
-    def test_the_account_group_field_does_not_split_a_configured_pair(
-        self, db, houses
-    ):
+    def test_the_account_group_field_does_not_split_a_configured_pair(self, db, houses):
         """The reported bug: one house showed a value of zero against its mortgage."""
         with db.transaction("name the group") as txn:
             asset = db.get_account(houses["Home B"].handle)

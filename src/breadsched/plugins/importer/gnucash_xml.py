@@ -305,9 +305,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
             break
 
     for row in ordered:
-        commodity = (
-            sink.commodity(row["namespace"], row["commodity"]) if row["commodity"] else None
-        )
+        commodity = sink.commodity(row["namespace"], row["commodity"]) if row["commodity"] else None
         sink.account(
             guid=row["guid"],
             name=row["name"],
@@ -428,9 +426,7 @@ def _slot_frame(split: ET.Element) -> dict[str, str]:
     return found
 
 
-def _collect_template_splits(
-    element: ET.Element, into: dict[str, list[dict]]
-) -> None:
+def _collect_template_splits(element: ET.Element, into: dict[str, list[dict]]) -> None:
     """Index a template transaction's splits by the template account they sit under."""
     for split in element.findall("trn:splits/trn:split", NS):
         template_account = _text(split, "split:account")
@@ -469,9 +465,7 @@ def _read_schedule(
     start = (
         # An Element with no children is falsey, so identity is the only safe test.
         _gdate(
-            recurrence_node.find("recurrence:start", NS)
-            if recurrence_node is not None
-            else None
+            recurrence_node.find("recurrence:start", NS) if recurrence_node is not None else None
         )
         or _gdate(element.find("sx:start", NS))
     )
@@ -494,8 +488,7 @@ def _read_schedule(
             end=end,
             count=int(occurrences) if occurrences.isdigit() and int(occurrences) else None,
             day_of_month=-1
-            if "end of month"
-            in _text(recurrence_node, "recurrence:period_type", "").lower()
+            if "end of month" in _text(recurrence_node, "recurrence:period_type", "").lower()
             else None,
             weekend_adjust=weekend,
         ),
@@ -528,8 +521,9 @@ def _read_schedule(
     balance_template_splits(schedule, sink.result)
     db.add_scheduled(schedule, txn)
     sink.result.scheduled += 1
-    LOG.debug("scheduled %r: %s, %d split(s)", name,
-              schedule.recurrence.describe(), len(schedule.splits))
+    LOG.debug(
+        "scheduled %r: %s, %d split(s)", name, schedule.recurrence.describe(), len(schedule.splits)
+    )
 
 
 def _template_amount(raw: dict) -> tuple[Money | None, str]:

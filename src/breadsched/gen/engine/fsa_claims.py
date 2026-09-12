@@ -28,7 +28,6 @@ __all__ = [
 ]
 
 
-
 @dataclass(frozen=True)
 class FsaClaimSuggestion:
     claim: FsaClaim
@@ -45,8 +44,7 @@ def claim_year_window(db: DbSQLite, service_date: date) -> tuple[date, date] | N
         if account.planning_role is not AccountPlanningRole.FSA:
             continue
         matches.extend(
-            year for year in account.fsa_years
-            if year.start <= service_date <= year.through
+            year for year in account.fsa_years if year.start <= service_date <= year.through
         )
     if not matches:
         return None
@@ -63,8 +61,7 @@ def _claim_words(claim: FsaClaim) -> set[str]:
 
 def _transaction_words(transaction: Transaction) -> set[str]:
     return {
-        word for word in re.findall(r"[a-z0-9]+", transaction.description.lower())
-        if len(word) > 2
+        word for word in re.findall(r"[a-z0-9]+", transaction.description.lower()) if len(word) > 2
     }
 
 
@@ -157,8 +154,11 @@ def suggest_claims_for_transaction(
             if reasons:
                 reason += ": " + ", ".join(reasons)
             candidate = FsaClaimSuggestion(
-                claim=claim, role=role, split_handle=split.handle,
-                score=score, reason=reason,
+                claim=claim,
+                role=role,
+                split_handle=split.handle,
+                score=score,
+                reason=reason,
             )
             if best is None or candidate.score > best.score:
                 best = candidate
@@ -166,9 +166,7 @@ def suggest_claims_for_transaction(
             suggestions.append(best)
 
     suggestions.sort(
-        key=lambda item: (
-            -item.score, -item.claim.service_date.toordinal(), item.claim.handle
-        )
+        key=lambda item: (-item.score, -item.claim.service_date.toordinal(), item.claim.handle)
     )
     return suggestions
 
@@ -288,7 +286,6 @@ def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
     return claim
 
 
-
 def attach_transaction_to_claim(
     db: DbSQLite,
     claim_handle: str,
@@ -312,17 +309,21 @@ def attach_transaction_to_claim(
         if account is None:
             continue
         eligible = (
-            role == "payment"
-            and account.account_class is AccountClass.EXPENSE
-            and split.value > 0
-        ) or (
-            role == "refund"
-            and account.account_class is AccountClass.EXPENSE
-            and split.value < 0
-        ) or (
-            role == "reimbursement"
-            and account.planning_role is AccountPlanningRole.FSA
-            and split.value < 0
+            (
+                role == "payment"
+                and account.account_class is AccountClass.EXPENSE
+                and split.value > 0
+            )
+            or (
+                role == "refund"
+                and account.account_class is AccountClass.EXPENSE
+                and split.value < 0
+            )
+            or (
+                role == "reimbursement"
+                and account.planning_role is AccountPlanningRole.FSA
+                and split.value < 0
+            )
         )
         if eligible and (split_handle is None or split.handle == split_handle):
             candidates.append((split, account))
@@ -347,9 +348,7 @@ def attach_transaction_to_claim(
             eligible_years = [year for year in eligible_years if year.start == funding_year_start]
         else:
             service_years = [
-                year
-                for year in eligible_years
-                if year.start <= claim.service_date <= year.through
+                year for year in eligible_years if year.start <= claim.service_date <= year.through
             ]
             if len(service_years) == 1:
                 eligible_years = service_years
@@ -360,8 +359,7 @@ def attach_transaction_to_claim(
             (
                 item
                 for item in claim.allocations
-                if item.account == account.handle
-                and item.funding_year_start == year.start
+                if item.account == account.handle and item.funding_year_start == year.start
             ),
             None,
         )
@@ -374,6 +372,7 @@ def attach_transaction_to_claim(
         raise ValueError("unknown FSA claim attachment role")
 
     return save_claim(db, claim)
+
 
 def delete_claim(db: DbSQLite, handle: str) -> None:
     if db.get_fsa_claim(handle) is None:

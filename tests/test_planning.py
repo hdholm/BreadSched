@@ -60,7 +60,6 @@ class TestEventDomain:
         ]
         assert all(event.key.startswith(f"scheduled:{payday.handle}:") for event in events)
 
-
     def test_future_amount_changes_flow_into_exact_dated_events(self, db, book):
         rent = ScheduledTransaction(
             name="Rent",
@@ -77,9 +76,7 @@ class TestEventDomain:
         with db.transaction("rent schedule") as txn:
             db.add_scheduled(rent, txn)
 
-        events = planning.scheduled_events(
-            db, date(2026, 6, 1), date(2027, 1, 31)
-        )
+        events = planning.scheduled_events(db, date(2026, 6, 1), date(2027, 1, 31))
 
         by_date = {event.planned_date: event.expected_amount for event in events}
         assert by_date[date(2026, 6, 1)] == Money("1800.00")
@@ -94,17 +91,13 @@ class TestEventDomain:
                 ScheduledSplit("expense", Money("1800")),
                 ScheduledSplit("cash", Money("-1800")),
             ],
-            amount_changes=[
-                ScheduledAmountChange(date(2030, 1, 1), Money("1950"))
-            ],
+            amount_changes=[ScheduledAmountChange(date(2030, 1, 1), Money("1950"))],
         )
 
         clone = ScheduledTransaction.from_dict(schedule.serialize())
 
         assert clone.amount(when=date(2029, 12, 1)) == Money("1800")
         assert clone.amount(when=date(2030, 1, 1)) == Money("1950")
-
-
 
     def test_seasonal_amount_profile_round_trips_and_posts_resolved_amount(self):
         schedule = ScheduledTransaction(
@@ -145,22 +138,18 @@ class TestEventDomain:
         with db.transaction("rent schedule") as txn:
             db.add_scheduled(rent, txn)
 
-        events = planning.scheduled_events(
-            db, date(2026, 1, 1), date(2026, 4, 30)
-        )
+        events = planning.scheduled_events(db, date(2026, 1, 1), date(2026, 4, 30))
 
         by_date = {event.planned_date: event.expected_amount for event in events}
         assert date(2026, 3, 1) not in by_date
         assert by_date[date(2026, 2, 1)] == Money("1800.00")
         assert by_date[date(2026, 4, 1)] == Money("2300.00")
 
-        forecast = schedule.forecast_occurrences(
-            db, date(2026, 1, 1), date(2026, 4, 30)
-        )
+        forecast = schedule.forecast_occurrences(db, date(2026, 1, 1), date(2026, 4, 30))
         assert date(2026, 3, 1) not in {item.when for item in forecast}
-        assert next(
-            item.amount for item in forecast if item.when == date(2026, 4, 1)
-        ) == Money("2300.00")
+        assert next(item.amount for item in forecast if item.when == date(2026, 4, 1)) == Money(
+            "2300.00"
+        )
 
     def test_occurrence_exceptions_round_trip_with_schedule(self):
         source = ScheduledTransaction(
@@ -171,9 +160,7 @@ class TestEventDomain:
                 ScheduledSplit("cash", Money("-1800")),
             ],
             skipped=[date(2026, 3, 1)],
-            occurrence_adjustments=[
-                ScheduledOccurrenceAdjustment(date(2026, 4, 1), Money("2300"))
-            ],
+            occurrence_adjustments=[ScheduledOccurrenceAdjustment(date(2026, 4, 1), Money("2300"))],
         )
 
         clone = ScheduledTransaction.from_dict(source.serialize())
@@ -199,18 +186,16 @@ class TestEventDomain:
             ScheduledOccurrenceAdjustment(date(2026, 3, 5), Money("1400.00"))
         ]
         scenario = Scenario(name="Alternate", schedule_overrides=[alternate])
-        events = planning.scenario_events(
-            db, scenario, date(2026, 1, 1), date(2026, 3, 31)
-        )
+        events = planning.scenario_events(db, scenario, date(2026, 1, 1), date(2026, 3, 31))
 
         by_date = {event.planned_date: event.expected_amount for event in events}
         assert date(2026, 2, 5) not in by_date
         assert by_date[date(2026, 3, 5)] == Money("1400.00")
-        baseline = planning.scheduled_events(
-            db, date(2026, 1, 1), date(2026, 3, 31)
-        )
+        baseline = planning.scheduled_events(db, date(2026, 1, 1), date(2026, 3, 31))
         assert {event.planned_date for event in baseline} == {
-            date(2026, 1, 5), date(2026, 2, 5), date(2026, 3, 5)
+            date(2026, 1, 5),
+            date(2026, 2, 5),
+            date(2026, 3, 5),
         }
 
     def test_scenario_can_replace_a_baseline_schedule_without_mutating_it(self, db, book):
@@ -231,9 +216,7 @@ class TestEventDomain:
             ScheduledSplit(book.salary, Money("-600.00")),
         ]
         scenario = Scenario(name="Reduced hours", schedule_overrides=[alternate])
-        events = planning.scenario_events(
-            db, scenario, date(2026, 1, 1), date(2026, 1, 31)
-        )
+        events = planning.scenario_events(db, scenario, date(2026, 1, 1), date(2026, 1, 31))
 
         assert len(events) == 1
         assert events[0].source is planning.EventSource.SCENARIO_SCHEDULE
@@ -257,9 +240,7 @@ class TestEventDomain:
             schedule_overrides=[ScenarioSchedule.from_scheduled(salary, enabled=False)],
         )
 
-        assert planning.scenario_events(
-            db, scenario, date(2026, 1, 1), date(2026, 1, 31)
-        ) == []
+        assert planning.scenario_events(db, scenario, date(2026, 1, 1), date(2026, 1, 31)) == []
 
     def test_posting_a_schedule_actualizes_the_generated_occurrence(self, db, book):
         bill = ScheduledTransaction(
@@ -281,9 +262,7 @@ class TestEventDomain:
         assert transaction.planned_for == date(2026, 1, 5)
         assert transaction.planned_amount == Money("180.00")
 
-        event = planning.scheduled_events(
-            db, date(2026, 1, 1), date(2026, 1, 31)
-        )[0]
+        event = planning.scheduled_events(db, date(2026, 1, 1), date(2026, 1, 31))[0]
         assert event.status is planning.EventStatus.ACTUALIZED
         assert event.actual_transaction == transaction.handle
         assert event.expected_amount == Money("180.00")
@@ -317,9 +296,7 @@ class TestEventDomain:
         with db.transaction("record actual") as txn:
             db.add_transaction(actual, txn)
 
-        event = planning.scheduled_events(
-            db, date(2026, 2, 1), date(2026, 2, 28)
-        )[0]
+        event = planning.scheduled_events(db, date(2026, 2, 1), date(2026, 2, 28))[0]
         assert event.planned_date == date(2026, 2, 7)
         assert event.actual_date == date(2026, 2, 8)
         assert event.expected_amount == Money("180.00")
@@ -332,9 +309,7 @@ class TestEventDomain:
         bill.splits[1].amount = Money("-200.00")
         with db.transaction("revise future estimate") as txn:
             db.commit_scheduled(bill, txn)
-        event = planning.scheduled_events(
-            db, date(2026, 2, 1), date(2026, 2, 28)
-        )[0]
+        event = planning.scheduled_events(db, date(2026, 2, 1), date(2026, 2, 28))[0]
         assert event.expected_amount == Money("180.00")
         assert event.variance == Money("13.42")
 
@@ -521,6 +496,7 @@ class TestEventDrivenProjection:
         assert january.liabilities == Money("60.00")
         assert january.ledger.reconciles()
 
+
 class TestActualResolutionWorkflow:
     def _bill_and_actual(self, db, book):
         bill = ScheduledTransaction(
@@ -570,9 +546,7 @@ class TestActualResolutionWorkflow:
 
     def test_matching_sets_explicit_resolution_and_clears_rejections(self, db, book):
         _bill, actual = self._bill_and_actual(db, book)
-        event = planning.unresolved_events(
-            db, date(2026, 5, 1), date(2026, 5, 31)
-        )[0]
+        event = planning.unresolved_events(db, date(2026, 5, 1), date(2026, 5, 31))[0]
         actual.rejected_plan_occurrences.append("scheduled:not-this-one:2026-05-07")
 
         planning.actualize_transaction(actual, event)
@@ -581,6 +555,7 @@ class TestActualResolutionWorkflow:
         assert actual.rejected_plan_occurrences == []
         assert actual.planned_occurrence == event.key
         assert planning.event_by_key(db, event.key) is not None
+
 
 class TestHistoricalEstimateProposals:
     def test_proposes_median_monthly_category_estimate(self, db, book):
@@ -599,9 +574,7 @@ class TestHistoricalEstimateProposals:
                     ),
                     txn,
                 )
-        proposals = estimates.propose_historical_estimates(
-            db, as_of=date(2026, 5, 15), months=4
-        )
+        proposals = estimates.propose_historical_estimates(db, as_of=date(2026, 5, 15), months=4)
         groceries = next(item for item in proposals if item.category == book.groceries)
         assert groceries.amount == Money("115.00")
         assert groceries.funding == book.checking
@@ -862,14 +835,10 @@ class TestHistoricalEstimateProposals:
         assert first.amount == Money("25.00")
         estimates.accept_historical_estimate(db, first)
 
-        second = estimates.propose_historical_estimates(
-            db, as_of=date(2026, 4, 20), months=3
-        )
+        second = estimates.propose_historical_estimates(db, as_of=date(2026, 4, 20), months=3)
         assert all(item.category != book.groceries for item in second)
 
-    def test_accepted_scenario_estimate_is_subtracted_only_in_that_scenario(
-        self, db, book
-    ):
+    def test_accepted_scenario_estimate_is_subtracted_only_in_that_scenario(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import Scenario, Transaction
 
@@ -895,13 +864,9 @@ class TestHistoricalEstimateProposals:
             )
             if item.category == book.groceries
         )
-        estimates.accept_historical_estimate(
-            db, proposal, scenario_handle=scenario.handle
-        )
+        estimates.accept_historical_estimate(db, proposal, scenario_handle=scenario.handle)
 
-        base = estimates.propose_historical_estimates(
-            db, as_of=date(2026, 4, 20), months=3
-        )
+        base = estimates.propose_historical_estimates(db, as_of=date(2026, 4, 20), months=3)
         alternate = estimates.propose_historical_estimates(
             db, as_of=date(2026, 4, 20), months=3, scenario_handle=scenario.handle
         )
@@ -965,9 +930,7 @@ class TestHistoricalEstimateProposals:
             )
             if item.category == book.rent
         )
-        estimates.accept_historical_estimate(
-            db, proposal, scenario_handle=scenario.handle
-        )
+        estimates.accept_historical_estimate(db, proposal, scenario_handle=scenario.handle)
         assert list(db.iter_scheduled()) == []
         saved = db.get_scenario(scenario.handle)
         assert saved is not None

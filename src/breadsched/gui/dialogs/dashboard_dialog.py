@@ -103,9 +103,7 @@ class DashboardDialog(Gtk.Window):
             name.set_text(group.name)
         header.append(name)
 
-        kind = Gtk.DropDown.new_from_strings(
-            [f"{k} - {_EXPLANATION[k]}" for k in KINDS]
-        )
+        kind = Gtk.DropDown.new_from_strings([f"{k} - {_EXPLANATION[k]}" for k in KINDS])
         kind.set_selected(KINDS.index(group.kind) if group else 0)
         header.append(kind)
 

@@ -2,7 +2,7 @@
 # Preserve any caller-provided PYTHONPATH entries after the local src directory.
 export PYTHONPATH := $(CURDIR)/src$(if $(PYTHONPATH),:$(PYTHONPATH))
 
-.PHONY: install test test-core test-performance test-hardening test-gui test-ordered lint fmt format-check typecheck build check demo cov all
+.PHONY: install test test-core test-performance test-hardening test-gui test-ordered lint fmt format-check typecheck typecheck-extended build check demo cov all
 
 install:
 	pip install -e ".[dev]"
@@ -36,9 +36,9 @@ lint:
 
 fmt:
 	ruff check --fix src tests examples
+	ruff format src tests examples
 
-# Available now for cleaning/baselining the existing tree; this becomes part of
-# `check` once current formatting debt has been eliminated.
+# Keep formatting consistent with `make fmt` in local and CI checks.
 format-check:
 	ruff format --check src tests examples
 
@@ -53,7 +53,7 @@ typecheck-extended:
 build:
 	python -m build
 
-check: lint typecheck typecheck-extended test demo build
+check: lint format-check typecheck typecheck-extended test demo build
 
 demo:
 	python examples/demo.py

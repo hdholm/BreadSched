@@ -103,7 +103,7 @@ def register_builtins(manager: PluginManager) -> None:
             category=IMPORTER,
             run=gnucash_sqlite.import_book,
             description="Accounts, transactions and scheduled transactions "
-                        "from a GnuCash SQLite3 book",
+            "from a GnuCash SQLite3 book",
             extensions=[".gnucash", ".sqlite", ".sqlite3", ".db"],
             sniff=lambda path: gnucash_common.detect_format(path) == "sqlite",
         )
@@ -114,8 +114,7 @@ def register_builtins(manager: PluginManager) -> None:
             name="GnuCash book (XML)",
             category=IMPORTER,
             run=gnucash_xml.import_book,
-            description="Accounts and transactions from a GnuCash XML book, "
-                        "compressed or plain",
+            description="Accounts and transactions from a GnuCash XML book, compressed or plain",
             extensions=[".gnucash", ".xml", ".gnc"],
             sniff=lambda path: gnucash_common.detect_format(path) in ("xml", "xml-gz"),
         )

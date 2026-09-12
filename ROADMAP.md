@@ -85,8 +85,9 @@ semantics, not duplicate business rules in presentation code.
     imports for type information but suppresses errors in imported GUI modules.
   - [ ] Extend mypy coverage to GUI modules, with an explicit baseline where
     necessary. Their diagnostics remain outside the CLI/web gate.
-  - [ ] Eliminate current formatting debt, then add `ruff format --check` to the
-    mandatory local/CI gate. A `make format-check` audit target exists now.
+  - [x] **0155 — Make formatting mandatory.** Apply Ruff formatting across source,
+    tests, and examples; enforce `make format-check` in `make check` and CI.
+    `make fmt` now applies both Ruff lint fixes and formatting.
   - [x] Keep Host/Origin/token web-security regressions in the standard gate.
   - [x] Add property-based recurrence tests around generated occurrence identity,
     weekend adjustment, and serialization. Continue adding properties as new

@@ -124,9 +124,7 @@ class Recurrence:
             elif self.period is PeriodType.MONTH:
                 yield add_months(self.start, index * self.interval, day=self.day_of_month)
             elif self.period is PeriodType.YEAR:
-                yield add_months(
-                    self.start, index * 12 * self.interval, day=self.day_of_month
-                )
+                yield add_months(self.start, index * 12 * self.interval, day=self.day_of_month)
             else:  # pragma: no cover - exhaustive
                 raise ValueError(f"unhandled period {self.period}")
             index += 1
@@ -169,9 +167,7 @@ class Recurrence:
         base = add_months(self.start, 0, day=1)
         return sum(1 for when in self._semi_month_days(base) if when >= self.start)
 
-    def _numbered_raw_occurrences(
-        self, since: date | None = None
-    ) -> Iterator[tuple[int, date]]:
+    def _numbered_raw_occurrences(self, since: date | None = None) -> Iterator[tuple[int, date]]:
         """Yield ``(occurrence number, nominal date)`` without losing ordinals."""
         if self.period is PeriodType.SEMI_MONTH:
             first_count = self._semi_month_first_count()
@@ -179,9 +175,7 @@ class Recurrence:
             while True:
                 base = add_months(self.start, step * self.interval, day=1)
                 valid = [
-                    when
-                    for when in self._semi_month_days(base)
-                    if step > 0 or when >= self.start
+                    when for when in self._semi_month_days(base) if step > 0 or when >= self.start
                 ]
                 before = 0 if step == 0 else first_count + (step - 1) * 2
                 for offset, when in enumerate(valid, start=1):
@@ -190,9 +184,7 @@ class Recurrence:
             # unreachable
 
         start_index = self._start_index_near(since)
-        yield from enumerate(
-            self._raw_occurrences(start_index), start=start_index + 1
-        )
+        yield from enumerate(self._raw_occurrences(start_index), start=start_index + 1)
 
     def occurrence_details(
         self, until: date, since: date | None = None
@@ -250,8 +242,13 @@ class Recurrence:
     def describe(self) -> str:
         if self.period is PeriodType.ONCE:
             return f"once on {self.start:%d %b %Y}"
-        unit = {"day": "day", "week": "week", "month": "month", "year": "year",
-                "semi_month": "half-month"}[self.period.value]
+        unit = {
+            "day": "day",
+            "week": "week",
+            "month": "month",
+            "year": "year",
+            "semi_month": "half-month",
+        }[self.period.value]
         every = unit if self.interval == 1 else f"{self.interval} {unit}s"
         text = f"every {every}"
         if self.end:

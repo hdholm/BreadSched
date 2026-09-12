@@ -44,13 +44,8 @@ def v2_to_v3(conn: sqlite3.Connection) -> None:
         )
         """
     )
-    conn.execute(
-        "CREATE INDEX IF NOT EXISTS idx_fsa_claim_service_date "
-        "ON fsa_claim(service_date)"
-    )
-    row = conn.execute(
-        "SELECT value FROM metadata WHERE key='fsa_claims'"
-    ).fetchone()
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_fsa_claim_service_date ON fsa_claim(service_date)")
+    row = conn.execute("SELECT value FROM metadata WHERE key='fsa_claims'").fetchone()
     if row is not None:
         claims = json.loads(row[0])
         for claim in claims:

@@ -51,7 +51,6 @@ def pmt(rate, periods, present_value, future_value=0, due: int = 0) -> Decimal:
         return payment / (1 + rate) if due else payment
 
 
-
 def ipmt(rate, period, periods, present_value, future_value=0, due: int = 0) -> Decimal:
     """The interest portion of the payment in ``period`` (1-based)."""
     with localcontext() as context:

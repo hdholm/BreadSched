@@ -43,7 +43,11 @@ class TestTemplatesStayOutOfTheLedger:
     def test_only_real_accounts_arrive(self, db, xml_book):
         gnucash_xml.import_book(db, xml_book.path)
         assert {a.name for a in db.iter_accounts()} == {
-            "Root Account", "Assets", "Checking", "Expenses", "Rent"
+            "Root Account",
+            "Assets",
+            "Checking",
+            "Expenses",
+            "Rent",
         }
 
     def test_no_template_transactions_reach_the_register(self, db, xml_book):
@@ -60,9 +64,7 @@ class TestTemplatesStayOutOfTheLedger:
 
     def test_balances_are_unaffected_by_the_template_section(self, db, xml_book):
         gnucash_xml.import_book(db, xml_book.path)
-        assert ledger.balance(db, db.get_account_by_name("Checking").handle) == Money(
-            "-1800.00"
-        )
+        assert ledger.balance(db, db.get_account_by_name("Checking").handle) == Money("-1800.00")
 
 
 class TestXmlScheduledTransactions:
@@ -75,7 +77,9 @@ class TestXmlScheduledTransactions:
         gnucash_xml.import_book(db, xml_book.path)
         sched = next(iter(db.iter_scheduled()))
         assert sched.recurrence.occurrences(date(2026, 3, 31)) == [
-            date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)
+            date(2026, 1, 1),
+            date(2026, 2, 1),
+            date(2026, 3, 1),
         ]
 
     def test_its_flags_are_read(self, db, xml_book):
@@ -90,7 +94,8 @@ class TestXmlScheduledTransactions:
         gnucash_xml.import_book(db, xml_book.path)
         sched = next(iter(db.iter_scheduled()))
         assert {db.full_name(s.account) for s in sched.splits} == {
-            "Expenses:Rent", "Assets:Checking"
+            "Expenses:Rent",
+            "Assets:Checking",
         }
 
     def test_the_credit_formula_carries_the_opposite_sign(self, db, xml_book):
@@ -111,9 +116,7 @@ class TestXmlScheduledTransactions:
     def test_it_appears_in_the_due_list(self, db, xml_book):
         gnucash_xml.import_book(db, xml_book.path)
         due = schedule.due_occurrences(db, as_of=date(2026, 3, 15), horizon_days=0)
-        assert [o.when for o in due] == [
-            date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)
-        ]
+        assert [o.when for o in due] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
 
     def test_scheduled_import_can_still_be_skipped(self, db, xml_book):
         gnucash_xml.import_book(db, xml_book.path, include_scheduled=False)
@@ -148,11 +151,17 @@ class TestMergingIntoAnExistingBook:
                 ("wages", "Salary", "INCOME", "income", 0),
             ],
             [
-                (date(2026, 1, 25), "Payroll",
-                 [("bank", 420000, 100, ""), ("wages", -420000, 100, "")]),
+                (
+                    date(2026, 1, 25),
+                    "Payroll",
+                    [("bank", 420000, 100, ""), ("wages", -420000, 100, "")],
+                ),
                 # Posted straight to a top-level account that will be merged.
-                (date(2026, 1, 26), "Direct to Assets",
-                 [("assets", 5000, 100, ""), ("wages", -5000, 100, "")]),
+                (
+                    date(2026, 1, 26),
+                    "Direct to Assets",
+                    [("assets", 5000, 100, ""), ("wages", -5000, 100, "")],
+                ),
             ],
         )
 
@@ -175,9 +184,7 @@ class TestMergingIntoAnExistingBook:
         assert names.count("Income") == 1
         db.close()
 
-    def test_imported_accounts_hang_off_the_existing_tree(
-        self, initialised, source, capsys
-    ):
+    def test_imported_accounts_hang_off_the_existing_tree(self, initialised, source, capsys):
         cli(["import", str(initialised), source.path])
         capsys.readouterr()
         db = DbSQLite()
@@ -186,9 +193,7 @@ class TestMergingIntoAnExistingBook:
         assert db.get_account_by_name("Income:Salary") is not None
         db.close()
 
-    def test_the_tree_shows_balances_from_the_single_root(
-        self, initialised, source, capsys
-    ):
+    def test_the_tree_shows_balances_from_the_single_root(self, initialised, source, capsys):
         """The reported symptom: top-level accounts all reading zero."""
         cli(["import", str(initialised), source.path])
         capsys.readouterr()
@@ -199,9 +204,7 @@ class TestMergingIntoAnExistingBook:
         assert ledger.balance_recursive(db, assets.handle) == Money("4250.00")
         db.close()
 
-    def test_a_split_posted_to_a_merged_account_is_not_lost(
-        self, initialised, source, capsys
-    ):
+    def test_a_split_posted_to_a_merged_account_is_not_lost(self, initialised, source, capsys):
         """A merged account keeps the source GUID in its splits; it must be remapped."""
         cli(["import", str(initialised), source.path])
         capsys.readouterr()

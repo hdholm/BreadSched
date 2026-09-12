@@ -30,14 +30,15 @@ TOOLBAR = [
     ("Undo", "edit-undo-symbolic", "app.undo", "Undo the last change"),
     ("Redo", "edit-redo-symbolic", "app.redo", "Redo the last undone change"),
     (None, None, None, None),
-    ("Transaction", "list-add-symbolic", "app.new-transaction",
-     "Enter a new transaction"),
-    ("Plan", "view-grid-symbolic", "win.show-category::plan",
-     "Show the event-driven plan"),
-    ("Accounts", "view-list-symbolic", "win.show-category::accounts",
-     "Show the chart of accounts"),
-    ("Projection", "network-cellular-signal-excellent-symbolic",
-     "win.show-category::projection", "Show the projection"),
+    ("Transaction", "list-add-symbolic", "app.new-transaction", "Enter a new transaction"),
+    ("Plan", "view-grid-symbolic", "win.show-category::plan", "Show the event-driven plan"),
+    ("Accounts", "view-list-symbolic", "win.show-category::accounts", "Show the chart of accounts"),
+    (
+        "Projection",
+        "network-cellular-signal-excellent-symbolic",
+        "win.show-category::projection",
+        "Show the projection",
+    ),
 ]
 
 CATEGORIES = [
@@ -55,9 +56,7 @@ CATEGORIES = [
 class ViewManager(Gtk.ApplicationWindow):
     """One window onto one book."""
 
-    def __init__(
-        self, application: Gtk.Application, *, prompt_due_on_open: bool = True
-    ) -> None:
+    def __init__(self, application: Gtk.Application, *, prompt_due_on_open: bool = True) -> None:
         super().__init__(application=application, title=APP_NAME)
         self.set_default_size(1180, 760)
         self.db: DbSQLite | None = None
@@ -78,12 +77,8 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _install_window_actions(self) -> None:
         """``win.show-category`` takes the category name as its parameter."""
-        action = Gio.SimpleAction.new(
-            "show-category", GLib.VariantType.new("s")
-        )
-        action.connect(
-            "activate", lambda _a, target: self.show_category(target.get_string())
-        )
+        action = Gio.SimpleAction.new("show-category", GLib.VariantType.new("s"))
+        action.connect("activate", lambda _a, target: self.show_category(target.get_string()))
         self.add_action(action)
 
     # ----------------------------------------------------------------- chrome
@@ -164,9 +159,7 @@ class ViewManager(Gtk.ApplicationWindow):
         title = Gtk.Label(label=APP_NAME)
         title.add_css_class("category-title")
         empty.append(title)
-        empty.append(
-            Gtk.Label(label="Open a book to begin, or start a new one.")
-        )
+        empty.append(Gtk.Label(label="Open a book to begin, or start a new one."))
 
         choices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         choices.set_halign(Gtk.Align.CENTER)
@@ -298,9 +291,7 @@ class ViewManager(Gtk.ApplicationWindow):
         if self.db is None:
             return
         counts = self.db.summary()
-        self.status.set_text(
-            f"{counts['account']} accounts · {counts['txn']} transactions"
-        )
+        self.status.set_text(f"{counts['account']} accounts · {counts['txn']} transactions")
 
     def _on_undo_available(self, available: bool) -> None:
         application = self.get_application()

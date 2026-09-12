@@ -30,10 +30,8 @@ CHART = [
 ]
 
 MOVEMENTS = [
-    (date(2026, 1, 1), "Payroll",
-     [("bank", 500000, 100, ""), ("wages", -500000, 100, "")]),
-    (date(2026, 1, 3), "Rent",
-     [("rent", 180000, 100, ""), ("bank", -180000, 100, "")]),
+    (date(2026, 1, 1), "Payroll", [("bank", 500000, 100, ""), ("wages", -500000, 100, "")]),
+    (date(2026, 1, 3), "Rent", [("rent", 180000, 100, ""), ("bank", -180000, 100, "")]),
 ]
 
 
@@ -73,12 +71,8 @@ class TestSingleRoot:
 
         assets = initialised_book.get_account_by_name("Assets")
         expenses = initialised_book.get_account_by_name("Expenses")
-        assert ledger.balance_recursive(initialised_book, assets.handle) == Money(
-            "3200.00"
-        )
-        assert ledger.balance_recursive(initialised_book, expenses.handle) == Money(
-            "1800.00"
-        )
+        assert ledger.balance_recursive(initialised_book, assets.handle) == Money("3200.00")
+        assert ledger.balance_recursive(initialised_book, expenses.handle) == Money("1800.00")
 
     def test_placeholders_are_merged_not_duplicated(self, initialised_book, tmp_path):
         """`init` makes an Assets placeholder; so does the source book."""
@@ -125,12 +119,14 @@ class TestTemplateAccounts:
         template_guids = []
         for _ in range(3):
             guid = new_guid()
-            write_account(
-                conn, guid, guid, "BANK", source.template_root, source.currency
-            )
+            write_account(conn, guid, guid, "BANK", source.template_root, source.currency)
             template_guids.append(guid)
             write_transaction(
-                conn, new_guid(), source.currency, date(2026, 1, 1), "Rent template",
+                conn,
+                new_guid(),
+                source.currency,
+                date(2026, 1, 1),
+                "Rent template",
                 [(guid, 180000, 100, ""), (guid, -180000, 100, "")],
             )
         conn.commit()
@@ -138,13 +134,12 @@ class TestTemplateAccounts:
         source.templates = template_guids
         return source
 
-    def test_template_accounts_stay_out_of_the_chart(
-        self, initialised_book, book_with_templates
-    ):
+    def test_template_accounts_stay_out_of_the_chart(self, initialised_book, book_with_templates):
         gnucash_sqlite.import_book(initialised_book, book_with_templates.path)
         names = {a.name for a in initialised_book.iter_accounts()}
-        assert not any(len(n) == 32 and all(c in "0123456789abcdef" for c in n)
-                       for n in names), "GUID-named template accounts were imported"
+        assert not any(len(n) == 32 and all(c in "0123456789abcdef" for c in n) for n in names), (
+            "GUID-named template accounts were imported"
+        )
 
     def test_template_root_is_not_imported(self, initialised_book, book_with_templates):
         gnucash_sqlite.import_book(initialised_book, book_with_templates.path)

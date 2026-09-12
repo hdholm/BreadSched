@@ -13,8 +13,16 @@ from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
 from ..gi_setup import GLib, GObject, Gtk, Pango
 
-__all__ = ["BaseView", "Row", "money_label", "column", "column_menu",
-           "sorted_model", "toolbar", "unwrap"]
+__all__ = [
+    "BaseView",
+    "Row",
+    "money_label",
+    "column",
+    "column_menu",
+    "sorted_model",
+    "toolbar",
+    "unwrap",
+]
 
 
 class Row(GObject.Object):
@@ -93,17 +101,11 @@ class BaseView(Gtk.Box):
             # stale callback repaint a replacement book, or a book whose SQLite
             # connection has since been closed.  The database identity is captured
             # when the work is scheduled so switching books cannot retarget it.
-            if (
-                scheduled_db is not None
-                and self.db is scheduled_db
-                and scheduled_db.is_open
-            ):
+            if scheduled_db is not None and self.db is scheduled_db and scheduled_db.is_open:
                 self.refresh()
             return GLib.SOURCE_REMOVE
 
-        self._refresh_source_id = GLib.idle_add(
-            run, priority=GLib.PRIORITY_DEFAULT_IDLE
-        )
+        self._refresh_source_id = GLib.idle_add(run, priority=GLib.PRIORITY_DEFAULT_IDLE)
 
     def cancel_refresh(self) -> None:
         """Cancel a queued idle repaint without touching the database."""

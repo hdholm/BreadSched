@@ -21,8 +21,13 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 
-__all__ = ["Suggestion", "infer_all", "infer_asset_links", "infer_card_settings",
-           "apply_suggestions"]
+__all__ = [
+    "Suggestion",
+    "infer_all",
+    "infer_asset_links",
+    "infer_card_settings",
+    "apply_suggestions",
+]
 
 
 @dataclass
@@ -67,7 +72,8 @@ def infer_asset_links(db: DbSQLite) -> list[Suggestion]:
     and is offered with lower confidence.
     """
     assets = [
-        a for a in db.iter_accounts()
+        a
+        for a in db.iter_accounts()
         if a.account_class is AccountClass.ASSET
         and not a.placeholder
         and not a.is_root
@@ -108,8 +114,7 @@ def infer_asset_links(db: DbSQLite) -> list[Suggestion]:
                     field="linked_asset",
                     value=handle,
                     reason=(
-                        f"{count} transaction(s) move between this loan and "
-                        f"{db.full_name(asset)}"
+                        f"{count} transaction(s) move between this loan and {db.full_name(asset)}"
                     ),
                     confidence=0.9 if count > 1 else 0.7,
                     account_name=db.full_name(loan),
@@ -125,9 +130,7 @@ def infer_asset_links(db: DbSQLite) -> list[Suggestion]:
                     account=loan.handle,
                     field="linked_asset",
                     value=match.handle,
-                    reason=(
-                        f"the names share a place: {loan.name!r} and {match.name!r}"
-                    ),
+                    reason=(f"the names share a place: {loan.name!r} and {match.name!r}"),
                     confidence=0.4,
                     account_name=db.full_name(loan),
                     value_label=db.full_name(match),
@@ -137,17 +140,28 @@ def infer_asset_links(db: DbSQLite) -> list[Suggestion]:
 
 
 _IGNORED_WORDS = {
-    "mortgage", "loan", "home", "house", "second", "the", "of", "equity",
-    "line", "credit", "account", "property", "value",
+    "mortgage",
+    "loan",
+    "home",
+    "house",
+    "second",
+    "the",
+    "of",
+    "equity",
+    "line",
+    "credit",
+    "account",
+    "property",
+    "value",
 }
 
 
 def _match_by_name(db: DbSQLite, loan: Account, assets: list[Account]) -> Account | None:
     """Find an asset sharing a distinctive word with the loan's name."""
+
     def words(name: str) -> set[str]:
         return {
-            word.strip(",.()").lower()
-            for word in name.replace(":", " ").split()
+            word.strip(",.()").lower() for word in name.replace(":", " ").split()
         } - _IGNORED_WORDS
 
     loan_words = words(loan.name)
@@ -212,8 +226,11 @@ def infer_card_settings(db: DbSQLite, months: int = 12) -> list[Suggestion]:
                     value=not carries,
                     reason=(
                         f"the balance after the last payment was {balance.format()}"
-                        + ("; the card carries a balance" if carries
-                           else "; the card is cleared each month")
+                        + (
+                            "; the card carries a balance"
+                            if carries
+                            else "; the card is cleared each month"
+                        )
                     ),
                     confidence=0.8,
                     account_name=db.full_name(card),

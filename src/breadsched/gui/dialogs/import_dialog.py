@@ -27,6 +27,7 @@ LOG = logs.get_logger(__name__)
 #: How many warnings the dialog shows before summarising the rest.
 WARNING_LIMIT = 50
 
+
 class ImportDialog(Gtk.Window):
     """Choose a GnuCash file, check what it is, then import it."""
 
@@ -41,13 +42,16 @@ class ImportDialog(Gtk.Window):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
 
-        box.append(Gtk.Label(
-            label=(
-                "Accounts and transactions are copied into this book. Supported import "
-                "files are opened read-only and never changed."
-            ),
-            xalign=0, wrap=True,
-        ))
+        box.append(
+            Gtk.Label(
+                label=(
+                    "Accounts and transactions are copied into this book. Supported import "
+                    "files are opened read-only and never changed."
+                ),
+                xalign=0,
+                wrap=True,
+            )
+        )
 
         chooser_row = Gtk.Box(spacing=8)
         self.path_label = Gtk.Label(label="No file chosen", xalign=0, hexpand=True)
@@ -64,12 +68,12 @@ class ImportDialog(Gtk.Window):
         box.append(self.detected_label)
 
         self.format_box = Gtk.Box(spacing=8)
-        self.number_format = Gtk.DropDown.new_from_strings([
-            "Auto-detect number format", "Period decimal (1,234.56)", "Comma decimal (1.234,56)"
-        ])
-        self.date_format = Gtk.DropDown.new_from_strings([
-            "Auto-detect QIF date order", "Month first (MM/DD)", "Day first (DD/MM)"
-        ])
+        self.number_format = Gtk.DropDown.new_from_strings(
+            ["Auto-detect number format", "Period decimal (1,234.56)", "Comma decimal (1.234,56)"]
+        )
+        self.date_format = Gtk.DropDown.new_from_strings(
+            ["Auto-detect QIF date order", "Month first (MM/DD)", "Day first (DD/MM)"]
+        )
         self.format_box.append(self.number_format)
         self.format_box.append(self.date_format)
         self.format_box.set_visible(False)
@@ -257,8 +261,7 @@ class ImportDialog(Gtk.Window):
         # one whose warnings need reading, and truncating them at twenty hides the
         # pattern in what went wrong.
         self.result_view.set_text(
-            result.detail(limit=WARNING_LIMIT)
-            + "\n\nThis import is a single undo step (Ctrl+Z)."
+            result.detail(limit=WARNING_LIMIT) + "\n\nThis import is a single undo step (Ctrl+Z)."
         )
         self.import_button.set_label("Import again")
         self.import_button.set_sensitive(True)

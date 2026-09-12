@@ -16,8 +16,12 @@ from .base import PrimaryObject, create_handle
 from .money import Money
 
 __all__ = [
-    "PlanningFlowKind", "PlanningResolution", "ReconcileState", "Split",
-    "Transaction", "UnbalancedError",
+    "PlanningFlowKind",
+    "PlanningResolution",
+    "ReconcileState",
+    "Split",
+    "Transaction",
+    "UnbalancedError",
 ]
 
 
@@ -83,8 +87,16 @@ class Split:
     """One leg of a transaction: an amount posted against one account."""
 
     __slots__ = (
-        "handle", "account", "value", "quantity", "memo", "action",
-        "reconcile", "reconcile_date", "planning_flow", "fsa_year_start",
+        "handle",
+        "account",
+        "value",
+        "quantity",
+        "memo",
+        "action",
+        "reconcile",
+        "reconcile_date",
+        "planning_flow",
+        "fsa_year_start",
     )
 
     def __init__(
@@ -137,9 +149,7 @@ class Split:
             "reconcile": self.reconcile.value,
             "reconcile_date": self.reconcile_date.isoformat() if self.reconcile_date else None,
             "planning_flow": self.planning_flow.value if self.planning_flow else None,
-            "fsa_year_start": (
-                self.fsa_year_start.isoformat() if self.fsa_year_start else None
-            ),
+            "fsa_year_start": (self.fsa_year_start.isoformat() if self.fsa_year_start else None),
         }
 
     @classmethod
@@ -306,9 +316,7 @@ class Transaction(PrimaryObject):
         raw_planned_for = data.get("planned_for")
         self.planned_for = date.fromisoformat(raw_planned_for) if raw_planned_for else None
         raw_planned_amount = data.get("planned_amount")
-        self.planned_amount = (
-            Money(*raw_planned_amount) if raw_planned_amount is not None else None
-        )
+        self.planned_amount = Money(*raw_planned_amount) if raw_planned_amount is not None else None
         default_resolution = (
             PlanningResolution.MATCHED
             if self.planned_occurrence is not None or self.scheduled_from is not None

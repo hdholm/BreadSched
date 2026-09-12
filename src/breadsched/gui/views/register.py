@@ -82,8 +82,13 @@ def column_headings(atype: AccountType) -> tuple[str, str]:
 class RegisterView(BaseView):
     """A scrollable ledger for one account at a time."""
 
-    WATCHES = ("database-changed", "transaction-add", "transaction-update",
-               "transaction-delete", "account-update")
+    WATCHES = (
+        "database-changed",
+        "transaction-add",
+        "transaction-update",
+        "transaction-delete",
+        "account-update",
+    )
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -158,7 +163,8 @@ class RegisterView(BaseView):
         # The menu needs the columns to exist, so the toolbar is added last.
         bar.append(
             column_menu(
-                "register", self.column_view,
+                "register",
+                self.column_view,
                 getattr(self.manager.get_application(), "view_settings", None),
             )
         )
@@ -167,8 +173,6 @@ class RegisterView(BaseView):
         scroller = Gtk.ScrolledWindow(child=self.column_view)
         scroller.set_vexpand(True)
         self.append(scroller)
-
-
 
     # ------------------------------------------------------------------ model
 
@@ -200,9 +204,7 @@ class RegisterView(BaseView):
         self.column_view.set_model(selection)
 
         closing = self._rows[-1].running if self._rows else None
-        self.balance_label.set_text(
-            closing.format(parens_negative=True) if closing else "0.00"
-        )
+        self.balance_label.set_text(closing.format(parens_negative=True) if closing else "0.00")
         if closing is not None and closing < 0:
             self.balance_label.add_css_class("negative")
         else:
@@ -263,9 +265,7 @@ class RegisterView(BaseView):
         txn = payload.transaction
         store = Gio.ListStore.new(Row)
         for split in txn.splits:
-            store.append(
-                Row(SplitRow(split, txn, split.handle == payload.split.handle, self.db))
-            )
+            store.append(Row(SplitRow(split, txn, split.handle == payload.split.handle, self.db)))
         return store
 
     def _on_selection_changed(self, selection, _param) -> None:
@@ -320,7 +320,9 @@ class RegisterView(BaseView):
         from ..dialogs.transaction_dialog import TransactionDialog
 
         dialog = TransactionDialog(
-            self.get_root(), self.db, default_account=self.account_handle,
+            self.get_root(),
+            self.db,
+            default_account=self.account_handle,
             transaction=transaction,
         )
         dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
@@ -332,7 +334,9 @@ class RegisterView(BaseView):
         from ..dialogs.transaction_dialog import TransactionDialog
 
         dialog = TransactionDialog(
-            self.get_root(), self.db, default_account=self.account_handle,
+            self.get_root(),
+            self.db,
+            default_account=self.account_handle,
             default_date=date.today(),
         )
         dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])

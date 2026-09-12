@@ -31,6 +31,7 @@ __all__ = [
 
 LOG = get_logger(__name__)
 
+
 class ScheduleGrowthPolicy(str, Enum):
     """How projection assumptions escalate a scheduled transaction."""
 
@@ -156,8 +157,8 @@ class ScheduledSplit:
         planning_flow: PlanningFlowKind | str | None = None,
     ) -> None:
         self.account = account
-        self.amount = None if amount is None else (
-            amount if isinstance(amount, Money) else Money(amount)
+        self.amount = (
+            None if amount is None else (amount if isinstance(amount, Money) else Money(amount))
         )
         self.formula = formula
         self.memo = memo
@@ -188,9 +189,9 @@ class ScheduledSplit:
                 return Money(evaluate(self.formula, variables or {}))
             except (FormulaError, ValueError, ArithmeticError):
                 LOG.warning(
-                    "scheduled split on account %s has an unusable formula %r; "
-                    "treating it as zero",
-                    self.account[:8], self.formula,
+                    "scheduled split on account %s has an unusable formula %r; treating it as zero",
+                    self.account[:8],
+                    self.formula,
                 )
                 return Money(0)
         return self.amount or Money(0)
@@ -198,7 +199,8 @@ class ScheduledSplit:
     def serialize(self) -> dict[str, Any]:
         return {
             "account": self.account,
-            "amount": None if self.amount is None
+            "amount": None
+            if self.amount is None
             else [self.amount.numerator, self.amount.denominator],
             "formula": self.formula,
             "memo": self.memo,
@@ -252,9 +254,7 @@ class ScheduledTransaction(PrimaryObject):
         self.currency = currency
         self.growth_policy = ScheduleGrowthPolicy(growth_policy)
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
-        self.seasonal_amounts = sorted(
-            list(seasonal_amounts or []), key=lambda item: item.month
-        )
+        self.seasonal_amounts = sorted(list(seasonal_amounts or []), key=lambda item: item.month)
         self.occurrence_adjustments = sorted(
             list(occurrence_adjustments or []), key=lambda item: item.when
         )
@@ -469,8 +469,7 @@ class ScheduledTransaction(PrimaryObject):
         if not self.postable:
             return []
         return [
-            when for when in self.recurrence.occurrences(until, since)
-            if when not in self.skipped
+            when for when in self.recurrence.occurrences(until, since) if when not in self.skipped
         ]
 
     # ------------------------------------------------------------ serialisation
@@ -488,9 +487,7 @@ class ScheduledTransaction(PrimaryObject):
             "growth_policy": self.growth_policy.value,
             "amount_changes": [item.serialize() for item in self.amount_changes],
             "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
-            "occurrence_adjustments": [
-                item.serialize() for item in self.occurrence_adjustments
-            ],
+            "occurrence_adjustments": [item.serialize() for item in self.occurrence_adjustments],
             "last_posted": self.last_posted.isoformat() if self.last_posted else None,
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
@@ -514,10 +511,7 @@ class ScheduledTransaction(PrimaryObject):
             key=lambda item: item.start,
         )
         self.seasonal_amounts = sorted(
-            [
-                ScheduledMonthAmount.from_dict(item)
-                for item in data.get("seasonal_amounts", [])
-            ],
+            [ScheduledMonthAmount.from_dict(item) for item in data.get("seasonal_amounts", [])],
             key=lambda item: item.month,
         )
         self.occurrence_adjustments = sorted(

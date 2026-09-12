@@ -30,17 +30,56 @@ def book_path(tmp_path, capsys):
         ("Visa", "CREDIT", "Liabilities"),
         ("Checking", "BANK", "Assets"),
     ):
-        cli(["account", str(path), "add", "--name", name, "--type", kind,
-             "--parent", parent])
-    cli(["add", str(path), "--date", "2026-01-01", "--description", "Drawdown",
-         "--from", "Liabilities:Mortgage Easton", "--to", "Assets:Home Easton",
-         "--amount", "385938.50"])
+        cli(["account", str(path), "add", "--name", name, "--type", kind, "--parent", parent])
+    cli(
+        [
+            "add",
+            str(path),
+            "--date",
+            "2026-01-01",
+            "--description",
+            "Drawdown",
+            "--from",
+            "Liabilities:Mortgage Easton",
+            "--to",
+            "Assets:Home Easton",
+            "--amount",
+            "385938.50",
+        ]
+    )
     for month in ("03", "04", "05"):
-        cli(["add", str(path), "--date", f"2026-{month}-14", "--description", "Spend",
-             "--from", "Liabilities:Visa", "--to", "Expenses", "--amount", "900.00"])
-        cli(["add", str(path), "--date", f"2026-{month}-22", "--description", "Payment",
-             "--from", "Assets:Checking", "--to", "Liabilities:Visa",
-             "--amount", "400.00"])
+        cli(
+            [
+                "add",
+                str(path),
+                "--date",
+                f"2026-{month}-14",
+                "--description",
+                "Spend",
+                "--from",
+                "Liabilities:Visa",
+                "--to",
+                "Expenses",
+                "--amount",
+                "900.00",
+            ]
+        )
+        cli(
+            [
+                "add",
+                str(path),
+                "--date",
+                f"2026-{month}-22",
+                "--description",
+                "Payment",
+                "--from",
+                "Assets:Checking",
+                "--to",
+                "Liabilities:Visa",
+                "--amount",
+                "400.00",
+            ]
+        )
     capsys.readouterr()
     return path
 
@@ -53,8 +92,19 @@ def open_book(path) -> DbSQLite:
 
 class TestAccountManagement:
     def test_an_account_can_be_added(self, book_path, capsys):
-        cli(["account", str(book_path), "add", "--name", "Savings",
-             "--type", "BANK", "--parent", "Assets"])
+        cli(
+            [
+                "account",
+                str(book_path),
+                "add",
+                "--name",
+                "Savings",
+                "--type",
+                "BANK",
+                "--parent",
+                "Assets",
+            ]
+        )
         capsys.readouterr()
         db = open_book(book_path)
         assert db.get_account_by_name("Assets:Savings") is not None
@@ -63,8 +113,21 @@ class TestAccountManagement:
     def test_an_opening_balance_can_be_posted_with_it(self, book_path, capsys):
         from breadsched.gen.engine import ledger
 
-        cli(["account", str(book_path), "add", "--name", "Savings", "--type", "BANK",
-             "--parent", "Assets", "--opening", "1500.00"])
+        cli(
+            [
+                "account",
+                str(book_path),
+                "add",
+                "--name",
+                "Savings",
+                "--type",
+                "BANK",
+                "--parent",
+                "Assets",
+                "--opening",
+                "1500.00",
+            ]
+        )
         capsys.readouterr()
         db = open_book(book_path)
         handle = db.get_account_by_name("Assets:Savings").handle
@@ -72,8 +135,19 @@ class TestAccountManagement:
         db.close()
 
     def test_an_account_can_be_renamed_and_regrouped(self, book_path, capsys):
-        cli(["account", str(book_path), "edit", "--name", "Assets:Checking",
-             "--rename", "Everyday", "--group", "Cash"])
+        cli(
+            [
+                "account",
+                str(book_path),
+                "edit",
+                "--name",
+                "Assets:Checking",
+                "--rename",
+                "Everyday",
+                "--group",
+                "Cash",
+            ]
+        )
         capsys.readouterr()
         db = open_book(book_path)
         account = db.get_account_by_name("Assets:Everyday")
@@ -84,8 +158,19 @@ class TestAccountManagement:
         assert cli(["account", str(book_path), "remove", "--name", "Assets:Checking"]) == 2
 
     def test_an_unused_account_can_be_removed(self, book_path, capsys):
-        cli(["account", str(book_path), "add", "--name", "Spare", "--type", "BANK",
-             "--parent", "Assets"])
+        cli(
+            [
+                "account",
+                str(book_path),
+                "add",
+                "--name",
+                "Spare",
+                "--type",
+                "BANK",
+                "--parent",
+                "Assets",
+            ]
+        )
         cli(["account", str(book_path), "remove", "--name", "Assets:Spare"])
         capsys.readouterr()
         db = open_book(book_path)
@@ -93,8 +178,17 @@ class TestAccountManagement:
         db.close()
 
     def test_a_loan_can_name_the_asset_behind_it(self, book_path, capsys):
-        cli(["account", str(book_path), "edit", "--name", "Liabilities:Mortgage Easton",
-             "--linked-asset", "Assets:Home Easton"])
+        cli(
+            [
+                "account",
+                str(book_path),
+                "edit",
+                "--name",
+                "Liabilities:Mortgage Easton",
+                "--linked-asset",
+                "Assets:Home Easton",
+            ]
+        )
         capsys.readouterr()
         db = open_book(book_path)
         loan = db.get_account_by_name("Liabilities:Mortgage Easton")
@@ -102,9 +196,21 @@ class TestAccountManagement:
         db.close()
 
     def test_a_card_records_how_it_is_used(self, book_path, capsys):
-        cli(["account", str(book_path), "edit", "--name", "Liabilities:Visa",
-             "--carries-balance", "yes", "--usual-payment", "400.00",
-             "--payment-day", "22"])
+        cli(
+            [
+                "account",
+                str(book_path),
+                "edit",
+                "--name",
+                "Liabilities:Visa",
+                "--carries-balance",
+                "yes",
+                "--usual-payment",
+                "400.00",
+                "--payment-day",
+                "22",
+            ]
+        )
         capsys.readouterr()
         db = open_book(book_path)
         card = db.get_account_by_name("Liabilities:Visa")
@@ -143,10 +249,32 @@ class TestInference:
     def test_names_are_a_weaker_fallback_than_transactions(self, tmp_path, capsys):
         path = tmp_path / "names.breadsched"
         cli(["init", str(path)])
-        cli(["account", str(path), "add", "--name", "Home Evans", "--type", "ASSET",
-             "--parent", "Assets"])
-        cli(["account", str(path), "add", "--name", "Mortgage Evans",
-             "--type", "LIABILITY", "--parent", "Liabilities"])
+        cli(
+            [
+                "account",
+                str(path),
+                "add",
+                "--name",
+                "Home Evans",
+                "--type",
+                "ASSET",
+                "--parent",
+                "Assets",
+            ]
+        )
+        cli(
+            [
+                "account",
+                str(path),
+                "add",
+                "--name",
+                "Mortgage Evans",
+                "--type",
+                "LIABILITY",
+                "--parent",
+                "Liabilities",
+            ]
+        )
         capsys.readouterr()
 
         db = open_book(path)
@@ -244,9 +372,25 @@ class TestInference:
 @pytest.fixture
 def budgeted(book_path, capsys):
     """A book with one estimate and one budget built from it."""
-    cli(["estimate", str(book_path), "add", "--name", "Groceries",
-         "--account", "Expenses", "--funded-from", "Assets:Checking",
-         "--amount", "600.00", "--every", "month", "--start", "2026-01-01"])
+    cli(
+        [
+            "estimate",
+            str(book_path),
+            "add",
+            "--name",
+            "Groceries",
+            "--account",
+            "Expenses",
+            "--funded-from",
+            "Assets:Checking",
+            "--amount",
+            "600.00",
+            "--every",
+            "month",
+            "--start",
+            "2026-01-01",
+        ]
+    )
     cli(["budget-new", str(book_path), "--name", "Base", "--start", "2026-01-01"])
     capsys.readouterr()
     return book_path
@@ -281,15 +425,11 @@ class TestMultipleBudgets:
         try:
             clone = next(b for b in db.iter_budgets() if b.name == "Tighter")
             account = next(iter(clone.lines))
-            before = next(
-                b for b in db.iter_budgets() if b.name == "Base"
-            ).amount(account, 0)
+            before = next(b for b in db.iter_budgets() if b.name == "Base").amount(account, 0)
             clone.set_amount(account, 0, "1.00")
             with db.transaction("edit") as txn:
                 db.commit_budget(clone, txn)
-            after = next(
-                b for b in db.iter_budgets() if b.name == "Base"
-            ).amount(account, 0)
+            after = next(b for b in db.iter_budgets() if b.name == "Base").amount(account, 0)
             assert after == before
         finally:
             db.close()
@@ -306,8 +446,17 @@ class TestMultipleBudgets:
 
     def test_a_schedule_can_be_removed_from_one_budget_only(self, budgeted, capsys):
         cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        cli(["budget-member", str(budgeted), "remove", "--budget", "Tighter",
-             "--schedule", "Groceries"])
+        cli(
+            [
+                "budget-member",
+                str(budgeted),
+                "remove",
+                "--budget",
+                "Tighter",
+                "--schedule",
+                "Groceries",
+            ]
+        )
         capsys.readouterr()
         db = open_book(budgeted)
         try:
@@ -329,18 +478,28 @@ class TestMultipleBudgets:
         finally:
             db.close()
 
-    def test_the_budget_a_flow_is_removed_from_stops_counting_it(
-        self, budgeted, capsys
-    ):
+    def test_the_budget_a_flow_is_removed_from_stops_counting_it(self, budgeted, capsys):
         cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        cli(["budget-member", str(budgeted), "remove", "--budget", "Tighter",
-             "--schedule", "Groceries"])
+        cli(
+            [
+                "budget-member",
+                str(budgeted),
+                "remove",
+                "--budget",
+                "Tighter",
+                "--schedule",
+                "Groceries",
+            ]
+        )
         capsys.readouterr()
         db = open_book(budgeted)
         try:
             clone = next(b for b in db.iter_budgets() if b.name == "Tighter")
             rebuilt = budgeting.from_schedules(
-                db, name="check", start=date(2026, 1, 1), periods=12,
+                db,
+                name="check",
+                start=date(2026, 1, 1),
+                periods=12,
                 budget_handle=clone.handle,
             )
             assert not rebuilt.lines
@@ -357,14 +516,21 @@ class TestMultipleBudgets:
         finally:
             db.close()
 
-    def test_the_dashboard_uses_the_plan_not_legacy_budget_selection(
-        self, budgeted, capsys
-    ):
+    def test_the_dashboard_uses_the_plan_not_legacy_budget_selection(self, budgeted, capsys):
         from breadsched.gen.engine import dashboard
 
         cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        cli(["budget-member", str(budgeted), "remove", "--budget", "Tighter",
-             "--schedule", "Groceries"])
+        cli(
+            [
+                "budget-member",
+                str(budgeted),
+                "remove",
+                "--budget",
+                "Tighter",
+                "--schedule",
+                "Groceries",
+            ]
+        )
         cli(["budget-use", str(budgeted), "Tighter"])
         capsys.readouterr()
 
@@ -399,10 +565,27 @@ class TestBillFrequency:
     def test_a_quarterly_flow_says_so(self, book_path, capsys):
         from breadsched.gen.engine import dashboard
 
-        cli(["estimate", str(book_path), "add", "--name", "HOA",
-             "--account", "Expenses", "--funded-from", "Assets:Checking",
-             "--amount", "619.00", "--every", "month", "--interval", "3",
-             "--start", "2026-01-01"])
+        cli(
+            [
+                "estimate",
+                str(book_path),
+                "add",
+                "--name",
+                "HOA",
+                "--account",
+                "Expenses",
+                "--funded-from",
+                "Assets:Checking",
+                "--amount",
+                "619.00",
+                "--every",
+                "month",
+                "--interval",
+                "3",
+                "--start",
+                "2026-01-01",
+            ]
+        )
         capsys.readouterr()
         db = open_book(book_path)
         try:
@@ -440,8 +623,17 @@ class TestMembershipIsDecidable:
 
     def test_removing_from_the_only_budget_excludes_it(self, budgeted, capsys):
         """An empty list used to read as 'every budget', which inverted the answer."""
-        cli(["budget-member", str(budgeted), "remove", "--budget", "Base",
-             "--schedule", "Groceries"])
+        cli(
+            [
+                "budget-member",
+                str(budgeted),
+                "remove",
+                "--budget",
+                "Base",
+                "--schedule",
+                "Groceries",
+            ]
+        )
         capsys.readouterr()
 
         db = open_book(budgeted)
@@ -455,15 +647,27 @@ class TestMembershipIsDecidable:
             db.close()
 
     def test_the_budget_then_has_no_lines(self, budgeted, capsys):
-        cli(["budget-member", str(budgeted), "remove", "--budget", "Base",
-             "--schedule", "Groceries"])
+        cli(
+            [
+                "budget-member",
+                str(budgeted),
+                "remove",
+                "--budget",
+                "Base",
+                "--schedule",
+                "Groceries",
+            ]
+        )
         capsys.readouterr()
 
         db = open_book(budgeted)
         try:
             base = next(b for b in db.iter_budgets() if b.name == "Base")
             rebuilt = budgeting.from_schedules(
-                db, name="check", start=date(2026, 1, 1), periods=12,
+                db,
+                name="check",
+                start=date(2026, 1, 1),
+                periods=12,
                 budget_handle=base.handle,
             )
             assert not rebuilt.lines
@@ -471,10 +675,18 @@ class TestMembershipIsDecidable:
             db.close()
 
     def test_adding_it_back_restores_it(self, budgeted, capsys):
-        cli(["budget-member", str(budgeted), "remove", "--budget", "Base",
-             "--schedule", "Groceries"])
-        cli(["budget-member", str(budgeted), "add", "--budget", "Base",
-             "--schedule", "Groceries"])
+        cli(
+            [
+                "budget-member",
+                str(budgeted),
+                "remove",
+                "--budget",
+                "Base",
+                "--schedule",
+                "Groceries",
+            ]
+        )
+        cli(["budget-member", str(budgeted), "add", "--budget", "Base", "--schedule", "Groceries"])
         capsys.readouterr()
 
         db = open_book(budgeted)

@@ -183,11 +183,19 @@ XML_WITH_SCHEDULE = """<?xml version="1.0" encoding="utf-8" ?>
 def create_xml_book(path: str | Path, compress: bool = True) -> SimpleNamespace:
     """Write the book and return a namespace of the GUIDs used inside it."""
     ids = SimpleNamespace(
-        root=new_guid(), assets=new_guid(), bank=new_guid(),
-        expenses=new_guid(), rent=new_guid(), txn=new_guid(),
-        split1=new_guid(), split2=new_guid(),
-        template_root=new_guid(), template_account=new_guid(),
-        template_txn=new_guid(), tsplit1=new_guid(), tsplit2=new_guid(),
+        root=new_guid(),
+        assets=new_guid(),
+        bank=new_guid(),
+        expenses=new_guid(),
+        rent=new_guid(),
+        txn=new_guid(),
+        split1=new_guid(),
+        split2=new_guid(),
+        template_root=new_guid(),
+        template_account=new_guid(),
+        template_txn=new_guid(),
+        tsplit1=new_guid(),
+        tsplit2=new_guid(),
         schedule=new_guid(),
     )
     body = XML_WITH_SCHEDULE.format(**vars(ids))

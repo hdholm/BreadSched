@@ -48,10 +48,7 @@ def test_ofx_imports_bank_statement_as_historical_activity(db, book, tmp_path):
     assert result.transactions == 2
     transactions = sorted(db.iter_transactions(), key=lambda item: item.post_date)
     assert [item.description for item in transactions] == ["Grocery Store", "Employer"]
-    assert all(
-        item.planning_resolution is PlanningResolution.HISTORICAL
-        for item in transactions
-    )
+    assert all(item.planning_resolution is PlanningResolution.HISTORICAL for item in transactions)
     source = db.get_account_by_name("Sample Bank Checking 1234")
     assert source is not None
     assert ledger.balance(db, source.handle, natural_sign=False) == Money("1954.33")
@@ -77,10 +74,7 @@ def test_ofx_without_fitid_uses_content_stable_fallback(db, book, tmp_path):
     path.write_text(without_fitid)
     ofx.import_book(db, path)
 
-    extra = (
-        "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260110120000"
-        "<TRNAMT>-10.00<NAME>Coffee</STMTTRN>"
-    )
+    extra = "<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260110120000<TRNAMT>-10.00<NAME>Coffee</STMTTRN>"
     path.write_text(without_fitid.replace("<BANKTRANLIST>", f"<BANKTRANLIST>{extra}"))
     ofx.import_book(db, path)
 
@@ -107,6 +101,4 @@ def test_ofx_rejects_conflicting_number_conventions(db, tmp_path):
     result = ofx.import_book(db, path)
 
     assert result.transactions == 0
-    assert any(
-        "conflicting decimal number formats" in warning for warning in result.warnings
-    )
+    assert any("conflicting decimal number formats" in warning for warning in result.warnings)

@@ -109,8 +109,7 @@ def write_account(
 ) -> str:
     conn.execute(
         "INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (guid, name, atype, commodity, 100, 0, parent, code, description,
-         hidden, placeholder),
+        (guid, name, atype, commodity, 100, 0, parent, code, description, hidden, placeholder),
     )
     return guid
 
@@ -137,8 +136,20 @@ def write_transaction(
     for account, numerator, denominator, memo in splits:
         conn.execute(
             "INSERT INTO splits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (new_guid(), guid, account, memo, "", "n", None,
-             numerator, denominator, numerator, denominator, None),
+            (
+                new_guid(),
+                guid,
+                account,
+                memo,
+                "",
+                "n",
+                None,
+                numerator,
+                denominator,
+                numerator,
+                denominator,
+                None,
+            ),
         )
     return guid
 
@@ -193,12 +204,8 @@ def create_book(
     template = new_guid()
     if template_root:
         write_account(conn, template, "Template Root", "ROOT", None, currency)
-    conn.execute(
-        "INSERT INTO books VALUES (?,?,?)", (new_guid(), book_root, template)
-    )
+    conn.execute("INSERT INTO books VALUES (?,?,?)", (new_guid(), book_root, template))
 
     conn.commit()
     conn.close()
-    return SimpleNamespace(
-        path=str(path), currency=currency, template_root=template, **ids
-    )
+    return SimpleNamespace(path=str(path), currency=currency, template_root=template, **ids)

@@ -68,8 +68,7 @@ def _amount_of(item) -> str:
 class ScheduledView(BaseView):
     """The definitions: what recurs, and how."""
 
-    WATCHES = ("database-changed", "scheduled-add", "scheduled-update",
-               "scheduled-delete")
+    WATCHES = ("database-changed", "scheduled-add", "scheduled-update", "scheduled-delete")
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -113,9 +112,7 @@ class ScheduledView(BaseView):
         self.definitions_view = Gtk.ColumnView()
         self.definitions_view.set_show_row_separators(True)
         self.definitions_view.append_column(self._name_column())
-        self.definitions_view.append_column(
-            column("Kind", _kind_of, sort_key=_kind_of)
-        )
+        self.definitions_view.append_column(column("Kind", _kind_of, sort_key=_kind_of))
         self.definitions_view.append_column(
             column(
                 "Frequency",
@@ -126,9 +123,7 @@ class ScheduledView(BaseView):
         self.definitions_view.append_column(
             column("Next", lambda s: "" if _is_split(s) else self._next_text(s))
         )
-        self.definitions_view.append_column(
-            column("Amount", _amount_of, numeric=True)
-        )
+        self.definitions_view.append_column(column("Amount", _amount_of, numeric=True))
         self.definitions_view.append_column(
             column(
                 "Planning purpose",
@@ -151,9 +146,7 @@ class ScheduledView(BaseView):
                 lambda s: "" if _is_split(s) else ("yes" if s.enabled else "no"),
             )
         )
-        bar.append(
-            column_menu("scheduled", self.definitions_view, self._settings())
-        )
+        bar.append(column_menu("scheduled", self.definitions_view, self._settings()))
         self.append(bar)
 
         self.status = Gtk.Label(xalign=0)
@@ -213,9 +206,7 @@ class ScheduledView(BaseView):
             definitions.append(Row(sched))
 
         tree = Gtk.TreeListModel.new(definitions, False, False, self._split_children)
-        selection = Gtk.SingleSelection(
-            model=sorted_model(self.definitions_view, tree)
-        )
+        selection = Gtk.SingleSelection(model=sorted_model(self.definitions_view, tree))
         selection.connect("notify::selected", self._on_selected)
         self.definitions_view.set_model(selection)
         # Gtk.SingleSelection auto-selects the first row before our notify handler
@@ -278,9 +269,7 @@ class ScheduledView(BaseView):
             tree_row.set_expanded(index == position)
         selected = selection.get_selected_item()
         payload = unwrap(selected) if selected is not None else None
-        self.edit_button.set_sensitive(
-            payload is not None and not _is_split(payload)
-        )
+        self.edit_button.set_sensitive(payload is not None and not _is_split(payload))
 
     def _editability_reason(self, sched) -> str:
         if sched is None or _is_split(sched):
@@ -312,38 +301,25 @@ class ScheduledView(BaseView):
         funding_candidates = 0
         planning_flow_splits = 0
         for split in sched.splits:
-            account = (
-                self.db.get_account(split.account) if self.db is not None else None
-            )
+            account = self.db.get_account(split.account) if self.db is not None else None
             account_class = account.account_class.value if account is not None else ""
             classes.append(account_class)
             if split.planning_flow is not None:
                 planning_flow_splits += 1
-            if (
-                account_class not in {"income", "expense"}
-                and split.planning_flow is None
-            ):
+            if account_class not in {"income", "expense"} and split.planning_flow is None:
                 funding_candidates += 1
         has_income_expense = any(value in {"income", "expense"} for value in classes)
         ordinary_balance_transfer = False
         if not has_income_expense and planning_flow_splits == 0:
-            ordinary_balance_transfer = all(
-                value in {"asset", "liability"} for value in classes
-            )
+            ordinary_balance_transfer = all(value in {"asset", "liability"} for value in classes)
             if ordinary_balance_transfer:
                 resolved = [split.resolve(sched.variables) for split in sched.splits]
                 positives = [value for value in resolved if value > 0]
                 negatives = [value for value in resolved if value < 0]
                 ordinary_balance_transfer = (
-                    len(positives) == 1
-                    and bool(negatives)
-                    and sum(resolved, Money(0)) == Money(0)
+                    len(positives) == 1 and bool(negatives) and sum(resolved, Money(0)) == Money(0)
                 )
-        if (
-            not has_income_expense
-            and planning_flow_splits < 1
-            and not ordinary_balance_transfer
-        ):
+        if not has_income_expense and planning_flow_splits < 1 and not ordinary_balance_transfer:
             return (
                 "This schedule has neither an Income/Expense leg, an explicit "
                 "planning-purpose leg, nor an unambiguous fixed balance-sheet "
@@ -407,8 +383,13 @@ class ScheduledView(BaseView):
 class UpcomingView(BaseView):
     """The diary: what is due, what is overdue, and what needs posting."""
 
-    WATCHES = ("database-changed", "scheduled-add", "scheduled-update",
-               "scheduled-delete", "transaction-add")
+    WATCHES = (
+        "database-changed",
+        "scheduled-add",
+        "scheduled-update",
+        "scheduled-delete",
+        "transaction-add",
+    )
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -440,12 +421,8 @@ class UpcomingView(BaseView):
 
         self.upcoming_view = Gtk.ColumnView()
         self.upcoming_view.set_show_row_separators(True)
-        self.upcoming_view.append_column(
-            column("Due", self._due_text, sort_key=lambda o: o.when)
-        )
-        self.upcoming_view.append_column(
-            column("Schedule", lambda o: o.name, expand=True)
-        )
+        self.upcoming_view.append_column(column("Due", self._due_text, sort_key=lambda o: o.when))
+        self.upcoming_view.append_column(column("Schedule", lambda o: o.name, expand=True))
         self.upcoming_view.append_column(column("Kind", lambda o: _kind_of(o.schedule)))
         self.upcoming_view.append_column(
             column("Frequency", lambda o: o.schedule.recurrence.describe(), expand=True)
@@ -473,9 +450,7 @@ class UpcomingView(BaseView):
         if self.db is None:
             return
         today = date.today()
-        occurrences = schedule.due_occurrences(
-            self.db, as_of=today, horizon_days=self._horizon
-        )
+        occurrences = schedule.due_occurrences(self.db, as_of=today, horizon_days=self._horizon)
         store = Gio.ListStore.new(Row)
         for occurrence in occurrences:
             store.append(Row(occurrence))
@@ -486,8 +461,7 @@ class UpcomingView(BaseView):
         overdue = [o for o in occurrences if o.when <= today]
         if overdue:
             self.status.set_text(
-                f"{len(overdue)} occurrence(s) overdue, "
-                f"oldest {overdue[0].when.isoformat()}"
+                f"{len(overdue)} occurrence(s) overdue, oldest {overdue[0].when.isoformat()}"
             )
             self.status.add_css_class("negative")
         else:

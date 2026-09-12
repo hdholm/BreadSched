@@ -30,23 +30,34 @@ def book_with_formula(tmp_path, debit: str, credit: str = "") -> str:
     ids = {
         name: new_guid()
         for name in (
-            "root", "assets", "bank", "expenses", "rent", "txn", "split1", "split2",
-            "template_root", "template_account", "template_txn", "tsplit1", "tsplit2",
+            "root",
+            "assets",
+            "bank",
+            "expenses",
+            "rent",
+            "txn",
+            "split1",
+            "split2",
+            "template_root",
+            "template_account",
+            "template_txn",
+            "tsplit1",
+            "tsplit2",
             "schedule",
         )
     }
     body = XML_WITH_SCHEDULE.format(**ids)
     body = body.replace(
-        "<slot:value type=\"string\">1800.00</slot:value>",
-        f"<slot:value type=\"string\">{debit}</slot:value>",
+        '<slot:value type="string">1800.00</slot:value>',
+        f'<slot:value type="string">{debit}</slot:value>',
         1,
     )
     if credit:
         body = body.replace(
             "<slot:key>credit-formula</slot:key>\n"
-            "                      <slot:value type=\"string\">1800.00</slot:value>",
+            '                      <slot:value type="string">1800.00</slot:value>',
             "<slot:key>credit-formula</slot:key>\n"
-            f"                      <slot:value type=\"string\">{credit}</slot:value>",
+            f'                      <slot:value type="string">{credit}</slot:value>',
         )
     path = tmp_path / "formula.gnucash"
     path.write_text(body, encoding="utf-8")
@@ -58,14 +69,14 @@ class TestAmountText:
         "text,expected",
         [
             ("1800.00", "1800.00"),
-            ("1,800.00", "1800.00"),      # English grouping
-            ("1.800,00", "1800.00"),      # European grouping
-            ("1 800,00", "1800.00"),      # French grouping, plain space
+            ("1,800.00", "1800.00"),  # English grouping
+            ("1.800,00", "1800.00"),  # European grouping
+            ("1 800,00", "1800.00"),  # French grouping, plain space
             ("\u00a01\u202f800,00", "1800.00"),  # non-breaking and narrow spaces
             ("$1,800.00", "1800.00"),
             ("\u20ac250,50", "250.50"),
             ("-250.50", "-250.50"),
-            ("1,234", "1234.00"),         # grouping, not a decimal
+            ("1,234", "1234.00"),  # grouping, not a decimal
             ("0.5", "0.50"),
         ],
     )
@@ -160,9 +171,7 @@ class TestFormulaImports:
 
 
 class TestOneBadScheduleIsNotFatal:
-    def test_a_broken_schedule_element_is_skipped_with_a_warning(
-        self, db, tmp_path, monkeypatch
-    ):
+    def test_a_broken_schedule_element_is_skipped_with_a_warning(self, db, tmp_path, monkeypatch):
         """Whatever else goes wrong in a schedule, the book still imports."""
         book = create_xml_book(tmp_path / "book.gnucash", compress=False)
 
@@ -175,5 +184,7 @@ class TestOneBadScheduleIsNotFatal:
         assert result.transactions == 1
         assert result.accounts == 5
         assert result.skipped == 1
-        assert any("scheduled transaction" in reason or "scheduled" in subject
-                   for reason, subject in result.skipped_details)
+        assert any(
+            "scheduled transaction" in reason or "scheduled" in subject
+            for reason, subject in result.skipped_details
+        )

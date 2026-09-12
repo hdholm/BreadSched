@@ -25,8 +25,11 @@ from breadsched.gen.lib import (
 def flat_assumptions(**overrides) -> Assumptions:
     """No growth anywhere, so a test can isolate one moving part at a time."""
     base = dict(
-        income_growth="0", expense_inflation="0", investment_return="0",
-        cash_interest="0", liability_interest="0",
+        income_growth="0",
+        expense_inflation="0",
+        investment_return="0",
+        cash_interest="0",
+        liability_interest="0",
     )
     base.update({k: str(v) for k, v in overrides.items()})
     return Assumptions(**base)
@@ -64,8 +67,11 @@ class TestAccountRoots:
 class TestShape:
     def test_produces_one_row_per_month(self, db, funded_book, monthly_budget):
         scenario = Scenario(
-            name="Base", start=date(2026, 3, 1), years=3,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Base",
+            start=date(2026, 3, 1),
+            years=3,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -75,8 +81,11 @@ class TestShape:
 
     def test_opens_from_the_ledger_balance(self, db, funded_book, monthly_budget):
         scenario = Scenario(
-            name="Base", start=date(2026, 3, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Base",
+            start=date(2026, 3, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -84,8 +93,11 @@ class TestShape:
 
     def test_an_opening_override_replaces_the_ledger(self, db, funded_book, monthly_budget):
         scenario = Scenario(
-            name="What if", start=date(2026, 3, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="What if",
+            start=date(2026, 3, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         scenario.opening_overrides[funded_book.checking] = Money("100000.00")
@@ -94,8 +106,11 @@ class TestShape:
 
     def test_a_missing_budget_is_reported_not_crashed(self, db, book):
         scenario = Scenario(
-            name="Broken", start=date(2026, 1, 1), years=1,
-            budget="deadbeef", basis=ProjectionBasis.BUDGET,
+            name="Broken",
+            start=date(2026, 1, 1),
+            years=1,
+            budget="deadbeef",
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -104,7 +119,9 @@ class TestShape:
 
     def test_progress_reports_position_through_the_horizon(self, db, book):
         scenario = Scenario(
-            name="Progress", start=date(2026, 1, 1), years=1,
+            name="Progress",
+            start=date(2026, 1, 1),
+            years=1,
             assumptions=flat_assumptions(),
         )
         updates = []
@@ -115,16 +132,17 @@ class TestShape:
         assert updates[-1].end == date(2026, 12, 31)
         assert updates[-1].current == updates[-1].end
         assert updates[-1].fraction == 1.0
-        assert [item.fraction for item in updates] == sorted(
-            item.fraction for item in updates
-        )
+        assert [item.fraction for item in updates] == sorted(item.fraction for item in updates)
 
 
 class TestBudgetDriven:
     def test_monthly_surplus_accumulates(self, db, book, monthly_budget):
         scenario = Scenario(
-            name="Base", start=date(2026, 1, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Base",
+            start=date(2026, 1, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -136,8 +154,11 @@ class TestBudgetDriven:
 
     def test_income_growth_applies_from_the_second_year(self, db, book, monthly_budget):
         scenario = Scenario(
-            name="Raises", start=date(2026, 1, 1), years=3,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Raises",
+            start=date(2026, 1, 1),
+            years=3,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(income_growth="0.10"),
         )
         result = projection.project(db, scenario)
@@ -147,8 +168,11 @@ class TestBudgetDriven:
 
     def test_inflation_lifts_expenses_only(self, db, book, monthly_budget):
         scenario = Scenario(
-            name="Inflation", start=date(2026, 1, 1), years=2,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Inflation",
+            start=date(2026, 1, 1),
+            years=2,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(expense_inflation="0.05"),
         )
         result = projection.project(db, scenario)
@@ -160,8 +184,11 @@ class TestBudgetDriven:
         self, db, book, monthly_budget
     ):
         scenario = Scenario(
-            name="Long", start=date(2026, 1, 1), years=3,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Long",
+            start=date(2026, 1, 1),
+            years=3,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -171,8 +198,11 @@ class TestBudgetDriven:
 
     def test_extension_can_be_switched_off(self, db, book, monthly_budget):
         scenario = Scenario(
-            name="No extension", start=date(2026, 1, 1), years=2,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="No extension",
+            start=date(2026, 1, 1),
+            years=2,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         scenario.extend_budget = False
@@ -186,14 +216,20 @@ class TestCompounding:
         with db.transaction("Seed brokerage") as txn:
             db.add_transaction(
                 Transaction.simple(
-                    date(2025, 12, 1), "Transfer in", book.brokerage, book.opening,
+                    date(2025, 12, 1),
+                    "Transfer in",
+                    book.brokerage,
+                    book.opening,
                     "100000.00",
                 ),
                 txn,
             )
         scenario = Scenario(
-            name="Growth", start=date(2026, 1, 1), years=1,
-            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+            name="Growth",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
         # The account carries its own 7% rate, which beats the (zeroed) global one.
@@ -203,14 +239,20 @@ class TestCompounding:
         with db.transaction("Seed brokerage") as txn:
             db.add_transaction(
                 Transaction.simple(
-                    date(2025, 12, 1), "Transfer in", book.brokerage, book.opening,
+                    date(2025, 12, 1),
+                    "Transfer in",
+                    book.brokerage,
+                    book.opening,
                     "100000.00",
                 ),
                 txn,
             )
         scenario = Scenario(
-            name="Pessimistic", start=date(2026, 1, 1), years=1,
-            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+            name="Pessimistic",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
         )
         scenario.assumptions.per_account[book.brokerage] = Decimal("0.02")
         result = projection.project(db, scenario)
@@ -218,7 +260,9 @@ class TestCompounding:
 
     def test_cash_interest_compounds_on_the_opening_balance(self, db, funded_book):
         scenario = Scenario(
-            name="Savings rate", start=date(2026, 3, 1), years=1,
+            name="Savings rate",
+            start=date(2026, 3, 1),
+            years=1,
             basis=ProjectionBasis.SCHEDULED,
             assumptions=flat_assumptions(cash_interest="0.12"),
         )
@@ -230,14 +274,20 @@ class TestCompounding:
         with db.transaction("Card balance") as txn:
             db.add_transaction(
                 Transaction.simple(
-                    date(2025, 12, 1), "Balance carried", book.groceries, book.card,
+                    date(2025, 12, 1),
+                    "Balance carried",
+                    book.groceries,
+                    book.card,
                     "5000.00",
                 ),
                 txn,
             )
         scenario = Scenario(
-            name="Minimum payments", start=date(2026, 1, 1), years=1,
-            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+            name="Minimum payments",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
         # The card's own 18.99% rate applies.
@@ -248,8 +298,11 @@ class TestCompounding:
 class TestScheduleDriven:
     def test_scheduled_pay_reaches_the_cash_balance(self, db, book, payday_schedule):
         scenario = Scenario(
-            name="Payday", start=date(2026, 1, 1), years=1,
-            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+            name="Payday",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
         assert result.rows[0].income == Money("5815.38")  # three paydays in January
@@ -267,8 +320,11 @@ class TestScheduleDriven:
         with db.transaction("Add") as txn:
             db.add_scheduled(sched, txn)
         scenario = Scenario(
-            name="Investing", start=date(2026, 1, 1), years=1,
-            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+            name="Investing",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
         )
         # Zero the brokerage's own 7% so this test measures routing, not growth.
         scenario.assumptions.per_account[book.brokerage] = Decimal("0")
@@ -296,8 +352,11 @@ class TestCombinedBasis:
             db.add_scheduled(sched, txn)
 
         scenario = Scenario(
-            name="Combined", start=date(2026, 1, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.COMBINED,
+            name="Combined",
+            start=date(2026, 1, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.COMBINED,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -307,8 +366,11 @@ class TestCombinedBasis:
         self, db, book, monthly_budget, payday_schedule
     ):
         scenario = Scenario(
-            name="Budget only", start=date(2026, 1, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Budget only",
+            start=date(2026, 1, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -318,8 +380,11 @@ class TestCombinedBasis:
 class TestOneOffs:
     def test_a_one_off_lands_in_its_month(self, db, book, monthly_budget):
         scenario = Scenario(
-            name="New roof", start=date(2026, 1, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="New roof",
+            start=date(2026, 1, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         scenario.add_one_off(date(2026, 6, 15), book.utilities, "12000.00", "New roof")
@@ -329,8 +394,11 @@ class TestOneOffs:
 
     def test_a_one_off_outside_the_window_is_ignored(self, db, book, monthly_budget):
         scenario = Scenario(
-            name="Later", start=date(2026, 1, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Later",
+            start=date(2026, 1, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         scenario.add_one_off(date(2030, 1, 1), book.utilities, "12000.00")
@@ -345,8 +413,11 @@ class TestSummary:
         with db.transaction("Cut income") as txn:
             db.commit_budget(monthly_budget, txn)
         scenario = Scenario(
-            name="Job loss", start=date(2026, 1, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Job loss",
+            start=date(2026, 1, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -357,8 +428,11 @@ class TestSummary:
 
     def test_a_healthy_plan_reports_no_shortfall(self, db, funded_book, monthly_budget):
         scenario = Scenario(
-            name="Base", start=date(2026, 3, 1), years=2,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Base",
+            start=date(2026, 3, 1),
+            years=2,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -366,8 +440,11 @@ class TestSummary:
 
     def test_annual_rollup_sums_twelve_months(self, db, book, monthly_budget):
         scenario = Scenario(
-            name="Base", start=date(2026, 1, 1), years=2,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Base",
+            start=date(2026, 1, 1),
+            years=2,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
@@ -377,8 +454,11 @@ class TestSummary:
 
     def test_summary_reports_the_headline_numbers(self, db, funded_book, monthly_budget):
         scenario = Scenario(
-            name="Base", start=date(2026, 3, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Base",
+            start=date(2026, 3, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         summary = projection.project(db, scenario).summary()
@@ -480,15 +560,16 @@ class TestDatedAssumptions:
 
 
 class TestComparison:
-    def test_two_scenarios_differ_by_their_assumptions(
-        self, db, funded_book, monthly_budget
-    ):
+    def test_two_scenarios_differ_by_their_assumptions(self, db, funded_book, monthly_budget):
         common = dict(
-            start=date(2026, 3, 1), years=5, budget=monthly_budget.handle,
+            start=date(2026, 3, 1),
+            years=5,
+            budget=monthly_budget.handle,
             basis=ProjectionBasis.BUDGET,
         )
         cautious = Scenario(
-            name="Cautious", assumptions=flat_assumptions(expense_inflation="0.06"),
+            name="Cautious",
+            assumptions=flat_assumptions(expense_inflation="0.06"),
             **common,
         )
         hopeful = Scenario(
@@ -526,12 +607,13 @@ class TestScenarioScheduledEvents:
 
 
 class TestScenarioPersistence:
-    def test_a_saved_scenario_reproduces_its_forecast(
-        self, db, funded_book, monthly_budget
-    ):
+    def test_a_saved_scenario_reproduces_its_forecast(self, db, funded_book, monthly_budget):
         scenario = Scenario(
-            name="Saved", start=date(2026, 3, 1), years=2,
-            budget=monthly_budget.handle, basis=ProjectionBasis.COMBINED,
+            name="Saved",
+            start=date(2026, 3, 1),
+            years=2,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.COMBINED,
             assumptions=Assumptions(income_growth="0.04", expense_inflation="0.03"),
         )
         scenario.add_one_off(date(2026, 9, 1), funded_book.utilities, "2500.00", "Boiler")
@@ -598,8 +680,11 @@ class TestScenarioPersistence:
     def test_a_saved_scenario_picks_up_new_actuals(self, db, funded_book, monthly_budget):
         """Scenarios store assumptions, never results, so they never go stale."""
         scenario = Scenario(
-            name="Live", start=date(2026, 3, 1), years=1,
-            budget=monthly_budget.handle, basis=ProjectionBasis.BUDGET,
+            name="Live",
+            start=date(2026, 3, 1),
+            years=1,
+            budget=monthly_budget.handle,
+            basis=ProjectionBasis.BUDGET,
             assumptions=flat_assumptions(),
         )
         with db.transaction("Save") as txn:
@@ -609,7 +694,10 @@ class TestScenarioPersistence:
         with db.transaction("A windfall arrives") as txn:
             db.add_transaction(
                 Transaction.simple(
-                    date(2026, 2, 20), "Bonus", funded_book.checking, funded_book.salary,
+                    date(2026, 2, 20),
+                    "Bonus",
+                    funded_book.checking,
+                    funded_book.salary,
                     "10000.00",
                 ),
                 txn,
@@ -640,15 +728,11 @@ class TestMonthlyStateLedger:
         assert first.ledger.holdings_close == first.holdings
         assert first.ledger.liabilities_close == first.liabilities
         assert (
-            first.ledger.opening_cash
-            + first.ledger.cash_flow
-            + first.ledger.cash_interest
+            first.ledger.opening_cash + first.ledger.cash_flow + first.ledger.cash_interest
             == first.ledger.closing_cash
         )
 
-    def test_investment_contributions_and_growth_are_attributed_by_account(
-        self, db, book
-    ):
+    def test_investment_contributions_and_growth_are_attributed_by_account(self, db, book):
         sched = ScheduledTransaction(
             name="Invest",
             recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
@@ -764,8 +848,11 @@ class TestMonthlyStateLedger:
 
     def test_month_explanation_omits_inactive_zero_accounts(self, db, book):
         scenario = Scenario(
-            name="Explain", start=date(2026, 1, 1), years=1,
-            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+            name="Explain",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
         detail = projection.explain_month(db, result, 0)
@@ -781,14 +868,18 @@ class TestMonthlyStateLedger:
 
     def test_month_explanation_rejects_an_unknown_index(self, db, book):
         scenario = Scenario(
-            name="Explain", start=date(2026, 1, 1), years=1,
-            basis=ProjectionBasis.SCHEDULED, assumptions=flat_assumptions(),
+            name="Explain",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
         )
         result = projection.project(db, scenario)
         import pytest
 
         with pytest.raises(IndexError):
             projection.explain_month(db, result, 12)
+
 
 class TestScheduledGrowthPolicy:
     def test_mixed_payroll_grows_with_income_in_auto_mode(self, db, book):
@@ -867,16 +958,12 @@ class TestScheduledGrowthPolicy:
 
 
 class TestEventProjectionScaling:
-    def test_assumption_resolution_is_cached_across_many_events(
-        self, db, book, monkeypatch
-    ):
+    def test_assumption_resolution_is_cached_across_many_events(self, db, book, monkeypatch):
         with db.transaction("Add daily income") as txn:
             db.add_scheduled(
                 ScheduledTransaction(
                     name="Daily income",
-                    recurrence=Recurrence(
-                        PeriodType.DAY, start=date(2026, 1, 1)
-                    ),
+                    recurrence=Recurrence(PeriodType.DAY, start=date(2026, 1, 1)),
                     splits=[
                         ScheduledSplit(book.checking, Money("10.00")),
                         ScheduledSplit(book.salary, Money("-10.00")),
@@ -913,9 +1000,7 @@ class TestEventProjectionScaling:
             db.add_scheduled(
                 ScheduledTransaction(
                     name="Daily expense",
-                    recurrence=Recurrence(
-                        PeriodType.DAY, start=date(2026, 1, 1)
-                    ),
+                    recurrence=Recurrence(PeriodType.DAY, start=date(2026, 1, 1)),
                     splits=[
                         ScheduledSplit(funded_book.checking, Money("-1.00")),
                         ScheduledSplit(funded_book.groceries, Money("1.00")),

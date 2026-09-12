@@ -73,13 +73,48 @@ class TestLayering:
     def test_the_core_has_no_third_party_dependencies(self):
         """Everything below the GUI runs on the standard library alone."""
         allowed = {
-            "__future__", "abc", "argparse", "ast", "bisect", "calendar", "configparser", "csv",
+            "__future__",
+            "abc",
+            "argparse",
+            "ast",
+            "bisect",
+            "calendar",
+            "configparser",
+            "csv",
             "dataclasses",
-            "datetime", "decimal", "enum", "fractions", "gzip", "json", "logging", "math",
-            "numbers", "operator", "pathlib", "sqlite3", "statistics", "sys", "time", "typing",
-            "uuid", "weakref", "xml", "breadsched", "IO", "collections", "functools",
-            "inspect", "itertools", "locale", "os", "re", "shutil", "socket", "tempfile",
-            "textwrap", "threading",
+            "datetime",
+            "decimal",
+            "enum",
+            "fractions",
+            "gzip",
+            "json",
+            "logging",
+            "math",
+            "numbers",
+            "operator",
+            "pathlib",
+            "sqlite3",
+            "statistics",
+            "sys",
+            "time",
+            "typing",
+            "uuid",
+            "weakref",
+            "xml",
+            "breadsched",
+            "IO",
+            "collections",
+            "functools",
+            "inspect",
+            "itertools",
+            "locale",
+            "os",
+            "re",
+            "shutil",
+            "socket",
+            "tempfile",
+            "textwrap",
+            "threading",
         }
         offenders: dict[str, set[str]] = {}
         for layer in CORE_DIRS:
@@ -97,17 +132,11 @@ class TestLayering:
 
 
 class TestGuiIsCheckable:
-    @pytest.mark.parametrize(
-        "module", modules_under("gui"), ids=lambda p: p.name
-    )
+    @pytest.mark.parametrize("module", modules_under("gui"), ids=lambda p: p.name)
     def test_every_gui_module_compiles(self, module, tmp_path):
-        py_compile.compile(
-            str(module), cfile=str(tmp_path / f"{module.stem}.pyc"), doraise=True
-        )
+        py_compile.compile(str(module), cfile=str(tmp_path / f"{module.stem}.pyc"), doraise=True)
 
-    @pytest.mark.parametrize(
-        "module", modules_under("gui"), ids=lambda p: p.name
-    )
+    @pytest.mark.parametrize("module", modules_under("gui"), ids=lambda p: p.name)
     def test_every_relative_import_resolves_to_something_real(self, module):
         """Checking depth is not enough: a shallow import can still point nowhere.
 
@@ -160,9 +189,7 @@ class TestSuiteIsLocationIndependent:
         for module in sorted(test_dir.glob("*.py")):
             tree = ast.parse(module.read_text(encoding="utf-8"))
             for node in ast.walk(tree):
-                if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
-                    "tests"
-                ):
+                if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("tests"):
                     offenders.append(f"{module.name}: from {node.module} import …")
                 elif isinstance(node, ast.Import):
                     offenders.extend(
@@ -202,9 +229,7 @@ class TestWarningPolicy:
                 importlib.import_module(module.name)
 
         ours = [
-            f"{w.filename}:{w.lineno} {w.message}"
-            for w in caught
-            if str(SRC) in str(w.filename)
+            f"{w.filename}:{w.lineno} {w.message}" for w in caught if str(SRC) in str(w.filename)
         ]
         assert ours == []
 
@@ -224,9 +249,9 @@ class TestWarningPolicy:
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
         filters = config["tool"]["pytest"]["ini_options"].get("filterwarnings", [])
-        assert not any(
-            entry.split(":")[0] == "ignore" and "::" in entry for entry in filters
-        ), "suppress warnings at their source, not by category across the suite"
+        assert not any(entry.split(":")[0] == "ignore" and "::" in entry for entry in filters), (
+            "suppress warnings at their source, not by category across the suite"
+        )
 
     def test_gi_is_imported_in_exactly_one_place(self):
         """Version pinning only works if it happens before the first import."""
@@ -256,14 +281,9 @@ class TestWarningPolicy:
         tree = ast.parse(source)
         pin_lines, import_lines = [], []
         for node in ast.walk(tree):
-            if (
-                isinstance(node, ast.Call)
-                and getattr(node.func, "attr", "") == "require_version"
-            ):
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "require_version":
                 pin_lines.append(node.lineno)
-            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith(
-                "gi.repository"
-            ):
+            if isinstance(node, ast.ImportFrom) and (node.module or "").startswith("gi.repository"):
                 import_lines.append(node.lineno)
         assert pin_lines and import_lines
         assert max(pin_lines) < min(import_lines)
@@ -281,17 +301,26 @@ class TestWarningPolicy:
                 if not name.startswith("set_"):
                     continue
                 for argument in node.args:
-                    if isinstance(argument, ast.Constant) and isinstance(
-                        argument.value, int
-                    ) and name in _ENUM_SETTERS:
+                    if (
+                        isinstance(argument, ast.Constant)
+                        and isinstance(argument.value, int)
+                        and name in _ENUM_SETTERS
+                    ):
                         offenders.append(f"{module.name}: {name}({argument.value})")
         assert offenders == []
 
 
 #: Setters whose argument is an enum, where a bare integer would be a magic number.
 _ENUM_SETTERS = {
-    "set_ellipsize", "set_wrap_mode", "set_justify", "set_orientation",
-    "set_align", "set_halign", "set_valign", "set_policy", "set_line_join",
+    "set_ellipsize",
+    "set_wrap_mode",
+    "set_justify",
+    "set_orientation",
+    "set_align",
+    "set_halign",
+    "set_valign",
+    "set_policy",
+    "set_line_join",
 }
 
 
@@ -312,8 +341,11 @@ class TestPluginRegistry:
         marker.write_text("!Type:Bank")
         manager.register(
             Plugin(
-                id="qif", name="QIF", category=IMPORTER,
-                run=lambda *a, **k: None, description="Quicken interchange",
+                id="qif",
+                name="QIF",
+                category=IMPORTER,
+                run=lambda *a, **k: None,
+                description="Quicken interchange",
                 extensions=[".qif"],
             )
         )

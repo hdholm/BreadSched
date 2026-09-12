@@ -83,7 +83,8 @@ def fake_gtk(monkeypatch):
 
     calls = []
     monkeypatch.setattr(
-        app_module.BreadSchedApplication, "run",
+        app_module.BreadSchedApplication,
+        "run",
         lambda self, argv: calls.append(argv) or 0,
     )
     return calls

@@ -55,8 +55,14 @@ _ASSUMPTIONS = [
 class ProjectionView(BaseView):
     """Multi-year forecast with live assumptions and saved scenarios."""
 
-    WATCHES = ("database-changed", "scenario-add", "scenario-update", "scenario-delete",
-               "budget-update", "transaction-add")
+    WATCHES = (
+        "database-changed",
+        "scenario-add",
+        "scenario-update",
+        "scenario-delete",
+        "budget-update",
+        "transaction-add",
+    )
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -332,9 +338,7 @@ class ProjectionView(BaseView):
             self._result = None
             self.explain_button.set_sensitive(False)
             self.chart.set_data([], [])
-            self.warning_label.set_text(
-                f"The projection could not be calculated: {exc}"
-            )
+            self.warning_label.set_text(f"The projection could not be calculated: {exc}")
             self.warning_label.add_css_class("negative")
             return
         self.warning_label.remove_css_class("negative")
@@ -429,8 +433,7 @@ class ProjectionView(BaseView):
         self.explain_button.set_sensitive(bool(result.rows))
         labels = [row.label for row in result.rows]
         series = [
-            Series("Cash", [float(r.cash_close.to_decimal()) for r in result.rows],
-                   fill=True),
+            Series("Cash", [float(r.cash_close.to_decimal()) for r in result.rows], fill=True),
             Series("Investments", [float(r.holdings.to_decimal()) for r in result.rows]),
             Series("Net worth", [float(r.net_worth.to_decimal()) for r in result.rows]),
         ]
@@ -518,9 +521,7 @@ class ProjectionView(BaseView):
             return
         names = [s.name for s in self._scenarios]
         picker = Gtk.DropDown.new_from_strings(["None", *names])
-        dialog = Gtk.Window(
-            title="Compare with", transient_for=self.get_root(), modal=True
-        )
+        dialog = Gtk.Window(title="Compare with", transient_for=self.get_root(), modal=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(16)
@@ -533,8 +534,7 @@ class ProjectionView(BaseView):
             index = picker.get_selected()
             dialog.close()
             self._comparison = (
-                self._project_with_progress(self._scenarios[index - 1])
-                if index > 0 else None
+                self._project_with_progress(self._scenarios[index - 1]) if index > 0 else None
             )
             self.recompute()
 
@@ -570,8 +570,6 @@ class ProjectionView(BaseView):
                 return
             from ...plugins.export.csv_export import export_projection
 
-            export_projection(
-                self._project_with_progress(self._collect()), file.get_path()
-            )
+            export_projection(self._project_with_progress(self._collect()), file.get_path())
 
         dialog.save(self.get_root(), None, on_saved)

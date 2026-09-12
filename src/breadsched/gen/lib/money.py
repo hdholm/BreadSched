@@ -301,9 +301,7 @@ class Money:
         total_cents = self._num_at(100)
         base, remainder = divmod(abs(total_cents), parts)
         sign = 1 if total_cents >= 0 else -1
-        return [
-            Money(sign * (base + (1 if i < remainder else 0)), 100) for i in range(parts)
-        ]
+        return [Money(sign * (base + (1 if i < remainder else 0)), 100) for i in range(parts)]
 
     # ------------------------------------------------------------ presentation
 

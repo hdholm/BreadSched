@@ -91,7 +91,6 @@ def _funding_account(db: DbSQLite, category: str, start: date, end: date) -> str
     return counts.most_common(1)[0][0] if counts else None
 
 
-
 def _target_events(
     db: DbSQLite,
     start: date,
@@ -121,7 +120,8 @@ def _scheduled_category_totals(
         for split in event.expected_splits:
             account = db.get_account(split.account)
             if account is None or account.account_class not in (
-                AccountClass.INCOME, AccountClass.EXPENSE
+                AccountClass.INCOME,
+                AccountClass.EXPENSE,
             ):
                 continue
             key = (account.handle, month)
@@ -150,7 +150,8 @@ def _planned_estimate_profiles(
         for split in event.expected_splits:
             account = db.get_account(split.account)
             if account is None or account.account_class not in (
-                AccountClass.INCOME, AccountClass.EXPENSE
+                AccountClass.INCOME,
+                AccountClass.EXPENSE,
             ):
                 continue
             key = (account.handle, event.planned_date.month)
@@ -169,9 +170,7 @@ def _residual_after_scheduled(actual: Money, scheduled: Money) -> tuple[Money, M
     return residual, actual - residual
 
 
-def _unscheduled_dates(
-    db: DbSQLite, category: str, start: date, end: date
-) -> list[date]:
+def _unscheduled_dates(db: DbSQLite, category: str, start: date, end: date) -> list[date]:
     dates: list[date] = []
     for txn in db.iter_transactions(account=category, start=start, end=end):
         if txn.planned_occurrence:
@@ -181,15 +180,10 @@ def _unscheduled_dates(
     return sorted(dates)
 
 
-def _infer_recurrence(
-    dates: list[date], start: date
-) -> tuple[Recurrence, str, Decimal]:
+def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence, str, Decimal]:
     if len(dates) < 2:
         return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
-    gaps = [
-        (later - earlier).days
-        for earlier, later in zip(dates[:-1], dates[1:], strict=True)
-    ]
+    gaps = [(later - earlier).days for earlier, later in zip(dates[:-1], dates[1:], strict=True)]
     typical_gap = float(median(gaps))
     if 5 <= typical_gap <= 9:
         return (
@@ -212,7 +206,6 @@ def _infer_recurrence(
     return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
 
 
-
 def _trend_summary(values: list[Money]) -> tuple[list[Money], str | None]:
     """Return the sample to use and a conservative trend label."""
     if len(values) < 6:
@@ -225,7 +218,7 @@ def _trend_summary(values: list[Money]) -> tuple[list[Money], str | None]:
     change = (later.to_decimal() - earlier.to_decimal()) / abs(earlier.to_decimal())
     if abs(change) < Decimal("0.10"):
         return values, None
-    recent = values[-min(3, len(values)):]
+    recent = values[-min(3, len(values)) :]
     direction = "upward" if change > 0 else "downward"
     return recent, f"{direction} trend ({abs(change) * Decimal(100):.1f}%)"
 
@@ -262,6 +255,7 @@ def _seasonal_amounts(
             result.append(ScheduledMonthAmount(month, abs(typical)))
     return tuple(result)
 
+
 def propose_historical_estimates(
     db: DbSQLite,
     *,
@@ -287,9 +281,7 @@ def propose_historical_estimates(
     history_start = _add_months(current_month, -months)
     history_end = current_month - timedelta(days=1)
     proposals: list[HistoricalEstimateProposal] = []
-    scheduled_totals = _scheduled_category_totals(
-        db, history_start, history_end, scenario_handle
-    )
+    scheduled_totals = _scheduled_category_totals(db, history_start, history_end, scenario_handle)
     estimate_profiles = _planned_estimate_profiles(db, current_month, scenario_handle)
 
     for account in db.iter_accounts():
@@ -312,9 +304,7 @@ def propose_historical_estimates(
                     total = total + value
                     txn_count += 1
             scheduled = scheduled_totals.get((account.handle, start), Money(0))
-            scheduled = scheduled + estimate_profiles.get(
-                (account.handle, start.month), Money(0)
-            )
+            scheduled = scheduled + estimate_profiles.get((account.handle, start.month), Money(0))
             residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
             applied_scheduled_total = applied_scheduled_total + applied_scheduled
             if residual:

@@ -47,10 +47,12 @@ def book_path(tmp_path, capsys):
             ("rent", "Rent", "EXPENSE", "expenses", 0),
         ],
         [
-            (date(2026, 1, 25), "Payroll",
-             [("bank", 420000, 100, ""), ("wages", -420000, 100, "")]),
-            (date(2026, 1, 2), "Rent",
-             [("rent", 180000, 100, ""), ("bank", -180000, 100, "")]),
+            (
+                date(2026, 1, 25),
+                "Payroll",
+                [("bank", 420000, 100, ""), ("wages", -420000, 100, "")],
+            ),
+            (date(2026, 1, 2), "Rent", [("rent", 180000, 100, ""), ("bank", -180000, 100, "")]),
         ],
     )
     path = tmp_path / "book.breadsched"
@@ -223,12 +225,14 @@ class TestItServes:
             "/api/account/fsa-years",
             {
                 "handle": retirement["handle"],
-                "years": [{
-                    "start": "2026-07-01",
-                    "through": "2027-06-30",
-                    "election": "3000.00",
-                    "runout_through": "2027-09-30",
-                }],
+                "years": [
+                    {
+                        "start": "2026-07-01",
+                        "through": "2027-06-30",
+                        "election": "3000.00",
+                        "runout_through": "2027-09-30",
+                    }
+                ],
             },
         )
         assert status == 200
@@ -275,9 +279,7 @@ class TestItServes:
             "2026-04-15",
         ]
 
-    def test_occurrence_options_can_preview_effective_amounts_and_exceptions(
-        self, client
-    ):
+    def test_occurrence_options_can_preview_effective_amounts_and_exceptions(self, client):
         status, payload = client.post(
             "/api/scheduled/occurrences",
             {
@@ -288,16 +290,11 @@ class TestItServes:
                 "amount": "1800.00",
                 "amount_changes": [{"start": "2026-03-01", "amount": "1950.00"}],
                 "skipped": ["2026-04-15"],
-                "occurrence_adjustments": [
-                    {"when": "2026-05-15", "amount": "2300.00"}
-                ],
+                "occurrence_adjustments": [{"when": "2026-05-15", "amount": "2300.00"}],
             },
         )
         assert status == 200
-        assert [
-            (row["when"], row["amount"], row["status"])
-            for row in payload["preview"]
-        ] == [
+        assert [(row["when"], row["amount"], row["status"]) for row in payload["preview"]] == [
             ("2026-01-15", "1800.00", "Normal"),
             ("2026-02-15", "1800.00", "Normal"),
             ("2026-03-15", "1950.00", "Future amount"),
@@ -344,9 +341,7 @@ class TestItServes:
                     {"start": "2026-07-15", "amount": "140.00"},
                 ],
                 "skipped": ["2026-03-13"],
-                "occurrence_adjustments": [
-                    {"when": "2026-04-15", "amount": "150.00"}
-                ],
+                "occurrence_adjustments": [{"when": "2026-04-15", "amount": "150.00"}],
                 "frequency": "monthly",
                 "start": "2026-02-15",
                 "count": "6",
@@ -371,24 +366,15 @@ class TestItServes:
             {"start": "2026-07-15", "amount": "140.00"},
         ]
         assert item["skipped"] == ["2026-03-13"]
-        assert item["occurrence_adjustments"] == [
-            {"when": "2026-04-15", "amount": "150.00"}
-        ]
-        _status, plan = client.get(
-            "/api/plan?from=2026-01&through=2026-12&period=month"
-        )
-        benefit = next(
-            row for row in plan["planning_flows"]
-            if row["kind"] == "benefit_funding"
-        )
+        assert item["occurrence_adjustments"] == [{"when": "2026-04-15", "amount": "150.00"}]
+        _status, plan = client.get("/api/plan?from=2026-01&through=2026-12&period=month")
+        benefit = next(row for row in plan["planning_flows"] if row["kind"] == "benefit_funding")
         assert Money(benefit["planned"][1]) == Money("-110.00")
 
     def test_schedule_rejects_an_unknown_growth_policy(self, client):
         _status, data = client.get("/api/scheduled")
         category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
-        funding = next(
-            a for a in data["accounts"] if a["name"].endswith(":Checking")
-        )
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post(
                 "/api/scheduled/save",
@@ -407,18 +393,12 @@ class TestItServes:
         payload = json.loads(caught.value.read())
         assert "growth policy" in payload["error"]
 
-    def test_fixed_multisplit_schedule_balances_payroll_and_classifies_saving(
-        self, client
-    ):
+    def test_fixed_multisplit_schedule_balances_payroll_and_classifies_saving(self, client):
         _status, data = client.get("/api/scheduled")
         salary = next(a for a in data["accounts"] if a["name"].endswith(":Salary"))
         rent = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
-        checking = next(
-            a for a in data["accounts"] if a["name"].endswith(":Checking")
-        )
-        retirement = next(
-            a for a in data["accounts"] if a["name"].endswith(":401(k)")
-        )
+        checking = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        retirement = next(a for a in data["accounts"] if a["name"].endswith(":401(k)"))
         status, created = client.post(
             "/api/scheduled/save",
             {
@@ -463,12 +443,9 @@ class TestItServes:
             },
         ]
 
-        _status, plan = client.get(
-            "/api/plan?from=2026-02&through=2026-03&period=month"
-        )
+        _status, plan = client.get("/api/plan?from=2026-02&through=2026-03&period=month")
         retirement_flow = next(
-            row for row in plan["planning_flows"]
-            if row["kind"] == "retirement_saving"
+            row for row in plan["planning_flows"] if row["kind"] == "retirement_saving"
         )
         assert Money(retirement_flow["planned"][0]) == Money("500.00")
 
@@ -670,7 +647,11 @@ class TestPlanApi:
         status, payload = client.get("/api/plan")
         assert status == 200
         assert set(payload) == {
-            "controls", "periods", "summary", "comparison", "categories",
+            "controls",
+            "periods",
+            "summary",
+            "comparison",
+            "categories",
             "planning_flows",
         }
         by_name = {row["full_name"]: row for row in payload["categories"]}
@@ -680,12 +661,13 @@ class TestPlanApi:
         assert Money(by_name["Expenses:Rent"]["actual"][0]) == Money("1800.00")
 
     def test_grouping_changes_display_buckets(self, client):
-        _status, payload = client.get(
-            "/api/plan?from=2026-01&through=2026-12&period=quarter"
-        )
+        _status, payload = client.get("/api/plan?from=2026-01&through=2026-12&period=quarter")
         assert payload["controls"]["period"] == "quarter"
         assert [row["label"] for row in payload["periods"]] == [
-            "Q1 2026", "Q2 2026", "Q3 2026", "Q4 2026"
+            "Q1 2026",
+            "Q2 2026",
+            "Q3 2026",
+            "Q4 2026",
         ]
 
     def test_plan_reports_base_and_saved_scenario_choices(self, client):
@@ -703,9 +685,12 @@ class TestPlanApi:
         assert comparison["name"] == scenario["name"]
         assert Money(comparison["summary"]["planned_cash_delta"]) == Money(0)
         salary = next(
-            row for row in comparison["categories"]
-            if row["account"] == next(
-                item["account"] for item in payload["categories"]
+            row
+            for row in comparison["categories"]
+            if row["account"]
+            == next(
+                item["account"]
+                for item in payload["categories"]
                 if item["full_name"] == "Income:Salary"
             )
         )
@@ -713,9 +698,7 @@ class TestPlanApi:
 
     def test_saved_plan_can_compare_with_base(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
-        query = urllib.parse.urlencode(
-            {"scenario": scenario["handle"], "compare": "__base__"}
-        )
+        query = urllib.parse.urlencode({"scenario": scenario["handle"], "compare": "__base__"})
         _status, payload = client.get(f"/api/plan?{query}")
         assert payload["comparison"]["handle"] is None
         assert payload["comparison"]["name"] == "Base scenario"
@@ -730,12 +713,8 @@ class TestPlanApi:
         assert caught.value.code == 400
 
     def test_plan_detail_reconciles_a_category_period(self, review_client):
-        _status, plan = review_client.get(
-            "/api/plan?from=2026-02&through=2026-02"
-        )
-        rent = next(
-            row for row in plan["categories"] if row["full_name"] == "Expenses:Rent"
-        )
+        _status, plan = review_client.get("/api/plan?from=2026-02&through=2026-02")
+        rent = next(row for row in plan["categories"] if row["full_name"] == "Expenses:Rent")
         query = urllib.parse.urlencode(
             {
                 "account": rent["account"],
@@ -762,12 +741,8 @@ class TestPlanApi:
                 "occurrence": review_client.occurrence,
             },
         )
-        _status, plan = review_client.get(
-            "/api/plan?from=2026-02&through=2026-02"
-        )
-        rent = next(
-            row for row in plan["categories"] if row["full_name"] == "Expenses:Rent"
-        )
+        _status, plan = review_client.get("/api/plan?from=2026-02&through=2026-02")
+        rent = next(row for row in plan["categories"] if row["full_name"] == "Expenses:Rent")
         query = urllib.parse.urlencode(
             {
                 "account": rent["account"],
@@ -787,9 +762,7 @@ class TestPlanApi:
 
     def test_plan_detail_rolls_up_descendant_categories(self, client):
         _status, plan = client.get("/api/plan?from=2026-01&through=2026-01")
-        expenses = next(
-            row for row in plan["categories"] if row["full_name"] == "Expenses"
-        )
+        expenses = next(row for row in plan["categories"] if row["full_name"] == "Expenses")
         query = urllib.parse.urlencode(
             {
                 "account": expenses["account"],
@@ -820,7 +793,7 @@ class TestPlanApi:
         assert 'class: "plan-cell-button"' in page
         assert 'type: "button"' in page
         assert '"aria-label": `Explain ${category.full_name}' in page
-        assert '.plan-cell-button:focus-visible' in page
+        assert ".plan-cell-button:focus-visible" in page
 
 
 class TestThreadSafety:
@@ -901,8 +874,7 @@ class TestImportApi:
     def test_qif_import_accepts_explicit_ambiguous_formats(self, client, tmp_path):
         path = tmp_path / "ambiguous.qif"
         path.write_text(
-            "!Account\nNImported checking\nTBank\n^\n!Type:Bank\n"
-            "D03/04/2026\nT12,50\nPExample\n^\n"
+            "!Account\nNImported checking\nTBank\n^\n!Type:Bank\nD03/04/2026\nT12,50\nPExample\n^\n"
         )
 
         status, payload = client.post(
@@ -1019,8 +991,13 @@ class TestDashboardApi:
     def test_it_reports_the_headline_figures(self, client):
         _status, payload = client.get("/api/dashboard")
         for key in (
-            "net_worth", "liquid", "required_liquid", "available",
-            "emergency_fund", "months_covered", "monthly_outgoings",
+            "net_worth",
+            "liquid",
+            "required_liquid",
+            "available",
+            "emergency_fund",
+            "months_covered",
+            "monthly_outgoings",
         ):
             assert key in payload["summary"], f"missing {key}"
 
@@ -1033,9 +1010,7 @@ class TestDashboardApi:
         _status, six = client.get("/api/dashboard?emergency_months=6")
         _status, twelve = client.get("/api/dashboard?emergency_months=12")
         assert twelve["config"]["emergency_months"] == 12
-        assert float(twelve["summary"]["emergency_fund"]) >= float(
-            six["summary"]["emergency_fund"]
-        )
+        assert float(twelve["summary"]["emergency_fund"]) >= float(six["summary"]["emergency_fund"])
 
     def test_amounts_are_strings_the_browser_can_parse(self, client):
         _status, payload = client.get("/api/dashboard")
@@ -1056,13 +1031,10 @@ class TestReviewApi:
 
     def test_unresolved_actuals_and_candidates_are_exposed(self, review_client):
         status, payload = review_client.get(
-            "/api/review?"
-            + urllib.parse.urlencode({"transaction": review_client.actual_handle})
+            "/api/review?" + urllib.parse.urlencode({"transaction": review_client.actual_handle})
         )
         assert status == 200
-        assert [item["handle"] for item in payload["actuals"]] == [
-            review_client.actual_handle
-        ]
+        assert [item["handle"] for item in payload["actuals"]] == [review_client.actual_handle]
         assert payload["selected"]["description"] == "Actual rent"
         candidate = payload["candidates"][0]
         assert candidate["key"] == review_client.occurrence
@@ -1081,14 +1053,11 @@ class TestReviewApi:
         assert status == 200
         assert payload["rejected"] == review_client.occurrence
         _status, review = review_client.get(
-            "/api/review?"
-            + urllib.parse.urlencode({"transaction": review_client.actual_handle})
+            "/api/review?" + urllib.parse.urlencode({"transaction": review_client.actual_handle})
         )
         assert review["candidates"] == []
 
-    def test_skipping_a_candidate_updates_schedule_but_keeps_actual_unresolved(
-        self, review_client
-    ):
+    def test_skipping_a_candidate_updates_schedule_but_keeps_actual_unresolved(self, review_client):
         status, payload = review_client.post(
             "/api/review/skip",
             {
@@ -1099,8 +1068,7 @@ class TestReviewApi:
         assert status == 200
         assert payload["skipped"] == review_client.occurrence
         _status, review = review_client.get(
-            "/api/review?"
-            + urllib.parse.urlencode({"transaction": review_client.actual_handle})
+            "/api/review?" + urllib.parse.urlencode({"transaction": review_client.actual_handle})
         )
         assert review["selected"]["handle"] == review_client.actual_handle
         assert review["candidates"] == []
@@ -1174,9 +1142,7 @@ class TestScenarioManagementApi:
         )
 
         assert status == 200
-        assert payload["assumptions"]["per_account"] == {
-            account["handle"]: "0.0825"
-        }
+        assert payload["assumptions"]["per_account"] == {account["handle"]: "0.0825"}
         _status, reopened = client.get("/api/scenarios")
         assert reopened["scenarios"][0]["assumptions"]["per_account"] == {
             account["handle"]: "0.0825"
@@ -1296,6 +1262,7 @@ class TestScenarioManagementPage:
         assert "Add dated assumptions…" in page
         assert "Dated assumption periods belong to saved scenarios" in page
 
+
 @pytest.fixture
 def scenario_event_client(book_path):
     """A web book with a baseline schedule available for scenario overrides."""
@@ -1359,16 +1326,11 @@ class TestScenarioEventWebParity:
     def test_scenario_only_estimate_is_persisted(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(
-            "/api/scenario/events?"
-            + urllib.parse.urlencode({"handle": scenario["handle"]})
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
         )
-        rent = next(
-            account for account in events["accounts"] if account["name"].endswith("Rent")
-        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
         bank = next(
-            account
-            for account in events["accounts"]
-            if account["name"].endswith("Checking")
+            account for account in events["accounts"] if account["name"].endswith("Checking")
         )
         _status, saved = scenario_event_client.post(
             "/api/scenario/event/save",
@@ -1396,23 +1358,17 @@ class TestScenarioEventWebParity:
     ):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(
-            "/api/scenario/events?"
-            + urllib.parse.urlencode({"handle": scenario["handle"]})
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
         )
         salary = next(
-            account for account in events["accounts"]
-            if account["name"].endswith("Salary")
+            account for account in events["accounts"] if account["name"].endswith("Salary")
         )
-        rent = next(
-            account for account in events["accounts"] if account["name"].endswith("Rent")
-        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
         bank = next(
-            account for account in events["accounts"]
-            if account["name"].endswith("Checking")
+            account for account in events["accounts"] if account["name"].endswith("Checking")
         )
         retirement = next(
-            account for account in events["accounts"]
-            if account["name"].endswith("401(k)")
+            account for account in events["accounts"] if account["name"].endswith("401(k)")
         )
         status, saved = scenario_event_client.post(
             "/api/scenario/event/save",
@@ -1455,21 +1411,14 @@ class TestScenarioEventWebParity:
             },
         ]
 
-    def test_scenario_estimate_can_skip_and_override_occurrences(
-        self, scenario_event_client
-    ):
+    def test_scenario_estimate_can_skip_and_override_occurrences(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(
-            "/api/scenario/events?"
-            + urllib.parse.urlencode({"handle": scenario["handle"]})
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
         )
-        rent = next(
-            account for account in events["accounts"] if account["name"].endswith("Rent")
-        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
         bank = next(
-            account
-            for account in events["accounts"]
-            if account["name"].endswith("Checking")
+            account for account in events["accounts"] if account["name"].endswith("Checking")
         )
         status, saved = scenario_event_client.post(
             "/api/scenario/event/save",
@@ -1482,32 +1431,23 @@ class TestScenarioEventWebParity:
                 "frequency": "monthly",
                 "start": "2026-03-01",
                 "skipped": ["2026-05-01"],
-                "occurrence_adjustments": [
-                    {"when": "2026-06-01", "amount": "1750.00"}
-                ],
+                "occurrence_adjustments": [{"when": "2026-06-01", "amount": "1750.00"}],
                 "weekend": "none",
             },
         )
         assert status == 200
         change = saved["changes"][0]
         assert change["skipped"] == ["2026-05-01"]
-        assert change["occurrence_adjustments"] == [
-            {"when": "2026-06-01", "amount": "1750.00"}
-        ]
+        assert change["occurrence_adjustments"] == [{"when": "2026-06-01", "amount": "1750.00"}]
 
     def test_scenario_estimate_can_end_after_occurrence_count(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(
-            "/api/scenario/events?"
-            + urllib.parse.urlencode({"handle": scenario["handle"]})
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
         )
-        rent = next(
-            account for account in events["accounts"] if account["name"].endswith("Rent")
-        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
         bank = next(
-            account
-            for account in events["accounts"]
-            if account["name"].endswith("Checking")
+            account for account in events["accounts"] if account["name"].endswith("Checking")
         )
         _status, saved = scenario_event_client.post(
             "/api/scenario/event/save",
@@ -1530,16 +1470,11 @@ class TestScenarioEventWebParity:
     def test_scenario_estimate_can_have_end_date(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(
-            "/api/scenario/events?"
-            + urllib.parse.urlencode({"handle": scenario["handle"]})
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
         )
-        rent = next(
-            account for account in events["accounts"] if account["name"].endswith("Rent")
-        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
         bank = next(
-            account
-            for account in events["accounts"]
-            if account["name"].endswith("Checking")
+            account for account in events["accounts"] if account["name"].endswith("Checking")
         )
         _status, saved = scenario_event_client.post(
             "/api/scenario/event/save",
@@ -1562,8 +1497,7 @@ class TestScenarioEventWebParity:
     def test_baseline_can_be_altered_then_suppressed(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(
-            "/api/scenario/events?"
-            + urllib.parse.urlencode({"handle": scenario["handle"]})
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
         )
         source = events["baseline"][0]
         assert source["simple"] is True
@@ -1605,9 +1539,7 @@ class TestScenarioEventWebParity:
 
 
 def test_historical_estimate_proposals_and_acceptance(client):
-    status, data = client.get(
-        "/api/historical-estimates?months=12&min_active_months=1"
-    )
+    status, data = client.get("/api/historical-estimates?months=12&min_active_months=1")
     assert status == 200
     rent = next(item for item in data["proposals"] if item["category_name"].endswith("Rent"))
     assert rent["funding_name"].endswith("Checking")
@@ -1642,12 +1574,14 @@ def test_fsa_claim_can_use_multiple_allocations(client):
         "/api/account/fsa-years",
         {
             "handle": fsa_account["handle"],
-            "years": [{
-                "start": "2026-01-01",
-                "through": "2026-12-31",
-                "election": "3000.00",
-                "runout_through": "2027-03-31",
-            }],
+            "years": [
+                {
+                    "start": "2026-01-01",
+                    "through": "2026-12-31",
+                    "election": "3000.00",
+                    "runout_through": "2027-03-31",
+                }
+            ],
         },
     )
     client.post(
@@ -1672,28 +1606,41 @@ def test_fsa_claim_can_use_multiple_allocations(client):
     )
     status, payload = client.get("/api/fsa/claims")
     assert status == 200
-    payment = next(item for item in payload["candidates"]["payments"]
-                   if item["description"] == "Dental service")
-    reimbursement = next(item for item in payload["candidates"]["reimbursements"]
-                         if item["description"] == "FSA reimbursement")
+    payment = next(
+        item
+        for item in payload["candidates"]["payments"]
+        if item["description"] == "Dental service"
+    )
+    reimbursement = next(
+        item
+        for item in payload["candidates"]["reimbursements"]
+        if item["description"] == "FSA reimbursement"
+    )
     status, saved = client.post(
         "/api/fsa/claim/save",
         {
             "service_date": "2026-02-01",
             "provider": "Dentist",
             "eob_responsibility": "500.00",
-            "payments": [{
-                "transaction": payment["transaction"], "split": payment["split"],
-            }],
-            "allocations": [{
-                "account": fsa_account["handle"],
-                "funding_year_start": "2026-01-01",
-                "target": [50000, 100],
-                "reimbursements": [{
-                    "transaction": reimbursement["transaction"],
-                    "split": reimbursement["split"],
-                }],
-            }],
+            "payments": [
+                {
+                    "transaction": payment["transaction"],
+                    "split": payment["split"],
+                }
+            ],
+            "allocations": [
+                {
+                    "account": fsa_account["handle"],
+                    "funding_year_start": "2026-01-01",
+                    "target": [50000, 100],
+                    "reimbursements": [
+                        {
+                            "transaction": reimbursement["transaction"],
+                            "split": reimbursement["split"],
+                        }
+                    ],
+                }
+            ],
         },
     )
     assert status == 200
@@ -1718,15 +1665,18 @@ def test_fsa_claim_can_use_multiple_allocations(client):
     )
     _status, refreshed = client.get("/api/fsa/claims")
     refund = next(
-        item for item in refreshed["candidates"]["refunds"]
+        item
+        for item in refreshed["candidates"]["refunds"]
         if item["description"] == "Dental provider refund"
     )
     allocation = claim["allocations"][0]
-    allocation["rejections"] = [{
-        "attempted_on": "2026-02-15",
-        "amount": [10000, 100],
-        "reason": "Receipt required",
-    }]
+    allocation["rejections"] = [
+        {
+            "attempted_on": "2026-02-15",
+            "amount": [10000, 100],
+            "reason": "Receipt required",
+        }
+    ]
     status, _saved = client.post(
         "/api/fsa/claim/save",
         {
@@ -1735,9 +1685,12 @@ def test_fsa_claim_can_use_multiple_allocations(client):
             "provider": "Dentist updated",
             "eob_responsibility": "450.00",
             "payments": claim["payments"],
-            "refunds": [{
-                "transaction": refund["transaction"], "split": refund["split"],
-            }],
+            "refunds": [
+                {
+                    "transaction": refund["transaction"],
+                    "split": refund["split"],
+                }
+            ],
             "allocations": [allocation],
         },
     )
@@ -1761,10 +1714,14 @@ def test_review_can_attach_actual_to_existing_fsa_claim(client):
         "/api/account/fsa-years",
         {
             "handle": fsa_account["handle"],
-            "years": [{
-                "start": "2026-01-01", "through": "2026-12-31",
-                "election": "3000.00", "runout_through": "2027-03-31",
-            }],
+            "years": [
+                {
+                    "start": "2026-01-01",
+                    "through": "2026-12-31",
+                    "election": "3000.00",
+                    "runout_through": "2027-03-31",
+                }
+            ],
         },
     )
     _status, saved = client.post(
@@ -1773,14 +1730,18 @@ def test_review_can_attach_actual_to_existing_fsa_claim(client):
             "service_date": "2026-04-01",
             "provider": "Clinic",
             "eob_responsibility": "250.00",
-            "payments": [], "allocations": [],
+            "payments": [],
+            "allocations": [],
         },
     )
     _status, txn = client.post(
         "/api/transaction",
         {
-            "date": "2026-04-02", "description": "Clinic payment",
-            "to": "Expenses:Rent", "from": "Assets:Checking", "amount": "250.00",
+            "date": "2026-04-02",
+            "description": "Clinic payment",
+            "to": "Expenses:Rent",
+            "from": "Assets:Checking",
+            "amount": "250.00",
         },
     )
     _status, review = client.get(f"/api/review?transaction={txn['handle']}")
@@ -1789,13 +1750,14 @@ def test_review_can_attach_actual_to_existing_fsa_claim(client):
     assert suggestion["suggested_role"] == "payment"
     assert suggestion["suggested_split"]
     assert "likely provider payment" in suggestion["reason"]
-    role = next(item for item in review["selected"]["fsa"]["roles"]
-                if item["role"] == "payment")
+    role = next(item for item in review["selected"]["fsa"]["roles"] if item["role"] == "payment")
     status, result = client.post(
         "/api/review/fsa-attach",
         {
-            "transaction": txn["handle"], "claim": saved["handle"],
-            "role": "payment", "split": role["split"],
+            "transaction": txn["handle"],
+            "claim": saved["handle"],
+            "role": "payment",
+            "split": role["split"],
         },
     )
     assert status == 200
@@ -1813,15 +1775,20 @@ def test_entry_can_attach_new_healthcare_payment_to_fsa_claim(client):
             "service_date": "2026-06-01",
             "provider": "Physical therapy",
             "eob_responsibility": "120.00",
-            "payments": [], "allocations": [],
+            "payments": [],
+            "allocations": [],
         },
     )
     status, txn = client.post(
         "/api/transaction",
         {
-            "date": "2026-06-02", "description": "PT payment",
-            "to": "Expenses:Rent", "from": "Assets:Checking", "amount": "120.00",
-            "fsa_claim": saved["handle"], "fsa_role": "payment",
+            "date": "2026-06-02",
+            "description": "PT payment",
+            "to": "Expenses:Rent",
+            "from": "Assets:Checking",
+            "amount": "120.00",
+            "fsa_claim": saved["handle"],
+            "fsa_role": "payment",
         },
     )
     assert status == 200
@@ -1843,10 +1810,14 @@ def test_fsa_claim_candidates_share_funding_year_window(client):
         "/api/account/fsa-years",
         {
             "handle": fsa_account["handle"],
-            "years": [{
-                "start": "2026-01-01", "through": "2026-12-31",
-                "election": "3000.00", "runout_through": "2027-03-31",
-            }],
+            "years": [
+                {
+                    "start": "2026-01-01",
+                    "through": "2026-12-31",
+                    "election": "3000.00",
+                    "runout_through": "2027-03-31",
+                }
+            ],
         },
     )
     for when, description, to_name, from_name in (
@@ -1859,8 +1830,11 @@ def test_fsa_claim_candidates_share_funding_year_window(client):
         client.post(
             "/api/transaction",
             {
-                "date": when, "description": description,
-                "to": to_name, "from": from_name, "amount": "50.00",
+                "date": when,
+                "description": description,
+                "to": to_name,
+                "from": from_name,
+                "amount": "50.00",
             },
         )
 
@@ -1879,22 +1853,30 @@ def test_review_ranks_likely_fsa_claim_first(client):
     _status, close = client.post(
         "/api/fsa/claim/save",
         {
-            "service_date": "2026-07-01", "provider": "Easton Dental",
-            "description": "Crown", "payments": [], "allocations": [],
+            "service_date": "2026-07-01",
+            "provider": "Easton Dental",
+            "description": "Crown",
+            "payments": [],
+            "allocations": [],
         },
     )
     client.post(
         "/api/fsa/claim/save",
         {
-            "service_date": "2026-01-01", "provider": "Other clinic",
-            "payments": [], "allocations": [],
+            "service_date": "2026-01-01",
+            "provider": "Other clinic",
+            "payments": [],
+            "allocations": [],
         },
     )
     _status, txn = client.post(
         "/api/transaction",
         {
-            "date": "2026-07-03", "description": "Easton Dental crown payment",
-            "to": "Expenses:Rent", "from": "Assets:Checking", "amount": "400.00",
+            "date": "2026-07-03",
+            "description": "Easton Dental crown payment",
+            "to": "Expenses:Rent",
+            "from": "Assets:Checking",
+            "amount": "400.00",
         },
     )
 

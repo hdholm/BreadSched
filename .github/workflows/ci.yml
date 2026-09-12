@@ -33,6 +33,9 @@ jobs:
       - name: Lint
         run: ruff check src tests examples
 
+      - name: Check formatting
+        run: ruff format --check src tests examples
+
       - name: Type check
         run: mypy src/breadsched/gen src/breadsched/plugins
 

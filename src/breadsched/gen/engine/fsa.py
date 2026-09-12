@@ -79,9 +79,7 @@ def year_status(
     closed = when > runout
     remaining = Money(0) if closed else available
     forfeited = available if closed else Money(0)
-    return FsaYearStatus(
-        account, year, funded, used, remaining, overage, forfeited, when
-    )
+    return FsaYearStatus(account, year, funded, used, remaining, overage, forfeited, when)
 
 
 def dashboard_statuses(

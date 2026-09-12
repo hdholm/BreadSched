@@ -124,9 +124,7 @@ class ScenarioSchedule:
         self.growth_policy = ScheduleGrowthPolicy(growth_policy)
         self.variables = dict(variables or {})
         self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
-        self.seasonal_amounts = sorted(
-            list(seasonal_amounts or []), key=lambda item: item.month
-        )
+        self.seasonal_amounts = sorted(list(seasonal_amounts or []), key=lambda item: item.month)
         self.skipped = sorted(set(skipped or []))
         self.occurrence_adjustments = sorted(
             list(occurrence_adjustments or []), key=lambda item: item.when
@@ -223,9 +221,7 @@ class ScenarioSchedule:
             "amount_changes": [item.serialize() for item in self.amount_changes],
             "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
             "skipped": [when.isoformat() for when in self.skipped],
-            "occurrence_adjustments": [
-                item.serialize() for item in self.occurrence_adjustments
-            ],
+            "occurrence_adjustments": [item.serialize() for item in self.occurrence_adjustments],
         }
 
     @classmethod
@@ -242,12 +238,10 @@ class ScenarioSchedule:
             growth_policy=data.get("growth_policy", "auto"),
             variables=data.get("variables", {}),
             amount_changes=[
-                ScheduledAmountChange.from_dict(item)
-                for item in data.get("amount_changes", [])
+                ScheduledAmountChange.from_dict(item) for item in data.get("amount_changes", [])
             ],
             seasonal_amounts=[
-                ScheduledMonthAmount.from_dict(item)
-                for item in data.get("seasonal_amounts", [])
+                ScheduledMonthAmount.from_dict(item) for item in data.get("seasonal_amounts", [])
             ],
             skipped=[date.fromisoformat(item) for item in data.get("skipped", [])],
             occurrence_adjustments=[
@@ -380,21 +374,11 @@ class AssumptionPeriod:
         self.start = start
         self.end = end
         self.description = description
-        self.income_growth = (
-            None if income_growth is None else Rate(income_growth)
-        )
-        self.expense_inflation = (
-            None if expense_inflation is None else Rate(expense_inflation)
-        )
-        self.investment_return = (
-            None if investment_return is None else Rate(investment_return)
-        )
-        self.cash_interest = (
-            None if cash_interest is None else Rate(cash_interest)
-        )
-        self.liability_interest = (
-            None if liability_interest is None else Rate(liability_interest)
-        )
+        self.income_growth = None if income_growth is None else Rate(income_growth)
+        self.expense_inflation = None if expense_inflation is None else Rate(expense_inflation)
+        self.investment_return = None if investment_return is None else Rate(investment_return)
+        self.cash_interest = None if cash_interest is None else Rate(cash_interest)
+        self.liability_interest = None if liability_interest is None else Rate(liability_interest)
         self.per_account: dict[str, Rate] = {
             handle: Rate(rate) for handle, rate in (per_account or {}).items()
         }
@@ -429,18 +413,14 @@ class AssumptionPeriod:
             "start": self.start.isoformat(),
             "end": self.end.isoformat() if self.end else None,
             "description": self.description,
-            "income_growth": None
-            if self.income_growth is None
-            else str(self.income_growth),
+            "income_growth": None if self.income_growth is None else str(self.income_growth),
             "expense_inflation": None
             if self.expense_inflation is None
             else str(self.expense_inflation),
             "investment_return": None
             if self.investment_return is None
             else str(self.investment_return),
-            "cash_interest": None
-            if self.cash_interest is None
-            else str(self.cash_interest),
+            "cash_interest": None if self.cash_interest is None else str(self.cash_interest),
             "liability_interest": None
             if self.liability_interest is None
             else str(self.liability_interest),
@@ -548,8 +528,7 @@ class Scenario(PrimaryObject):
         self.budget = data.get("budget")
         self.assumptions = Assumptions.from_dict(data.get("assumptions", {}))
         self.assumption_periods = [
-            AssumptionPeriod.from_dict(item)
-            for item in data.get("assumption_periods", [])
+            AssumptionPeriod.from_dict(item) for item in data.get("assumption_periods", [])
         ]
         self.schedule_overrides = [
             ScenarioSchedule.from_dict(item) for item in data.get("schedule_overrides", [])

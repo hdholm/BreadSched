@@ -379,9 +379,7 @@ class PlanView(BaseView):
             for existing in scenario.schedule_overrides
             if existing.source_schedule != schedule.handle
         ]
-        scenario.schedule_overrides.append(
-            ScenarioSchedule.from_scheduled(schedule, enabled=False)
-        )
+        scenario.schedule_overrides.append(ScenarioSchedule.from_scheduled(schedule, enabled=False))
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
 
@@ -504,9 +502,7 @@ class PlanView(BaseView):
             return
         self._initialize_range_bounds()
         self._populate_scenarios()
-        selected_scenario = self._selected_scenario() or baseline_scenario(
-            self.manager, self.db
-        )
+        selected_scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
         self._report = build_category_report(
             self.db,
             self._start_date,
@@ -556,27 +552,17 @@ class PlanView(BaseView):
                 name = Gtk.Label(label=("   " * category.depth) + category.name, xalign=0)
                 name.set_tooltip_text(category.full_name)
                 self.grid.attach(name, 0, row_index, 1, 1)
-                values = (category.planned, category.actual, category.variance)[
-                    self._measure_index
-                ]
+                values = (category.planned, category.actual, category.variance)[self._measure_index]
                 for col, value in enumerate(values, 1):
                     period = periods[col - 1]
                     label = Gtk.Label(
-                        label=(
-                            value.format(parens_negative=True)
-                            if value is not None
-                            else "—"
-                        ),
+                        label=(value.format(parens_negative=True) if value is not None else "—"),
                         xalign=1,
                     )
                     button = Gtk.Button()
                     button.set_child(label)
-                    button.set_tooltip_text(
-                        f"Explain {category.full_name} — {period.label}"
-                    )
-                    button.connect(
-                        "clicked", self._on_plan_cell_clicked, category, period
-                    )
+                    button.set_tooltip_text(f"Explain {category.full_name} — {period.label}")
+                    button.connect("clicked", self._on_plan_cell_clicked, category, period)
                     self.grid.attach(button, col, row_index, 1, 1)
                 row_index += 1
 
@@ -589,27 +575,17 @@ class PlanView(BaseView):
                 name = Gtk.Label(label=flow.name, xalign=0)
                 name.set_tooltip_text(flow.full_name)
                 self.grid.attach(name, 0, row_index, 1, 1)
-                values = (flow.planned, flow.actual, flow.variance)[
-                    self._measure_index
-                ]
+                values = (flow.planned, flow.actual, flow.variance)[self._measure_index]
                 for col, value in enumerate(values, 1):
                     period = periods[col - 1]
                     label = Gtk.Label(
-                        label=(
-                            value.format(parens_negative=True)
-                            if value is not None
-                            else "—"
-                        ),
+                        label=(value.format(parens_negative=True) if value is not None else "—"),
                         xalign=1,
                     )
                     button = Gtk.Button()
                     button.set_child(label)
-                    button.set_tooltip_text(
-                        f"Explain {flow.name} — {period.label}"
-                    )
-                    button.connect(
-                        "clicked", self._on_flow_cell_clicked, flow, period
-                    )
+                    button.set_tooltip_text(f"Explain {flow.name} — {period.label}")
+                    button.connect("clicked", self._on_flow_cell_clicked, flow, period)
                     self.grid.attach(button, col, row_index, 1, 1)
                 row_index += 1
 
@@ -627,9 +603,7 @@ class PlanView(BaseView):
             self.db,
             detail,
             period_label=period.label,
-            scenario_name=(
-                "Base scenario" if self._scenario_handle is None else scenario.name
-            ),
+            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
         ).present()
 
     def _on_plan_cell_clicked(self, _button, category, period) -> None:
@@ -646,7 +620,5 @@ class PlanView(BaseView):
             self.db,
             detail,
             period_label=period.label,
-            scenario_name=(
-                "Base scenario" if self._scenario_handle is None else scenario.name
-            ),
+            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
         ).present()

@@ -201,9 +201,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.additional_splits, 1, row, 1, 1)
         row += 1
 
-        self.amount_changes_editor = DatedAmountListEditor(
-            self._validate, "Add future amount"
-        )
+        self.amount_changes_editor = DatedAmountListEditor(self._validate, "Add future amount")
         label = Gtk.Label(label="Future amounts", xalign=0, valign=Gtk.Align.START)
         grid.attach(label, 0, row, 1, 1)
         grid.attach(self.amount_changes_editor, 1, row, 1, 1)
@@ -250,9 +248,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.start_entry, 1, row, 1, 1)
         row += 1
 
-        self.ends = Gtk.DropDown.new_from_strings(
-            ["Never", "On date", "After occurrences"]
-        )
+        self.ends = Gtk.DropDown.new_from_strings(["Never", "On date", "After occurrences"])
         self.ends.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Ends", xalign=0), 0, row, 1, 1)
         grid.attach(self.ends, 1, row, 1, 1)
@@ -427,9 +423,7 @@ class ScenarioScheduleDialog(Gtk.Window):
                 if split.planning_flow is not None
                 else resolved * account.sign()
             )
-            direction_index = (
-                1 if split.planning_flow is None and normal_amount < 0 else 0
-            )
+            direction_index = 1 if split.planning_flow is None and normal_amount < 0 else 0
             extra_values.append(
                 (
                     account_index,
@@ -445,14 +439,10 @@ class ScenarioScheduleDialog(Gtk.Window):
         )
         self.skipped_editor.set_values(source.skipped)
         self.occurrence_adjustments_editor.set_values(
-            (item.when, str(item.amount.to_decimal()))
-            for item in source.occurrence_adjustments
+            (item.when, str(item.amount.to_decimal())) for item in source.occurrence_adjustments
         )
 
-
-    def _protect_formula_fields(
-        self, source: ScheduledTransaction | ScenarioSchedule
-    ) -> None:
+    def _protect_formula_fields(self, source: ScheduledTransaction | ScenarioSchedule) -> None:
         """Protect formula-owned structure while allowing validated formula inputs."""
         protected = (
             self.category,
@@ -475,27 +465,17 @@ class ScenarioScheduleDialog(Gtk.Window):
         ]
         for index, split in enumerate(source.splits, 1):
             account = self.db.get_account(split.account)
-            account_name = (
-                self.db.full_name(account) if account is not None else split.account
-            )
-            value = (
-                f"formula {split.formula!r}"
-                if split.formula
-                else str(split.amount or Money(0))
-            )
+            account_name = self.db.full_name(account) if account is not None else split.account
+            value = f"formula {split.formula!r}" if split.formula else str(split.amount or Money(0))
             lines.append(f"  {index}. {account_name}: {value}")
         if source.variables:
             lines.extend(["", "Formula variables:"])
-            lines.extend(
-                f"  {key} = {value}" for key, value in sorted(source.variables.items())
-            )
+            lines.extend(f"  {key} = {value}" for key, value in sorted(source.variables.items()))
         self.protected_details.set_text("\n".join(lines))
         self.protected_details.set_visible(True)
         self.preview.set_visible(False)
 
-    def _build_formula_editor(
-        self, source: ScheduledTransaction | ScenarioSchedule
-    ) -> None:
+    def _build_formula_editor(self, source: ScheduledTransaction | ScenarioSchedule) -> None:
         """Expose formula text and variables without making split accounts editable."""
         self.formula_box.set_visible(True)
         heading = Gtk.Label(label="Formula inputs", xalign=0)
@@ -507,9 +487,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             if not split.formula:
                 continue
             account = self.db.get_account(split.account)
-            account_name = (
-                self.db.full_name(account) if account is not None else split.account
-            )
+            account_name = self.db.full_name(account) if account is not None else split.account
             row = Gtk.Box(spacing=8)
             label = Gtk.Label(label=account_name, xalign=0)
             label.set_hexpand(True)
@@ -559,8 +537,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         formulas = [entry.get_text() for _index, entry in self._formula_entries]
         return (
             formulas != self._formula_originals
-            or self.formula_variables_entry.get_text().strip()
-            != self._formula_variables_original
+            or self.formula_variables_entry.get_text().strip() != self._formula_variables_original
         )
 
     def _validate_formula_inputs(self) -> str | None:
@@ -645,7 +622,6 @@ class ScenarioScheduleDialog(Gtk.Window):
             return None
         return abs(amount) if amount else None
 
-
     def _amount_changes(self) -> list[ScheduledAmountChange] | None:
         values = self.amount_changes_editor.values()
         if not values:
@@ -701,8 +677,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         if len({item.when for item in changes}) != len(changes):
             return None
         if any(
-            item.when not in recurrence.occurrences(item.when, since=item.when)
-            for item in changes
+            item.when not in recurrence.occurrences(item.when, since=item.when) for item in changes
         ):
             return None
         return sorted(changes, key=lambda item: item.when)
@@ -750,7 +725,11 @@ class ScenarioScheduleDialog(Gtk.Window):
                 problems.append("choose an income or expense category")
             selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
             for (
-                account_index, raw_amount, _purpose_index, _memo, _direction
+                account_index,
+                raw_amount,
+                _purpose_index,
+                _memo,
+                _direction,
             ) in self.additional_splits.values():
                 if account_index in selected_accounts:
                     problems.append("each additional split needs a different account")
@@ -802,9 +781,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             if change.description == old_name:
                 change.description = change.name
             change.recurrence = recurrence
-            change.growth_policy = _GROWTH_POLICIES[
-                self.growth_policy.get_selected()
-            ][1]
+            change.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
             change.skipped = self._skipped(recurrence) or []
             if self._formula_inputs_changed():
                 variables = self._formula_variables()
@@ -824,7 +801,11 @@ class ScenarioScheduleDialog(Gtk.Window):
         extra_splits = []
         extra_total = Money(0)
         for (
-            account_index, raw_amount, purpose_index, memo, direction_index
+            account_index,
+            raw_amount,
+            purpose_index,
+            memo,
+            direction_index,
         ) in self.additional_splits.values():
             account = self._accounts[account_index]
             extra_amount = Money(parse_user_amount(raw_amount))
@@ -853,9 +834,7 @@ class ScenarioScheduleDialog(Gtk.Window):
                 ScheduledSplit(
                     funding.handle,
                     funding_value,
-                    planning_flow=_PLANNING_FLOWS[
-                        self.planning_flow.get_selected()
-                    ][1],
+                    planning_flow=_PLANNING_FLOWS[self.planning_flow.get_selected()][1],
                 ),
             ],
             source_schedule=self.source.handle if self.source is not None else None,
@@ -866,7 +845,9 @@ class ScenarioScheduleDialog(Gtk.Window):
             seasonal_amounts=list(
                 self.current.seasonal_amounts
                 if self.current is not None
-                else self.source.seasonal_amounts if self.source is not None else []
+                else self.source.seasonal_amounts
+                if self.source is not None
+                else []
             ),
             skipped=self._skipped(recurrence) or [],
             occurrence_adjustments=self._occurrence_adjustments(recurrence) or [],

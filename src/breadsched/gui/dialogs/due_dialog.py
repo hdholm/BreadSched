@@ -35,9 +35,7 @@ class DueDialog(Gtk.Window):
     """One row per due occurrence, each with its own decision."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, occurrences) -> None:
-        super().__init__(
-            title="Scheduled transactions due", transient_for=parent, modal=True
-        )
+        super().__init__(title="Scheduled transactions due", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db
         self.occurrences = list(occurrences)
@@ -62,7 +60,9 @@ class DueDialog(Gtk.Window):
 
         bulk = Gtk.Box(spacing=8)
         for label, choice in (
-            ("Post all", POST), ("Remind me later for all", LATER), ("Never, all", NEVER)
+            ("Post all", POST),
+            ("Remind me later for all", LATER),
+            ("Never, all", NEVER),
         ):
             button = Gtk.Button(label=label)
             button.connect("clicked", lambda _b, value=choice: self.set_all(value))

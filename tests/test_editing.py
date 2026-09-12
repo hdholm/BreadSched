@@ -24,8 +24,22 @@ from breadsched.gen.lib import Money, Split, Transaction
 def book_path(tmp_path, capsys):
     path = tmp_path / "book.breadsched"
     cli(["init", str(path)])
-    cli(["add", str(path), "--date", "2026-01-05", "--description", "Rent",
-         "--from", "Assets", "--to", "Expenses", "--amount", "1800.00"])
+    cli(
+        [
+            "add",
+            str(path),
+            "--date",
+            "2026-01-05",
+            "--description",
+            "Rent",
+            "--from",
+            "Assets",
+            "--to",
+            "Expenses",
+            "--amount",
+            "1800.00",
+        ]
+    )
     capsys.readouterr()
     return path
 
@@ -55,8 +69,22 @@ class TestCliEditing:
         assert cli(["edit", str(book_path), handle[:8], "--description", "Short"]) == 0
 
     def test_an_ambiguous_reference_is_refused(self, book_path, capsys):
-        cli(["add", str(book_path), "--date", "2026-02-05", "--description", "Rent",
-             "--from", "Assets", "--to", "Expenses", "--amount", "1800.00"])
+        cli(
+            [
+                "add",
+                str(book_path),
+                "--date",
+                "2026-02-05",
+                "--description",
+                "Rent",
+                "--from",
+                "Assets",
+                "--to",
+                "Expenses",
+                "--amount",
+                "1800.00",
+            ]
+        )
         capsys.readouterr()
         assert cli(["edit", str(book_path), "", "--description", "x"]) == 2
 
@@ -82,9 +110,7 @@ class TestCliEditing:
         db.load(str(book_path))
         edited = db.get_transaction(handle)
         assert edited.is_balanced()
-        assert ledger.balance(db, db.get_account_by_name("Expenses").handle) == Money(
-            "1950.00"
-        )
+        assert ledger.balance(db, db.get_account_by_name("Expenses").handle) == Money("1950.00")
         db.close()
 
     def test_editing_is_a_single_undo_step(self, book_path, capsys):
@@ -99,9 +125,7 @@ class TestCliEditing:
         ) == Money("1950.00")
         db.close()
 
-    def test_a_multi_split_amount_is_refused_rather_than_guessed(
-        self, book_path, capsys
-    ):
+    def test_a_multi_split_amount_is_refused_rather_than_guessed(self, book_path, capsys):
         """With three legs there is no single amount; changing one silently is worse."""
         db = DbSQLite()
         db.load(str(book_path))

@@ -145,9 +145,7 @@ class TestApplicationIdentity:
     """Two applications in one process must not fight over the session bus."""
 
     def test_two_applications_can_be_registered_at_once(self, app):
-        second = BreadSchedApplication(
-            application_id=f"{APP_ID}.Second", unique=False
-        )
+        second = BreadSchedApplication(application_id=f"{APP_ID}.Second", unique=False)
         second.register()
         assert second.get_is_registered()
         assert app.get_is_registered()
@@ -175,14 +173,10 @@ class TestEmptyWindow:
 
 
 class TestDuePromptPolicy:
-    def test_production_window_prompts_when_a_book_opens(
-        self, app, populated_book, monkeypatch
-    ):
+    def test_production_window_prompts_when_a_book_opens(self, app, populated_book, monkeypatch):
         calls = []
         production_window = ViewManager(app)
-        monkeypatch.setattr(
-            production_window, "prompt_for_due", lambda: calls.append(None)
-        )
+        monkeypatch.setattr(production_window, "prompt_for_due", lambda: calls.append(None))
         try:
             app.open_book(populated_book)
             assert calls == []
@@ -235,9 +229,7 @@ class TestOpeningABook:
         app.open_book(str(path))
         assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
 
-    def test_opening_a_second_book_switches_cleanly(
-        self, app, window, populated_book, tmp_path
-    ):
+    def test_opening_a_second_book_switches_cleanly(self, app, window, populated_book, tmp_path):
         from breadsched.cli.main import main as cli
 
         app.open_book(populated_book)
@@ -247,9 +239,7 @@ class TestOpeningABook:
         assert "second.breadsched" in window.get_title()
         assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
 
-    def test_reopening_the_same_category_still_repaints(
-        self, app, window, populated_book
-    ):
+    def test_reopening_the_same_category_still_repaints(self, app, window, populated_book):
         """Row 0 is already selected the second time, so selection cannot be relied on."""
         app.open_book(populated_book)
         window.show_category("plan")
@@ -276,9 +266,7 @@ class TestEveryViewBuilds:
         assert window.stack.get_visible_child_name() == category
 
     @pytest.mark.parametrize("category", CATEGORY_KEYS)
-    def test_switching_back_and_forth_is_safe(
-        self, app, window, populated_book, category
-    ):
+    def test_switching_back_and_forth_is_safe(self, app, window, populated_book, category):
         app.open_book(populated_book)
         for _ in range(3):
             window.show_category("accounts")
@@ -308,9 +296,7 @@ class TestAccountTree:
         assert window.stack.get_visible_child_name() == "register"
         assert window._views["register"].account_handle == handle
 
-    def test_double_clicking_an_account_opens_its_register(
-        self, app, window, populated_book
-    ):
+    def test_double_clicking_an_account_opens_its_register(self, app, window, populated_book):
         """The register is the thing opened dozens of times a day, so it gets the
         gesture; editing has its own button."""
         app.open_book(populated_book)
@@ -339,7 +325,8 @@ class TestAccountTree:
             model.get_item(index).set_expanded(True)
         position = next(
             (
-                index for index in range(model.get_n_items())
+                index
+                for index in range(model.get_n_items())
                 if not unwrap(model.get_item(index)).placeholder
             ),
             None,
@@ -359,7 +346,8 @@ class TestAccountTree:
         for index in range(model.get_n_items()):
             model.get_item(index).set_expanded(True)
         position = next(
-            index for index in range(model.get_n_items())
+            index
+            for index in range(model.get_n_items())
             if not unwrap(model.get_item(index)).placeholder
         )
         model.set_selected(position)
@@ -369,9 +357,7 @@ class TestAccountTree:
         view._on_edit_selected(None)
         assert opened["account"] is unwrap(model.get_item(position))
 
-    def test_the_edit_button_does_nothing_without_a_selection(
-        self, app, window, populated_book
-    ):
+    def test_the_edit_button_does_nothing_without_a_selection(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("accounts")
         view = window._views["accounts"]
@@ -421,9 +407,7 @@ class TestRegisterSelection:
 
 
 class TestLiveUpdates:
-    def test_posting_a_transaction_repaints_the_open_view(
-        self, app, window, populated_book
-    ):
+    def test_posting_a_transaction_repaints_the_open_view(self, app, window, populated_book):
         app.open_book(populated_book)
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
         window.open_register(handle)
@@ -433,8 +417,7 @@ class TestLiveUpdates:
         other = app.db.get_account_by_name("Expenses:Rent").handle
         with app.db.transaction("New rent") as txn:
             app.db.add_transaction(
-                Transaction.simple(date(2026, 4, 1), "April rent", other, handle,
-                                   Money("1800.00")),
+                Transaction.simple(date(2026, 4, 1), "April rent", other, handle, Money("1800.00")),
                 txn,
             )
         assert view.column_view.get_model().get_n_items() == before + 1
@@ -485,9 +468,7 @@ class TestProjectionView:
         rent = app.db.get_account_by_name("Expenses:Rent").handle
         with app.db.transaction("new actual") as txn:
             app.db.add_transaction(
-                Transaction.simple(
-                    date(2026, 5, 1), "May rent", rent, checking, Money("1800")
-                ),
+                Transaction.simple(date(2026, 5, 1), "May rent", rent, checking, Money("1800")),
                 txn,
             )
 
@@ -518,9 +499,7 @@ class TestProjectionView:
 
 
 class TestDialogs:
-    def test_the_transaction_dialog_starts_with_two_splits(
-        self, app, window, populated_book
-    ):
+    def test_the_transaction_dialog_starts_with_two_splits(self, app, window, populated_book):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
         app.open_book(populated_book)
@@ -529,9 +508,7 @@ class TestDialogs:
         assert len(dialog.splits) == 2
         assert dialog.save_button.get_sensitive() is False
 
-    def test_one_amount_is_enough_for_a_two_split_entry(
-        self, app, window, populated_book
-    ):
+    def test_one_amount_is_enough_for_a_two_split_entry(self, app, window, populated_book):
         """The common case: pick two accounts, type one number."""
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
@@ -541,9 +518,7 @@ class TestDialogs:
         assert dialog.save_button.get_sensitive() is True
         assert "blank split will be set to" in dialog.status.get_text()
 
-    def test_transaction_amount_accepts_comma_decimal_input(
-        self, app, window, populated_book
-    ):
+    def test_transaction_amount_accepts_comma_decimal_input(self, app, window, populated_book):
         from breadsched.gen.lib import Money
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
@@ -566,9 +541,7 @@ class TestDialogs:
         dialog._on_save(None)
 
         assert app.db.summary()["txn"] == before + 1
-        posted = next(
-            t for t in app.db.iter_transactions() if t.description == "Test entry"
-        )
+        posted = next(t for t in app.db.iter_transactions() if t.description == "Test entry")
         assert posted.is_balanced()
         first_account = dialog.splits[0].account_handle
         assert posted.value_for(first_account) == Money("42.00")
@@ -657,18 +630,14 @@ class TestImportDialogState:
         dialog.set_source(str(junk))
         assert dialog.import_button.get_sensitive() is False
 
-    def test_a_successful_import_reports_what_arrived(
-        self, dialog, gnucash_sqlite_path
-    ):
+    def test_a_successful_import_reports_what_arrived(self, dialog, gnucash_sqlite_path):
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)
         text = dialog.result_view.get_text()
         assert "transactions" in text
         assert "undo step" in text
 
-    def test_the_debug_option_writes_a_log_beside_the_source(
-        self, dialog, gnucash_sqlite_path
-    ):
+    def test_the_debug_option_writes_a_log_beside_the_source(self, dialog, gnucash_sqlite_path):
         from pathlib import Path
 
         dialog.debug_check.set_active(True)
@@ -688,15 +657,21 @@ class TestImportDialogState:
             ("food", "Groceries", "EXPENSE", "root", 0),
         ]
         book = create_book(
-            tmp_path / "damaged.gnucash", chart,
-            [(date(2026, 1, 5), "Shop",
-              [("food", 1000, 100, ""), ("bank", -1000, 100, "")])],
+            tmp_path / "damaged.gnucash",
+            chart,
+            [(date(2026, 1, 5), "Shop", [("food", 1000, 100, ""), ("bank", -1000, 100, "")])],
         )
         import sqlite3
 
         conn = sqlite3.connect(book.path)
-        write_transaction(conn, new_guid(), book.currency, date(2026, 2, 2),
-                          "Lonely", [(book.bank, 5000, 100, "")])
+        write_transaction(
+            conn,
+            new_guid(),
+            book.currency,
+            date(2026, 2, 2),
+            "Lonely",
+            [(book.bank, 5000, 100, "")],
+        )
         conn.commit()
         conn.close()
 
@@ -750,7 +725,9 @@ class TestImportNoise:
         )
         completed = subprocess.run(
             [sys.executable, "-c", script],
-            capture_output=True, text=True, check=True,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         warnings_seen = json.loads(completed.stdout.strip().splitlines()[-1])
 
@@ -763,8 +740,7 @@ class TestImportNoise:
         # have not seen before are left alone, so this does not become brittle
         # against every PyGObject release.
         escaped_noise = [
-            w for w in warnings_seen
-            if any(re.match(p, w["message"]) for p in UPSTREAM_NOISE)
+            w for w in warnings_seen if any(re.match(p, w["message"]) for p in UPSTREAM_NOISE)
         ]
         ours = [w for w in warnings_seen if "breadsched" in w["file"]]
         assert escaped_noise == [], "the suppression in gi_setup is not working"
@@ -777,18 +753,13 @@ class TestImportNoise:
 
         from breadsched.gui import gi_setup
 
-        reported = (
-            "GLib.unix_signal_add_full is deprecated; "
-            "use GLibUnix.signal_add_full instead"
-        )
+        reported = "GLib.unix_signal_add_full is deprecated; use GLibUnix.signal_add_full instead"
         assert any(re.match(p, reported) for p in gi_setup.UPSTREAM_NOISE)
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             for pattern in gi_setup.UPSTREAM_NOISE:
-                warnings.filterwarnings(
-                    "ignore", message=pattern, category=DeprecationWarning
-                )
+                warnings.filterwarnings("ignore", message=pattern, category=DeprecationWarning)
             warnings.warn(reported, DeprecationWarning, stacklevel=1)
         assert caught == []
 
@@ -801,12 +772,11 @@ class TestImportNoise:
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             for pattern in gi_setup.UPSTREAM_NOISE:
-                warnings.filterwarnings(
-                    "ignore", message=pattern, category=DeprecationWarning
-                )
+                warnings.filterwarnings("ignore", message=pattern, category=DeprecationWarning)
             warnings.warn(
                 "Gtk.CssProvider.load_from_data is deprecated",
-                DeprecationWarning, stacklevel=1,
+                DeprecationWarning,
+                stacklevel=1,
             )
         assert len(caught) == 1
 
@@ -829,7 +799,11 @@ class TestMenuBarAndToolbar:
             value = menu.get_item_attribute_value(index, "label", None)
             labels.append(value.get_string() if value else "")
         assert [label.replace("_", "") for label in labels] == [
-            "File", "Edit", "View", "Actions", "Help"
+            "File",
+            "Edit",
+            "View",
+            "Actions",
+            "Help",
         ]
 
     def test_the_window_shows_it(self, window):
@@ -937,9 +911,7 @@ class TestRegisterSplitDetail:
             model.get_item(index + 1).get_item().payload.account_name
             for index in range(len(transaction.splits))
         }
-        assert names == {
-            register.db.full_name(s.account) for s in transaction.splits
-        }
+        assert names == {register.db.full_name(s.account) for s in transaction.splits}
 
     def test_selecting_one_collapses_the_previous(self, register):
         selection = register.column_view.get_model()
@@ -950,9 +922,9 @@ class TestRegisterSplitDetail:
 
         # Select a later top-level row; the first must close again.
         position = next(
-            index for index in range(model.get_n_items())
-            if model.get_item(index).get_depth() == 0
-            and index != 0
+            index
+            for index in range(model.get_n_items())
+            if model.get_item(index).get_depth() == 0 and index != 0
         )
         selection.set_selected(position)
         register._on_selection_changed(selection, None)
@@ -991,9 +963,7 @@ class TestColumnBehaviour:
         app.open_book(populated_book)
         window.show_category("scheduled")
         window.show_category("upcoming")
-        for name, attribute in (
-            ("scheduled", "definitions_view"), ("upcoming", "upcoming_view")
-        ):
+        for name, attribute in (("scheduled", "definitions_view"), ("upcoming", "upcoming_view")):
             columns = getattr(window._views[name], attribute).get_columns()
             assert columns.get_n_items() > 0
             for index in range(columns.get_n_items()):
@@ -1113,7 +1083,9 @@ class TestScheduleEntry:
         dialog.start_entry.set_text("2026-01-02")
         built = dialog.build()
         assert built.recurrence.occurrences(date(2026, 2, 1))[:3] == [
-            date(2026, 1, 2), date(2026, 1, 16), date(2026, 1, 30)
+            date(2026, 1, 2),
+            date(2026, 1, 16),
+            date(2026, 1, 30),
         ]
 
     def test_schedule_can_end_on_a_date(self, dialog):
@@ -1136,9 +1108,7 @@ class TestScheduleEntry:
         assert built.recurrence.count == 6
         assert built.recurrence.end is None
 
-    def test_existing_simple_schedule_can_be_edited_in_place(
-        self, app, window, populated_book
-    ):
+    def test_existing_simple_schedule_can_be_edited_in_place(self, app, window, populated_book):
         app.open_book(populated_book)
         bank = app.db.get_account_by_name("Assets:Checking Account")
         rent = app.db.get_account_by_name("Expenses:Rent")
@@ -1167,9 +1137,7 @@ class TestScheduleEntry:
         assert edited.name == "Rent revised"
         assert edited.amount() == Money("1850.00")
         assert edited.growth_policy.value == "none"
-        same_handle = [
-            item for item in app.db.iter_scheduled() if item.handle == source.handle
-        ]
+        same_handle = [item for item in app.db.iter_scheduled() if item.handle == source.handle]
         assert len(same_handle) == 1
 
     def test_fixed_schedule_with_duplicate_expense_account_is_editable(
@@ -1196,17 +1164,13 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
-        assert [
-            (split.account, split.amount, split.memo) for split in rebuilt.splits
-        ] == [
+        assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
             (expense.handle, Money("120.00"), "component A"),
             (expense.handle, Money("80.00"), "component B"),
             (bank.handle, Money("-200.00"), ""),
         ]
 
-    def test_imported_fixed_custom_recurrence_round_trips(
-        self, app, window, populated_book
-    ):
+    def test_imported_fixed_custom_recurrence_round_trips(self, app, window, populated_book):
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
         app.open_book(populated_book)
@@ -1268,10 +1232,7 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
-        assert [
-            (split.account, split.amount, split.planning_flow)
-            for split in rebuilt.splits
-        ] == [
+        assert [(split.account, split.amount, split.planning_flow) for split in rebuilt.splits] == [
             (
                 planning_account.handle,
                 Money("150.00"),
@@ -1280,9 +1241,7 @@ class TestScheduleEntry:
             (bank.handle, Money("-150.00"), None),
         ]
 
-    def test_fixed_multiple_planning_purpose_legs_are_editable(
-        self, app, window, populated_book
-    ):
+    def test_fixed_multiple_planning_purpose_legs_are_editable(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType, PlanningFlowKind
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
@@ -1376,16 +1335,12 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
-        assert [
-            (split.account, split.amount, split.memo) for split in rebuilt.splits
-        ] == [
+        assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
             (reserve.handle, Money("125.00"), "destination"),
             (bank.handle, Money("-125.00"), "source"),
         ]
 
-    def test_fixed_asset_liability_transfer_is_editable(
-        self, app, window, populated_book
-    ):
+    def test_fixed_asset_liability_transfer_is_editable(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
@@ -1413,16 +1368,12 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
-        assert [
-            (split.account, split.amount, split.memo) for split in rebuilt.splits
-        ] == [
+        assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
             (liability.handle, Money("90.00"), "principal"),
             (bank.handle, Money("-90.00"), "funding"),
         ]
 
-    def test_fixed_multi_leg_balance_sheet_transfer_is_editable(
-        self, app, window, populated_book
-    ):
+    def test_fixed_multi_leg_balance_sheet_transfer_is_editable(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
@@ -1457,9 +1408,7 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
-        assert [
-            (split.account, split.amount, split.memo) for split in rebuilt.splits
-        ] == [
+        assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
             (primary.handle, Money("150.00"), "primary"),
             (secondary.handle, Money("-50.00"), "secondary"),
             (bank.handle, Money("-100.00"), "funding"),
@@ -1502,9 +1451,7 @@ class TestScheduleEntry:
 
         dialog = ScheduleDialog(window, app.db, source=source)
         rebuilt = dialog.build()
-        assert [
-            (split.account, split.amount, split.memo) for split in rebuilt.splits
-        ] == [
+        assert [(split.account, split.amount, split.memo) for split in rebuilt.splits] == [
             (liability.handle, Money("200.00"), "primary"),
             (reserve.handle, Money("-75.00"), "extra"),
             (bank.handle, Money("-125.00"), "funding"),
@@ -1593,9 +1540,7 @@ class TestScheduleEntry:
         assert dialog.save_button.get_sensitive() is False
         assert "formula" in dialog.status.get_text().lower()
 
-    def test_initial_schedule_selection_enables_view_edit(
-        self, app, window, populated_book
-    ):
+    def test_initial_schedule_selection_enables_view_edit(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("scheduled")
         view = window._views["scheduled"]
@@ -1780,9 +1725,7 @@ class TestEditingFromTheRegister:
         dialog, transaction = self._dialog_for(register)
         dialog.description_entry.set_text("Corrected description")
         dialog._on_save(None)
-        assert app.db.get_transaction(transaction.handle).description == (
-            "Corrected description"
-        )
+        assert app.db.get_transaction(transaction.handle).description == ("Corrected description")
 
     def test_an_amount_edit_keeps_the_book_balanced(self, register, app):
         from breadsched.gen.lib import Money
@@ -1858,9 +1801,7 @@ class TestLastBookIsRemembered:
         from breadsched.gen.utils.settings import Settings
 
         app.open_book(populated_book)
-        assert app.settings.get("general", "last_book_path") == str(
-            Path(populated_book).resolve()
-        )
+        assert app.settings.get("general", "last_book_path") == str(Path(populated_book).resolve())
         assert Settings("settings", directory=app.settings.directory).get(
             "general", "last_book_path"
         ) == str(Path(populated_book).resolve())
@@ -1878,9 +1819,7 @@ class TestLastBookIsRemembered:
         assert app.db is not None
 
     def test_a_book_that_has_gone_is_forgotten(self, app, tmp_path):
-        app.settings.set(
-            "general", "last_book_path", str(tmp_path / "gone.breadsched")
-        )
+        app.settings.set("general", "last_book_path", str(tmp_path / "gone.breadsched"))
         app.settings.save()
         assert app.reopen_last_book() is False
         assert app.settings.get("general", "last_book_path") is None
@@ -1898,9 +1837,7 @@ class TestLastBookIsRemembered:
         assert app.db is not None
         assert app.book_path == str(remembered)
 
-    def test_a_remembered_default_user_book_is_reopened(
-        self, app, tmp_path, monkeypatch
-    ):
+    def test_a_remembered_default_user_book_is_reopened(self, app, tmp_path, monkeypatch):
         from breadsched.cli.main import main as cli
         from breadsched.gui import paths
 
@@ -1939,7 +1876,8 @@ class TestSortingReordersRows:
         before = descriptions()
         columns = view.column_view.get_columns()
         description_column = next(
-            columns.get_item(i) for i in range(columns.get_n_items())
+            columns.get_item(i)
+            for i in range(columns.get_n_items())
             if columns.get_item(i).get_title() == "Transfer"
         )
         view.column_view.sort_by_column(description_column, Gtk.SortType.ASCENDING)
@@ -1949,9 +1887,7 @@ class TestSortingReordersRows:
         assert ascending == sorted(ascending) or ascending != before
         assert descriptions() == list(reversed(ascending))
 
-    def test_a_tree_keeps_children_with_their_parents(
-        self, app, window, populated_book
-    ):
+    def test_a_tree_keeps_children_with_their_parents(self, app, window, populated_book):
         """Sorting the flattened list would tear splits away from their transaction."""
         app.open_book(populated_book)
         window.show_category("register")
@@ -2015,9 +1951,7 @@ class TestDerivedPlanView:
         assert view._report.activity.periods
         assert view._report.categories
 
-    def test_grouping_changes_display_buckets_not_source_data(
-        self, app, window, populated_book
-    ):
+    def test_grouping_changes_display_buckets_not_source_data(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("plan")
         view = window._views["plan"]
@@ -2054,14 +1988,9 @@ class TestDerivedPlanView:
             child = child.get_next_sibling()
 
         assert buttons
-        assert all(
-            (button.get_tooltip_text() or "").startswith("Explain ")
-            for button in buttons
-        )
+        assert all((button.get_tooltip_text() or "").startswith("Explain ") for button in buttons)
 
-    def test_scenario_event_actions_require_a_saved_scenario(
-        self, app, window, populated_book
-    ):
+    def test_scenario_event_actions_require_a_saved_scenario(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("plan")
         view = window._views["plan"]
@@ -2102,9 +2031,7 @@ class TestDerivedPlanView:
         assert view.alter_schedule_button.get_sensitive() is False
         assert view.suppress_schedule_button.get_sensitive() is False
 
-    def test_suppressing_a_baseline_schedule_is_scenario_only(
-        self, app, window, populated_book
-    ):
+    def test_suppressing_a_baseline_schedule_is_scenario_only(self, app, window, populated_book):
         from breadsched.gen.lib import Scenario
 
         app.open_book(populated_book)
@@ -2132,9 +2059,7 @@ class TestDerivedPlanView:
         assert saved.schedule_overrides[0].enabled is False
         assert app.db.get_scheduled(schedule.handle).enabled == schedule.enabled
 
-    def test_scenario_estimate_dialog_saves_a_recurring_estimate(
-        self, app, window, populated_book
-    ):
+    def test_scenario_estimate_dialog_saves_a_recurring_estimate(self, app, window, populated_book):
         from breadsched.gen.lib import PeriodType, Scenario
         from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
 
@@ -2164,9 +2089,7 @@ class TestDerivedPlanView:
         assert estimate.recurrence.period is PeriodType.WEEK
         assert estimate.recurrence.interval == 1
 
-    def test_alternate_schedule_changes_only_the_saved_scenario(
-        self, app, window, populated_book
-    ):
+    def test_alternate_schedule_changes_only_the_saved_scenario(self, app, window, populated_book):
         from breadsched.gen.lib import (
             Money,
             PeriodType,
@@ -2240,17 +2163,13 @@ class TestDerivedPlanView:
                 ScheduledSplit(checking.handle, formula="-base"),
             ],
             amount_changes=[ScheduledAmountChange(date(2027, 1, 1), Money("130"))],
-            occurrence_adjustments=[
-                ScheduledOccurrenceAdjustment(date(2026, 3, 1), Money("140"))
-            ],
+            occurrence_adjustments=[ScheduledOccurrenceAdjustment(date(2026, 3, 1), Money("140"))],
         )
         source.variables = {"base": "125"}
         current = ScenarioSchedule.from_scheduled(source)
         scenario = Scenario(name="Formula scenario", schedule_overrides=[current])
 
-        dialog = ScenarioScheduleDialog(
-            window, app.db, scenario, source=source, current=current
-        )
+        dialog = ScenarioScheduleDialog(window, app.db, scenario, source=source, current=current)
         assert dialog.save_button.get_sensitive() is True
         assert dialog.amount_entry.get_sensitive() is False
         assert "formula 'base'" in dialog.protected_details.get_text()
@@ -2302,9 +2221,7 @@ class TestDerivedPlanView:
         current = ScenarioSchedule.from_scheduled(source)
         scenario = Scenario(name="Formula variant", schedule_overrides=[current])
 
-        dialog = ScenarioScheduleDialog(
-            window, app.db, scenario, source=source, current=current
-        )
+        dialog = ScenarioScheduleDialog(window, app.db, scenario, source=source, current=current)
         dialog.formula_variables_entry.set_text("base=120; factor=2")
         dialog._formula_entries[0][1].set_text("base * factor")
         dialog._formula_entries[1][1].set_text("-(base * factor)")
@@ -2379,9 +2296,7 @@ class TestDueReview:
         dialog, due = self._dialog(due_book, window)
         assert len(dialog.choosers) == len(due) > 0
 
-    def test_due_dialog_is_modal_transient_and_destroyed_with_parent(
-        self, due_book, window
-    ):
+    def test_due_dialog_is_modal_transient_and_destroyed_with_parent(self, due_book, window):
         dialog, _ = self._dialog(due_book, window)
         assert dialog.get_modal() is True
         assert dialog.get_transient_for() is window
@@ -2492,9 +2407,7 @@ class TestDueReview:
 
 
 class TestResolutionView:
-    def test_imported_history_does_not_enter_review_queue(
-        self, app, window, populated_book
-    ):
+    def test_imported_history_does_not_enter_review_queue(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("resolution")
         view = window._views["resolution"]
@@ -2511,11 +2424,7 @@ class TestResolutionView:
         db.load(populated_book)
         schedule = next(iter(db.iter_scheduled()))
         when = next(
-            iter(
-                schedule.recurrence.occurrences(
-                    date(2026, 12, 31), since=date(2026, 1, 1)
-                )
-            )
+            iter(schedule.recurrence.occurrences(date(2026, 12, 31), since=date(2026, 1, 1)))
         )
         actual = Transaction(
             post_date=when + timedelta(days=1),
@@ -2548,9 +2457,7 @@ class TestResolutionView:
         resolved = app.db.get_transaction(actual_handle)
         assert resolved.planning_resolution is PlanningResolution.MATCHED
         assert resolved.planned_occurrence == occurrence_key
-        assert all(
-            txn.handle != actual_handle for txn in view._unresolved_transactions()
-        )
+        assert all(txn.handle != actual_handle for txn in view._unresolved_transactions())
 
     def test_reject_then_unexpected_is_persistent(self, app, window, populated_book):
         from breadsched.gen.lib import PlanningResolution
@@ -2573,6 +2480,7 @@ class TestResolutionView:
         resolved = app.db.get_transaction(actual_handle)
         assert resolved.planning_resolution is PlanningResolution.UNEXPECTED
         assert resolved.rejected_plan_occurrences == []
+
 
 class TestDashboardView:
     """The dashboard is the view a book opens on."""
@@ -2659,7 +2567,9 @@ class TestAccountEditor:
 
         root = view.db.root_account()
         return AccountDialog(
-            view.get_root(), view.db, account,
+            view.get_root(),
+            view.db,
+            account,
             default_parent=root.handle if root else None,
         )
 
@@ -2697,16 +2607,12 @@ class TestAccountEditor:
         dialog._on_save(None)
         assert app.db.get_account(account.handle).group == "Cash"
 
-    def test_imported_account_parent_hidden_and_commodity_round_trip(
-        self, accounts_view, app
-    ):
+    def test_imported_account_parent_hidden_and_commodity_round_trip(self, accounts_view, app):
         from breadsched.gen.lib import Account, AccountType, Commodity
 
         root = app.db.root_account()
         with app.db.transaction("add imported-style account structure") as txn:
-            commodity = Commodity(
-                namespace="FUND", mnemonic="GENERIC", fullname="Generic security"
-            )
+            commodity = Commodity(namespace="FUND", mnemonic="GENERIC", fullname="Generic security")
             app.db.add_commodity(commodity, txn)
             parent = Account(
                 name="Ordinary parent",
@@ -2731,15 +2637,11 @@ class TestAccountEditor:
         assert selected_parent.handle == parent.handle
         assert dialog.hidden_check.get_active() is True
         assert dialog.commodity_scu_entry.get_text() == "1000"
-        assert (
-            dialog.commodity_handles[dialog.commodity_picker.get_selected()]
-            == commodity.handle
-        )
+        assert dialog.commodity_handles[dialog.commodity_picker.get_selected()] == commodity.handle
         notes_buffer = dialog.notes_view.get_buffer()
         notes_start, notes_end = notes_buffer.get_bounds()
         assert (
-            notes_buffer.get_text(notes_start, notes_end, True)
-            == "Generic imported account note"
+            notes_buffer.get_text(notes_start, notes_end, True) == "Generic imported account note"
         )
 
         rebuilt = dialog.build()
@@ -2792,7 +2694,8 @@ class TestAccountEditor:
 
         with app.db.transaction("house") as txn:
             house = Account(
-                name="House", atype=AccountType.ASSET,
+                name="House",
+                atype=AccountType.ASSET,
                 parent=app.db.root_account().handle,
             )
             app.db.add_account(house, txn)
@@ -2800,17 +2703,13 @@ class TestAccountEditor:
         dialog = self._dialog(accounts_view)
         dialog.name_entry.set_text("Mortgage")
         dialog.type_picker.set_selected(_TYPES.index(AccountType.LIABILITY))
-        index = next(
-            i for i, a in enumerate(dialog.assets, start=1) if a.handle == house.handle
-        )
+        index = next(i for i, a in enumerate(dialog.assets, start=1) if a.handle == house.handle)
         dialog.asset_picker.set_selected(index)
         dialog._on_save(None)
 
         assert app.db.get_account_by_name("Mortgage").linked_asset == house.handle
 
-    def test_deleting_an_account_with_history_is_refused_with_a_reason(
-        self, accounts_view, app
-    ):
+    def test_deleting_an_account_with_history_is_refused_with_a_reason(self, accounts_view, app):
         account = app.db.get_account_by_name("Assets:Checking Account")
         dialog = self._dialog(accounts_view, account)
         dialog._on_delete(None)
@@ -2836,9 +2735,7 @@ class TestAccountEditor:
 class TestDashboardBillsLinkToSchedules:
     """A bill is a scheduled transaction seen from another angle."""
 
-    def test_the_frequency_column_reads_as_the_schedule_says(
-        self, app, window, populated_book
-    ):
+    def test_the_frequency_column_reads_as_the_schedule_says(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
@@ -2879,9 +2776,7 @@ class TestAccountDialogConstruction:
         from breadsched.gui.dialogs.account_dialog import AccountDialog
 
         app.open_book(populated_book)
-        dialog = AccountDialog(
-            window, app.db, None, default_parent=app.db.root_account().handle
-        )
+        dialog = AccountDialog(window, app.db, None, default_parent=app.db.root_account().handle)
         assert dialog.save_button.get_sensitive() is False
 
     def test_it_builds_for_an_existing_account(self, app, window, populated_book):
@@ -2907,9 +2802,7 @@ class TestAccountDialogConstruction:
         from breadsched.gui.dialogs.account_dialog import AccountDialog
 
         app.open_book(populated_book)
-        dialog = AccountDialog(
-            window, app.db, None, default_parent=app.db.root_account().handle
-        )
+        dialog = AccountDialog(window, app.db, None, default_parent=app.db.root_account().handle)
         dialog.name_entry.set_text("Something")
         assert dialog.save_button.get_sensitive() is True
 
@@ -3017,9 +2910,7 @@ class TestNoGtkCriticals:
         view.period.set_selected(1)
         assert criticals == []
 
-    def test_changing_the_dashboard_horizons_is_quiet(
-        self, app, window, populated_book, criticals
-    ):
+    def test_changing_the_dashboard_horizons_is_quiet(self, app, window, populated_book, criticals):
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
@@ -3044,9 +2935,7 @@ class TestStartScreen:
 
     def test_all_four_ways_in_are_offered(self, app, window):
         actions = _action_names(window.stack.get_child_by_name("empty"))
-        assert set(actions) >= {
-            "app.new", "app.open", "app.import-new", "app.open-default"
-        }
+        assert set(actions) >= {"app.new", "app.open", "app.import-new", "app.open-default"}
 
     def test_every_offered_action_exists(self, app, window):
         for name in _action_names(window.stack.get_child_by_name("empty")):
@@ -3068,9 +2957,7 @@ class TestStartScreen:
         assert target.parent == tmp_path
         assert not target.exists(), "the start screen must not create it"
 
-    def test_opening_the_default_creates_it_on_request(
-        self, app, window, tmp_path, monkeypatch
-    ):
+    def test_opening_the_default_creates_it_on_request(self, app, window, tmp_path, monkeypatch):
         from breadsched.gui import paths
 
         monkeypatch.setenv("XDG_DOCUMENTS_DIR", str(tmp_path))
@@ -3109,9 +2996,7 @@ class TestStartScreen:
         assert app.db.get_account(marker.handle) is not None
         assert app.settings.get("general", "last_book_path") == str(target.resolve())
 
-    def test_starter_materialization_refuses_to_replace_an_existing_book(
-        self, tmp_path
-    ):
+    def test_starter_materialization_refuses_to_replace_an_existing_book(self, tmp_path):
         from breadsched.gui.app import BreadSchedApplication
 
         target = tmp_path / "existing.breadsched"
@@ -3122,9 +3007,7 @@ class TestStartScreen:
 
         assert target.read_bytes() == b"do not replace"
 
-    def test_opening_the_default_twice_reuses_it(
-        self, app, window, tmp_path, monkeypatch
-    ):
+    def test_opening_the_default_twice_reuses_it(self, app, window, tmp_path, monkeypatch):
         from breadsched.gen.lib import Account, AccountType
         from breadsched.gui import paths
 
@@ -3132,8 +3015,7 @@ class TestStartScreen:
         app.on_open_default()
         with app.db.transaction("mark") as txn:
             app.db.add_account(
-                Account(name="Marker", atype=AccountType.BANK,
-                        parent=app.db.root_account().handle),
+                Account(name="Marker", atype=AccountType.BANK, parent=app.db.root_account().handle),
                 txn,
             )
         app.on_open_default()
@@ -3146,9 +3028,7 @@ class TestStartScreen:
         monkeypatch.delenv("XDG_DOCUMENTS_DIR", raising=False)
         documents = tmp_path / "Documents"
         documents.mkdir()
-        monkeypatch.setattr(
-            paths.Path, "home", classmethod(lambda cls: tmp_path)
-        )
+        monkeypatch.setattr(paths.Path, "home", classmethod(lambda cls: tmp_path))
         assert paths.documents_directory() == documents
 
     def test_home_is_the_fallback(self, tmp_path, monkeypatch):

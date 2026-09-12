@@ -234,15 +234,12 @@ class ResolutionView(BaseView):
             if self.db is not None and self._transaction_handle is not None:
                 transaction = self.db.get_transaction(self._transaction_handle)
                 if transaction is not None:
-                    amount_variance = (
-                        _gross_amount(transaction) - candidate.event.expected_amount
-                    )
+                    amount_variance = _gross_amount(transaction) - candidate.event.expected_amount
             amount_text = amount_variance.format()
             if amount_variance > 0:
                 amount_text = f"+{amount_text}"
             self.variance.set_text(
-                f"If matched: amount variance {amount_text} · "
-                f"date variance {signed_days:+d} day(s)"
+                f"If matched: amount variance {amount_text} · date variance {signed_days:+d} day(s)"
             )
         self._set_action_sensitivity()
 
@@ -327,28 +324,33 @@ class ResolutionView(BaseView):
         claims, roles = self._fsa_options(transaction)
         if not claims or not roles:
             return
-        dialog = Gtk.Window(
-            title="Attach to FSA claim", transient_for=self.get_root(), modal=True
-        )
+        dialog = Gtk.Window(title="Attach to FSA claim", transient_for=self.get_root(), modal=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(12)
         dialog.set_child(box)
-        claim_pick = Gtk.DropDown.new_from_strings([
-            (
-                f"{item.claim.service_date} "
-                f"{item.claim.provider or item.claim.description or 'FSA claim'} "
-                f"— {item.reason}"
+        claim_pick = Gtk.DropDown.new_from_strings(
+            [
+                (
+                    f"{item.claim.service_date} "
+                    f"{item.claim.provider or item.claim.description or 'FSA claim'} "
+                    f"— {item.reason}"
+                )
+                for item in claims
+            ]
+        )
+        role_pick = Gtk.DropDown.new_from_strings(
+            [
+                f"{role.replace('_', ' ').title()} · {account}"
+                for role, _split, account, _years in roles
+            ]
+        )
+        year_pick = Gtk.DropDown.new_from_strings(
+            ["Auto funding year"]
+            + sorted(
+                {year.isoformat() for _role, _split, _account, years in roles for year in years}
             )
-            for item in claims
-        ])
-        role_pick = Gtk.DropDown.new_from_strings([
-            f"{role.replace('_', ' ').title()} · {account}"
-            for role, _split, account, _years in roles
-        ])
-        year_pick = Gtk.DropDown.new_from_strings(["Auto funding year"] + sorted({
-            year.isoformat() for _role, _split, _account, years in roles for year in years
-        }))
+        )
         rows = (("Claim", claim_pick), ("As", role_pick), ("Funding year", year_pick))
         for label, widget in rows:
             row = Gtk.Box(spacing=8)
@@ -375,11 +377,16 @@ class ResolutionView(BaseView):
                 model = year_pick.get_model()
                 item = model.get_string(selected_year)
                 from datetime import date as _date
+
                 year = _date.fromisoformat(item)
             try:
                 fsa_claims.attach_transaction_to_claim(
-                    self.db, claim.handle, transaction.handle, role=role,
-                    split_handle=split, funding_year_start=year,
+                    self.db,
+                    claim.handle,
+                    transaction.handle,
+                    role=role,
+                    split_handle=split,
+                    funding_year_start=year,
                 )
             except (KeyError, ValueError) as exc:
                 status.set_text(str(exc))

@@ -51,11 +51,26 @@ def build_gnucash_book(path: Path) -> None:
     usd = uuid.uuid4().hex
     write_commodity(conn, usd)
 
-    ids = {name: uuid.uuid4().hex for name in (
-        "root", "assets", "checking", "savings", "brokerage", "liab", "card",
-        "income", "salary", "expenses", "rent", "food", "utilities", "equity",
-        "opening",
-    )}
+    ids = {
+        name: uuid.uuid4().hex
+        for name in (
+            "root",
+            "assets",
+            "checking",
+            "savings",
+            "brokerage",
+            "liab",
+            "card",
+            "income",
+            "salary",
+            "expenses",
+            "rent",
+            "food",
+            "utilities",
+            "equity",
+            "opening",
+        )
+    }
     tree = [
         ("root", "Root Account", "ROOT", None, 1),
         ("assets", "Assets", "ASSET", "root", 1),
@@ -75,30 +90,63 @@ def build_gnucash_book(path: Path) -> None:
     ]
     for key, name, atype, parent, placeholder in tree:
         write_account(
-            conn, ids[key], name, atype,
-            ids[parent] if parent else None, usd, placeholder=placeholder,
+            conn,
+            ids[key],
+            name,
+            atype,
+            ids[parent] if parent else None,
+            usd,
+            placeholder=placeholder,
         )
 
-    write_transaction(conn, uuid.uuid4().hex, usd, date(2025, 12, 31), "Opening balances", [
-        (ids["checking"], 850000, 100, ""),
-        (ids["savings"], 1500000, 100, ""),
-        (ids["brokerage"], 8200000, 100, ""),
-        (ids["card"], -230000, 100, ""),
-        (ids["opening"], -10320000, 100, ""),
-    ])
+    write_transaction(
+        conn,
+        uuid.uuid4().hex,
+        usd,
+        date(2025, 12, 31),
+        "Opening balances",
+        [
+            (ids["checking"], 850000, 100, ""),
+            (ids["savings"], 1500000, 100, ""),
+            (ids["brokerage"], 8200000, 100, ""),
+            (ids["card"], -230000, 100, ""),
+            (ids["opening"], -10320000, 100, ""),
+        ],
+    )
     for month in (1, 2, 3):
-        write_transaction(conn, uuid.uuid4().hex, usd, date(2026, month, 25), "Payroll", [
-            (ids["checking"], 620000, 100, ""),
-            (ids["salary"], -620000, 100, ""),
-        ])
-        write_transaction(conn, uuid.uuid4().hex, usd, date(2026, month, 1), "Rent", [
-            (ids["rent"], 210000, 100, ""),
-            (ids["checking"], -210000, 100, ""),
-        ])
-        write_transaction(conn, uuid.uuid4().hex, usd, date(2026, month, 12), "Supermarket", [
-            (ids["food"], 68000 + month * 1500, 100, ""),
-            (ids["checking"], -(68000 + month * 1500), 100, ""),
-        ])
+        write_transaction(
+            conn,
+            uuid.uuid4().hex,
+            usd,
+            date(2026, month, 25),
+            "Payroll",
+            [
+                (ids["checking"], 620000, 100, ""),
+                (ids["salary"], -620000, 100, ""),
+            ],
+        )
+        write_transaction(
+            conn,
+            uuid.uuid4().hex,
+            usd,
+            date(2026, month, 1),
+            "Rent",
+            [
+                (ids["rent"], 210000, 100, ""),
+                (ids["checking"], -210000, 100, ""),
+            ],
+        )
+        write_transaction(
+            conn,
+            uuid.uuid4().hex,
+            usd,
+            date(2026, month, 12),
+            "Supermarket",
+            [
+                (ids["food"], 68000 + month * 1500, 100, ""),
+                (ids["checking"], -(68000 + month * 1500), 100, ""),
+            ],
+        )
     conn.commit()
     conn.close()
 
@@ -127,8 +175,10 @@ def main() -> int:
 
     rule("2. Register for the checking account")
     for row in ledger.register(db, checking)[:6]:
-        print(f"   {row.post_date}  {row.description:<20} "
-              f"{row.amount.format('$'):>12}  {row.running.format('$'):>12}")
+        print(
+            f"   {row.post_date}  {row.description:<20} "
+            f"{row.amount.format('$'):>12}  {row.running.format('$'):>12}"
+        )
 
     rule("3. Budget versus actual, first quarter")
     budget = Budget(name="2026", start=date(2026, 1, 1), periods=12)
@@ -147,8 +197,10 @@ def main() -> int:
         first_quarter = line.periods[:3]
         budgeted = sum((p.budgeted for p in first_quarter), Money(0))
         actual = sum((p.actual for p in first_quarter), Money(0))
-        print(f"   {line.name:<24}{budgeted.format('$'):>12}"
-              f"{actual.format('$'):>12}{(actual - budgeted).format('$'):>12}")
+        print(
+            f"   {line.name:<24}{budgeted.format('$'):>12}"
+            f"{actual.format('$'):>12}{(actual - budgeted).format('$'):>12}"
+        )
     print(f"   Planned monthly surplus: {report.net_cash_flow(3).format('$')}")
 
     rule("4. Add a scheduled monthly investment")
@@ -170,23 +222,34 @@ def main() -> int:
 
     rule("5. Save two scenarios and project twenty years")
     base = Scenario(
-        name="Base case", start=date(2026, 4, 1), years=20,
-        basis=ProjectionBasis.COMBINED, budget=budget.handle,
+        name="Base case",
+        start=date(2026, 4, 1),
+        years=20,
+        basis=ProjectionBasis.COMBINED,
+        budget=budget.handle,
         assumptions=Assumptions(
-            income_growth="0.03", expense_inflation="0.025",
-            investment_return="0.06", cash_interest="0.02",
+            income_growth="0.03",
+            expense_inflation="0.025",
+            investment_return="0.06",
+            cash_interest="0.02",
         ),
     )
     stress = Scenario(
-        name="Long recession", start=date(2026, 4, 1), years=20,
-        basis=ProjectionBasis.COMBINED, budget=budget.handle,
+        name="Long recession",
+        start=date(2026, 4, 1),
+        years=20,
+        basis=ProjectionBasis.COMBINED,
+        budget=budget.handle,
         assumptions=Assumptions(
-            income_growth="0.00", expense_inflation="0.05",
-            investment_return="0.01", cash_interest="0.005",
+            income_growth="0.00",
+            expense_inflation="0.05",
+            investment_return="0.01",
+            cash_interest="0.005",
         ),
     )
-    stress.add_one_off(date(2028, 6, 1), accounts["Expenses:Utilities"],
-                       "18000.00", "Roof replacement")
+    stress.add_one_off(
+        date(2028, 6, 1), accounts["Expenses:Utilities"], "18000.00", "Roof replacement"
+    )
     with db.transaction("Save scenarios") as txn:
         db.add_scenario(base, txn)
         db.add_scenario(stress, txn)
@@ -197,27 +260,29 @@ def main() -> int:
         with db.transaction("Set return assumption") as txn:
             db.commit_account(account, txn)
 
-    print(f"   {'scenario':<18}{'yr 5 net worth':>18}{'yr 10':>16}{'yr 20':>16}"
-          f"{'lowest cash':>16}")
+    print(f"   {'scenario':<18}{'yr 5 net worth':>18}{'yr 10':>16}{'yr 20':>16}{'lowest cash':>16}")
     projections = {}
     for scenario in (base, stress):
         result = projection.project(db, scenario)
         projections[scenario.name] = result
         year_end = result.year_end("net_worth")
-        print(f"   {scenario.name:<18}{year_end[4].format('$'):>18}"
-              f"{year_end[9].format('$'):>16}{year_end[19].format('$'):>16}"
-              f"{result.minimum_cash.format('$'):>16}")
+        print(
+            f"   {scenario.name:<18}{year_end[4].format('$'):>18}"
+            f"{year_end[9].format('$'):>16}{year_end[19].format('$'):>16}"
+            f"{result.minimum_cash.format('$'):>16}"
+        )
 
     rule("6. What the difference is worth")
     rows = projection.compare(projections["Base case"], projections["Long recession"])
     for row in rows[11::60]:
-        print(f"   {row['label']:<10} base {row['base_net_worth'].format('$'):>16}"
-              f"   recession {row['other_net_worth'].format('$'):>16}"
-              f"   gap {row['net_worth_delta'].format('$'):>16}")
+        print(
+            f"   {row['label']:<10} base {row['base_net_worth'].format('$'):>16}"
+            f"   recession {row['other_net_worth'].format('$'):>16}"
+            f"   gap {row['net_worth_delta'].format('$'):>16}"
+        )
 
     shortfall = projections["Long recession"].first_shortfall()
-    print(f"\n   Recession case cash shortfall: "
-          f"{shortfall.label if shortfall else 'none'}")
+    print(f"\n   Recession case cash shortfall: {shortfall.label if shortfall else 'none'}")
 
     db.close()
     print(f"\nBook written to {workdir}")

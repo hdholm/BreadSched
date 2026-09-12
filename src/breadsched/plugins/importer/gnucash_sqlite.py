@@ -198,7 +198,8 @@ def import_book(
             _import_transactions(conn, sink, report)
             LOG.debug(
                 "imported %d transactions, skipped %d",
-                result.transactions, result.skipped,
+                result.transactions,
+                result.skipped,
             )
             if include_scheduled:
                 report("Reading scheduled transactions", 0)
@@ -235,9 +236,7 @@ def book_roots(conn: sqlite3.Connection) -> tuple[str | None, str | None]:
     """
     if not _table_exists(conn, "books"):
         return None, None
-    row = conn.execute(
-        "SELECT root_account_guid, root_template_guid FROM books LIMIT 1"
-    ).fetchone()
+    row = conn.execute("SELECT root_account_guid, root_template_guid FROM books LIMIT 1").fetchone()
     if row is None:
         return None, None
     return row["root_account_guid"], row["root_template_guid"]
@@ -324,8 +323,10 @@ def _import_accounts(conn: sqlite3.Connection, sink: ImportSink) -> None:
             ).fetchone()
             if source is not None:
                 commodity = sink.commodity(
-                    source["namespace"], source["mnemonic"],
-                    source["fullname"] or "", source["fraction"] or 100,
+                    source["namespace"],
+                    source["mnemonic"],
+                    source["fullname"] or "",
+                    source["fraction"] or 100,
                 )
         notes = ""
         if _table_exists(conn, "slots"):
@@ -338,7 +339,9 @@ def _import_accounts(conn: sqlite3.Connection, sink: ImportSink) -> None:
                 notes = note_row["string_val"]
         LOG.debug(
             "account %s (%s) parent=%s",
-            row["name"], row["account_type"], (row.get("parent_guid") or "-")[:8],
+            row["name"],
+            row["account_type"],
+            (row.get("parent_guid") or "-")[:8],
         )
         sink.account(
             guid=row["guid"],
@@ -411,7 +414,8 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
         if row["guid"] not in splits_by_txn:
             LOG.debug(
                 "transaction %s (%s) has no usable splits in the source",
-                row["guid"][:8], row["description"] or "",
+                row["guid"][:8],
+                row["description"] or "",
             )
         try:
             post_date = parse_gnc_date(row["post_date"])
@@ -459,12 +463,13 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
                 recurrence["recurrence_weekend_adjust"]
                 if "recurrence_weekend_adjust" in recurrence.keys()
                 else "none"
-            ) or "none",
+            )
+            or "none",
             WeekendAdjust.NONE,
         )
-        day_of_month = -1 if "end of month" in (
-            recurrence["recurrence_period_type"] or ""
-        ).lower() else None
+        day_of_month = (
+            -1 if "end of month" in (recurrence["recurrence_period_type"] or "").lower() else None
+        )
 
         sched = ScheduledTransaction(
             handle=row["guid"],

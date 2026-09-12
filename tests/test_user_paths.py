@@ -9,9 +9,10 @@ from breadsched.gen.utils.user_paths import (
 
 def test_windows_config_uses_appdata(tmp_path):
     appdata = tmp_path / "Roaming"
-    assert config_directory(
-        environ={"APPDATA": str(appdata)}, home=tmp_path, platform="win32"
-    ) == appdata / "breadsched"
+    assert (
+        config_directory(environ={"APPDATA": str(appdata)}, home=tmp_path, platform="win32")
+        == appdata / "breadsched"
+    )
 
 
 def test_macos_config_uses_application_support(tmp_path):
@@ -28,9 +29,12 @@ def test_xdg_documents_file_is_honoured(tmp_path):
     (config / "user-dirs.dirs").write_text(
         'XDG_DOCUMENTS_DIR="$HOME/Household Files"\n', encoding="utf-8"
     )
-    assert documents_directory(
-        environ={"XDG_CONFIG_HOME": str(config)}, home=tmp_path, platform="linux"
-    ) == documents
+    assert (
+        documents_directory(
+            environ={"XDG_CONFIG_HOME": str(config)}, home=tmp_path, platform="linux"
+        )
+        == documents
+    )
 
 
 def test_windows_onedrive_documents_is_detected(tmp_path):

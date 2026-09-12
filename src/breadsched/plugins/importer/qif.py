@@ -103,7 +103,6 @@ def _parse_amount(raw: str, number_format: NumberFormat) -> Money:
         raise ValueError(f"unrecognised QIF amount {raw!r}") from exc
 
 
-
 def _date_texts(records: list[list[str]]) -> list[str]:
     values: list[str] = []
     for record in records:
@@ -270,9 +269,7 @@ def import_book(
             return result
         if detected_format is None:
             detected_format = "dot"
-            result.warn(
-                "QIF number format is ambiguous; assuming period decimal separator"
-            )
+            result.warn("QIF number format is ambiguous; assuming period decimal separator")
     else:
         detected_format = number_format
     if date_format == "auto":
@@ -332,9 +329,7 @@ def import_book(
             if split_rows:
                 for item in split_rows:
                     try:
-                        split_amount = _parse_amount(
-                            item.get("amount", ""), detected_format
-                        )
+                        split_amount = _parse_amount(item.get("amount", ""), detected_format)
                     except ValueError as exc:
                         result.skip(str(exc), fields.get("P", "transaction"))
                         raw_splits = []
@@ -352,17 +347,19 @@ def import_book(
                 if not raw_splits:
                     continue
             else:
-                target = _category_handle(
-                    sink, db, fields.get("L", "Uncategorized"), amount
-                )
+                target = _category_handle(sink, db, fields.get("L", "Uncategorized"), amount)
                 raw_splits.append({"account": target, "value": -amount})
             split_identity = tuple(
-                (item["account"], str(item["value"]), item.get("memo", ""))
-                for item in raw_splits
+                (item["account"], str(item["value"]), item.get("memo", "")) for item in raw_splits
             )
             identity = (
-                current_name, post_date.isoformat(), str(amount), fields.get("P", ""),
-                fields.get("M", ""), fields.get("N", ""), split_identity,
+                current_name,
+                post_date.isoformat(),
+                str(amount),
+                fields.get("P", ""),
+                fields.get("M", ""),
+                fields.get("N", ""),
+                split_identity,
             )
             occurrence = identity_counts.get(identity, 0) + 1
             identity_counts[identity] = occurrence

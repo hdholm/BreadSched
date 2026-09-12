@@ -34,9 +34,7 @@ class SaveScenarioDialog(Gtk.Window):
         box.append(Gtk.Label(label="Name", xalign=0))
         box.append(self.name_entry)
 
-        self.description_entry = Gtk.Entry(
-            placeholder_text="What this scenario assumes, and why"
-        )
+        self.description_entry = Gtk.Entry(placeholder_text="What this scenario assumes, and why")
         self.description_entry.set_text(scenario.description)
         box.append(Gtk.Label(label="Description", xalign=0))
         box.append(self.description_entry)

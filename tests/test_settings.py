@@ -64,9 +64,9 @@ class TestReadingAndWriting:
         settings.save()
         settings.remove("general", "last_book")
         settings.save()
-        assert Settings("test", directory=tmp_path / "breadsched").get(
-            "general", "last_book"
-        ) is None
+        assert (
+            Settings("test", directory=tmp_path / "breadsched").get("general", "last_book") is None
+        )
 
     def test_the_directory_is_created_on_demand(self, tmp_path):
         target = tmp_path / "deep" / "nested" / "breadsched"
@@ -93,9 +93,10 @@ class TestResilience:
         store = Settings("test", directory=directory)
         store.set("general", "last_book", "/books/new.breadsched")
         assert store.save() is True
-        assert Settings("test", directory=directory).get(
-            "general", "last_book"
-        ) == "/books/new.breadsched"
+        assert (
+            Settings("test", directory=directory).get("general", "last_book")
+            == "/books/new.breadsched"
+        )
 
     def test_saving_leaves_no_temporary_file_behind(self, settings):
         settings.set("general", "x", "1")

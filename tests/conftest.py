@@ -112,6 +112,7 @@ def db():
 def book(db):
     """A small household chart of accounts, returned as a namespace of handles."""
     with db.transaction("Set up chart of accounts") as txn:
+
         def add(name, atype, parent=None, **kwargs):
             account = Account(name=name, atype=atype, parent=parent, **kwargs)
             db.add_account(account, txn)
@@ -195,9 +196,7 @@ def funded_book(db, book):
             txn,
         )
         db.add_transaction(
-            Transaction.simple(
-                date(2026, 2, 14), "Dinner out", book.groceries, book.card, "86.40"
-            ),
+            Transaction.simple(date(2026, 2, 14), "Dinner out", book.groceries, book.card, "86.40"),
             txn,
         )
     return book
@@ -225,9 +224,7 @@ def payday_schedule(db, book):
     sched = ScheduledTransaction(
         name="Salary",
         description="Fortnightly pay",
-        recurrence=Recurrence(
-            period=PeriodType.WEEK, interval=2, start=date(2026, 1, 2)
-        ),
+        recurrence=Recurrence(period=PeriodType.WEEK, interval=2, start=date(2026, 1, 2)),
         splits=[
             ScheduledSplit(book.checking, Money("1938.46")),
             ScheduledSplit(book.salary, Money("-1938.46")),
@@ -241,6 +238,7 @@ def payday_schedule(db, book):
 
 # -------------------------------------------------------------- GnuCash books
 
+
 @pytest.fixture
 def gnucash_sqlite_path(tmp_path):
     """A GnuCash SQLite3 book with accounts, transactions and a schedule."""
@@ -252,14 +250,32 @@ def gnucash_sqlite_path(tmp_path):
     write_commodity(conn, usd)
 
     ids = SimpleNamespace(
-        currency=usd, root=new_guid(), assets=new_guid(), checking=new_guid(), card=new_guid(),
-        income=new_guid(), salary=new_guid(), expenses=new_guid(), rent=new_guid(), food=new_guid(),
-        template_root=new_guid(), template=new_guid(), sched=new_guid(),
+        currency=usd,
+        root=new_guid(),
+        assets=new_guid(),
+        checking=new_guid(),
+        card=new_guid(),
+        income=new_guid(),
+        salary=new_guid(),
+        expenses=new_guid(),
+        rent=new_guid(),
+        food=new_guid(),
+        template_root=new_guid(),
+        template=new_guid(),
+        sched=new_guid(),
     )
     write_account(conn, ids.root, "Root Account", "ROOT", None, usd)
     write_account(conn, ids.assets, "Assets", "ASSET", ids.root, usd, placeholder=1)
-    write_account(conn, ids.checking, "Checking Account", "BANK", ids.assets, usd,
-                 code="1010", description="Everyday account")
+    write_account(
+        conn,
+        ids.checking,
+        "Checking Account",
+        "BANK",
+        ids.assets,
+        usd,
+        code="1010",
+        description="Everyday account",
+    )
     conn.execute(
         "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
         (ids.checking, "notes", 4, "Generic account note"),
@@ -271,20 +287,41 @@ def gnucash_sqlite_path(tmp_path):
     write_account(conn, ids.rent, "Rent", "EXPENSE", ids.expenses, usd)
     write_account(conn, ids.food, "Groceries", "EXPENSE", ids.expenses, usd)
 
-    write_transaction(conn, new_guid(), usd, date(2026, 1, 25), "Payroll deposit", [
-        (ids.checking, 420000, 100, ""),
-        (ids.salary, -420000, 100, ""),
-    ])
-    write_transaction(conn, new_guid(), usd, date(2026, 1, 2), "Rent", [
-        (ids.rent, 180000, 100, "January"),
-        (ids.checking, -180000, 100, ""),
-    ])
+    write_transaction(
+        conn,
+        new_guid(),
+        usd,
+        date(2026, 1, 25),
+        "Payroll deposit",
+        [
+            (ids.checking, 420000, 100, ""),
+            (ids.salary, -420000, 100, ""),
+        ],
+    )
+    write_transaction(
+        conn,
+        new_guid(),
+        usd,
+        date(2026, 1, 2),
+        "Rent",
+        [
+            (ids.rent, 180000, 100, "January"),
+            (ids.checking, -180000, 100, ""),
+        ],
+    )
     # A three-split transaction: the card pays part of a grocery run.
-    write_transaction(conn, new_guid(), usd, date(2026, 1, 14), "Supermarket", [
-        (ids.food, 12550, 100, ""),
-        (ids.checking, -5000, 100, ""),
-        (ids.card, -7550, 100, ""),
-    ])
+    write_transaction(
+        conn,
+        new_guid(),
+        usd,
+        date(2026, 1, 14),
+        "Supermarket",
+        [
+            (ids.food, 12550, 100, ""),
+            (ids.checking, -5000, 100, ""),
+            (ids.card, -7550, 100, ""),
+        ],
+    )
 
     # Scheduled transaction: monthly rent, with the real account carried on a slot.
     write_account(conn, ids.template_root, "Template Root", "ROOT", None, usd)
@@ -301,8 +338,7 @@ def gnucash_sqlite_path(tmp_path):
         split_guid = new_guid()
         conn.execute(
             "INSERT INTO splits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-            (split_guid, template_txn, account, "", "", "n", None, value, 100,
-             value, 100, None),
+            (split_guid, template_txn, account, "", "", "n", None, value, 100, value, 100, None),
         )
         conn.execute(
             "INSERT INTO slots (obj_guid,name,slot_type,guid_val) VALUES (?,?,?,?)",
@@ -310,8 +346,7 @@ def gnucash_sqlite_path(tmp_path):
         )
     conn.execute(
         "INSERT INTO schedxactions VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        (ids.sched, "Monthly rent", 1, "20260101", None, None, 0, 0, 1, 0, 3, 0, 0,
-         ids.template),
+        (ids.sched, "Monthly rent", 1, "20260101", None, None, 0, 0, 1, 0, 3, 0, 0, ids.template),
     )
     conn.execute(
         "INSERT INTO recurrences (obj_guid,recurrence_mult,recurrence_period_type,"
@@ -509,12 +544,23 @@ GNUCASH_XML = """<?xml version="1.0" encoding="utf-8" ?>
 def gnucash_xml_path(tmp_path):
     """A gzip-compressed GnuCash XML book, the format GnuCash saves by default."""
     ids = SimpleNamespace(
-        root=new_guid(), bank=new_guid(), wages=new_guid(), util=new_guid(),
-        txn1=new_guid(), txn2=new_guid(),
-        split1=new_guid(), split2=new_guid(), split3=new_guid(), split4=new_guid(),
+        root=new_guid(),
+        bank=new_guid(),
+        wages=new_guid(),
+        util=new_guid(),
+        txn1=new_guid(),
+        txn2=new_guid(),
+        split1=new_guid(),
+        split2=new_guid(),
+        split3=new_guid(),
+        split4=new_guid(),
         # GnuCash names each template account after the schedule it backs.
-        tmpl_root=new_guid(), tmpl_acct=new_guid(), tmpl_txn=new_guid(),
-        tmpl_split1=new_guid(), tmpl_split2=new_guid(), sx=new_guid(),
+        tmpl_root=new_guid(),
+        tmpl_acct=new_guid(),
+        tmpl_txn=new_guid(),
+        tmpl_split1=new_guid(),
+        tmpl_split2=new_guid(),
+        sx=new_guid(),
     )
     body = GNUCASH_XML.format(**vars(ids))
     path = tmp_path / "household-xml.gnucash"

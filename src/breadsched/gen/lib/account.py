@@ -86,9 +86,7 @@ class FsaFundingYear:
             "start": self.start.isoformat(),
             "through": self.through.isoformat(),
             "election": [self.election.numerator, self.election.denominator],
-            "runout_through": (
-                self.runout_through.isoformat() if self.runout_through else None
-            ),
+            "runout_through": (self.runout_through.isoformat() if self.runout_through else None),
         }
 
     @classmethod
@@ -209,7 +207,7 @@ class Account(PrimaryObject):
         self.fsa_years: list[FsaFundingYear] = []
 
         # Projection hints.  These are what turn a chart of accounts into a model.
-        self.annual_return: Decimal = Decimal("0")   # investment growth, e.g. 0.06
+        self.annual_return: Decimal = Decimal("0")  # investment growth, e.g. 0.06
         self.annual_interest: Decimal = Decimal("0")  # cost of a liability, e.g. 0.1899
         self.exclude_from_projection: bool = False
 
@@ -275,7 +273,8 @@ class Account(PrimaryObject):
             "pays_in_full": self.pays_in_full,
             "usual_payment": (
                 [self.usual_payment.numerator, self.usual_payment.denominator]
-                if self.usual_payment is not None else None
+                if self.usual_payment is not None
+                else None
             ),
             "payment_day": self.payment_day,
         }
@@ -293,9 +292,7 @@ class Account(PrimaryObject):
         self.commodity_scu = int(raw_scu) if raw_scu is not None else None
         self.notes = data.get("notes", "")
         self.planning_role = AccountPlanningRole(data.get("planning_role", "ordinary"))
-        self.fsa_years = [
-            FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])
-        ]
+        self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))
         self.exclude_from_projection = data.get("exclude_from_projection", False)

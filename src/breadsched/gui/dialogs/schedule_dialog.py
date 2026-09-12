@@ -111,8 +111,7 @@ class ScheduleDialog(Gtk.Window):
         self._category_ledger_direction: int | None = None
         self._frequencies = list(_FREQUENCIES)
         if source is not None and not any(
-            period is source.recurrence.period
-            and interval == source.recurrence.interval
+            period is source.recurrence.period and interval == source.recurrence.interval
             for _label, period, interval in self._frequencies
         ):
             self._frequencies.append(
@@ -146,8 +145,10 @@ class ScheduleDialog(Gtk.Window):
         row += 1
 
         self.kind = Gtk.DropDown.new_from_strings(
-            ["Commitment - posted to the ledger when due",
-             "Estimate - shapes budgets only, never posted"]
+            [
+                "Commitment - posted to the ledger when due",
+                "Estimate - shapes budgets only, never posted",
+            ]
         )
         grid.attach(Gtk.Label(label="Kind", xalign=0), 0, row, 1, 1)
         grid.attach(self.kind, 1, row, 1, 1)
@@ -215,9 +216,7 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.additional_splits, 1, row, 1, 1)
         row += 1
 
-        self.amount_changes_editor = DatedAmountListEditor(
-            self._validate, "Add future amount"
-        )
+        self.amount_changes_editor = DatedAmountListEditor(self._validate, "Add future amount")
         label = Gtk.Label(label="Future amounts", xalign=0, valign=Gtk.Align.START)
         grid.attach(label, 0, row, 1, 1)
         grid.attach(self.amount_changes_editor, 1, row, 1, 1)
@@ -241,9 +240,7 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.occurrence_adjustments_editor, 1, row, 1, 1)
         row += 1
 
-        self.frequency = Gtk.DropDown.new_from_strings(
-            [item[0] for item in self._frequencies]
-        )
+        self.frequency = Gtk.DropDown.new_from_strings([item[0] for item in self._frequencies])
         self.frequency.set_selected(3)
         self.frequency.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Frequency", xalign=0), 0, row, 1, 1)
@@ -256,9 +253,7 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.start_entry, 1, row, 1, 1)
         row += 1
 
-        self.ends = Gtk.DropDown.new_from_strings(
-            ["Never", "On date", "After occurrences"]
-        )
+        self.ends = Gtk.DropDown.new_from_strings(["Never", "On date", "After occurrences"])
         self.ends.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Ends", xalign=0), 0, row, 1, 1)
         grid.attach(self.ends, 1, row, 1, 1)
@@ -286,9 +281,7 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.weekend, 1, row, 1, 1)
         row += 1
 
-        self.auto_check = Gtk.CheckButton(
-            label="Post automatically once the date arrives"
-        )
+        self.auto_check = Gtk.CheckButton(label="Post automatically once the date arrives")
         grid.attach(self.auto_check, 1, row, 1, 1)
 
         self.formula_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -335,9 +328,7 @@ class ScheduleDialog(Gtk.Window):
                     self._load_source(source)
             self._validate()
 
-    def _detail_text(
-        self, source: ScheduledTransaction, reason: str
-    ) -> str:
+    def _detail_text(self, source: ScheduledTransaction, reason: str) -> str:
         """Return a lossless human-readable summary for an unsupported schedule."""
         recurrence = source.recurrence
         lines = [
@@ -353,10 +344,7 @@ class ScheduleDialog(Gtk.Window):
             f"Recurrence: {recurrence.describe()}",
             f"First due: {recurrence.start.isoformat()}",
             f"End date: {recurrence.end.isoformat() if recurrence.end else '(none)'}",
-            (
-                "Occurrence limit: "
-                f"{recurrence.count if recurrence.count is not None else '(none)'}"
-            ),
+            (f"Occurrence limit: {recurrence.count if recurrence.count is not None else '(none)'}"),
             (
                 "Day of month: "
                 f"{recurrence.day_of_month if recurrence.day_of_month is not None else '(default)'}"
@@ -370,50 +358,30 @@ class ScheduleDialog(Gtk.Window):
                 )
             ),
             f"Weekend adjustment: {recurrence.weekend_adjust.value}",
-            (
-                "Last posted: "
-                f"{source.last_posted.isoformat() if source.last_posted else '(none)'}"
-            ),
+            (f"Last posted: {source.last_posted.isoformat() if source.last_posted else '(none)'}"),
             "",
             "Splits:",
         ]
         for index, split in enumerate(source.splits, 1):
             account = self.db.get_account(split.account)
-            account_name = (
-                self.db.full_name(account) if account is not None else split.account
-            )
-            value = (
-                f"formula {split.formula!r}"
-                if split.formula
-                else str(split.amount or Money(0))
-            )
-            purpose = (
-                split.planning_flow.label
-                if split.planning_flow is not None
-                else "(none)"
-            )
+            account_name = self.db.full_name(account) if account is not None else split.account
+            value = f"formula {split.formula!r}" if split.formula else str(split.amount or Money(0))
+            purpose = split.planning_flow.label if split.planning_flow is not None else "(none)"
             memo = split.memo or "(none)"
             lines.append(
                 f"  {index}. {account_name}: {value}; planning purpose {purpose}; memo {memo}"
             )
         if source.variables:
             lines.extend(["", "Formula variables:"])
-            lines.extend(
-                f"  {key} = {value}"
-                for key, value in sorted(source.variables.items())
-            )
+            lines.extend(f"  {key} = {value}" for key, value in sorted(source.variables.items()))
         if source.amount_changes:
             lines.extend(["", "Future amount changes:"])
             lines.extend(
-                f"  {item.start.isoformat()}: {item.amount}"
-                for item in source.amount_changes
+                f"  {item.start.isoformat()}: {item.amount}" for item in source.amount_changes
             )
         if source.seasonal_amounts:
             lines.extend(["", "Seasonal month amounts:"])
-            lines.extend(
-                f"  month {item.month}: {item.amount}"
-                for item in source.seasonal_amounts
-            )
+            lines.extend(f"  month {item.month}: {item.amount}" for item in source.seasonal_amounts)
         if source.skipped:
             lines.extend(["", "Skipped occurrences:"])
             lines.extend(f"  {when.isoformat()}" for when in source.skipped)
@@ -424,7 +392,6 @@ class ScheduleDialog(Gtk.Window):
                 for item in source.occurrence_adjustments
             )
         return "\n".join(lines)
-
 
     def _load_formula_source(self, source: ScheduledTransaction) -> None:
         """Load editable schedule metadata while preserving formula-owned values."""
@@ -438,10 +405,7 @@ class ScheduleDialog(Gtk.Window):
             )
         )
         for index, (_label, period, interval) in enumerate(self._frequencies):
-            if (
-                source.recurrence.period is period
-                and source.recurrence.interval == interval
-            ):
+            if source.recurrence.period is period and source.recurrence.interval == interval:
                 self.frequency.set_selected(index)
                 break
         self.start_entry.set_text(source.recurrence.start.isoformat())
@@ -547,8 +511,7 @@ class ScheduleDialog(Gtk.Window):
         formulas = [entry.get_text() for _index, entry in self._formula_entries]
         return (
             formulas != self._formula_originals
-            or self.formula_variables_entry.get_text().strip()
-            != self._formula_variables_original
+            or self.formula_variables_entry.get_text().strip() != self._formula_variables_original
         )
 
     def _validate_formula_inputs(self) -> str | None:
@@ -585,17 +548,11 @@ class ScheduleDialog(Gtk.Window):
                 continue
             parts.append((account, split))
         flow = next(
-            (
-                item
-                for item in parts
-                if item[0].account_class.value in {"income", "expense"}
-            ),
+            (item for item in parts if item[0].account_class.value in {"income", "expense"}),
             None,
         )
         if flow is None:
-            planning_flows = [
-                item for item in parts if item[1].planning_flow is not None
-            ]
+            planning_flows = [item for item in parts if item[1].planning_flow is not None]
             if planning_flows:
                 flow = planning_flows[0]
         if flow is None:
@@ -698,11 +655,7 @@ class ScheduleDialog(Gtk.Window):
                         if split.planning_flow is not None
                         else resolved * account.sign()
                     )
-                    direction_index = (
-                        1
-                        if split.planning_flow is None and normal_amount < 0
-                        else 0
-                    )
+                    direction_index = 1 if split.planning_flow is None and normal_amount < 0 else 0
                     extra_values.append(
                         (
                             account_index,
@@ -715,10 +668,7 @@ class ScheduleDialog(Gtk.Window):
                 self.additional_splits.set_values(extra_values)
 
         for index, (_label, period, interval) in enumerate(self._frequencies):
-            if (
-                source.recurrence.period is period
-                and source.recurrence.interval == interval
-            ):
+            if source.recurrence.period is period and source.recurrence.interval == interval:
                 self.frequency.set_selected(index)
                 break
         self.start_entry.set_text(source.recurrence.start.isoformat())
@@ -738,8 +688,7 @@ class ScheduleDialog(Gtk.Window):
         )
         self.skipped_editor.set_values(source.skipped)
         self.occurrence_adjustments_editor.set_values(
-            (item.when, str(item.amount.to_decimal()))
-            for item in source.occurrence_adjustments
+            (item.when, str(item.amount.to_decimal())) for item in source.occurrence_adjustments
         )
 
     # ------------------------------------------------------------- validation
@@ -813,7 +762,6 @@ class ScheduleDialog(Gtk.Window):
             return None
         return value if value else None
 
-
     def _amount_changes(self) -> list[ScheduledAmountChange] | None:
         values = self.amount_changes_editor.values()
         if not values:
@@ -869,8 +817,7 @@ class ScheduleDialog(Gtk.Window):
         if len({item.when for item in changes}) != len(changes):
             return None
         if any(
-            item.when not in recurrence.occurrences(item.when, since=item.when)
-            for item in changes
+            item.when not in recurrence.occurrences(item.when, since=item.when) for item in changes
         ):
             return None
         return sorted(changes, key=lambda item: item.when)
@@ -896,9 +843,7 @@ class ScheduleDialog(Gtk.Window):
                 if formula_problem:
                     problems.append(formula_problem)
             self.save_button.set_sensitive(not problems)
-            self.status.set_text(
-                "; ".join(problems).capitalize() if problems else ""
-            )
+            self.status.set_text("; ".join(problems).capitalize() if problems else "")
             return
         if self._amount() is None:
             problems.append("enter an amount")
@@ -914,7 +859,11 @@ class ScheduleDialog(Gtk.Window):
         if self.category.get_selected() == self.funding.get_selected():
             problems.append("choose two different accounts")
         for (
-            _account_index, raw_amount, _purpose_index, _memo, _direction
+            _account_index,
+            raw_amount,
+            _purpose_index,
+            _memo,
+            _direction,
         ) in self.additional_splits.values():
             try:
                 extra_amount = Money(parse_user_amount(raw_amount))
@@ -964,9 +913,7 @@ class ScheduleDialog(Gtk.Window):
             schedule.recurrence = recurrence
             schedule.auto_create = self.auto_check.get_active()
             schedule.placeholder = self.kind.get_selected() == 1
-            schedule.growth_policy = _GROWTH_POLICIES[
-                self.growth_policy.get_selected()
-            ][1]
+            schedule.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
             schedule.skipped = self._skipped(recurrence) or []
             if self._formula_inputs_changed():
                 variables = self._formula_variables()
@@ -1000,7 +947,11 @@ class ScheduleDialog(Gtk.Window):
         extra_splits = []
         extra_total = Money(0)
         for (
-            account_index, raw_amount, purpose_index, memo, direction_index
+            account_index,
+            raw_amount,
+            purpose_index,
+            memo,
+            direction_index,
         ) in self.additional_splits.values():
             account = self._accounts[account_index]
             extra_amount = Money(parse_user_amount(raw_amount))
@@ -1032,14 +983,10 @@ class ScheduleDialog(Gtk.Window):
         ]
         schedule.auto_create = self.auto_check.get_active()
         schedule.placeholder = self.kind.get_selected() == 1
-        schedule.growth_policy = _GROWTH_POLICIES[
-            self.growth_policy.get_selected()
-        ][1]
+        schedule.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
         schedule.amount_changes = self._amount_changes() or []
         schedule.skipped = self._skipped(recurrence) or []
-        schedule.occurrence_adjustments = (
-            self._occurrence_adjustments(recurrence) or []
-        )
+        schedule.occurrence_adjustments = self._occurrence_adjustments(recurrence) or []
         return schedule
 
     def _on_save(self, _button) -> None:

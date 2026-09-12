@@ -196,9 +196,7 @@ class ScenarioManagerDialog(Gtk.Window):
         periods = len(scenario.assumption_periods)
         changes = len(scenario.schedule_overrides)
         if base:
-            self.timeline_summary.set_text(
-                "Dated assumption periods belong to saved scenarios."
-            )
+            self.timeline_summary.set_text("Dated assumption periods belong to saved scenarios.")
             self.event_summary.set_text(
                 "Base scenario uses the book's baseline scheduled and estimated activity."
             )
@@ -250,8 +248,7 @@ class ScenarioManagerDialog(Gtk.Window):
         accounts = []
         for account in self.db.iter_accounts():
             if account.account_class is AccountClass.LIABILITY or (
-                account.account_class is AccountClass.ASSET
-                and account.atype.is_investment
+                account.account_class is AccountClass.ASSET and account.atype.is_investment
             ):
                 accounts.append(account)
         return sorted(accounts, key=lambda item: self.db.full_name(item).casefold())
@@ -266,7 +263,10 @@ class ScenarioManagerDialog(Gtk.Window):
 
     def _on_edit_account_rates(self, _button) -> None:
         AccountAssumptionsDialog(
-            self, self.db, self._projection_accounts(), self._account_rates,
+            self,
+            self.db,
+            self._projection_accounts(),
+            self._account_rates,
             self._account_rates_saved,
         ).present()
 
@@ -342,13 +342,16 @@ class AccountAssumptionsDialog(Gtk.Window):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(16)
         self.set_child(outer)
-        outer.append(Gtk.Label(
-            label=(
-                "Blank values inherit the account's own annual rate when present, then "
-                "the scenario's investment or liability default."
-            ),
-            xalign=0, wrap=True,
-        ))
+        outer.append(
+            Gtk.Label(
+                label=(
+                    "Blank values inherit the account's own annual rate when present, then "
+                    "the scenario's investment or liability default."
+                ),
+                xalign=0,
+                wrap=True,
+            )
+        )
         grid = Gtk.Grid(column_spacing=12, row_spacing=6)
         for row, account in enumerate(accounts):
             grid.attach(Gtk.Label(label=db.full_name(account), xalign=0), 0, row, 1, 1)
@@ -477,9 +480,7 @@ class AssumptionTimelineDialog(Gtk.Window):
     @staticmethod
     def _changed_rates(period: AssumptionPeriod) -> str:
         names = [
-            label
-            for label, attribute in _ASSUMPTIONS
-            if getattr(period, attribute) is not None
+            label for label, attribute in _ASSUMPTIONS if getattr(period, attribute) is not None
         ]
         return ", ".join(names) if names else "no rate overrides"
 
@@ -599,8 +600,7 @@ class AssumptionPeriodDialog(Gtk.Window):
         accounts = []
         for account in self.db.iter_accounts():
             if account.account_class is AccountClass.LIABILITY or (
-                account.account_class is AccountClass.ASSET
-                and account.atype.is_investment
+                account.account_class is AccountClass.ASSET and account.atype.is_investment
             ):
                 accounts.append(account)
         return sorted(accounts, key=lambda item: self.db.full_name(item).casefold())
@@ -615,7 +615,10 @@ class AssumptionPeriodDialog(Gtk.Window):
 
     def _on_edit_account_rates(self, _button) -> None:
         AccountAssumptionsDialog(
-            self, self.db, self._projection_accounts(), self._account_rates,
+            self,
+            self.db,
+            self._projection_accounts(),
+            self._account_rates,
             self._account_rates_saved,
         ).present()
 
@@ -631,9 +634,7 @@ class AssumptionPeriodDialog(Gtk.Window):
             values: dict[str, Decimal | None] = {}
             for attribute, entry in self.rate_entries.items():
                 text = entry.get_text().strip()
-                values[attribute] = (
-                    None if not text else Decimal(text) / Decimal("100")
-                )
+                values[attribute] = None if not text else Decimal(text) / Decimal("100")
             period = AssumptionPeriod(
                 start,
                 end,

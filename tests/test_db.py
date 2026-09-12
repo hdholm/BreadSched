@@ -85,9 +85,7 @@ class TestWriterLock:
 
 
 class TestSyncedPathWarning:
-    def test_opening_book_under_known_sync_root_warns(
-        self, tmp_path, monkeypatch, breadsched_logs
-    ):
+    def test_opening_book_under_known_sync_root_warns(self, tmp_path, monkeypatch, breadsched_logs):
         synced = tmp_path / "OneDrive"
         synced.mkdir()
         monkeypatch.setenv("OneDrive", str(synced))
@@ -266,9 +264,7 @@ class TestSignals:
         seen = []
         db.connect("transaction-add", lambda handles: seen.append(handles))
         with db.transaction("Post") as txn:
-            posted = Transaction.simple(
-                date(2026, 1, 5), "R", book.rent, book.checking, "1"
-            )
+            posted = Transaction.simple(date(2026, 1, 5), "R", book.rent, book.checking, "1")
             db.add_transaction(posted, txn)
         assert seen == [[posted.handle]]
 
@@ -291,9 +287,7 @@ class TestSignals:
         with db.transaction("Import", batch=True) as txn:
             for day in range(1, 6):
                 db.add_transaction(
-                    Transaction.simple(
-                        date(2026, 1, day), "R", book.rent, book.checking, "1"
-                    ),
+                    Transaction.simple(date(2026, 1, day), "R", book.rent, book.checking, "1"),
                     txn,
                 )
         assert seen == []
@@ -301,9 +295,7 @@ class TestSignals:
     def test_a_failing_listener_does_not_break_the_write(self, db, book):
         db.connect("transaction-add", lambda handles: 1 / 0)
         with db.transaction("Post") as txn:
-            posted = Transaction.simple(
-                date(2026, 1, 5), "R", book.rent, book.checking, "1"
-            )
+            posted = Transaction.simple(date(2026, 1, 5), "R", book.rent, book.checking, "1")
             db.add_transaction(posted, txn)
         assert db.get_transaction(posted.handle) is not None
 
@@ -338,9 +330,7 @@ class TestQueries:
 
     def test_split_index_tracks_edits(self, db, book):
         with db.transaction("Post") as txn:
-            posted = Transaction.simple(
-                date(2026, 1, 5), "R", book.rent, book.checking, "100"
-            )
+            posted = Transaction.simple(date(2026, 1, 5), "R", book.rent, book.checking, "100")
             db.add_transaction(posted, txn)
         assert len(db.split_rows(book.rent)) == 1
 
@@ -352,9 +342,7 @@ class TestQueries:
 
     def test_deleting_a_transaction_clears_its_index_rows(self, db, book):
         with db.transaction("Post") as txn:
-            posted = Transaction.simple(
-                date(2026, 1, 5), "R", book.rent, book.checking, "100"
-            )
+            posted = Transaction.simple(date(2026, 1, 5), "R", book.rent, book.checking, "100")
             db.add_transaction(posted, txn)
         with db.transaction("Delete") as txn:
             db.remove_transaction(posted.handle, txn)
@@ -386,9 +374,12 @@ class TestSchemaMigration:
 
         assert db.get_metadata("schema_version") == 3
         assert db.get_account(handle).name == "Checking"
-        versions = [row[0] for row in db._require().execute(
-            "SELECT version FROM schema_migration ORDER BY version"
-        )]
+        versions = [
+            row[0]
+            for row in db._require().execute(
+                "SELECT version FROM schema_migration ORDER BY version"
+            )
+        ]
         assert versions == [2, 3]
         assert db.integrity_problems() == []
         db.close()
@@ -403,9 +394,12 @@ class TestSchemaMigration:
                 "SELECT value FROM metadata WHERE key='schema_version'"
             ).fetchone()[0]
             assert version == "1"
-            assert old.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migration'"
-            ).fetchone() is None
+            assert (
+                old.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migration'"
+                ).fetchone()
+                is None
+            )
         finally:
             old.close()
 
@@ -430,9 +424,7 @@ class TestSchemaMigration:
             "INSERT OR REPLACE INTO metadata(key,value) VALUES ('fsa_claims', ?)",
             (json.dumps([legacy_claim]),),
         )
-        conn.execute(
-            "INSERT OR REPLACE INTO metadata(key,value) VALUES ('schema_version', '2')"
-        )
+        conn.execute("INSERT OR REPLACE INTO metadata(key,value) VALUES ('schema_version', '2')")
         conn.execute("DELETE FROM schema_migration WHERE version=3")
         conn.commit()
         db.close()
@@ -468,12 +460,16 @@ class TestSchemaMigration:
 
         raw = sqlite3.connect(path)
         try:
-            assert raw.execute(
-                "SELECT value FROM metadata WHERE key='schema_version'"
-            ).fetchone()[0] == "1"
-            assert raw.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='should_rollback'"
-            ).fetchone() is None
+            assert (
+                raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]
+                == "1"
+            )
+            assert (
+                raw.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='should_rollback'"
+                ).fetchone()
+                is None
+            )
         finally:
             raw.close()
         assert (tmp_path / "failure.breadsched.pre-migration-v1.bak").exists()
@@ -736,9 +732,7 @@ class TestTransactionLifecycleSafety:
         path = tmp_path / "stray.breadsched"
         db = DbSQLite()
         db.load(str(path))
-        db._require().execute(
-            "INSERT INTO metadata(key,value) VALUES ('stray_uncommitted','no')"
-        )
+        db._require().execute("INSERT INTO metadata(key,value) VALUES ('stray_uncommitted','no')")
         db.close()
 
         reopened = DbSQLite()
@@ -887,9 +881,13 @@ class TestUserBackups:
         conn = sqlite3.connect(source)
         conn.execute(
             "INSERT INTO account(handle,parent,name,atype,blob) VALUES (?,?,?,?,?)",
-            ("bad", "missing", "Bad", "BANK", json.dumps({
-                "handle": "bad", "name": "Bad", "atype": "BANK", "parent": "missing"
-            })),
+            (
+                "bad",
+                "missing",
+                "Bad",
+                "BANK",
+                json.dumps({"handle": "bad", "name": "Bad", "atype": "BANK", "parent": "missing"}),
+            ),
         )
         conn.commit()
         conn.close()

@@ -27,6 +27,7 @@ __all__ = ["Settings", "config_directory"]
 
 LOG = get_logger(__name__)
 
+
 class Settings:
     """A small typed wrapper over an INI file.
 

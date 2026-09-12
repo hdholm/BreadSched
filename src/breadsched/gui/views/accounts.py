@@ -31,8 +31,15 @@ __all__ = ["AccountTreeView"]
 class AccountTreeView(BaseView):
     """Hierarchical account list with running totals."""
 
-    WATCHES = ("database-changed", "account-add", "account-update", "account-delete",
-               "transaction-add", "transaction-update", "transaction-delete")
+    WATCHES = (
+        "database-changed",
+        "account-add",
+        "account-update",
+        "account-delete",
+        "transaction-add",
+        "transaction-update",
+        "transaction-delete",
+    )
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -87,17 +94,14 @@ class AccountTreeView(BaseView):
                 sort_key=lambda a: a.planning_role.label.casefold(),
             )
         )
-        self.column_view.append_column(
-            column("Description", lambda a: a.description, expand=True)
-        )
-        self.column_view.append_column(
-            column("Balance", self._format_balance, numeric=True)
-        )
+        self.column_view.append_column(column("Description", lambda a: a.description, expand=True))
+        self.column_view.append_column(column("Balance", self._format_balance, numeric=True))
         self.column_view.connect("activate", self._on_activated)
 
         self._header.append(
             column_menu(
-                "accounts", self.column_view,
+                "accounts",
+                self.column_view,
                 getattr(self.manager.get_application(), "view_settings", None),
             )
         )
@@ -138,9 +142,7 @@ class AccountTreeView(BaseView):
         col.set_expand(True)
         col.set_resizable(True)
         col.set_sorter(
-            Gtk.CustomSorter.new(
-                _compare_by(lambda account: account.name.casefold(), None, False)
-            )
+            Gtk.CustomSorter.new(_compare_by(lambda account: account.name.casefold(), None, False))
         )
         return col
 
@@ -158,13 +160,11 @@ class AccountTreeView(BaseView):
         root = self.db.root_account()
         model = Gtk.TreeListModel.new(
             self._children_store(root.handle if root else None),
-            False,   # passthrough: rows are our Row objects, not raw items
-            True,    # autoexpand the first level
+            False,  # passthrough: rows are our Row objects, not raw items
+            True,  # autoexpand the first level
             self._create_child_model,
         )
-        self.column_view.set_model(
-            Gtk.SingleSelection(model=sorted_model(self.column_view, model))
-        )
+        self.column_view.set_model(Gtk.SingleSelection(model=sorted_model(self.column_view, model)))
         self._refresh_summary()
 
     def _children_store(self, parent: str | None) -> Gio.ListStore:
@@ -231,7 +231,9 @@ class AccountTreeView(BaseView):
 
         root = self.db.root_account()
         dialog = AccountDialog(
-            self.get_root(), self.db, account,
+            self.get_root(),
+            self.db,
+            account,
             default_parent=root.handle if root else None,
         )
         dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
@@ -267,8 +269,6 @@ class AccountTreeView(BaseView):
             tree_row.set_expanded(not tree_row.get_expanded())
             return
         self.manager.open_register(account.handle)
-
-
 
     def _on_zero_toggled(self, button: Gtk.ToggleButton) -> None:
         self._show_zero = not button.get_active()

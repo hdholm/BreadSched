@@ -157,7 +157,8 @@ class TransactionDialog(Gtk.Window):
         box.append(scroller)
 
         self.fsa_claims = [
-            claim for claim in fsa_claims.iter_claims(db)
+            claim
+            for claim in fsa_claims.iter_claims(db)
             if fsa_claims.claim_summary(db, claim).status
             is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
         ]
@@ -211,7 +212,8 @@ class TransactionDialog(Gtk.Window):
             if default_account:
                 here = next(
                     (
-                        index for index, account in enumerate(self.accounts)
+                        index
+                        for index, account in enumerate(self.accounts)
                         if account.handle == default_account
                     ),
                     0,
@@ -254,9 +256,7 @@ class TransactionDialog(Gtk.Window):
 
         if len({e.account_handle for e in self.splits}) < 2:
             problems.append("use at least two different accounts")
-        if any(
-            e.value() is None and not e.is_blank for e in self.splits
-        ):
+        if any(e.value() is None and not e.is_blank for e in self.splits):
             problems.append("check the amounts")
         try:
             date.fromisoformat(self.date_entry.get_text().strip())
@@ -284,9 +284,7 @@ class TransactionDialog(Gtk.Window):
             self.save_button.set_sensitive(False)
             return
         if residual:
-            self.status.set_text(
-                f"Out of balance by {residual.format(parens_negative=True)}"
-            )
+            self.status.set_text(f"Out of balance by {residual.format(parens_negative=True)}")
             self.status.add_css_class("negative")
             self.save_button.set_sensitive(False)
             return
@@ -304,9 +302,7 @@ class TransactionDialog(Gtk.Window):
 
         target = self.transaction if self.editing else Transaction()
         target.post_date = when
-        target.description = (
-            self.description_entry.get_text().strip() or "(no description)"
-        )
+        target.description = self.description_entry.get_text().strip() or "(no description)"
         target.num = self.num_entry.get_text().strip()
 
         splits: list[Split] = []

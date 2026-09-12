@@ -59,10 +59,10 @@ class TestDateParsing:
     @pytest.mark.parametrize(
         "raw,expected",
         [
-            ("20260125104000", date(2026, 1, 25)),      # modern SQLite books
+            ("20260125104000", date(2026, 1, 25)),  # modern SQLite books
             ("2026-01-25 10:40:00", date(2026, 1, 25)),  # older SQLite books
             ("2026-01-25 10:59:00 +0000", date(2026, 1, 25)),  # XML books
-            ("20260125", date(2026, 1, 25)),             # recurrence start dates
+            ("20260125", date(2026, 1, 25)),  # recurrence start dates
         ],
     )
     def test_every_shape_gnucash_emits(self, raw, expected):
@@ -117,9 +117,7 @@ class TestSqliteImport:
 
     def test_multi_split_transactions_keep_every_leg(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-        shop = next(
-            t for t in db.iter_transactions() if t.description == "Supermarket"
-        )
+        shop = next(t for t in db.iter_transactions() if t.description == "Supermarket")
         assert len(shop.splits) == 3
         assert shop.is_balanced()
 
@@ -132,9 +130,7 @@ class TestSqliteImport:
         usd = db.get_commodity_by_mnemonic("USD")
         assert usd is not None and usd.fraction == 100
 
-    def test_missing_transaction_date_is_reported_and_skipped(
-        self, db, gnucash_sqlite_path
-    ):
+    def test_missing_transaction_date_is_reported_and_skipped(self, db, gnucash_sqlite_path):
         conn = sqlite3.connect(gnucash_sqlite_path.path)
         conn.execute(
             "UPDATE transactions SET post_date = NULL WHERE description = ?",
@@ -208,9 +204,7 @@ class TestSqliteImport:
         assert reimported.usual_payment == Money("125.00")
         assert reimported.payment_day == 18
 
-    def test_reimport_preserves_breadsched_owned_annotations(
-        self, db, gnucash_sqlite_path
-    ):
+    def test_reimport_preserves_breadsched_owned_annotations(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         transaction = next(
             item for item in db.iter_transactions() if item.description == "Supermarket"
@@ -236,8 +230,7 @@ class TestSqliteImport:
         assert reimported.planning_resolution is PlanningResolution.MATCHED
         assert reimported.rejected_plan_occurrences == ["other:occurrence"]
         annotated_split = next(
-            split for split in reimported.splits
-            if split.handle == transaction.splits[0].handle
+            split for split in reimported.splits if split.handle == transaction.splits[0].handle
         )
         assert annotated_split.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
         assert annotated_split.fsa_year_start == date(2026, 1, 1)
@@ -258,7 +251,9 @@ class TestSqliteScheduledImport:
         assert sched.name == "Monthly rent"
         assert sched.enabled is True
         assert sched.recurrence.occurrences(date(2026, 3, 31)) == [
-            date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1),
+            date(2026, 1, 1),
+            date(2026, 2, 1),
+            date(2026, 3, 1),
         ]
 
     def test_template_splits_resolve_to_the_real_accounts(self, db, gnucash_sqlite_path):
@@ -266,13 +261,9 @@ class TestSqliteScheduledImport:
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         sched = db.get_scheduled(gnucash_sqlite_path.ids.sched)
         accounts = {split.account for split in sched.splits}
-        assert accounts == {
-            gnucash_sqlite_path.ids.rent, gnucash_sqlite_path.ids.checking
-        }
+        assert accounts == {gnucash_sqlite_path.ids.rent, gnucash_sqlite_path.ids.checking}
 
-    def test_the_imported_schedule_produces_a_balanced_transaction(
-        self, db, gnucash_sqlite_path
-    ):
+    def test_the_imported_schedule_produces_a_balanced_transaction(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         sched = db.get_scheduled(gnucash_sqlite_path.ids.sched)
         txn = sched.instantiate(date(2026, 4, 1))
@@ -319,9 +310,7 @@ class TestXmlImport:
         assert result.accounts == 4
         assert result.transactions == 2
 
-    def test_missing_transaction_date_is_reported_and_skipped(
-        self, db, tmp_path, gnucash_xml_path
-    ):
+    def test_missing_transaction_date_is_reported_and_skipped(self, db, tmp_path, gnucash_xml_path):
         damaged = tmp_path / "missing-date.gnucash"
         damaged.write_text(
             gnucash_xml_path.plain.replace(
@@ -372,9 +361,7 @@ class TestXmlImport:
         result = gnucash_xml.import_book(db, plain)
         assert result.transactions == 2
 
-    def test_importing_both_formats_into_one_book(
-        self, db, gnucash_sqlite_path, gnucash_xml_path
-    ):
+    def test_importing_both_formats_into_one_book(self, db, gnucash_sqlite_path, gnucash_xml_path):
         """Two households, two formats, one BreadSched book: handles must not collide."""
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         gnucash_xml.import_book(db, gnucash_xml_path.path)
@@ -397,10 +384,14 @@ class TestDamagedBooks:
             ],
             transactions=[
                 # 100.00 of groceries paid for with 90.00: ten dollars unaccounted.
-                (date(2026, 1, 1), "Lopsided", [
-                    ("food", 10000, 100, ""),
-                    ("bank", -9000, 100, ""),
-                ]),
+                (
+                    date(2026, 1, 1),
+                    "Lopsided",
+                    [
+                        ("food", 10000, 100, ""),
+                        ("bank", -9000, 100, ""),
+                    ],
+                ),
             ],
         )
 
@@ -421,10 +412,14 @@ class TestDamagedBooks:
                 ("food", "Groceries", "EXPENSE", "root", 0),
             ],
             transactions=[
-                (date(2026, 1, 1), "Lopsided", [
-                    ("food", 10000, 100, ""),
-                    ("bank", -9000, 100, ""),
-                ]),
+                (
+                    date(2026, 1, 1),
+                    "Lopsided",
+                    [
+                        ("food", 10000, 100, ""),
+                        ("bank", -9000, 100, ""),
+                    ],
+                ),
             ],
         )
         gnucash_sqlite.import_book(db, book.path)
@@ -433,9 +428,7 @@ class TestDamagedBooks:
         assert repaired.is_balanced()
         assert len(repaired.splits) == 3
 
-    def test_a_split_pointing_at_a_missing_account_is_skipped_not_fatal(
-        self, db, tmp_path
-    ):
+    def test_a_split_pointing_at_a_missing_account_is_skipped_not_fatal(self, db, tmp_path):
         """One damaged transaction must not cost the user the other thousand."""
         book = create_book(
             tmp_path / "orphan.gnucash",
@@ -445,10 +438,14 @@ class TestDamagedBooks:
                 ("food", "Groceries", "EXPENSE", "root", 0),
             ],
             transactions=[
-                (date(2026, 1, 2), "Fine", [
-                    ("food", 5000, 100, ""),
-                    ("bank", -5000, 100, ""),
-                ]),
+                (
+                    date(2026, 1, 2),
+                    "Fine",
+                    [
+                        ("food", 5000, 100, ""),
+                        ("bank", -5000, 100, ""),
+                    ],
+                ),
             ],
         )
 
@@ -456,8 +453,7 @@ class TestDamagedBooks:
         conn = sqlite3.connect(book.path)
         conn.execute(
             "INSERT INTO transactions VALUES (?,?,?,?,?,?)",
-            (new_guid(), book.currency, "", "20260101120000", "20260101120000",
-             "Orphaned"),
+            (new_guid(), book.currency, "", "20260101120000", "20260101120000", "Orphaned"),
         )
         orphan_txn = conn.execute(
             "SELECT guid FROM transactions WHERE description='Orphaned'"
@@ -465,8 +461,7 @@ class TestDamagedBooks:
         for account, value in ((book.bank, 100), (new_guid(), -100)):
             conn.execute(
                 "INSERT INTO splits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                (new_guid(), orphan_txn, account, "", "", "n", None, value, 100,
-                 value, 100, None),
+                (new_guid(), orphan_txn, account, "", "", "n", None, value, 100, value, 100, None),
             )
         conn.commit()
         conn.close()
@@ -490,7 +485,8 @@ class TestXmlScheduledTransactions:
     def test_no_guid_named_accounts_appear(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         guidish = [
-            a.name for a in db.iter_accounts()
+            a.name
+            for a in db.iter_accounts()
             if len(a.name) == 32 and all(c in "0123456789abcdef" for c in a.name)
         ]
         assert guidish == []
@@ -498,9 +494,7 @@ class TestXmlScheduledTransactions:
     def test_template_transactions_stay_out_of_the_register(self, db, gnucash_xml_path):
         result = gnucash_xml.import_book(db, gnucash_xml_path.path)
         assert result.transactions == 2
-        assert {t.description for t in db.iter_transactions()} == {
-            "March salary", "Electricity"
-        }
+        assert {t.description for t in db.iter_transactions()} == {"March salary", "Electricity"}
 
     def test_the_schedule_is_imported(self, db, gnucash_xml_path):
         result = gnucash_xml.import_book(db, gnucash_xml_path.path)
@@ -516,7 +510,9 @@ class TestXmlScheduledTransactions:
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         schedule = db.get_scheduled(gnucash_xml_path.ids.sx)
         assert schedule.recurrence.occurrences(date(2026, 3, 31)) == [
-            date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)
+            date(2026, 1, 1),
+            date(2026, 2, 1),
+            date(2026, 3, 1),
         ]
 
     def test_template_splits_resolve_to_real_accounts(self, db, gnucash_xml_path):
@@ -526,18 +522,14 @@ class TestXmlScheduledTransactions:
         accounts = {split.account for split in schedule.splits}
         assert accounts == {gnucash_xml_path.ids.util, gnucash_xml_path.ids.bank}
 
-    def test_credit_and_debit_formulas_become_signed_amounts(
-        self, db, gnucash_xml_path
-    ):
+    def test_credit_and_debit_formulas_become_signed_amounts(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         schedule = db.get_scheduled(gnucash_xml_path.ids.sx)
         by_account = {s.account: s.resolve() for s in schedule.splits}
         assert by_account[gnucash_xml_path.ids.util] == Money("825.00")
         assert by_account[gnucash_xml_path.ids.bank] == Money("-825.00")
 
-    def test_the_imported_schedule_produces_a_balanced_transaction(
-        self, db, gnucash_xml_path
-    ):
+    def test_the_imported_schedule_produces_a_balanced_transaction(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         schedule = db.get_scheduled(gnucash_xml_path.ids.sx)
         txn = schedule.instantiate(date(2026, 4, 1))
@@ -549,13 +541,9 @@ class TestXmlScheduledTransactions:
 
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         due = schedule_engine.due_occurrences(db, as_of=date(2026, 3, 15), horizon_days=0)
-        assert [o.when for o in due] == [
-            date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)
-        ]
+        assert [o.when for o in due] == [date(2026, 1, 1), date(2026, 2, 1), date(2026, 3, 1)]
 
     def test_scheduled_import_can_be_skipped(self, db, gnucash_xml_path):
-        result = gnucash_xml.import_book(
-            db, gnucash_xml_path.path, include_scheduled=False
-        )
+        result = gnucash_xml.import_book(db, gnucash_xml_path.path, include_scheduled=False)
         assert result.scheduled == 0
         assert list(db.iter_scheduled()) == []

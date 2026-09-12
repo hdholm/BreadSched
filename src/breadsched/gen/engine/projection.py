@@ -120,11 +120,7 @@ class _AssumptionTimeline:
     def escalation(
         self, field_name: Literal["income_growth", "expense_inflation"], completed_years: int
     ) -> Decimal:
-        factors = (
-            self._income_factors
-            if field_name == "income_growth"
-            else self._expense_factors
-        )
+        factors = self._income_factors if field_name == "income_growth" else self._expense_factors
         return factors[min(max(0, completed_years), len(factors) - 1)]
 
 
@@ -294,9 +290,17 @@ class MonthRow:
         """Flat mapping for CSV and JSON output.  Slots means no ``__dict__``."""
         data: dict[str, object] = {"month": self.month, "label": self.label}
         for name in (
-            "cash_open", "income", "expense", "contributions", "debt_payments",
-            "interest_earned", "investment_growth", "interest_charged",
-            "cash_close", "holdings", "liabilities",
+            "cash_open",
+            "income",
+            "expense",
+            "contributions",
+            "debt_payments",
+            "interest_earned",
+            "investment_growth",
+            "interest_charged",
+            "cash_close",
+            "holdings",
+            "liabilities",
         ):
             data[name] = getattr(self, name)
         data["net_flow"] = self.net_flow
@@ -365,7 +369,7 @@ class Projection:
         out: list[Money] = []
         for start in range(0, len(self.rows), 12):
             total = Money(0)
-            for row in self.rows[start:start + 12]:
+            for row in self.rows[start : start + 12]:
                 total = total + getattr(row, attribute)
             out.append(total)
         return out
@@ -420,9 +424,7 @@ class Projection:
         }
 
 
-def explain_month(
-    db: DbSQLite, result: Projection, index: int
-) -> ProjectionMonthDetail:
+def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMonthDetail:
     """Explain the exact events, accruals, and account changes behind one month."""
     if index < 0 or index >= len(result.rows):
         raise IndexError(index)
@@ -498,9 +500,7 @@ def explain_month(
         investment_growth=_sum(ledger.investment_growth.values()),
         holdings_close=ledger.holdings_close,
         liabilities_open=ledger.liabilities_open,
-        liability_movements=_sum(
-            item.movement for item in liabilities
-        ),
+        liability_movements=_sum(item.movement for item in liabilities),
         liability_interest=_sum(ledger.liability_interest.values()),
         liabilities_close=ledger.liabilities_close,
         net_worth=row.net_worth,
@@ -569,9 +569,7 @@ def _dated_growth_factor(
             break
         assumptions = scenario.assumptions_for(anniversary)
         rate = (
-            assumptions.income_growth
-            if field == "income_growth"
-            else assumptions.expense_inflation
+            assumptions.income_growth if field == "income_growth" else assumptions.expense_inflation
         )
         factor *= _ONE + rate.decimal
     return factor
@@ -595,9 +593,7 @@ class _MonthFlows:
     debt_payments: Money = field(default_factory=lambda: Money(0))
     contributions: dict = field(default_factory=dict)
 
-    def apply(
-        self, account: Account, amount: Money, funded_from_cash: bool = True
-    ) -> None:
+    def apply(self, account: Account, amount: Money, funded_from_cash: bool = True) -> None:
         cls = account.account_class
         if cls is AccountClass.INCOME:
             # Income accounts carry credit balances, so a pay cheque posts a
@@ -621,8 +617,6 @@ class _MonthFlows:
             self.debt_payments = self.debt_payments + amount
             if funded_from_cash:
                 self.cash_delta = self.cash_delta - amount
-
-
 
 
 @dataclass(slots=True)
@@ -672,9 +666,7 @@ def _advance_event_state(
 
         cash_rate = _period_growth_rate(assumptions.cash_interest, days)
         cash_growth = (
-            (cash * cash_rate).quantize(_PROJECTION_MONEY_DENOMINATOR)
-            if cash_rate
-            else Money(0)
+            (cash * cash_rate).quantize(_PROJECTION_MONEY_DENOMINATOR) if cash_rate else Money(0)
         )
         cash = cash + cash_growth
         flows.cash_interest = flows.cash_interest + cash_growth
@@ -689,15 +681,9 @@ def _advance_event_state(
                 ),
                 days,
             )
-            growth = (
-                (balance * rate).quantize(_PROJECTION_MONEY_DENOMINATOR)
-                if rate
-                else Money(0)
-            )
+            growth = (balance * rate).quantize(_PROJECTION_MONEY_DENOMINATOR) if rate else Money(0)
             holdings[handle] = balance + growth
-            flows.investment_growth[handle] = (
-                flows.investment_growth.get(handle, Money(0)) + growth
-            )
+            flows.investment_growth[handle] = flows.investment_growth.get(handle, Money(0)) + growth
 
         for handle, owed in list(debts.items()):
             account = accounts[handle]
@@ -737,8 +723,7 @@ def _event_escalation_factor(
     already state their intended amount, so neither is escalated.
     """
     if (
-        event.source
-        not in (planning.EventSource.SCHEDULED, planning.EventSource.SCENARIO_SCHEDULE)
+        event.source not in (planning.EventSource.SCHEDULED, planning.EventSource.SCENARIO_SCHEDULE)
         or event.status is planning.EventStatus.ACTUALIZED
     ):
         return _ONE
@@ -747,15 +732,10 @@ def _event_escalation_factor(
     if source_handle is None:
         return _ONE
 
-    policy = schedule_growth_policies.get(
-        source_handle, ScheduleGrowthPolicy.AUTO
-    )
+    policy = schedule_growth_policies.get(source_handle, ScheduleGrowthPolicy.AUTO)
     if policy is ScheduleGrowthPolicy.NONE:
         return _ONE
-    if (
-        policy is ScheduleGrowthPolicy.AUTO
-        and source_handle in formula_schedule_handles
-    ):
+    if policy is ScheduleGrowthPolicy.AUTO and source_handle in formula_schedule_handles:
         return _ONE
 
     classes = {
@@ -798,8 +778,7 @@ def _apply_event(
     """Apply one event's effective splits to financial state on its exact date."""
     flows.events.append(event)
     factor = _event_escalation_factor(
-        scenario, timeline, event, accounts, schedule_growth_policies,
-        formula_schedule_handles
+        scenario, timeline, event, accounts, schedule_growth_policies, formula_schedule_handles
     )
     for planned_split in event.splits:
         account = accounts.get(planned_split.account)
@@ -934,17 +913,39 @@ def _project_events(
         for event in events_by_month.get((month.year, month.month), []):
             _report_progress(progress, event.when, start, end, "Applying scheduled events")
             cash = _advance_event_state(
-                timeline, accounts, cursor, event.when, cash, holdings, debts, flows,
+                timeline,
+                accounts,
+                cursor,
+                event.when,
+                cash,
+                holdings,
+                debts,
+                flows,
                 schedule_driven_liabilities,
             )
             cash = _apply_event(
-                scenario, timeline, event, accounts, cash, holdings, debts, flows,
-                schedule_growth_policies, formula_schedule_handles,
+                scenario,
+                timeline,
+                event,
+                accounts,
+                cash,
+                holdings,
+                debts,
+                flows,
+                schedule_growth_policies,
+                formula_schedule_handles,
             )
             cursor = event.when
 
         cash = _advance_event_state(
-            timeline, accounts, cursor, next_month, cash, holdings, debts, flows,
+            timeline,
+            accounts,
+            cursor,
+            next_month,
+            cash,
+            holdings,
+            debts,
+            flows,
             schedule_driven_liabilities,
         )
 
@@ -1019,7 +1020,8 @@ def _project_periodic(
     if scenario.budget and budget is None:
         result.warnings.append("the scenario's budget no longer exists; using schedules only")
     use_budget = budget is not None and scenario.basis in (
-        ProjectionBasis.BUDGET, ProjectionBasis.COMBINED
+        ProjectionBasis.BUDGET,
+        ProjectionBasis.COMBINED,
     )
     use_schedules = scenario.basis in (ProjectionBasis.SCHEDULED, ProjectionBasis.COMBINED)
 
@@ -1051,7 +1053,6 @@ def _project_periodic(
         elif account.account_class is AccountClass.LIABILITY:
             debts[account.handle] = opening
 
-
     one_offs_by_month: dict[int, list] = {}
     for item in scenario.one_offs:
         index = (item.when.year - start.year) * 12 + (item.when.month - start.month)
@@ -1066,9 +1067,7 @@ def _project_periodic(
         year = index // 12
         assumptions = scenario.assumptions_for(month)
         income_factor = _dated_growth_factor(scenario, "income_growth", month, year)
-        expense_factor = _dated_growth_factor(
-            scenario, "expense_inflation", month, year
-        )
+        expense_factor = _dated_growth_factor(scenario, "expense_inflation", month, year)
         cash_rate = monthly_rate(assumptions.cash_interest)
 
         cash_open = cash

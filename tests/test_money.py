@@ -128,7 +128,9 @@ class TestRoundingAndAllocation:
         parts = Money("100.00").allocate(3)
         assert sum((p.to_decimal() for p in parts), Decimal(0)) == Decimal("100.00")
         assert [p.to_decimal() for p in parts] == [
-            Decimal("33.34"), Decimal("33.33"), Decimal("33.33")
+            Decimal("33.34"),
+            Decimal("33.33"),
+            Decimal("33.33"),
         ]
 
     def test_allocation_of_a_negative_total(self):

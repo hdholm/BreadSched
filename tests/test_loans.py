@@ -74,9 +74,7 @@ class TestInterestAndPrincipal:
         rate = Decimal("0.005")
         payment = pmt(rate, 360, 200000, due=1)
         for period in (1, 2, 120, 360):
-            total = ipmt(rate, period, 360, 200000, due=1) + ppmt(
-                rate, period, 360, 200000, due=1
-            )
+            total = ipmt(rate, period, 360, 200000, due=1) + ppmt(rate, period, 360, 200000, due=1)
             assert q(total) == q(payment)
         rows = amortisation_schedule(rate, 360, 200000, due=1)
         assert abs(rows[-1]["balance"]) < Decimal("0.01")
@@ -115,9 +113,7 @@ class TestFormulaIntegration:
 
     def test_gnucash_colon_syntax_is_accepted(self):
         """GnuCash separates arguments with colons, which Python cannot parse."""
-        assert normalise("pmt(rate : periods : principal)") == (
-            "pmt(rate , periods , principal)"
-        )
+        assert normalise("pmt(rate : periods : principal)") == ("pmt(rate , periods , principal)")
         result = evaluate("pmt(rate : periods : principal)", self.VARIABLES)
         assert q(result) == Decimal("1199.10")
 
@@ -240,7 +236,9 @@ class TestLoanSetup:
 
         create_loan(db, terms)
         scenario = Scenario(
-            name="With a mortgage", start=date(2026, 1, 1), years=5,
+            name="With a mortgage",
+            start=date(2026, 1, 1),
+            years=5,
             basis=ProjectionBasis.SCHEDULED,
         )
         result = projection.project(db, scenario)
@@ -267,9 +265,9 @@ class TestLoanSetup:
         )
 
         result = projection.project(db, scenario)
-        expected = amortisation_schedule(
-            terms.period_rate, terms.periods, terms.principal.rate()
-        )[59]["balance"]
+        expected = amortisation_schedule(terms.period_rate, terms.periods, terms.principal.rate())[
+            59
+        ]["balance"]
 
         assert abs(result.rows[-1].liabilities.to_decimal() - expected) < Decimal("0.05")
         first_payment = result.rows[0].expense + result.rows[0].debt_payments
@@ -288,9 +286,7 @@ class TestLoanSetup:
 
         interest = next(row for row in report.categories if row.account == terms.interest_account)
         principal = next(
-            row
-            for row in report.planning_flows
-            if row.kind is PlanningFlowKind.DEBT_PRINCIPAL
+            row for row in report.planning_flows if row.kind is PlanningFlowKind.DEBT_PRINCIPAL
         )
         assert interest.planned == [Money("1000.00")]
         assert principal.planned[0].quantize(100) == Money("199.10")
@@ -325,19 +321,14 @@ class TestGnuCashMortgageFormulas:
         expected = q(evaluate(self.PAYMENT, {}))
         assert expected == Decimal("3235.38")
         for period in (1, 60, 180):
-            total = (
-                evaluate(self.INTEREST, {"i": period})
-                + evaluate(self.PRINCIPAL, {"i": period})
-            )
+            total = evaluate(self.INTEREST, {"i": period}) + evaluate(self.PRINCIPAL, {"i": period})
             assert q(total) == expected
 
     def test_the_split_moves_over_the_life_of_the_loan(self):
         early = evaluate(self.INTEREST, {"i": 1})
         late = evaluate(self.INTEREST, {"i": 170})
         assert late < early
-        assert evaluate(self.PRINCIPAL, {"i": 170}) > evaluate(
-            self.PRINCIPAL, {"i": 1}
-        )
+        assert evaluate(self.PRINCIPAL, {"i": 170}) > evaluate(self.PRINCIPAL, {"i": 1})
 
     def test_the_amounts_are_positive_as_gnucash_expects(self):
         """They go straight into a debit slot; a negative would reverse the entry."""
@@ -370,9 +361,7 @@ class TestGnuCashMortgageFormulas:
             splits=[
                 ScheduledSplit(book.card, formula=self.PRINCIPAL, memo="Principal"),
                 ScheduledSplit(book.utilities, formula=self.INTEREST, memo="Interest"),
-                ScheduledSplit(
-                    book.checking, formula=f"-({self.PAYMENT})", memo="Payment"
-                ),
+                ScheduledSplit(book.checking, formula=f"-({self.PAYMENT})", memo="Payment"),
             ],
         )
         first = dict(sched.resolved_splits(when=date(2026, 1, 1)))

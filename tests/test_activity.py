@@ -31,9 +31,7 @@ def _monthly_bill(book, *, start: date, amount: str = "100.00") -> ScheduledTran
 
 
 class TestActivityAggregation:
-    def test_months_group_expected_and_unexpected_actuals_without_driving_dates(
-        self, db, book
-    ):
+    def test_months_group_expected_and_unexpected_actuals_without_driving_dates(self, db, book):
         bill = _monthly_bill(book, start=date(2026, 1, 7))
         with db.transaction("plan") as txn:
             db.add_scheduled(bill, txn)
@@ -47,17 +45,11 @@ class TestActivityAggregation:
             planning.mark_unexpected(actual)
             db.add_transaction(actual, txn)
 
-        report = activity.build_activity_report(
-            db, date(2026, 1, 1), date(2026, 2, 28)
-        )
+        report = activity.build_activity_report(db, date(2026, 1, 1), date(2026, 2, 28))
 
         january, february = report.periods
-        assert [event.planned_date for event in january.planned_events] == [
-            date(2026, 1, 7)
-        ]
-        assert [event.planned_date for event in february.planned_events] == [
-            date(2026, 2, 7)
-        ]
+        assert [event.planned_date for event in january.planned_events] == [date(2026, 1, 7)]
+        assert [event.planned_date for event in february.planned_events] == [date(2026, 2, 7)]
         assert january.planned_amount == Money("100.00")
         assert january.actual_amount == Money("35.00")
         assert january.planned_cash_change == Money("-100.00")
@@ -68,9 +60,7 @@ class TestActivityAggregation:
         assert report.unresolved_actual_count == 0
         assert report.unexpected_count == 1
 
-    def test_matched_actual_keeps_expected_and_actual_in_their_own_date_periods(
-        self, db, book
-    ):
+    def test_matched_actual_keeps_expected_and_actual_in_their_own_date_periods(self, db, book):
         bill = ScheduledTransaction(
             name="Month-end electric",
             recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 31)),
@@ -89,16 +79,12 @@ class TestActivityAggregation:
             book.checking,
             "193.42",
         )
-        expected = planning.scheduled_events(
-            db, date(2026, 1, 1), date(2026, 2, 7)
-        )[0]
+        expected = planning.scheduled_events(db, date(2026, 1, 1), date(2026, 2, 7))[0]
         planning.actualize_transaction(actual, expected)
         with db.transaction("actual") as txn:
             db.add_transaction(actual, txn)
 
-        report = activity.build_activity_report(
-            db, date(2026, 1, 1), date(2026, 2, 28)
-        )
+        report = activity.build_activity_report(db, date(2026, 1, 1), date(2026, 2, 28))
         january, february = report.periods
 
         assert january.planned_amount == Money("180.00")
@@ -164,9 +150,7 @@ class TestActivityAggregation:
         with db.transaction("unresolved actual") as txn:
             db.add_transaction(actual, txn)
 
-        report = activity.build_activity_report(
-            db, date(2026, 4, 1), date(2026, 4, 30)
-        )
+        report = activity.build_activity_report(db, date(2026, 4, 1), date(2026, 4, 30))
 
         assert report.unresolved_actual_count == 1
         assert report.unexpected_count == 0
@@ -190,9 +174,7 @@ class TestActivityAggregation:
         with db.transaction("legacy actual") as txn:
             db.add_transaction(actual, txn)
 
-        report = activity.build_activity_report(
-            db, date(2026, 4, 1), date(2026, 4, 30)
-        )
+        report = activity.build_activity_report(db, date(2026, 4, 1), date(2026, 4, 30))
 
         assert report.unexpected_count == 0
         assert report.periods[0].actual_transactions[0].unexpected is False
@@ -202,9 +184,7 @@ class TestActivityAggregation:
         with db.transaction("plan") as txn:
             db.add_scheduled(bill, txn)
 
-        report = activity.build_activity_report(
-            db, date(2026, 3, 1), date(2026, 3, 31)
-        )
+        report = activity.build_activity_report(db, date(2026, 3, 1), date(2026, 3, 31))
         payload = report.as_dict()
 
         assert payload["period"] == "month"
@@ -213,6 +193,7 @@ class TestActivityAggregation:
         assert period["label"] == "Mar 2026"
         assert period["planned_events"][0]["planned_date"] == date(2026, 3, 8)
         assert period["planned_events"][0]["source"] == "scheduled"
+
 
 class TestCategoryPlanning:
     def test_recurring_estimate_builds_category_period_values(self, db, book):
@@ -227,9 +208,7 @@ class TestCategoryPlanning:
         with db.transaction("weekly estimate") as txn:
             db.add_scheduled(groceries, txn)
 
-        report = activity.build_category_report(
-            db, date(2026, 1, 1), date(2026, 1, 31)
-        )
+        report = activity.build_category_report(db, date(2026, 1, 1), date(2026, 1, 31))
         row = next(item for item in report.expenses if item.account == book.groceries)
         assert row.planned == [Money("1500.00")]
         assert row.actual == [Money(0)]
@@ -266,9 +245,7 @@ class TestCategoryPlanning:
         with db.transaction("transfer") as txn:
             db.add_scheduled(transfer, txn)
 
-        report = activity.build_category_report(
-            db, date(2026, 2, 1), date(2026, 2, 28)
-        )
+        report = activity.build_category_report(db, date(2026, 2, 1), date(2026, 2, 28))
         assert report.income == ()
         assert report.expenses == ()
 
@@ -277,17 +254,13 @@ class TestCategoryPlanning:
         with db.transaction("utility estimate") as txn:
             db.add_scheduled(bill, txn)
 
-        report = activity.build_category_report(
-            db, date(2026, 3, 1), date(2026, 3, 31)
-        )
+        report = activity.build_category_report(db, date(2026, 3, 1), date(2026, 3, 31))
         parent = next(item for item in report.expenses if item.account == book.expenses)
         utility = next(item for item in report.expenses if item.account == book.utilities)
         assert parent.planned == [Money("125.00")]
         assert utility.planned == [Money("125.00")]
 
-    def test_future_period_variance_is_not_applicable_but_actual_is_retained(
-        self, db, book
-    ):
+    def test_future_period_variance_is_not_applicable_but_actual_is_retained(self, db, book):
         bill = _monthly_bill(book, start=date(2026, 1, 7), amount="100.00")
         future_actual = Transaction.simple(
             date(2026, 3, 7),
@@ -338,7 +311,6 @@ class TestPlanningFlowClassification:
         assert PlanningFlowKind.BENEFIT_FUNDING.ledger_amount(amount) == amount
         assert PlanningFlowKind.DEBT_PRINCIPAL.ledger_amount(amount) == amount
         assert PlanningFlowKind.RETIREMENT_INCOME.ledger_amount(amount) == -amount
-
 
     def test_account_roles_infer_common_balance_sheet_flows(self, db, book):
         brokerage = db.get_account(book.brokerage)
@@ -574,9 +546,7 @@ class TestPlanningFlowClassification:
         )
         with db.transaction("plan contribution") as txn:
             db.add_scheduled(contribution, txn)
-        event = planning.event_by_key(
-            db, contribution.occurrence_key(date(2026, 1, 15))
-        )
+        event = planning.event_by_key(db, contribution.occurrence_key(date(2026, 1, 15)))
         assert event is not None
         actual = Transaction.simple(
             date(2026, 1, 15),

@@ -40,18 +40,14 @@ gi.require_version("Pango", "1.0")
 
 #: Message patterns raised by PyGObject itself that no change here can prevent.
 #: Matched as regular expressions against the start of the warning text.
-UPSTREAM_NOISE = (
-    r"GLib\.unix_signal_add_full is deprecated",
-)
+UPSTREAM_NOISE = (r"GLib\.unix_signal_add_full is deprecated",)
 
 
 def _import_repository():
     """Import the gi namespaces with PyGObject's own import noise suppressed."""
     with warnings.catch_warnings():
         for pattern in UPSTREAM_NOISE:
-            warnings.filterwarnings(
-                "ignore", message=pattern, category=DeprecationWarning
-            )
+            warnings.filterwarnings("ignore", message=pattern, category=DeprecationWarning)
         from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango
 
         return Gdk, Gio, GLib, GObject, Gtk, Pango

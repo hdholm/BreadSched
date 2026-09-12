@@ -79,7 +79,8 @@ def post_due(
     today = as_of or date.today()
     posted: list[Transaction] = []
     candidates = [
-        occ for occ in due_occurrences(db, as_of=today, horizon_days=0)
+        occ
+        for occ in due_occurrences(db, as_of=today, horizon_days=0)
         # A placeholder describes a budget expectation, not a transaction that
         # will happen; posting one would invent a ledger entry.
         if occ.when <= today

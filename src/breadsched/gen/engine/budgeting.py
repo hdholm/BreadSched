@@ -75,8 +75,7 @@ def set_current_budget(db: DbSQLite, budget: Budget | str | None) -> None:
 def members_of(db: DbSQLite, budget_handle: str | None) -> list:
     """Schedules that count towards a budget."""
     return [
-        sched for sched in db.iter_scheduled()
-        if sched.enabled and sched.in_budget(budget_handle)
+        sched for sched in db.iter_scheduled() if sched.enabled and sched.in_budget(budget_handle)
     ]
 
 
@@ -203,9 +202,7 @@ def coverage(db: DbSQLite, budget: Budget) -> list[ScheduleCoverage]:
     Answers "which of my budgeted amounts are actually pinned to something", which
     is the question that tells a user where their plan is a guess.
     """
-    generated = from_schedules(
-        db, "coverage", budget.start, budget.periods, budget.kind
-    )
+    generated = from_schedules(db, "coverage", budget.start, budget.periods, budget.kind)
     rows: list[ScheduleCoverage] = []
     for handle, line in budget.lines.items():
         account = db.get_account(handle)

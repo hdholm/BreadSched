@@ -45,6 +45,7 @@ _UNARY: dict[type[ast.unaryop], Callable[[Any], Any]] = {
     ast.USub: operator.neg,
 }
 
+
 #: Functions a formula may call. Whitelisted by name, so a formula still cannot
 #: reach anything that was not deliberately offered to it.
 #:
@@ -132,9 +133,7 @@ def _walk(node: ast.AST, variables: dict[str, Any]) -> Decimal:
         name = getattr(node.func, "id", None)
         if name not in FUNCTIONS:
             known = ", ".join(sorted(FUNCTIONS))
-            raise FormulaError(
-                f"unknown function {name or '?'!r}; formulas may call: {known}"
-            )
+            raise FormulaError(f"unknown function {name or '?'!r}; formulas may call: {known}")
         if node.keywords:
             raise FormulaError("formula functions take positional arguments only")
         arguments = [_walk(argument, variables) for argument in node.args]

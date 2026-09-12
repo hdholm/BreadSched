@@ -12,9 +12,7 @@ from breadsched.gen.lib import AccountClass, Money
 class TestBalances:
     def test_bank_balance_after_a_month(self, db, funded_book):
         # 5000 opening + 4200 salary - 1800 rent - 310.55 groceries
-        assert ledger.balance(db, funded_book.checking, as_of=date(2026, 1, 31)) == Money(
-            "7089.45"
-        )
+        assert ledger.balance(db, funded_book.checking, as_of=date(2026, 1, 31)) == Money("7089.45")
 
     def test_credit_card_reports_what_is_owed_as_positive(self, db, funded_book):
         """A liability's natural sign is the amount owed, not the ledger's minus."""
@@ -29,9 +27,9 @@ class TestBalances:
         ) == Money("1800.00")
 
     def test_parent_totals_include_children(self, db, funded_book):
-        assert ledger.balance_recursive(
-            db, funded_book.expenses, as_of=date(2026, 2, 28)
-        ) == Money("3996.95")
+        assert ledger.balance_recursive(db, funded_book.expenses, as_of=date(2026, 2, 28)) == Money(
+            "3996.95"
+        )
 
     def test_a_placeholder_holds_nothing_of_its_own(self, db, funded_book):
         assert ledger.balance(db, funded_book.expenses) == Money(0)
@@ -54,7 +52,10 @@ class TestRegister:
     def test_running_balance_accumulates_in_date_order(self, db, funded_book):
         rows = ledger.register(db, funded_book.checking)
         assert [row.description for row in rows] == [
-            "Opening balance", "January rent", "Weekly shop", "January salary",
+            "Opening balance",
+            "January rent",
+            "Weekly shop",
+            "January salary",
             "February rent",
         ]
         assert rows[-1].running == Money("5289.45")
@@ -137,9 +138,7 @@ class TestBudgetReport:
         assert 3 in report.shortfall_periods()
         assert 0 not in report.shortfall_periods()
 
-    def test_cumulative_flow_runs_to_the_end_of_the_budget(
-        self, db, funded_book, monthly_budget
-    ):
+    def test_cumulative_flow_runs_to_the_end_of_the_budget(self, db, funded_book, monthly_budget):
         cumulative = cashflow.build_report(db, monthly_budget).cumulative_cash_flow()
         assert len(cumulative) == 12
         assert cumulative[-1] > cumulative[0]
@@ -171,7 +170,9 @@ class TestScheduleEngine:
     def test_due_list_covers_missed_occurrences(self, db, payday_schedule):
         due = schedule.due_occurrences(db, as_of=date(2026, 2, 1), horizon_days=0)
         assert [occ.when for occ in due] == [
-            date(2026, 1, 2), date(2026, 1, 16), date(2026, 1, 30),
+            date(2026, 1, 2),
+            date(2026, 1, 16),
+            date(2026, 1, 30),
         ]
 
     def test_posting_writes_real_transactions(self, db, book, payday_schedule):
@@ -315,14 +316,14 @@ class TestUnbalancedSchedules:
         txn = lopsided.instantiate(date(2026, 1, 1), strict=False)
         assert len(txn.splits) == 2
 
-    def test_a_projection_completes_and_says_which_schedule_is_wrong(
-        self, db, book, lopsided
-    ):
+    def test_a_projection_completes_and_says_which_schedule_is_wrong(self, db, book, lopsided):
         from breadsched.gen.engine import projection
         from breadsched.gen.lib import ProjectionBasis, Scenario
 
         scenario = Scenario(
-            name="With a broken schedule", start=date(2026, 1, 1), years=2,
+            name="With a broken schedule",
+            start=date(2026, 1, 1),
+            years=2,
             basis=ProjectionBasis.SCHEDULED,
         )
         result = projection.project(db, scenario)
@@ -336,7 +337,9 @@ class TestUnbalancedSchedules:
         from breadsched.gen.lib import ProjectionBasis, Scenario
 
         scenario = Scenario(
-            name="Long", start=date(2026, 1, 1), years=10,
+            name="Long",
+            start=date(2026, 1, 1),
+            years=10,
             basis=ProjectionBasis.SCHEDULED,
         )
         result = projection.project(db, scenario)
@@ -345,7 +348,5 @@ class TestUnbalancedSchedules:
     def test_a_budget_can_still_be_built_from_it(self, db, book, lopsided):
         from breadsched.gen.engine import budgeting
 
-        budget = budgeting.from_schedules(
-            db, name="2026", start=date(2026, 1, 1), periods=12
-        )
+        budget = budgeting.from_schedules(db, name="2026", start=date(2026, 1, 1), periods=12)
         assert budget.lines

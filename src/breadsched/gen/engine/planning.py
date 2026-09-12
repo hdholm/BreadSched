@@ -66,9 +66,7 @@ class PlannedSplit:
         return {
             "account": self.account,
             "amount": self.amount,
-            "planning_flow": (
-                self.planning_flow.value if self.planning_flow is not None else None
-            ),
+            "planning_flow": (self.planning_flow.value if self.planning_flow is not None else None),
         }
 
 
@@ -98,9 +96,7 @@ class PlannedEvent:
     @property
     def status(self) -> EventStatus:
         return (
-            EventStatus.ACTUALIZED
-            if self.actual_transaction is not None
-            else EventStatus.EXPECTED
+            EventStatus.ACTUALIZED if self.actual_transaction is not None else EventStatus.EXPECTED
         )
 
     @property
@@ -303,9 +299,7 @@ def _scenario_schedule_event(
         description=schedule.description,
         expected_splits=expected,
         expected_amount=(
-            actual.planned_amount
-            if actual.planned_amount is not None
-            else expected_amount
+            actual.planned_amount if actual.planned_amount is not None else expected_amount
         ),
         placeholder=schedule.placeholder,
         actual_transaction=actual.handle,
@@ -381,7 +375,7 @@ def event_by_key(db: DbSQLite, key: str) -> PlannedEvent | None:
     prefix = "scheduled:"
     if not key.startswith(prefix):
         return None
-    payload = key[len(prefix):]
+    payload = key[len(prefix) :]
     try:
         handle, raw_date = payload.rsplit(":", 1)
         when = date.fromisoformat(raw_date)

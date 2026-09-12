@@ -42,17 +42,12 @@ class PlanDetailDialog(Gtk.Window):
 
         outer.append(
             Gtk.Label(
-                label=(
-                    f"{scenario_name} · {detail.start:%Y-%m-%d} through "
-                    f"{detail.end:%Y-%m-%d}"
-                ),
+                label=(f"{scenario_name} · {detail.start:%Y-%m-%d} through {detail.end:%Y-%m-%d}"),
                 xalign=0,
             )
         )
         variance = (
-            detail.variance.format(parens_negative=True)
-            if detail.variance is not None
-            else "—"
+            detail.variance.format(parens_negative=True) if detail.variance is not None else "—"
         )
         summary = Gtk.Label(
             label=(
@@ -68,12 +63,8 @@ class PlanDetailDialog(Gtk.Window):
         notebook = Gtk.Notebook()
         notebook.set_vexpand(True)
         outer.append(notebook)
-        notebook.append_page(
-            self._planned_page(detail), Gtk.Label(label="Planned occurrences")
-        )
-        notebook.append_page(
-            self._actual_page(detail), Gtk.Label(label="Actual transactions")
-        )
+        notebook.append_page(self._planned_page(detail), Gtk.Label(label="Planned occurrences"))
+        notebook.append_page(self._actual_page(detail), Gtk.Label(label="Actual transactions"))
 
         close = Gtk.Button(label="Close")
         close.set_halign(Gtk.Align.END)
@@ -101,9 +92,7 @@ class PlanDetailDialog(Gtk.Window):
         scroll.set_vexpand(True)
         return scroll
 
-    def _planned_page(
-        self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail
-    ) -> Gtk.Widget:
+    def _planned_page(self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail) -> Gtk.Widget:
         rows = [
             (
                 item.planned_date.isoformat(),
@@ -123,9 +112,7 @@ class PlanDetailDialog(Gtk.Window):
             rows,
         )
 
-    def _actual_page(
-        self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail
-    ) -> Gtk.Widget:
+    def _actual_page(self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail) -> Gtk.Widget:
         rows = [
             (
                 item.post_date.isoformat(),

@@ -73,15 +73,11 @@ class LoanTerms:
 
     def payment(self) -> Money:
         """The level payment, as a positive amount of money leaving the household."""
-        return Money(
-            -pmt(self.period_rate, self.periods, self.principal.rate())
-        ).quantize(100)
+        return Money(-pmt(self.period_rate, self.periods, self.principal.rate())).quantize(100)
 
     def total_interest(self) -> Money:
         total = Money(0)
-        for row in amortisation_schedule(
-            self.period_rate, self.periods, self.principal.rate()
-        ):
+        for row in amortisation_schedule(self.period_rate, self.periods, self.principal.rate()):
             total = total + Money(-row["interest"]).quantize(100)
         return total
 
@@ -125,9 +121,7 @@ def build_schedule(terms: LoanTerms) -> ScheduledTransaction:
     ]
     funding = "-pmt(rate, periods, principal)"
     if terms.escrow and terms.escrow_account:
-        splits.append(
-            ScheduledSplit(terms.escrow_account, amount=terms.escrow, memo="Escrow")
-        )
+        splits.append(ScheduledSplit(terms.escrow_account, amount=terms.escrow, memo="Escrow"))
         funding = f"{funding} - {terms.escrow.to_decimal(2)}"
     splits.append(ScheduledSplit(terms.payment_account, formula=funding, memo="Payment"))
 
@@ -137,9 +131,7 @@ def build_schedule(terms: LoanTerms) -> ScheduledTransaction:
 
 def schedule_preview(terms: LoanTerms, rows: int = 12) -> list[dict[str, object]]:
     """The first ``rows`` payments, split into interest and principal."""
-    table = amortisation_schedule(
-        terms.period_rate, terms.periods, terms.principal.rate()
-    )
+    table = amortisation_schedule(terms.period_rate, terms.periods, terms.principal.rate())
     return [
         {
             "period": int(row["period"]),
@@ -212,11 +204,10 @@ def _opening_balances_account(db: DbSQLite, txn) -> str | None:
         return None
     equity = db.get_account_by_name("Equity")
     if equity is None:
-        equity = Account(name="Equity", atype=AccountType.EQUITY, parent=root.handle,
-                         placeholder=True)
+        equity = Account(
+            name="Equity", atype=AccountType.EQUITY, parent=root.handle, placeholder=True
+        )
         db.add_account(equity, txn)
-    account = Account(
-        name="Opening Balances", atype=AccountType.EQUITY, parent=equity.handle
-    )
+    account = Account(name="Opening Balances", atype=AccountType.EQUITY, parent=equity.handle)
     db.add_account(account, txn)
     return account.handle

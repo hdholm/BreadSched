@@ -72,7 +72,8 @@ class FsaClaimAllocation:
             "funding_year_start": self.funding_year_start.isoformat(),
             "target": (
                 [self.target.numerator, self.target.denominator]
-                if self.target is not None else None
+                if self.target is not None
+                else None
             ),
             "reimbursements": [link.serialize() for link in self.reimbursements],
             "rejections": [item.serialize() for item in self.rejections],
@@ -86,13 +87,9 @@ class FsaClaimAllocation:
             funding_year_start=date.fromisoformat(str(data["funding_year_start"])),
             target=Money(*raw_target) if raw_target is not None else None,
             reimbursements=[
-                FsaClaimSplitLink.from_dict(item)
-                for item in data.get("reimbursements", [])
+                FsaClaimSplitLink.from_dict(item) for item in data.get("reimbursements", [])
             ],
-            rejections=[
-                FsaClaimRejection.from_dict(item)
-                for item in data.get("rejections", [])
-            ],
+            rejections=[FsaClaimRejection.from_dict(item) for item in data.get("rejections", [])],
         )
 
 
@@ -128,7 +125,8 @@ class FsaClaim(PrimaryObject):
             "description": self.description,
             "eob_responsibility": (
                 [self.eob_responsibility.numerator, self.eob_responsibility.denominator]
-                if self.eob_responsibility is not None else None
+                if self.eob_responsibility is not None
+                else None
             ),
             "payments": [link.serialize() for link in self.payments],
             "refunds": [link.serialize() for link in self.refunds],
@@ -141,12 +139,8 @@ class FsaClaim(PrimaryObject):
         self.provider = str(data.get("provider", ""))
         self.description = str(data.get("description", ""))
         self.eob_responsibility = Money(*raw_eob) if raw_eob is not None else None
-        self.payments = [
-            FsaClaimSplitLink.from_dict(item) for item in data.get("payments", [])
-        ]
-        self.refunds = [
-            FsaClaimSplitLink.from_dict(item) for item in data.get("refunds", [])
-        ]
+        self.payments = [FsaClaimSplitLink.from_dict(item) for item in data.get("payments", [])]
+        self.refunds = [FsaClaimSplitLink.from_dict(item) for item in data.get("refunds", [])]
         self.allocations = [
             FsaClaimAllocation.from_dict(item) for item in data.get("allocations", [])
         ]

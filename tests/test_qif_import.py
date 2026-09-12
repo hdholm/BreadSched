@@ -44,10 +44,7 @@ def test_qif_imports_bank_income_and_expense_history(db, book, tmp_path):
     assert result.skipped == 0
     transactions = sorted(db.iter_transactions(), key=lambda item: item.post_date)
     assert [item.description for item in transactions] == ["Grocery Store", "Employer"]
-    assert all(
-        item.planning_resolution is PlanningResolution.HISTORICAL
-        for item in transactions
-    )
+    assert all(item.planning_resolution is PlanningResolution.HISTORICAL for item in transactions)
     groceries = db.get_account(book.groceries)
     salary = db.get_account(book.salary)
     checking = db.get_account(book.checking)
@@ -86,8 +83,7 @@ def test_qif_reimport_survives_unrelated_record_insertion(db, book, tmp_path):
 
     inserted = (
         "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
-        "D01/10/2026\nT-10.00\nPCoffee\nLGroceries\n^\n"
-        + original.split("!Type:Bank\n", 1)[1]
+        "D01/10/2026\nT-10.00\nPCoffee\nLGroceries\n^\n" + original.split("!Type:Bank\n", 1)[1]
     )
     path.write_text(inserted)
     qif.import_book(db, path)
@@ -114,8 +110,7 @@ def test_qif_detects_comma_decimal_amounts(db, book, tmp_path):
 def test_qif_explicit_number_format_resolves_ambiguous_amount(db, book, tmp_path):
     path = tmp_path / "ambiguous.qif"
     path.write_text(
-        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
-        "D03/01/2026\nT1,234\nPTransfer\nLSalary\n^\n"
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\nD03/01/2026\nT1,234\nPTransfer\nLSalary\n^\n"
     )
 
     result = qif.import_book(db, path, number_format="comma")

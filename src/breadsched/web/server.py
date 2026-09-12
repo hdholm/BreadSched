@@ -133,12 +133,10 @@ class Api:
                     "value": str(group.value.to_decimal()) if group.value else None,
                     "debt": str(group.debt.to_decimal()) if group.debt else None,
                     "equity": (
-                        str(group.equity.to_decimal())
-                        if group.equity is not None else None
+                        str(group.equity.to_decimal()) if group.equity is not None else None
                     ),
                     "loan_to_value": (
-                        float(group.loan_to_value)
-                        if group.loan_to_value is not None else None
+                        float(group.loan_to_value) if group.loan_to_value is not None else None
                     ),
                     "accounts": [
                         {"name": name, "balance": str(balance.to_decimal())}
@@ -160,7 +158,8 @@ class Api:
                 }
                 for claim in fsa_claims.iter_claims(self.db)
                 for summary in [fsa_claims.claim_summary(self.db, claim)]
-                if summary.status not in {
+                if summary.status
+                not in {
                     fsa_claims.FsaClaimStatus.FULLY_REIMBURSED,
                 }
             ],
@@ -172,7 +171,8 @@ class Api:
                     "through": status.year.through.isoformat(),
                     "runout_through": (
                         status.year.runout_through.isoformat()
-                        if status.year.runout_through else None
+                        if status.year.runout_through
+                        else None
                     ),
                     "election": str(status.year.election.to_decimal()),
                     "funded": str(status.funded.to_decimal()),
@@ -233,8 +233,7 @@ class Api:
                                 "through": year.through.isoformat(),
                                 "election": str(year.election.to_decimal()),
                                 "runout_through": (
-                                    year.runout_through.isoformat()
-                                    if year.runout_through else None
+                                    year.runout_through.isoformat() if year.runout_through else None
                                 ),
                             }
                             for year in account.fsa_years
@@ -249,7 +248,6 @@ class Api:
         root = self.db.root_account()
         walk(root.handle if root else None, 0)
         return rows
-
 
     def account_planning_role_save(self, payload: dict) -> dict:
         handle = str(payload.get("handle", ""))
@@ -277,12 +275,14 @@ class Api:
         years: list[FsaFundingYear] = []
         for raw in payload.get("years", []):
             runout = str(raw.get("runout_through", "")).strip()
-            years.append(FsaFundingYear(
-                start=date.fromisoformat(str(raw["start"])),
-                through=date.fromisoformat(str(raw["through"])),
-                election=self._input_money(payload, raw["election"]),
-                runout_through=date.fromisoformat(runout) if runout else None,
-            ))
+            years.append(
+                FsaFundingYear(
+                    start=date.fromisoformat(str(raw["start"])),
+                    through=date.fromisoformat(str(raw["through"])),
+                    election=self._input_money(payload, raw["election"]),
+                    runout_through=date.fromisoformat(runout) if runout else None,
+                )
+            )
         years.sort(key=lambda year: year.start)
         for earlier, later in zip(years, years[1:], strict=False):
             if later.start <= earlier.through:
@@ -296,36 +296,40 @@ class Api:
         rows = []
         for claim in fsa_claims.iter_claims(self.db):
             summary = fsa_claims.claim_summary(self.db, claim)
-            rows.append({
-                "handle": claim.handle,
-                "service_date": claim.service_date.isoformat(),
-                "provider": claim.provider,
-                "description": claim.description,
-                "eob_responsibility": (
-                    str(claim.eob_responsibility.to_decimal())
-                    if claim.eob_responsibility is not None else None
-                ),
-                "paid": str(summary.paid.to_decimal()),
-                "provider_refunds": str(summary.refunds.to_decimal()),
-                "net_paid": str(summary.net_paid.to_decimal()),
-                "reimbursed": str(summary.reimbursed.to_decimal()),
-                "rejected": str(summary.rejected.to_decimal()),
-                "remaining": str(summary.remaining_reimbursable.to_decimal()),
-                "status": summary.status.value,
-                "status_label": summary.status.label,
-                "payments": [link.serialize() for link in claim.payments],
-                "refunds": [link.serialize() for link in claim.refunds],
-                "allocations": [
-                    {
-                        **allocation.serialize(),
-                        "account_name": (
-                            self.db.full_name(allocation.account)
-                            if self.db.get_account(allocation.account) else allocation.account
-                        ),
-                    }
-                    for allocation in claim.allocations
-                ],
-            })
+            rows.append(
+                {
+                    "handle": claim.handle,
+                    "service_date": claim.service_date.isoformat(),
+                    "provider": claim.provider,
+                    "description": claim.description,
+                    "eob_responsibility": (
+                        str(claim.eob_responsibility.to_decimal())
+                        if claim.eob_responsibility is not None
+                        else None
+                    ),
+                    "paid": str(summary.paid.to_decimal()),
+                    "provider_refunds": str(summary.refunds.to_decimal()),
+                    "net_paid": str(summary.net_paid.to_decimal()),
+                    "reimbursed": str(summary.reimbursed.to_decimal()),
+                    "rejected": str(summary.rejected.to_decimal()),
+                    "remaining": str(summary.remaining_reimbursable.to_decimal()),
+                    "status": summary.status.value,
+                    "status_label": summary.status.label,
+                    "payments": [link.serialize() for link in claim.payments],
+                    "refunds": [link.serialize() for link in claim.refunds],
+                    "allocations": [
+                        {
+                            **allocation.serialize(),
+                            "account_name": (
+                                self.db.full_name(allocation.account)
+                                if self.db.get_account(allocation.account)
+                                else allocation.account
+                            ),
+                        }
+                        for allocation in claim.allocations
+                    ],
+                }
+            )
         return {"claims": rows, "candidates": self.fsa_claim_candidates()}
 
     def fsa_claim_candidates(self) -> dict:
@@ -397,8 +401,7 @@ class Api:
                         else None
                     ),
                     reimbursements=[
-                        FsaClaimSplitLink.from_dict(link)
-                        for link in item.get("reimbursements", [])
+                        FsaClaimSplitLink.from_dict(link) for link in item.get("reimbursements", [])
                     ],
                     rejections=[
                         FsaClaimRejection(
@@ -499,9 +502,7 @@ class Api:
         proposal = next((item for item in proposals if item.category == category), None)
         if proposal is None:
             raise ValueError("historical estimate proposal is no longer available")
-        handle = estimates.accept_historical_estimate(
-            self.db, proposal, scenario_handle=scenario
-        )
+        handle = estimates.accept_historical_estimate(self.db, proposal, scenario_handle=scenario)
         return {"handle": handle, "category": proposal.category_name}
 
     def scheduled(self, days: int = 60) -> dict:
@@ -533,14 +534,10 @@ class Api:
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
                     "planning_flow": simple["planning_flow"] if simple else None,
-                    "additional_splits": (
-                        simple["additional_splits"] if simple else []
-                    ),
+                    "additional_splits": (simple["additional_splits"] if simple else []),
                     "start": item.recurrence.start.isoformat(),
                     "end": (
-                        item.recurrence.end.isoformat()
-                        if item.recurrence.end is not None
-                        else None
+                        item.recurrence.end.isoformat() if item.recurrence.end is not None else None
                     ),
                     "count": item.recurrence.count,
                     "weekend": self._weekend_key(item.recurrence.weekend_adjust),
@@ -565,10 +562,7 @@ class Api:
                 }
                 for account in accounts
             ],
-            "upcoming": [
-                {"date": o.when, "name": o.name, "amount": o.amount}
-                for o in occurrences
-            ],
+            "upcoming": [{"date": o.when, "name": o.name, "amount": o.amount} for o in occurrences],
         }
 
     @staticmethod
@@ -645,22 +639,21 @@ class Api:
         for account in self.db.iter_accounts():
             if not (
                 account.account_class is AccountClass.LIABILITY
-                or (
-                    account.account_class is AccountClass.ASSET
-                    and account.atype.is_investment
-                )
+                or (account.account_class is AccountClass.ASSET and account.atype.is_investment)
             ):
                 continue
-            projection_accounts.append({
-                "handle": account.handle,
-                "name": self.db.full_name(account),
-                "class": account.account_class.value,
-                "account_rate": (
-                    account.annual_interest
-                    if account.account_class is AccountClass.LIABILITY
-                    else account.annual_return
-                ),
-            })
+            projection_accounts.append(
+                {
+                    "handle": account.handle,
+                    "name": self.db.full_name(account),
+                    "class": account.account_class.value,
+                    "account_rate": (
+                        account.annual_interest
+                        if account.account_class is AccountClass.LIABILITY
+                        else account.annual_return
+                    ),
+                }
+            )
         projection_accounts.sort(key=lambda item: item["name"].casefold())
         return {
             "scenarios": [
@@ -684,10 +677,7 @@ class Api:
                 raise ValueError(f"unknown account assumption: {handle}")
             if not (
                 account.account_class is AccountClass.LIABILITY
-                or (
-                    account.account_class is AccountClass.ASSET
-                    and account.atype.is_investment
-                )
+                or (account.account_class is AccountClass.ASSET and account.atype.is_investment)
             ):
                 raise ValueError(
                     "account-specific projection rate is not valid for "
@@ -858,7 +848,6 @@ class Api:
             self.db.commit_scenario(scenario, txn)
         return self._scenario_payload(scenario)
 
-
     _SCENARIO_FREQUENCIES = {
         "weekly": (PeriodType.WEEK, 1),
         "biweekly": (PeriodType.WEEK, 2),
@@ -891,7 +880,8 @@ class Api:
         for split in scheduled.splits:
             account = self.db.get_account(split.account)
             if account is not None and account.account_class in (
-                AccountClass.INCOME, AccountClass.EXPENSE
+                AccountClass.INCOME,
+                AccountClass.EXPENSE,
             ):
                 flow = split
                 break
@@ -903,9 +893,7 @@ class Api:
                 split
                 for split in others
                 if (account := self.db.get_account(split.account)) is not None
-                and account.account_class not in (
-                    AccountClass.INCOME, AccountClass.EXPENSE
-                )
+                and account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
                 and split.planning_flow is None
             ),
             others[-1] if others else None,
@@ -935,9 +923,7 @@ class Api:
                     "account": split.account,
                     "amount": str(normal_amount.to_decimal()),
                     "planning_flow": (
-                        split.planning_flow.value
-                        if split.planning_flow is not None
-                        else None
+                        split.planning_flow.value if split.planning_flow is not None else None
                     ),
                 }
             )
@@ -966,11 +952,7 @@ class Api:
         return "none"
 
     def _scenario_event_payload(self, item: ScenarioSchedule) -> dict:
-        source = (
-            self.db.get_scheduled(item.source_schedule)
-            if item.source_schedule
-            else None
-        )
+        source = self.db.get_scheduled(item.source_schedule) if item.source_schedule else None
         simple = self._simple_schedule_parts(item)
         return {
             "handle": item.handle,
@@ -979,9 +961,7 @@ class Api:
             "source_name": source.name if source is not None else None,
             "enabled": item.enabled,
             "growth_policy": item.growth_policy.value,
-            "simple": (
-                simple is not None and self._frequency_key(item.recurrence) is not None
-            ),
+            "simple": (simple is not None and self._frequency_key(item.recurrence) is not None),
             "category": simple["category"] if simple else None,
             "funding": simple["funding"] if simple else None,
             "amount": simple["amount"] if simple else None,
@@ -1051,9 +1031,7 @@ class Api:
                 }
                 for item in schedules
             ],
-            "changes": [
-                self._scenario_event_payload(item) for item in scenario.schedule_overrides
-            ],
+            "changes": [self._scenario_event_payload(item) for item in scenario.schedule_overrides],
         }
 
     @staticmethod
@@ -1160,9 +1138,7 @@ class Api:
             except ValueError:
                 raise ValueError("choose a valid planning purpose") from None
             value = (
-                purpose.ledger_amount(amount)
-                if purpose is not None
-                else amount * account.sign()
+                purpose.ledger_amount(amount) if purpose is not None else amount * account.sign()
             )
             splits.append(ScheduledSplit(handle, value, planning_flow=purpose))
             total = total + value
@@ -1183,11 +1159,7 @@ class Api:
             raise ValueError("give the scenario estimate a name")
         category_handle = str(payload.get("category", "")).strip()
         funding_handle = str(payload.get("funding", "")).strip()
-        if (
-            not category_handle
-            or not funding_handle
-            or category_handle == funding_handle
-        ):
+        if not category_handle or not funding_handle or category_handle == funding_handle:
             raise ValueError("choose two different accounts")
         category = self.db.get_account(category_handle)
         funding = self.db.get_account(funding_handle)
@@ -1234,7 +1206,11 @@ class Api:
                 if count < 1:
                     raise ValueError("occurrence count must be at least 1")
         recurrence = Recurrence(
-            period=period, interval=interval, start=start, end=end, count=count,
+            period=period,
+            interval=interval,
+            start=start,
+            end=end,
+            count=count,
             weekend_adjust=self._SCENARIO_WEEKENDS[weekend],
         )
         skipped = self._parse_skipped(payload, recurrence)
@@ -1244,9 +1220,7 @@ class Api:
         signed = amount * category.sign()
         planning_flow_raw = str(payload.get("planning_flow") or "").strip()
         try:
-            planning_flow = (
-                PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
-            )
+            planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
         except ValueError:
             raise ValueError("choose a valid planning purpose") from None
         additional_splits, additional_total = self._parse_additional_splits(
@@ -1300,7 +1274,8 @@ class Api:
         )
         if source_handle:
             scenario.schedule_overrides = [
-                item for item in scenario.schedule_overrides
+                item
+                for item in scenario.schedule_overrides
                 if item.source_schedule != source_handle
             ]
         scenario.schedule_overrides.append(change)
@@ -1315,12 +1290,9 @@ class Api:
         if source is None:
             raise KeyError(source_handle)
         scenario.schedule_overrides = [
-            item for item in scenario.schedule_overrides
-            if item.source_schedule != source_handle
+            item for item in scenario.schedule_overrides if item.source_schedule != source_handle
         ]
-        scenario.schedule_overrides.append(
-            ScenarioSchedule.from_scheduled(source, enabled=False)
-        )
+        scenario.schedule_overrides.append(ScenarioSchedule.from_scheduled(source, enabled=False))
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
         return self.scenario_events(scenario.handle)
@@ -1357,9 +1329,7 @@ class Api:
             end = self._month_end(through.year, through.month)
 
         if start < minimum:
-            raise ValueError(
-                f"From cannot be earlier than the first book data ({minimum:%b %Y})."
-            )
+            raise ValueError(f"From cannot be earlier than the first book data ({minimum:%b %Y}).")
         if end < start:
             raise ValueError("Through must be the same month as From or later.")
         if end > maximum:
@@ -1368,9 +1338,7 @@ class Api:
         grouping = activity.ReportingPeriod(period)
         scenarios = list(self.db.iter_scenarios())
         if scenario_handle:
-            selected = next(
-                (item for item in scenarios if item.handle == scenario_handle), None
-            )
+            selected = next((item for item in scenarios if item.handle == scenario_handle), None)
             if selected is None:
                 raise KeyError(scenario_handle)
             scenario = selected
@@ -1403,9 +1371,7 @@ class Api:
                 self.db, start, end, period=grouping, scenario=compare_scenario
             )
             compare_rows = {row.account: row for row in compare_report.categories}
-            compare_flows = {
-                (row.kind, row.account): row for row in compare_report.planning_flows
-            }
+            compare_flows = {(row.kind, row.account): row for row in compare_report.planning_flows}
             comparison_categories: list[dict[str, object]] = []
             comparison_flows: list[dict[str, object]] = []
             comparison = {
@@ -1416,16 +1382,12 @@ class Api:
                     "actual_cash": compare_report.activity.actual_cash_change,
                     "variance": compare_report.cash_variance,
                     "planned_cash_delta": (
-                        totals.planned_cash_change
-                        - compare_report.activity.planned_cash_change
+                        totals.planned_cash_change - compare_report.activity.planned_cash_change
                     ),
                     "actual_cash_delta": (
-                        totals.actual_cash_change
-                        - compare_report.activity.actual_cash_change
+                        totals.actual_cash_change - compare_report.activity.actual_cash_change
                     ),
-                    "variance_delta": (
-                        report.cash_variance - compare_report.cash_variance
-                    ),
+                    "variance_delta": (report.cash_variance - compare_report.cash_variance),
                 },
                 "categories": comparison_categories,
                 "planning_flows": comparison_flows,
@@ -1446,15 +1408,11 @@ class Api:
                         "variance": other_variance,
                         "planned_delta": [
                             value - alternate
-                            for value, alternate in zip(
-                                row.planned, other_planned, strict=True
-                            )
+                            for value, alternate in zip(row.planned, other_planned, strict=True)
                         ],
                         "actual_delta": [
                             value - alternate
-                            for value, alternate in zip(
-                                row.actual, other_actual, strict=True
-                            )
+                            for value, alternate in zip(row.actual, other_actual, strict=True)
                         ],
                         "variance_delta": [
                             (
@@ -1462,9 +1420,7 @@ class Api:
                                 if value is not None and alternate is not None
                                 else None
                             )
-                            for value, alternate in zip(
-                                row.variance, other_variance, strict=True
-                            )
+                            for value, alternate in zip(row.variance, other_variance, strict=True)
                         ],
                     }
                 )
@@ -1518,10 +1474,7 @@ class Api:
                 "scenario": scenario_handle,
                 "scenarios": [
                     {"handle": None, "name": "Base scenario"},
-                    *[
-                        {"handle": item.handle, "name": item.name}
-                        for item in scenarios
-                    ],
+                    *[{"handle": item.handle, "name": item.name} for item in scenarios],
                 ],
             },
             "periods": [
@@ -1581,9 +1534,7 @@ class Api:
         end = date.fromisoformat(end_value)
         scenarios = list(self.db.iter_scenarios())
         if scenario_handle:
-            scenario = next(
-                (item for item in scenarios if item.handle == scenario_handle), None
-            )
+            scenario = next((item for item in scenarios if item.handle == scenario_handle), None)
             if scenario is None:
                 raise KeyError(scenario_handle)
             scenario_name = scenario.name
@@ -1670,38 +1621,52 @@ class Api:
             if account is None:
                 continue
             if account.account_class is AccountClass.EXPENSE and split.value > 0:
-                roles.append({
-                    "role": "payment", "split": split.handle,
-                    "account": self.db.full_name(account),
-                })
+                roles.append(
+                    {
+                        "role": "payment",
+                        "split": split.handle,
+                        "account": self.db.full_name(account),
+                    }
+                )
             if account.account_class is AccountClass.EXPENSE and split.value < 0:
-                roles.append({
-                    "role": "refund", "split": split.handle,
-                    "account": self.db.full_name(account),
-                })
+                roles.append(
+                    {
+                        "role": "refund",
+                        "split": split.handle,
+                        "account": self.db.full_name(account),
+                    }
+                )
             if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
-                roles.append({
-                    "role": "reimbursement", "split": split.handle,
-                    "account": self.db.full_name(account),
-                    "years": [year.start.isoformat() for year in account.fsa_years
-                              if transaction.post_date <= (year.runout_through or year.through)],
-                })
+                roles.append(
+                    {
+                        "role": "reimbursement",
+                        "split": split.handle,
+                        "account": self.db.full_name(account),
+                        "years": [
+                            year.start.isoformat()
+                            for year in account.fsa_years
+                            if transaction.post_date <= (year.runout_through or year.through)
+                        ],
+                    }
+                )
         claims = []
         for suggestion in fsa_claims.suggest_claims_for_transaction(self.db, transaction):
             claim = suggestion.claim
             summary = fsa_claims.claim_summary(self.db, claim)
-            claims.append({
-                "handle": claim.handle,
-                "label": (
-                    f"{claim.service_date.isoformat()} "
-                    f"{claim.provider or claim.description or 'FSA claim'}"
-                ),
-                "remaining": summary.remaining_reimbursable,
-                "score": suggestion.score,
-                "reason": suggestion.reason,
-                "suggested_role": suggestion.role,
-                "suggested_split": suggestion.split_handle,
-            })
+            claims.append(
+                {
+                    "handle": claim.handle,
+                    "label": (
+                        f"{claim.service_date.isoformat()} "
+                        f"{claim.provider or claim.description or 'FSA claim'}"
+                    ),
+                    "remaining": summary.remaining_reimbursable,
+                    "score": suggestion.score,
+                    "reason": suggestion.reason,
+                    "suggested_role": suggestion.role,
+                    "suggested_split": suggestion.split_handle,
+                }
+            )
         return {"roles": roles, "claims": claims}
 
     def review(self, transaction_handle: str | None = None) -> dict:
@@ -1749,9 +1714,7 @@ class Api:
                         "description": event.description,
                         "expected_amount": event.expected_amount,
                         "date_distance_days": candidate.date_distance,
-                        "date_variance_days": (
-                            transaction.post_date - event.planned_date
-                        ).days,
+                        "date_variance_days": (transaction.post_date - event.planned_date).days,
                         "amount_difference": candidate.amount_difference,
                         "amount_variance": actual_amount - event.expected_amount,
                         "common_accounts": candidate.common_accounts,
@@ -1778,8 +1741,7 @@ class Api:
             "shortfalls": report.shortfall_periods(),
             "net": [report.net_cash_flow(p) for p in range(report.budget.periods)],
             "net_actual": [
-                report.net_cash_flow(p, actual=True)
-                for p in range(report.budget.periods)
+                report.net_cash_flow(p, actual=True) for p in range(report.budget.periods)
             ],
             "lines": [
                 {
@@ -1849,9 +1811,7 @@ class Api:
         )
         return scenario
 
-    def _projection_payload(
-        self, scenario: Scenario, *, base: bool = False, result=None
-    ) -> dict:
+    def _projection_payload(self, scenario: Scenario, *, base: bool = False, result=None) -> dict:
         if result is None:
             result = projection.project(self.db, scenario)
         return {
@@ -1872,8 +1832,7 @@ class Api:
                     ],
                 ],
                 "budgets": [
-                    {"handle": item.handle, "name": item.name}
-                    for item in self.db.iter_budgets()
+                    {"handle": item.handle, "name": item.name} for item in self.db.iter_budgets()
                 ],
             },
             "summary": result.summary(),
@@ -1941,9 +1900,7 @@ class Api:
             "events": [event.as_dict() for event in detail.events],
         }
 
-    def projection(
-        self, scenario_handle: str | None = None, years: int | None = None
-    ) -> dict:
+    def projection(self, scenario_handle: str | None = None, years: int | None = None) -> dict:
         """Calculate a persisted Base/saved scenario without mutating it."""
         return self._projection_payload(
             self._projection_draft(scenario_handle, years), base=scenario_handle is None
@@ -2010,9 +1967,7 @@ class Api:
                         "cash_delta": difference(left.cash_close, right.cash_close),
                         "net_worth_delta": difference(left.net_worth, right.net_worth),
                     }
-                    for left, right in zip(
-                        primary_result.rows, comparison_result.rows, strict=True
-                    )
+                    for left, right in zip(primary_result.rows, comparison_result.rows, strict=True)
                 ],
             },
         }
@@ -2023,9 +1978,7 @@ class Api:
         scenario = self._projection_draft(handle)
         self._apply_projection_payload(scenario, payload)
         if handle is None:
-            self.db.set_metadata(
-                "planning.base_assumptions", scenario.assumptions.serialize()
-            )
+            self.db.set_metadata("planning.base_assumptions", scenario.assumptions.serialize())
             return self._projection_payload(scenario, base=True)
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
@@ -2041,9 +1994,7 @@ class Api:
             raise KeyError("unknown account")
         when = date.fromisoformat(payload.get("date") or date.today().isoformat())
         amount = self._input_money(payload, payload["amount"])
-        txn = Transaction(
-            post_date=when, description=payload.get("description", "").strip()
-        )
+        txn = Transaction(post_date=when, description=payload.get("description", "").strip())
         memo = payload.get("memo", "")
         txn.add_split(Split(debit.handle, amount, memo=memo))
         txn.add_split(Split(credit.handle, -amount, memo=memo))
@@ -2054,7 +2005,10 @@ class Api:
         if claim_handle and claim_role:
             funding_year = str(payload.get("fsa_year") or "").strip()
             fsa_claims.attach_transaction_to_claim(
-                self.db, claim_handle, txn.handle, role=claim_role,
+                self.db,
+                claim_handle,
+                txn.handle,
+                role=claim_role,
                 funding_year_start=(date.fromisoformat(funding_year) if funding_year else None),
             )
         return {"handle": txn.handle, "date": when, "amount": amount}
@@ -2215,11 +2169,7 @@ class Api:
             raise ValueError("schedule name is required")
         category_handle = str(payload.get("category") or "").strip()
         funding_handle = str(payload.get("funding") or "").strip()
-        if (
-            not category_handle
-            or not funding_handle
-            or category_handle == funding_handle
-        ):
+        if not category_handle or not funding_handle or category_handle == funding_handle:
             raise ValueError("choose two different accounts")
         category = self.db.get_account(category_handle)
         funding = self.db.get_account(funding_handle)
@@ -2304,9 +2254,7 @@ class Api:
         signed = amount * category.sign()
         planning_flow_raw = str(payload.get("planning_flow") or "").strip()
         try:
-            planning_flow = (
-                PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
-            )
+            planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
         except ValueError:
             raise ValueError("choose a valid planning purpose") from None
         additional_splits, additional_total = self._parse_additional_splits(
@@ -2339,7 +2287,6 @@ class Api:
                 self.db.commit_scheduled(item, txn)
         return {"handle": item.handle, "name": item.name}
 
-
     def import_local(self, payload: dict) -> dict:
         path = str(payload.get("path") or "").strip()
         if not path:
@@ -2367,9 +2314,7 @@ class Api:
         posted = schedule.post_due(self.db, only_auto=False)
         return {
             "posted": len(posted),
-            "transactions": [
-                {"date": t.post_date, "description": t.description} for t in posted
-            ],
+            "transactions": [{"date": t.post_date, "description": t.description} for t in posted],
         }
 
 

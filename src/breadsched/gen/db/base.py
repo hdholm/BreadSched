@@ -274,9 +274,7 @@ class DbBase(Callback, ABC):
     def get_metadata(self, key: str, default: Any = None) -> Any: ...
 
     @abstractmethod
-    def set_metadata(
-        self, key: str, value: Any, txn: DbTxn | None = None
-    ) -> None: ...
+    def set_metadata(self, key: str, value: Any, txn: DbTxn | None = None) -> None: ...
 
     # --------------------------------------------------------------- utilities
 

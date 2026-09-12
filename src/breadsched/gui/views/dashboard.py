@@ -25,9 +25,16 @@ __all__ = ["DashboardView"]
 class DashboardView(BaseView):
     """Balances, the liquidity verdict, and the bills."""
 
-    WATCHES = ("database-changed", "transaction-add", "transaction-update",
-               "transaction-delete", "scheduled-add", "scheduled-update",
-               "scheduled-delete", "account-update")
+    WATCHES = (
+        "database-changed",
+        "transaction-add",
+        "transaction-update",
+        "transaction-delete",
+        "scheduled-add",
+        "scheduled-update",
+        "scheduled-delete",
+        "account-update",
+    )
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
@@ -51,9 +58,7 @@ class DashboardView(BaseView):
         bar.append(Gtk.Label(label="Liquid for"))
         self.liquidity_spin = Gtk.SpinButton.new_with_range(7, 365, 1)
         self.liquidity_spin.set_value(30)
-        self.liquidity_spin.set_tooltip_text(
-            "Days of bills that must be covered by cash on hand"
-        )
+        self.liquidity_spin.set_tooltip_text("Days of bills that must be covered by cash on hand")
         self.liquidity_spin.connect("value-changed", self._on_setting_changed)
         bar.append(self.liquidity_spin)
         bar.append(Gtk.Label(label="days"))
@@ -61,9 +66,7 @@ class DashboardView(BaseView):
         bar.append(Gtk.Label(label="Emergency"))
         self.emergency_spin = Gtk.SpinButton.new_with_range(1, 36, 1)
         self.emergency_spin.set_value(6)
-        self.emergency_spin.set_tooltip_text(
-            "Months of outgoings the emergency fund should cover"
-        )
+        self.emergency_spin.set_tooltip_text("Months of outgoings the emergency fund should cover")
         self.emergency_spin.connect("value-changed", self._on_setting_changed)
         bar.append(self.emergency_spin)
         bar.append(Gtk.Label(label="months"))
@@ -135,24 +138,39 @@ class DashboardView(BaseView):
         # The schedule's own words, not a decimal month count: "every 3 months"
         # is what the user set, and 3.0000 reads as though it were the truth.
         self.bills_view.append_column(
-            column("Frequency", lambda b: b.frequency,
-                   sort_key=lambda b: b.cycle_months)
+            column("Frequency", lambda b: b.frequency, sort_key=lambda b: b.cycle_months)
         )
         self.bills_view.append_column(
-            column("Amount", lambda b: b.amount.format(),
-                   sort_key=lambda b: b.amount.to_decimal(), numeric=True)
+            column(
+                "Amount",
+                lambda b: b.amount.format(),
+                sort_key=lambda b: b.amount.to_decimal(),
+                numeric=True,
+            )
         )
         self.bills_view.append_column(
-            column("Monthly", lambda b: b.monthly.format(),
-                   sort_key=lambda b: b.monthly.to_decimal(), numeric=True)
+            column(
+                "Monthly",
+                lambda b: b.monthly.format(),
+                sort_key=lambda b: b.monthly.to_decimal(),
+                numeric=True,
+            )
         )
         self.bills_view.append_column(
-            column("Hold now", lambda b: b.hold(self._today()).format(),
-                   sort_key=lambda b: b.hold(self._today()).to_decimal(), numeric=True)
+            column(
+                "Hold now",
+                lambda b: b.hold(self._today()).format(),
+                sort_key=lambda b: b.hold(self._today()).to_decimal(),
+                numeric=True,
+            )
         )
         self.bills_view.append_column(
-            column("Annual", lambda b: b.annual.format(),
-                   sort_key=lambda b: b.annual.to_decimal(), numeric=True)
+            column(
+                "Annual",
+                lambda b: b.annual.format(),
+                sort_key=lambda b: b.annual.to_decimal(),
+                numeric=True,
+            )
         )
         self.bills_view.append_column(
             column("Kind", lambda b: "Estimate" if b.estimate else "Committed")
@@ -199,9 +217,7 @@ class DashboardView(BaseView):
         store = Gio.ListStore.new(Row)
         for bill in self.board.bills:
             store.append(Row(bill))
-        self.bills_view.set_model(
-            Gtk.SingleSelection(model=sorted_model(self.bills_view, store))
-        )
+        self.bills_view.set_model(Gtk.SingleSelection(model=sorted_model(self.bills_view, store)))
 
     def _render_cards(self) -> None:
         _empty(self.cards)
@@ -213,11 +229,13 @@ class DashboardView(BaseView):
         cards = [
             ("Net worth", summary["net_worth"], False),
             ("Liquid", summary["liquid"], False),
-            (f"Needed in {board.config.liquidity_days} days",
-             summary["required_liquid"], False),
+            (f"Needed in {board.config.liquidity_days} days", summary["required_liquid"], False),
             ("Available", summary["available"], summary["available"] < 0),
-            (f"Emergency fund ({board.config.emergency_months} mo)",
-             summary["emergency_fund"], False),
+            (
+                f"Emergency fund ({board.config.emergency_months} mo)",
+                summary["emergency_fund"],
+                False,
+            ),
         ]
         for label, amount, alarm in cards:
             self.cards.append(_card(label, amount.format(parens_negative=True), alarm))
@@ -231,18 +249,14 @@ class DashboardView(BaseView):
             )
         )
         if shortfall > 0:
-            self.cards.append(
-                _card("Short of the fund", shortfall.format(), True)
-            )
+            self.cards.append(_card("Short of the fund", shortfall.format(), True))
 
     def _render_groups(self) -> None:
         _empty(self.groups)
         board = self.board
         assert board is not None
 
-        for position, heading in enumerate(
-            ("Group", "Value", "Owed", "Equity / total", "LTV")
-        ):
+        for position, heading in enumerate(("Group", "Value", "Owed", "Equity / total", "LTV")):
             label = Gtk.Label(label=heading, xalign=1 if position else 0)
             label.add_css_class("summary-label")
             self.groups.attach(label, position, 0, 1, 1)
@@ -259,12 +273,18 @@ class DashboardView(BaseView):
             )
             self.groups.attach(
                 _amount(group.equity if group.equity is not None else group.total),
-                3, index, 1, 1,
+                3,
+                index,
+                1,
+                1,
             )
             ratio = group.loan_to_value
             self.groups.attach(
                 Gtk.Label(label=f"{ratio:.1%}" if ratio is not None else "", xalign=1),
-                4, index, 1, 1,
+                4,
+                index,
+                1,
+                1,
             )
 
     def _render_fsa(self) -> None:
@@ -277,17 +297,30 @@ class DashboardView(BaseView):
         self.fsa_grid.set_visible(bool(statuses))
         if not statuses:
             return
-        headings = ("Account", "Funding year", "Status", "Election", "Funded",
-                    "Used", "Remaining", "Forfeited")
+        headings = (
+            "Account",
+            "Funding year",
+            "Status",
+            "Election",
+            "Funded",
+            "Used",
+            "Remaining",
+            "Forfeited",
+        )
         for column_index, heading in enumerate(headings):
             label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
             label.add_css_class("summary-label")
             self.fsa_grid.attach(label, column_index, 0, 1, 1)
         for row_index, status in enumerate(statuses, start=1):
             values = (
-                self.db.full_name(status.account), status.label, status.phase,
-                status.year.election.format(), status.funded.format(), status.used.format(),
-                status.remaining.format(), status.forfeited.format(),
+                self.db.full_name(status.account),
+                status.label,
+                status.phase,
+                status.year.election.format(),
+                status.funded.format(),
+                status.used.format(),
+                status.remaining.format(),
+                status.forfeited.format(),
             )
             for column_index, value in enumerate(values):
                 label = Gtk.Label(label=value, xalign=1 if column_index >= 3 else 0)
@@ -305,7 +338,8 @@ class DashboardView(BaseView):
             for claim in fsa_claims.iter_claims(self.db)
         ]
         summaries = [
-            summary for summary in summaries
+            summary
+            for summary in summaries
             if summary.status is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
         ]
         self.fsa_claim_heading.set_visible(bool(summaries))
@@ -313,8 +347,14 @@ class DashboardView(BaseView):
         if not summaries:
             return
         headings = (
-            "Service date", "Provider", "Status", "Net paid", "Reimbursed",
-            "Rejected", "Remaining", "Action",
+            "Service date",
+            "Provider",
+            "Status",
+            "Net paid",
+            "Reimbursed",
+            "Rejected",
+            "Remaining",
+            "Action",
         )
         for column_index, heading in enumerate(headings):
             label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
@@ -343,7 +383,6 @@ class DashboardView(BaseView):
             self.fsa_claim_grid.attach(review, 7, row_index, 1, 1)
 
     # ----------------------------------------------------------------- actions
-
 
     def _open_fsa_claim(self, claim_handle: str | None = None) -> None:
         from ..dialogs.fsa_claims_dialog import FsaClaimsDialog

@@ -132,9 +132,7 @@ class DashboardConfig:
             "liquidity_days": self.liquidity_days,
             "emergency_months": self.emergency_months,
             "reserve": [self.reserve.numerator, self.reserve.denominator],
-            "minimum_bill": [
-                self.minimum_bill.numerator, self.minimum_bill.denominator
-            ],
+            "minimum_bill": [self.minimum_bill.numerator, self.minimum_bill.denominator],
         }
 
     @classmethod
@@ -228,9 +226,7 @@ def default_config(db: DbSQLite) -> DashboardConfig:
     # mentions every account, and a field that only applied to unmentioned ones
     # would never do anything.
     named: dict[str, GroupConfig] = {}
-    for bucket in (
-        liquid, retirement, fsa_accounts, investments, other_assets, liabilities
-    ):
+    for bucket in (liquid, retirement, fsa_accounts, investments, other_assets, liabilities):
         for handle in list(bucket):
             named_account = db.get_account(handle)
             if named_account is None or not named_account.group:
@@ -557,9 +553,7 @@ def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
 
     # 1. Loans gathered onto the asset they are secured on.
     paired_in_config = {
-        handle
-        for group in config.groups if _pairs_a_loan(db, group)
-        for handle in group.accounts
+        handle for group in config.groups if _pairs_a_loan(db, group) for handle in group.accounts
     }
     by_asset: dict[str, list[Account]] = {}
     for loan, asset in linked_pairs(db):
@@ -587,9 +581,7 @@ def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
         remaining = [h for h in group.accounts if h not in claimed]
         if not remaining:
             continue
-        resolved.append(
-            GroupConfig(name=group.name, accounts=remaining, kind=group.kind)
-        )
+        resolved.append(GroupConfig(name=group.name, accounts=remaining, kind=group.kind))
         claimed.update(remaining)
 
     # 3. Accounts naming a group the configuration did not place them in.
@@ -599,9 +591,7 @@ def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
             continue
         existing_group = by_name.get(account.group)
         if existing_group is None:
-            existing_group = GroupConfig(
-                name=account.group, accounts=[], kind=_kind_for(account)
-            )
+            existing_group = GroupConfig(name=account.group, accounts=[], kind=_kind_for(account))
             by_name[account.group] = existing_group
             resolved.append(existing_group)
         existing_group.accounts.append(account.handle)
@@ -658,9 +648,7 @@ def _group_result(db: DbSQLite, group: GroupConfig, today: date) -> GroupResult:
         else:
             value = value + balance
 
-    result = GroupResult(
-        name=group.name, kind=group.kind, total=total, accounts=lines
-    )
+    result = GroupResult(name=group.name, kind=group.kind, total=total, accounts=lines)
     if group.kind == "property" or (value and debt):
         # A property line is only useful as value against loan: either number
         # alone says nothing about whether the house is an asset yet.
@@ -723,9 +711,7 @@ def _bills_and_income(
 
         days = cycle_days(sched)
         if income > 0 and income >= outflow:
-            income_per_month = income_per_month + (
-                income * (DAYS_PER_MONTH / days)
-            ).quantize(100)
+            income_per_month = income_per_month + (income * (DAYS_PER_MONTH / days)).quantize(100)
             if next_income is None or when < next_income:
                 next_income = when
             continue

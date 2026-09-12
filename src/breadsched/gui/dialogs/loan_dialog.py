@@ -33,8 +33,7 @@ class LoanDialog(Gtk.Window):
         self._liabilities = self._accounts_of(AccountClass.LIABILITY)
         self._expenses = self._accounts_of(AccountClass.EXPENSE)
         self._funding = [
-            a for a in db.iter_accounts()
-            if a.atype.is_cash_like and not a.placeholder
+            a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder
         ]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -132,7 +131,8 @@ class LoanDialog(Gtk.Window):
 
     def _accounts_of(self, account_class: AccountClass) -> list:
         return [
-            a for a in self.db.iter_accounts()
+            a
+            for a in self.db.iter_accounts()
             if a.account_class is account_class and not a.placeholder and not a.is_root
         ]
 
@@ -204,9 +204,7 @@ class LoanDialog(Gtk.Window):
             self.preview.attach(label, position, 0, 1, 1)
 
         for index, entry in enumerate(schedule_preview(terms, rows=12), start=1):
-            self.preview.attach(
-                Gtk.Label(label=str(entry["period"]), xalign=0), 0, index, 1, 1
-            )
+            self.preview.attach(Gtk.Label(label=str(entry["period"]), xalign=0), 0, index, 1, 1)
             for position, key in enumerate(
                 ("payment", "interest", "principal", "balance"), start=1
             ):

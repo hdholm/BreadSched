@@ -35,7 +35,11 @@ class TestInit:
         assert Path(book_path).exists()
         accounts = run_json(capsys, "accounts", book_path)
         assert {a["name"] for a in accounts} == {
-            "Assets", "Liabilities", "Income", "Expenses", "Equity"
+            "Assets",
+            "Liabilities",
+            "Income",
+            "Expenses",
+            "Equity",
         }
 
     def test_refuses_to_overwrite(self, capsys, book_path):
@@ -51,12 +55,36 @@ class TestPostingAndReading:
     @pytest.fixture
     def stocked(self, capsys, book_path):
         run(capsys, "init", book_path)
-        run(capsys, "add", book_path, "--date", "2026-01-01",
-            "--description", "Opening balance", "--from", "Equity",
-            "--to", "Assets", "--amount", "5000.00")
-        run(capsys, "add", book_path, "--date", "2026-01-05",
-            "--description", "Rent", "--from", "Assets", "--to", "Expenses",
-            "--amount", "1800.00")
+        run(
+            capsys,
+            "add",
+            book_path,
+            "--date",
+            "2026-01-01",
+            "--description",
+            "Opening balance",
+            "--from",
+            "Equity",
+            "--to",
+            "Assets",
+            "--amount",
+            "5000.00",
+        )
+        run(
+            capsys,
+            "add",
+            book_path,
+            "--date",
+            "2026-01-05",
+            "--description",
+            "Rent",
+            "--from",
+            "Assets",
+            "--to",
+            "Expenses",
+            "--amount",
+            "1800.00",
+        )
         return book_path
 
     def test_balances_reflect_postings(self, capsys, stocked):
@@ -101,8 +129,14 @@ class TestGnuCashSubcommands:
 
     def test_filters_transactions_by_date(self, capsys, gnucash_sqlite_path):
         rows = run_json(
-            capsys, "gnucash", "transactions", gnucash_sqlite_path.path,
-            "--start", "2026-01-20", "--end", "2026-01-31",
+            capsys,
+            "gnucash",
+            "transactions",
+            gnucash_sqlite_path.path,
+            "--start",
+            "2026-01-20",
+            "--end",
+            "2026-01-31",
         )
         assert [r["description"] for r in rows] == ["Payroll deposit"]
 
@@ -138,12 +172,41 @@ class TestBudgetAndProjection:
     def planned(self, capsys, book_path, gnucash_sqlite_path):
         run(capsys, "init", book_path)
         run(capsys, "import", book_path, gnucash_sqlite_path.path)
-        run(capsys, "budget-set", book_path, "--name", "2026",
-            "--account", "Income:Salary", "--amount", "4200.00", "--start", "2026-01-01")
-        run(capsys, "budget-set", book_path, "--name", "2026",
-            "--account", "Expenses:Rent", "--amount", "1800.00")
-        run(capsys, "budget-set", book_path, "--name", "2026",
-            "--account", "Expenses:Groceries", "--amount", "600.00")
+        run(
+            capsys,
+            "budget-set",
+            book_path,
+            "--name",
+            "2026",
+            "--account",
+            "Income:Salary",
+            "--amount",
+            "4200.00",
+            "--start",
+            "2026-01-01",
+        )
+        run(
+            capsys,
+            "budget-set",
+            book_path,
+            "--name",
+            "2026",
+            "--account",
+            "Expenses:Rent",
+            "--amount",
+            "1800.00",
+        )
+        run(
+            capsys,
+            "budget-set",
+            book_path,
+            "--name",
+            "2026",
+            "--account",
+            "Expenses:Groceries",
+            "--amount",
+            "600.00",
+        )
         return book_path
 
     def test_budget_report_shows_variance(self, capsys, planned):
@@ -153,47 +216,124 @@ class TestBudgetAndProjection:
         assert rent["actual"] == "1800.00"
 
     def test_projection_summarises_by_year(self, capsys, planned):
-        result = run_json(capsys, "project", planned, "--years", "3",
-                          "--basis", "budget", "--budget", "2026",
-                          "--start", "2026-01-01", "--income-growth", "0",
-                          "--inflation", "0", "--investment-return", "0",
-                          "--cash-interest", "0")
+        result = run_json(
+            capsys,
+            "project",
+            planned,
+            "--years",
+            "3",
+            "--basis",
+            "budget",
+            "--budget",
+            "2026",
+            "--start",
+            "2026-01-01",
+            "--income-growth",
+            "0",
+            "--inflation",
+            "0",
+            "--investment-return",
+            "0",
+            "--cash-interest",
+            "0",
+        )
         assert result["summary"]["months"] == 36
         assert result["summary"]["total_income"] == "151200.00"
 
     def test_projection_writes_csv(self, capsys, planned, tmp_path):
         out_file = tmp_path / "projection.csv"
-        code, out = run(capsys, "project", planned, "--years", "2",
-                        "--basis", "budget", "--budget", "2026",
-                        "--csv", str(out_file))
+        code, out = run(
+            capsys,
+            "project",
+            planned,
+            "--years",
+            "2",
+            "--basis",
+            "budget",
+            "--budget",
+            "2026",
+            "--csv",
+            str(out_file),
+        )
         assert code == 0
         lines = out_file.read_text().splitlines()
         assert lines[0].startswith("month,cash_open")
         assert len(lines) == 25
 
     def test_monthly_view_prints_every_month(self, capsys, planned):
-        code, out = run(capsys, "project", planned, "--years", "1", "--monthly",
-                        "--basis", "budget", "--budget", "2026", "--start", "2026-01-01")
+        code, out = run(
+            capsys,
+            "project",
+            planned,
+            "--years",
+            "1",
+            "--monthly",
+            "--basis",
+            "budget",
+            "--budget",
+            "2026",
+            "--start",
+            "2026-01-01",
+        )
         assert code == 0
         assert "Jan 2026" in out and "Dec 2026" in out
 
     def test_a_shortfall_is_called_out(self, capsys, planned):
-        run(capsys, "budget-set", planned, "--name", "2026",
-            "--account", "Expenses:Rent", "--amount", "9000.00")
-        code, out = run(capsys, "project", planned, "--years", "1",
-                        "--basis", "budget", "--budget", "2026", "--start", "2026-01-01")
+        run(
+            capsys,
+            "budget-set",
+            planned,
+            "--name",
+            "2026",
+            "--account",
+            "Expenses:Rent",
+            "--amount",
+            "9000.00",
+        )
+        code, out = run(
+            capsys,
+            "project",
+            planned,
+            "--years",
+            "1",
+            "--basis",
+            "budget",
+            "--budget",
+            "2026",
+            "--start",
+            "2026-01-01",
+        )
         assert "Cash runs out in" in out
 
     def test_activity_reports_periods_without_making_them_the_plan(self, capsys, book_path):
         run(capsys, "init", book_path)
-        run(capsys, "add", book_path, "--date", "2026-01-05",
-            "--description", "Unexpected purchase", "--from", "Assets",
-            "--to", "Expenses", "--amount", "25.00")
+        run(
+            capsys,
+            "add",
+            book_path,
+            "--date",
+            "2026-01-05",
+            "--description",
+            "Unexpected purchase",
+            "--from",
+            "Assets",
+            "--to",
+            "Expenses",
+            "--amount",
+            "25.00",
+        )
         posted = run_json(capsys, "register", book_path, "Assets")[0]
         run(capsys, "plan-unexpected", book_path, posted["handle"])
         result = run_json(
-            capsys, "activity", book_path, "--start", "2026-01-01",
-            "--end", "2026-03-31", "--period", "quarter",
+            capsys,
+            "activity",
+            book_path,
+            "--start",
+            "2026-01-01",
+            "--end",
+            "2026-03-31",
+            "--period",
+            "quarter",
         )
         assert result["period"] == "quarter"
         assert len(result["periods"]) == 1
@@ -229,17 +369,20 @@ class TestBudgetAndProjection:
         )
         assert activity_result["periods"]
 
-        assert run_json(
-            capsys,
-            "plan-unresolved",
-            book_path,
-            "--start",
-            "2026-01-01",
-            "--end",
-            "2026-01-31",
-            "--budget",
-            "Legacy plan",
-        ) == []
+        assert (
+            run_json(
+                capsys,
+                "plan-unresolved",
+                book_path,
+                "--start",
+                "2026-01-01",
+                "--end",
+                "2026-01-31",
+                "--budget",
+                "Legacy plan",
+            )
+            == []
+        )
 
         run(
             capsys,
@@ -257,14 +400,17 @@ class TestBudgetAndProjection:
             "10.00",
         )
         posted = run_json(capsys, "register", book_path, "Assets")[0]
-        assert run_json(
-            capsys,
-            "plan-matches",
-            book_path,
-            posted["handle"],
-            "--budget",
-            "Legacy plan",
-        ) == []
+        assert (
+            run_json(
+                capsys,
+                "plan-matches",
+                book_path,
+                posted["handle"],
+                "--budget",
+                "Legacy plan",
+            )
+            == []
+        )
 
     def test_plan_resolution_commands_preserve_user_decisions(self, capsys, book_path):
         from datetime import date
@@ -299,14 +445,31 @@ class TestBudgetAndProjection:
             db.close()
 
         unresolved = run_json(
-            capsys, "plan-unresolved", book_path,
-            "--start", "2026-01-01", "--end", "2026-01-31",
+            capsys,
+            "plan-unresolved",
+            book_path,
+            "--start",
+            "2026-01-01",
+            "--end",
+            "2026-01-31",
         )
         occurrence = unresolved[0]["key"]
 
-        run(capsys, "add", book_path, "--date", "2026-01-06",
-            "--description", "Actual bill", "--from", "Assets",
-            "--to", "Expenses", "--amount", "27.00")
+        run(
+            capsys,
+            "add",
+            book_path,
+            "--date",
+            "2026-01-06",
+            "--description",
+            "Actual bill",
+            "--from",
+            "Assets",
+            "--to",
+            "Expenses",
+            "--amount",
+            "27.00",
+        )
         posted = run_json(capsys, "register", book_path, "Assets")[0]
 
         matches = run_json(capsys, "plan-matches", book_path, posted["handle"])
@@ -315,15 +478,21 @@ class TestBudgetAndProjection:
         run(capsys, "plan-reject", book_path, posted["handle"], occurrence)
         assert run_json(capsys, "plan-matches", book_path, posted["handle"]) == []
 
-        resolved = run_json(
-            capsys, "plan-resolve", book_path, posted["handle"], occurrence
-        )
+        resolved = run_json(capsys, "plan-resolve", book_path, posted["handle"], occurrence)
         assert resolved["resolution"] == "matched"
         assert resolved["occurrence"] == occurrence
-        assert run_json(
-            capsys, "plan-unresolved", book_path,
-            "--start", "2026-01-01", "--end", "2026-01-31",
-        ) == []
+        assert (
+            run_json(
+                capsys,
+                "plan-unresolved",
+                book_path,
+                "--start",
+                "2026-01-01",
+                "--end",
+                "2026-01-31",
+            )
+            == []
+        )
 
 
 class TestScenarios:
@@ -331,15 +500,45 @@ class TestScenarios:
     def planned(self, capsys, book_path, gnucash_sqlite_path):
         run(capsys, "init", book_path)
         run(capsys, "import", book_path, gnucash_sqlite_path.path)
-        run(capsys, "budget-set", book_path, "--name", "2026",
-            "--account", "Income:Salary", "--amount", "4200.00", "--start", "2026-01-01")
-        run(capsys, "budget-set", book_path, "--name", "2026",
-            "--account", "Expenses:Rent", "--amount", "1800.00")
+        run(
+            capsys,
+            "budget-set",
+            book_path,
+            "--name",
+            "2026",
+            "--account",
+            "Income:Salary",
+            "--amount",
+            "4200.00",
+            "--start",
+            "2026-01-01",
+        )
+        run(
+            capsys,
+            "budget-set",
+            book_path,
+            "--name",
+            "2026",
+            "--account",
+            "Expenses:Rent",
+            "--amount",
+            "1800.00",
+        )
         return book_path
 
     def test_save_and_list(self, capsys, planned):
-        run(capsys, "scenario", planned, "save", "--name", "Base",
-            "--years", "10", "--income-growth", "0.03")
+        run(
+            capsys,
+            "scenario",
+            planned,
+            "save",
+            "--name",
+            "Base",
+            "--years",
+            "10",
+            "--income-growth",
+            "0.03",
+        )
         rows = run_json(capsys, "scenario", planned, "list")
         assert rows[0]["name"] == "Base"
         assert rows[0]["years"] == 10
@@ -351,17 +550,57 @@ class TestScenarios:
         assert len(rows) == 1 and rows[0]["years"] == 8
 
     def test_projecting_from_a_saved_scenario(self, capsys, planned):
-        run(capsys, "scenario", planned, "save", "--name", "Base", "--years", "4",
-            "--basis", "budget", "--budget", "2026")
+        run(
+            capsys,
+            "scenario",
+            planned,
+            "save",
+            "--name",
+            "Base",
+            "--years",
+            "4",
+            "--basis",
+            "budget",
+            "--budget",
+            "2026",
+        )
         result = run_json(capsys, "project", planned, "--scenario", "Base")
         assert result["summary"]["scenario"] == "Base"
         assert result["summary"]["months"] == 48
 
     def test_comparing_two_scenarios(self, capsys, planned):
-        run(capsys, "scenario", planned, "save", "--name", "Careful", "--years", "5",
-            "--basis", "budget", "--budget", "2026", "--inflation", "0.06")
-        run(capsys, "scenario", planned, "save", "--name", "Hopeful", "--years", "5",
-            "--basis", "budget", "--budget", "2026", "--income-growth", "0.06")
+        run(
+            capsys,
+            "scenario",
+            planned,
+            "save",
+            "--name",
+            "Careful",
+            "--years",
+            "5",
+            "--basis",
+            "budget",
+            "--budget",
+            "2026",
+            "--inflation",
+            "0.06",
+        )
+        run(
+            capsys,
+            "scenario",
+            planned,
+            "save",
+            "--name",
+            "Hopeful",
+            "--years",
+            "5",
+            "--basis",
+            "budget",
+            "--budget",
+            "2026",
+            "--income-growth",
+            "0.06",
+        )
         rows = run_json(capsys, "compare", planned, "Careful", "Hopeful")
         assert len(rows) == 5
         assert float(rows[-1]["net_worth_delta"]) > 0
@@ -447,9 +686,10 @@ class TestVerify:
             ).fetchone()
             data = json.loads(row[1])
             data["parent"] = "missing-parent"
-            conn.execute("UPDATE account SET parent=?, blob=? WHERE handle=?", (
-                "missing-parent", json.dumps(data, separators=(",", ":")), row[0]
-            ))
+            conn.execute(
+                "UPDATE account SET parent=?, blob=? WHERE handle=?",
+                ("missing-parent", json.dumps(data, separators=(",", ":")), row[0]),
+            )
             conn.commit()
         finally:
             conn.close()
@@ -483,9 +723,19 @@ class TestBackupAndRestore:
     def test_backup_and_restore_round_trip(self, capsys, book_path, tmp_path):
         run(capsys, "init", book_path)
         run(
-            capsys, "add", book_path, "--date", "2026-01-01",
-            "--description", "Opening", "--from", "Equity",
-            "--to", "Assets", "--amount", "1234.00",
+            capsys,
+            "add",
+            book_path,
+            "--date",
+            "2026-01-01",
+            "--description",
+            "Opening",
+            "--from",
+            "Equity",
+            "--to",
+            "Assets",
+            "--amount",
+            "1234.00",
         )
         backup = tmp_path / "household.backup"
         result = run_json(capsys, "backup", book_path, backup)

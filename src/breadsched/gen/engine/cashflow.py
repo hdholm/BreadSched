@@ -109,7 +109,8 @@ class BudgetReport:
     def shortfall_periods(self, actual: bool = False) -> list[int]:
         """Periods where more goes out than comes in -- the point of the exercise."""
         return [
-            period for period in range(self.budget.periods)
+            period
+            for period in range(self.budget.periods)
             if self.net_cash_flow(period, actual) < 0
         ]
 
@@ -171,8 +172,11 @@ def build_report(
                 continue
             if not account.atype.is_flow:
                 continue
-            moved = any(db.split_rows(account.handle, budget.period_start(0),
-                                      budget.period_end(budget.periods - 1)))
+            moved = any(
+                db.split_rows(
+                    account.handle, budget.period_start(0), budget.period_end(budget.periods - 1)
+                )
+            )
             if moved:
                 handles.append(account.handle)
 
@@ -193,7 +197,10 @@ def build_report(
                     period=period,
                     budgeted=budget.amount(handle, period),
                     actual=actual_for(
-                        db, handle, budget.period_start(period), budget.period_end(period),
+                        db,
+                        handle,
+                        budget.period_start(period),
+                        budget.period_end(period),
                         include_children=False,
                     ),
                     is_income=is_income,

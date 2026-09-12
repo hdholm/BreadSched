@@ -62,7 +62,8 @@ class _AllocationRow(Gtk.Frame):
         super().__init__()
         self.db = db
         self.accounts = [
-            account for account in db.iter_accounts()
+            account
+            for account in db.iter_accounts()
             if account.planning_role is AccountPlanningRole.FSA
         ]
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -100,10 +101,12 @@ class _AllocationRow(Gtk.Frame):
             if allocation.target is not None:
                 self.target.set_text(str(allocation.target.to_decimal()))
             self.reimburse.set_links(allocation.reimbursements)
-            self.rejections.set_text("; ".join(
-                f"{item.attempted_on.isoformat()} | {item.amount.to_decimal()} | {item.reason}"
-                for item in allocation.rejections
-            ))
+            self.rejections.set_text(
+                "; ".join(
+                    f"{item.attempted_on.isoformat()} | {item.amount.to_decimal()} | {item.reason}"
+                    for item in allocation.rejections
+                )
+            )
 
     def _refresh_years(self, *_args) -> None:
         if not self.accounts:
@@ -148,9 +151,7 @@ class _AllocationRow(Gtk.Frame):
 class FsaClaimsDialog(Gtk.Window):
     """GTK maintenance surface for FSA claims and reconciliation links."""
 
-    def __init__(
-        self, parent: Gtk.Window, db: DbSQLite, claim_handle: str | None = None
-    ) -> None:
+    def __init__(self, parent: Gtk.Window, db: DbSQLite, claim_handle: str | None = None) -> None:
         super().__init__(title="FSA claims", transient_for=parent)
         self.db = db
         self.set_default_size(860, 700)
@@ -181,10 +182,14 @@ class FsaClaimsDialog(Gtk.Window):
         self.provider = Gtk.Entry(placeholder_text="Provider")
         self.description = Gtk.Entry(placeholder_text="Description")
         self.eob = Gtk.Entry(placeholder_text="EOB patient responsibility")
-        for row, (label, widget) in enumerate((
-            ("Service date", self.service), ("Provider", self.provider),
-            ("Description", self.description), ("EOB responsibility", self.eob),
-        )):
+        for row, (label, widget) in enumerate(
+            (
+                ("Service date", self.service),
+                ("Provider", self.provider),
+                ("Description", self.description),
+                ("EOB responsibility", self.eob),
+            )
+        ):
             fields.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
             fields.attach(widget, 1, row, 1, 1)
         outer.append(fields)
@@ -195,15 +200,11 @@ class FsaClaimsDialog(Gtk.Window):
         self.reimbursement_candidates = reimbursements
         outer.append(Gtk.Label(label="Healthcare payments", xalign=0))
         self.payments = _LinkList(payments)
-        self.payments_scroll = Gtk.ScrolledWindow(
-            child=self.payments, min_content_height=90
-        )
+        self.payments_scroll = Gtk.ScrolledWindow(child=self.payments, min_content_height=90)
         outer.append(self.payments_scroll)
         outer.append(Gtk.Label(label="Provider refunds / credits", xalign=0))
         self.refunds = _LinkList(refunds)
-        self.refunds_scroll = Gtk.ScrolledWindow(
-            child=self.refunds, min_content_height=75
-        )
+        self.refunds_scroll = Gtk.ScrolledWindow(child=self.refunds, min_content_height=75)
         outer.append(self.refunds_scroll)
         self.service.connect("changed", self._service_changed)
 
@@ -228,8 +229,7 @@ class FsaClaimsDialog(Gtk.Window):
         selected = 0
         if claim_handle is not None:
             selected = next(
-                (index for index, claim in enumerate(self.claims)
-                 if claim.handle == claim_handle),
+                (index for index, claim in enumerate(self.claims) if claim.handle == claim_handle),
                 0,
             )
         if self.claims:
@@ -277,9 +277,7 @@ class FsaClaimsDialog(Gtk.Window):
         start, _through = window
         selected_keys = {(item.transaction, item.split) for item in selected}
         return [
-            item
-            for item in candidates
-            if start <= item[2] or (item[0], item[1]) in selected_keys
+            item for item in candidates if start <= item[2] or (item[0], item[1]) in selected_keys
         ]
 
     def _refresh_claim_candidates(
@@ -303,9 +301,7 @@ class FsaClaimsDialog(Gtk.Window):
             service_date = date.fromisoformat(self.service.get_text().strip())
         except ValueError:
             return
-        self._refresh_claim_candidates(
-            service_date, self.payments.links(), self.refunds.links()
-        )
+        self._refresh_claim_candidates(service_date, self.payments.links(), self.refunds.links())
 
     def _clear_allocations(self) -> None:
         child = self.allocations.get_first_child()
@@ -347,7 +343,8 @@ class FsaClaimsDialog(Gtk.Window):
         self.description.set_text(claim.description if claim else "")
         self.eob.set_text(
             str(claim.eob_responsibility.to_decimal())
-            if claim and claim.eob_responsibility is not None else ""
+            if claim and claim.eob_responsibility is not None
+            else ""
         )
         service_date = claim.service_date if claim else date.fromisoformat(self.service.get_text())
         self._refresh_claim_candidates(
@@ -361,21 +358,27 @@ class FsaClaimsDialog(Gtk.Window):
     def _save(self, _button) -> None:
         try:
             eob_text = self.eob.get_text().strip()
-            claim = FsaClaim(
-                handle=self.current.handle if self.current else None,
-                service_date=date.fromisoformat(self.service.get_text().strip()),
-                provider=self.provider.get_text().strip(),
-                description=self.description.get_text().strip(),
-                eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
-                payments=self.payments.links(), refunds=self.refunds.links(),
-                allocations=[row.value() for row in self._allocation_rows],
-            ) if self.current else FsaClaim(
-                service_date=date.fromisoformat(self.service.get_text().strip()),
-                provider=self.provider.get_text().strip(),
-                description=self.description.get_text().strip(),
-                eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
-                payments=self.payments.links(), refunds=self.refunds.links(),
-                allocations=[row.value() for row in self._allocation_rows],
+            claim = (
+                FsaClaim(
+                    handle=self.current.handle if self.current else None,
+                    service_date=date.fromisoformat(self.service.get_text().strip()),
+                    provider=self.provider.get_text().strip(),
+                    description=self.description.get_text().strip(),
+                    eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
+                    payments=self.payments.links(),
+                    refunds=self.refunds.links(),
+                    allocations=[row.value() for row in self._allocation_rows],
+                )
+                if self.current
+                else FsaClaim(
+                    service_date=date.fromisoformat(self.service.get_text().strip()),
+                    provider=self.provider.get_text().strip(),
+                    description=self.description.get_text().strip(),
+                    eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
+                    payments=self.payments.links(),
+                    refunds=self.refunds.links(),
+                    allocations=[row.value() for row in self._allocation_rows],
+                )
             )
             fsa_claims.save_claim(self.db, claim)
         except (ValueError, IndexError) as exc:

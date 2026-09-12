@@ -108,11 +108,13 @@ def table(
     for row in body:
         for index, cell in enumerate(row):
             widths[index] = max(widths[index], len(cell))
+
     def line(cells: Sequence[str]) -> str:
         return "  ".join(
             cell.rjust(widths[i]) if i in right else cell.ljust(widths[i])
             for i, cell in enumerate(cells)
         ).rstrip()
+
     out = [line(headers), "  ".join("-" * w for w in widths)]
     out.extend(line(row) for row in body)
     return "\n".join(out)
@@ -210,9 +212,13 @@ def cmd_import(args: argparse.Namespace) -> int:
             "source_format": result.source_format,
             "log_file": result.log_path,
             "suggestions": [
-                {"account": s.account_name, "field": s.field,
-                 "value": s.value_label, "confidence": s.confidence,
-                 "reason": s.reason}
+                {
+                    "account": s.account_name,
+                    "field": s.field,
+                    "value": s.value_label,
+                    "confidence": s.confidence,
+                    "reason": s.reason,
+                }
                 for s in suggestions
             ],
         },
@@ -241,9 +247,7 @@ def cmd_backup(args: argparse.Namespace) -> int:
 
 def cmd_restore(args: argparse.Namespace) -> int:
     """Restore a verified backup, preserving an overwritten book first."""
-    destination = DbSQLite.restore_backup(
-        args.source, args.destination, overwrite=args.overwrite
-    )
+    destination = DbSQLite.restore_backup(args.source, args.destination, overwrite=args.overwrite)
     payload = {"backup": args.source, "book": destination}
     pre_restore = Path(str(destination) + ".pre-restore.bak")
     if pre_restore.exists():
@@ -316,7 +320,7 @@ def cmd_register(args: argparse.Namespace) -> int:
             db, account.handle, start=parse_date(args.start), end=parse_date(args.end)
         )
         if args.limit:
-            rows = rows[-args.limit:]
+            rows = rows[-args.limit :]
         payload = [
             {
                 "handle": row.transaction.handle,
@@ -375,8 +379,10 @@ def cmd_balance(args: argparse.Namespace) -> int:
                 summary,
                 args,
                 table(
-                    [[k.replace("_", " "), v.format(parens_negative=True)]
-                     for k, v in summary.items()],
+                    [
+                        [k.replace("_", " "), v.format(parens_negative=True)]
+                        for k, v in summary.items()
+                    ],
                     ["measure", "amount"],
                     right={1},
                 ),
@@ -393,8 +399,12 @@ def cmd_add(args: argparse.Namespace) -> int:
         credit = resolve_account(db, getattr(args, "from"))
         when = parse_date(args.date) or date.today()
         posted = Transaction.simple(
-            when, args.description, debit.handle, credit.handle,
-            Money(args.amount), memo=args.memo,
+            when,
+            args.description,
+            debit.handle,
+            credit.handle,
+            Money(args.amount),
+            memo=args.memo,
         )
         posted.num = args.num
         with db.transaction(f"Add {args.description}") as txn:
@@ -457,9 +467,7 @@ def cmd_edit(args: argparse.Namespace) -> int:
                     "interface, or delete and re-enter it."
                 )
             amount = Money(args.amount)
-            positive = next(
-                (s for s in target.splits if s.value > 0), target.splits[0]
-            )
+            positive = next((s for s in target.splits if s.value > 0), target.splits[0])
             for split in target.splits:
                 split.value = amount if split is positive else -amount
                 split.quantity = split.value
@@ -468,8 +476,7 @@ def cmd_edit(args: argparse.Namespace) -> int:
             db.commit_transaction(target, txn)
 
         emit(
-            {"handle": target.handle, "date": target.post_date,
-             "description": target.description},
+            {"handle": target.handle, "date": target.post_date, "description": target.description},
             args,
             f"Edited {before}\n     -> {target.describe()}",
         )
@@ -501,16 +508,17 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
                 [{"date": t.post_date, "description": t.description} for t in posted],
                 args,
                 f"Posted {len(posted)} scheduled transaction(s)"
-                + ("" if not posted else ":\n" + "\n".join(
-                    f"  {t.post_date}  {t.description}" for t in posted
-                )),
+                + (
+                    ""
+                    if not posted
+                    else ":\n" + "\n".join(f"  {t.post_date}  {t.description}" for t in posted)
+                ),
             )
             return 0
 
         occurrences = schedule.due_occurrences(db, as_of=as_of, horizon_days=args.days)
         payload = [
-            {"date": occ.when, "name": occ.name, "amount": occ.amount}
-            for occ in occurrences
+            {"date": occ.when, "name": occ.name, "amount": occ.amount} for occ in occurrences
         ]
         emit(
             payload,
@@ -542,41 +550,53 @@ def cmd_budget(args: argparse.Namespace) -> int:
         rows = []
         payload = []
         for line in report.lines:
-            rows.append([
-                line.name,
-                line.budgeted_total.format(),
-                line.actual_total.format(),
-                line.variance_total.format(parens_negative=True),
-            ])
-            payload.append({
-                "account": line.name,
-                "budgeted": line.budgeted_total,
-                "actual": line.actual_total,
-                "variance": line.variance_total,
-            })
+            rows.append(
+                [
+                    line.name,
+                    line.budgeted_total.format(),
+                    line.actual_total.format(),
+                    line.variance_total.format(parens_negative=True),
+                ]
+            )
+            payload.append(
+                {
+                    "account": line.name,
+                    "budgeted": line.budgeted_total,
+                    "actual": line.actual_total,
+                    "variance": line.variance_total,
+                }
+            )
         summary = report.annual_summary()
         actual_summary = report.annual_summary(actual=True)
         rows.append(["", "", "", ""])
-        rows.append([
-            "Income for the period",
-            summary["income"].format(), actual_summary["income"].format(), "",
-        ])
-        rows.append([
-            "Expenses for the period",
-            summary["expense"].format(), actual_summary["expense"].format(), "",
-        ])
-        rows.append([
-            "NET CASH FLOW",
-            summary["net"].format(parens_negative=True),
-            actual_summary["net"].format(parens_negative=True),
-            (actual_summary["net"] - summary["net"]).format(parens_negative=True),
-        ])
+        rows.append(
+            [
+                "Income for the period",
+                summary["income"].format(),
+                actual_summary["income"].format(),
+                "",
+            ]
+        )
+        rows.append(
+            [
+                "Expenses for the period",
+                summary["expense"].format(),
+                actual_summary["expense"].format(),
+                "",
+            ]
+        )
+        rows.append(
+            [
+                "NET CASH FLOW",
+                summary["net"].format(parens_negative=True),
+                actual_summary["net"].format(parens_negative=True),
+                (actual_summary["net"] - summary["net"]).format(parens_negative=True),
+            ]
+        )
         text = table(rows, ["account", "budgeted", "actual", "variance"], right={1, 2, 3})
         shortfalls = report.shortfall_periods()
         if shortfalls:
-            text += "\n\nPlanned shortfall in: " + ", ".join(
-                report.labels[p] for p in shortfalls
-            )
+            text += "\n\nPlanned shortfall in: " + ", ".join(report.labels[p] for p in shortfalls)
         emit(
             {
                 "budget": budget.name,
@@ -868,11 +888,15 @@ def cmd_project(args: argparse.Namespace) -> int:
 
         summary = result.summary()
         if not args.json:
-            print(f"Scenario: {scenario.name}  ({scenario.basis.value} basis, "
-                  f"{scenario.years} years from {scenario.start})")
-            print(f"  income growth {scenario.assumptions.income_growth:.1%}   "
-                  f"expense inflation {scenario.assumptions.expense_inflation:.1%}   "
-                  f"investment return {scenario.assumptions.investment_return:.1%}")
+            print(
+                f"Scenario: {scenario.name}  ({scenario.basis.value} basis, "
+                f"{scenario.years} years from {scenario.start})"
+            )
+            print(
+                f"  income growth {scenario.assumptions.income_growth:.1%}   "
+                f"expense inflation {scenario.assumptions.expense_inflation:.1%}   "
+                f"investment return {scenario.assumptions.investment_return:.1%}"
+            )
             print()
         emit({"summary": summary, "rows": [r.as_dict() for r in result.rows]}, args, text)
 
@@ -880,8 +904,10 @@ def cmd_project(args: argparse.Namespace) -> int:
             shortfall = result.first_shortfall()
             print()
             if shortfall:
-                print(f"  Cash runs out in {shortfall.label} "
-                      f"({shortfall.cash_close.format(parens_negative=True)})")
+                print(
+                    f"  Cash runs out in {shortfall.label} "
+                    f"({shortfall.cash_close.format(parens_negative=True)})"
+                )
             else:
                 print(f"  Lowest cash balance: {result.minimum_cash.format()}")
             for warning in result.warnings:
@@ -944,7 +970,9 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                 table(
                     [
                         [
-                            s.name, str(s.years), s.basis.value,
+                            s.name,
+                            str(s.years),
+                            s.basis.value,
                             f"{s.assumptions.income_growth:.1%}",
                             f"{s.assumptions.expense_inflation:.1%}",
                             f"{s.assumptions.investment_return:.1%}",
@@ -1045,11 +1073,13 @@ def cmd_export(args: argparse.Namespace) -> int:
     try:
         account = resolve_account(db, args.account).handle if args.account else None
         count = export_transactions(
-            db, args.output, account=account,
-            start=parse_date(args.start), end=parse_date(args.end),
+            db,
+            args.output,
+            account=account,
+            start=parse_date(args.start),
+            end=parse_date(args.end),
         )
-        emit({"rows": count, "output": args.output}, args,
-             f"Wrote {count} rows to {args.output}")
+        emit({"rows": count, "output": args.output}, args, f"Wrote {count} rows to {args.output}")
         return 0
     finally:
         db.close()
@@ -1081,8 +1111,10 @@ def cmd_gnucash(args: argparse.Namespace) -> int:
         )
     elif args.action == "transactions":
         rows = gnucash_sqlite.read_transactions(
-            args.source, account_guid=args.account,
-            start=parse_date(args.start), end=parse_date(args.end),
+            args.source,
+            account_guid=args.account,
+            start=parse_date(args.start),
+            end=parse_date(args.end),
         )
         emit(
             rows,
@@ -1133,16 +1165,20 @@ def cmd_account(args: argparse.Namespace) -> int:
                 if account.is_root:
                     continue
                 linked = db.get_account(account.linked_asset or "")
-                rows.append([
-                    db.full_name(account), account.atype.value, account.group,
-                    db.full_name(linked) if linked else "",
-                    "" if account.atype is not AccountType.CREDIT
-                    else ("monthly" if account.pays_in_full else "carries"),
-                ])
+                rows.append(
+                    [
+                        db.full_name(account),
+                        account.atype.value,
+                        account.group,
+                        db.full_name(linked) if linked else "",
+                        ""
+                        if account.atype is not AccountType.CREDIT
+                        else ("monthly" if account.pays_in_full else "carries"),
+                    ]
+                )
             emit(
                 [
-                    {"name": r[0], "type": r[1], "group": r[2],
-                     "linked_asset": r[3], "card": r[4]}
+                    {"name": r[0], "type": r[1], "group": r[2], "linked_asset": r[3], "card": r[4]}
                     for r in rows
                 ],
                 args,
@@ -1172,14 +1208,14 @@ def cmd_account(args: argparse.Namespace) -> int:
                         db.get_account_by_name("Equity")
                     )
                     if equity is None:
-                        raise CommandError(
-                            "no equity account to post the opening balance against"
-                        )
+                        raise CommandError("no equity account to post the opening balance against")
                     db.add_transaction(
                         Transaction.simple(
                             parse_date(args.opening_date) or date.today(),
                             f"{args.name} opening balance",
-                            account.handle, equity.handle, Money(args.opening),
+                            account.handle,
+                            equity.handle,
+                            Money(args.opening),
                         ),
                         txn,
                     )
@@ -1194,8 +1230,7 @@ def cmd_account(args: argparse.Namespace) -> int:
         if args.action == "remove":
             with db.transaction(f"Remove account {account.name}") as txn:
                 db.remove_account(account.handle, txn)
-            emit({"removed": account.handle}, args,
-                 f"Removed {db.full_name(account)}")
+            emit({"removed": account.handle}, args, f"Removed {db.full_name(account)}")
             return 0
 
         # edit
@@ -1243,15 +1278,16 @@ def cmd_infer(args: argparse.Namespace) -> int:
         result = inference.infer_all(db)
         rows = [
             [
-                s.account_name, s.field, str(s.value_label or s.value),
-                f"{s.confidence:.0%}", s.reason,
+                s.account_name,
+                s.field,
+                str(s.value_label or s.value),
+                f"{s.confidence:.0%}",
+                s.reason,
             ]
             for s in result.suggestions
         ]
         if args.apply:
-            chosen = [
-                s for s in result.suggestions if s.confidence >= args.min_confidence
-            ]
+            chosen = [s for s in result.suggestions if s.confidence >= args.min_confidence]
             applied = inference.apply_suggestions(db, chosen)
             emit(
                 {"applied": applied, "considered": len(result.suggestions)},
@@ -1263,14 +1299,18 @@ def cmd_infer(args: argparse.Namespace) -> int:
 
         emit(
             [
-                {"account": s.account_name, "field": s.field, "value": s.value_label,
-                 "confidence": s.confidence, "reason": s.reason}
+                {
+                    "account": s.account_name,
+                    "field": s.field,
+                    "value": s.value_label,
+                    "confidence": s.confidence,
+                    "reason": s.reason,
+                }
                 for s in result.suggestions
             ],
             args,
             table(rows, ["account", "setting", "value", "confidence", "because"])
-            + ("\n\nNothing is changed until you pass --apply."
-               if result.suggestions else ""),
+            + ("\n\nNothing is changed until you pass --apply." if result.suggestions else ""),
         )
         return 0
     finally:
@@ -1317,9 +1357,7 @@ def cmd_budget_member(args: argparse.Namespace) -> int:
         budget = _budget_by_name(db, args.budget)
         if budget is None:
             raise CommandError(f"no budget named {args.budget!r}")
-        sched = next(
-            (s for s in db.iter_scheduled() if s.name == args.schedule), None
-        )
+        sched = next((s for s in db.iter_scheduled() if s.name == args.schedule), None)
         if sched is None:
             raise CommandError(f"no scheduled transaction named {args.schedule!r}")
 
@@ -1360,21 +1398,27 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                     "summary": summary,
                     "groups": [
                         {
-                            "name": g.name, "kind": g.kind, "total": g.total,
-                            "value": g.value, "debt": g.debt, "equity": g.equity,
+                            "name": g.name,
+                            "kind": g.kind,
+                            "total": g.total,
+                            "value": g.value,
+                            "debt": g.debt,
+                            "equity": g.equity,
                             "loan_to_value": g.loan_to_value,
-                            "accounts": [
-                                {"name": n, "balance": b} for n, b in g.accounts
-                            ],
+                            "accounts": [{"name": n, "balance": b} for n, b in g.accounts],
                         }
                         for g in board.groups
                     ],
                     "bills": [
                         {
-                            "name": b.name, "next_due": b.next_due,
-                            "cycle_months": b.cycle_months, "amount": b.amount,
-                            "monthly": b.monthly, "annual": b.annual,
-                            "hold": b.hold(board.as_of), "estimate": b.estimate,
+                            "name": b.name,
+                            "next_due": b.next_due,
+                            "cycle_months": b.cycle_months,
+                            "amount": b.amount,
+                            "monthly": b.monthly,
+                            "annual": b.annual,
+                            "hold": b.hold(board.as_of),
+                            "estimate": b.estimate,
                         }
                         for b in board.bills
                     ],
@@ -1394,29 +1438,40 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 and group.debt is not None
                 and equity is not None
             ):
-                rows.append([
-                    group.name,
-                    group.value.format(), group.debt.format(),
-                    equity.format(parens_negative=True),
-                    f"{loan_to_value:.1%}",
-                ])
+                rows.append(
+                    [
+                        group.name,
+                        group.value.format(),
+                        group.debt.format(),
+                        equity.format(parens_negative=True),
+                        f"{loan_to_value:.1%}",
+                    ]
+                )
             else:
-                rows.append([
-                    group.name, "", "",
-                    group.total.format(parens_negative=True), "",
-                ])
-        print(table(rows, ["group", "value", "owed", "equity / total", "LTV"],
-                    right={1, 2, 3, 4}))
+                rows.append(
+                    [
+                        group.name,
+                        "",
+                        "",
+                        group.total.format(parens_negative=True),
+                        "",
+                    ]
+                )
+        print(table(rows, ["group", "value", "owed", "equity / total", "LTV"], right={1, 2, 3, 4}))
 
         print()
         headline = [
             ["Net worth", summary["net_worth"].format(parens_negative=True)],
             ["Liquid", summary["liquid"].format()],
-            [f"Needed within {config.liquidity_days} days",
-             summary["required_liquid"].format(parens_negative=True)],
+            [
+                f"Needed within {config.liquidity_days} days",
+                summary["required_liquid"].format(parens_negative=True),
+            ],
             ["Available", summary["available"].format(parens_negative=True)],
-            [f"Emergency fund ({config.emergency_months} months)",
-             summary["emergency_fund"].format()],
+            [
+                f"Emergency fund ({config.emergency_months} months)",
+                summary["emergency_fund"].format(),
+            ],
             ["Months covered", f"{summary['months_covered']}"],
             ["Outgoings, monthly", summary["monthly_outgoings"].format()],
             ["Income, monthly", summary["income_per_month"].format()],
@@ -1438,11 +1493,13 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 ]
                 for bill in board.bills[: args.limit]
             ]
-            print(table(
-                bill_rows,
-                ["bill", "next due", "cycle", "amount", "monthly", "hold", "annual", ""],
-                right={3, 4, 5, 6},
-            ))
+            print(
+                table(
+                    bill_rows,
+                    ["bill", "next due", "cycle", "amount", "monthly", "hold", "annual", ""],
+                    right={3, 4, 5, 6},
+                )
+            )
             if len(board.bills) > args.limit:
                 print(f"... and {len(board.bills) - args.limit} more")
         return 0
@@ -1456,13 +1513,16 @@ def cmd_budget_new(args: argparse.Namespace) -> int:
     try:
         if next((b for b in db.iter_budgets() if b.name == args.name), None):
             raise CommandError(
-                f"a budget named {args.name!r} already exists; "
-                "delete it or choose another name"
+                f"a budget named {args.name!r} already exists; delete it or choose another name"
             )
         start = parse_date(args.start) or date(date.today().year, 1, 1)
         budget = budgeting.from_schedules(
-            db, name=args.name, start=start, periods=args.periods,
-            kind=args.kind, include_placeholders=not args.no_estimates,
+            db,
+            name=args.name,
+            start=start,
+            periods=args.periods,
+            kind=args.kind,
+            include_placeholders=not args.no_estimates,
             flows_only=not args.include_transfers,
         )
         if not budget.lines and not args.allow_empty:
@@ -1480,24 +1540,29 @@ def cmd_budget_new(args: argparse.Namespace) -> int:
             name = db.full_name(account) if account else handle
             amounts = [line.amount(i) for i in range(budget.periods)]
             lumpy = len({a.to_decimal() for a in amounts}) > 1
-            rows.append([
-                name,
-                budget.period_label(0),
-                amounts[0].format(),
-                line.total().format(),
-                "varies" if lumpy else "level",
-            ])
-            payload.append({
-                "account": name, "total": line.total(),
-                "amounts": amounts, "varies": lumpy,
-            })
+            rows.append(
+                [
+                    name,
+                    budget.period_label(0),
+                    amounts[0].format(),
+                    line.total().format(),
+                    "varies" if lumpy else "level",
+                ]
+            )
+            payload.append(
+                {
+                    "account": name,
+                    "total": line.total(),
+                    "amounts": amounts,
+                    "varies": lumpy,
+                }
+            )
         emit(
             {"budget": budget.name, "periods": budget.periods, "lines": payload},
             args,
             f"Created budget {budget.name!r} with {len(budget.lines)} line(s) "
             f"over {budget.periods} {budget.kind.value}(s)\n\n"
-            + table(rows, ["account", "first period", "amount", "total", "shape"],
-                    right={2, 3}),
+            + table(rows, ["account", "first period", "amount", "total", "shape"], right={2, 3}),
         )
         return 0
     finally:
@@ -1506,32 +1571,37 @@ def cmd_budget_new(args: argparse.Namespace) -> int:
 
 def cmd_estimate(args: argparse.Namespace) -> int:
     """Manage placeholder flows: recurring estimates that are never posted."""
-    db = open_book(args.book if args.action != "list" else args.book,
-                   "r" if args.action == "list" else "w")
+    db = open_book(
+        args.book if args.action != "list" else args.book, "r" if args.action == "list" else "w"
+    )
     try:
         if args.action == "list":
             rows, payload = [], []
             for sched in db.iter_scheduled():
                 if not sched.placeholder:
                     continue
-                rows.append([
-                    sched.name,
-                    sched.recurrence.describe(),
-                    sched.amount().format(),
-                    "yes" if sched.enabled else "no",
-                ])
-                payload.append({
-                    "name": sched.name, "frequency": sched.recurrence.describe(),
-                    "amount": sched.amount(), "enabled": sched.enabled,
-                })
-            emit(payload, args,
-                 table(rows, ["name", "frequency", "amount", "enabled"], right={2}))
+                rows.append(
+                    [
+                        sched.name,
+                        sched.recurrence.describe(),
+                        sched.amount().format(),
+                        "yes" if sched.enabled else "no",
+                    ]
+                )
+                payload.append(
+                    {
+                        "name": sched.name,
+                        "frequency": sched.recurrence.describe(),
+                        "amount": sched.amount(),
+                        "enabled": sched.enabled,
+                    }
+                )
+            emit(payload, args, table(rows, ["name", "frequency", "amount", "enabled"], right={2}))
             return 0
 
         if args.action == "remove":
             match = next(
-                (s for s in db.iter_scheduled()
-                 if s.placeholder and s.name == args.name), None
+                (s for s in db.iter_scheduled() if s.placeholder and s.name == args.name), None
             )
             if match is None:
                 raise CommandError(f"no estimate named {args.name!r}")
@@ -1543,12 +1613,16 @@ def cmd_estimate(args: argparse.Namespace) -> int:
         account = resolve_account(db, args.account)
         funding = resolve_account(db, args.funded_from)
         recurrence = Recurrence(
-            period=args.every, interval=args.interval,
+            period=args.every,
+            interval=args.interval,
             start=parse_date(args.start) or date.today().replace(day=1),
         )
         sched = budgeting.placeholder_schedule(
-            name=args.name, account=account.handle, counter_account=funding.handle,
-            amount=Money(args.amount), recurrence=recurrence,
+            name=args.name,
+            account=account.handle,
+            counter_account=funding.handle,
+            amount=Money(args.amount),
+            recurrence=recurrence,
         )
         with db.transaction(f"Add estimate {args.name}") as txn:
             db.add_scheduled(sched, txn)
@@ -1664,15 +1738,20 @@ def build_parser() -> argparse.ArgumentParser:
             sub.add_argument("book", help="path to the BreadSched book")
         sub.add_argument("--json", action="store_true", help="emit JSON instead of a table")
         sub.add_argument(
-            "-v", "--verbose", action="count", default=0,
+            "-v",
+            "--verbose",
+            action="count",
+            default=0,
             help="log progress and warnings to stderr; repeat (-vv) for full detail",
         )
         sub.add_argument(
-            "--debug", action="store_true",
+            "--debug",
+            action="store_true",
             help="full detail, equivalent to -vv",
         )
         sub.add_argument(
-            "--log-file", metavar="PATH",
+            "--log-file",
+            metavar="PATH",
             help="also write a complete debug log to PATH",
         )
         return sub
@@ -1683,13 +1762,18 @@ def build_parser() -> argparse.ArgumentParser:
     imp = add("import", "Import a GnuCash book")
     imp.add_argument("source", help="path to the GnuCash file")
     imp.add_argument("--format", help="force an importer instead of detecting one")
-    imp.add_argument("--no-scheduled", action="store_true",
-                     help="skip scheduled transactions")
+    imp.add_argument("--no-scheduled", action="store_true", help="skip scheduled transactions")
     imp.add_argument("--max-warnings", type=int, default=10)
-    imp.add_argument("--no-infer", action="store_true",
-                     help="skip looking for loan/asset links and card settings")
-    imp.add_argument("--infer-apply", action="store_true",
-                     help="apply confident suggestions rather than only listing them")
+    imp.add_argument(
+        "--no-infer",
+        action="store_true",
+        help="skip looking for loan/asset links and card settings",
+    )
+    imp.add_argument(
+        "--infer-apply",
+        action="store_true",
+        help="apply confident suggestions rather than only listing them",
+    )
     imp.set_defaults(func=cmd_import)
 
     backup = add("backup", "Create a consistent backup of a book")
@@ -1701,7 +1785,8 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("source", help="path to the backup")
     restore.add_argument("destination", help="path to restore the book")
     restore.add_argument(
-        "--overwrite", action="store_true",
+        "--overwrite",
+        action="store_true",
         help="replace an existing book after preserving a pre-restore backup",
     )
     restore.set_defaults(func=cmd_restore)
@@ -1730,8 +1815,7 @@ def build_parser() -> argparse.ArgumentParser:
     add_txn = add("add", "Post a two-split transaction")
     add_txn.add_argument("--date", default="today")
     add_txn.add_argument("--description", required=True)
-    add_txn.add_argument("--from", required=True, dest="from",
-                         help="account the money leaves")
+    add_txn.add_argument("--from", required=True, dest="from", help="account the money leaves")
     add_txn.add_argument("--to", required=True, help="account the money arrives in")
     add_txn.add_argument("--amount", required=True)
     add_txn.add_argument("--memo", default="")
@@ -1755,8 +1839,7 @@ def build_parser() -> argparse.ArgumentParser:
     sched.add_argument("--as-of")
     sched.add_argument("--days", type=int, default=30, help="look this far ahead")
     sched.add_argument("--post", action="store_true", help="write due occurrences")
-    sched.add_argument("--all", action="store_true",
-                       help="with --post, include manual schedules")
+    sched.add_argument("--all", action="store_true", help="with --post, include manual schedules")
     sched.set_defaults(func=cmd_scheduled)
 
     budget = add("budget", "Budget versus actual")
@@ -1836,8 +1919,12 @@ def build_parser() -> argparse.ArgumentParser:
     account.add_argument("--placeholder", action="store_true")
     account.add_argument("--group", help="dashboard group this account belongs to")
     account.add_argument("--linked-asset", help="for a loan: the asset behind it")
-    account.add_argument("--carries-balance", type=_boolean, metavar="yes|no",
-                         help="for a credit card: whether a balance is carried")
+    account.add_argument(
+        "--carries-balance",
+        type=_boolean,
+        metavar="yes|no",
+        help="for a credit card: whether a balance is carried",
+    )
     account.add_argument("--usual-payment", help="typical payment on a card")
     account.add_argument("--payment-day", type=int)
     account.add_argument("--opening", help="opening balance to post")
@@ -1866,10 +1953,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     dash = add("dashboard", "Overview of balances, bills and liquidity")
     dash.add_argument("--as-of")
-    dash.add_argument("--liquidity-days", type=int,
-                      help="days of bills that must be covered by cash")
-    dash.add_argument("--emergency-months", type=int,
-                      help="months of outgoings the emergency fund should cover")
+    dash.add_argument(
+        "--liquidity-days", type=int, help="days of bills that must be covered by cash"
+    )
+    dash.add_argument(
+        "--emergency-months", type=int, help="months of outgoings the emergency fund should cover"
+    )
     dash.add_argument("--limit", type=int, default=40, help="bills to list")
     dash.set_defaults(func=cmd_dashboard)
 
@@ -1878,15 +1967,19 @@ def build_parser() -> argparse.ArgumentParser:
     budget_new.add_argument("--start", help="first period (YYYY-MM-DD)")
     budget_new.add_argument("--periods", type=int, default=12)
     budget_new.add_argument(
-        "--kind", default="month", choices=[k.value for k in PeriodKind],
+        "--kind",
+        default="month",
+        choices=[k.value for k in PeriodKind],
         help="length of each budget period",
     )
     budget_new.add_argument(
-        "--no-estimates", action="store_true",
+        "--no-estimates",
+        action="store_true",
         help="use only committed schedules, ignoring placeholder estimates",
     )
     budget_new.add_argument(
-        "--include-transfers", action="store_true",
+        "--include-transfers",
+        action="store_true",
         help="also budget transfers and debt payments, not just income and expenses",
     )
     budget_new.add_argument("--allow-empty", action="store_true")
@@ -1897,11 +1990,14 @@ def build_parser() -> argparse.ArgumentParser:
     estimate.add_argument("--name")
     estimate.add_argument("--account", help="the income or expense account")
     estimate.add_argument(
-        "--funded-from", help="the account the money moves to or from",
+        "--funded-from",
+        help="the account the money moves to or from",
     )
     estimate.add_argument("--amount")
     estimate.add_argument(
-        "--every", default="month", choices=[p.value for p in PeriodType],
+        "--every",
+        default="month",
+        choices=[p.value for p in PeriodType],
         help="how often the flow recurs",
     )
     estimate.add_argument("--interval", type=int, default=1)
@@ -1920,8 +2016,7 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--inflation", default="0.025", help="annual expense inflation")
         sub.add_argument("--investment-return", default="0.06", help="annual, nominal")
         sub.add_argument("--cash-interest", default="0.01")
-        sub.add_argument("--basis", default="scheduled",
-                         choices=[b.value for b in ProjectionBasis])
+        sub.add_argument("--basis", default="scheduled", choices=[b.value for b in ProjectionBasis])
         sub.add_argument("--budget", help="budget name to drive recurring amounts")
 
     project_cmd = add("project", "Run a multi-year projection")
@@ -1929,8 +2024,9 @@ def build_parser() -> argparse.ArgumentParser:
     project_cmd.add_argument("--name", help="label for an ad hoc scenario")
     project_cmd.add_argument("--years", type=int)
     project_cmd.add_argument("--start")
-    project_cmd.add_argument("--monthly", action="store_true",
-                             help="month by month instead of yearly")
+    project_cmd.add_argument(
+        "--monthly", action="store_true", help="month by month instead of yearly"
+    )
     project_cmd.add_argument("--csv", help="also write the monthly rows to this file")
     assumption_flags(project_cmd)
     project_cmd.set_defaults(func=cmd_project)
@@ -1955,8 +2051,7 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--end")
     export.set_defaults(func=cmd_export)
 
-    gnucash = add("gnucash", "Read a GnuCash book directly, without importing",
-                  needs_book=False)
+    gnucash = add("gnucash", "Read a GnuCash book directly, without importing", needs_book=False)
     gnucash.add_argument("action", choices=["info", "accounts", "transactions"])
     gnucash.add_argument("source", help="path to the GnuCash file")
     gnucash.add_argument("--account", help="filter by GnuCash account GUID")

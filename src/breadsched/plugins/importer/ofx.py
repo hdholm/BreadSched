@@ -111,7 +111,11 @@ def _source_account(
     name = f"{institution} {label} {tail}".strip() if institution else f"{label} {tail}"
     guid = _stable_handle("account", account_id, kind, institution)
     return sink.account(
-        guid, name, atype, parent, commodity=commodity,
+        guid,
+        name,
+        atype,
+        parent,
+        commodity=commodity,
         description=f"Imported OFX account ending {tail}",
     ).handle
 
@@ -188,9 +192,7 @@ def import_book(
             return result
         if detected_format is None:
             detected_format = "dot"
-            result.warn(
-                "OFX number format is ambiguous; assuming period decimal separator"
-            )
+            result.warn("OFX number format is ambiguous; assuming period decimal separator")
     else:
         detected_format = number_format
 
@@ -201,9 +203,7 @@ def import_book(
     with db.transaction(message or f"Import {source.name}", batch=True) as txn:
         sink = ImportSink(db, txn, result)
         commodity = sink.commodity("CURRENCY", currency_code, currency_code)
-        source_account = _source_account(
-            sink, db, account_id, account_type, institution, commodity
-        )
+        source_account = _source_account(sink, db, account_id, account_type, institution, commodity)
         fallback_counts: dict[tuple[object, ...], int] = {}
         for index, block in enumerate(transaction_blocks, 1):
             report(index)
@@ -222,7 +222,11 @@ def import_book(
                 identity = fitid
             else:
                 fallback = (
-                    account_id, post_date.isoformat(), str(amount), description, memo,
+                    account_id,
+                    post_date.isoformat(),
+                    str(amount),
+                    description,
+                    memo,
                     _tag(block, "CHECKNUM"),
                 )
                 occurrence = fallback_counts.get(fallback, 0) + 1

@@ -182,7 +182,11 @@ class ImportSink:
     # ------------------------------------------------------------- commodities
 
     def commodity(
-        self, namespace: str, mnemonic: str, fullname: str = "", fraction: int = 100,
+        self,
+        namespace: str,
+        mnemonic: str,
+        fullname: str = "",
+        fraction: int = 100,
         source_guid: str | None = None,
     ) -> str:
         key = f"{namespace}:{mnemonic}"
@@ -398,7 +402,9 @@ class ImportSink:
 
         LOG.debug(
             "%s: %d split(s) totalling %s",
-            subject, len(txn_obj.splits), txn_obj.imbalance(),
+            subject,
+            len(txn_obj.splits),
+            txn_obj.imbalance(),
         )
 
         residual = txn_obj.imbalance()
@@ -569,10 +575,8 @@ def parse_amount_text(text: str) -> Money | None:
     elif comma >= 0:
         # A lone comma is decimal when it separates the final one or two digits
         # (1.234,5 style); otherwise it is grouping (1,234).
-        tail = cleaned[comma + 1:]
-        cleaned = (
-            cleaned.replace(",", ".") if len(tail) in (1, 2) else cleaned.replace(",", "")
-        )
+        tail = cleaned[comma + 1 :]
+        cleaned = cleaned.replace(",", ".") if len(tail) in (1, 2) else cleaned.replace(",", "")
 
     try:
         return Money(cleaned)

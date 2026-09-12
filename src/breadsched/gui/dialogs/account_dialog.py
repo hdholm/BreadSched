@@ -77,9 +77,9 @@ class AccountDialog(Gtk.Window):
             commodity.handle for commodity in self.commodities
         ]
         self.assets = [
-            a for a in db.iter_accounts()
-            if a.account_class is AccountClass.ASSET
-            and not a.is_root and not a.atype.is_cash_like
+            a
+            for a in db.iter_accounts()
+            if a.account_class is AccountClass.ASSET and not a.is_root and not a.atype.is_cash_like
         ]
         self.assets.sort(key=db.full_name)
 
@@ -117,20 +117,15 @@ class AccountDialog(Gtk.Window):
         row += 1
 
         commodity_labels = ["(book/default)"] + [
-            f"{commodity.mnemonic} ({commodity.namespace})"
-            for commodity in self.commodities
+            f"{commodity.mnemonic} ({commodity.namespace})" for commodity in self.commodities
         ]
         if editing and account.commodity not in self.commodity_handles:
             commodity_labels.append(f"Imported commodity ({account.commodity})")
             self.commodity_handles.append(account.commodity)
         self.commodity_picker = Gtk.DropDown.new_from_strings(commodity_labels)
         if editing and account.commodity:
-            self.commodity_picker.set_selected(
-                self.commodity_handles.index(account.commodity)
-            )
-        self.commodity_picker.set_tooltip_text(
-            "Currency or security associated with this account"
-        )
+            self.commodity_picker.set_selected(self.commodity_handles.index(account.commodity))
+        self.commodity_picker.set_tooltip_text("Currency or security associated with this account")
         grid.attach(Gtk.Label(label="Commodity", xalign=0), 0, row, 1, 1)
         grid.attach(self.commodity_picker, 1, row, 1, 1)
         row += 1
@@ -176,9 +171,7 @@ class AccountDialog(Gtk.Window):
         self.notes_view = Gtk.TextView()
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.notes_view.set_size_request(-1, 72)
-        self.notes_view.set_tooltip_text(
-            "Imported or local notes attached to this account"
-        )
+        self.notes_view.set_tooltip_text("Imported or local notes attached to this account")
         if editing and account.notes:
             self.notes_view.get_buffer().set_text(account.notes)
         notes_scroll = Gtk.ScrolledWindow()
@@ -186,7 +179,10 @@ class AccountDialog(Gtk.Window):
         notes_scroll.set_child(self.notes_view)
         grid.attach(
             Gtk.Label(label="Notes", xalign=0, valign=Gtk.Align.START),
-            0, row, 1, 1,
+            0,
+            row,
+            1,
+            1,
         )
         grid.attach(notes_scroll, 1, row, 1, 1)
         row += 1
@@ -199,9 +195,7 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.group_entry, 1, row, 1, 1)
         row += 1
 
-        self.planning_role_picker = Gtk.DropDown.new_from_strings(
-            [role.label for role in _ROLES]
-        )
+        self.planning_role_picker = Gtk.DropDown.new_from_strings([role.label for role in _ROLES])
         if editing:
             self.planning_role_picker.set_selected(_ROLES.index(account.planning_role))
         self.planning_role_picker.set_tooltip_text(
@@ -219,9 +213,12 @@ class AccountDialog(Gtk.Window):
         fsa_heading.add_css_class("summary-label")
         self.fsa_box.append(fsa_heading)
         fsa_note = Gtk.Label(
-            label=("Election availability is tracked separately from the ledger balance. "
-                   "Run-out allows explicitly assigned prior-year claims after year-end."),
-            xalign=0, wrap=True,
+            label=(
+                "Election availability is tracked separately from the ledger balance. "
+                "Run-out allows explicitly assigned prior-year claims after year-end."
+            ),
+            xalign=0,
+            wrap=True,
         )
         fsa_note.add_css_class("dim")
         self.fsa_box.append(fsa_note)
@@ -353,13 +350,16 @@ class AccountDialog(Gtk.Window):
         child = self.fsa_rows.get_first_child()
         while child is not None:
             start, through, election, runout = child._fsa_fields
-            years.append(FsaFundingYear(
-                date.fromisoformat(start.get_text().strip()),
-                date.fromisoformat(through.get_text().strip()),
-                Money(parse_user_amount(election.get_text().strip())),
-                date.fromisoformat(runout.get_text().strip())
-                if runout.get_text().strip() else None,
-            ))
+            years.append(
+                FsaFundingYear(
+                    date.fromisoformat(start.get_text().strip()),
+                    date.fromisoformat(through.get_text().strip()),
+                    Money(parse_user_amount(election.get_text().strip())),
+                    date.fromisoformat(runout.get_text().strip())
+                    if runout.get_text().strip()
+                    else None,
+                )
+            )
             child = child.get_next_sibling()
         years.sort(key=lambda year: year.start)
         for earlier, later in zip(years, years[1:], strict=False):
@@ -491,8 +491,11 @@ class AccountDialog(Gtk.Window):
 
         self.db.add_transaction(
             Transaction.simple(
-                date.today(), f"{account.name} opening balance",
-                account.handle, equity.handle, value,
+                date.today(),
+                f"{account.name} opening balance",
+                account.handle,
+                equity.handle,
+                value,
             ),
             txn,
         )

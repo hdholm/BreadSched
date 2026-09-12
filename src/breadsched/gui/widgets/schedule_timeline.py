@@ -128,11 +128,7 @@ class DateListEditor(_ListEditor):
 
     def add_row(self, when: date | None = None) -> None:
         row = Gtk.Box(spacing=6)
-        choices = (
-            [item.isoformat() for item in self._date_choices()]
-            if self._date_choices
-            else []
-        )
+        choices = [item.isoformat() for item in self._date_choices()] if self._date_choices else []
         current = when.isoformat() if when is not None else None
         if self._date_choices is None:
             date_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD", hexpand=True)
@@ -219,9 +215,7 @@ class PlanningSplitListEditor(_ListEditor):
         value.set_text(amount)
         purpose = Gtk.DropDown.new_from_strings(self._purpose_labels)
         purpose.set_selected(purpose_index)
-        direction = Gtk.DropDown.new_from_strings(
-            ["Normal direction", "Opposite direction"]
-        )
+        direction = Gtk.DropDown.new_from_strings(["Normal direction", "Opposite direction"])
         direction.set_selected(direction_index)
         direction.set_tooltip_text(
             "Use opposite direction only when the stored ledger leg intentionally runs "

@@ -28,9 +28,7 @@ def export_transactions(
     rows = 0
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(
-            ["date", "num", "description", "account", "memo", "amount", "reconciled"]
-        )
+        writer.writerow(["date", "num", "description", "account", "memo", "amount", "reconciled"])
         for txn in db.iter_transactions(account=account, start=start, end=end):
             for split in txn.splits:
                 writer.writerow(
@@ -51,9 +49,20 @@ def export_transactions(
 def export_projection(projection: Projection, path: str | Path) -> int:
     """One row per projected month."""
     fields = [
-        "month", "cash_open", "income", "expense", "net_flow", "contributions",
-        "debt_payments", "interest_earned", "investment_growth", "interest_charged",
-        "cash_close", "holdings", "liabilities", "net_worth",
+        "month",
+        "cash_open",
+        "income",
+        "expense",
+        "net_flow",
+        "contributions",
+        "debt_payments",
+        "interest_earned",
+        "investment_growth",
+        "interest_charged",
+        "cash_close",
+        "holdings",
+        "liabilities",
+        "net_worth",
     ]
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)

@@ -20,10 +20,10 @@ from ..gi_setup import Gtk
 __all__ = ["Series", "LineChart"]
 
 _PALETTE = [
-    (0.20, 0.51, 0.89),   # blue
-    (0.18, 0.65, 0.42),   # green
-    (0.85, 0.45, 0.13),   # orange
-    (0.60, 0.35, 0.71),   # purple
+    (0.20, 0.51, 0.89),  # blue
+    (0.18, 0.65, 0.42),  # green
+    (0.85, 0.45, 0.13),  # orange
+    (0.60, 0.35, 0.71),  # purple
 ]
 
 
