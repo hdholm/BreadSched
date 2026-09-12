@@ -27,6 +27,7 @@ from ...gen.lib import (
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduleGrowthPolicy,
     WeekendAdjust,
     evaluate,
     scheduled_occurrence_preview,
@@ -55,6 +56,13 @@ _WEEKEND = [
     ("Leave on the day", WeekendAdjust.NONE),
     ("Move to the Friday before", WeekendAdjust.PREVIOUS),
     ("Move to the Monday after", WeekendAdjust.NEXT),
+]
+
+_GROWTH_POLICIES = [
+    ("Automatic from schedule contents", ScheduleGrowthPolicy.AUTO),
+    ("No growth - fixed nominal amount", ScheduleGrowthPolicy.NONE),
+    ("Income growth", ScheduleGrowthPolicy.INCOME),
+    ("Expense inflation", ScheduleGrowthPolicy.INFLATION),
 ]
 
 _PLANNING_FLOWS = [
@@ -142,6 +150,18 @@ class ScheduleDialog(Gtk.Window):
         )
         grid.attach(Gtk.Label(label="Kind", xalign=0), 0, row, 1, 1)
         grid.attach(self.kind, 1, row, 1, 1)
+        row += 1
+
+        self.growth_policy = Gtk.DropDown.new_from_strings(
+            [label for label, _policy in _GROWTH_POLICIES]
+        )
+        self.growth_policy.set_tooltip_text(
+            "Automatic uses income growth when a schedule contains income, "
+            "expense inflation for expense-only schedules, and no generic growth "
+            "for formula-driven schedules."
+        )
+        grid.attach(Gtk.Label(label="Projection growth", xalign=0), 0, row, 1, 1)
+        grid.attach(self.growth_policy, 1, row, 1, 1)
         row += 1
 
         self.category = Gtk.DropDown.new_from_strings(self._names)
@@ -409,6 +429,13 @@ class ScheduleDialog(Gtk.Window):
         """Load editable schedule metadata while preserving formula-owned values."""
         self.name_entry.set_text(source.name)
         self.kind.set_selected(1 if source.placeholder else 0)
+        self.growth_policy.set_selected(
+            next(
+                index
+                for index, (_label, policy) in enumerate(_GROWTH_POLICIES)
+                if policy is source.growth_policy
+            )
+        )
         for index, (_label, period, interval) in enumerate(self._frequencies):
             if (
                 source.recurrence.period is period
@@ -543,6 +570,13 @@ class ScheduleDialog(Gtk.Window):
         """Populate the simple editor from an existing two-split schedule."""
         self.name_entry.set_text(source.name)
         self.kind.set_selected(1 if source.placeholder else 0)
+        self.growth_policy.set_selected(
+            next(
+                index
+                for index, (_label, policy) in enumerate(_GROWTH_POLICIES)
+                if policy is source.growth_policy
+            )
+        )
         parts = []
         for split in source.splits:
             account = self.db.get_account(split.account)
@@ -929,6 +963,9 @@ class ScheduleDialog(Gtk.Window):
             schedule.recurrence = recurrence
             schedule.auto_create = self.auto_check.get_active()
             schedule.placeholder = self.kind.get_selected() == 1
+            schedule.growth_policy = _GROWTH_POLICIES[
+                self.growth_policy.get_selected()
+            ][1]
             schedule.skipped = self._skipped(recurrence) or []
             if self._formula_inputs_changed():
                 variables = self._formula_variables()
@@ -994,6 +1031,9 @@ class ScheduleDialog(Gtk.Window):
         ]
         schedule.auto_create = self.auto_check.get_active()
         schedule.placeholder = self.kind.get_selected() == 1
+        schedule.growth_policy = _GROWTH_POLICIES[
+            self.growth_policy.get_selected()
+        ][1]
         schedule.amount_changes = self._amount_changes() or []
         schedule.skipped = self._skipped(recurrence) or []
         schedule.occurrence_adjustments = (

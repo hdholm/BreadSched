@@ -819,6 +819,12 @@ function openScheduledEditor(data, source) {
     accounts, source?.additional_splits || [], changed);
   const category = select("category", flowAccounts.map((a) => [a.handle, a.name]), source?.category || flowAccounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
+  const growthPolicy = select("growth_policy", [
+    ["auto", "Automatic from schedule contents"],
+    ["none", "No growth - fixed nominal amount"],
+    ["income", "Income growth"],
+    ["inflation", "Expense inflation"],
+  ], source?.growth_policy || "auto");
   const planningFlow = select("planning_flow", [
     ["", "Ordinary transfer"],
     ["retirement_saving", "Retirement saving"],
@@ -833,6 +839,7 @@ function openScheduledEditor(data, source) {
   form.append(
     field("Name", el("input", { name:"name", value:source?.name || "", required:"required" })),
     field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]], source?.placeholder ? "estimate" : "commitment")),
+    field("Projection growth", growthPolicy),
     field("Category", category), field("Paid from / into", funding),
     field("Planning purpose override", planningFlow),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
@@ -882,7 +889,8 @@ function openScheduledEditor(data, source) {
     try {
       await post("/api/scheduled/save", {
         handle: source?.handle || null, name: values.name,
-        placeholder: values.kind === "estimate", category: values.category, funding: values.funding,
+        placeholder: values.kind === "estimate", growth_policy: values.growth_policy,
+        category: values.category, funding: values.funding,
         planning_flow: values.planning_flow || null, amount: values.amount,
         additional_splits: additionalSplits.values(),
         amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
@@ -1157,6 +1165,7 @@ async function scenarioEventPanel(handle, fromMonth) {
     const existing = mode.kind === "alter" ? data.changes.find((x)=>x.source_schedule===source?.handle && x.enabled) : null;
     const editSource = existing || source;
     const planningFlow = editSource?.planning_flow || "";
+    const growthPolicy = editSource?.growth_policy || "auto";
     let refreshTimeline = () => {};
     const changed = () => refreshTimeline();
     const futureEditor = timelineEditor(
@@ -1168,9 +1177,13 @@ async function scenarioEventPanel(handle, fromMonth) {
     const preview = schedulePreviewNode();
     const additionalSplits = planningSplitEditor(
       data.accounts, editSource?.additional_splits || [], changed);
-    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
+    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
+      el("label", {}, "Projection growth", el("select", {name:"growth_policy"},
+        [["auto","Automatic from schedule contents"],["none","No growth - fixed nominal amount"],
+         ["income","Income growth"],["inflation","Expense inflation"]].map(([value,label])=>
+          el("option",{value,selected:value===growthPolicy?"selected":null},label)))),
       el("label", {}, "Income / expense category", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
       el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
       el("label", {}, "Planning purpose override", el("select", {name:"planning_flow"},

@@ -25,6 +25,7 @@ from ...gen.lib import (
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduleGrowthPolicy,
     WeekendAdjust,
     evaluate,
     scheduled_occurrence_preview,
@@ -53,6 +54,13 @@ _WEEKEND = [
     ("Leave on the day", WeekendAdjust.NONE),
     ("Move to the Friday before", WeekendAdjust.PREVIOUS),
     ("Move to the Monday after", WeekendAdjust.NEXT),
+]
+
+_GROWTH_POLICIES = [
+    ("Automatic from schedule contents", ScheduleGrowthPolicy.AUTO),
+    ("No growth - fixed nominal amount", ScheduleGrowthPolicy.NONE),
+    ("Income growth", ScheduleGrowthPolicy.INCOME),
+    ("Expense inflation", ScheduleGrowthPolicy.INFLATION),
 ]
 
 _PLANNING_FLOWS = [
@@ -137,6 +145,18 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.name_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Name", xalign=0), 0, row, 1, 1)
         grid.attach(self.name_entry, 1, row, 1, 1)
+        row += 1
+
+        self.growth_policy = Gtk.DropDown.new_from_strings(
+            [label for label, _policy in _GROWTH_POLICIES]
+        )
+        self.growth_policy.set_tooltip_text(
+            "Automatic uses income growth when a schedule contains income, "
+            "expense inflation for expense-only schedules, and no generic growth "
+            "for formula-driven schedules."
+        )
+        grid.attach(Gtk.Label(label="Projection growth", xalign=0), 0, row, 1, 1)
+        grid.attach(self.growth_policy, 1, row, 1, 1)
         row += 1
 
         self.category = Gtk.DropDown.new_from_strings(self._names)
@@ -292,6 +312,13 @@ class ScenarioScheduleDialog(Gtk.Window):
 
     def _load_source(self, source: ScheduledTransaction | ScenarioSchedule) -> None:
         self.name_entry.set_text(source.name)
+        self.growth_policy.set_selected(
+            next(
+                index
+                for index, (_label, policy) in enumerate(_GROWTH_POLICIES)
+                if policy is source.growth_policy
+            )
+        )
         self.start_entry.set_text(source.recurrence.start.isoformat())
         if source.recurrence.end is not None:
             self.ends.set_selected(1)
@@ -774,6 +801,9 @@ class ScenarioScheduleDialog(Gtk.Window):
             if change.description == old_name:
                 change.description = change.name
             change.recurrence = recurrence
+            change.growth_policy = _GROWTH_POLICIES[
+                self.growth_policy.get_selected()
+            ][1]
             change.skipped = self._skipped(recurrence) or []
             if self._formula_inputs_changed():
                 variables = self._formula_variables()
@@ -830,6 +860,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             source_schedule=self.source.handle if self.source is not None else None,
             enabled=True,
             placeholder=placeholder,
+            growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
             amount_changes=self._amount_changes() or [],
             seasonal_amounts=list(
                 self.current.seasonal_amounts

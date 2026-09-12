@@ -1102,19 +1102,23 @@ class TestScheduleEntry:
                 ScheduledSplit(rent.handle, Money("1800.00")),
                 ScheduledSplit(bank.handle, Money("-1800.00")),
             ],
+            growth_policy="income",
         )
         with app.db.transaction("add editable schedule") as txn:
             app.db.add_scheduled(source, txn)
         from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
 
         dialog = ScheduleDialog(window, app.db, source=source)
+        assert dialog.growth_policy.get_selected() == 2
         dialog.name_entry.set_text("Rent revised")
         dialog.amount_entry.set_text("1850.00")
+        dialog.growth_policy.set_selected(1)
         dialog._on_save(None)
         edited = app.db.get_scheduled(source.handle)
         assert edited is not None
         assert edited.name == "Rent revised"
         assert edited.amount() == Money("1850.00")
+        assert edited.growth_policy.value == "none"
         same_handle = [
             item for item in app.db.iter_scheduled() if item.handle == source.handle
         ]
@@ -2135,6 +2139,7 @@ class TestDerivedPlanView:
                 ScheduledSplit(rent.handle, Money("1800.00")),
                 ScheduledSplit(checking.handle, Money("-1800.00")),
             ],
+            growth_policy="income",
         )
         schedule.placeholder = True
         scenario = Scenario(name="Higher rent")
@@ -2146,7 +2151,9 @@ class TestDerivedPlanView:
         schedule = app.db.get_scheduled(schedule.handle)
         assert scenario is not None and schedule is not None
         dialog = ScenarioScheduleDialog(window, app.db, scenario, source=schedule)
+        assert dialog.growth_policy.get_selected() == 2
         dialog.amount_entry.set_text("2100.00")
+        dialog.growth_policy.set_selected(3)
         dialog._on_save(None)
 
         saved = app.db.get_scenario_by_name("Higher rent")
@@ -2154,7 +2161,9 @@ class TestDerivedPlanView:
         assert saved is not None and baseline is not None
         assert saved.schedule_overrides[0].source_schedule == schedule.handle
         assert saved.schedule_overrides[0].splits[0].amount == Money("2100.00")
+        assert saved.schedule_overrides[0].growth_policy.value == "inflation"
         assert baseline.splits[0].amount == Money("1800.00")
+        assert baseline.growth_policy.value == "income"
 
     def test_scenario_formula_schedule_preserves_protected_fields(
         self, app, window, populated_book

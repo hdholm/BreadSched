@@ -55,6 +55,7 @@ from ..gen.lib import (
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    ScheduleGrowthPolicy,
     Split,
     Transaction,
     WeekendAdjust,
@@ -490,6 +491,7 @@ class Api:
                     "enabled": item.enabled,
                     "placeholder": item.placeholder,
                     "auto": item.auto_create,
+                    "growth_policy": item.growth_policy.value,
                     "simple": simple is not None and frequency is not None,
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
@@ -932,6 +934,7 @@ class Api:
             "source_schedule": item.source_schedule,
             "source_name": source.name if source is not None else None,
             "enabled": item.enabled,
+            "growth_policy": item.growth_policy.value,
             "simple": (
                 simple is not None and self._frequency_key(item.recurrence) is not None
             ),
@@ -981,6 +984,7 @@ class Api:
                 {
                     "handle": item.handle,
                     "name": item.name,
+                    "growth_policy": item.growth_policy.value,
                     "simple": (parts := self._simple_schedule_parts(item)) is not None
                     and (frequency := self._frequency_key(item.recurrence)) is not None,
                     "category": parts["category"] if parts else None,
@@ -1204,6 +1208,31 @@ class Api:
         additional_splits, additional_total = self._parse_additional_splits(
             payload, {category.handle, funding.handle}
         )
+        existing_change = (
+            next(
+                (
+                    item
+                    for item in scenario.schedule_overrides
+                    if item.source_schedule == source_handle and item.enabled
+                ),
+                None,
+            )
+            if source_handle is not None
+            else None
+        )
+        default_growth_policy = (
+            existing_change.growth_policy
+            if existing_change is not None
+            else source.growth_policy
+            if source is not None
+            else ScheduleGrowthPolicy.AUTO
+        )
+        try:
+            growth_policy = ScheduleGrowthPolicy(
+                str(payload.get("growth_policy") or default_growth_policy.value)
+            )
+        except ValueError:
+            raise ValueError("choose a valid projection growth policy") from None
         change = ScenarioSchedule(
             name=name,
             recurrence=recurrence,
@@ -1219,6 +1248,7 @@ class Api:
             source_schedule=source_handle,
             enabled=True,
             placeholder=source.placeholder if source is not None else True,
+            growth_policy=growth_policy,
             amount_changes=self._parse_amount_changes(payload, start),
             seasonal_amounts=list(source.seasonal_amounts) if source is not None else [],
             skipped=skipped,
@@ -2204,6 +2234,16 @@ class Api:
         if set(skipped) & {change.when for change in adjustments}:
             raise ValueError("an occurrence cannot be both skipped and overridden")
 
+        default_growth_policy = (
+            existing.growth_policy if existing is not None else ScheduleGrowthPolicy.AUTO
+        )
+        try:
+            growth_policy = ScheduleGrowthPolicy(
+                str(payload.get("growth_policy") or default_growth_policy.value)
+            )
+        except ValueError:
+            raise ValueError("choose a valid projection growth policy") from None
+
         item = (
             ScheduledTransaction.from_dict(existing.serialize())
             if existing is not None
@@ -2235,6 +2275,7 @@ class Api:
             ),
         ]
         item.placeholder = bool(payload.get("placeholder", False))
+        item.growth_policy = growth_policy
         item.amount_changes = amount_changes
         item.skipped = skipped
         item.occurrence_adjustments = adjustments

@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0128
-(`projection: add schedule growth policy`).
+Status below is current through patch 0129
+(`projection: expose schedule growth policy in GTK and web`).
 
 ## Product direction and current hardening phase
 
@@ -45,8 +45,8 @@ roughly in this order:
    generic expense inflation or separately charged generic liability interest; add
    explicit schedule growth policy so multi-split payroll can receive income growth;
    then fix recurrence period numbering and start-of-period loan mathematics. The
-   domain/engine growth-policy foundation is implemented in 0128; expose it in
-   GTK/web editors next.
+   domain/engine growth-policy foundation is implemented in 0128 and exposed in
+   both GTK and web schedule/scenario editors in 0129.
 2. Harden the formula evaluator: correct fractional powers and GnuCash argument/
    grouping parsing, bound expression complexity/powers, and convert evaluator
    failures consistently to ``FormulaError``.
@@ -246,9 +246,10 @@ This remains one of the largest functional gaps.
   regression that compares projected loan balance to the amortisation table.
 - 0128 adds persisted per-schedule growth policy values ``auto``, ``none``,
   ``income``, and ``inflation``. Automatic mode now treats mixed gross-to-net
-  payroll as income growth while formula schedules remain fixed by default. Add
-  GTK and web controls for choosing the policy explicitly, and later add a custom
-  per-schedule rate only if the scenario-assumption model can explain it cleanly.
+  payroll as income growth while formula schedules remain fixed by default. Patch
+  0129 exposes the policy in both GTK and web baseline/scenario schedule editors.
+  Add a custom per-schedule rate later only if the scenario-assumption model can
+  explain it cleanly.
 - Improve projection caching/reuse without making saved scenarios store stale
   calculated results.
 - Add cancellation/progress reporting for expensive projections.
@@ -413,3 +414,7 @@ regress them:
   their liabilities do not receive a second generic liability-interest accrual; an
   economic-sense projection test anchors the resulting balance to the amortisation
   table.
+- Schedule growth policy (`auto`, `none`, `income`, or `inflation`) is persisted for
+  baseline and scenario schedules and is editable in both GTK4 and the web parity
+  interface. Mixed gross-to-net payroll grows as one balanced income event in
+  automatic mode, while formula schedules remain nominally fixed by default.

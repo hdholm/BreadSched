@@ -102,7 +102,7 @@ Projection is event-driven. Cash, investment, and liability state advances betwe
 actual, scheduled, estimated, and one-off dated events. Reporting months are views
 of those state transitions rather than the engine's clock.
 
-Schedules may select a growth policy:
+Both GTK4 and web schedule/scenario editors expose a projection growth policy:
 
 - `auto` — infer the appropriate ordinary household behavior;
 - `none` — keep the event nominally fixed;

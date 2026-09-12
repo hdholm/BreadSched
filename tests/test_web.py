@@ -300,6 +300,7 @@ class TestItServes:
             {
                 "name": "Internet",
                 "placeholder": False,
+                "growth_policy": "income",
                 "category": category["handle"],
                 "funding": funding["handle"],
                 "amount": "95.00",
@@ -319,6 +320,7 @@ class TestItServes:
                 "handle": handle,
                 "name": "Internet service",
                 "placeholder": True,
+                "growth_policy": "none",
                 "category": category["handle"],
                 "funding": funding["handle"],
                 "planning_flow": "benefit_funding",
@@ -345,6 +347,7 @@ class TestItServes:
         assert Money(item["amount"]) == Money("110.00")
         assert item["placeholder"] is True
         assert item["auto"] is False
+        assert item["growth_policy"] == "none"
         assert item["count"] == 6
         assert item["end"] is None
         assert item["weekend"] == "previous"
@@ -365,6 +368,30 @@ class TestItServes:
             if row["kind"] == "benefit_funding"
         )
         assert Money(benefit["planned"][1]) == Money("-110.00")
+
+    def test_schedule_rejects_an_unknown_growth_policy(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(
+            a for a in data["accounts"] if a["name"].endswith(":Checking")
+        )
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scheduled/save",
+                {
+                    "name": "Growth validation fixture",
+                    "growth_policy": "not-a-policy",
+                    "category": category["handle"],
+                    "funding": funding["handle"],
+                    "amount": "75.00",
+                    "frequency": "monthly",
+                    "start": "2026-02-01",
+                    "weekend": "none",
+                },
+            )
+        assert caught.value.code == 400
+        payload = json.loads(caught.value.read())
+        assert "growth policy" in payload["error"]
 
     def test_fixed_multisplit_schedule_balances_payroll_and_classifies_saving(
         self, client
@@ -1229,6 +1256,7 @@ class TestScenarioEventWebParity:
             {
                 "handle": scenario["handle"],
                 "name": "Lower rent estimate",
+                "growth_policy": "inflation",
                 "category": rent["handle"],
                 "funding": bank["handle"],
                 "planning_flow": "debt_principal",
@@ -1242,6 +1270,7 @@ class TestScenarioEventWebParity:
         assert saved["changes"][0]["source_schedule"] is None
         assert saved["changes"][0]["amount"] == "1500.00"
         assert saved["changes"][0]["planning_flow"] == "debt_principal"
+        assert saved["changes"][0]["growth_policy"] == "inflation"
 
     def test_scenario_estimate_can_carry_fixed_multisplit_classifications(
         self, scenario_event_client
