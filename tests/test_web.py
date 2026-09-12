@@ -262,6 +262,33 @@ class TestItServes:
         assert status == 200
         assert set(payload) == {"definitions", "accounts", "upcoming"}
 
+    def test_scheduled_active_state_can_be_edited(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        values = {
+            "name": "Recurring expense",
+            "category": category["handle"],
+            "funding": funding["handle"],
+            "amount": "25.00",
+            "frequency": "monthly",
+            "start": "2026-01-01",
+            "enabled": False,
+        }
+        status, created = client.post("/api/scheduled/save", values)
+        assert status == 200
+        _status, data = client.get("/api/scheduled")
+        item = next(row for row in data["definitions"] if row["handle"] == created["handle"])
+        assert item["enabled"] is False
+        assert all(row["name"] != values["name"] for row in data["upcoming"])
+
+        values.update(handle=created["handle"], enabled=True)
+        status, _updated = client.post("/api/scheduled/save", values)
+        assert status == 200
+        _status, data = client.get("/api/scheduled")
+        item = next(row for row in data["definitions"] if row["handle"] == created["handle"])
+        assert item["enabled"] is True
+
     def test_occurrence_options_follow_recurrence_and_weekend_adjustment(self, client):
         status, payload = client.post(
             "/api/scheduled/occurrences",

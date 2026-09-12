@@ -13,6 +13,7 @@ Three defects are pinned here, all of which reached a user:
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import date
 
 import pytest
@@ -23,7 +24,7 @@ from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.engine import ledger, schedule
 from breadsched.gen.lib import Money
-from breadsched.plugins.importer import gnucash_xml
+from breadsched.plugins.importer import gnucash_sqlite, gnucash_xml
 
 
 @pytest.fixture
@@ -88,6 +89,44 @@ class TestXmlScheduledTransactions:
         assert sched.enabled is True
         assert sched.auto_create is True
         assert sched.advance_days == 5
+
+    def test_inactive_import_and_source_state_changes(self, db, tmp_path):
+        source = create_xml_book(tmp_path / "source.gnucash", compress=False)
+        path = tmp_path / "source.gnucash"
+        path.write_text(source.body.replace("<sx:enabled>y", "<sx:enabled>n"))
+        gnucash_xml.import_book(db, path)
+        assert db.get_scheduled(source.schedule).enabled is False
+        assert schedule.due_occurrences(db, as_of=date(2026, 3, 15)) == []
+        assert schedule.forecast_occurrences(db, date(2026, 3, 1), date(2026, 4, 30)) == []
+
+        path.write_text(source.body)
+        gnucash_xml.import_book(db, path)
+        assert db.get_scheduled(source.schedule).enabled is True
+        path.write_text(source.body.replace("<sx:enabled>y", "<sx:enabled>n"))
+        gnucash_xml.import_book(db, path)
+        assert db.get_scheduled(source.schedule).enabled is False
+        assert len(list(db.iter_scheduled())) == 1
+
+
+@pytest.mark.parametrize("inactive", [0, "n", "false"])
+def test_inactive_sqlite_schedule_survives_reimport(db, gnucash_sqlite_path, inactive):
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET enabled=?", (inactive,))
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    sched = next(iter(db.iter_scheduled()))
+    assert sched.enabled is False
+    assert schedule.due_occurrences(db, as_of=date(2026, 3, 15)) == []
+    assert schedule.forecast_occurrences(db, date(2026, 3, 1), date(2026, 4, 30)) == []
+
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET enabled=1")
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    assert db.get_scheduled(sched.handle).enabled is True
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET enabled=?", (inactive,))
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    assert db.get_scheduled(sched.handle).enabled is False
+    assert len(list(db.iter_scheduled())) == 1
 
     def test_template_splits_resolve_to_real_accounts(self, db, xml_book):
         """The slot indirection: the template split names the real account."""

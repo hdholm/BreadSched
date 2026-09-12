@@ -48,7 +48,7 @@ _FREQUENCIES = [
     ("Quarterly", PeriodType.MONTH, 3),
     ("Twice a year", PeriodType.MONTH, 6),
     ("Yearly", PeriodType.YEAR, 1),
-    ("One off", PeriodType.ONCE, 1),
+    ("Once", PeriodType.ONCE, 1),
 ]
 
 _WEEKEND = [

@@ -93,13 +93,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Preserve imported schedule active state.** Silent reactivation can
-   create unintended future activity; repair import and re-import before widening
-   the schedule workflow. Details belong under Import and GnuCash interoperability.
-2. **NEXT — Historical estimator residual correctness.** Reproduce accepted
+1. **NEXT — Historical estimator residual correctness.** Reproduce accepted
    estimates increasing suggestions, omitted future schedules, and split-category
    omissions together. Details and acceptance criteria belong under Historical estimator.
-3. **Dashboard balances and hierarchy**, followed by the scheduled-entry and import
+2. **Dashboard balances and hierarchy**, followed by the scheduled-entry and import
    usability work below. Mortgage planning-flow semantics require design review.
 
 ## Dashboard balances and group hierarchy
@@ -358,9 +355,8 @@ semantics, not duplicate business rules in presentation code.
 
 ## Scheduled transactions and loans
 
-- [ ] **Frequency terminology.** Rename the displayed frequency `One off`/`One-off`
-  to `Once` consistently in GTK, web, previews, and help without changing persisted
-  recurrence identifiers or imported one-time semantics.
+- [x] **0158 — Frequency terminology.** Display `Once` in GTK and web schedule
+  and scenario editors without changing the saved recurrence identifier.
 - [ ] **Account-linked card payments.** Credit cards with payment days should appear
   in scheduled/upcoming activity. Design an account-linked payment schedule type
   if needed, defining statement/current-balance amounts, paid-in-full versus
@@ -445,13 +441,11 @@ semantics, not duplicate business rules in presentation code.
 
 ## Import and GnuCash interoperability
 
-- [ ] **NEXT — Preserve inactive scheduled transactions.** Imported inactive
-  definitions reportedly become active. Trace both XML and SQLite active/enabled
-  fields through decoding, persistence, merge, display/editor saves, and occurrence
-  generation.
-  Inactive definitions must remain inspectable but generate no due/planned activity;
-  re-import must preserve the source's active state without silent reactivation.
-  Add generic initial-import and state-change/re-import regressions.
+- [x] **0158 — Preserve and expose inactive schedule state.** Decode GnuCash
+  SQLite textual false flags without treating them as truthy. Regressions cover
+  inactive XML/SQLite schedules, toggling source state on re-import, and exclusion
+  from due and projected activity. GTK and web editors display and save the active
+  state explicitly, including for formula-backed schedules in GTK.
 - [ ] **Account type changes on re-import.** Respect authoritative GnuCash account
   type changes while retaining stable identities and BreadSched-owned metadata.
   Validate the effect on account roles, commodity/precision, balance signs,

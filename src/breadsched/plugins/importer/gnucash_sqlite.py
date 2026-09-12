@@ -483,8 +483,8 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
                 day_of_month=day_of_month,
                 weekend_adjust=weekend,
             ),
-            enabled=bool(row["enabled"]),
-            auto_create=bool(row["auto_create"]),
+            enabled=_source_flag(row["enabled"]),
+            auto_create=_source_flag(row["auto_create"]),
             advance_days=row["adv_creation"] or 0,
         )
         sched.splits = _template_splits(conn, sink, row["template_act_guid"])
@@ -497,6 +497,13 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
         balance_template_splits(sched, sink.result)
         db.add_scheduled(sched, txn)
         sink.result.scheduled += 1
+
+
+def _source_flag(value: object) -> bool:
+    """Read a source boolean even when SQLite retained a textual flag."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "y", "yes", "true"}
+    return bool(value)
 
 
 def _template_splits(

@@ -2275,6 +2275,10 @@ class Api:
         item.amount_changes = amount_changes
         item.skipped = skipped
         item.occurrence_adjustments = adjustments
+        if "enabled" in payload:
+            if not isinstance(payload["enabled"], bool):
+                raise ValueError("active status must be true or false")
+            item.enabled = payload["enabled"]
         item.auto_create = bool(payload.get("auto", False))
         if item.placeholder:
             item.auto_create = False

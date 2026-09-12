@@ -50,7 +50,7 @@ _FREQUENCIES = [
     ("Quarterly", PeriodType.MONTH, 3),
     ("Twice a year", PeriodType.MONTH, 6),
     ("Yearly", PeriodType.YEAR, 1),
-    ("One off", PeriodType.ONCE, 1),
+    ("Once", PeriodType.ONCE, 1),
 ]
 
 _WEEKEND = [
@@ -281,6 +281,11 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.weekend, 1, row, 1, 1)
         row += 1
 
+        self.enabled_check = Gtk.CheckButton(label="Active — include in upcoming and plans")
+        self.enabled_check.set_active(True)
+        grid.attach(self.enabled_check, 1, row, 1, 1)
+        row += 1
+
         self.auto_check = Gtk.CheckButton(label="Post automatically once the date arrives")
         grid.attach(self.auto_check, 1, row, 1, 1)
 
@@ -419,6 +424,7 @@ class ScheduleDialog(Gtk.Window):
             if source.recurrence.weekend_adjust is adjustment:
                 self.weekend.set_selected(index)
                 break
+        self.enabled_check.set_active(source.enabled)
         self.auto_check.set_active(source.auto_create)
         self.skipped_editor.set_values(source.skipped)
 
@@ -682,6 +688,7 @@ class ScheduleDialog(Gtk.Window):
             if source.recurrence.weekend_adjust is adjustment:
                 self.weekend.set_selected(index)
                 break
+        self.enabled_check.set_active(source.enabled)
         self.auto_check.set_active(source.auto_create)
         self.amount_changes_editor.set_values(
             (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
@@ -911,6 +918,7 @@ class ScheduleDialog(Gtk.Window):
             if schedule.description == old_name:
                 schedule.description = schedule.name
             schedule.recurrence = recurrence
+            schedule.enabled = self.enabled_check.get_active()
             schedule.auto_create = self.auto_check.get_active()
             schedule.placeholder = self.kind.get_selected() == 1
             schedule.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
@@ -981,6 +989,7 @@ class ScheduleDialog(Gtk.Window):
                 planning_flow=planning_kind,
             ),
         ]
+        schedule.enabled = self.enabled_check.get_active()
         schedule.auto_create = self.auto_check.get_active()
         schedule.placeholder = self.kind.get_selected() == 1
         schedule.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
