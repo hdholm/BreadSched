@@ -65,9 +65,11 @@ roughly in this order:
    planning/FSA classifications by stable GnuCash GUID while allowing source-owned
    ledger facts to refresh. Longer term, move planning resolutions/classifications
    out of ledger objects where that materially simplifies safe synchronization.
-5. Replace O(book) verification on every write with changed-record/incremental
-   verification while retaining full ``verify`` for diagnostics, migrations, and
-   tests.  Add a realistic-book performance gate.
+5. Patch 0135 replaces O(book) verification on normal commit/undo/redo with
+   changed-record verification, including reverse-reference checks for deletions and
+   per-transaction ``split_index`` validation. Full ``verify`` remains the exhaustive
+   diagnostic. Add a realistic-book performance gate so this cost model stays bounded
+   as books grow.
 6. Close transaction/undo holes around metadata and move financial records such as
    FSA claims into normal transactional persistence rather than an unversioned
    metadata blob.

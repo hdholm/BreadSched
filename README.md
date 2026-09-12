@@ -4,6 +4,14 @@ BreadSched is a household-finance application for tracking income and expenses,
 planning cash flow from dated financial events, and projecting household finances
 under saved assumptions and alternate scenarios.
 
+### Why the name BreadSched?
+
+The application is focused heavily on cash flow, but most obvious names built from
+words such as cash, money, funds, projections, or schedules are already used by
+other products or services. **Bread** is slang for money, while **Sched** is a
+diminutive of schedule. Combining them produces **BreadSched**, with the additional
+advantage that the two parts form a rhyming pair.
+
 GTK4 is the primary/reference interface and Linux is the primary native desktop
 target. The web interface is required to maintain functional parity with GTK4 so
 that the same book, planning rules, and financial engines can also support browser

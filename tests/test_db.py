@@ -611,17 +611,17 @@ class TestTransactionLifecycleSafety:
             db.close()
 
     def test_exception_during_commit_restores_transaction_state(self, db, monkeypatch):
-        real_verify = db.verify_book
+        real_verify = db._verify_changes
         calls = 0
 
-        def explode_once():
+        def explode_once(records, *, reverse=False):
             nonlocal calls
             calls += 1
             if calls == 1:
                 raise RuntimeError("verification exploded")
-            return real_verify()
+            return real_verify(records, reverse=reverse)
 
-        monkeypatch.setattr(db, "verify_book", explode_once)
+        monkeypatch.setattr(db, "_verify_changes", explode_once)
         with pytest.raises(RuntimeError, match="verification exploded"):
             with db.transaction("broken commit") as txn:
                 db.add_account(Account(name="Not durable", atype=AccountType.BANK), txn)
@@ -631,6 +631,23 @@ class TestTransactionLifecycleSafety:
             kept = Account(name="Durable", atype=AccountType.BANK)
             db.add_account(kept, txn)
         assert db.get_account(kept.handle) is not None
+
+    def test_normal_commit_does_not_run_full_book_verification(self, db, book, monkeypatch):
+        def unexpected_full_scan():
+            raise AssertionError("normal commits must not run verify_book()")
+
+        monkeypatch.setattr(db, "verify_book", unexpected_full_scan)
+        posted = Transaction.simple(
+            date(2026, 3, 1), "Incremental verification", book.rent, book.checking, "10"
+        )
+        with db.transaction("incremental commit") as txn:
+            db.add_transaction(posted, txn)
+
+        assert db.get_transaction(posted.handle) is not None
+        assert db.undo() is True
+        assert db.get_transaction(posted.handle) is None
+        assert db.redo() is True
+        assert db.get_transaction(posted.handle) is not None
 
     def test_undo_is_not_allowed_inside_an_active_transaction(self, db, book):
         with db.transaction("post") as txn:

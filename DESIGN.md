@@ -43,6 +43,19 @@ application-service layer is strengthened, use cases such as resolving an actual
 saving a claim, reconciling an account, or editing a schedule should have one
 implementation called by every presentation.
 
+## Persistence verification
+
+Normal writes are verified incrementally from the records already captured by the
+database transaction. Changed objects are checked for their own domain invariants
+and derived-index rows, and deletions check reverse references that could make
+untouched objects invalid. A changed ledger transaction verifies only its own
+``split_index`` rows rather than rebuilding the complete index.
+
+``verify_book()`` remains the exhaustive diagnostic for explicit verification,
+backup/restore validation, migration checks, tests, and corruption investigation.
+This separation is deliberate: correctness checks on ordinary edits should scale
+with the change, not with the lifetime size of the household ledger.
+
 ## Exact financial representation
 
 ### Double entry

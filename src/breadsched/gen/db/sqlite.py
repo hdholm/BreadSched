@@ -29,7 +29,7 @@ from ..lib.budget import Budget
 from ..lib.commodity import Commodity
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
-from ..lib.transaction import Transaction
+from ..lib.transaction import Transaction, UnbalancedError
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
 from .migrations import LATEST_SCHEMA_VERSION, MIGRATIONS
 from .verification import BookIssue, verify_domain
@@ -618,13 +618,377 @@ class DbSQLite(DbBase):
             self._write_lock.release()
             raise
 
+    def _verify_changes(
+        self,
+        records: list[tuple[str, str, dict | None, dict | None]],
+        *,
+        reverse: bool = False,
+    ) -> list[BookIssue]:
+        """Verify only objects and reverse references affected by one write batch.
+
+        ``verify_book()`` remains the exhaustive diagnostic. Normal commits and
+        undo/redo already know which rows changed, so rebuilding every transaction
+        and the complete split index on each edit is unnecessary work.
+        """
+        states: dict[tuple[str, str], tuple[dict | None, dict | None]] = {}
+        for table, handle, before, after in records:
+            key = (table, handle)
+            original = states.get(key, (before, before))[0]
+            states[key] = (original, after)
+
+        targets = {
+            key: (before if reverse else after)
+            for key, (before, after) in states.items()
+        }
+        issues: list[BookIssue] = []
+        for (table, handle), data in targets.items():
+            if data is None:
+                issues.extend(self._verify_deleted_reference(table, handle))
+                continue
+            issues.extend(self._verify_changed_object(table, handle, data))
+        return issues
+
+    def _verify_changed_object(
+        self, table: str, handle: str, data: dict[str, Any]
+    ) -> list[BookIssue]:
+        issues = self._verify_derived_row(table, handle, data)
+
+        if table == "account":
+            account = Account.from_dict(data)
+            if account.parent is not None and self.get_account(account.parent) is None:
+                issues.append(BookIssue(
+                    "account.missing_parent",
+                    f"account {account.name!r} refers to missing parent {account.parent}",
+                    handle,
+                ))
+            if account.commodity is not None and self.get_commodity(account.commodity) is None:
+                issues.append(BookIssue(
+                    "account.missing_commodity",
+                    f"account {account.name!r} refers to missing commodity {account.commodity}",
+                    handle,
+                ))
+            if account.linked_asset is not None and self.get_account(account.linked_asset) is None:
+                issues.append(BookIssue(
+                    "account.missing_linked_asset",
+                    f"account {account.name!r} refers to missing linked asset "
+                    f"{account.linked_asset}",
+                    handle,
+                ))
+            seen: set[str] = set()
+            current = account
+            while current.parent is not None:
+                if current.handle in seen:
+                    issues.append(BookIssue(
+                        "account.parent_cycle",
+                        f"account hierarchy contains a cycle involving {account.name!r}",
+                        handle,
+                    ))
+                    break
+                seen.add(current.handle)
+                parent = self.get_account(current.parent)
+                if parent is None:
+                    break
+                current = parent
+
+        elif table == "txn":
+            transaction = Transaction.from_dict(data)
+            if (
+                transaction.currency is not None
+                and self.get_commodity(transaction.currency) is None
+            ):
+                issues.append(BookIssue(
+                    "transaction.missing_currency",
+                    f"transaction {transaction.describe()} refers to missing currency "
+                    f"{transaction.currency}",
+                    handle,
+                ))
+            try:
+                transaction.validate()
+            except UnbalancedError as exc:
+                issues.append(BookIssue("transaction.unbalanced", str(exc), handle))
+            split_handles: set[str] = set()
+            for transaction_split in transaction.splits:
+                if transaction_split.handle in split_handles:
+                    issues.append(BookIssue(
+                        "transaction.duplicate_split_handle",
+                        f"transaction {transaction.describe()} contains duplicate split handle "
+                        f"{transaction_split.handle}",
+                        handle,
+                    ))
+                split_handles.add(transaction_split.handle)
+                if self.get_account(transaction_split.account) is None:
+                    issues.append(BookIssue(
+                        "transaction.missing_account",
+                        f"transaction {transaction.describe()} has a split for missing account "
+                        f"{transaction_split.account}",
+                        handle,
+                    ))
+            issues.extend(self._verify_transaction_index(transaction))
+
+        elif table == "scheduled":
+            scheduled = ScheduledTransaction.from_dict(data)
+            if scheduled.currency is not None and self.get_commodity(scheduled.currency) is None:
+                issues.append(BookIssue(
+                    "scheduled.missing_currency",
+                    f"scheduled transaction {scheduled.name!r} refers to missing currency "
+                    f"{scheduled.currency}",
+                    handle,
+                ))
+            for scheduled_split in scheduled.splits:
+                if self.get_account(scheduled_split.account) is None:
+                    issues.append(BookIssue(
+                        "scheduled.missing_account",
+                        f"scheduled transaction {scheduled.name!r} refers to missing account "
+                        f"{scheduled_split.account}",
+                        handle,
+                    ))
+            if scheduled.budgets_decided:
+                for budget_handle in scheduled.budgets:
+                    if self.get_budget(budget_handle) is None:
+                        issues.append(BookIssue(
+                            "scheduled.missing_budget",
+                            f"scheduled transaction {scheduled.name!r} refers to missing budget "
+                            f"{budget_handle}",
+                            handle,
+                        ))
+
+        elif table == "budget":
+            budget = Budget.from_dict(data)
+            if budget.scenario is not None and self.get_scenario(budget.scenario) is None:
+                issues.append(BookIssue(
+                    "budget.missing_scenario",
+                    f"budget {budget.name!r} refers to missing scenario {budget.scenario}",
+                    handle,
+                ))
+            for account_handle in budget.lines:
+                if self.get_account(account_handle) is None:
+                    issues.append(BookIssue(
+                        "budget.missing_account",
+                        f"budget {budget.name!r} contains a line for missing account "
+                        f"{account_handle}",
+                        handle,
+                    ))
+
+        elif table == "scenario":
+            scenario = Scenario.from_dict(data)
+            if scenario.budget is not None and self.get_budget(scenario.budget) is None:
+                issues.append(BookIssue(
+                    "scenario.missing_budget",
+                    f"scenario {scenario.name!r} refers to missing budget {scenario.budget}",
+                    handle,
+                ))
+            refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
+            refs.update(item.account for item in scenario.one_offs)
+            for period in scenario.assumption_periods:
+                refs.update(period.per_account)
+            for account_handle in sorted(refs):
+                if self.get_account(account_handle) is None:
+                    issues.append(BookIssue(
+                        "scenario.missing_account",
+                        f"scenario {scenario.name!r} refers to missing account {account_handle}",
+                        handle,
+                    ))
+
+        return issues
+
+    def _verify_derived_row(
+        self, table: str, handle: str, data: dict[str, Any]
+    ) -> list[BookIssue]:
+        columns_by_table: dict[str, tuple[str, ...]] = {
+            "commodity": ("mnemonic",),
+            "account": ("parent", "name", "atype"),
+            "txn": ("post_date", "description"),
+            "scheduled": ("name",),
+            "budget": ("name",),
+            "scenario": ("name",),
+        }
+        defaults: dict[tuple[str, str], Any] = {
+            ("commodity", "mnemonic"): "",
+            ("account", "parent"): None,
+            ("account", "name"): "",
+            ("account", "atype"): "",
+            ("txn", "description"): "",
+            ("scheduled", "name"): "",
+            ("budget", "name"): "",
+            ("scenario", "name"): "",
+        }
+        columns = columns_by_table[table]
+        selected = ", ".join(("handle", *columns))
+        row = self._require().execute(
+            f"SELECT {selected} FROM {table} WHERE handle=?", (handle,)
+        ).fetchone()
+        if row is None:
+            return [BookIssue(
+                f"{table}.missing_row", f"{table} object {handle} was not stored", handle
+            )]
+        issues: list[BookIssue] = []
+        if data.get("handle") != handle:
+            issues.append(BookIssue(
+                f"{table}.handle_mismatch",
+                f"{table} row {handle} contains object handle {data.get('handle')!r}",
+                handle,
+            ))
+        for column in columns:
+            expected = data.get(column, defaults.get((table, column)))
+            if table == "txn" and column == "post_date" and expected is not None:
+                expected = str(expected)
+            if row[column] != expected:
+                issues.append(BookIssue(
+                    f"{table}.index_mismatch",
+                    f"{table} derived column {column} disagrees with blob for {handle}",
+                    handle,
+                ))
+        return issues
+
+    def _verify_transaction_index(self, transaction: Transaction) -> list[BookIssue]:
+        expected = {
+            split.handle: (
+                transaction.handle, split.account, transaction.post_date.isoformat(),
+                split.value.numerator, split.value.denominator,
+            )
+            for split in transaction.splits
+        }
+        actual = {
+            row["handle"]: (row["txn"], row["account"], row["post_date"],
+                            row["value_num"], row["value_den"])
+            for row in self._require().execute(
+                "SELECT handle, txn, account, post_date, value_num, value_den "
+                "FROM split_index WHERE txn=?", (transaction.handle,)
+            )
+        }
+        issues: list[BookIssue] = []
+        for split_handle in sorted(expected.keys() - actual.keys()):
+            issues.append(BookIssue(
+                "split_index.missing",
+                f"split {split_handle} is missing from split_index",
+                split_handle,
+            ))
+        for split_handle in sorted(actual.keys() - expected.keys()):
+            issues.append(BookIssue(
+                "split_index.orphan",
+                f"split_index contains unknown split {split_handle}",
+                split_handle,
+            ))
+        for split_handle in sorted(expected.keys() & actual.keys()):
+            if expected[split_handle] != actual[split_handle]:
+                issues.append(BookIssue(
+                    "split_index.mismatch",
+                    f"split_index disagrees with transaction data for split {split_handle}",
+                    split_handle,
+                ))
+        return issues
+
+    def _verify_deleted_reference(self, table: str, handle: str) -> list[BookIssue]:
+        issues: list[BookIssue] = []
+        if table == "account":
+            for account in self._accounts.values():
+                if account.parent == handle:
+                    issues.append(BookIssue(
+                        "account.missing_parent",
+                        f"account {account.name!r} refers to missing parent {handle}",
+                        account.handle,
+                    ))
+                if account.linked_asset == handle:
+                    issues.append(BookIssue(
+                        "account.missing_linked_asset",
+                        f"account {account.name!r} refers to missing linked asset {handle}",
+                        account.handle,
+                    ))
+            row = self._require().execute(
+                "SELECT txn FROM split_index WHERE account=? LIMIT 1", (handle,)
+            ).fetchone()
+            if row is not None:
+                issues.append(BookIssue(
+                    "transaction.missing_account",
+                    f"transaction {row['txn']} has a split for missing account {handle}",
+                    row["txn"],
+                ))
+            for scheduled in self.iter_scheduled():
+                if any(split.account == handle for split in scheduled.splits):
+                    issues.append(BookIssue(
+                        "scheduled.missing_account",
+                        f"scheduled transaction {scheduled.name!r} refers to missing account "
+                        f"{handle}",
+                        scheduled.handle,
+                    ))
+            for budget in self.iter_budgets():
+                if handle in budget.lines:
+                    issues.append(BookIssue(
+                        "budget.missing_account",
+                        f"budget {budget.name!r} contains a line for missing account {handle}",
+                        budget.handle,
+                    ))
+            for scenario in self.iter_scenarios():
+                refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
+                refs.update(item.account for item in scenario.one_offs)
+                for period in scenario.assumption_periods:
+                    refs.update(period.per_account)
+                if handle in refs:
+                    issues.append(BookIssue(
+                        "scenario.missing_account",
+                        f"scenario {scenario.name!r} refers to missing account {handle}",
+                        scenario.handle,
+                    ))
+
+        elif table == "commodity":
+            for account in self._accounts.values():
+                if account.commodity == handle:
+                    issues.append(BookIssue(
+                        "account.missing_commodity",
+                        f"account {account.name!r} refers to missing commodity {handle}",
+                        account.handle,
+                    ))
+            for transaction in self.iter_transactions():
+                if transaction.currency == handle:
+                    issues.append(BookIssue(
+                        "transaction.missing_currency",
+                        f"transaction {transaction.describe()} refers to missing currency {handle}",
+                        transaction.handle,
+                    ))
+            for scheduled in self.iter_scheduled():
+                if scheduled.currency == handle:
+                    issues.append(BookIssue(
+                        "scheduled.missing_currency",
+                        f"scheduled transaction {scheduled.name!r} refers to missing currency "
+                        f"{handle}",
+                        scheduled.handle,
+                    ))
+
+        elif table == "budget":
+            for scheduled in self.iter_scheduled():
+                if scheduled.budgets_decided and handle in scheduled.budgets:
+                    issues.append(BookIssue(
+                        "scheduled.missing_budget",
+                        f"scheduled transaction {scheduled.name!r} refers to missing budget "
+                        f"{handle}",
+                        scheduled.handle,
+                    ))
+            for scenario in self.iter_scenarios():
+                if scenario.budget == handle:
+                    issues.append(BookIssue(
+                        "scenario.missing_budget",
+                        f"scenario {scenario.name!r} refers to missing budget {handle}",
+                        scenario.handle,
+                    ))
+
+        elif table == "scenario":
+            for budget in self.iter_budgets():
+                if budget.scenario == handle:
+                    issues.append(BookIssue(
+                        "budget.missing_scenario",
+                        f"budget {budget.name!r} refers to missing scenario {handle}",
+                        budget.handle,
+                    ))
+
+        return issues
+
     def _txn_commit(self, txn: DbTxn) -> None:
         conn: sqlite3.Connection | None = None
         try:
             if self._active_txn is not txn:
                 raise DbError("attempted to commit a transaction that is not active")
             conn = self._require_writable()
-            issues = self.verify_book()
+            issues = self._verify_changes(txn.records)
             if issues:
                 first = issues[0]
                 raise DbError(
@@ -704,7 +1068,7 @@ class DbSQLite(DbBase):
                 for table, handle, before, after in records:
                     target = before if reverse else after
                     self._store(table, handle, target)
-                issues = self.verify_book()
+                issues = self._verify_changes(txn.records, reverse=reverse)
                 if issues:
                     first = issues[0]
                     raise DbError(
