@@ -199,6 +199,15 @@ XDG `user-dirs.dirs` and common Windows OneDrive redirection. Because SQLite fil
 are unsafe as an only copy on many sync/network filesystems, known sync roots are
 detected and opening a book there emits a durability warning.
 
+## Account-tree integrity
+
+An account is a chart root because its account type is `ROOT`, not merely because its
+parent field is empty. This distinction prevents damaged/imported parentless ordinary
+accounts from disappearing from engines that intentionally skip the root. Full book
+verification reports parentless non-root accounts when an explicit root exists, while
+lightweight rootless books remain valid for tests/tools that intentionally omit a chart
+root.
+
 ## Storage and transactions
 
 SQLite is the native persistence engine. The design priorities are atomic financial

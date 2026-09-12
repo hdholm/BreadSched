@@ -5,6 +5,8 @@ from decimal import Decimal
 
 from breadsched.gen.engine import projection
 from breadsched.gen.lib import (
+    Account,
+    AccountType,
     AssumptionPeriod,
     Assumptions,
     Money,
@@ -28,6 +30,35 @@ def flat_assumptions(**overrides) -> Assumptions:
     )
     base.update({k: str(v) for k, v in overrides.items()})
     return Assumptions(**base)
+
+
+class TestAccountRoots:
+    def test_parentless_non_root_account_is_not_hidden_from_projection(self, db):
+        with db.transaction("rootless chart") as txn:
+            checking = Account(name="Checking", atype=AccountType.BANK)
+            equity = Account(name="Opening equity", atype=AccountType.EQUITY)
+            db.add_account(checking, txn)
+            db.add_account(equity, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 1, 1),
+                    "Opening balance",
+                    checking.handle,
+                    equity.handle,
+                    "1000.00",
+                ),
+                txn,
+            )
+
+        scenario = Scenario(
+            name="Rootless projection",
+            start=date(2026, 2, 1),
+            years=1,
+            assumptions=flat_assumptions(),
+        )
+        result = projection.project(db, scenario)
+
+        assert result.rows[0].cash_open == Money("1000.00")
 
 
 class TestShape:

@@ -35,8 +35,17 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
     budgets = {budget.handle: budget for budget in db.iter_budgets()}
     scenarios = {scenario.handle: scenario for scenario in db.iter_scenarios()}
 
-    # Account graph and references.
+    # Account graph and references. A normal chart has one explicit ROOT account;
+    # once that root exists, any other parentless account is orphaned rather than
+    # another root. Rootless lightweight books remain valid for small tools/tests.
+    has_explicit_root = any(account.is_root for account in accounts.values())
     for account in accounts.values():
+        if has_explicit_root and account.parent is None and not account.is_root:
+            issues.append(BookIssue(
+                "account.orphaned_top_level",
+                f"account {account.name!r} has no parent beneath the chart root",
+                account.handle,
+            ))
         if account.parent is not None and account.parent not in accounts:
             issues.append(BookIssue(
                 "account.missing_parent",

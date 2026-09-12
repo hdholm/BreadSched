@@ -240,7 +240,7 @@ class Account(PrimaryObject):
 
     @property
     def is_root(self) -> bool:
-        return self.atype is AccountType.ROOT or self.parent is None
+        return self.atype is AccountType.ROOT
 
     @property
     def carries_balance(self) -> bool:

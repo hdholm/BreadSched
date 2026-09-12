@@ -84,6 +84,25 @@ class TestSyncedPathWarning:
         assert breadsched_logs.containing("inside OneDrive")
 
 
+class TestRootIntegrity:
+    def test_verify_flags_parentless_non_root_when_chart_has_root(self, tmp_path):
+        path = str(tmp_path / "orphaned.breadsched")
+        db = DbSQLite()
+        db.load(path)
+        with db.transaction("chart") as txn:
+            root = Account(name="Root", atype=AccountType.ROOT)
+            orphan = Account(name="Detached checking", atype=AccountType.BANK)
+            db.add_account(root, txn)
+            db.add_account(orphan, txn)
+
+        issues = db.verify_book()
+        assert any(
+            issue.code == "account.orphaned_top_level" and issue.handle == orphan.handle
+            for issue in issues
+        )
+        db.close()
+
+
 class TestPersistence:
     def test_account_survives_a_round_trip(self, tmp_path):
         path = str(tmp_path / "book.breadsched")

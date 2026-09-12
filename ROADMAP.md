@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0147 — `quality: guard large-book projection time`**.
+Status is current through patch **0148 — `hardening: distinguish chart roots explicitly`**.
 
 ## Status legend
 
@@ -338,6 +338,9 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Expand executable invariants: balanced transactions, no orphaned splits,
   commodity consistency, schedule idempotency, reconciliation preservation, and
   projection conservation.
+  - [x] **0148 — Explicit chart-root semantics.** Only `ROOT` accounts are treated
+    as roots by engines; a normal rooted chart reports parentless non-root accounts
+    as integrity findings instead of silently dropping them from Projection.
 - [ ] Add a user-visible **Verify book** / diagnostic workflow before a stable release.
 - [ ] Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
