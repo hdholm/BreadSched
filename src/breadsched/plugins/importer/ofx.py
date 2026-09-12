@@ -12,12 +12,17 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from datetime import date
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
+from ...gen.utils.amount_input import (
+    NumberFormat,
+    detect_number_format,
+    parse_decimal_amount,
+)
 from ...gen.utils.logs import get_logger
 from .gnucash_common import ImportResult, ImportSink
 
@@ -71,10 +76,10 @@ def _parse_date(raw: str) -> date:
     return date(int(digits[:4]), int(digits[4:6]), int(digits[6:8]))
 
 
-def _parse_amount(raw: str) -> Money:
+def _parse_amount(raw: str, number_format: NumberFormat) -> Money:
     try:
-        return Money(Decimal(raw.strip().replace(",", "")))
-    except (InvalidOperation, ValueError) as exc:
+        return Money(parse_decimal_amount(raw, number_format))
+    except ValueError as exc:
         raise ValueError(f"unrecognised OFX amount {raw!r}") from exc
 
 
@@ -146,6 +151,7 @@ def import_book(
     include_scheduled: bool = True,
     message: str | None = None,
     progress: Callable[[str, int, int], None] | None = None,
+    number_format: NumberFormat | Literal["auto"] = "auto",
 ) -> ImportResult:
     """Import OFX/QFX bank and credit-card statement transactions."""
     del include_scheduled
@@ -172,6 +178,21 @@ def import_book(
         return result
     account_id = _tag(account_block, "ACCTID")
     transaction_blocks = _blocks(text, "STMTTRN")
+    if number_format == "auto":
+        try:
+            detected_format = detect_number_format(
+                _tag(block, "TRNAMT") for block in transaction_blocks
+            )
+        except ValueError as exc:
+            result.warn(str(exc))
+            return result
+        if detected_format is None:
+            detected_format = "dot"
+            result.warn(
+                "OFX number format is ambiguous; assuming period decimal separator"
+            )
+    else:
+        detected_format = number_format
 
     def report(done: int) -> None:
         if progress is not None:
@@ -188,7 +209,7 @@ def import_book(
             report(index)
             try:
                 post_date = _parse_date(_tag(block, "DTPOSTED"))
-                amount = _parse_amount(_tag(block, "TRNAMT"))
+                amount = _parse_amount(_tag(block, "TRNAMT"), detected_format)
             except ValueError as exc:
                 result.skip(str(exc), _tag(block, "NAME", "transaction"))
                 continue

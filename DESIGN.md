@@ -106,6 +106,13 @@ cash date across a month boundary, but it must never change that ordinal. Formul
 period variables such as ``period`` and GnuCash-compatible ``i`` use the recurrence
 ordinal, not a number reconstructed from the adjusted calendar date.
 
+External amount text is parsed at the boundary that knows its format. Core `Money`
+construction accepts only unambiguous numeric text; importers and user interfaces
+must not silently reinterpret locale punctuation. QIF/OFX import examines the full
+source for a consistent decimal convention before parsing records. Conflicting
+conventions are reported, and ambiguous files may use an explicit importer format
+override rather than guessing per transaction.
+
 The formula language is parsed through a restricted evaluator, never Python
 `eval()`. Formula expressions are treated as untrusted imported/user input and must
 have bounded, predictable evaluation behavior. Expression depth, node count, and

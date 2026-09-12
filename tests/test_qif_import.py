@@ -93,3 +93,34 @@ def test_qif_reimport_survives_unrelated_record_insertion(db, book, tmp_path):
     qif.import_book(db, path)
 
     assert len(list(db.iter_transactions())) == 3
+
+
+def test_qif_detects_comma_decimal_amounts(db, book, tmp_path):
+    path = tmp_path / "comma-decimal.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D03/01/2026\nT-45,67\nPGroceries\nLGroceries\n^\n"
+        "D03/02/2026\nT2.000,00\nPEmployer\nLSalary\n^\n"
+    )
+
+    result = qif.import_book(db, path)
+
+    assert result.transactions == 2
+    checking = db.get_account(book.checking)
+    assert checking is not None
+    assert ledger.balance(db, checking.handle, natural_sign=False) == Money("1954.33")
+
+
+def test_qif_explicit_number_format_resolves_ambiguous_amount(db, book, tmp_path):
+    path = tmp_path / "ambiguous.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D03/01/2026\nT1,234\nPTransfer\nLSalary\n^\n"
+    )
+
+    result = qif.import_book(db, path, number_format="comma")
+
+    assert result.transactions == 1
+    checking = db.get_account(book.checking)
+    assert checking is not None
+    assert ledger.balance(db, checking.handle, natural_sign=False) == Money("1.234")

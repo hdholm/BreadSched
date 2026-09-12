@@ -10,12 +10,17 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
+from ...gen.utils.amount_input import (
+    NumberFormat,
+    detect_number_format,
+    parse_decimal_amount,
+)
 from ...gen.utils.logs import get_logger
 from .gnucash_common import ImportResult, ImportSink
 
@@ -61,14 +66,23 @@ def _parse_date(raw: str) -> date:
     return date(year, month, day)
 
 
-def _parse_amount(raw: str) -> Money:
-    text = raw.strip().replace(",", "")
-    if text.startswith("(") and text.endswith(")"):
-        text = f"-{text[1:-1]}"
+def _parse_amount(raw: str, number_format: NumberFormat) -> Money:
     try:
-        return Money(Decimal(text))
-    except (InvalidOperation, ValueError) as exc:
+        return Money(parse_decimal_amount(raw, number_format))
+    except ValueError as exc:
         raise ValueError(f"unrecognised QIF amount {raw!r}") from exc
+
+
+def _amount_texts(records: list[list[str]]) -> list[str]:
+    values: list[str] = []
+    for record in records:
+        if not record or record[0].startswith("!"):
+            continue
+        fields, split_rows = _transaction_fields(record)
+        if fields.get("T"):
+            values.append(fields["T"])
+        values.extend(item["amount"] for item in split_rows if item.get("amount"))
+    return values
 
 
 def _records(lines: list[str]):
@@ -184,6 +198,7 @@ def import_book(
     include_scheduled: bool = True,
     message: str | None = None,
     progress: Callable[[str, int, int], None] | None = None,
+    number_format: NumberFormat | Literal["auto"] = "auto",
 ) -> ImportResult:
     """Import bank/cash/credit-card QIF accounts and transactions.
 
@@ -204,6 +219,19 @@ def import_book(
     current_type = "Bank"
     section_type = "Bank"
     records = list(_records(lines))
+    if number_format == "auto":
+        try:
+            detected_format = detect_number_format(_amount_texts(records))
+        except ValueError as exc:
+            result.warn(str(exc))
+            return result
+        if detected_format is None:
+            detected_format = "dot"
+            result.warn(
+                "QIF number format is ambiguous; assuming period decimal separator"
+            )
+    else:
+        detected_format = number_format
     with db.transaction(message or f"Import {source.name}", batch=True) as txn:
         sink = ImportSink(db, txn, result)
         done = 0
@@ -234,7 +262,7 @@ def import_book(
             fields, split_rows = _transaction_fields(record)
             try:
                 post_date = _parse_date(fields.get("D", ""))
-                amount = _parse_amount(fields.get("T", ""))
+                amount = _parse_amount(fields.get("T", ""), detected_format)
             except ValueError as exc:
                 result.skip(str(exc), fields.get("P", fields.get("M", "transaction")))
                 continue
@@ -250,7 +278,9 @@ def import_book(
             if split_rows:
                 for item in split_rows:
                     try:
-                        split_amount = _parse_amount(item.get("amount", ""))
+                        split_amount = _parse_amount(
+                            item.get("amount", ""), detected_format
+                        )
                     except ValueError as exc:
                         result.skip(str(exc), fields.get("P", "transaction"))
                         raw_splits = []

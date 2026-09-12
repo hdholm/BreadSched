@@ -85,3 +85,28 @@ def test_ofx_without_fitid_uses_content_stable_fallback(db, book, tmp_path):
     ofx.import_book(db, path)
 
     assert len(list(db.iter_transactions())) == 3
+
+
+def test_ofx_detects_comma_decimal_amounts(db, book, tmp_path):
+    path = tmp_path / "comma-decimal.ofx"
+    text = _SAMPLE.replace("-45.67", "-45,67").replace("2000.00", "2.000,00")
+    path.write_text(text)
+
+    result = ofx.import_book(db, path)
+
+    assert result.transactions == 2
+    source = db.get_account_by_name("Sample Bank Checking 1234")
+    assert source is not None
+    assert ledger.balance(db, source.handle, natural_sign=False) == Money("1954.33")
+
+
+def test_ofx_rejects_conflicting_number_conventions(db, tmp_path):
+    path = tmp_path / "mixed.ofx"
+    path.write_text(_SAMPLE.replace("2000.00", "2000,00"))
+
+    result = ofx.import_book(db, path)
+
+    assert result.transactions == 0
+    assert any(
+        "conflicting decimal number formats" in warning for warning in result.warnings
+    )
