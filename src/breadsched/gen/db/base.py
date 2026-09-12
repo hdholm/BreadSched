@@ -23,6 +23,7 @@ from typing import Any, Literal
 from ..lib.account import Account
 from ..lib.budget import Budget
 from ..lib.commodity import Commodity
+from ..lib.fsa_claim import FsaClaim
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
@@ -100,6 +101,9 @@ class DbBase(Callback, ABC):
         "scenario-add": (list,),
         "scenario-update": (list,),
         "scenario-delete": (list,),
+        "fsa-claim-add": (list,),
+        "fsa-claim-update": (list,),
+        "fsa-claim-delete": (list,),
         "database-changed": (object,),
         "undo-available": (bool,),
         "redo-available": (bool,),
@@ -247,13 +251,32 @@ class DbBase(Callback, ABC):
     @abstractmethod
     def iter_scenarios(self) -> Iterator[Scenario]: ...
 
+    # --------------------------------------------------------------- FSA claims
+
+    @abstractmethod
+    def add_fsa_claim(self, claim: FsaClaim, txn: DbTxn) -> str: ...
+
+    @abstractmethod
+    def commit_fsa_claim(self, claim: FsaClaim, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def remove_fsa_claim(self, handle: str, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def get_fsa_claim(self, handle: str) -> FsaClaim | None: ...
+
+    @abstractmethod
+    def iter_fsa_claims(self) -> Iterator[FsaClaim]: ...
+
     # ---------------------------------------------------------------- metadata
 
     @abstractmethod
     def get_metadata(self, key: str, default: Any = None) -> Any: ...
 
     @abstractmethod
-    def set_metadata(self, key: str, value: Any) -> None: ...
+    def set_metadata(
+        self, key: str, value: Any, txn: DbTxn | None = None
+    ) -> None: ...
 
     # --------------------------------------------------------------- utilities
 

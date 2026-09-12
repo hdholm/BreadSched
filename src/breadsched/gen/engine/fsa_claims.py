@@ -27,7 +27,6 @@ __all__ = [
     "suggest_claims_for_transaction",
 ]
 
-_METADATA_KEY = "fsa_claims"
 
 
 @dataclass(frozen=True)
@@ -210,12 +209,7 @@ class FsaClaimSummary:
 
 
 def iter_claims(db: DbSQLite) -> list[FsaClaim]:
-    raw = db.get_metadata(_METADATA_KEY, [])
-    return [FsaClaim.from_dict(item) for item in raw]
-
-
-def _store(db: DbSQLite, claims: list[FsaClaim]) -> None:
-    db.set_metadata(_METADATA_KEY, [claim.serialize() for claim in claims])
+    return list(db.iter_fsa_claims())
 
 
 def _resolve_link(db: DbSQLite, link: FsaClaimSplitLink):
@@ -242,8 +236,9 @@ def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFunding
 
 
 def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
-    """Persist a claim and attribute linked FSA reimbursements to their plan years."""
+    """Persist a claim and linked split classifications as one atomic edit."""
     seen_reimbursements: set[tuple[str, str]] = set()
+    assignments: dict[str, list[tuple[str, date]]] = {}
     for link in claim.payments:
         _resolve_link(db, link)
     for link in claim.refunds:
@@ -271,14 +266,25 @@ def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
             if transaction.post_date > runout:
                 raise ValueError("reimbursement is after the funding year's run-out window")
             if split.fsa_year_start != year.start:
-                split.fsa_year_start = year.start
-                with db.transaction("Assign FSA reimbursement funding year") as txn:
-                    db.commit_transaction(transaction, txn)
-    claims = iter_claims(db)
-    claims = [item for item in claims if item.handle != claim.handle]
-    claims.append(claim)
-    claims.sort(key=lambda item: (item.service_date, item.handle))
-    _store(db, claims)
+                assignments.setdefault(transaction.handle, []).append((split.handle, year.start))
+
+    existing = db.get_fsa_claim(claim.handle)
+    with db.transaction("Save FSA claim") as txn:
+        for transaction_handle, split_assignments in assignments.items():
+            transaction = db.get_transaction(transaction_handle)
+            if transaction is None:
+                raise ValueError("linked transaction no longer exists")
+            by_handle = {split.handle: split for split in transaction.splits}
+            for split_handle, funding_year_start in split_assignments:
+                split = by_handle.get(split_handle)
+                if split is None:
+                    raise ValueError("linked transaction split no longer exists")
+                split.fsa_year_start = funding_year_start
+            db.commit_transaction(transaction, txn)
+        if existing is None:
+            db.add_fsa_claim(claim, txn)
+        else:
+            db.commit_fsa_claim(claim, txn)
     return claim
 
 
@@ -370,11 +376,10 @@ def attach_transaction_to_claim(
     return save_claim(db, claim)
 
 def delete_claim(db: DbSQLite, handle: str) -> None:
-    claims = iter_claims(db)
-    updated = [claim for claim in claims if claim.handle != handle]
-    if len(updated) == len(claims):
+    if db.get_fsa_claim(handle) is None:
         raise KeyError(handle)
-    _store(db, updated)
+    with db.transaction("Delete FSA claim") as txn:
+        db.remove_fsa_claim(handle, txn)
 
 
 def _sum_links(db: DbSQLite, links: list[FsaClaimSplitLink]) -> Money:

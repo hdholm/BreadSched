@@ -55,6 +55,27 @@ class TestPersistence:
         assert db.get_metadata("book_name") == "Household"
         assert db.get_metadata("missing", "fallback") == "fallback"
 
+    def test_metadata_cannot_escape_an_active_transaction(self, db, book):
+        with pytest.raises(DbError, match="must use that DbTxn"):
+            with db.transaction("Atomic edit") as txn:
+                posted = Transaction.simple(
+                    date(2026, 1, 5), "Example", book.rent, book.checking, "10"
+                )
+                db.add_transaction(posted, txn)
+                db.set_metadata("example", "committed too early")
+        assert db.get_transaction(posted.handle) is None
+        assert db.get_metadata("example") is None
+
+    def test_transactional_metadata_is_undoable(self, db):
+        with db.transaction("Set metadata") as txn:
+            db.set_metadata("example", {"value": 1}, txn)
+        assert db.get_metadata("example") == {"value": 1}
+
+        assert db.undo() is True
+        assert db.get_metadata("example") is None
+        assert db.redo() is True
+        assert db.get_metadata("example") == {"value": 1}
+
 
 class TestIntegrity:
     def test_unbalanced_transactions_are_refused(self, db, book):
@@ -260,19 +281,19 @@ class TestSchemaMigration:
         db.close()
         return handle
 
-    def test_v1_book_is_backed_up_and_migrated_to_v2(self, tmp_path):
+    def test_v1_book_is_backed_up_and_migrated_to_latest(self, tmp_path):
         path = tmp_path / "old.breadsched"
         handle = self._make_v1_book(path)
 
         db = DbSQLite()
         db.load(str(path))
 
-        assert db.get_metadata("schema_version") == 2
+        assert db.get_metadata("schema_version") == 3
         assert db.get_account(handle).name == "Checking"
         versions = [row[0] for row in db._require().execute(
             "SELECT version FROM schema_migration ORDER BY version"
         )]
-        assert versions == [2]
+        assert versions == [2, 3]
         assert db.integrity_problems() == []
         db.close()
 
@@ -291,6 +312,45 @@ class TestSchemaMigration:
             ).fetchone() is None
         finally:
             old.close()
+
+    def test_v2_claim_metadata_migrates_to_primary_rows(self, tmp_path):
+        path = tmp_path / "claims-v2.breadsched"
+        db = DbSQLite()
+        db.load(str(path))
+        legacy_claim = {
+            "handle": "a" * 32,
+            "service_date": "2026-05-01",
+            "provider": "Generic provider",
+            "description": "Generic service",
+            "eob_responsibility": None,
+            "payments": [],
+            "refunds": [],
+            "allocations": [],
+        }
+        conn = db._require()
+        conn.execute("DROP TABLE fsa_claim")
+        conn.execute("DROP INDEX IF EXISTS idx_fsa_claim_service_date")
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata(key,value) VALUES ('fsa_claims', ?)",
+            (json.dumps([legacy_claim]),),
+        )
+        conn.execute(
+            "INSERT OR REPLACE INTO metadata(key,value) VALUES ('schema_version', '2')"
+        )
+        conn.execute("DELETE FROM schema_migration WHERE version=3")
+        conn.commit()
+        db.close()
+
+        migrated = DbSQLite()
+        migrated.load(str(path))
+        claim = migrated.get_fsa_claim(legacy_claim["handle"])
+        assert migrated.get_metadata("schema_version") == 3
+        assert migrated.get_metadata("fsa_claims") is None
+        assert claim is not None
+        assert claim.provider == "Generic provider"
+        assert claim.description == "Generic service"
+        assert migrated.verify_book() == []
+        migrated.close()
 
     def test_failed_migration_rolls_back_the_original_book(self, tmp_path, monkeypatch):
         import sqlite3

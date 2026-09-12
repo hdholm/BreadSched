@@ -287,6 +287,57 @@ def test_review_attachment_links_payment_and_reimbursement_to_claim(db, book):
     assert summary.remaining_reimbursable == Money("100.00")
 
 
+def test_claim_save_is_atomic_and_undoable(db, book):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+
+    account = _fsa_account(db, book)
+    reimbursement = Transaction.simple(
+        date(2026, 5, 10), "FSA reimbursement", book.checking, account.handle, "200.00"
+    )
+    with db.transaction("Add reimbursement") as txn:
+        db.add_transaction(reimbursement, txn)
+    reimbursement_split = reimbursement.splits[1]
+    assert reimbursement_split.fsa_year_start is None
+
+    claim = FsaClaim(
+        service_date=date(2026, 5, 1),
+        provider="Generic provider",
+        allocations=[
+            FsaClaimAllocation(
+                account.handle,
+                account.fsa_years[0].start,
+                reimbursements=[
+                    FsaClaimSplitLink(reimbursement.handle, reimbursement_split.handle)
+                ],
+            )
+        ],
+    )
+    fsa_claims.save_claim(db, claim)
+
+    stored_transaction = db.get_transaction(reimbursement.handle)
+    stored_split = next(
+        split for split in stored_transaction.splits if split.handle == reimbursement_split.handle
+    )
+    assert db.get_fsa_claim(claim.handle) is not None
+    assert stored_split.fsa_year_start == account.fsa_years[0].start
+
+    assert db.undo() is True
+    restored_transaction = db.get_transaction(reimbursement.handle)
+    restored_split = next(
+        split for split in restored_transaction.splits if split.handle == reimbursement_split.handle
+    )
+    assert db.get_fsa_claim(claim.handle) is None
+    assert restored_split.fsa_year_start is None
+
+    assert db.redo() is True
+    redone_transaction = db.get_transaction(reimbursement.handle)
+    redone_split = next(
+        split for split in redone_transaction.splits if split.handle == reimbursement_split.handle
+    )
+    assert db.get_fsa_claim(claim.handle) is not None
+    assert redone_split.fsa_year_start == account.fsa_years[0].start
+
 def test_claim_suggestions_rank_service_context(db, book):
     from breadsched.gen.engine import fsa_claims
     from breadsched.gen.lib import FsaClaim

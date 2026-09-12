@@ -27,6 +27,7 @@ from ..lib.account import Account
 from ..lib.base import PrimaryObject
 from ..lib.budget import Budget
 from ..lib.commodity import Commodity
+from ..lib.fsa_claim import FsaClaim
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction, UnbalancedError
@@ -90,6 +91,13 @@ CREATE TABLE IF NOT EXISTS scenario (
     name   TEXT NOT NULL,
     blob   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS fsa_claim (
+    handle       TEXT PRIMARY KEY,
+    service_date TEXT NOT NULL,
+    provider     TEXT NOT NULL,
+    blob         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_fsa_claim_service_date ON fsa_claim(service_date);
 CREATE TABLE IF NOT EXISTS schema_migration (
     version    INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -104,6 +112,7 @@ _TABLES: dict[str, tuple[type, str]] = {
     "scheduled": (ScheduledTransaction, "scheduled"),
     "budget": (Budget, "budget"),
     "scenario": (Scenario, "scenario"),
+    "fsa_claim": (FsaClaim, "fsa-claim"),
 }
 
 
@@ -395,6 +404,7 @@ class DbSQLite(DbBase):
             "scheduled": ("name",),
             "budget": ("name",),
             "scenario": ("name",),
+            "fsa_claim": ("service_date", "provider"),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -405,6 +415,8 @@ class DbSQLite(DbBase):
             ("scheduled", "name"): "",
             ("budget", "name"): "",
             ("scenario", "name"): "",
+            ("fsa_claim", "service_date"): "",
+            ("fsa_claim", "provider"): "",
         }
         for table, columns in derived_specs.items():
             selected = ", ".join(("handle", *columns, "blob"))
@@ -443,6 +455,9 @@ class DbSQLite(DbBase):
                             f"{row['handle']}",
                             row["handle"],
                         ))
+
+        for claim in self.iter_fsa_claims():
+            issues.extend(self._verify_fsa_claim_references(claim))
 
         expected: dict[str, tuple[str, str, str, int, int]] = {}
         for transaction in self.iter_transactions():
@@ -525,6 +540,15 @@ class DbSQLite(DbBase):
     def _store(self, table: str, handle: str, data: dict[str, Any] | None) -> None:
         """Insert, replace or delete one row, keeping derived tables in step."""
         conn = self._require_writable()
+        if table == "metadata":
+            if data is None:
+                conn.execute("DELETE FROM metadata WHERE key=?", (handle,))
+            else:
+                conn.execute(
+                    "INSERT OR REPLACE INTO metadata(key,value) VALUES (?,?)",
+                    (handle, json.dumps(data["value"])),
+                )
+            return
         if data is None:
             conn.execute(f"DELETE FROM {table} WHERE handle=?", (handle,))
             if table == "txn":
@@ -563,6 +587,12 @@ class DbSQLite(DbBase):
                 "INSERT OR REPLACE INTO commodity(handle,mnemonic,blob) VALUES (?,?,?)",
                 (handle, data.get("mnemonic", ""), blob),
             )
+        elif table == "fsa_claim":
+            conn.execute(
+                "INSERT OR REPLACE INTO fsa_claim(handle,service_date,provider,blob) "
+                "VALUES (?,?,?,?)",
+                (handle, data.get("service_date", ""), data.get("provider", ""), blob),
+            )
         else:
             conn.execute(
                 f"INSERT OR REPLACE INTO {table}(handle,name,blob) VALUES (?,?,?)",
@@ -570,6 +600,11 @@ class DbSQLite(DbBase):
             )
 
     def _read(self, table: str, handle: str) -> dict[str, Any] | None:
+        if table == "metadata":
+            row = self._require().execute(
+                "SELECT value FROM metadata WHERE key=?", (handle,)
+            ).fetchone()
+            return {"value": json.loads(row["value"])} if row else None
         row = self._require().execute(
             f"SELECT blob FROM {table} WHERE handle=?", (handle,)
         ).fetchone()
@@ -651,6 +686,8 @@ class DbSQLite(DbBase):
     def _verify_changed_object(
         self, table: str, handle: str, data: dict[str, Any]
     ) -> list[BookIssue]:
+        if table == "metadata":
+            return []
         issues = self._verify_derived_row(table, handle, data)
 
         if table == "account":
@@ -789,6 +826,42 @@ class DbSQLite(DbBase):
                         handle,
                     ))
 
+        elif table == "fsa_claim":
+            issues.extend(self._verify_fsa_claim_references(FsaClaim.from_dict(data)))
+
+        return issues
+
+    def _verify_fsa_claim_references(self, claim: FsaClaim) -> list[BookIssue]:
+        issues: list[BookIssue] = []
+        links = [*claim.payments, *claim.refunds]
+        links.extend(
+            link
+            for allocation in claim.allocations
+            for link in allocation.reimbursements
+        )
+        for link in links:
+            transaction = self.get_transaction(link.transaction)
+            if transaction is None:
+                issues.append(BookIssue(
+                    "fsa_claim.missing_transaction",
+                    f"FSA claim {claim.handle} refers to missing transaction "
+                    f"{link.transaction}",
+                    claim.handle,
+                ))
+            elif not any(split.handle == link.split for split in transaction.splits):
+                issues.append(BookIssue(
+                    "fsa_claim.missing_split",
+                    f"FSA claim {claim.handle} refers to missing split {link.split}",
+                    claim.handle,
+                ))
+        for allocation in claim.allocations:
+            if self.get_account(allocation.account) is None:
+                issues.append(BookIssue(
+                    "fsa_claim.missing_account",
+                    f"FSA claim {claim.handle} refers to missing account "
+                    f"{allocation.account}",
+                    claim.handle,
+                ))
         return issues
 
     def _verify_derived_row(
@@ -801,6 +874,7 @@ class DbSQLite(DbBase):
             "scheduled": ("name",),
             "budget": ("name",),
             "scenario": ("name",),
+            "fsa_claim": ("service_date", "provider"),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -811,6 +885,8 @@ class DbSQLite(DbBase):
             ("scheduled", "name"): "",
             ("budget", "name"): "",
             ("scenario", "name"): "",
+            ("fsa_claim", "service_date"): "",
+            ("fsa_claim", "provider"): "",
         }
         columns = columns_by_table[table]
         selected = ", ".join(("handle", *columns))
@@ -880,6 +956,8 @@ class DbSQLite(DbBase):
 
     def _verify_deleted_reference(self, table: str, handle: str) -> list[BookIssue]:
         issues: list[BookIssue] = []
+        if table == "metadata":
+            return issues
         if table == "account":
             for account in self._accounts.values():
                 if account.parent == handle:
@@ -928,6 +1006,28 @@ class DbSQLite(DbBase):
                         "scenario.missing_account",
                         f"scenario {scenario.name!r} refers to missing account {handle}",
                         scenario.handle,
+                    ))
+            for claim in self.iter_fsa_claims():
+                if any(allocation.account == handle for allocation in claim.allocations):
+                    issues.append(BookIssue(
+                        "fsa_claim.missing_account",
+                        f"FSA claim {claim.handle} refers to missing account {handle}",
+                        claim.handle,
+                    ))
+
+        elif table == "txn":
+            for claim in self.iter_fsa_claims():
+                links = [*claim.payments, *claim.refunds]
+                links.extend(
+                    link
+                    for allocation in claim.allocations
+                    for link in allocation.reimbursements
+                )
+                if any(link.transaction == handle for link in links):
+                    issues.append(BookIssue(
+                        "fsa_claim.missing_transaction",
+                        f"FSA claim {claim.handle} refers to missing transaction {handle}",
+                        claim.handle,
                     ))
 
         elif table == "commodity":
@@ -1038,9 +1138,13 @@ class DbSQLite(DbBase):
 
     def _emit_for(self, txn: DbTxn, reverse: bool = False) -> None:
         grouped: dict[str, list[str]] = {}
+        metadata_changed = False
         for table, handle, before, after in txn.records:
             if reverse:
                 before, after = after, before
+            if table == "metadata":
+                metadata_changed = True
+                continue
             stem = _TABLES[table][1]
             if before is None and after is not None:
                 key = f"{stem}-add"
@@ -1052,7 +1156,7 @@ class DbSQLite(DbBase):
                 grouped.setdefault(key, []).append(handle)
         for signal, handles in grouped.items():
             self.emit(signal, (handles,))
-        if grouped:
+        if grouped or metadata_changed:
             self.emit("database-changed", (self,))
 
     # --------------------------------------------------------------- undo/redo
@@ -1317,6 +1421,31 @@ class DbSQLite(DbBase):
             if obj is not None:
                 yield obj
 
+    # --------------------------------------------------------------- FSA claims
+
+    def add_fsa_claim(self, claim: FsaClaim, txn: DbTxn) -> str:
+        return self._write(claim, txn, "fsa_claim")
+
+    def commit_fsa_claim(self, claim: FsaClaim, txn: DbTxn) -> None:
+        self._write(claim, txn, "fsa_claim")
+
+    def remove_fsa_claim(self, handle: str, txn: DbTxn) -> None:
+        self._delete("fsa_claim", handle, txn)
+
+    def get_fsa_claim(self, handle: str) -> FsaClaim | None:
+        row = self._require().execute(
+            "SELECT blob FROM fsa_claim WHERE handle=?", (handle,)
+        ).fetchone()
+        return FsaClaim.from_dict(json.loads(row["blob"])) if row else None
+
+    def iter_fsa_claims(self) -> Iterator[FsaClaim]:
+        for row in self._require().execute(
+            "SELECT handle, blob FROM fsa_claim ORDER BY service_date, handle"
+        ):
+            obj = self._decode_row("fsa_claim", row["handle"], row["blob"], FsaClaim)
+            if obj is not None:
+                yield obj
+
     # ---------------------------------------------------------------- metadata
 
     def get_metadata(self, key: str, default: Any = None) -> Any:
@@ -1335,10 +1464,22 @@ class DbSQLite(DbBase):
             (key, json.dumps(value)),
         )
 
-    def set_metadata(self, key: str, value: Any) -> None:
+    def set_metadata(self, key: str, value: Any, txn: DbTxn | None = None) -> None:
         conn = self._require_writable()
-        self._set_metadata_uncommitted(key, value)
-        conn.commit()
+        if txn is None:
+            if self._active_txn is not None:
+                raise DbError(
+                    "metadata writes inside a database transaction must use that DbTxn"
+                )
+            self._set_metadata_uncommitted(key, value)
+            conn.commit()
+            return
+        if self._active_txn is not txn:
+            raise DbError("metadata writes require the active database transaction")
+        before = self._read("metadata", key)
+        after = {"value": value}
+        self._store("metadata", key, after)
+        txn.add("metadata", key, before, after)
 
     # ------------------------------------------------------------------ counts
 
@@ -1346,5 +1487,8 @@ class DbSQLite(DbBase):
         conn = self._require()
         return {
             table: conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"]
-            for table in ("account", "txn", "split_index", "scheduled", "budget", "scenario")
+            for table in (
+                "account", "txn", "split_index", "scheduled", "budget", "scenario",
+                "fsa_claim",
+            )
         }

@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from .base import create_handle
+from .base import PrimaryObject
 from .money import Money
 
 __all__ = [
@@ -96,22 +96,33 @@ class FsaClaimAllocation:
         )
 
 
-@dataclass
-class FsaClaim:
+class FsaClaim(PrimaryObject):
     """Financial lifecycle for one healthcare service episode."""
 
-    service_date: date
-    provider: str = ""
-    description: str = ""
-    eob_responsibility: Money | None = None
-    payments: list[FsaClaimSplitLink] = field(default_factory=list)
-    refunds: list[FsaClaimSplitLink] = field(default_factory=list)
-    allocations: list[FsaClaimAllocation] = field(default_factory=list)
-    handle: str = field(default_factory=create_handle)
+    TABLE = "fsa_claim"
 
-    def serialize(self) -> dict[str, Any]:
+    def __init__(
+        self,
+        service_date: date | None = None,
+        provider: str = "",
+        description: str = "",
+        eob_responsibility: Money | None = None,
+        payments: list[FsaClaimSplitLink] | None = None,
+        refunds: list[FsaClaimSplitLink] | None = None,
+        allocations: list[FsaClaimAllocation] | None = None,
+        handle: str | None = None,
+    ) -> None:
+        super().__init__(handle=handle)
+        self.service_date = service_date or date.min
+        self.provider = provider
+        self.description = description
+        self.eob_responsibility = eob_responsibility
+        self.payments = list(payments or [])
+        self.refunds = list(refunds or [])
+        self.allocations = list(allocations or [])
+
+    def _serialize(self) -> dict[str, Any]:
         return {
-            "handle": self.handle,
             "service_date": self.service_date.isoformat(),
             "provider": self.provider,
             "description": self.description,
@@ -124,18 +135,18 @@ class FsaClaim:
             "allocations": [allocation.serialize() for allocation in self.allocations],
         }
 
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> FsaClaim:
+    def _unserialize(self, data: dict[str, Any]) -> None:
         raw_eob = data.get("eob_responsibility")
-        return cls(
-            handle=str(data["handle"]),
-            service_date=date.fromisoformat(str(data["service_date"])),
-            provider=str(data.get("provider", "")),
-            description=str(data.get("description", "")),
-            eob_responsibility=Money(*raw_eob) if raw_eob is not None else None,
-            payments=[FsaClaimSplitLink.from_dict(item) for item in data.get("payments", [])],
-            refunds=[FsaClaimSplitLink.from_dict(item) for item in data.get("refunds", [])],
-            allocations=[
-                FsaClaimAllocation.from_dict(item) for item in data.get("allocations", [])
-            ],
-        )
+        self.service_date = date.fromisoformat(str(data["service_date"]))
+        self.provider = str(data.get("provider", ""))
+        self.description = str(data.get("description", ""))
+        self.eob_responsibility = Money(*raw_eob) if raw_eob is not None else None
+        self.payments = [
+            FsaClaimSplitLink.from_dict(item) for item in data.get("payments", [])
+        ]
+        self.refunds = [
+            FsaClaimSplitLink.from_dict(item) for item in data.get("refunds", [])
+        ]
+        self.allocations = [
+            FsaClaimAllocation.from_dict(item) for item in data.get("allocations", [])
+        ]

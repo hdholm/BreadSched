@@ -8,6 +8,7 @@ immutable and makes every supported upgrade path independently testable.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Callable
 
@@ -31,8 +32,44 @@ def v1_to_v2(conn: sqlite3.Connection) -> None:
     )
 
 
+def v2_to_v3(conn: sqlite3.Connection) -> None:
+    """Move FSA claims from metadata into first-class transactional rows."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fsa_claim (
+            handle       TEXT PRIMARY KEY,
+            service_date TEXT NOT NULL,
+            provider     TEXT NOT NULL,
+            blob         TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_fsa_claim_service_date "
+        "ON fsa_claim(service_date)"
+    )
+    row = conn.execute(
+        "SELECT value FROM metadata WHERE key='fsa_claims'"
+    ).fetchone()
+    if row is not None:
+        claims = json.loads(row[0])
+        for claim in claims:
+            conn.execute(
+                "INSERT OR REPLACE INTO fsa_claim(handle,service_date,provider,blob) "
+                "VALUES (?,?,?,?)",
+                (
+                    str(claim["handle"]),
+                    str(claim["service_date"]),
+                    str(claim.get("provider", "")),
+                    json.dumps(claim, separators=(",", ":")),
+                ),
+            )
+        conn.execute("DELETE FROM metadata WHERE key='fsa_claims'")
+
+
 MIGRATIONS: dict[int, Migration] = {
     1: v1_to_v2,
+    2: v2_to_v3,
 }
 
 LATEST_SCHEMA_VERSION = max(MIGRATIONS) + 1

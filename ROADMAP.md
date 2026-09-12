@@ -70,9 +70,13 @@ roughly in this order:
    per-transaction ``split_index`` validation. Full ``verify`` remains the exhaustive
    diagnostic. Add a realistic-book performance gate so this cost model stays bounded
    as books grow.
-6. Close transaction/undo holes around metadata and move financial records such as
-   FSA claims into normal transactional persistence rather than an unversioned
-   metadata blob.
+6. Patch 0136 closes the metadata transaction/undo hole: metadata writes made while
+   a ``DbTxn`` is active must explicitly participate in that transaction, and such
+   writes are undoable/redoable. FSA claims are now first-class persisted objects in
+   their own table, with a v2-to-v3 migration from the legacy metadata blob; claim
+   updates and linked reimbursement split classifications commit atomically and undo
+   together. Continue moving any future financial workflow state out of ad-hoc
+   metadata when it needs transactional semantics.
 7. Expand quality gates: mypy across CLI/web and then GUI with an explicit baseline,
    ``ruff format --check``, security regressions, recurrence property tests, and
    realistic projection/storage benchmarks. The first pytest-xdist stage lands in

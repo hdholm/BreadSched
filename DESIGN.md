@@ -191,7 +191,17 @@ histories.
 
 Verification should protect invariants without imposing whole-book work on every
 small edit. Cross-cutting metadata that participates in financial workflows must
-obey the same transaction/undo rules as ordinary primary objects.
+obey the same transaction/undo rules as ordinary primary objects. A direct metadata
+write is therefore forbidden while a ``DbTxn`` is active unless that write is
+explicitly attached to the active transaction; transactional metadata participates
+in rollback, undo, and redo.
+
+Financial workflow records should not be stored as opaque metadata collections when
+they have their own identity and lifecycle. FSA claims are first-class primary
+objects: one claim save transaction can update linked reimbursement split
+classifications and the claim row atomically, and one undo reverses both. Schema
+migrations move legacy claim metadata into the primary-object table before normal
+book use.
 
 Only one writer should own a book at a time unless the storage architecture is
 explicitly designed for safe concurrent writers.
