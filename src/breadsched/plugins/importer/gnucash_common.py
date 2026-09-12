@@ -258,6 +258,26 @@ class ImportSink:
                 LOG.debug("mapped source root %s onto the book's root", guid[:8])
                 return existing_root
 
+        existing = self.db.get_account(guid)
+        if existing is not None:
+            account = Account(
+                handle=guid,
+                name=name,
+                atype=parsed,
+                parent=mapped_parent,
+                commodity=commodity,
+                code=code,
+                description=description,
+                placeholder=placeholder,
+                hidden=hidden,
+                commodity_scu=commodity_scu,
+            )
+            account.notes = notes
+            self._preserve_breadsched_account_state(account, existing)
+            self.db.commit_account(account, self.txn)
+            self._known_accounts.add(guid)
+            return account
+
         twin = self._existing_sibling(mapped_parent, name, parsed)
         if twin is not None:
             self._remap[guid] = twin.handle
@@ -282,6 +302,20 @@ class ImportSink:
         self._known_accounts.add(guid)
         self.result.accounts += 1
         return account
+
+    @staticmethod
+    def _preserve_breadsched_account_state(imported: Account, existing: Account) -> None:
+        """Keep BreadSched-owned account configuration across source re-import."""
+        imported.planning_role = existing.planning_role
+        imported.fsa_years = list(existing.fsa_years)
+        imported.annual_return = existing.annual_return
+        imported.annual_interest = existing.annual_interest
+        imported.exclude_from_projection = existing.exclude_from_projection
+        imported.group = existing.group
+        imported.linked_asset = existing.linked_asset
+        imported.pays_in_full = existing.pays_in_full
+        imported.usual_payment = existing.usual_payment
+        imported.payment_day = existing.payment_day
 
     def _existing_sibling(
         self, parent: str | None, name: str, atype: AccountType
@@ -317,6 +351,7 @@ class ImportSink:
         Nothing raises: an exception would abort the enclosing batch and roll back
         every transaction imported so far.
         """
+        existing = self.db.get_transaction(guid)
         txn_obj = Transaction(
             handle=guid,
             post_date=post_date,
@@ -324,8 +359,9 @@ class ImportSink:
             currency=self.resolve_commodity(currency),
             num=num,
         )
-        # Imported GnuCash history is already-established actual activity.  It
-        # must not enter BreadSched's plan-resolution review queue en masse.
+        # Imported GnuCash history is already-established actual activity. New
+        # records must not enter BreadSched's plan-resolution review queue en
+        # masse. On re-import, BreadSched-owned planning state is merged below.
         txn_obj.planning_resolution = PlanningResolution.HISTORICAL
         subject = txn_obj.describe()
 
@@ -356,6 +392,9 @@ class ImportSink:
                     handle=raw.get("handle"),
                 )
             )
+
+        if existing is not None:
+            self._preserve_breadsched_transaction_state(txn_obj, existing)
 
         LOG.debug(
             "%s: %d split(s) totalling %s",
@@ -393,6 +432,34 @@ class ImportSink:
         self.result.transactions += 1
         self.result.splits += len(txn_obj.splits)
         return txn_obj
+
+    @staticmethod
+    def _preserve_breadsched_transaction_state(
+        imported: Transaction, existing: Transaction
+    ) -> None:
+        """Merge BreadSched-owned annotations into a re-imported transaction.
+
+        GnuCash remains authoritative for ledger facts such as dates, amounts,
+        accounts, memos, actions, and reconcile state. BreadSched owns the
+        planning/review annotations and FSA classifications added after import.
+        Split annotations are preserved only when the source split GUID still
+        exists, so a materially replaced source split cannot inherit stale state.
+        """
+        imported.notes = existing.notes
+        imported.scheduled_from = existing.scheduled_from
+        imported.planned_occurrence = existing.planned_occurrence
+        imported.planned_for = existing.planned_for
+        imported.planned_amount = existing.planned_amount
+        imported.planning_resolution = existing.planning_resolution
+        imported.rejected_plan_occurrences = list(existing.rejected_plan_occurrences)
+
+        existing_splits = {split.handle: split for split in existing.splits}
+        for split in imported.splits:
+            prior = existing_splits.get(split.handle)
+            if prior is None:
+                continue
+            split.planning_flow = prior.planning_flow
+            split.fsa_year_start = prior.fsa_year_start
 
     def _imbalance_account(self, currency: str | None) -> str:
         existing = self.db.get_account_by_name("Imbalance")

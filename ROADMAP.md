@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0131
-(`hardening: correct start-of-period loan maths`).
+Status below is current through patch 0134
+(`import: preserve BreadSched annotations on re-import`).
 
 ## Product direction and current hardening phase
 
@@ -59,8 +59,12 @@ roughly in this order:
    requests, with transport-level regressions for missing tokens, foreign origins,
    foreign hosts, and simple non-JSON cross-site writes.
 4. Preserve BreadSched-owned planning/classification/claim state across GnuCash
-   re-import.  Longer term, move planning resolutions/classifications out of ledger
-   objects where that materially simplifies safe synchronization.
+   re-import. Patch 0134 preserves BreadSched-owned account planning/projection/FSA
+   configuration while allowing source-owned chart fields to refresh, and merges
+   transaction notes, plan-resolution/link state, rejected matches, and split
+   planning/FSA classifications by stable GnuCash GUID while allowing source-owned
+   ledger facts to refresh. Longer term, move planning resolutions/classifications
+   out of ledger objects where that materially simplifies safe synchronization.
 5. Replace O(book) verification on every write with changed-record/incremental
    verification while retaining full ``verify`` for diagnostics, migrations, and
    tests.  Add a realistic-book performance gate.

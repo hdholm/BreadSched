@@ -7,12 +7,20 @@ against anything this codebase produces.
 
 import sqlite3
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from gnucash_fixtures import create_book, new_guid
 
 from breadsched.gen.engine import ledger
-from breadsched.gen.lib import AccountType, Money, PlanningResolution
+from breadsched.gen.lib import (
+    AccountPlanningRole,
+    AccountType,
+    FsaFundingYear,
+    Money,
+    PlanningFlowKind,
+    PlanningResolution,
+)
 from breadsched.gen.plug import IMPORTER, PluginManager
 from breadsched.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
 
@@ -133,6 +141,85 @@ class TestSqliteImport:
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         assert db.summary() == counts_before
         assert first.transactions == 3
+
+    def test_reimport_preserves_breadsched_owned_account_configuration(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        account.planning_role = AccountPlanningRole.FSA
+        account.fsa_years = [
+            FsaFundingYear(
+                start=date(2026, 1, 1),
+                through=date(2026, 12, 31),
+                election=Money("1200.00"),
+            )
+        ]
+        account.annual_return = Decimal("0.041")
+        account.annual_interest = Decimal("0.073")
+        account.exclude_from_projection = True
+        account.group = "Planning group"
+        account.pays_in_full = False
+        account.usual_payment = Money("125.00")
+        account.payment_day = 18
+        with db.transaction("Configure imported account") as db_txn:
+            db.commit_account(account, db_txn)
+
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE accounts SET description=? WHERE guid=?",
+                ("Updated source description", gnucash_sqlite_path.ids.checking),
+            )
+            source.commit()
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        reimported = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert reimported is not None
+        assert reimported.description == "Updated source description"
+        assert reimported.planning_role is AccountPlanningRole.FSA
+        assert reimported.fsa_years == account.fsa_years
+        assert reimported.annual_return == Decimal("0.041")
+        assert reimported.annual_interest == Decimal("0.073")
+        assert reimported.exclude_from_projection is True
+        assert reimported.group == "Planning group"
+        assert reimported.pays_in_full is False
+        assert reimported.usual_payment == Money("125.00")
+        assert reimported.payment_day == 18
+
+    def test_reimport_preserves_breadsched_owned_annotations(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        transaction = next(
+            item for item in db.iter_transactions() if item.description == "Supermarket"
+        )
+        transaction.notes = "planning note"
+        transaction.planned_occurrence = "schedule:occurrence"
+        transaction.planned_for = date(2026, 1, 14)
+        transaction.planned_amount = Money("75.00")
+        transaction.planning_resolution = PlanningResolution.MATCHED
+        transaction.rejected_plan_occurrences = ["other:occurrence"]
+        transaction.splits[0].planning_flow = PlanningFlowKind.RETIREMENT_SAVING
+        transaction.splits[0].fsa_year_start = date(2026, 1, 1)
+        with db.transaction("Annotate imported transaction") as db_txn:
+            db.commit_transaction(transaction, db_txn)
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        reimported = db.get_transaction(transaction.handle)
+        assert reimported is not None
+        assert reimported.notes == "planning note"
+        assert reimported.planned_occurrence == "schedule:occurrence"
+        assert reimported.planned_for == date(2026, 1, 14)
+        assert reimported.planned_amount == Money("75.00")
+        assert reimported.planning_resolution is PlanningResolution.MATCHED
+        assert reimported.rejected_plan_occurrences == ["other:occurrence"]
+        annotated_split = next(
+            split for split in reimported.splits
+            if split.handle == transaction.splits[0].handle
+        )
+        assert annotated_split.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert annotated_split.fsa_year_start == date(2026, 1, 1)
 
     def test_import_is_a_single_undoable_step(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
