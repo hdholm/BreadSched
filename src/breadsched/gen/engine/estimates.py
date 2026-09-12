@@ -105,48 +105,23 @@ def _target_events(
     return planning.scenario_events(db, scenario, start, end)
 
 
-def _scheduled_category_totals(
-    db: DbSQLite,
-    start: date,
-    end: date,
-    scenario_handle: str | None,
-) -> dict[tuple[str, date], Money]:
-    """Historical committed activity, excluding planning-only estimates."""
-    totals: dict[tuple[str, date], Money] = {}
-    for event in _target_events(db, start, end, scenario_handle):
-        if event.placeholder:
-            continue
-        month = _month_start(event.planned_date)
-        for split in event.expected_splits:
-            account = db.get_account(split.account)
-            if account is None or account.account_class not in (
-                AccountClass.INCOME,
-                AccountClass.EXPENSE,
-            ):
-                continue
-            key = (account.handle, month)
-            totals[key] = totals.get(key, Money(0)) + split.amount * account.sign()
-    return totals
-
-
-def _planned_estimate_profiles(
+def _planned_category_profiles(
     db: DbSQLite,
     start: date,
     scenario_handle: str | None,
 ) -> dict[tuple[str, int], Money]:
-    """Expected estimate amount by category and month-of-year.
+    """Existing future coverage by category and calendar month.
 
-    Historical suggestions create schedules beginning in the current planning
-    period.  Looking only for occurrences inside the historical sample therefore
-    forgets an estimate immediately after it is accepted.  Instead, sample the
-    next twelve planning months and use that future plan as the amount already
-    accounted for when re-analysing history.
+    Historical ledger activity is the gross need, including transactions resolved
+    to older schedules. Sample the selected *future* plan to find what already
+    covers that need. Historical schedules may have ended or changed amounts;
+    future commitments and accepted estimates may have begun only recently.
+    The next twelve months supply one occurrence of each calendar month without
+    treating a past occurrence and its future replacement as separate coverage.
     """
     end = _add_months(start, 12) - timedelta(days=1)
     totals: dict[tuple[str, int], Money] = {}
     for event in _target_events(db, start, end, scenario_handle):
-        if not event.placeholder:
-            continue
         for split in event.expected_splits:
             account = db.get_account(split.account)
             if account is None or account.account_class not in (
@@ -281,8 +256,7 @@ def propose_historical_estimates(
     history_start = _add_months(current_month, -months)
     history_end = current_month - timedelta(days=1)
     proposals: list[HistoricalEstimateProposal] = []
-    scheduled_totals = _scheduled_category_totals(db, history_start, history_end, scenario_handle)
-    estimate_profiles = _planned_estimate_profiles(db, current_month, scenario_handle)
+    planned_profiles = _planned_category_profiles(db, current_month, scenario_handle)
 
     for account in db.iter_accounts():
         if account.is_root or account.placeholder:
@@ -292,6 +266,7 @@ def propose_historical_estimates(
 
         monthly: list[Money] = []
         monthly_by_month: dict[int, list[Money]] = {}
+        gross_monthly: list[Money] = []
         txn_count = 0
         applied_scheduled_total = Money(0)
         for offset in range(months):
@@ -303,8 +278,9 @@ def propose_historical_estimates(
                 if value:
                     total = total + value
                     txn_count += 1
-            scheduled = scheduled_totals.get((account.handle, start), Money(0))
-            scheduled = scheduled + estimate_profiles.get((account.handle, start.month), Money(0))
+            if total:
+                gross_monthly.append(total)
+            scheduled = planned_profiles.get((account.handle, start.month), Money(0))
             residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
             applied_scheduled_total = applied_scheduled_total + applied_scheduled
             if residual:
@@ -334,6 +310,7 @@ def propose_historical_estimates(
         active_ratio = len(monthly) / months
         confidence = min(0.95, 0.45 + active_ratio * 0.5)
         scheduled_total = applied_scheduled_total
+        gross_median = _typical_amount(gross_monthly)
         proposals.append(
             HistoricalEstimateProposal(
                 category=account.handle,
@@ -347,9 +324,11 @@ def propose_historical_estimates(
                 transaction_count=txn_count,
                 confidence=confidence,
                 reason=(
-                    f"{cadence}; median residual of {len(monthly)} active month(s) "
-                    f"across {months} completed month(s) after subtracting "
-                    f"{scheduled_total.format()} of scheduled category activity"
+                    f"{cadence}; historical median {gross_median.format()} across "
+                    f"{len(gross_monthly)} active month(s); {scheduled_total.format()} "
+                    f"of selected future plan applied across {months} completed month(s); "
+                    f"median uncovered {monthly_residual.format()} across "
+                    f"{len(monthly)} month(s)"
                     + (f"; {trend}, using recent median" if trend else "")
                     + ("; recurring seasonal variation detected" if seasonal else "")
                 ),

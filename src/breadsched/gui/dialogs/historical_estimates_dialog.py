@@ -92,6 +92,9 @@ class HistoricalEstimatesDialog(Gtk.Window):
         self.status.set_text(f"{len(proposals)} proposal(s)")
         for proposal in proposals:
             row = Gtk.Box(spacing=10)
+            add = Gtk.Button(label="Add")
+            add.connect("clicked", self._on_add, proposal)
+            row.append(add)
             label = Gtk.Label(
                 label=(
                     f"{proposal.display_amount.format()} "
@@ -105,9 +108,6 @@ class HistoricalEstimatesDialog(Gtk.Window):
             )
             label.set_hexpand(True)
             row.append(label)
-            add = Gtk.Button(label="Add")
-            add.connect("clicked", self._on_add, proposal)
-            row.append(add)
             self.rows.append(row)
 
     def _on_analyze(self, _button) -> None:

@@ -773,7 +773,7 @@ async function openHistoricalEstimateDialog() {
         el("td", {}, `${item.source_name} → ${item.destination_name}`),
         el("td", {}, item.frequency),
         el("td", { class:"num" }, money(item.amount)),
-        el("td", { class:"muted" }, `${item.active_months}/${data.months} months; ${money(item.scheduled_amount)} scheduled`),
+        el("td", { class:"muted" }, `${item.active_months}/${data.months} months; ${money(item.scheduled_amount)} covered by plan`),
         el("td", { class:"muted" }, `${Math.round(item.confidence * 100)}%`),
         el("td", {}, el("button", { class:"action", type:"button", onclick:async()=>{
           try {

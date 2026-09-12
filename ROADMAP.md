@@ -93,11 +93,14 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Historical estimator residual correctness.** Reproduce accepted
-   estimates increasing suggestions, omitted future schedules, and split-category
-   omissions together. Details and acceptance criteria belong under Historical estimator.
+1. **NEXT — Historical estimator long-cycle coverage and review workflow.** The
+   monthly future-coverage regression is repaired; multi-year recurrences and
+   editable drafts still need separate acceptance rules and UI work.
 2. **Dashboard balances and hierarchy**, followed by the scheduled-entry and import
    usability work below. Mortgage planning-flow semantics require design review.
+3. **Escrow planning semantics.** Define an explicit account role and shared
+   expense-recognition rules before wiring UI and imported schedules; details under
+   Plan and planning-flow reporting.
 
 ## Dashboard balances and group hierarchy
 
@@ -292,25 +295,23 @@ semantics, not duplicate business rules in presentation code.
 
 ## Historical estimator
 
-- [ ] **Restore convergence after adding an estimate (reported regression).**
-  Adding an accepted scheduled estimate reportedly increases the next suggested
-  amount instead of reducing the uncovered need. Trace signs, selected scenario,
-  source schedule identity, and date windows from analysis through acceptance and
-  reanalysis. With unchanged assumptions, accepting the whole residual should
-  leave no duplicate suggestion; partial acceptance should reduce it by the amount
-  already covered. Replace the earlier completed-status claim with executable
-  regressions and explain gross inferred need, existing coverage, and residual.
-- [ ] **Scheduled coverage across history and future.** Verify how historical
-  actuals attributable to schedules enter inferred need, then subtract applicable
-  future planned coverage exactly once. Include schedules beginning after the
-  history window, scenario overrides/suppression, inactive schedules, and long-cycle
-  recurrences every two or three years. Avoid both missed future coverage and
-  subtracting a historical event and its future replacement twice.
-- [ ] **All split categories contribute.** Investigate scheduled multi-split
-  transactions omitted from category coverage. Use a generic combined bill with
-  several expense legs, including a service category also visible in history;
-  each leg must reduce that category's uncovered need with the correct sign.
-  Cover repeated legs to the same category, refunds, and exact arithmetic.
+- [x] **0159 — Restore estimate convergence and monthly future coverage.** Gross
+  need comes from historical actuals; the selected future plan contributes the
+  coverage, once, for each calendar month. Both commitments and accepted estimates
+  count, even if they began after history; expired, inactive, and scenario-suppressed
+  schedules do not. Cover updated amounts, partial/full acceptance, and explain
+  historical median, applied future coverage, and remaining median separately.
+- [ ] **Long-cycle and partial-year future coverage.** The next twelve planning
+  months establish one future sample of each calendar month. A schedule every two
+  or three years, a seasonal schedule that only begins partway through the future
+  year, or a scenario with changing coverage needs cadence-aware matching of
+  historical need against the exact future windows. Avoid suppressing an uncovered
+  near-term month because a later year has a scheduled occurrence, and avoid
+  projecting a completed one-time expense as recurring. Define and test those
+  cases before extending the current one-year window.
+- [x] **0159 — Count all future split categories.** Future committed and estimated
+  multi-split events contribute each income/expense leg, including repeated legs
+  and refunds to the same category, with exact signed totals.
 - [ ] **Review before acceptance.** The suggestion's Add action should open the
   populated Add Scheduled Transaction editor for adjustments to amount, accounts,
   recurrence, dates, and splits. Commit only after Save; Cancel must leave no new
@@ -318,9 +319,9 @@ semantics, not duplicate business rules in presentation code.
 - [ ] **One suggestion window per book/context.** Repeating Suggest from History
   should foreground the existing window, not create another. Handle closing,
   changing books, and scenario changes without stale references.
-- [ ] **Stable Add placement.** Place each suggestion's Add button before its
-  description in a stable column so resizing/scrolling does not detach the action
-  visually from the item it affects. Maintain equivalent web behavior.
+- [x] **0159 — Stable Add placement in GTK.** Place each suggestion's Add button
+  before its description so resizing does not detach the action from its item.
+  The web table already displays its action in the proposal's own row.
 
 - [ ] Detect irregular-but-recurring activity more reliably.
 - [ ] Improve confidence scoring and outlier handling.
@@ -332,6 +333,19 @@ semantics, not duplicate business rules in presentation code.
 
 ## Plan and planning-flow reporting
 
+- [ ] **Escrow account planning and projection.** Introduce an explicit Escrow role
+  for asset accounts, with source-preserving configuration and GTK/web parity. A
+  scheduled contribution from cash to escrow is the planning expense at funding
+  time even though the ledger debit increases an asset. Later scheduled payments
+  from escrow to tax, insurance, or other expense accounts are draws against that
+  already budgeted amount, not a second planning expense. Keep both ledger legs
+  intact for balances and show escrow balance rising and falling on the correct
+  dates in Projection; distinguish budgeted expense from cash movement and net-worth
+  changes. Define how direct payments, refunds, adjustments, negative balances,
+  split mortgage payments, actualization, imported GnuCash schedules, and scenario
+  overrides affect recognition; prevent double counting in Plan, estimates,
+  Dashboard totals, and Projection explanations. Test generic funding/draw cycles
+  and partial payouts before activating the new classification.
 - [ ] **Row and column totals.** Add totals across reporting periods for each row
   and totals down each period column, including a clearly explained grand total.
   Apply the same rules to actual, planned, and variance values. Do not count both

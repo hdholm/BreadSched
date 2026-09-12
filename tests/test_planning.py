@@ -1,5 +1,6 @@
 """Scheduled events are the source of truth for planning and actualization."""
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -17,6 +18,7 @@ from breadsched.gen.lib import (
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
+    Split,
     Transaction,
 )
 
@@ -558,6 +560,151 @@ class TestActualResolutionWorkflow:
 
 
 class TestHistoricalEstimateProposals:
+    def test_future_multisplit_commitment_covers_each_category_and_respects_scenario(
+        self, db, book
+    ):
+        from breadsched.gen.engine import estimates
+
+        bill = ScheduledTransaction(
+            name="Combined bill",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 4, 5)),
+            splits=[
+                ScheduledSplit(book.groceries, Money("20")),
+                ScheduledSplit(book.groceries, Money("40")),
+                ScheduledSplit(book.groceries, Money("-10")),
+                ScheduledSplit(book.utilities, Money("15")),
+                ScheduledSplit(book.checking, Money("-65")),
+            ],
+        )
+        suppressed = Scenario(
+            name="Without bill",
+            schedule_overrides=[ScenarioSchedule.from_scheduled(bill, enabled=False)],
+        )
+        with db.transaction("History and future bill") as txn:
+            db.add_scheduled(bill, txn)
+            db.add_scenario(suppressed, txn)
+            for month in (1, 2, 3):
+                actual = Transaction(post_date=date(2026, month, 8), description="Combined bill")
+                actual.add_split(Split(book.groceries, Money("100")))
+                actual.add_split(Split(book.utilities, Money("60")))
+                actual.add_split(Split(book.checking, Money("-160")))
+                db.add_transaction(actual, txn)
+
+        def amounts(scenario_handle=None):
+            return {
+                item.category: item.amount
+                for item in estimates.propose_historical_estimates(
+                    db, as_of=date(2026, 4, 20), months=3, scenario_handle=scenario_handle
+                )
+            }
+
+        assert amounts() == {book.groceries: Money("50"), book.utilities: Money("45")}
+        assert amounts(suppressed.handle) == {
+            book.groceries: Money("100"),
+            book.utilities: Money("60"),
+        }
+        with db.transaction("Disable bill") as txn:
+            bill.enabled = False
+            db.commit_scheduled(bill, txn)
+        assert amounts() == {book.groceries: Money("100"), book.utilities: Money("60")}
+
+    def test_future_amount_changes_replace_historical_schedule_coverage(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        bill = ScheduledTransaction(
+            name="Known bill",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 5)),
+            splits=[
+                ScheduledSplit(book.rent, Money("80")),
+                ScheduledSplit(book.checking, Money("-80")),
+            ],
+            amount_changes=[ScheduledAmountChange(date(2026, 4, 1), Money("120"))],
+        )
+        with db.transaction("History and changing bill") as txn:
+            db.add_scheduled(bill, txn)
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 5), "Rent", book.rent, book.checking, "180"
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.rent
+        )
+        assert proposal.amount == Money("60")
+        assert proposal.scheduled_amount == Money("360")
+        assert "historical median 180.00" in proposal.reason
+        assert "median uncovered 60.00" in proposal.reason
+
+    def test_expired_schedule_no_longer_covers_future_need(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        expired = ScheduledTransaction(
+            name="Former bill",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 5), count=3),
+            splits=[
+                ScheduledSplit(book.rent, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        with db.transaction("Past bill") as txn:
+            db.add_scheduled(expired, txn)
+            for month in (1, 2, 3):
+                actual = Transaction.simple(
+                    date(2026, month, 5), "Rent", book.rent, book.checking, "100"
+                )
+                actual.scheduled_from = expired.handle
+                db.add_transaction(actual, txn)
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.rent
+        )
+        assert proposal.amount == Money("100")
+
+    def test_partial_estimates_converge_in_selected_future_plan(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("History") as txn:
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 5), "Groceries", book.groceries, book.checking, "100"
+                    ),
+                    txn,
+                )
+        first = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.groceries
+        )
+        estimates.accept_historical_estimate(db, replace(first, amount=Money("40")))
+        second = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.groceries
+        )
+        assert second.amount == Money("60")
+        estimates.accept_historical_estimate(db, second)
+        assert all(
+            item.category != book.groceries
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+        )
+
     def test_proposes_median_monthly_category_estimate(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import Transaction

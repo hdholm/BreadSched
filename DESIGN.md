@@ -90,6 +90,13 @@ Scheduled commitments and estimates use the same underlying event model. Estimat
 accepted from historical analysis become planned activity themselves; rerunning the
 analysis therefore asks only for residual unplanned need rather than repeatedly
 suggesting the same amount.
+Historical category actuals supply gross inferred need, including actuals matched
+to an earlier schedule. The selected future plan supplies coverage: committed
+schedules and planning-only estimates contribute their category splits once, using
+the next twelve planning months as a calendar-month profile. Historical scheduled
+occurrences are not also subtracted, since a schedule may have ended or changed
+amounts. Longer recurrence cycles and partial-year transitions need explicit
+cadence-aware coverage before this profile can represent them reliably.
 
 When an actual resolves a planned occurrence, BreadSched preserves the original
 occurrence identity, planned date, and expected value so later schedule changes do
