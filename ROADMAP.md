@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0146 — `platform: use native user paths`**.
+Status is current through patch **0147 — `quality: guard large-book projection time`**.
 
 ## Status legend
 
@@ -89,9 +89,10 @@ semantics, not duplicate business rules in presentation code.
   - [x] Add property-based recurrence tests around generated occurrence identity,
     weekend adjustment, and serialization. Continue adding properties as new
     collision/edge cases are discovered.
-  - [x] Add a realistic storage performance gate: one ordinary commit on a synthetic
-    30,000-transaction book must remain below a deliberately generous 0.5-second
-    budget. Add projection/report benchmarks separately as those paths are hardened.
+  - [x] Add realistic storage/projection performance gates on one shared synthetic
+    30,000-transaction household history: an ordinary commit stays below 0.5 seconds
+    and a 30-year projection stays below a deliberately generous 3-second budget.
+    Add report-specific benchmarks as those paths are hardened.
   - [x] Continue pytest-xdist rollout: core/non-GTK uses `pytest -n auto`; GTK stays
     serial and the realistic performance gate runs separately with `-n 0`.
   - [x] Preserve `make test-ordered` / `pytest -n 0` as a deterministic diagnostic path.

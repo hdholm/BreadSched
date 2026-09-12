@@ -224,10 +224,11 @@ book use.
 ### Performance and randomized correctness gates
 
 Performance regressions should be guarded at the operation boundary rather than by
-timing unrelated setup. The storage gate therefore creates a realistic synthetic
-30,000-transaction history outside the measured interval and times one ordinary
-commit. The budget is intentionally much looser than expected incremental-write
-performance while remaining well below the old whole-book verification cost.
+timing unrelated setup. The performance gate therefore creates one realistic
+synthetic 30,000-transaction history outside the measured interval, then times both
+one ordinary commit and a 30-year projection. Budgets are intentionally much looser
+than normal performance while remaining below the historical regressions they are
+intended to catch.
 
 Recurrence correctness is also tested with generated inputs. Property-based tests
 exercise many dates, intervals, weekend adjustments, and semi-monthly shapes while
