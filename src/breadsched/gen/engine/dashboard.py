@@ -34,7 +34,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, TypedDict
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountPlanningRole
@@ -347,6 +347,24 @@ class BillRow:
         return self.days_until(today) <= days
 
 
+class DashboardSummary(TypedDict):
+    as_of: date
+    net_worth: Money
+    assets: Money
+    debts: Money
+    liquid: Money
+    required_liquid: Money
+    available: Money
+    emergency_fund: Money
+    emergency_shortfall: Money
+    months_covered: Decimal
+    monthly_outgoings: Money
+    annual_outgoings: Money
+    income_per_month: Money
+    next_income: date | None
+    bills: int
+
+
 @dataclass
 class Dashboard:
     """Everything the dashboard shows, computed once."""
@@ -455,7 +473,7 @@ class Dashboard:
             return Decimal(0)
         return (self.liquid.rate() / monthly.rate()).quantize(Decimal("0.01"))
 
-    def summary(self) -> dict[str, object]:
+    def summary(self) -> DashboardSummary:
         return {
             "as_of": self.as_of,
             "net_worth": self.net_worth,

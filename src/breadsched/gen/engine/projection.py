@@ -16,7 +16,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, TypedDict
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass
@@ -1266,9 +1266,18 @@ def _budget_period(budget, month: date, extend: bool) -> int | None:
     return index % budget.periods
 
 
-def compare(base: Projection, other: Projection) -> list[dict[str, object]]:
+class ComparisonRow(TypedDict):
+    index: int
+    label: str
+    cash_delta: Money
+    net_worth_delta: Money
+    base_net_worth: Money
+    other_net_worth: Money
+
+
+def compare(base: Projection, other: Projection) -> list[ComparisonRow]:
     """Row-by-row difference between two scenarios, for the comparison view."""
-    rows: list[dict[str, object]] = []
+    rows: list[ComparisonRow] = []
     for index in range(min(len(base.rows), len(other.rows))):
         left, right = base.rows[index], other.rows[index]
         rows.append(

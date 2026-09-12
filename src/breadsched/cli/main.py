@@ -438,7 +438,9 @@ def cmd_edit(args: argparse.Namespace) -> int:
         before = target.describe()
 
         if args.date:
-            target.post_date = parse_date(args.date)
+            parsed_date = parse_date(args.date)
+            if parsed_date is not None:
+                target.post_date = parsed_date
         if args.description is not None:
             target.description = args.description
         if args.num is not None:
@@ -990,11 +992,11 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                 f"Saved scenario {scenario.name!r}",
             )
         elif args.action == "delete":
-            scenario = db.get_scenario_by_name(args.name)
-            if scenario is None:
+            to_delete = db.get_scenario_by_name(args.name)
+            if to_delete is None:
                 raise CommandError(f"no scenario named {args.name!r}")
             with db.transaction(f"Delete scenario {args.name}") as txn:
-                db.remove_scenario(scenario.handle, txn)
+                db.remove_scenario(to_delete.handle, txn)
             emit({"deleted": args.name}, args, f"Deleted scenario {args.name!r}")
         return 0
     finally:
@@ -1006,9 +1008,10 @@ def cmd_compare(args: argparse.Namespace) -> int:
     try:
         left_scenario = db.get_scenario_by_name(args.base)
         right_scenario = db.get_scenario_by_name(args.other)
-        for name, found in ((args.base, left_scenario), (args.other, right_scenario)):
-            if found is None:
-                raise CommandError(f"no scenario named {name!r}")
+        if left_scenario is None:
+            raise CommandError(f"no scenario named {args.base!r}")
+        if right_scenario is None:
+            raise CommandError(f"no scenario named {args.other!r}")
         left = projection.project(db, left_scenario)
         right = projection.project(db, right_scenario)
         rows = projection.compare(left, right)
@@ -1383,12 +1386,19 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         print(f"Dashboard as at {board.as_of}\n")
         rows = []
         for group in board.groups:
-            if group.loan_to_value is not None:
+            loan_to_value = group.loan_to_value
+            equity = group.equity
+            if (
+                loan_to_value is not None
+                and group.value is not None
+                and group.debt is not None
+                and equity is not None
+            ):
                 rows.append([
                     group.name,
                     group.value.format(), group.debt.format(),
-                    group.equity.format(parens_negative=True),
-                    f"{group.loan_to_value:.1%}",
+                    equity.format(parens_negative=True),
+                    f"{loan_to_value:.1%}",
                 ])
             else:
                 rows.append([

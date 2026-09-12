@@ -16,6 +16,7 @@ import json
 import secrets
 import threading
 from calendar import monthrange
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from functools import partial
@@ -670,7 +671,7 @@ class Api:
         }
 
     def _per_account_rates(
-        self, payload: object, existing: dict[str, Decimal] | None = None
+        self, payload: object, existing: Mapping[str, Decimal] | None = None
     ) -> dict[str, Decimal]:
         if payload is None:
             return dict(existing or {})
@@ -712,7 +713,7 @@ class Api:
             "cash_interest",
             "liability_interest",
         )
-        values = {}
+        values: dict[str, Decimal] = {}
         for field in fields:
             if field not in payload:
                 raise ValueError(f"missing assumption: {field}")
@@ -720,11 +721,18 @@ class Api:
             if value < Decimal("-1") or value > Decimal("1"):
                 raise ValueError(f"{field} must be between -1 and 1")
             values[field] = value
-        values["per_account"] = self._per_account_rates(
+        per_account = self._per_account_rates(
             payload.get("per_account") if "per_account" in payload else None,
             existing.per_account if existing is not None else None,
         )
-        return Assumptions(**values)
+        return Assumptions(
+            income_growth=values["income_growth"],
+            expense_inflation=values["expense_inflation"],
+            investment_return=values["investment_return"],
+            cash_interest=values["cash_interest"],
+            liability_interest=values["liability_interest"],
+            per_account=per_account,
+        )
 
     def scenario_save(self, payload: dict) -> dict:
         handle = payload.get("handle")
@@ -1374,20 +1382,21 @@ class Api:
         )
         totals = report.activity
 
-        comparison = None
+        comparison: dict[str, object] | None = None
         if compare_handle is not None:
             if compare_handle == "__base__":
                 compare_scenario = self._base_scenario(start, end)
                 compare_identity = None
                 compare_name = "Base scenario"
             else:
-                compare_scenario = next(
+                selected_compare = next(
                     (item for item in scenarios if item.handle == compare_handle), None
                 )
-                if compare_scenario is None:
+                if selected_compare is None:
                     raise KeyError(compare_handle)
-                compare_identity = compare_scenario.handle
-                compare_name = compare_scenario.name
+                compare_scenario = selected_compare
+                compare_identity = selected_compare.handle
+                compare_name = selected_compare.name
             if compare_identity == scenario_handle:
                 raise ValueError("Plan comparison must use a different scenario.")
             compare_report = activity.build_category_report(
@@ -1397,6 +1406,8 @@ class Api:
             compare_flows = {
                 (row.kind, row.account): row for row in compare_report.planning_flows
             }
+            comparison_categories: list[dict[str, object]] = []
+            comparison_flows: list[dict[str, object]] = []
             comparison = {
                 "handle": compare_identity,
                 "name": compare_name,
@@ -1416,8 +1427,8 @@ class Api:
                         report.cash_variance - compare_report.cash_variance
                     ),
                 },
-                "categories": [],
-                "planning_flows": [],
+                "categories": comparison_categories,
+                "planning_flows": comparison_flows,
             }
             for row in report.categories:
                 other = compare_rows.get(row.account)
@@ -1427,7 +1438,7 @@ class Api:
                 other_variance: list[Money | None] = (
                     other.variance if other is not None else list(zeroes)
                 )
-                comparison["categories"].append(
+                comparison_categories.append(
                     {
                         "account": row.account,
                         "planned": other_planned,
@@ -1457,31 +1468,31 @@ class Api:
                         ],
                     }
                 )
-            for row in report.planning_flows:
-                other = compare_flows.get((row.kind, row.account))
-                zeroes = [Money(0) for _ in row.planned]
-                other_planned = other.planned if other is not None else zeroes
-                other_actual = other.actual if other is not None else zeroes
-                other_variance: list[Money | None] = (
-                    other.variance if other is not None else list(zeroes)
+            for flow_row in report.planning_flows:
+                other_flow = compare_flows.get((flow_row.kind, flow_row.account))
+                flow_zeroes = [Money(0) for _ in flow_row.planned]
+                other_flow_planned = other_flow.planned if other_flow is not None else flow_zeroes
+                other_flow_actual = other_flow.actual if other_flow is not None else flow_zeroes
+                other_flow_variance: list[Money | None] = (
+                    other_flow.variance if other_flow is not None else list(flow_zeroes)
                 )
-                comparison["planning_flows"].append(
+                comparison_flows.append(
                     {
-                        "kind": row.kind.value,
-                        "account": row.account,
-                        "planned": other_planned,
-                        "actual": other_actual,
-                        "variance": other_variance,
+                        "kind": flow_row.kind.value,
+                        "account": flow_row.account,
+                        "planned": other_flow_planned,
+                        "actual": other_flow_actual,
+                        "variance": other_flow_variance,
                         "planned_delta": [
                             value - alternate
                             for value, alternate in zip(
-                                row.planned, other_planned, strict=True
+                                flow_row.planned, other_flow_planned, strict=True
                             )
                         ],
                         "actual_delta": [
                             value - alternate
                             for value, alternate in zip(
-                                row.actual, other_actual, strict=True
+                                flow_row.actual, other_flow_actual, strict=True
                             )
                         ],
                         "variance_delta": [
@@ -1491,7 +1502,7 @@ class Api:
                                 else None
                             )
                             for value, alternate in zip(
-                                row.variance, other_variance, strict=True
+                                flow_row.variance, other_flow_variance, strict=True
                             )
                         ],
                     }
@@ -1582,26 +1593,27 @@ class Api:
 
         if flow_kind:
             kind = PlanningFlowKind(flow_kind)
-            detail = activity.explain_planning_flow_period(
+            flow_detail = activity.explain_planning_flow_period(
                 self.db, kind, account_handle, start, end, scenario=scenario
             )
             category = {
-                "account": detail.account,
-                "name": detail.name,
-                "full_name": detail.full_name,
+                "account": flow_detail.account,
+                "name": flow_detail.name,
+                "full_name": flow_detail.full_name,
                 "class": "planning_flow",
                 "kind": kind.value,
             }
         else:
-            detail = activity.explain_category_period(
+            category_detail = activity.explain_category_period(
                 self.db, account_handle, start, end, scenario=scenario
             )
             category = {
-                "account": detail.account,
-                "name": detail.name,
-                "full_name": detail.full_name,
-                "class": detail.account_class.value,
+                "account": category_detail.account,
+                "name": category_detail.name,
+                "full_name": category_detail.full_name,
+                "class": category_detail.account_class.value,
             }
+        detail = flow_detail if flow_kind else category_detail
         return {
             "category": category,
             "period": {"start": detail.start, "end": detail.end},
@@ -1652,7 +1664,7 @@ class Api:
         return total
 
     def _review_fsa_options(self, transaction: Transaction) -> dict:
-        roles = []
+        roles: list[dict[str, object]] = []
         for split in transaction.splits:
             account = self.db.get_account(split.account)
             if account is None:
@@ -2162,7 +2174,7 @@ class Api:
             weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
         )
         horizon = date(min(start.year + 10, 9999), 12, 31)
-        result = {
+        result: dict[str, object] = {
             "occurrences": [item.isoformat() for item in recurrence.occurrences(horizon)[:500]]
         }
         raw_amount = str(payload.get("amount") or "").strip()
@@ -2241,7 +2253,7 @@ class Api:
                 raise ValueError("end date cannot precede first due date")
         count = None
         raw_count = payload.get("count")
-        if raw_count not in (None, ""):
+        if raw_count is not None and raw_count != "":
             try:
                 count = int(raw_count)
             except (TypeError, ValueError) as exc:
@@ -2365,22 +2377,9 @@ def api(db: DbSQLite) -> Api:
     return Api(db)
 
 
-def _plain(values: dict) -> dict:
+def _plain(values: Mapping[str, object]) -> dict[str, str | None]:
     """Convert Money and date values to strings the browser can read."""
-    out = {}
-    for key, value in values.items():
-        if hasattr(value, "to_decimal"):
-            out[key] = str(value.to_decimal())
-        elif hasattr(value, "isoformat"):
-            out[key] = value.isoformat()
-        else:
-            out[key] = str(value) if value is not None else None
-    return out
-
-
-def _plain(values: dict) -> dict:
-    """Convert Money and date values to strings the browser can read."""
-    out = {}
+    out: dict[str, str | None] = {}
     for key, value in values.items():
         if hasattr(value, "to_decimal"):
             out[key] = str(value.to_decimal())

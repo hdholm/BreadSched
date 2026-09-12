@@ -45,15 +45,15 @@ format-check:
 typecheck:
 	mypy src/breadsched/gen src/breadsched/plugins
 
-# Audit the next static-analysis scope without making existing CLI/web type debt
-# block the normal gate until that debt has been fixed or explicitly baselined.
+# Check CLI/web while retaining imported type information. GUI imports remain
+# available for inference, but their own errors wait for the GUI typing stage.
 typecheck-extended:
-	mypy src/breadsched/cli src/breadsched/web
+	mypy --follow-imports=silent src/breadsched/cli src/breadsched/web
 
 build:
 	python -m build
 
-check: lint typecheck test demo build
+check: lint typecheck typecheck-extended test demo build
 
 demo:
 	python examples/demo.py

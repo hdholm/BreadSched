@@ -36,6 +36,9 @@ jobs:
       - name: Type check
         run: mypy src/breadsched/gen src/breadsched/plugins
 
+      - name: Type check CLI and web
+        run: make typecheck-extended
+
       - name: Test core in parallel
         run: pytest -n auto -m "not gui and not performance" --cov=breadsched --cov-report=term-missing
 

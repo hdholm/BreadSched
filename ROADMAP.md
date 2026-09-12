@@ -80,9 +80,11 @@ semantics, not duplicate business rules in presentation code.
 ## Remaining hardening work
 
 - [ ] **NEXT — Finish quality-gate expansion.**
-  - [ ] Extend mypy coverage to CLI and web, then GUI with an explicit baseline where
-    necessary. `make typecheck-extended` now exposes the CLI/web audit scope; reduce
-    those errors before moving it into the mandatory `make check` gate.
+  - [x] **0154 — Add CLI/web to the mandatory mypy gate.** Correct CLI and web type
+    errors and annotate comparison/dashboard results. The extended gate follows
+    imports for type information but suppresses errors in imported GUI modules.
+  - [ ] Extend mypy coverage to GUI modules, with an explicit baseline where
+    necessary. Their diagnostics remain outside the CLI/web gate.
   - [ ] Eliminate current formatting debt, then add `ruff format --check` to the
     mandatory local/CI gate. A `make format-check` audit target exists now.
   - [x] Keep Host/Origin/token web-security regressions in the standard gate.
