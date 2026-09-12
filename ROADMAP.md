@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0139 — `quality: repair legacy CLI budget filters`**.
+Status is current through patch **0140 — `hardening: make Money comparisons safe`**.
 
 ## Status legend
 
@@ -102,12 +102,12 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Continue reducing CLI/web typing debt and move the extended mypy audit into the
   mandatory gate once the scope is clean or has a narrowly documented baseline.
 - [ ] Harden `Money` and amount handling:
-  - explicit locale-aware parsing instead of silently misreading European formats;
-  - correct equality/hash behavior and safe comparison failure semantics;
-  - remove dimensionally meaningless `Money * Money` behavior;
-  - introduce a distinct rate concept;
-  - remove hard-coded cents where account/commodity precision differs;
-  - define commodity/currency-safe arithmetic and valuation boundaries.
+  - [x] **0140 — Core parsing/comparison safety.** Ambiguous locale-formatted strings are rejected instead of silently mis-scaled; equality/hash behavior follows Python's numeric contract; non-numeric equality does not raise.
+  - [ ] Add explicit locale-aware parsing at user/import boundaries rather than asking the core `Money` constructor to guess locale.
+  - [ ] Remove dimensionally meaningless `Money * Money` behavior as a distinct rate type is introduced.
+  - [ ] Introduce a distinct rate concept.
+  - [ ] Remove hard-coded cents where account/commodity precision differs.
+  - [ ] Define commodity/currency-safe arithmetic and valuation boundaries.
 - [ ] Add platform-correct settings/default-book paths and warnings for unsafe synced
   locations where SQLite durability is questionable.
 - [ ] Add an inter-process book lock with clear read-only/failure behavior when a

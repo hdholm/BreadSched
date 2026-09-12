@@ -18,8 +18,13 @@ class TestConstruction:
     def test_accepts_decimal(self):
         assert Money(Decimal("19.99")).to_decimal() == Decimal("19.99")
 
-    def test_strips_formatting(self):
+    def test_accepts_unambiguous_english_grouping(self):
         assert Money("$1,234.56") == Money("1234.56")
+
+    @pytest.mark.parametrize("text", ["1,80", "1.800,00", "12,50"])
+    def test_rejects_ambiguous_locale_formatted_strings(self, text):
+        with pytest.raises(ValueError, match="cannot read"):
+            Money(text)
 
     def test_normalises_to_lowest_terms(self):
         value = Money(50, 100)
@@ -75,12 +80,23 @@ class TestComparison:
         assert Money(1, 3) < Money(1, 2)
         assert Money(2, 4) == Money(1, 2)
 
-    def test_compares_against_plain_values(self):
+    def test_compares_against_plain_numeric_values(self):
         assert Money("10.00") > 9
-        assert Money("10.00") == "10"
+        assert Money("10.00") == Decimal("10")
+
+    def test_non_numeric_comparison_is_false_not_an_error(self):
+        assert (Money("10.00") == "abc") is False
+        assert (Money("10.00") == "10") is False
 
     def test_is_hashable_by_value(self):
         assert len({Money(1, 2), Money(2, 4)}) == 1
+
+    def test_hash_matches_equal_python_numbers(self):
+        one = Money(1)
+        assert one == 1
+        assert one == Decimal("1")
+        assert hash(one) == hash(1) == hash(Decimal("1"))
+        assert 1 in {one}
 
 
 class TestRoundingAndAllocation:

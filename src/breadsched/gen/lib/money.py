@@ -12,11 +12,15 @@ and refuses ``float`` deliberately.
 
 from __future__ import annotations
 
+import re
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
+from fractions import Fraction
 from math import gcd
 from numbers import Integral
 
 __all__ = ["Money", "ZERO"]
+
+_US_GROUPED = re.compile(r"^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
 
 
 class Money:
@@ -53,9 +57,20 @@ class Money:
     @staticmethod
     def _parse(text: str) -> tuple[int, int]:
         raw = text
-        text = text.strip().replace(",", "").replace("$", "")
+        text = text.strip().replace("$", "")
         if not text:
             return 0, 1
+
+        # Money itself deliberately uses one unambiguous numeric syntax. Locale-
+        # aware user/import parsing belongs at the input boundary. Accept strict
+        # English thousands grouping for backward compatibility, but reject comma
+        # forms that could also mean a decimal separator rather than silently
+        # scaling them by 100 or 1000.
+        if "," in text:
+            if not _US_GROUPED.fullmatch(text):
+                raise ValueError(f"cannot read {raw!r} as an amount")
+            text = text.replace(",", "")
+
         try:
             if "/" in text:
                 num, _, den = text.partition("/")
@@ -119,6 +134,16 @@ class Money:
             return Money(other)  # type: ignore[arg-type]
         return None
 
+    @staticmethod
+    def _coerce_comparison(other: object) -> Money | None:
+        if isinstance(other, Money):
+            return other
+        if isinstance(other, Decimal):
+            return Money(other)
+        if isinstance(other, Integral):
+            return Money(int(other))
+        return None
+
     def __add__(self, other: object) -> Money:
         rhs = self._coerce(other)
         if rhs is None:
@@ -170,23 +195,25 @@ class Money:
         return self._num * other._den, other._num * self._den
 
     def __eq__(self, other: object) -> bool:
-        rhs = self._coerce(other)
+        rhs = self._coerce_comparison(other)
         if rhs is None:
             return NotImplemented
         return self._num == rhs._num and self._den == rhs._den
 
     def __hash__(self) -> int:
-        return hash((self._num, self._den))
+        # Python requires equal numeric objects to share a hash. Fraction already
+        # implements the cross-numeric hash contract for ints and Decimals.
+        return hash(Fraction(self._num, self._den))
 
     def __lt__(self, other: object) -> bool:
-        rhs = self._coerce(other)
+        rhs = self._coerce_comparison(other)
         if rhs is None:
             return NotImplemented
         left, right = self._cmp_key(rhs)
         return left < right
 
     def __le__(self, other: object) -> bool:
-        rhs = self._coerce(other)
+        rhs = self._coerce_comparison(other)
         if rhs is None:
             return NotImplemented
         left, right = self._cmp_key(rhs)

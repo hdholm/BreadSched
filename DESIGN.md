@@ -261,3 +261,7 @@ Documentation has three distinct jobs:
 When a patch changes architecture, update this design document. When it adds,
 completes, changes, or reprioritizes pending work, update the roadmap. Do not use
 the README or design document as an alternate TODO list.
+
+## Money and exact arithmetic
+
+Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality.
