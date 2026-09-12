@@ -1,6 +1,7 @@
 """The database contract: atomic batches, working undo, honest signals."""
 
 import json
+import socket
 import sqlite3
 from datetime import date
 from pathlib import Path
@@ -21,6 +22,50 @@ from breadsched.gen.lib import (
     Transaction,
     UnbalancedError,
 )
+
+
+class TestWriterLock:
+    def test_second_writer_is_rejected_but_read_only_open_is_allowed(self, tmp_path):
+        path = str(tmp_path / "locked.breadsched")
+        first = DbSQLite()
+        first.load(path)
+
+        second = DbSQLite()
+        with pytest.raises(DbError, match="already open for writing"):
+            second.load(path)
+
+        reader = DbSQLite()
+        reader.load(path, mode="r")
+        reader.close()
+
+        first.close()
+        second.load(path)
+        second.close()
+
+    def test_stale_same_host_lock_is_reclaimed(self, tmp_path):
+        path = str(tmp_path / "stale.breadsched")
+        seed = DbSQLite()
+        seed.load(path)
+        seed.close()
+
+        lock_path = Path(f"{path}.lock")
+        lock_path.write_text(
+            json.dumps(
+                {
+                    "pid": 999_999_999,
+                    "host": socket.gethostname(),
+                    "token": "stale",
+                    "book": str(Path(path).resolve()),
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        reopened = DbSQLite()
+        reopened.load(path)
+        assert lock_path.exists()
+        reopened.close()
+        assert not lock_path.exists()
 
 
 class TestPersistence:

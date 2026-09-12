@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0144 — `import: reject missing source dates`**.
+Status is current through patch **0145 — `storage: prevent competing writers`**.
 
 ## Status legend
 
@@ -112,8 +112,9 @@ semantics, not duplicate business rules in presentation code.
   - [ ] Define commodity/currency-safe arithmetic and valuation boundaries.
 - [ ] Add platform-correct settings/default-book paths and warnings for unsafe synced
   locations where SQLite durability is questionable.
-- [ ] Add an inter-process book lock with clear read-only/failure behavior when a
-  second writer attempts to open the same book.
+- [x] **0145 — Inter-process writer lock.** Writable native books use an owned
+  sidecar lock, competing writers fail with an explicit read-only alternative,
+  read-only opens remain allowed, and stale same-host locks are safely reclaimed.
 - [ ] Finish the deliberate legacy Budget-domain migration after mapping every
   remaining CLI/Dashboard/cash-flow/Projection dependency.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a

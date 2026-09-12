@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import socket
 import threading
 import time
 from collections.abc import Iterator
@@ -128,8 +129,95 @@ class DbSQLite(DbBase):
         self._write_lock = threading.RLock()
         self._tolerate_malformed = False
         self._verification_load_issues: dict[tuple[str, str], BookIssue] = {}
+        self._book_lock_path: Path | None = None
+        self._book_lock_token: str | None = None
 
     # ------------------------------------------------------------- life cycle
+
+    @staticmethod
+    def _writer_lock_path(path: str) -> Path:
+        return Path(f"{path}.lock")
+
+    @staticmethod
+    def _pid_is_alive(pid: int) -> bool:
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        except OSError:
+            return True
+        return True
+
+    def _acquire_book_lock(self, path: str) -> None:
+        if path == ":memory:":
+            return
+        lock_path = self._writer_lock_path(path)
+        hostname = socket.gethostname()
+        token = os.urandom(16).hex()
+        payload = {
+            "pid": os.getpid(),
+            "host": hostname,
+            "token": token,
+            "book": str(Path(path).resolve()),
+        }
+        while True:
+            try:
+                fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                try:
+                    existing = json.loads(lock_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError, TypeError):
+                    existing = {}
+                owner_host = existing.get("host")
+                owner_pid = existing.get("pid")
+                stale = (
+                    owner_host == hostname
+                    and isinstance(owner_pid, int)
+                    and not self._pid_is_alive(owner_pid)
+                )
+                if stale:
+                    try:
+                        lock_path.unlink()
+                    except FileNotFoundError:
+                        pass
+                    continue
+                owner = "another process"
+                if owner_host and owner_pid:
+                    owner = f"PID {owner_pid} on {owner_host}"
+                raise DbError(
+                    f"book is already open for writing by {owner}; "
+                    "close that writer or open this book read-only"
+                ) from None
+            else:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    json.dump(payload, handle, sort_keys=True)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                self._book_lock_path = lock_path
+                self._book_lock_token = token
+                return
+
+    def _release_book_lock(self) -> None:
+        lock_path = self._book_lock_path
+        token = self._book_lock_token
+        self._book_lock_path = None
+        self._book_lock_token = None
+        if lock_path is None or token is None:
+            return
+        try:
+            existing = json.loads(lock_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return
+        if existing.get("token") != token:
+            return
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
 
     def load(self, path: str, mode: str = "w") -> None:
         self._load(path, mode, tolerate_malformed=False)
@@ -159,13 +247,20 @@ class DbSQLite(DbBase):
         self._active_txn = None
         existing_book = path != ":memory:" and Path(path).exists() and Path(path).stat().st_size > 0
 
+        if not self.readonly:
+            self._acquire_book_lock(path)
+
         # Read-only means read-only at SQLite level, not merely at our Python API.
         # This prevents PRAGMAs or accidental direct SQL from modifying the book.
-        if self.readonly and path != ":memory:":
-            uri = Path(path).resolve().as_uri() + "?mode=ro"
-            self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
-        else:
-            self._conn = sqlite3.connect(path, check_same_thread=False)
+        try:
+            if self.readonly and path != ":memory:":
+                uri = Path(path).resolve().as_uri() + "?mode=ro"
+                self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+            else:
+                self._conn = sqlite3.connect(path, check_same_thread=False)
+        except Exception:
+            self._release_book_lock()
+            raise
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys=ON")
 
@@ -193,6 +288,7 @@ class DbSQLite(DbBase):
             self._conn = None
             self._accounts.clear()
             self._verification_load_issues.clear()
+            self._release_book_lock()
             raise
 
     def _initialise_new_book(self) -> None:
@@ -520,6 +616,7 @@ class DbSQLite(DbBase):
         self._tolerate_malformed = False
         self._verification_load_issues.clear()
         self.readonly = False
+        self._release_book_lock()
 
     @property
     def is_open(self) -> bool:

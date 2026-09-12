@@ -240,8 +240,10 @@ its continuing work is tracked in the roadmap.
 
 BreadSched native books use the `.breadsched` suffix and SQLite storage. Verify and
 backup operations are available from the CLI, and schema migrations are expected to
-preserve recoverability. Storage hardening, locking, transaction atomicity, and
-large-book performance are active roadmap priorities.
+preserve recoverability. A writable book is protected by a small sidecar lock file;
+a second process may still open the book read-only, but cannot become a competing
+writer. Clean shutdown removes the lock, and a stale same-host lock is reclaimed when
+its recorded process no longer exists.
 
 Do not place the only copy of a financial book in a location whose synchronization
 or filesystem behavior is not safe for SQLite. Keep independent backups.
