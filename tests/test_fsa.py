@@ -1,6 +1,6 @@
 """FSA benefit-year availability is separate from custodial cash balance."""
 
-from datetime import date
+from datetime import date, timedelta
 
 from breadsched.gen.engine import fsa
 from breadsched.gen.lib import (
@@ -101,6 +101,46 @@ def test_fsa_years_round_trip_with_account_serialization():
     ]
     restored = Account.from_dict(account.serialize())
     assert restored.fsa_years == account.fsa_years
+
+
+def test_dashboard_limits_recent_closed_year_to_90_days_after_runout(db, book):
+    account = _fsa_account(db, book)
+    last_day = fsa.dashboard_statuses(db, as_of=date(2027, 9, 30))
+    assert [(item.account.handle, item.phase) for item in last_day] == [(account.handle, "run-out")]
+    deadline = date(2027, 9, 30)
+    history = fsa.dashboard_statuses(db, as_of=deadline + timedelta(days=90))
+    assert history[0].phase == "closed"
+    assert history[0].forfeited == account.fsa_years[0].election
+    assert fsa.dashboard_statuses(db, as_of=deadline + timedelta(days=91)) == []
+    assert fsa.dashboard_statuses(db, as_of=deadline + timedelta(days=1), recent_closed=0) == []
+
+
+def test_dashboard_keeps_current_year_when_prior_year_closes(db, book):
+    account = _fsa_account(db, book)
+    current = FsaFundingYear(date(2027, 7, 1), date(2028, 6, 30), Money("2400"))
+    account.fsa_years.append(current)
+    with db.transaction("Add next benefit year") as txn:
+        db.commit_account(account, txn)
+
+    statuses = fsa.dashboard_statuses(db, as_of=date(2028, 1, 1))
+
+    assert [item.year for item in statuses] == [current]
+    assert statuses[0].remaining == current.election
+
+
+def test_dashboard_uses_year_end_when_no_runout_and_keeps_only_latest_closed(db, book):
+    account = _fsa_account(db, book)
+    first = FsaFundingYear(date(2025, 1, 1), date(2025, 12, 31), Money("1200"))
+    second = FsaFundingYear(date(2026, 1, 1), date(2026, 1, 31), Money("100"))
+    account.fsa_years = [first, second]
+    with db.transaction("Set generic benefit years") as txn:
+        db.commit_account(account, txn)
+
+    statuses = fsa.dashboard_statuses(db, as_of=date(2026, 2, 1))
+
+    assert [item.year for item in statuses] == [second]
+    assert fsa.dashboard_statuses(db, as_of=second.through + timedelta(days=90))[0].year == second
+    assert fsa.dashboard_statuses(db, as_of=second.through + timedelta(days=91)) == []
 
 
 def _second_fsa_account(db, book):

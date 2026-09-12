@@ -399,7 +399,7 @@ class AccountDialog(Gtk.Window):
             return
         carrying = not self.full_check.get_active()
         self.usual_entry.set_sensitive(carrying)
-        self.day_spin.set_sensitive(carrying)
+        self.day_spin.set_sensitive(True)
 
     def _validate(self, *_args) -> None:
         if not self._ready:

@@ -88,7 +88,12 @@ def dashboard_statuses(
     as_of: date | None = None,
     recent_closed: int = 1,
 ) -> list[FsaYearStatus]:
-    """Current/open FSA years plus recent closed years for each FSA account."""
+    """Open years plus at most one recently closed year per account by default.
+
+    A closed year is recent through 90 days after its inclusive run-out deadline
+    (or plan-year end when no run-out is defined). Older history remains available
+    through :func:`year_status` but does not belong on the Dashboard.
+    """
     when = as_of or date.today()
     statuses: list[FsaYearStatus] = []
     for account in db.iter_accounts():
@@ -99,7 +104,16 @@ def dashboard_statuses(
             for year in sorted(account.fsa_years, key=lambda item: item.start, reverse=True)
         ]
         active = [status for status in account_statuses if status.phase != "closed"]
-        closed = [status for status in account_statuses if status.phase == "closed"]
+        closed = [
+            status
+            for status in account_statuses
+            if status.phase == "closed"
+            and (when - (status.year.runout_through or status.year.through)).days <= 90
+        ]
+        closed.sort(
+            key=lambda status: status.year.runout_through or status.year.through,
+            reverse=True,
+        )
         statuses.extend(reversed(active))
         statuses.extend(closed[:recent_closed])
     return statuses

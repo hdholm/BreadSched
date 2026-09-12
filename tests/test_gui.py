@@ -2731,6 +2731,29 @@ class TestAccountEditor:
         assert card.usual_payment == Money("400.00")
         assert card.payment_day == 22
 
+    def test_a_card_paid_in_full_keeps_an_editable_payment_day(self, accounts_view, app):
+        from breadsched.gen.lib import AccountType
+        from breadsched.gui.dialogs.account_dialog import _TYPES
+
+        dialog = self._dialog(accounts_view)
+        dialog.name_entry.set_text("Monthly card")
+        dialog.type_picker.set_selected(_TYPES.index(AccountType.CREDIT))
+        assert dialog.full_check.get_active() is True
+        assert dialog.day_spin.get_sensitive() is True
+        dialog.day_spin.set_value(17)
+        dialog.full_check.set_active(False)
+        dialog.full_check.set_active(True)
+        assert dialog.day_spin.get_sensitive() is True
+        assert dialog.usual_entry.get_sensitive() is False
+        dialog._on_save(None)
+
+        card = app.db.get_account_by_name("Monthly card")
+        assert card.pays_in_full is True
+        assert card.payment_day == 17
+        reopened = self._dialog(accounts_view, card)
+        assert reopened.day_spin.get_sensitive() is True
+        assert reopened.day_spin.get_value_as_int() == 17
+
     def test_a_loan_can_name_its_asset(self, accounts_view, app):
         from breadsched.gen.lib import Account, AccountType
         from breadsched.gui.dialogs.account_dialog import _TYPES

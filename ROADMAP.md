@@ -6,7 +6,9 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0150 — `storage: canonicalize writer lock identity`**.
+Implementation status includes **0157 — card payment days and recent FSA years**;
+0157 remains pending Fedora validation. Unchecked field reports below are requests
+or suspected regressions, not claims that a root cause has already been confirmed.
 
 ## Status legend
 
@@ -79,6 +81,54 @@ semantics, not duplicate business rules in presentation code.
 
 ## Remaining hardening work
 
+- [x] **0157 — Keep paid-in-full card payment days editable.** A card cleared each
+  month still has a payment due day. Only the usual carried-balance payment amount
+  depends on the cleared-in-full setting; the due day remains editable and persists
+  when the setting changes or the editor is reopened.
+- [x] **0157 — Bound recently closed FSA years on the Dashboard.** GTK and web use
+  the shared query: show open years and at most one recently closed year per FSA
+  account, only through 90 days after its run-out deadline (or year end when no
+  run-out exists). Older years remain available in history. This supersedes the
+  earlier request to hide every closed year immediately.
+
+## Immediate field-report priorities
+
+1. **NEXT — Preserve imported schedule active state.** Silent reactivation can
+   create unintended future activity; repair import and re-import before widening
+   the schedule workflow. Details belong under Import and GnuCash interoperability.
+2. **NEXT — Historical estimator residual correctness.** Reproduce accepted
+   estimates increasing suggestions, omitted future schedules, and split-category
+   omissions together. Details and acceptance criteria belong under Historical estimator.
+3. **Dashboard balances and hierarchy**, followed by the scheduled-entry and import
+   usability work below. Mortgage planning-flow semantics require design review.
+
+## Dashboard balances and group hierarchy
+
+- [ ] **FSA group availability.** Show remaining funds for the applicable plan
+  year(s), using the shared FSA funding-year calculations at the Dashboard's as-of
+  date, instead of the custodial account ledger balance. Cover overlapping plan
+  years/run-out periods, exhausted and expired years, and missing year definitions.
+  GTK and web must present the same result and make unavailable year data explicit.
+- [ ] **Colon-separated group paths.** Accept account-style paths in configuration
+  and account group fields. For example, `Investments:Plan A` and `Investments:Plan B`
+  display as `Plan A` and `Plan B` under an `Investments` heading. Each leaf shows its
+  own total; each heading shows the sum of its children and any directly assigned
+  accounts. Support deeper paths and persist the full paths while displaying local
+  names. Compute the hierarchy and totals in the engine for GTK/web/CLI parity.
+- [ ] **Account-subtree deduplication.** A grouped parent account includes its whole
+  subtree exactly once. Explicitly selected descendants must not appear or be added
+  again beneath the same grouped parent. Resolve overlapping group assignments
+  consistently so heading/grand totals and liquidity calculations cannot count a
+  descendant twice. Cover parent-plus-child selections, nested descendants,
+  repeated handles, and mixed assets/liabilities with generic regression fixtures.
+- [ ] **Paid-off loans.** Omit paid-off loan entries from the Dashboard, including
+  loans linked to an asset. Preserve the asset's own visibility and value exactly
+  once; a linked asset must not keep a paid-off loan row visible. Test multiple
+  loans on one asset and distinguish a zero loan balance from a fully repaid loan
+  that still has stale future schedule occurrences.
+
+## Other hardening work
+
 - [x] **0138–0156 — Expanded quality gates.**
   - [x] **0154 — Add CLI/web to the mandatory mypy gate.** Correct CLI and web type
     errors and annotate comparison/dashboard results. The extended gate follows
@@ -143,8 +193,6 @@ semantics, not duplicate business rules in presentation code.
   not stored monthly budget cells.
 - [x] Base and saved scenarios support dated assumptions and scenario-specific
   estimate add/alter/suppress behavior.
-- [x] Accepted historical estimates count as already planned activity when analysis
-  is rerun, so estimation converges on residual need.
 - [x] Account planning roles are primary, with explicit split planning purpose as an
   override; Retirement, FSA/benefit, Loan/debt, and Investment roles feed planning
   semantics.
@@ -219,6 +267,15 @@ semantics, not duplicate business rules in presentation code.
 
 ## Register workflow
 
+- [ ] **Hidden account choices.** Exclude hidden accounts from account lists for
+  new transaction/split entry in GTK and web. When editing a transaction already
+  referencing a hidden account, preserve and identify that existing selection;
+  filtering must never silently replace a stored split account.
+- [ ] **One split-based transaction model.** Present ordinary entry as two splits
+  by default, with the same split model, validation, and editing path used for
+  additional legs. Retain atomic balanced postings and avoid separate financial
+  semantics for a two-account shortcut.
+
 - [ ] Allow multiple register windows/views at the same time; filters, selection,
   edit state, and navigation must remain local to each window/view.
 - [ ] Improve register appearance and information density while keeping account-type
@@ -238,6 +295,36 @@ semantics, not duplicate business rules in presentation code.
 
 ## Historical estimator
 
+- [ ] **Restore convergence after adding an estimate (reported regression).**
+  Adding an accepted scheduled estimate reportedly increases the next suggested
+  amount instead of reducing the uncovered need. Trace signs, selected scenario,
+  source schedule identity, and date windows from analysis through acceptance and
+  reanalysis. With unchanged assumptions, accepting the whole residual should
+  leave no duplicate suggestion; partial acceptance should reduce it by the amount
+  already covered. Replace the earlier completed-status claim with executable
+  regressions and explain gross inferred need, existing coverage, and residual.
+- [ ] **Scheduled coverage across history and future.** Verify how historical
+  actuals attributable to schedules enter inferred need, then subtract applicable
+  future planned coverage exactly once. Include schedules beginning after the
+  history window, scenario overrides/suppression, inactive schedules, and long-cycle
+  recurrences every two or three years. Avoid both missed future coverage and
+  subtracting a historical event and its future replacement twice.
+- [ ] **All split categories contribute.** Investigate scheduled multi-split
+  transactions omitted from category coverage. Use a generic combined bill with
+  several expense legs, including a service category also visible in history;
+  each leg must reduce that category's uncovered need with the correct sign.
+  Cover repeated legs to the same category, refunds, and exact arithmetic.
+- [ ] **Review before acceptance.** The suggestion's Add action should open the
+  populated Add Scheduled Transaction editor for adjustments to amount, accounts,
+  recurrence, dates, and splits. Commit only after Save; Cancel must leave no new
+  schedule. Reanalysis must use the actual saved values.
+- [ ] **One suggestion window per book/context.** Repeating Suggest from History
+  should foreground the existing window, not create another. Handle closing,
+  changing books, and scenario changes without stale references.
+- [ ] **Stable Add placement.** Place each suggestion's Add button before its
+  description in a stable column so resizing/scrolling does not detach the action
+  visually from the item it affects. Maintain equivalent web behavior.
+
 - [ ] Detect irregular-but-recurring activity more reliably.
 - [ ] Improve confidence scoring and outlier handling.
 - [ ] Provide richer explanations of history, cadence, trend, seasonality, and
@@ -248,6 +335,19 @@ semantics, not duplicate business rules in presentation code.
 
 ## Plan and planning-flow reporting
 
+- [ ] **Row and column totals.** Add totals across reporting periods for each row
+  and totals down each period column, including a clearly explained grand total.
+  Apply the same rules to actual, planned, and variance values. Do not count both
+  a category parent and its children or mix cash transfers with expense totals
+  without explicitly defined semantics; keep GTK and web consistent.
+- [ ] **Mortgage cash flow and liability projection — design review required.**
+  Evaluate showing the whole mortgage payment credited from the cash/asset account
+  in Plan while principal reduces the loan liability in Projection and interest
+  remains an expense. Reconcile cash, expense, principal, and net-worth totals;
+  avoid duplicate interest/principal and treating the whole payment as an expense.
+  The requested presentation is tentative and needs an agreed worked example
+  before changing financial classifications or Plan aggregation.
+
 - [ ] Add clearer unresolved/unexpected indicators in Plan.
 - [ ] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
   principal, and other economically meaningful balance-sheet flows.
@@ -257,6 +357,27 @@ semantics, not duplicate business rules in presentation code.
   comparison, and Dashboard consistently.
 
 ## Scheduled transactions and loans
+
+- [ ] **Frequency terminology.** Rename the displayed frequency `One off`/`One-off`
+  to `Once` consistently in GTK, web, previews, and help without changing persisted
+  recurrence identifiers or imported one-time semantics.
+- [ ] **Account-linked card payments.** Credit cards with payment days should appear
+  in scheduled/upcoming activity. Design an account-linked payment schedule type
+  if needed, defining statement/current-balance amounts, paid-in-full versus
+  carried-balance rules, date changes, and linkage to actual payment transactions.
+  Prevent duplicate forecasts when an explicit/imported payment schedule exists.
+- [ ] **Upcoming transaction activation.** Double-clicking upcoming activity in
+  the Upcoming view or Dashboard should open its view/edit workflow. Identify the
+  selected occurrence and distinguish editing it from editing the recurring
+  definition; opening the editor must not post a future transaction automatically.
+- [ ] **Duplicate and create from actual.** Provide Duplicate Scheduled Transaction
+  and Create Scheduled Transaction from an existing transaction. Populate a draft
+  for review and preserve all split accounts, amounts, memos, and planning purposes;
+  generate independent identities and prompt for applicable recurrence/dates.
+- [ ] **Delete schedules.** Provide a discoverable deletion action with appropriate
+  confirmation and atomic undo/redo. Retain already posted transactions and handle
+  scenario overrides, pending occurrences, resolutions, and imported-source
+  re-import behavior explicitly rather than leaving broken references.
 
 - [ ] Continue widening safe editing only where complete split/recurrence/import
   semantics can be round-tripped without guessing.
@@ -305,6 +426,13 @@ semantics, not duplicate business rules in presentation code.
 
 ## FSA / benefit accounts and claims
 
+- [ ] **Funding, direct payment, and indirect reimbursement flows.** Model payroll
+  splits funding an FSA separately from benefit availability and medical expense.
+  Cover direct FSA-to-medical-expense payments, FSA reimbursements through a bank
+  account, and medical charges paid via bank/credit-card chains. Link the claim,
+  payment, and reimbursement without counting expense or benefit usage twice;
+  preserve service dates, funding-year attribution, refunds, and reconciliation.
+
 - [ ] Improve Review suggestions and action explanations.
 - [ ] Add stronger Dashboard alerts for claims needing attention.
 - [ ] Handle over-reimbursement, reopened claims, late EOB changes, and correction
@@ -316,6 +444,38 @@ semantics, not duplicate business rules in presentation code.
   custodial account ledger balance.
 
 ## Import and GnuCash interoperability
+
+- [ ] **NEXT — Preserve inactive scheduled transactions.** Imported inactive
+  definitions reportedly become active. Trace both XML and SQLite active/enabled
+  fields through decoding, persistence, merge, display/editor saves, and occurrence
+  generation.
+  Inactive definitions must remain inspectable but generate no due/planned activity;
+  re-import must preserve the source's active state without silent reactivation.
+  Add generic initial-import and state-change/re-import regressions.
+- [ ] **Account type changes on re-import.** Respect authoritative GnuCash account
+  type changes while retaining stable identities and BreadSched-owned metadata.
+  Validate the effect on account roles, commodity/precision, balance signs,
+  schedules, and existing transactions; report incompatible changes explicitly.
+- [ ] **Supported scheduled formulas.** Investigate valid GnuCash formulas being
+  ignored even though the current safe formula system can represent them. Cover
+  parsing/translation, variables, recurrence ordinals, and per-leg formulas in both
+  import formats. Preserve unsupported expressions with actionable reasons rather
+  than silently discarding them or enabling unrestricted evaluation.
+- [ ] **Transaction-level notes/memos.** Determine whether GnuCash notes outside
+  individual splits are lost on import or omitted by the transaction editor/display.
+  Preserve and expose them separately from split memos, including on authoritative
+  source updates, while respecting ownership of locally authored notes.
+- [ ] **Remember the source book.** Import GnuCash into Current Book should remember
+  the last selected GnuCash source for that destination book and preselect it on
+  the next import. A missing/moved source should allow reselection; remembered paths
+  do not authorize an automatic import or writing to the GnuCash source.
+- [ ] **Precise import/re-import counts and skipped-item history.** Report matched
+  transactions overwritten/refreshed from authoritative GnuCash data separately
+  from new transactions and new splits. Define unchanged matches clearly. Persist
+  stable skipped-item identities and reasons per source so later reports separate
+  newly skipped records from previously reported skips and records now imported
+  successfully. Update this history atomically with import outcome and retain
+  BreadSched-owned metadata through source-authoritative updates.
 
 - [ ] Add OFX investment transactions.
 - [ ] Add useful QIF investment/security records.
