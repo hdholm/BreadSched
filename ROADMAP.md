@@ -54,9 +54,10 @@ roughly in this order:
 2. Harden the formula evaluator. Patch 0132 fixes fractional powers, keeps Python-style
    function argument commas distinct from GnuCash grouping commas, bounds expression
    complexity and powers, and converts evaluator failures consistently to ``FormulaError``.
-3. Harden the web parity surface: validate Host and Origin, require JSON for writes,
-   and use an unguessable per-server token (or an equivalently strong same-origin
-   design) with regression tests for hostile requests.
+3. Harden the web parity surface. Patch 0133 validates loopback Host/Origin,
+   requires JSON for writes, and requires an unguessable per-server token on API
+   requests, with transport-level regressions for missing tokens, foreign origins,
+   foreign hosts, and simple non-JSON cross-site writes.
 4. Preserve BreadSched-owned planning/classification/claim state across GnuCash
    re-import.  Longer term, move planning resolutions/classifications out of ledger
    objects where that materially simplifies safe synchronization.

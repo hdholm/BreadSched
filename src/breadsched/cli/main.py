@@ -1560,7 +1560,7 @@ def cmd_web(args: argparse.Namespace) -> int:
             raise CommandError(str(exc)) from exc
         except OSError as exc:
             raise CommandError(f"could not listen on {args.host}:{args.port}: {exc}") from exc
-        address = f"http://{args.host}:{httpd.server_port}/"
+        address = f"http://{args.host}:{httpd.server_port}/#token={httpd.token}"
         print(f"BreadSched is serving {args.book} at {address}")
         print("Press Ctrl+C to stop.")
         try:

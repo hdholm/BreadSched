@@ -5,14 +5,15 @@ third-party dependencies: a finance tool that people run on their own machine fo
 years should not rot because a web framework moved on. The whole surface is a small
 JSON API plus one static page.
 
-It binds to the loopback address only. There is no authentication, because there is
-no network exposure to authenticate against; if that ever changes, this docstring
-is wrong and the change needs more than a new bind address.
+It binds to loopback only and still treats browser requests as untrusted input.
+Every API request carries an unguessable per-server token, writes must be JSON, and
+Host/Origin checks reject cross-site and DNS-rebinding requests.
 """
 
 from __future__ import annotations
 
 import json
+import secrets
 import threading
 from calendar import monthrange
 from datetime import date
@@ -20,7 +21,7 @@ from decimal import Decimal
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
@@ -2408,6 +2409,9 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "BreadSched"
     api_object: Api
     lock: threading.Lock
+    token: str
+
+    _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
     def log_message(self, fmt: str, *args) -> None:  # noqa: A003 - base class name
         LOG.debug("%s %s", self.address_string(), fmt % args)
@@ -2439,13 +2443,38 @@ class Handler(BaseHTTPRequestHandler):
         }.get(path.suffix, "application/octet-stream")
         self._send(200, path.read_bytes(), kind)
 
+    def _trusted_host(self) -> bool:
+        host = urlparse(f"//{self.headers.get('Host', '')}").hostname
+        return host in self._LOCAL_HOSTS
+
+    def _trusted_origin(self) -> bool:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        parsed = urlparse(origin)
+        return parsed.scheme in {"http", "https"} and parsed.hostname in self._LOCAL_HOSTS
+
+    def _trusted_api_request(self, *, write: bool = False) -> bool:
+        if not self._trusted_host() or not self._trusted_origin():
+            return False
+        if write and self.headers.get_content_type() != "application/json":
+            return False
+        supplied = self.headers.get("X-BreadSched-Token", "")
+        return secrets.compare_digest(supplied, self.token)
+
     # ---------------------------------------------------------------- routing
 
     def do_GET(self) -> None:  # noqa: N802 - required by the base class
+        if not self._trusted_host():
+            self._json(403, {"error": "untrusted host"})
+            return
         parsed = urlparse(self.path)
         route = ROUTES.get(parsed.path)
         if route is None:
             self._static("index.html" if parsed.path in ("/", "") else parsed.path[1:])
+            return
+        if not self._trusted_api_request():
+            self._json(403, {"error": "untrusted request"})
             return
         query = parse_qs(parsed.query)
         try:
@@ -2460,6 +2489,9 @@ class Handler(BaseHTTPRequestHandler):
             self._json(500, {"error": str(exc)})
 
     def do_POST(self) -> None:  # noqa: N802 - required by the base class
+        if not self._trusted_api_request(write=True):
+            self._json(403, {"error": "untrusted request"})
+            return
         parsed = urlparse(self.path)
         route = POST_ROUTES.get(parsed.path)
         if route is None:
@@ -2481,7 +2513,13 @@ class Handler(BaseHTTPRequestHandler):
             self._json(400, {"error": str(exc)})
 
 
-def build_handler(db: DbSQLite) -> type[Handler]:
+class BreadSchedHTTPServer(ThreadingHTTPServer):
+    """Threaded local server carrying the API token exposed to the launcher."""
+
+    token: str
+
+
+def build_handler(db: DbSQLite, token: str) -> type[Handler]:
     """A handler class bound to one database, with a lock around every request.
 
     SQLite connections are not safe to share across threads, and the server is
@@ -2491,7 +2529,7 @@ def build_handler(db: DbSQLite) -> type[Handler]:
     return type(
         "BoundHandler",
         (Handler,),
-        {"api_object": Api(db), "lock": threading.Lock()},
+        {"api_object": Api(db), "lock": threading.Lock(), "token": token},
     )
 
 
@@ -2500,17 +2538,19 @@ def serve(
     host: str = "127.0.0.1",
     port: int = 8765,
     open_browser: bool = False,
-) -> ThreadingHTTPServer:
+) -> BreadSchedHTTPServer:
     """Start the server. Returns it without blocking; call ``serve_forever``."""
     if host not in ("127.0.0.1", "localhost", "::1"):
-        raise ValueError(
-            "the web interface has no authentication and binds to loopback only"
-        )
-    server = ThreadingHTTPServer((host, port), build_handler(db))
+        raise ValueError("the web interface binds to loopback only")
+    token = secrets.token_urlsafe(32)
+    server = BreadSchedHTTPServer((host, port), build_handler(db, token))
+    server.token = token
     if open_browser:  # pragma: no cover - depends on a desktop session
         import webbrowser
 
+        query = urlencode({"token": token})
         threading.Timer(
-            0.5, partial(webbrowser.open, f"http://{host}:{server.server_port}/")
+            0.5,
+            partial(webbrowser.open, f"http://{host}:{server.server_port}/#{query}"),
         ).start()
     return server

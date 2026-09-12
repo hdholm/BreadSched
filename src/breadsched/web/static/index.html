@@ -198,15 +198,20 @@ const money = (value) => {
 };
 const cls = (value) => (Number(value) < 0 ? "num neg" : "num");
 
+const params = new URLSearchParams(window.location.hash.slice(1));
+const apiToken = params.get("token") || "";
+if (params.has("token")) history.replaceState(null, "", window.location.pathname + window.location.search);
+const apiHeaders = () => ({ "X-BreadSched-Token": apiToken });
+
 async function get(path) {
-  const response = await fetch(path);
+  const response = await fetch(path, { headers: apiHeaders() });
   if (!response.ok) throw new Error((await response.json()).error || response.statusText);
   return response.json();
 }
 async function post(path, body) {
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { ...apiHeaders(), "Content-Type": "application/json" },
     body: JSON.stringify(body || {}),
   });
   const payload = await response.json();

@@ -72,20 +72,27 @@ def client(book_path):
 
     class Client:
         base_url = base
+        token = httpd.token
 
         def raw(self, path: str):
             with urllib.request.urlopen(base + path, timeout=10) as response:
                 return response.status, response.read(), response.headers
 
         def get(self, path: str):
-            status, body, _ = self.raw(path)
-            return status, json.loads(body)
+            request = urllib.request.Request(
+                base + path, headers={"X-BreadSched-Token": self.token}
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return response.status, json.loads(response.read())
 
         def post(self, path: str, payload: dict):
             request = urllib.request.Request(
                 base + path,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-BreadSched-Token": self.token,
+                },
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=10) as response:
@@ -131,16 +138,23 @@ def review_client(book_path):
     class Client:
         actual_handle = actual.handle
         occurrence = planned.occurrence_key(date(2026, 2, 5))
+        token = httpd.token
 
         def get(self, path: str):
-            with urllib.request.urlopen(base + path, timeout=10) as response:
+            request = urllib.request.Request(
+                base + path, headers={"X-BreadSched-Token": self.token}
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status, json.loads(response.read())
 
         def post(self, path: str, payload: dict):
             request = urllib.request.Request(
                 base + path,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-BreadSched-Token": self.token,
+                },
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=10) as response:
@@ -884,6 +898,50 @@ class TestSafety:
         finally:
             db.close()
 
+    def test_api_requires_the_startup_token(self, client):
+        request = urllib.request.Request(client.base_url + "/api/accounts")
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=10)
+        assert caught.value.code == 403
+
+    def test_foreign_origin_cannot_write_even_with_the_token(self, client):
+        request = urllib.request.Request(
+            client.base_url + "/api/transaction",
+            data=json.dumps({"description": "blocked request"}).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                "Origin": "https://example.invalid",
+                "X-BreadSched-Token": client.token,
+            },
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=10)
+        assert caught.value.code == 403
+
+    def test_non_json_write_is_rejected(self, client):
+        request = urllib.request.Request(
+            client.base_url + "/api/transaction",
+            data=b"{}",
+            headers={
+                "Content-Type": "text/plain",
+                "X-BreadSched-Token": client.token,
+            },
+            method="POST",
+        )
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=10)
+        assert caught.value.code == 403
+
+    def test_foreign_host_is_rejected(self, client):
+        request = urllib.request.Request(
+            client.base_url + "/",
+            headers={"Host": "example.invalid"},
+        )
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request, timeout=10)
+        assert caught.value.code == 403
+
 
 class TestCliIntegration:
     def test_the_web_command_exists(self, capsys):
@@ -938,6 +996,7 @@ class TestDashboardApi:
         assert 'let current = "Dashboard"' in page
         assert '"Dashboard", "Accounts"' in page
         assert "async function showDashboard" in page
+        assert '"X-BreadSched-Token"' in page
 
 
 class TestReviewApi:
@@ -1209,15 +1268,23 @@ def scenario_event_client(book_path):
     base = f"http://127.0.0.1:{httpd.server_port}"
 
     class Client:
+        token = httpd.token
+
         def get(self, path: str):
-            with urllib.request.urlopen(base + path, timeout=10) as response:
+            request = urllib.request.Request(
+                base + path, headers={"X-BreadSched-Token": self.token}
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status, json.loads(response.read())
 
         def post(self, path: str, payload: dict):
             request = urllib.request.Request(
                 base + path,
                 data=json.dumps(payload).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "X-BreadSched-Token": self.token,
+                },
                 method="POST",
             )
             with urllib.request.urlopen(request, timeout=10) as response:
