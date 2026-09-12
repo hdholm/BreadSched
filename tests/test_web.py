@@ -878,6 +878,39 @@ class TestWriting:
         assert caught.value.code in (400, 404, 500)
 
 
+class TestImportApi:
+    def test_qif_import_accepts_explicit_ambiguous_formats(self, client, tmp_path):
+        path = tmp_path / "ambiguous.qif"
+        path.write_text(
+            "!Account\nNImported checking\nTBank\n^\n!Type:Bank\n"
+            "D03/04/2026\nT12,50\nPExample\n^\n"
+        )
+
+        status, payload = client.post(
+            "/api/import",
+            {
+                "path": str(path),
+                "number_format": "comma",
+                "date_format": "day-first",
+                "include_scheduled": True,
+            },
+        )
+
+        assert status == 200
+        assert "QIF" in payload["format"]
+        assert "transactions" in payload["detail"]
+
+    def test_import_rejects_unknown_format_choice(self, client, tmp_path):
+        path = tmp_path / "sample.qif"
+        path.write_text("!Type:Bank\nD01/01/2026\nT1.00\nPExample\n^\n")
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/import",
+                {"path": str(path), "number_format": "guess-hard"},
+            )
+        assert caught.value.code == 400
+
+
 class TestSafety:
     def test_it_refuses_to_bind_beyond_loopback(self, book_path):
         """No authentication means no listening on a network interface."""

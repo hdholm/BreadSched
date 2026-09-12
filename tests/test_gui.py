@@ -578,6 +578,36 @@ class TestImportDialogState:
         assert "SQLite" in dialog.detected_label.get_text()
         assert dialog.import_button.get_sensitive() is True
 
+    def test_qif_exposes_number_and_date_format_choices(self, dialog, tmp_path):
+        path = tmp_path / "ambiguous.qif"
+        path.write_text("!Type:Bank\nD03/04/2026\nT12,50\nPExample\n^\n")
+
+        dialog.set_source(str(path))
+
+        assert dialog.format_box.get_visible() is True
+        assert dialog.number_format.get_visible() is True
+        assert dialog.date_format.get_visible() is True
+        dialog.number_format.set_selected(2)
+        dialog.date_format.set_selected(2)
+        assert dialog.number_format.get_selected() == 2
+        assert dialog.date_format.get_selected() == 2
+
+    def test_ofx_exposes_number_but_not_qif_date_choice(self, dialog, tmp_path):
+        path = tmp_path / "statement.ofx"
+        path.write_text(
+            "OFXHEADER:100\nDATA:OFXSGML\n\n<OFX><BANKMSGSRSV1>"
+            "<STMTTRNRS><STMTRS><BANKTRANLIST><STMTTRN>"
+            "<TRNTYPE>DEBIT<DTPOSTED>20260304<TRNAMT>-12.50"
+            "</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS>"
+            "</BANKMSGSRSV1></OFX>"
+        )
+
+        dialog.set_source(str(path))
+
+        assert dialog.format_box.get_visible() is True
+        assert dialog.number_format.get_visible() is True
+        assert dialog.date_format.get_visible() is False
+
     def test_a_result_is_cleared_when_another_file_is_chosen(
         self, dialog, gnucash_sqlite_path, gnucash_xml_path
     ):

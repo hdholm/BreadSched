@@ -63,6 +63,18 @@ class ImportDialog(Gtk.Window):
         self.detected_label = Gtk.Label(xalign=0)
         box.append(self.detected_label)
 
+        self.format_box = Gtk.Box(spacing=8)
+        self.number_format = Gtk.DropDown.new_from_strings([
+            "Auto-detect number format", "Period decimal (1,234.56)", "Comma decimal (1.234,56)"
+        ])
+        self.date_format = Gtk.DropDown.new_from_strings([
+            "Auto-detect QIF date order", "Month first (MM/DD)", "Day first (DD/MM)"
+        ])
+        self.format_box.append(self.number_format)
+        self.format_box.append(self.date_format)
+        self.format_box.set_visible(False)
+        box.append(self.format_box)
+
         self.scheduled_check = Gtk.CheckButton(
             label="Import scheduled transactions when supported", active=True
         )
@@ -138,6 +150,14 @@ class ImportDialog(Gtk.Window):
             self.detected_label.remove_css_class("negative")
             self.import_button.set_sensitive(True)
         self._plugin = plugin
+        if plugin is None:
+            self.format_box.set_visible(False)
+        else:
+            is_qif = plugin.id == "qif"
+            is_ofx = plugin.id == "ofx"
+            self.format_box.set_visible(is_qif or is_ofx)
+            self.number_format.set_visible(is_qif or is_ofx)
+            self.date_format.set_visible(is_qif)
 
     def _on_progress(self, stage: str, done: int, total: int) -> None:
         """Show how far the import has got, and keep the window responsive.
@@ -197,11 +217,19 @@ class ImportDialog(Gtk.Window):
             )
 
         try:
-            result = self._plugin.run(
-                self.db, self.path,
-                include_scheduled=self.scheduled_check.get_active(),
-                progress=self._on_progress,
-            )
+            kwargs = {
+                "include_scheduled": self.scheduled_check.get_active(),
+                "progress": self._on_progress,
+            }
+            if self._plugin.id in {"qif", "ofx"}:
+                kwargs["number_format"] = ("auto", "dot", "comma")[
+                    self.number_format.get_selected()
+                ]
+            if self._plugin.id == "qif":
+                kwargs["date_format"] = ("auto", "month-first", "day-first")[
+                    self.date_format.get_selected()
+                ]
+            result = self._plugin.run(self.db, self.path, **kwargs)
         except Exception as exc:  # noqa: BLE001 - shown to the user, and logged
             LOG.exception("import of %s failed", self.path)
             lines = [f"Import failed: {exc}", "", "Nothing was written to the book."]

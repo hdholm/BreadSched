@@ -273,3 +273,11 @@ the README or design document as an alternate TODO list.
 ## Money and exact arithmetic
 
 Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality.
+
+### Ambiguous import formats are user-resolvable
+
+Importers should infer date/number conventions from whole-file evidence where possible,
+not guess independently for each record. When evidence is ambiguous, both reference GTK4
+and parity web workflows expose explicit overrides and pass those choices into the same
+importer implementation. Web import currently operates on a local path visible to the
+BreadSched process; transport convenience must not create a second import semantics layer.

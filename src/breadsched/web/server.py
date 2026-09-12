@@ -63,6 +63,7 @@ from ..gen.lib import (
     scheduled_occurrence_preview,
 )
 from ..gen.lib.base import create_handle
+from ..gen.plug import IMPORTER, PluginManager
 from ..gen.utils.logs import get_logger
 
 __all__ = ["serve", "build_handler", "api"]
@@ -2292,6 +2293,30 @@ class Api:
                 self.db.commit_scheduled(item, txn)
         return {"handle": item.handle, "name": item.name}
 
+
+    def import_local(self, payload: dict) -> dict:
+        path = str(payload.get("path") or "").strip()
+        if not path:
+            raise ValueError("choose a file to import")
+        plugin = PluginManager.instance().for_file(path, IMPORTER)
+        if plugin is None:
+            raise ValueError("file format is not recognised")
+        kwargs: dict[str, object] = {
+            "include_scheduled": bool(payload.get("include_scheduled", True))
+        }
+        if plugin.id in {"qif", "ofx"}:
+            number_format = str(payload.get("number_format") or "auto")
+            if number_format not in {"auto", "dot", "comma"}:
+                raise ValueError("choose a valid number format")
+            kwargs["number_format"] = number_format
+        if plugin.id == "qif":
+            date_format = str(payload.get("date_format") or "auto")
+            if date_format not in {"auto", "month-first", "day-first"}:
+                raise ValueError("choose a valid QIF date order")
+            kwargs["date_format"] = date_format
+        result = plugin.run(self.db, path, **kwargs)
+        return {"format": plugin.name, "detail": result.detail(limit=50)}
+
     def post_scheduled(self) -> dict:
         posted = schedule.post_due(self.db, only_auto=False)
         return {
@@ -2380,6 +2405,7 @@ POST_ROUTES = {
     "/api/fsa/claim/save": lambda a, body: a.fsa_claim_save(body),
     "/api/fsa/claim/delete": lambda a, body: a.fsa_claim_delete(body),
     "/api/transaction": lambda a, body: a.add_transaction(body),
+    "/api/import": lambda a, body: a.import_local(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),
     "/api/scheduled/save": lambda a, body: a.scheduled_save(body),

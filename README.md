@@ -212,7 +212,8 @@ planning and projection capabilities without abandoning a mature existing book.
 Current compatibility includes accounts, transactions, commodities, scheduled
 transactions, formula schedules, reconciliation state, and an expanding set of
 account metadata. QIF and OFX imports detect period-vs-comma decimal conventions
-from the source file rather than silently stripping punctuation. QIF likewise detects
+from the source file rather than silently stripping punctuation. GTK4 and web import
+workflows can override that detection when a file is ambiguous. QIF likewise detects
 month-first versus day-first date order from the complete file when the source gives
 unambiguous evidence. Ambiguous number/date formats can be selected explicitly by
 importer callers instead of being guessed per transaction.
@@ -220,7 +221,9 @@ importer callers instead of being guessed per transaction.
 Import problems are reported per record rather than aborting the
 entire book whenever safe recovery is possible.
 
-Native QIF and OFX/QFX importers are also available for bank/cash/credit-card style
+The web import view accepts a local file path visible to the BreadSched process; browser-native
+file upload is planned as a convenience improvement. Native QIF and OFX/QFX importers
+are also available for bank/cash/credit-card style
 history. Their supported and pending formats are tracked in `ROADMAP.md`.
 
 ## FSA / benefit planning

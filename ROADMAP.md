@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0142 — `import: detect QIF date order`**.
+Status is current through patch **0143 — `import: expose ambiguous format choices`**.
 
 ## Status legend
 
@@ -312,12 +312,13 @@ semantics, not duplicate business rules in presentation code.
   reliably.
 - [ ] Expand duplicate/re-import tests, including cross-file duplicate heuristics.
 - [ ] Improve import summaries/problem reporting.
+- [ ] Add browser-native file upload to the web import view; 0143 provides functional parity through local paths visible to the BreadSched process.
 - [ ] Cover richer transfer/category mapping and real-world QIF/OFX deviations.
 - [ ] Continue representative GnuCash compatibility fixtures for accounts,
   transactions, reconciliation, commodities, schedules, formula loans, and unusual
   but valid structures.
 - [ ] Add multi-currency valuation and exchange-rate/price handling.
-- [ ] Expose QIF date-order and QIF/OFX number-format selection in import UI when auto-detection is ambiguous (0141/0142 provide importer-level overrides).
+- [x] **0143 — Expose ambiguous import-format choices.** GTK4 and web import workflows expose QIF date-order and QIF/OFX number-format overrides while keeping auto-detection as the default.
 - [ ] Report missing import dates explicitly rather than silently substituting today.
 - [ ] Investigate/cover older GnuCash SQLite timezone/date conventions.
 
