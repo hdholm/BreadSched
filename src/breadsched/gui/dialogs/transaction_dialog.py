@@ -20,6 +20,7 @@ from datetime import date
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import fsa_claims
 from ...gen.lib import Money, ReconcileState, Split, Transaction, UnbalancedError
+from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 
 __all__ = ["TransactionDialog"]
@@ -75,7 +76,7 @@ class SplitEditor:
         if not text:
             return None
         try:
-            return Money(text)
+            return Money(parse_user_amount(text))
         except (ValueError, ArithmeticError):
             return None
 

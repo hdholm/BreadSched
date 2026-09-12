@@ -541,6 +541,19 @@ class TestDialogs:
         assert dialog.save_button.get_sensitive() is True
         assert "blank split will be set to" in dialog.status.get_text()
 
+    def test_transaction_amount_accepts_comma_decimal_input(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Money
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        dialog = TransactionDialog(window, app.db)
+        dialog.splits[0].amount.set_text("45,67")
+
+        assert dialog.splits[0].value() == Money("45.67")
+        assert dialog.save_button.get_sensitive() is True
+
     def test_the_transaction_dialog_posts(self, app, window, populated_book):
         from breadsched.gen.lib import Money
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog

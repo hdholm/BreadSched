@@ -16,6 +16,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.loans import LoanTerms, create_loan, schedule_preview
 from ...gen.lib import Money
 from ...gen.lib.account import AccountClass
+from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 
 __all__ = ["LoanDialog"]
@@ -148,7 +149,7 @@ class LoanDialog(Gtk.Window):
         if not name or not (self._liabilities and self._expenses and self._funding):
             return None
         try:
-            principal = Money(self.amount_entry.get_text().strip())
+            principal = Money(parse_user_amount(self.amount_entry.get_text().strip()))
             rate = Decimal(self.rate_entry.get_text().strip() or "0") / Decimal(100)
             start = date.fromisoformat(self.start_entry.get_text().strip())
         except (ValueError, ArithmeticError, InvalidOperation):

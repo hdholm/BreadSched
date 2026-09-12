@@ -21,6 +21,7 @@ from decimal import Decimal
 from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Literal, cast
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from ..gen.db.sqlite import DbSQLite
@@ -42,6 +43,7 @@ from ..gen.lib import (
     Assumptions,
     FsaClaim,
     FsaClaimAllocation,
+    FsaClaimRejection,
     FsaClaimSplitLink,
     FsaFundingYear,
     Money,
@@ -64,6 +66,7 @@ from ..gen.lib import (
 )
 from ..gen.lib.base import create_handle
 from ..gen.plug import IMPORTER, PluginManager
+from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..gen.utils.logs import get_logger
 
 __all__ = ["serve", "build_handler", "api"]
@@ -82,6 +85,17 @@ def _encode(value: object) -> object:
 
 class Api:
     """The JSON surface. Every method returns plain data, never a response object."""
+
+    @staticmethod
+    def _input_money(payload: dict, raw: object) -> Money:
+        """Parse a browser-entered amount using the browser decimal convention."""
+        if isinstance(raw, (list, tuple)) and len(raw) == 2:
+            return Money(int(raw[0]), int(raw[1]))
+        number_format = str(payload.get("number_format") or "auto")
+        if number_format not in {"auto", "dot", "comma"}:
+            raise ValueError("invalid number format")
+        selected = cast(NumberFormat | Literal["auto"], number_format)
+        return Money(parse_user_amount(str(raw).strip(), selected))
 
     def __init__(self, db: DbSQLite) -> None:
         self.db = db
@@ -265,7 +279,7 @@ class Api:
             years.append(FsaFundingYear(
                 start=date.fromisoformat(str(raw["start"])),
                 through=date.fromisoformat(str(raw["through"])),
-                election=Money(str(raw["election"])),
+                election=self._input_money(payload, raw["election"]),
                 runout_through=date.fromisoformat(runout) if runout else None,
             ))
         years.sort(key=lambda year: year.start)
@@ -369,11 +383,31 @@ class Api:
             service_date=date.fromisoformat(str(payload["service_date"])),
             provider=str(payload.get("provider", "")).strip(),
             description=str(payload.get("description", "")).strip(),
-            eob_responsibility=Money(eob) if eob else None,
+            eob_responsibility=self._input_money(payload, eob) if eob else None,
             payments=[FsaClaimSplitLink.from_dict(item) for item in payload.get("payments", [])],
             refunds=[FsaClaimSplitLink.from_dict(item) for item in payload.get("refunds", [])],
             allocations=[
-                FsaClaimAllocation.from_dict(item)
+                FsaClaimAllocation(
+                    account=str(item["account"]),
+                    funding_year_start=date.fromisoformat(str(item["funding_year_start"])),
+                    target=(
+                        self._input_money(payload, item["target"])
+                        if item.get("target") not in (None, "")
+                        else None
+                    ),
+                    reimbursements=[
+                        FsaClaimSplitLink.from_dict(link)
+                        for link in item.get("reimbursements", [])
+                    ],
+                    rejections=[
+                        FsaClaimRejection(
+                            attempted_on=date.fromisoformat(str(rejection["attempted_on"])),
+                            amount=self._input_money(payload, rejection["amount"]),
+                            reason=str(rejection.get("reason", "")),
+                        )
+                        for rejection in item.get("rejections", [])
+                    ],
+                )
                 for item in payload.get("allocations", [])
             ],
         )
@@ -1026,7 +1060,7 @@ class Api:
                 raise ValueError("future amount entry is invalid")
             try:
                 when = date.fromisoformat(str(raw.get("start") or ""))
-                amount = abs(Money(str(raw.get("amount") or "")))
+                amount = abs(Api._input_money(payload, raw.get("amount") or ""))
             except (ValueError, ArithmeticError):
                 raise ValueError(
                     "future amounts require YYYY-MM-DD dates and valid amounts"
@@ -1075,7 +1109,7 @@ class Api:
                 raise ValueError("one-time amount entry is invalid")
             try:
                 when = date.fromisoformat(str(raw.get("when") or ""))
-                amount = abs(Money(str(raw.get("amount") or "")))
+                amount = abs(Api._input_money(payload, raw.get("amount") or ""))
             except (ValueError, ArithmeticError):
                 raise ValueError(
                     "one-time amounts require YYYY-MM-DD dates and valid amounts"
@@ -1107,7 +1141,7 @@ class Api:
             if account is None or handle in used:
                 raise ValueError("each additional split needs a different account")
             try:
-                amount = Money(str(raw.get("amount") or "0"))
+                amount = self._input_money(payload, raw.get("amount") or "0")
             except (ValueError, ArithmeticError) as exc:
                 raise ValueError("additional split amount must be a valid number") from exc
             if amount <= 0:
@@ -1154,7 +1188,7 @@ class Api:
         if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
             raise ValueError("choose an income or expense category")
         try:
-            amount = abs(Money(str(payload.get("amount", "")).strip()))
+            amount = abs(self._input_money(payload, payload.get("amount", "")))
         except (ValueError, ArithmeticError):
             raise ValueError("enter a valid amount") from None
         if not amount:
@@ -1994,7 +2028,7 @@ class Api:
         if debit is None or credit is None:
             raise KeyError("unknown account")
         when = date.fromisoformat(payload.get("date") or date.today().isoformat())
-        amount = Money(str(payload["amount"]))
+        amount = self._input_money(payload, payload["amount"])
         txn = Transaction(
             post_date=when, description=payload.get("description", "").strip()
         )
@@ -2134,7 +2168,7 @@ class Api:
         raw_amount = str(payload.get("amount") or "").strip()
         if raw_amount:
             try:
-                amount = abs(Money(raw_amount))
+                amount = abs(self._input_money(payload, raw_amount))
             except (ValueError, ArithmeticError) as exc:
                 raise ValueError("amount must be a valid number") from exc
             if not amount:
@@ -2183,7 +2217,7 @@ class Api:
             raise ValueError("category must be an income or expense account")
 
         try:
-            amount = Money(str(payload.get("amount") or "0"))
+            amount = self._input_money(payload, payload.get("amount") or "0")
         except (ValueError, ArithmeticError) as exc:
             raise ValueError("amount must be a valid number") from exc
         if amount <= 0:

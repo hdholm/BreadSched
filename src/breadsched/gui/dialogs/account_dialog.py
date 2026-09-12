@@ -25,6 +25,7 @@ from ...gen.lib import (
     Money,
     Transaction,
 )
+from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 
 __all__ = ["AccountDialog"]
@@ -355,7 +356,7 @@ class AccountDialog(Gtk.Window):
             years.append(FsaFundingYear(
                 date.fromisoformat(start.get_text().strip()),
                 date.fromisoformat(through.get_text().strip()),
-                Money(election.get_text().strip()),
+                Money(parse_user_amount(election.get_text().strip())),
                 date.fromisoformat(runout.get_text().strip())
                 if runout.get_text().strip() else None,
             ))
@@ -456,7 +457,7 @@ class AccountDialog(Gtk.Window):
             account.pays_in_full = self.full_check.get_active()
             text = self.usual_entry.get_text().strip()
             try:
-                account.usual_payment = Money(text) if text else None
+                account.usual_payment = Money(parse_user_amount(text)) if text else None
             except (ValueError, InvalidOperation, ArithmeticError):
                 account.usual_payment = None
             account.payment_day = int(self.day_spin.get_value())
@@ -483,7 +484,7 @@ class AccountDialog(Gtk.Window):
         if equity is None:
             return
         try:
-            value = Money(amount)
+            value = Money(parse_user_amount(amount))
         except (ValueError, InvalidOperation, ArithmeticError, Decimal):
             return
         from datetime import date

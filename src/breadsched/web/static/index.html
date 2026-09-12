@@ -202,6 +202,11 @@ const params = new URLSearchParams(window.location.hash.slice(1));
 const apiToken = params.get("token") || "";
 if (params.has("token")) history.replaceState(null, "", window.location.pathname + window.location.search);
 const apiHeaders = () => ({ "X-BreadSched-Token": apiToken });
+const browserNumberFormat = (() => {
+  const decimal = new Intl.NumberFormat().formatToParts(1.1)
+    .find((part) => part.type === "decimal")?.value;
+  return decimal === "," ? "comma" : "dot";
+})();
 
 async function get(path) {
   const response = await fetch(path, { headers: apiHeaders() });
@@ -212,7 +217,7 @@ async function post(path, body) {
   const response = await fetch(path, {
     method: "POST",
     headers: { ...apiHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify(body || {}),
+    body: JSON.stringify({ number_format: browserNumberFormat, ...(body || {}) }),
   });
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.error || response.statusText);
@@ -575,16 +580,14 @@ async function openFsaClaimsEditor(initialHandle=null) {
     const allocationPayload = Array.from(allocations.children).map((row) => {
       const fields = row._claimFields;
       const targetValue = fields.target.value.trim();
-      const targetMoney = targetValue ? Math.round(Number(targetValue) * 100) : null;
       const rejections = Array.from(fields.rejections.children).map((rejectionRow) => {
         const r = rejectionRow._rejectionFields;
-        const cents = Math.round(Number(r.amount.value) * 100);
-        return { attempted_on:r.attempted.value, amount:[cents, 100], reason:r.reason.value.trim() };
+        return { attempted_on:r.attempted.value, amount:r.amount.value.trim(), reason:r.reason.value.trim() };
       });
       return {
         account:fields.accountSelect.value,
         funding_year_start:fields.yearSelect.value,
-        target:targetMoney === null ? null : [targetMoney, 100],
+        target:targetValue || null,
         reimbursements:Array.from(fields.reimburse.selectedOptions).map(
           (option)=>JSON.parse(option.value)),
         rejections,

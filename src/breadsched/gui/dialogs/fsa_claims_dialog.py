@@ -15,6 +15,7 @@ from ...gen.lib import (
     FsaClaimSplitLink,
     Money,
 )
+from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import GLib, Gtk
 
 __all__ = ["FsaClaimsDialog"]
@@ -128,13 +129,17 @@ class _AllocationRow(Gtk.Frame):
             parts = [part.strip() for part in raw.split("|", 2)]
             if len(parts) < 2:
                 raise ValueError("Rejected attempts use date | amount | reason")
-            rejections.append(FsaClaimRejection(
-                date.fromisoformat(parts[0]), Money(parts[1]), parts[2] if len(parts) > 2 else ""
-            ))
+            rejections.append(
+                FsaClaimRejection(
+                    date.fromisoformat(parts[0]),
+                    Money(parse_user_amount(parts[1])),
+                    parts[2] if len(parts) > 2 else "",
+                )
+            )
         return FsaClaimAllocation(
             account=account.handle,
             funding_year_start=year.start,
-            target=Money(target_text) if target_text else None,
+            target=Money(parse_user_amount(target_text)) if target_text else None,
             reimbursements=self.reimburse.links(),
             rejections=rejections,
         )
@@ -361,14 +366,14 @@ class FsaClaimsDialog(Gtk.Window):
                 service_date=date.fromisoformat(self.service.get_text().strip()),
                 provider=self.provider.get_text().strip(),
                 description=self.description.get_text().strip(),
-                eob_responsibility=Money(eob_text) if eob_text else None,
+                eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
                 payments=self.payments.links(), refunds=self.refunds.links(),
                 allocations=[row.value() for row in self._allocation_rows],
             ) if self.current else FsaClaim(
                 service_date=date.fromisoformat(self.service.get_text().strip()),
                 provider=self.provider.get_text().strip(),
                 description=self.description.get_text().strip(),
-                eob_responsibility=Money(eob_text) if eob_text else None,
+                eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
                 payments=self.payments.links(), refunds=self.refunds.links(),
                 allocations=[row.value() for row in self._allocation_rows],
             )

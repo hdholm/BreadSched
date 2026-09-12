@@ -30,6 +30,7 @@ from ...gen.lib import (
     evaluate,
     scheduled_occurrence_preview,
 )
+from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
@@ -639,7 +640,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         if not text:
             return None
         try:
-            amount = Money(text)
+            amount = Money(parse_user_amount(text))
         except (ValueError, ArithmeticError):
             return None
         return abs(amount) if amount else None
@@ -653,7 +654,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         try:
             for when_text, amount_text in values:
                 when = date.fromisoformat(when_text)
-                amount = Money(amount_text)
+                amount = Money(parse_user_amount(amount_text))
                 if amount <= 0:
                     return None
                 changes.append(ScheduledAmountChange(when, amount))
@@ -691,7 +692,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         try:
             for when_text, amount_text in values:
                 when = date.fromisoformat(when_text)
-                amount = Money(amount_text)
+                amount = Money(parse_user_amount(amount_text))
                 if amount <= 0:
                     return None
                 changes.append(ScheduledOccurrenceAdjustment(when, amount))
@@ -756,7 +757,7 @@ class ScenarioScheduleDialog(Gtk.Window):
                     break
                 selected_accounts.add(account_index)
                 try:
-                    extra_amount = Money(raw_amount)
+                    extra_amount = Money(parse_user_amount(raw_amount))
                 except (ValueError, ArithmeticError):
                     problems.append("check additional split amounts")
                     break
@@ -826,7 +827,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             account_index, raw_amount, purpose_index, memo, direction_index
         ) in self.additional_splits.values():
             account = self._accounts[account_index]
-            extra_amount = Money(raw_amount)
+            extra_amount = Money(parse_user_amount(raw_amount))
             purpose = _PLANNING_FLOWS[purpose_index][1]
             value = (
                 purpose.ledger_amount(extra_amount)

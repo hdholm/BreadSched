@@ -872,6 +872,25 @@ class TestWriting:
         balance = next(a["balance"] for a in accounts if a["name"] == "Checking")
         assert Money(balance) == Money("2275.00")
 
+    def test_a_transaction_accepts_comma_decimal_browser_input(self, client):
+        status, payload = client.post(
+            "/api/transaction",
+            {
+                "date": "2026-02-02",
+                "description": "Localized web entry",
+                "from": "Assets:Checking",
+                "to": "Expenses:Rent",
+                "amount": "45,67",
+                "number_format": "comma",
+            },
+        )
+        assert status == 200
+        assert payload.get("ok") or payload.get("handle")
+
+        _status, accounts = client.get("/api/accounts")
+        balance = next(a["balance"] for a in accounts if a["name"] == "Checking")
+        assert Money(balance) == Money("2354.33")
+
     def test_an_unbalanced_request_is_refused_cleanly(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post("/api/transaction", {"description": "nonsense"})

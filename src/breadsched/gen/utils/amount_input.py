@@ -7,13 +7,20 @@ infer one from the complete source before parsing individual amounts.
 
 from __future__ import annotations
 
+import locale
 from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 NumberFormat = Literal["dot", "comma"]
 
-__all__ = ["NumberFormat", "detect_number_format", "parse_decimal_amount"]
+__all__ = [
+    "NumberFormat",
+    "detect_number_format",
+    "parse_decimal_amount",
+    "parse_user_amount",
+    "user_number_format",
+]
 
 
 def _unsigned_text(raw: str) -> str:
@@ -86,3 +93,32 @@ def parse_decimal_amount(raw: str, number_format: NumberFormat) -> Decimal:
         return Decimal(normalized)
     except InvalidOperation as exc:
         raise ValueError(f"invalid amount {raw!r}") from exc
+
+
+def user_number_format() -> NumberFormat:
+    """Return the current process' preferred decimal convention for user input.
+
+    Python may run with the neutral ``C`` numeric locale even when the desktop is
+    localized, so callers should treat this only as the tie-breaker for genuinely
+    ambiguous values.  Unambiguous comma- or period-decimal text is detected from
+    the value itself by :func:`parse_user_amount`.
+    """
+    return "comma" if locale.localeconv().get("decimal_point") == "," else "dot"
+
+
+def parse_user_amount(
+    raw: str,
+    number_format: NumberFormat | Literal["auto"] = "auto",
+) -> Decimal:
+    """Parse an amount typed by a person without weakening core ``Money`` parsing.
+
+    ``auto`` accepts unambiguous period- or comma-decimal text and uses the current
+    numeric locale only when a single value cannot identify its convention (for
+    example ``1,234``).  A presentation that knows its locale, such as the web
+    client, should pass an explicit convention so ambiguous grouping is stable.
+    """
+    raw = raw.strip().replace("$", "")
+    selected = number_format
+    if selected == "auto":
+        selected = detect_number_format([raw]) or user_number_format()
+    return parse_decimal_amount(raw, selected)

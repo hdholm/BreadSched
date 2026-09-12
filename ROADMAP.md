@@ -106,7 +106,7 @@ semantics, not duplicate business rules in presentation code.
   - [x] **0140 — Core parsing/comparison safety.** Ambiguous locale-formatted strings are rejected instead of silently mis-scaled; equality/hash behavior follows Python's numeric contract; non-numeric equality does not raise.
   - [x] **0141 — QIF/OFX number-format parsing.** Detect period-vs-comma decimal conventions from the complete import file, parse grouping explicitly, reject conflicting conventions, and allow an explicit importer override for ambiguous files.
   - [x] **0142 — QIF date-order parsing.** Detect month-first versus day-first ordering from complete-file evidence, reject conflicting evidence, preserve year-first dates, and allow an explicit importer override for all-ambiguous files.
-  - [ ] Extend explicit locale-aware amount parsing to GTK/web user-entry boundaries rather than asking the core `Money` constructor to guess locale.
+  - [x] **0153 — Locale-aware GTK/web amount entry.** Route typed amounts through one boundary parser, accept period- or comma-decimal input without weakening core `Money`, send the browser decimal convention with writes, and remove JavaScript floating-point conversion from FSA amount entry.
   - [x] **0152 — Dimensional Money/Rate semantics.** Reject `Money * Money`, make
     `Money / Money` an exact dimensionless ratio, and represent scenario growth,
     inflation, return, and interest assumptions with a Decimal-compatible `Rate`
