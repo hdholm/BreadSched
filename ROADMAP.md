@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0138 — `quality: add performance and recurrence gates`**.
+Status is current through patch **0139 — `quality: repair legacy CLI budget filters`**.
 
 ## Status legend
 
@@ -81,7 +81,8 @@ semantics, not duplicate business rules in presentation code.
 
 - [ ] **NEXT — Finish quality-gate expansion.**
   - [ ] Extend mypy coverage to CLI and web, then GUI with an explicit baseline where
-    necessary.
+    necessary. `make typecheck-extended` now exposes the CLI/web audit scope; reduce
+    those errors before moving it into the mandatory `make check` gate.
   - [ ] Eliminate current formatting debt, then add `ruff format --check` to the
     mandatory local/CI gate. A `make format-check` audit target exists now.
   - [x] Keep Host/Origin/token web-security regressions in the standard gate.
@@ -94,9 +95,12 @@ semantics, not duplicate business rules in presentation code.
   - [x] Continue pytest-xdist rollout: core/non-GTK uses `pytest -n auto`; GTK stays
     serial and the realistic performance gate runs separately with `-n 0`.
   - [x] Preserve `make test-ordered` / `pytest -n 0` as a deterministic diagnostic path.
-- [ ] Fix documented CLI commands that still depend on legacy Budget APIs or stale
-  method names; extend static analysis so these failures cannot hide outside the
-  current mypy scope.
+- [x] **0139 — Repair stale legacy-budget CLI lookups.** Documented `activity`,
+  `plan-unresolved`, and `plan-matches` budget filters use the supported database
+  iteration API instead of a nonexistent `get_budget_by_name` method, with CLI
+  regressions covering the documented options.
+- [ ] Continue reducing CLI/web typing debt and move the extended mypy audit into the
+  mandatory gate once the scope is clean or has a narrowly documented baseline.
 - [ ] Harden `Money` and amount handling:
   - explicit locale-aware parsing instead of silently misreading European formats;
   - correct equality/hash behavior and safe comparison failure semantics;

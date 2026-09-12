@@ -200,6 +200,72 @@ class TestBudgetAndProjection:
         assert result["actual_amount"] == "25.00"
         assert result["unexpected_count"] == 1
 
+    def test_legacy_budget_filters_use_supported_lookup(self, capsys, book_path):
+        run(capsys, "init", book_path)
+        run(
+            capsys,
+            "budget-set",
+            book_path,
+            "--name",
+            "Legacy plan",
+            "--account",
+            "Expenses",
+            "--amount",
+            "100.00",
+            "--start",
+            "2026-01-01",
+        )
+
+        activity_result = run_json(
+            capsys,
+            "activity",
+            book_path,
+            "--start",
+            "2026-01-01",
+            "--end",
+            "2026-01-31",
+            "--budget",
+            "Legacy plan",
+        )
+        assert activity_result["periods"]
+
+        assert run_json(
+            capsys,
+            "plan-unresolved",
+            book_path,
+            "--start",
+            "2026-01-01",
+            "--end",
+            "2026-01-31",
+            "--budget",
+            "Legacy plan",
+        ) == []
+
+        run(
+            capsys,
+            "add",
+            book_path,
+            "--date",
+            "2026-01-10",
+            "--description",
+            "Generic purchase",
+            "--from",
+            "Assets",
+            "--to",
+            "Expenses",
+            "--amount",
+            "10.00",
+        )
+        posted = run_json(capsys, "register", book_path, "Assets")[0]
+        assert run_json(
+            capsys,
+            "plan-matches",
+            book_path,
+            posted["handle"],
+            "--budget",
+            "Legacy plan",
+        ) == []
+
     def test_plan_resolution_commands_preserve_user_decisions(self, capsys, book_path):
         from datetime import date
 

@@ -69,7 +69,9 @@ Before handing off a patch:
 6. Run focused tests, then the broadest practical suite. GTK runtime tests on a
    real GTK environment are authoritative for GUI behavior.
 7. Run the repository quality gates, especially Ruff and mypy. `make check` is the
-   preferred final local verification when dependencies are available.
+   preferred final local verification when dependencies are available. Use
+   `make typecheck-extended` while reducing CLI/web typing debt; it is an audit
+   target until that scope is clean enough to join the mandatory gate.
 8. Generate the deliverable with `git format-patch`.
 9. Verify the final mailbox patch with a real `git am` against the exact preceding
    accepted state.

@@ -594,6 +594,11 @@ def cmd_budget(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _budget_by_name(db: DbSQLite, name: str) -> Budget | None:
+    """Return a legacy Budget by exact name without relying on SQLite-only helpers."""
+    return next((budget for budget in db.iter_budgets() if budget.name == name), None)
+
+
 def cmd_activity(args: argparse.Namespace) -> int:
     """Show event-driven plan versus actuals in display-only time buckets."""
     db = open_book(args.book, "r")
@@ -604,7 +609,7 @@ def cmd_activity(args: argparse.Namespace) -> int:
             raise CommandError("activity requires --start and --end")
         budget_handle = None
         if args.budget:
-            budget = db.get_budget_by_name(args.budget)
+            budget = _budget_by_name(db, args.budget)
             if budget is None:
                 raise CommandError(f"no budget named {args.budget!r}")
             budget_handle = budget.handle
@@ -653,7 +658,7 @@ def cmd_activity(args: argparse.Namespace) -> int:
 def _budget_handle(db: DbSQLite, name: str | None) -> str | None:
     if not name:
         return None
-    budget = db.get_budget_by_name(name)
+    budget = _budget_by_name(db, name)
     if budget is None:
         raise CommandError(f"no budget named {name!r}")
     return budget.handle
@@ -1292,7 +1297,7 @@ def cmd_budget_use(args: argparse.Namespace) -> int:
     """Nominate the budget the dashboard and new projections follow."""
     db = open_book(args.book)
     try:
-        budget = next((b for b in db.iter_budgets() if b.name == args.name), None)
+        budget = _budget_by_name(db, args.name)
         if budget is None:
             raise CommandError(f"no budget named {args.name!r}")
         budgeting.set_current_budget(db, budget)
@@ -1306,7 +1311,7 @@ def cmd_budget_member(args: argparse.Namespace) -> int:
     """Add or remove a scheduled flow from a budget."""
     db = open_book(args.book)
     try:
-        budget = next((b for b in db.iter_budgets() if b.name == args.budget), None)
+        budget = _budget_by_name(db, args.budget)
         if budget is None:
             raise CommandError(f"no budget named {args.budget!r}")
         sched = next(
@@ -1603,7 +1608,7 @@ def cmd_plugins(args: argparse.Namespace) -> int:
 def cmd_budget_set(args: argparse.Namespace) -> int:
     db = open_book(args.book)
     try:
-        budget = next((b for b in db.iter_budgets() if b.name == args.name), None)
+        budget = _budget_by_name(db, args.name)
         created = budget is None
         if budget is None:
             budget = Budget(

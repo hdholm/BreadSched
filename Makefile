@@ -45,6 +45,11 @@ format-check:
 typecheck:
 	mypy src/breadsched/gen src/breadsched/plugins
 
+# Audit the next static-analysis scope without making existing CLI/web type debt
+# block the normal gate until that debt has been fixed or explicitly baselined.
+typecheck-extended:
+	mypy src/breadsched/cli src/breadsched/web
+
 build:
 	python -m build
 
