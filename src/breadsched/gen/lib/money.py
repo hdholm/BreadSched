@@ -17,10 +17,32 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from fractions import Fraction
 from math import gcd
 from numbers import Integral
+from typing import overload
 
-__all__ = ["Money", "ZERO"]
+__all__ = ["Money", "Rate", "ZERO"]
 
 _US_GROUPED = re.compile(r"^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
+
+
+class Rate(Decimal):
+    """Dimensionless decimal rate used for growth, interest, and returns.
+
+    ``Rate`` subclasses :class:`Decimal` deliberately: rates retain Decimal's
+    exact arithmetic, formatting, JSON boundary handling, and compatibility with
+    existing scenario data while remaining distinguishable from monetary amounts.
+    """
+
+    def __new__(cls, value: Rate | Decimal | str | int = 0) -> Rate:
+        if isinstance(value, float):
+            raise TypeError("refusing to build Rate from float; use str or Decimal")
+        result = super().__new__(cls, str(value))
+        if not result.is_finite():
+            raise ValueError("rate must be finite")
+        return result
+
+    @property
+    def decimal(self) -> Decimal:
+        return Decimal(self)
 
 
 class Money:
@@ -165,20 +187,43 @@ class Money:
         return rhs - self
 
     def __mul__(self, other: object) -> Money:
-        rhs = self._coerce(other)
-        if rhs is None:
+        if isinstance(other, Money):
+            raise TypeError("cannot multiply two monetary amounts; use a Rate or scalar")
+        if isinstance(other, Fraction):
+            return Money(self._num * other.numerator, self._den * other.denominator)
+        if isinstance(other, Rate):
+            factor = other.decimal
+        elif isinstance(other, Decimal):
+            factor = other
+        elif isinstance(other, Integral):
+            factor = Decimal(int(other))
+        else:
             return NotImplemented
-        return Money(self._num * rhs._num, self._den * rhs._den)
+        num, den = self._from_decimal(factor)
+        return Money(self._num * num, self._den * den)
 
     __rmul__ = __mul__
 
-    def __truediv__(self, other: object) -> Money:
-        rhs = self._coerce(other)
-        if rhs is None:
+    @overload
+    def __truediv__(self, other: Money) -> Fraction: ...
+
+    @overload
+    def __truediv__(self, other: int | Decimal) -> Money: ...
+
+    def __truediv__(self, other: object) -> Money | Fraction:
+        if isinstance(other, Money):
+            if other._num == 0:
+                raise ZeroDivisionError("division by zero Money")
+            return Fraction(self._num * other._den, self._den * other._num)
+        if isinstance(other, Decimal):
+            num, den = self._from_decimal(other)
+        elif isinstance(other, Integral):
+            num, den = int(other), 1
+        else:
             return NotImplemented
-        if rhs._num == 0:
-            raise ZeroDivisionError("division by zero Money")
-        return Money(self._num * rhs._den, self._den * rhs._num)
+        if num == 0:
+            raise ZeroDivisionError("division by zero scalar")
+        return Money(self._num * den, self._den * num)
 
     def __neg__(self) -> Money:
         return Money(-self._num, self._den)

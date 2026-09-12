@@ -1,10 +1,11 @@
 """Money must be exact.  Every other guarantee in the application rests on this."""
 
 from decimal import Decimal
+from fractions import Fraction
 
 import pytest
 
-from breadsched.gen.lib.money import Money
+from breadsched.gen.lib.money import Money, Rate
 
 
 class TestConstruction:
@@ -59,12 +60,19 @@ class TestArithmetic:
         assert total == Money("10.00")
 
     def test_thirds_stay_exact_until_asked_to_round(self):
-        third = Money(100) / Money(3)
-        assert third * Money(3) == Money(100)
+        third = Money(100) / 3
+        assert third * 3 == Money(100)
         assert third.to_decimal() == Decimal("33.33")
 
-    def test_multiplication_by_a_decimal_rate(self):
-        assert (Money("1000.00") * Decimal("1.05")).to_decimal() == Decimal("1050.00")
+    def test_multiplication_by_a_rate(self):
+        assert (Money("1000.00") * Rate("1.05")).to_decimal() == Decimal("1050.00")
+
+    def test_dividing_money_by_money_returns_an_exact_ratio(self):
+        assert Money(1) / Money(3) == Fraction(1, 3)
+
+    def test_multiplication_by_two_money_values_is_rejected(self):
+        with pytest.raises(TypeError, match="two monetary amounts"):
+            Money("10") * Money("2")
 
     def test_negation_and_absolute(self):
         assert -Money("5") == Money("-5")
@@ -73,6 +81,18 @@ class TestArithmetic:
     def test_zero_is_falsey(self):
         assert not Money(0)
         assert Money("0.01")
+
+
+class TestRate:
+    def test_rate_is_dimensionless_and_decimal_backed(self):
+        rate = Rate("0.0625")
+        assert rate.decimal == Decimal("0.0625")
+        assert rate == Decimal("0.0625")
+        assert f"{rate:.2%}" == "6.25%"
+
+    def test_rate_rejects_float(self):
+        with pytest.raises(TypeError):
+            Rate(0.1)
 
 
 class TestComparison:

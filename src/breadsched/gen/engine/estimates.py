@@ -220,7 +220,7 @@ def _trend_summary(values: list[Money]) -> tuple[list[Money], str | None]:
     split = len(values) // 2
     earlier = _typical_amount(values[:split])
     later = _typical_amount(values[split:])
-    if not earlier or earlier * later <= 0:
+    if not earlier or (earlier > 0) != (later > 0):
         return values, None
     change = (later.to_decimal() - earlier.to_decimal()) / abs(earlier.to_decimal())
     if abs(change) < Decimal("0.10"):

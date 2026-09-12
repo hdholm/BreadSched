@@ -259,7 +259,7 @@ def suggest_from_history(
         total = Money(0)
         for amount in active:
             total = total + amount
-        typical = (total / Money(len(active))).quantize(100)
+        typical = (total / len(active)).quantize(100)
         frequency = len(active) / months_of_history
 
         line = budget.line(account.handle)

@@ -13,13 +13,14 @@ compounds to 6% over the year rather than to 6.17%.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from enum import Enum
 from typing import Any
 
 from .base import PrimaryObject, create_handle
-from .money import Money
+from .money import Money, Rate
 from .recurrence import Recurrence
 from .scheduled import (
     ScheduledAmountChange,
@@ -261,22 +262,68 @@ class Assumptions:
 
     def __init__(
         self,
-        income_growth: Decimal | str = "0.03",
-        expense_inflation: Decimal | str = "0.025",
-        investment_return: Decimal | str = "0.06",
-        cash_interest: Decimal | str = "0.01",
-        liability_interest: Decimal | str = "0.0",
-        per_account: dict[str, Decimal] | None = None,
+        income_growth: Rate | Decimal | str = "0.03",
+        expense_inflation: Rate | Decimal | str = "0.025",
+        investment_return: Rate | Decimal | str = "0.06",
+        cash_interest: Rate | Decimal | str = "0.01",
+        liability_interest: Rate | Decimal | str = "0.0",
+        per_account: Mapping[str, Rate | Decimal | str] | None = None,
     ) -> None:
-        self.income_growth = Decimal(str(income_growth))
-        self.expense_inflation = Decimal(str(expense_inflation))
-        self.investment_return = Decimal(str(investment_return))
-        self.cash_interest = Decimal(str(cash_interest))
-        self.liability_interest = Decimal(str(liability_interest))
+        self.income_growth = income_growth
+        self.expense_inflation = expense_inflation
+        self.investment_return = investment_return
+        self.cash_interest = cash_interest
+        self.liability_interest = liability_interest
         #: Account handle -> rate, overriding whichever global rate applies.
-        self.per_account: dict[str, Decimal] = dict(per_account or {})
+        self.per_account: dict[str, Rate] = {
+            handle: Rate(rate) for handle, rate in (per_account or {}).items()
+        }
 
-    def rate_for(self, account_handle: str, default: Decimal) -> Decimal:
+    @staticmethod
+    def _rate(value: Rate | Decimal | str) -> Rate:
+        return value if isinstance(value, Rate) else Rate(value)
+
+    @property
+    def income_growth(self) -> Rate:
+        return self._income_growth
+
+    @income_growth.setter
+    def income_growth(self, value: Rate | Decimal | str) -> None:
+        self._income_growth = self._rate(value)
+
+    @property
+    def expense_inflation(self) -> Rate:
+        return self._expense_inflation
+
+    @expense_inflation.setter
+    def expense_inflation(self, value: Rate | Decimal | str) -> None:
+        self._expense_inflation = self._rate(value)
+
+    @property
+    def investment_return(self) -> Rate:
+        return self._investment_return
+
+    @investment_return.setter
+    def investment_return(self, value: Rate | Decimal | str) -> None:
+        self._investment_return = self._rate(value)
+
+    @property
+    def cash_interest(self) -> Rate:
+        return self._cash_interest
+
+    @cash_interest.setter
+    def cash_interest(self, value: Rate | Decimal | str) -> None:
+        self._cash_interest = self._rate(value)
+
+    @property
+    def liability_interest(self) -> Rate:
+        return self._liability_interest
+
+    @liability_interest.setter
+    def liability_interest(self, value: Rate | Decimal | str) -> None:
+        self._liability_interest = self._rate(value)
+
+    def rate_for(self, account_handle: str, default: Rate) -> Rate:
         return self.per_account.get(account_handle, default)
 
     def serialize(self) -> dict[str, Any]:
@@ -297,7 +344,7 @@ class Assumptions:
             investment_return=data.get("investment_return", "0"),
             cash_interest=data.get("cash_interest", "0"),
             liability_interest=data.get("liability_interest", "0"),
-            per_account={k: Decimal(v) for k, v in data.get("per_account", {}).items()},
+            per_account=data.get("per_account", {}),
         )
 
     def __repr__(self) -> str:
@@ -320,12 +367,12 @@ class AssumptionPeriod:
         start: date,
         end: date | None = None,
         *,
-        income_growth: Decimal | str | None = None,
-        expense_inflation: Decimal | str | None = None,
-        investment_return: Decimal | str | None = None,
-        cash_interest: Decimal | str | None = None,
-        liability_interest: Decimal | str | None = None,
-        per_account: dict[str, Decimal | str] | None = None,
+        income_growth: Rate | Decimal | str | None = None,
+        expense_inflation: Rate | Decimal | str | None = None,
+        investment_return: Rate | Decimal | str | None = None,
+        cash_interest: Rate | Decimal | str | None = None,
+        liability_interest: Rate | Decimal | str | None = None,
+        per_account: Mapping[str, Rate | Decimal | str] | None = None,
         description: str = "",
     ) -> None:
         if end is not None and end < start:
@@ -334,22 +381,22 @@ class AssumptionPeriod:
         self.end = end
         self.description = description
         self.income_growth = (
-            None if income_growth is None else Decimal(str(income_growth))
+            None if income_growth is None else Rate(income_growth)
         )
         self.expense_inflation = (
-            None if expense_inflation is None else Decimal(str(expense_inflation))
+            None if expense_inflation is None else Rate(expense_inflation)
         )
         self.investment_return = (
-            None if investment_return is None else Decimal(str(investment_return))
+            None if investment_return is None else Rate(investment_return)
         )
         self.cash_interest = (
-            None if cash_interest is None else Decimal(str(cash_interest))
+            None if cash_interest is None else Rate(cash_interest)
         )
         self.liability_interest = (
-            None if liability_interest is None else Decimal(str(liability_interest))
+            None if liability_interest is None else Rate(liability_interest)
         )
-        self.per_account: dict[str, Decimal] = {
-            handle: Decimal(str(rate)) for handle, rate in (per_account or {}).items()
+        self.per_account: dict[str, Rate] = {
+            handle: Rate(rate) for handle, rate in (per_account or {}).items()
         }
 
     def applies(self, when: date) -> bool:

@@ -107,8 +107,10 @@ semantics, not duplicate business rules in presentation code.
   - [x] **0141 — QIF/OFX number-format parsing.** Detect period-vs-comma decimal conventions from the complete import file, parse grouping explicitly, reject conflicting conventions, and allow an explicit importer override for ambiguous files.
   - [x] **0142 — QIF date-order parsing.** Detect month-first versus day-first ordering from complete-file evidence, reject conflicting evidence, preserve year-first dates, and allow an explicit importer override for all-ambiguous files.
   - [ ] Extend explicit locale-aware amount parsing to GTK/web user-entry boundaries rather than asking the core `Money` constructor to guess locale.
-  - [ ] Remove dimensionally meaningless `Money * Money` behavior as a distinct rate type is introduced.
-  - [ ] Introduce a distinct rate concept.
+  - [x] **0152 — Dimensional Money/Rate semantics.** Reject `Money * Money`, make
+    `Money / Money` an exact dimensionless ratio, and represent scenario growth,
+    inflation, return, and interest assumptions with a Decimal-compatible `Rate`
+    type while preserving existing serialized scenario data.
   - [ ] Remove hard-coded cents where account/commodity precision differs.
   - [ ] Define commodity/currency-safe arithmetic and valuation boundaries.
 - [x] **0146 — Platform-correct user paths.** Settings use XDG/APPDATA/macOS

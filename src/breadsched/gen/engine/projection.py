@@ -20,7 +20,7 @@ from typing import Literal
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass
-from ..lib.money import Money
+from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, ProjectionBasis, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
@@ -102,10 +102,10 @@ class _AssumptionTimeline:
             anniversary = add_months(self.start.replace(day=1), year * 12, day=1)
             assumptions = self.at(anniversary)
             self._income_factors.append(
-                self._income_factors[-1] * (_ONE + assumptions.income_growth)
+                self._income_factors[-1] * (_ONE + assumptions.income_growth.decimal)
             )
             self._expense_factors.append(
-                self._expense_factors[-1] * (_ONE + assumptions.expense_inflation)
+                self._expense_factors[-1] * (_ONE + assumptions.expense_inflation.decimal)
             )
 
     def at(self, when: date) -> Assumptions:
@@ -138,13 +138,14 @@ def _report_progress(
     callback(ProjectionProgress(current=current, end=end, fraction=elapsed / span, phase=phase))
 
 
-def monthly_rate(annual: Decimal) -> Decimal:
+def monthly_rate(annual: Rate | Decimal) -> Decimal:
     """Convert an annual nominal rate to the equivalent monthly compounding rate."""
-    if annual == 0:
+    value = annual.decimal if isinstance(annual, Rate) else annual
+    if value == 0:
         return Decimal(0)
-    if annual <= -1:
+    if value <= -1:
         raise ValueError("annual rate must be greater than -100%")
-    return (_ONE + annual) ** _TWELFTH - _ONE
+    return (_ONE + value) ** _TWELFTH - _ONE
 
 
 @dataclass(slots=True)
@@ -518,7 +519,7 @@ def _resolve_rate(
     account: Account,
     *,
     schedule_driven_liabilities: set[str] | None = None,
-) -> Decimal:
+) -> Rate:
     """Resolve one account's projection rate.
 
     A liability whose interest is already represented by a formula schedule must
@@ -530,16 +531,20 @@ def _resolve_rate(
         and schedule_driven_liabilities
         and account.handle in schedule_driven_liabilities
     ):
-        return Decimal(0)
+        return Rate(0)
     if account.handle in assumptions.per_account:
         return assumptions.per_account[account.handle]
     if account.account_class is AccountClass.LIABILITY:
-        return account.annual_interest or assumptions.liability_interest
+        return (
+            Rate(account.annual_interest)
+            if account.annual_interest
+            else assumptions.liability_interest
+        )
     if account.annual_return:
-        return account.annual_return
+        return Rate(account.annual_return)
     if account.atype.is_investment:
         return assumptions.investment_return
-    return Decimal(0)
+    return Rate(0)
 
 
 def _dated_growth_factor(
@@ -568,7 +573,7 @@ def _dated_growth_factor(
             if field == "income_growth"
             else assumptions.expense_inflation
         )
-        factor *= _ONE + rate
+        factor *= _ONE + rate.decimal
     return factor
 
 
@@ -636,13 +641,14 @@ class _EventMonthFlows:
     events: list[planning.PlannedEvent] = field(default_factory=list)
 
 
-def _period_growth_rate(annual: Decimal, days: int) -> Decimal:
+def _period_growth_rate(annual: Rate | Decimal, days: int) -> Rate:
     """Effective growth over ``days`` using an actual/365 convention."""
-    if days <= 0 or annual == 0:
-        return Decimal(0)
-    if annual <= -1:
+    value = annual.decimal if isinstance(annual, Rate) else annual
+    if days <= 0 or value == 0:
+        return Rate(0)
+    if value <= -1:
         raise ValueError("annual rate must be greater than -100%")
-    return (_ONE + annual) ** (Decimal(days) / Decimal(365)) - _ONE
+    return Rate((_ONE + value) ** (Decimal(days) / Decimal(365)) - _ONE)
 
 
 def _advance_event_state(
@@ -666,7 +672,7 @@ def _advance_event_state(
 
         cash_rate = _period_growth_rate(assumptions.cash_interest, days)
         cash_growth = (
-            (cash * Money(cash_rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
+            (cash * cash_rate).quantize(_PROJECTION_MONEY_DENOMINATOR)
             if cash_rate
             else Money(0)
         )
@@ -684,7 +690,7 @@ def _advance_event_state(
                 days,
             )
             growth = (
-                (balance * Money(rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
+                (balance * rate).quantize(_PROJECTION_MONEY_DENOMINATOR)
                 if rate
                 else Money(0)
             )
@@ -704,7 +710,7 @@ def _advance_event_state(
                 days,
             )
             charge = (
-                (owed * Money(rate)).quantize(_PROJECTION_MONEY_DENOMINATOR)
+                (owed * rate).quantize(_PROJECTION_MONEY_DENOMINATOR)
                 if (rate and owed > 0)
                 else Money(0)
             )

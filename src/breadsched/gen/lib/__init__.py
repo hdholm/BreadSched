@@ -17,7 +17,7 @@ from .fsa_claim import (
     FsaClaimRejection,
     FsaClaimSplitLink,
 )
-from .money import ZERO, Money
+from .money import ZERO, Money, Rate
 from .recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
 from .scenario import (
     AssumptionPeriod,
@@ -50,7 +50,7 @@ __all__ = [
     "FsaClaimAllocation", "FsaClaimRejection", "FsaClaimSplitLink", "FsaFundingYear",
     "AssumptionPeriod", "Assumptions",
     "Budget", "BudgetLine",
-    "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind",
+    "Commodity", "DEFAULT_CURRENCY", "FormulaError", "Money", "OneOff", "PeriodKind", "Rate",
     "PeriodType", "PlanningFlowKind", "PlanningResolution", "PrimaryObject", "ProjectionBasis",
     "ReconcileState", "Recurrence",
     "Scenario", "ScenarioSchedule", "ScheduledAmountChange", "ScheduledMonthAmount",

@@ -72,9 +72,11 @@ values and avoid binary floating-point error. Commodity precision, account-speci
 SCU, and eventually multi-commodity valuation are distinct concerns from the exact
 stored ledger fraction.
 
-Rates are conceptually different from money amounts. Projection and investment
-work should keep that distinction explicit rather than treating every numeric value
-as interchangeable.
+Rates are dimensionless and distinct from money amounts. The ``Rate`` domain type
+is Decimal-compatible for persistence and presentation, while ``Money`` remains an
+exact rational ledger quantity. Multiplying two monetary amounts is invalid; scaling
+a monetary amount requires a dimensionless scalar/rate, and dividing one monetary
+amount by another yields an exact dimensionless ratio.
 
 ## Event-driven planning
 
@@ -304,7 +306,7 @@ the README or design document as an alternate TODO list.
 
 ## Money and exact arithmetic
 
-Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality.
+Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality. ``Money * Money`` is deliberately rejected. ``Money / Money`` produces an exact ``Fraction`` ratio, while projection assumptions use ``Rate`` so percentages cannot masquerade as ledger amounts.
 
 ### Ambiguous import formats are user-resolvable
 
