@@ -15,8 +15,8 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 import socket
+import sqlite3
 import threading
 import time
 from collections.abc import Iterator
@@ -36,9 +36,9 @@ from ..utils.logs import get_logger
 from ..utils.user_paths import sync_service_for_path
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
 from .migrations import LATEST_SCHEMA_VERSION, MIGRATIONS
+from .verification import BookIssue, verify_domain
 
 LOG = get_logger(__name__)
-from .verification import BookIssue, verify_domain
 
 __all__ = ["DbSQLite"]
 

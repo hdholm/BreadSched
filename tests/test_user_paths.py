@@ -1,7 +1,5 @@
 """Platform-specific user directories without a third-party dependency."""
 
-from pathlib import Path
-
 from breadsched.gen.utils.user_paths import (
     config_directory,
     documents_directory,

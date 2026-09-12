@@ -78,7 +78,8 @@ class TestLayering:
             "datetime", "decimal", "enum", "fractions", "gzip", "json", "logging", "math",
             "numbers", "operator", "pathlib", "sqlite3", "statistics", "sys", "time", "typing",
             "uuid", "weakref", "xml", "breadsched", "IO", "collections", "functools",
-            "inspect", "itertools", "os", "re", "shutil", "socket", "tempfile", "textwrap", "threading",
+            "inspect", "itertools", "os", "re", "shutil", "socket", "tempfile", "textwrap",
+            "threading",
         }
         offenders: dict[str, set[str]] = {}
         for layer in CORE_DIRS:
