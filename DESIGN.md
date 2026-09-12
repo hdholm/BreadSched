@@ -281,3 +281,7 @@ not guess independently for each record. When evidence is ambiguous, both refere
 and parity web workflows expose explicit overrides and pass those choices into the same
 importer implementation. Web import currently operates on a local path visible to the
 BreadSched process; transport convenience must not create a second import semantics layer.
+
+## Import date integrity
+
+Required source dates are never synthesized. Missing or malformed posting/start dates are reported against the source record and skipped rather than silently using the current date. Optional dates remain optional.

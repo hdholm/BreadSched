@@ -413,9 +413,17 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
                 "transaction %s (%s) has no usable splits in the source",
                 row["guid"][:8], row["description"] or "",
             )
+        try:
+            post_date = parse_gnc_date(row["post_date"])
+        except ValueError as exc:
+            sink.result.skip(
+                str(exc),
+                f"transaction {row['description'] or row['guid'][:8]!r}",
+            )
+            continue
         sink.transaction(
             guid=row["guid"],
-            post_date=parse_gnc_date(row["post_date"]),
+            post_date=post_date,
             description=row["description"] or "",
             currency=row["currency_guid"],
             num=row["num"] or "",
@@ -437,8 +445,15 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
         period = PERIOD_MAP.get(
             (recurrence["recurrence_period_type"] or "month").lower(), PeriodType.MONTH
         )
-        start = parse_gnc_date(recurrence["recurrence_period_start"])
-        end = parse_gnc_date(row["end_date"]) if row["end_date"] else None
+        try:
+            start = parse_gnc_date(recurrence["recurrence_period_start"])
+            end = parse_gnc_date(row["end_date"]) if row["end_date"] else None
+        except ValueError as exc:
+            sink.result.skip(
+                str(exc),
+                f"scheduled transaction {row['name'] or row['guid'][:8]!r}",
+            )
+            continue
         weekend = _WEEKEND_MAP.get(
             (
                 recurrence["recurrence_weekend_adjust"]

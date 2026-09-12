@@ -157,7 +157,11 @@ def import_book(
             for element, is_template in _iter_top_level(stream):
                 tag = element.tag.rsplit("}", 1)[-1]
                 if tag == "transaction" and not is_template:
-                    _read_transaction(element, sink)
+                    try:
+                        _read_transaction(element, sink)
+                    except ValueError as exc:
+                        description = _text(element, "trn:description") or "transaction"
+                        sink.result.skip(str(exc), description)
                 elif tag == "transaction" and is_template:
                     _collect_template_splits(element, template_splits)
                 elif tag == "schedxaction":
@@ -470,8 +474,9 @@ def _read_schedule(
             else None
         )
         or _gdate(element.find("sx:start", NS))
-        or date.today()
     )
+    if start is None:
+        raise ValueError("missing scheduled transaction start date")
     weekend = _WEEKEND.get(
         _text(recurrence_node, "recurrence:weekend_adj", "none").lower(),
         WeekendAdjust.NONE,

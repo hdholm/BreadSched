@@ -146,8 +146,8 @@ def parse_gnc_date(raw: str | None) -> date:
     numeric zone offset.  All are truncated to the posting *date*, since a
     cash-flow model has no use for the time of day.
     """
-    if not raw:
-        return date.today()
+    if not raw or not raw.strip():
+        raise ValueError("missing GnuCash date")
     text = raw.strip()
     if len(text) == 14 and text.isdigit():
         return date(int(text[0:4]), int(text[4:6]), int(text[6:8]))

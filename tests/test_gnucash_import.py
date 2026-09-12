@@ -72,6 +72,10 @@ class TestDateParsing:
         with pytest.raises(ValueError):
             gnucash_common.parse_gnc_date("last Tuesday")
 
+    def test_missing_dates_are_rejected_rather_than_replaced_with_today(self):
+        with pytest.raises(ValueError, match="missing GnuCash date"):
+            gnucash_common.parse_gnc_date("")
+
 
 class TestSqliteImport:
     def test_imports_the_whole_chart_of_accounts(self, db, gnucash_sqlite_path):
@@ -127,6 +131,23 @@ class TestSqliteImport:
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         usd = db.get_commodity_by_mnemonic("USD")
         assert usd is not None and usd.fraction == 100
+
+    def test_missing_transaction_date_is_reported_and_skipped(
+        self, db, gnucash_sqlite_path
+    ):
+        conn = sqlite3.connect(gnucash_sqlite_path.path)
+        conn.execute(
+            "UPDATE transactions SET post_date = NULL WHERE description = ?",
+            ("Rent",),
+        )
+        conn.commit()
+        conn.close()
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        assert result.skipped >= 1
+        assert all(txn.description != "Rent" for txn in db.iter_transactions())
+        assert any(reason == "missing GnuCash date" for reason, _ in result.skipped_details)
 
     def test_the_source_book_is_never_written_to(self, db, gnucash_sqlite_path):
         import os
@@ -297,6 +318,25 @@ class TestXmlImport:
         result = gnucash_xml.import_book(db, gnucash_xml_path.path)
         assert result.accounts == 4
         assert result.transactions == 2
+
+    def test_missing_transaction_date_is_reported_and_skipped(
+        self, db, tmp_path, gnucash_xml_path
+    ):
+        damaged = tmp_path / "missing-date.gnucash"
+        damaged.write_text(
+            gnucash_xml_path.plain.replace(
+                "<ts:date>2026-03-25 10:59:00 +0000</ts:date>",
+                "<ts:date></ts:date>",
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        result = gnucash_xml.import_book(db, damaged)
+
+        assert result.skipped >= 1
+        assert db.get_transaction(gnucash_xml_path.ids.txn1) is None
+        assert any(reason == "missing GnuCash date" for reason, _ in result.skipped_details)
 
     def test_amounts_parse_from_the_fraction_notation(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)

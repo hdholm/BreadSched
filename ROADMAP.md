@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0143 — `import: expose ambiguous format choices`**.
+Status is current through patch **0144 — `import: reject missing source dates`**.
 
 ## Status legend
 
@@ -319,7 +319,7 @@ semantics, not duplicate business rules in presentation code.
   but valid structures.
 - [ ] Add multi-currency valuation and exchange-rate/price handling.
 - [x] **0143 — Expose ambiguous import-format choices.** GTK4 and web import workflows expose QIF date-order and QIF/OFX number-format overrides while keeping auto-detection as the default.
-- [ ] Report missing import dates explicitly rather than silently substituting today.
+- [x] **0144 — Reject missing GnuCash dates.** Required transaction and scheduled-transaction dates are reported and skipped instead of silently substituting today.
 - [ ] Investigate/cover older GnuCash SQLite timezone/date conventions.
 
 ## Storage, integrity, and recovery
