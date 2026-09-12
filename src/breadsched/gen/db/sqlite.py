@@ -140,7 +140,8 @@ class DbSQLite(DbBase):
 
     @staticmethod
     def _writer_lock_path(path: str) -> Path:
-        return Path(f"{path}.lock")
+        resolved = Path(path).expanduser().resolve()
+        return resolved.with_name(f"{resolved.name}.lock")
 
     @staticmethod
     def _pid_is_alive(pid: int) -> bool:
@@ -166,7 +167,7 @@ class DbSQLite(DbBase):
             "pid": os.getpid(),
             "host": hostname,
             "token": token,
-            "book": str(Path(path).resolve()),
+            "book": str(Path(path).expanduser().resolve()),
         }
         while True:
             try:

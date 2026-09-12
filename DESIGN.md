@@ -245,12 +245,14 @@ checking generator-owned occurrence identity and serialization round trips. Name
 regression cases remain valuable for explaining specific historical failures; the
 property layer complements rather than replaces them.
 
-Only one writer may own a native book at a time. Writable opens acquire a sidecar
-lock containing host/process identity and a random ownership token before SQLite is
-opened. A competing writer fails with an explicit read-only alternative; read-only
-opens remain allowed. A stale lock is reclaimed automatically only when it belongs to
-the same host and its recorded process no longer exists. Lock removal verifies the
-ownership token so one process cannot delete another writer's lock.
+Only one writer may own a native book at a time. Writable opens canonicalize the
+book path, then acquire a sidecar lock containing host/process identity and a random
+ownership token before SQLite is opened. Canonical identity prevents alternate path
+spellings or symlink aliases from becoming competing writers. A competing writer
+fails with an explicit read-only alternative; read-only opens remain allowed. A
+stale lock is reclaimed automatically only when it belongs to the same host and its
+recorded process no longer exists. Lock removal verifies the ownership token so one
+process cannot delete another writer's lock.
 
 ## GTK test availability
 

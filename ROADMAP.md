@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0149 — `quality: skip missing GTK4 typelib cleanly`**.
+Status is current through patch **0150 — `storage: canonicalize writer lock identity`**.
 
 ## Status legend
 
@@ -115,9 +115,10 @@ semantics, not duplicate business rules in presentation code.
   Application Support as appropriate; Documents discovery honors XDG user dirs and
   common Windows OneDrive redirection; recognized cloud-sync roots emit an SQLite
   durability warning when a book is opened there.
-- [x] **0145 — Inter-process writer lock.** Writable native books use an owned
+- [x] **0145/0150 — Inter-process writer lock.** Writable native books use an owned
   sidecar lock, competing writers fail with an explicit read-only alternative,
-  read-only opens remain allowed, and stale same-host locks are safely reclaimed.
+  read-only opens remain allowed, stale same-host locks are safely reclaimed, and
+  canonical path identity prevents a symlink alias from bypassing the writer lock.
 - [ ] Finish the deliberate legacy Budget-domain migration after mapping every
   remaining CLI/Dashboard/cash-flow/Projection dependency.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a

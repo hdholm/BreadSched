@@ -42,6 +42,22 @@ class TestWriterLock:
         second.load(path)
         second.close()
 
+    def test_symlink_alias_cannot_open_second_writer(self, tmp_path):
+        path = tmp_path / "real.breadsched"
+        alias = tmp_path / "alias.breadsched"
+        first = DbSQLite()
+        first.load(str(path))
+        try:
+            try:
+                alias.symlink_to(path)
+            except (OSError, NotImplementedError):
+                pytest.skip("symlinks are unavailable on this platform")
+            second = DbSQLite()
+            with pytest.raises(DbError, match="already open for writing"):
+                second.load(str(alias))
+        finally:
+            first.close()
+
     def test_stale_same_host_lock_is_reclaimed(self, tmp_path):
         path = str(tmp_path / "stale.breadsched")
         seed = DbSQLite()
