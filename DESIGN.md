@@ -95,7 +95,10 @@ ordinal, not a number reconstructed from the adjusted calendar date.
 
 The formula language is parsed through a restricted evaluator, never Python
 `eval()`. Formula expressions are treated as untrusted imported/user input and must
-have bounded, predictable evaluation behavior.
+have bounded, predictable evaluation behavior. Expression depth, node count, and
+power magnitude are bounded; evaluator failures cross the API boundary as
+`FormulaError`. GnuCash colon-delimited argument syntax and grouping commas are
+normalised without rewriting ordinary comma-delimited function calls.
 
 Formula-driven loans own their payment arithmetic. Projection must not separately
 inflate a formula loan payment or add generic liability interest to a liability

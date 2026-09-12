@@ -51,9 +51,9 @@ roughly in this order:
    semi-monthly adjustments cannot corrupt loan formula periods. Patch 0131 corrects
    start-of-period (`due=1`) interest/principal decomposition and verifies full
    annuity-due repayment against independent reference values.
-2. Harden the formula evaluator: correct fractional powers and GnuCash argument/
-   grouping parsing, bound expression complexity/powers, and convert evaluator
-   failures consistently to ``FormulaError``.
+2. Harden the formula evaluator. Patch 0132 fixes fractional powers, keeps Python-style
+   function argument commas distinct from GnuCash grouping commas, bounds expression
+   complexity and powers, and converts evaluator failures consistently to ``FormulaError``.
 3. Harden the web parity surface: validate Host and Origin, require JSON for writes,
    and use an unguessable per-server token (or an equivalently strong same-origin
    design) with regression tests for hostile requests.

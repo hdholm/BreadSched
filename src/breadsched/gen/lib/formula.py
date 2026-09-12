@@ -13,7 +13,7 @@ import ast
 import operator
 import re
 from collections.abc import Callable
-from decimal import Decimal
+from decimal import Decimal, DecimalException, localcontext
 from typing import Any
 
 from . import finance
@@ -22,6 +22,9 @@ __all__ = ["evaluate", "normalise", "FormulaError", "FUNCTIONS"]
 
 #: A comma sitting between digits, with three digits and no more after it.
 _THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+_MAX_NODES = 256
+_MAX_DEPTH = 32
+_MAX_POWER_ABS = Decimal("1000")
 
 
 class FormulaError(ValueError):
@@ -114,7 +117,11 @@ def _walk(node: ast.AST, variables: dict[str, Any]) -> Decimal:
         if isinstance(node.op, ast.Div) and right == 0:
             raise FormulaError("division by zero")
         if isinstance(node.op, ast.Pow):
-            return Decimal(left) ** int(right)
+            if abs(right) > _MAX_POWER_ABS:
+                raise FormulaError("power exponent is too large")
+            with localcontext() as context:
+                context.prec = max(context.prec, 28)
+                return Decimal(left) ** Decimal(right)
         return binary_func(left, right)
     if isinstance(node, ast.UnaryOp):
         unary_func = _UNARY.get(type(node.op))
@@ -140,24 +147,28 @@ def _walk(node: ast.AST, variables: dict[str, Any]) -> Decimal:
     raise FormulaError(f"{type(node).__name__} is not allowed in a formula")
 
 
+def _uses_gnucash_argument_syntax(expression: str) -> bool:
+    depth = 0
+    for character in expression:
+        if character in "([":
+            depth += 1
+        elif character in ")]":
+            depth = max(0, depth - 1)
+        elif character == ":" and depth > 0:
+            return True
+    return False
+
+
 def normalise(expression: str) -> str:
     """Rewrite GnuCash's formula dialect into one Python can parse.
 
-    Two differences, both taken from mortgages written by GnuCash's loan
-    assistant, e.g.::
-
-        ppmt( .05375 / 12.00 : i : 180.00 : 399,200.00 : 0 : 0 )
-
-    *Colons separate arguments.* Only colons inside brackets are rewritten, so a
-    stray colon elsewhere still fails loudly rather than being reinterpreted.
-
-    *Numbers carry thousands separators.* ``399,200.00`` has to lose its comma
-    before the colons become commas, or the amount arrives as two arguments and
-    the call fails with a baffling arity error.
+    GnuCash loan formulas use colons between function arguments and may group
+    digits with commas, for example ``399,200.00``.  Ordinary Python-style
+    formulas already use commas as argument separators, so grouping commas are
+    stripped only when a colon-delimited GnuCash call is actually present.
     """
-    # Strip the grouping comma first: a comma between digits with exactly three
-    # digits after it is a separator, never an argument boundary.
-    expression = _THOUSANDS.sub("", expression)
+    if _uses_gnucash_argument_syntax(expression):
+        expression = _THOUSANDS.sub("", expression)
     out: list[str] = []
     depth = 0
     for character in expression:
@@ -169,12 +180,30 @@ def normalise(expression: str) -> str:
     return "".join(out)
 
 
+def _check_complexity(tree: ast.AST) -> None:
+    count = 0
+    stack: list[tuple[ast.AST, int]] = [(tree, 1)]
+    while stack:
+        node, depth = stack.pop()
+        count += 1
+        if count > _MAX_NODES:
+            raise FormulaError("formula is too complex")
+        if depth > _MAX_DEPTH:
+            raise FormulaError("formula is nested too deeply")
+        stack.extend((child, depth + 1) for child in ast.iter_child_nodes(node))
+
+
 def evaluate(expression: str, variables: dict[str, Any] | None = None) -> Decimal:
     """Evaluate an arithmetic expression over ``variables``."""
     if not expression or not expression.strip():
         return Decimal(0)
     try:
         tree = ast.parse(normalise(expression), mode="eval")
+        _check_complexity(tree)
+        return _walk(tree, variables or {})
+    except FormulaError:
+        raise
     except SyntaxError as exc:
         raise FormulaError(f"cannot parse {expression!r}: {exc.msg}") from exc
-    return _walk(tree, variables or {})
+    except (DecimalException, ArithmeticError, TypeError, ValueError, RecursionError) as exc:
+        raise FormulaError(f"cannot evaluate {expression!r}: {exc}") from exc

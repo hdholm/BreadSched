@@ -139,6 +139,27 @@ class TestFormulaIntegration:
         with pytest.raises(FormulaError):
             evaluate("pmt.__class__", self.VARIABLES)
 
+    def test_fractional_powers_are_not_truncated(self):
+        result = evaluate("1.06 ** (1 / 12)")
+        assert abs(result - Decimal("1.004867550565343")) < Decimal("1e-15")
+
+    def test_python_argument_commas_are_not_stripped_as_grouping(self):
+        result = evaluate("pmt(0.005,360,200000,0)")
+        assert q(result) == Decimal("1199.10")
+
+    @pytest.mark.parametrize(
+        "formula",
+        [
+            "9**9**9",
+            "10 % 0",
+            "'abc'",
+            "-" * 80 + "1",
+        ],
+    )
+    def test_evaluator_failures_are_reported_as_formula_errors(self, formula):
+        with pytest.raises(FormulaError):
+            evaluate(formula)
+
 
 class TestLoanSetup:
     @pytest.fixture
