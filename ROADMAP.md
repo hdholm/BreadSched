@@ -9,8 +9,8 @@ reprioritizes roadmap work must update this file in the same patch.  Completed
 items should either be removed or moved briefly to the completed section so this
 remains a useful description of work that is still outstanding.
 
-Status below is current through patch 0130
-(`hardening: preserve recurrence occurrence numbers`).
+Status below is current through patch 0131
+(`hardening: correct start-of-period loan maths`).
 
 ## Product direction and current hardening phase
 
@@ -48,8 +48,9 @@ roughly in this order:
    domain/engine growth-policy foundation is implemented in 0128 and exposed in
    both GTK and web schedule/scenario editors in 0129. Patch 0130 carries the
    nominal occurrence number alongside adjusted recurrence dates so weekend and
-   semi-monthly adjustments cannot corrupt loan formula periods; start-of-period
-   loan mathematics remains the next loan-correctness item.
+   semi-monthly adjustments cannot corrupt loan formula periods. Patch 0131 corrects
+   start-of-period (`due=1`) interest/principal decomposition and verifies full
+   annuity-due repayment against independent reference values.
 2. Harden the formula evaluator: correct fractional powers and GnuCash argument/
    grouping parsing, bound expression complexity/powers, and convert evaluator
    failures consistently to ``FormulaError``.
@@ -68,8 +69,8 @@ roughly in this order:
 7. Expand quality gates: mypy across CLI/web and then GUI with an explicit baseline,
    ``ruff format --check``, security regressions, recurrence property tests, and
    realistic projection/storage benchmarks. The first pytest-xdist stage lands in
-   0130: core/non-GTK tests run with 12 workers in the Makefile and core CI while
-   GTK remains serial. Keep a serial deterministic diagnostic path, audit tests for
+   0130: core/non-GTK tests run with `pytest -n auto` in the Makefile and core CI
+   while GTK remains serial. Keep a serial deterministic diagnostic path, audit tests for
    shared ports/files/process-global state, and only consider parallel GTK after a
    sustained clean run history.
 8. Finish the deliberate legacy Budget-domain migration, then return to register,
@@ -375,7 +376,7 @@ does not silently point at removed views or stale terminology.
   error reporting.
 - Keep Ruff, mypy, randomized tests, GTK runtime tests, end-to-end demo, and package
   build/install checks as release gates. Core/non-GTK tests run under pytest-xdist
-  with 12 workers as of 0130; keep GTK serial initially and preserve ``make
+  with automatic worker selection as of 0130; keep GTK serial initially and preserve ``make
   test-ordered`` as a single-process diagnostic path.
 - Add property-based tests for recurrence and monetary arithmetic and fuzz-style
   tests for malformed import data where they provide useful additional coverage.

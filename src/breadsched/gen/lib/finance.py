@@ -51,18 +51,6 @@ def pmt(rate, periods, present_value, future_value=0, due: int = 0) -> Decimal:
         return payment / (1 + rate) if due else payment
 
 
-def _balance_before(rate, periods, present_value, future_value, due, period) -> Decimal:
-    """Outstanding balance at the start of ``period`` (1-based)."""
-    with localcontext() as context:
-        context.prec = _PRECISION
-        rate = _d(rate)
-        payment = pmt(rate, periods, present_value, future_value, due)
-        elapsed = _d(period) - 1
-        if rate == 0:
-            return _d(present_value) + payment * elapsed
-        growth = (1 + rate) ** elapsed
-        return _d(present_value) * growth + payment * (growth - 1) / rate
-
 
 def ipmt(rate, period, periods, present_value, future_value=0, due: int = 0) -> Decimal:
     """The interest portion of the payment in ``period`` (1-based)."""
@@ -74,9 +62,12 @@ def ipmt(rate, period, periods, present_value, future_value=0, due: int = 0) -> 
             raise ValueError(f"period {period} is outside 1..{periods}")
         if rate == 0:
             return Decimal(0)
-        balance = _balance_before(rate, periods, present_value, future_value, due, index)
-        interest = -balance * rate
-        if due and index > 1:
+        payment = pmt(rate, periods, present_value, future_value, due)
+        remaining = fv(rate, index - 1, payment, present_value, due)
+        interest = remaining * rate
+        if due:
+            if index == 1:
+                return Decimal(0)
             interest = interest / (1 + rate)
         return interest
 

@@ -63,6 +63,24 @@ class TestInterestAndPrincipal:
         assert len(rows) == 360
         assert abs(rows[-1]["balance"]) < Decimal("0.01")
 
+    def test_start_of_period_interest_matches_annuity_due_timing(self):
+        rate = Decimal("0.005")
+        assert q(ipmt(rate, 1, 360, 200000, due=1)) == Decimal("0.00")
+        assert q(ipmt(rate, 2, 360, 200000, due=1)) == Decimal("-994.03")
+        assert q(ipmt(rate, 120, 360, 200000, due=1)) == Decimal("-834.49")
+        assert q(ipmt(rate, 360, 360, 200000, due=1)) == Decimal("-5.94")
+
+    def test_start_of_period_parts_sum_to_payment_and_repay(self):
+        rate = Decimal("0.005")
+        payment = pmt(rate, 360, 200000, due=1)
+        for period in (1, 2, 120, 360):
+            total = ipmt(rate, period, 360, 200000, due=1) + ppmt(
+                rate, period, 360, 200000, due=1
+            )
+            assert q(total) == q(payment)
+        rows = amortisation_schedule(rate, 360, 200000, due=1)
+        assert abs(rows[-1]["balance"]) < Decimal("0.01")
+
     def test_a_period_outside_the_term_is_refused(self):
         with pytest.raises(ValueError):
             ipmt(Decimal("0.005"), 400, 360, 200000)
