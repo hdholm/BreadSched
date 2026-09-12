@@ -79,12 +79,17 @@ semantics, not duplicate business rules in presentation code.
 
 ## Remaining hardening work
 
-- [ ] **NEXT — Finish quality-gate expansion.**
+- [x] **0138–0156 — Expanded quality gates.**
   - [x] **0154 — Add CLI/web to the mandatory mypy gate.** Correct CLI and web type
     errors and annotate comparison/dashboard results. The extended gate follows
     imports for type information but suppresses errors in imported GUI modules.
-  - [ ] Extend mypy coverage to GUI modules, with an explicit baseline where
-    necessary. Their diagnostics remain outside the CLI/web gate.
+  - [x] **0156 — Add GUI modules to mandatory mypy coverage.** Correct optional
+    value narrowing, collection annotations, and per-account Rate assignments;
+    share dialog-close refresh callbacks and repair the invalid exception class
+    in opening-balance parsing. The extended gate checks all presentation modules
+    and their imports without a suppressed GUI baseline. Dynamic PyGObject APIs
+    still require the GTK runtime tests.
+    Projection controls also preserve per-account rates when rebuilding assumptions.
   - [x] **0155 — Make formatting mandatory.** Apply Ruff formatting across source,
     tests, and examples; enforce `make format-check` in `make check` and CI.
     `make fmt` now applies both Ruff lint fixes and formatting.
@@ -103,8 +108,6 @@ semantics, not duplicate business rules in presentation code.
   `plan-unresolved`, and `plan-matches` budget filters use the supported database
   iteration API instead of a nonexistent `get_budget_by_name` method, with CLI
   regressions covering the documented options.
-- [ ] Continue reducing CLI/web typing debt and move the extended mypy audit into the
-  mandatory gate once the scope is clean or has a narrowly documented baseline.
 - [ ] Harden `Money` and amount handling:
   - [x] **0140 — Core parsing/comparison safety.** Ambiguous locale-formatted strings are rejected instead of silently mis-scaled; equality/hash behavior follows Python's numeric contract; non-numeric equality does not raise.
   - [x] **0141 — QIF/OFX number-format parsing.** Detect period-vs-comma decimal conventions from the complete import file, parse grouping explicitly, reject conflicting conventions, and allow an explicit importer override for ambiguous files.

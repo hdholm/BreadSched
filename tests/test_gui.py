@@ -435,6 +435,27 @@ class TestLiveUpdates:
 
 
 class TestProjectionView:
+    def test_collect_preserves_account_rates_without_sharing_the_original_map(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType, Rate
+
+        app.open_book(populated_book)
+        root = app.db.root_account()
+        account = Account(name="Generic investment", atype=AccountType.STOCK, parent=root.handle)
+        with app.db.transaction("Add generic projection account") as txn:
+            app.db.add_account(account, txn)
+        window.show_category("projection")
+        view = window._views["projection"]
+        original = view.scenario.assumptions
+        original.per_account[account.handle] = Rate("0.0375")
+
+        collected = view._collect().assumptions
+
+        assert collected.per_account == {account.handle: Rate("0.0375")}
+        assert collected.per_account is not original.per_account
+        assert isinstance(collected.per_account[account.handle], Rate)
+
     def test_the_chart_receives_series(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("projection")
@@ -2599,6 +2620,28 @@ class TestAccountEditor:
         dialog = self._dialog(accounts_view, account)
         assert dialog.editing is True
         assert dialog.name_entry.get_text() == account.name
+
+    def test_invalid_opening_amount_does_not_raise_a_secondary_exception(self, accounts_view, app):
+        from breadsched.gen.lib import Account, AccountType
+
+        dialog = self._dialog(accounts_view)
+        account = app.db.get_account_by_name("Assets:Checking Account")
+        before = sorted(item.handle for item in app.db.iter_transactions())
+        with app.db.transaction("Check malformed opening input") as txn:
+            if app.db.get_account_by_name("Equity") is None:
+                root = app.db.root_account()
+                app.db.add_account(
+                    Account(name="Equity", atype=AccountType.EQUITY, parent=root.handle), txn
+                )
+            dialog._post_opening(account, "not an amount", txn)
+        assert sorted(item.handle for item in app.db.iter_transactions()) == before
+
+    def test_dialog_close_refreshes_view_and_allows_default_close(self, accounts_view, monkeypatch):
+        calls = []
+        monkeypatch.setattr(accounts_view, "refresh", lambda: calls.append("refresh"))
+
+        assert accounts_view.refresh_on_close(None) is False
+        assert calls == ["refresh"]
 
     def test_an_edit_is_stored(self, accounts_view, app):
         account = app.db.get_account_by_name("Assets:Checking Account")

@@ -127,6 +127,11 @@ class BaseView(Gtk.Box):
             if self.db is not None and self.db.is_open:
                 self.refresh()
 
+    def refresh_on_close(self, *_args) -> bool:
+        """Refresh after a child dialog closes and allow its default close action."""
+        self.refresh()
+        return False
+
     def refresh(self) -> None:
         """Rebuild from the database.  Subclasses override."""
 

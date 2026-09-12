@@ -312,6 +312,8 @@ class BreadSchedApplication(Gtk.Application):
 
         from .dialogs.import_dialog import ImportDialog
 
+        if self.db is None:
+            return
         window = ImportDialog(self.props.active_window, self.db)
         window.set_source(source_path)
         window.present()
@@ -344,7 +346,8 @@ class BreadSchedApplication(Gtk.Application):
                 return
             from ..plugins.export.csv_export import export_transactions
 
-            export_transactions(self.db, file.get_path())
+            if self.db is not None:
+                export_transactions(self.db, file.get_path())
 
         dialog.save(self.props.active_window, None, on_saved)
 

@@ -107,7 +107,7 @@ class ScheduleDialog(Gtk.Window):
         self._formula_entries: list[tuple[int, Gtk.Entry]] = []
         self._formula_originals: list[str] = []
         self._formula_variables_original = ""
-        self._category_planning_flow = None
+        self._category_planning_flow: PlanningFlowKind | None = None
         self._category_ledger_direction: int | None = None
         self._frequencies = list(_FREQUENCIES)
         if source is not None and not any(

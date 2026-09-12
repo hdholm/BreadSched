@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib import AccountClass, AssumptionPeriod, Scenario
+from ...gen.lib import AccountClass, AssumptionPeriod, Rate, Scenario
 from ...gen.lib.base import create_handle
 from ..gi_setup import Gtk
 from ..planning_context import (
@@ -37,7 +37,7 @@ class ScenarioManagerDialog(Gtk.Window):
         self._baseline = baseline_scenario(manager, db)
         self._scenarios: list[Scenario] = []
         self._loading = False
-        self._account_rates: dict[str, Decimal] = {}
+        self._account_rates: dict[str, Rate] = {}
         self.set_default_size(620, 520)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -271,7 +271,7 @@ class ScenarioManagerDialog(Gtk.Window):
         ).present()
 
     def _account_rates_saved(self, values: dict[str, Decimal]) -> None:
-        self._account_rates = dict(values)
+        self._account_rates = {handle: Rate(value) for handle, value in values.items()}
         self._update_account_summary()
 
     def _on_duplicate(self, _button) -> None:
@@ -623,7 +623,7 @@ class AssumptionPeriodDialog(Gtk.Window):
         ).present()
 
     def _account_rates_saved(self, values: dict[str, Decimal]) -> None:
-        self._account_rates = dict(values)
+        self._account_rates = {handle: Rate(value) for handle, value in values.items()}
         self._update_account_summary()
 
     def _on_save(self, _button) -> None:

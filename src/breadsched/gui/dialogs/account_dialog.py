@@ -13,7 +13,7 @@ same makes one household look poorer than it is and the other richer.
 
 from __future__ import annotations
 
-from decimal import Decimal, InvalidOperation
+from decimal import InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
@@ -30,7 +30,7 @@ from ..gi_setup import Gtk
 
 __all__ = ["AccountDialog"]
 
-_TYPES = [t for t in AccountType if t is not AccountType.ROOT]
+_TYPES: list[AccountType] = [t for t in AccountType if t is not AccountType.ROOT]
 _ROLES = list(AccountPlanningRole)
 
 
@@ -46,7 +46,7 @@ class AccountDialog(Gtk.Window):
     ) -> None:
         editing = account is not None
         super().__init__(
-            title="Edit account" if editing else "New account",
+            title="Edit account" if account is not None else "New account",
             transient_for=parent,
             modal=True,
         )
@@ -102,14 +102,14 @@ class AccountDialog(Gtk.Window):
         self.name_entry = Gtk.Entry(placeholder_text="Checking")
         self.name_entry.set_hexpand(True)
         self.name_entry.connect("changed", self._validate)
-        if editing:
+        if account is not None:
             self.name_entry.set_text(account.name)
         grid.attach(Gtk.Label(label="Name", xalign=0), 0, row, 1, 1)
         grid.attach(self.name_entry, 1, row, 1, 1)
         row += 1
 
         self.type_picker = Gtk.DropDown.new_from_strings([t.value for t in _TYPES])
-        if editing:
+        if account is not None:
             self.type_picker.set_selected(_TYPES.index(account.atype))
         self.type_picker.connect("notify::selected", self._on_type_changed)
         grid.attach(Gtk.Label(label="Type", xalign=0), 0, row, 1, 1)
@@ -119,11 +119,11 @@ class AccountDialog(Gtk.Window):
         commodity_labels = ["(book/default)"] + [
             f"{commodity.mnemonic} ({commodity.namespace})" for commodity in self.commodities
         ]
-        if editing and account.commodity not in self.commodity_handles:
+        if account is not None and account.commodity not in self.commodity_handles:
             commodity_labels.append(f"Imported commodity ({account.commodity})")
             self.commodity_handles.append(account.commodity)
         self.commodity_picker = Gtk.DropDown.new_from_strings(commodity_labels)
-        if editing and account.commodity:
+        if account is not None and account.commodity:
             self.commodity_picker.set_selected(self.commodity_handles.index(account.commodity))
         self.commodity_picker.set_tooltip_text("Currency or security associated with this account")
         grid.attach(Gtk.Label(label="Commodity", xalign=0), 0, row, 1, 1)
@@ -135,7 +135,7 @@ class AccountDialog(Gtk.Window):
             "GnuCash account-specific smallest commodity unit (SCU); "
             "leave blank for the commodity default"
         )
-        if editing and account.commodity_scu is not None:
+        if account is not None and account.commodity_scu is not None:
             self.commodity_scu_entry.set_text(str(account.commodity_scu))
         self.commodity_scu_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Commodity SCU", xalign=0), 0, row, 1, 1)
@@ -145,7 +145,7 @@ class AccountDialog(Gtk.Window):
         self.parent_picker = Gtk.DropDown.new_from_strings(
             [db.full_name(a) or a.name for a in self.parents] or ["(none)"]
         )
-        chosen = account.parent if editing else default_parent
+        chosen = account.parent if account is not None else default_parent
         for index, candidate in enumerate(self.parents):
             if candidate.handle == chosen:
                 self.parent_picker.set_selected(index)
@@ -155,14 +155,14 @@ class AccountDialog(Gtk.Window):
         row += 1
 
         self.code_entry = Gtk.Entry(placeholder_text="Optional")
-        if editing:
+        if account is not None:
             self.code_entry.set_text(account.code)
         grid.attach(Gtk.Label(label="Code", xalign=0), 0, row, 1, 1)
         grid.attach(self.code_entry, 1, row, 1, 1)
         row += 1
 
         self.description_entry = Gtk.Entry()
-        if editing:
+        if account is not None:
             self.description_entry.set_text(account.description)
         grid.attach(Gtk.Label(label="Description", xalign=0), 0, row, 1, 1)
         grid.attach(self.description_entry, 1, row, 1, 1)
@@ -172,7 +172,7 @@ class AccountDialog(Gtk.Window):
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.notes_view.set_size_request(-1, 72)
         self.notes_view.set_tooltip_text("Imported or local notes attached to this account")
-        if editing and account.notes:
+        if account is not None and account.notes:
             self.notes_view.get_buffer().set_text(account.notes)
         notes_scroll = Gtk.ScrolledWindow()
         notes_scroll.set_min_content_height(72)
@@ -189,14 +189,14 @@ class AccountDialog(Gtk.Window):
 
         self.group_entry = Gtk.Entry(placeholder_text="Home Easton")
         self.group_entry.set_tooltip_text("The dashboard group this account joins")
-        if editing:
+        if account is not None:
             self.group_entry.set_text(account.group)
         grid.attach(Gtk.Label(label="Dashboard group", xalign=0), 0, row, 1, 1)
         grid.attach(self.group_entry, 1, row, 1, 1)
         row += 1
 
         self.planning_role_picker = Gtk.DropDown.new_from_strings([role.label for role in _ROLES])
-        if editing:
+        if account is not None:
             self.planning_role_picker.set_selected(_ROLES.index(account.planning_role))
         self.planning_role_picker.set_tooltip_text(
             "Default planning meaning for movements through this account"
@@ -227,12 +227,12 @@ class AccountDialog(Gtk.Window):
         add_fsa.connect("clicked", lambda *_: self._add_fsa_year_row())
         self.fsa_box.append(add_fsa)
         box.append(self.fsa_box)
-        if editing:
+        if account is not None:
             for funding_year in account.fsa_years:
                 self._add_fsa_year_row(funding_year)
 
         self.placeholder_check = Gtk.CheckButton(label="Placeholder (holds no entries)")
-        if editing:
+        if account is not None:
             self.placeholder_check.set_active(account.placeholder)
         grid.attach(self.placeholder_check, 1, row, 1, 1)
         row += 1
@@ -241,7 +241,7 @@ class AccountDialog(Gtk.Window):
         self.hidden_check.set_tooltip_text(
             "Hide this account from normal account lists unless hidden accounts are shown"
         )
-        if editing:
+        if account is not None:
             self.hidden_check.set_active(account.hidden)
         grid.attach(self.hidden_check, 1, row, 1, 1)
         row += 1
@@ -260,7 +260,7 @@ class AccountDialog(Gtk.Window):
         self.asset_picker = Gtk.DropDown.new_from_strings(
             ["(none)"] + [db.full_name(a) for a in self.assets]
         )
-        if editing and account.linked_asset:
+        if account is not None and account.linked_asset:
             for index, asset in enumerate(self.assets, start=1):
                 if asset.handle == account.linked_asset:
                     self.asset_picker.set_selected(index)
@@ -273,7 +273,7 @@ class AccountDialog(Gtk.Window):
         self.card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.card_box.add_css_class("card")
         self.full_check = Gtk.CheckButton(label="Cleared in full every month")
-        self.full_check.set_active(account.pays_in_full if editing else True)
+        self.full_check.set_active(account.pays_in_full if account is not None else True)
         self.full_check.connect("toggled", self._on_card_changed)
         self.card_box.append(self.full_check)
 
@@ -282,13 +282,13 @@ class AccountDialog(Gtk.Window):
         self.usual_entry.set_tooltip_text(
             "Carried as a scheduled estimate while a balance is outstanding"
         )
-        if editing and account.usual_payment:
+        if account is not None and account.usual_payment:
             self.usual_entry.set_text(f"{account.usual_payment.to_decimal():.2f}")
         card_grid.attach(Gtk.Label(label="Usual payment", xalign=0), 0, 0, 1, 1)
         card_grid.attach(self.usual_entry, 1, 0, 1, 1)
 
         self.day_spin = Gtk.SpinButton.new_with_range(1, 28, 1)
-        if editing and account.payment_day:
+        if account is not None and account.payment_day:
             self.day_spin.set_value(account.payment_day)
         card_grid.attach(Gtk.Label(label="Payment day", xalign=0), 0, 1, 1, 1)
         card_grid.attach(self.day_spin, 1, 1, 1, 1)
@@ -298,7 +298,7 @@ class AccountDialog(Gtk.Window):
         box.append(self.status)
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        if editing:
+        if account is not None:
             delete = Gtk.Button(label="Delete")
             delete.add_css_class("destructive-action")
             delete.connect("clicked", self._on_delete)
@@ -337,7 +337,12 @@ class AccountDialog(Gtk.Window):
             widget.connect("changed", self._validate)
             row.append(widget)
         remove = Gtk.Button(label="Remove")
-        remove.connect("clicked", lambda *_: (self.fsa_rows.remove(row), self._validate()))
+
+        def remove_row(*_args) -> None:
+            self.fsa_rows.remove(row)
+            self._validate()
+
+        remove.connect("clicked", remove_row)
         row.append(remove)
         row._fsa_fields = (start, through, election, runout)
         self.fsa_rows.append(row)
@@ -485,7 +490,7 @@ class AccountDialog(Gtk.Window):
             return
         try:
             value = Money(parse_user_amount(amount))
-        except (ValueError, InvalidOperation, ArithmeticError, Decimal):
+        except (ValueError, InvalidOperation, ArithmeticError):
             return
         from datetime import date
 

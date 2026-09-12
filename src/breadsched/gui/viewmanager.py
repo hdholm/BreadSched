@@ -104,6 +104,7 @@ class ViewManager(Gtk.ApplicationWindow):
                 separator.set_margin_end(6)
                 self.toolbar.append(separator)
                 continue
+            assert label is not None and icon is not None and tooltip is not None
             button = _tool_button(label, icon, action, tooltip)
             self.tool_buttons[action] = button
             self.toolbar.append(button)

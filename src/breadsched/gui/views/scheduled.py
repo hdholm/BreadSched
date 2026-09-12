@@ -17,7 +17,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 from ...gen.engine import schedule
-from ...gen.lib import PeriodType
+from ...gen.lib import PeriodType, ScheduledTransaction
 from ...gen.lib.money import Money
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap
@@ -236,7 +236,7 @@ class ScheduledView(BaseView):
 
     def _split_children(self, item):
         payload = item.payload if isinstance(item, Row) else item
-        if _is_split(payload) or self.db is None or not payload.splits:
+        if not isinstance(payload, ScheduledTransaction) or self.db is None or not payload.splits:
             return None
         store = Gio.ListStore.new(Row)
         for split in payload.splits:
@@ -349,7 +349,7 @@ class ScheduledView(BaseView):
             source=sched,
             read_only_reason=reason or None,
         )
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
     def _on_new_clicked(self, _button) -> None:
@@ -358,7 +358,7 @@ class ScheduledView(BaseView):
         from ..dialogs.schedule_dialog import ScheduleDialog
 
         dialog = ScheduleDialog(self.get_root(), self.db)
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
     def _on_suggest_clicked(self, _button) -> None:
@@ -367,7 +367,7 @@ class ScheduledView(BaseView):
         from ..dialogs.historical_estimates_dialog import HistoricalEstimatesDialog
 
         dialog = HistoricalEstimatesDialog(self.get_root(), self.db)
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
     def _on_loan_clicked(self, _button) -> None:
@@ -376,7 +376,7 @@ class ScheduledView(BaseView):
         from ..dialogs.loan_dialog import LoanDialog
 
         dialog = LoanDialog(self.get_root(), self.db)
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
 
@@ -499,5 +499,5 @@ class UpcomingView(BaseView):
             self.status.set_text("Nothing is due")
             return
         dialog = DueDialog(self.get_root(), self.db, due)
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()

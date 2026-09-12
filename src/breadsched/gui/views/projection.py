@@ -248,6 +248,8 @@ class ProjectionView(BaseView):
         self.recompute()
 
     def _populate_scenarios(self) -> None:
+        if self.db is None:
+            return
         self._scenarios = list(self.db.iter_scenarios())
         model = Gtk.StringList()
         model.append("Base scenario")
@@ -286,6 +288,8 @@ class ProjectionView(BaseView):
             self.schedule_refresh()
 
     def _populate_budgets(self) -> None:
+        if self.db is None:
+            return
         self._budgets = list(self.db.iter_budgets())
         model = Gtk.StringList()
         model.append("None")
@@ -313,11 +317,16 @@ class ProjectionView(BaseView):
             if 0 < selected <= len(getattr(self, "_budgets", []))
             else None
         )
+        rates = {
+            key: Decimal(str(round(scale.get_value(), 4))) for key, scale in self._scales.items()
+        }
         self.scenario.assumptions = Assumptions(
-            **{
-                key: Decimal(str(round(scale.get_value(), 4)))
-                for key, scale in self._scales.items()
-            }
+            income_growth=rates["income_growth"],
+            expense_inflation=rates["expense_inflation"],
+            investment_return=rates["investment_return"],
+            cash_interest=rates["cash_interest"],
+            liability_interest=rates["liability_interest"],
+            per_account=self.scenario.assumptions.per_account,
         )
         if self.scenario.start is None:
             self.scenario.start = date.today().replace(day=1)

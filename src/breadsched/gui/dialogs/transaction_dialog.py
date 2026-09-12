@@ -98,7 +98,7 @@ class TransactionDialog(Gtk.Window):
     ) -> None:
         editing = transaction is not None
         super().__init__(
-            title="Edit transaction" if editing else "New transaction",
+            title="Edit transaction" if transaction is not None else "New transaction",
             transient_for=parent,
             modal=True,
         )
@@ -122,7 +122,7 @@ class TransactionDialog(Gtk.Window):
         header = Gtk.Grid(column_spacing=10, row_spacing=8)
         box.append(header)
 
-        when = (transaction.post_date if editing else default_date) or date.today()
+        when = (transaction.post_date if transaction is not None else default_date) or date.today()
         self.date_entry = Gtk.Entry(text=when.isoformat())
         self.date_entry.connect("changed", self.revalidate)
         header.attach(Gtk.Label(label="Date", xalign=0), 0, 0, 1, 1)
@@ -130,13 +130,13 @@ class TransactionDialog(Gtk.Window):
 
         self.description_entry = Gtk.Entry(placeholder_text="What was it for")
         self.description_entry.set_hexpand(True)
-        if editing:
+        if transaction is not None:
             self.description_entry.set_text(transaction.description)
         header.attach(Gtk.Label(label="Description", xalign=0), 0, 1, 1, 1)
         header.attach(self.description_entry, 1, 1, 1, 1)
 
         self.num_entry = Gtk.Entry(placeholder_text="Cheque or reference")
-        if editing:
+        if transaction is not None:
             self.num_entry.set_text(transaction.num)
         header.attach(Gtk.Label(label="Number", xalign=0), 0, 2, 1, 1)
         header.attach(self.num_entry, 1, 2, 1, 1)
@@ -185,7 +185,7 @@ class TransactionDialog(Gtk.Window):
         box.append(self.status)
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        if editing:
+        if transaction is not None:
             delete = Gtk.Button(label="Delete")
             delete.add_css_class("destructive-action")
             delete.connect("clicked", self._on_delete)
@@ -200,7 +200,7 @@ class TransactionDialog(Gtk.Window):
         buttons.append(self.save_button)
         box.append(buttons)
 
-        if editing:
+        if transaction is not None:
             for split in transaction.splits:
                 self.add_split(split)
         else:
@@ -300,7 +300,7 @@ class TransactionDialog(Gtk.Window):
         when = date.fromisoformat(self.date_entry.get_text().strip())
         residual = self.residual()
 
-        target = self.transaction if self.editing else Transaction()
+        target = self.transaction if self.transaction is not None else Transaction()
         target.post_date = when
         target.description = self.description_entry.get_text().strip() or "(no description)"
         target.num = self.num_entry.get_text().strip()
@@ -310,9 +310,12 @@ class TransactionDialog(Gtk.Window):
             value = editor.value()
             if value is None:
                 value = -residual
+            account_handle = editor.account_handle
+            if account_handle is None:
+                raise ValueError("Choose an account for every split")
             splits.append(
                 Split(
-                    account=editor.account_handle,
+                    account=account_handle,
                     value=value,
                     memo=editor.memo.get_text().strip(),
                     reconcile=editor.reconcile,
@@ -340,7 +343,11 @@ class TransactionDialog(Gtk.Window):
             self.status.set_text(str(exc))
             self.status.add_css_class("negative")
             return
-        if self.fsa_claim is not None and self.fsa_claim.get_selected() > 0:
+        if (
+            self.fsa_claim is not None
+            and self.fsa_role is not None
+            and self.fsa_claim.get_selected() > 0
+        ):
             claim = self.fsa_claims[self.fsa_claim.get_selected() - 1]
             roles = ("payment", "refund", "reimbursement")
             role = roles[self.fsa_role.get_selected()]

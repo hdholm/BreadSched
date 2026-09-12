@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.activity import CategoryPeriodDetail, PlanningFlowPeriodDetail
 from ..gi_setup import Gtk
@@ -72,7 +74,7 @@ class PlanDetailDialog(Gtk.Window):
         outer.append(close)
 
     @staticmethod
-    def _table(headers: tuple[str, ...], rows: list[tuple[str, ...]]) -> Gtk.Widget:
+    def _table(headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]) -> Gtk.Widget:
         grid = Gtk.Grid(column_spacing=12, row_spacing=5)
         grid.set_margin_top(8)
         grid.set_margin_bottom(8)

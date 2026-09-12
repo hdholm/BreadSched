@@ -39,7 +39,7 @@ jobs:
       - name: Type check
         run: mypy src/breadsched/gen src/breadsched/plugins
 
-      - name: Type check CLI and web
+      - name: Type check CLI, web and GUI
         run: make typecheck-extended
 
       - name: Test core in parallel

@@ -208,7 +208,9 @@ class LoanDialog(Gtk.Window):
             for position, key in enumerate(
                 ("payment", "interest", "principal", "balance"), start=1
             ):
-                cell = Gtk.Label(label=entry[key].format(), xalign=1)
+                amount = entry[key]
+                assert isinstance(amount, Money)
+                cell = Gtk.Label(label=amount.format(), xalign=1)
                 cell.add_css_class("numeric")
                 self.preview.attach(cell, position, index, 1, 1)
 

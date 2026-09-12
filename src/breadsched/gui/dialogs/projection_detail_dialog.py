@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ..gi_setup import Gtk
@@ -78,7 +80,7 @@ class ProjectionDetailDialog(Gtk.Window):
     @staticmethod
     def _table(
         headers: tuple[str, ...],
-        rows: list[tuple[str, ...]],
+        rows: Sequence[tuple[str, ...]],
         *,
         left_columns: int = 1,
     ) -> Gtk.Widget:

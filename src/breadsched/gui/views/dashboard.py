@@ -421,7 +421,7 @@ class DashboardView(BaseView):
         from ..dialogs.dashboard_dialog import DashboardDialog
 
         dialog = DashboardDialog(self.get_root(), self.db, self.config)
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
 

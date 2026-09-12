@@ -45,10 +45,9 @@ format-check:
 typecheck:
 	mypy src/breadsched/gen src/breadsched/plugins
 
-# Check CLI/web while retaining imported type information. GUI imports remain
-# available for inference, but their own errors wait for the GUI typing stage.
+# Check every presentation layer, including GUI modules and their imports.
 typecheck-extended:
-	mypy --follow-imports=silent src/breadsched/cli src/breadsched/web
+	mypy src/breadsched/cli src/breadsched/web src/breadsched/gui
 
 build:
 	python -m build

@@ -11,11 +11,13 @@ from calendar import monthrange
 from datetime import date
 
 from ...gen.engine.activity import (
+    CategoryReport,
     ReportingPeriod,
     build_category_report,
     explain_category_period,
     explain_planning_flow_period,
 )
+from ...gen.lib import Scenario
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -60,7 +62,7 @@ class PlanView(BaseView):
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
-        self._report = None
+        self._report: CategoryReport | None = None
         today = date.today()
         self._start_date = date(today.year, 1, 1)
         self._end_date = date(today.year + 1, 12, 31)
@@ -68,7 +70,7 @@ class PlanView(BaseView):
         self._measure_index = 0
         self._bounds_initialized = False
         self._updating_controls = False
-        self._scenarios = []
+        self._scenarios: list[Scenario] = []
         self._scenario_handle: str | None = selected_scenario_handle(manager)
         self._updating_scenarios = False
         self._build()

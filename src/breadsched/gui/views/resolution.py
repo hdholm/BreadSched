@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from ...gen.engine import fsa_claims, planning
 from ...gen.lib import AccountClass, AccountPlanningRole
 from ...gen.lib.money import Money
@@ -296,8 +298,10 @@ class ResolutionView(BaseView):
         self._refresh_candidates()
 
     def _fsa_options(self, transaction):
+        if self.db is None:
+            return [], []
         claims = fsa_claims.suggest_claims_for_transaction(self.db, transaction)
-        roles = []
+        roles: list[tuple[str, str, str, list[date]]] = []
         for split in transaction.splits:
             account = self.db.get_account(split.account)
             if account is None:
@@ -369,6 +373,8 @@ class ResolutionView(BaseView):
         box.append(actions)
 
         def do_attach(_button) -> None:
+            if self.db is None:
+                return
             claim = claims[claim_pick.get_selected()].claim
             role, split, _account, _years = roles[role_pick.get_selected()]
             selected_year = year_pick.get_selected()

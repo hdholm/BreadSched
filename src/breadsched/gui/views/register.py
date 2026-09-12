@@ -211,14 +211,17 @@ class RegisterView(BaseView):
             self.balance_label.remove_css_class("negative")
 
     def _populate_picker(self) -> None:
+        db = self.db
+        if db is None:
+            return
         accounts = sorted(
-            (a for a in self.db.iter_accounts() if not a.is_root and not a.placeholder),
-            key=lambda a: self.db.full_name(a),
+            (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
+            key=db.full_name,
         )
         self._pickable = accounts
         model = Gtk.StringList()
         for account in accounts:
-            model.append(self.db.full_name(account))
+            model.append(db.full_name(account))
         self.account_picker.set_model(model)
 
         if self.account_handle is None and accounts:
@@ -260,7 +263,7 @@ class RegisterView(BaseView):
     def _children_of(self, item):
         """The splits of a transaction row, or None for a split row itself."""
         payload = item.payload if isinstance(item, Row) else item
-        if isinstance(payload, SplitRow) or self.db is None:
+        if not isinstance(payload, ledger.RegisterRow) or self.db is None:
             return None
         txn = payload.transaction
         store = Gio.ListStore.new(Row)
@@ -325,7 +328,7 @@ class RegisterView(BaseView):
             default_account=self.account_handle,
             transaction=transaction,
         )
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
     def _on_add_clicked(self, _button) -> None:
@@ -339,5 +342,5 @@ class RegisterView(BaseView):
             default_account=self.account_handle,
             default_date=date.today(),
         )
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()

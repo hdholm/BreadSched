@@ -12,7 +12,7 @@ would be technically correct and useless.
 from __future__ import annotations
 
 from ...gen.engine import ledger  # noqa: E402
-from ...gen.lib.account import AccountClass  # noqa: E402
+from ...gen.lib.account import Account, AccountClass  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
 from ..gi_setup import Gio, Gtk
 from ._base import (
@@ -179,7 +179,9 @@ class AccountTreeView(BaseView):
             store.append(Row(account))
         return store
 
-    def _has_value(self, account) -> bool:
+    def _has_value(self, account: Account) -> bool:
+        if self.db is None:
+            return False
         return bool(ledger.balance_recursive(self.db, account.handle)) or bool(
             self.db.child_accounts(account.handle)
         )
@@ -188,10 +190,13 @@ class AccountTreeView(BaseView):
         """Return a child model, or ``None`` for a leaf so no expander is drawn."""
         if self.db is None:
             return None
-        children = self.db.child_accounts(row.payload.handle)
+        account = row.payload
+        if not isinstance(account, Account):
+            return None
+        children = self.db.child_accounts(account.handle)
         if not children:
             return None
-        return self._children_store(row.payload.handle)
+        return self._children_store(account.handle)
 
     # ---------------------------------------------------------------- summary
 
@@ -201,6 +206,8 @@ class AccountTreeView(BaseView):
             self.summary.remove(child)
             child = self.summary.get_first_child()
 
+        if self.db is None:
+            return
         totals = ledger.totals_by_class(self.db)
         cards = [
             ("Cash on hand", ledger.cash_on_hand(self.db)),
@@ -236,7 +243,7 @@ class AccountTreeView(BaseView):
             account,
             default_parent=root.handle if root else None,
         )
-        dialog.connect("close-request", lambda *_: (self.refresh(), False)[1])
+        dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
     def selected_account(self):

@@ -70,8 +70,9 @@ Before handing off a patch:
    real GTK environment are authoritative for GUI behavior.
 7. Run the repository quality gates, especially Ruff and mypy. `make check` is the
    preferred final local verification when dependencies are available. The
-   CLI/web `make typecheck-extended` gate keeps imported types available but
-   leaves diagnostics in imported GUI modules for the later GUI typing stage.
+   `make typecheck-extended` gate covers CLI, web, and GUI modules, including
+   diagnostics from their imports. GTK runtime tests remain necessary: dynamic
+   PyGObject APIs without type stubs cannot be fully checked by mypy.
 8. Generate the deliverable with `git format-patch`.
 9. Verify the final mailbox patch with a real `git am` against the exact preceding
    accepted state.
