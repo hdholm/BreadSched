@@ -26,6 +26,7 @@ dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
     "pytest-xdist>=3.5",
+    "hypothesis>=6.100",
     # Shuffles test order every run and prints the seed. Order-dependent tests
     # otherwise pass on the machine that wrote them and fail on the next one.
     "pytest-randomly>=3.15",
@@ -51,7 +52,10 @@ breadsched = ["gui/resources/*.css", "plugins/**/*.gpr.py"]
 minversion = "7.0"
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-markers = ["gui: requires a GTK4 runtime"]
+markers = [
+    "gui: requires a GTK4 runtime",
+    "performance: realistic-size performance guard; run separately from the normal matrix",
+]
 
 [tool.ruff]
 line-length = 100

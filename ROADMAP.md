@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0136 — `hardening: make FSA claims transactional`**.
+Status is current through patch **0138 — `quality: add performance and recurrence gates`**.
 
 ## Status legend
 
@@ -71,20 +71,29 @@ semantics, not duplicate business rules in presentation code.
   escape an active `DbTxn`; transactional metadata participates in undo/redo; FSA
   claims are first-class persisted records migrated from legacy metadata and save
   atomically with reimbursement split classifications.
+- [x] **0138 — First expanded quality gates.** A dedicated serial performance gate
+  measures single-write cost on a synthetic 30,000-transaction household book;
+  Hypothesis-based recurrence properties exercise randomized intervals, dates,
+  weekend adjustments, serialization, and occurrence identity. Core xdist runs
+  exclude the dedicated performance marker, which executes once in CI.
 
 ## Remaining hardening work
 
-- [ ] **NEXT — Expand quality gates.**
-  - Extend mypy coverage to CLI and web, then GUI with an explicit baseline where
+- [ ] **NEXT — Finish quality-gate expansion.**
+  - [ ] Extend mypy coverage to CLI and web, then GUI with an explicit baseline where
     necessary.
-  - Add `ruff format --check` to local/CI gates.
-  - Keep Host/Origin/token web-security regressions in the standard gate.
-  - Add property-based recurrence tests around collision and edge cases.
-  - Add realistic projection/storage performance benchmarks, including a large-book
-    commit budget so O(book) write regressions are caught automatically.
-  - Continue pytest-xdist rollout: core/non-GTK uses `pytest -n auto`; GTK stays
-    serial until sustained clean-run history justifies parallel GTK testing.
-  - Preserve `make test-ordered` / `pytest -n 0` as a deterministic diagnostic path.
+  - [ ] Eliminate current formatting debt, then add `ruff format --check` to the
+    mandatory local/CI gate. A `make format-check` audit target exists now.
+  - [x] Keep Host/Origin/token web-security regressions in the standard gate.
+  - [x] Add property-based recurrence tests around generated occurrence identity,
+    weekend adjustment, and serialization. Continue adding properties as new
+    collision/edge cases are discovered.
+  - [x] Add a realistic storage performance gate: one ordinary commit on a synthetic
+    30,000-transaction book must remain below a deliberately generous 0.5-second
+    budget. Add projection/report benchmarks separately as those paths are hardened.
+  - [x] Continue pytest-xdist rollout: core/non-GTK uses `pytest -n auto`; GTK stays
+    serial and the realistic performance gate runs separately with `-n 0`.
+  - [x] Preserve `make test-ordered` / `pytest -n 0` as a deterministic diagnostic path.
 - [ ] Fix documented CLI commands that still depend on legacy Budget APIs or stale
   method names; extend static analysis so these failures cannot hide outside the
   current mypy scope.

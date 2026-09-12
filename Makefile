@@ -2,17 +2,24 @@
 # Preserve any caller-provided PYTHONPATH entries after the local src directory.
 export PYTHONPATH := $(CURDIR)/src$(if $(PYTHONPATH),:$(PYTHONPATH))
 
-.PHONY: install test test-core test-gui test-ordered lint fmt typecheck build check demo cov all
+.PHONY: install test test-core test-performance test-hardening test-gui test-ordered lint fmt format-check typecheck build check demo cov all
 
 install:
 	pip install -e ".[dev]"
 
 PYTEST_XDIST_WORKERS ?= auto
 
-test: test-core test-gui
+test: test-core test-performance test-gui
 
 test-core:
-	pytest -n $(PYTEST_XDIST_WORKERS) -m "not gui"
+	pytest -n $(PYTEST_XDIST_WORKERS) -m "not gui and not performance"
+
+test-performance:
+	pytest -n 0 -m performance
+
+test-hardening:
+	pytest -n 0 tests/test_web.py -k TestSafety
+	pytest -n 0 -m performance
 
 test-gui:
 	pytest -m gui
@@ -29,6 +36,11 @@ lint:
 
 fmt:
 	ruff check --fix src tests examples
+
+# Available now for cleaning/baselining the existing tree; this becomes part of
+# `check` once current formatting debt has been eliminated.
+format-check:
+	ruff format --check src tests examples
 
 typecheck:
 	mypy src/breadsched/gen src/breadsched/plugins

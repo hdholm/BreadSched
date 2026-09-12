@@ -203,6 +203,21 @@ classifications and the claim row atomically, and one undo reverses both. Schema
 migrations move legacy claim metadata into the primary-object table before normal
 book use.
 
+
+### Performance and randomized correctness gates
+
+Performance regressions should be guarded at the operation boundary rather than by
+timing unrelated setup. The storage gate therefore creates a realistic synthetic
+30,000-transaction history outside the measured interval and times one ordinary
+commit. The budget is intentionally much looser than expected incremental-write
+performance while remaining well below the old whole-book verification cost.
+
+Recurrence correctness is also tested with generated inputs. Property-based tests
+exercise many dates, intervals, weekend adjustments, and semi-monthly shapes while
+checking generator-owned occurrence identity and serialization round trips. Named
+regression cases remain valuable for explaining specific historical failures; the
+property layer complements rather than replaces them.
+
 Only one writer should own a book at a time unless the storage architecture is
 explicitly designed for safe concurrent writers.
 

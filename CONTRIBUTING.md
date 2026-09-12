@@ -46,6 +46,12 @@ exclusive ownership of fixed ports, filenames, environment state, or process-glo
 mutable objects. GTK runtime tests remain serial until the roadmap explicitly moves
 them to a parallel-safe stage.
 
+Randomized/property-based tests should use generic generated data and state the
+invariant they protect. Realistic performance tests belong under the `performance`
+marker and must time only the operation under test, not fixture/book construction.
+Performance thresholds should be loose enough for ordinary CI variability while
+still detecting the regression class they were introduced to prevent.
+
 ## Patch workflow
 
 BreadSched development uses sequential `git am` mailbox patches.
