@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0148 — `hardening: distinguish chart roots explicitly`**.
+Status is current through patch **0149 — `quality: skip missing GTK4 typelib cleanly`**.
 
 ## Status legend
 
@@ -349,6 +349,9 @@ semantics, not duplicate business rules in presentation code.
 
 - [ ] Continue real GTK runtime testing for selections, dialogs, focus transitions,
   model replacement, multiple windows, and GTK API-version differences.
+  - [x] **0149 — Missing GTK4 typelib handling.** GUI test collection skips cleanly
+    when PyGObject exists but `gi.require_version("Gtk", "4.0")` cannot load the GTK4
+    typelib, matching the launcher's environment handling instead of aborting pytest.
 - [ ] Improve first-run UX, preferences, actionable errors, icons/resources, and
   native desktop polish without moving financial logic into GUI code.
 - [ ] Add printable/exportable reports and richer scenario/flow reporting.

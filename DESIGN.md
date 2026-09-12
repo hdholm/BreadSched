@@ -252,6 +252,13 @@ opens remain allowed. A stale lock is reclaimed automatically only when it belon
 the same host and its recorded process no longer exists. Lock removal verifies the
 ownership token so one process cannot delete another writer's lock.
 
+## GTK test availability
+
+GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
+PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
+(`ValueError` from `gi.require_version`) skip the GTK module cleanly; once GTK4 is
+available, runtime/widget failures remain real test failures.
+
 ## GTK4 and web parity
 
 GTK4 defines the reference workflow and interaction model. The web UI must maintain

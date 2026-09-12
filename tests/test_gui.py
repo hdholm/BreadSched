@@ -13,6 +13,7 @@ bound without entering a main loop and no test can hang waiting for one.
 from __future__ import annotations
 
 import gc
+import importlib
 import itertools
 from datetime import date
 from pathlib import Path
@@ -23,9 +24,13 @@ import pytest
 # gi.repository here: that is where versions are pinned and where PyGObject's
 # import-time noise is suppressed. A test that imports gi directly reintroduces
 # both problems for the whole session, since the first import is the one that counts.
-gi_setup = pytest.importorskip(
-    "breadsched.gui.gi_setup", reason="PyGObject is not installed"
-)
+try:
+    gi_setup = importlib.import_module("breadsched.gui.gi_setup")
+except (ImportError, ValueError) as exc:
+    # PyGObject can be installed while the GTK 4 typelib is absent. In that case
+    # gi.require_version raises ValueError rather than ImportError; it is still an
+    # unavailable GTK runtime, not a test-collection failure.
+    pytest.skip(f"GTK 4 unavailable: {exc}", allow_module_level=True)
 Gdk, Gtk = gi_setup.Gdk, gi_setup.Gtk
 
 try:
