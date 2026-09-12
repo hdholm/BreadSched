@@ -1,9 +1,9 @@
 """Persistent settings, in INI files under the user's config directory.
 
-Follows the XDG Base Directory specification, which is what GNOME applications
-use: ``$XDG_CONFIG_HOME/breadsched/`` when that is set, otherwise
-``~/.config/breadsched/``. Two files, because they have different lifetimes and
-different levels of interest to a human:
+Uses the platform's normal per-user configuration area: XDG config on Linux and
+other Unix systems, ``%APPDATA%`` on Windows, and ``~/Library/Application Support``
+on macOS. Two files have different lifetimes and different levels of interest to a
+human:
 
 * ``settings.ini`` — deliberate preferences, such as the book to reopen.
 * ``views.ini`` — remembered interface state: column widths, sort order, which
@@ -17,25 +17,15 @@ next start.
 from __future__ import annotations
 
 import configparser
-import os
 from pathlib import Path
 from typing import Any
 
 from .logs import get_logger
+from .user_paths import config_directory
 
 __all__ = ["Settings", "config_directory"]
 
 LOG = get_logger(__name__)
-
-APP_DIRECTORY = "breadsched"
-
-
-def config_directory() -> Path:
-    """The directory settings live in, honouring ``XDG_CONFIG_HOME``."""
-    base = os.environ.get("XDG_CONFIG_HOME")
-    root = Path(base) if base else Path.home() / ".config"
-    return root / APP_DIRECTORY
-
 
 class Settings:
     """A small typed wrapper over an INI file.

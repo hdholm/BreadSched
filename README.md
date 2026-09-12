@@ -246,7 +246,13 @@ writer. Clean shutdown removes the lock, and a stale same-host lock is reclaimed
 its recorded process no longer exists.
 
 Do not place the only copy of a financial book in a location whose synchronization
-or filesystem behavior is not safe for SQLite. Keep independent backups.
+or filesystem behavior is not safe for SQLite. BreadSched warns when a book path is
+inside a recognized OneDrive, iCloud Drive, Dropbox, or Google Drive root. Keep
+independent backups.
+
+Settings use the platform's normal per-user configuration directory, and the default
+book chooser follows the platform Documents location (including XDG `user-dirs.dirs`
+on Linux and common OneDrive Documents redirection on Windows).
 
 ## Project status
 

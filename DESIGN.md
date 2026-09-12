@@ -190,6 +190,15 @@ BreadSched state.
 Longer-term separation of imported ledger state from BreadSched classifications/resolutions is
 preferred where it makes synchronization safer.
 
+## Platform user paths
+
+Per-user settings belong in the platform's normal configuration location rather than
+a Linux-specific `~/.config` path: XDG config on Linux/Unix, `%APPDATA%` on Windows,
+and `~/Library/Application Support` on macOS. Documents discovery likewise respects
+XDG `user-dirs.dirs` and common Windows OneDrive redirection. Because SQLite files
+are unsafe as an only copy on many sync/network filesystems, known sync roots are
+detected and opening a book there emits a durability warning.
+
 ## Storage and transactions
 
 SQLite is the native persistence engine. The design priorities are atomic financial

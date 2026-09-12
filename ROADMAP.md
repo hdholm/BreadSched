@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0145 — `storage: prevent competing writers`**.
+Status is current through patch **0146 — `platform: use native user paths`**.
 
 ## Status legend
 
@@ -110,8 +110,10 @@ semantics, not duplicate business rules in presentation code.
   - [ ] Introduce a distinct rate concept.
   - [ ] Remove hard-coded cents where account/commodity precision differs.
   - [ ] Define commodity/currency-safe arithmetic and valuation boundaries.
-- [ ] Add platform-correct settings/default-book paths and warnings for unsafe synced
-  locations where SQLite durability is questionable.
+- [x] **0146 — Platform-correct user paths.** Settings use XDG/APPDATA/macOS
+  Application Support as appropriate; Documents discovery honors XDG user dirs and
+  common Windows OneDrive redirection; recognized cloud-sync roots emit an SQLite
+  durability warning when a book is opened there.
 - [x] **0145 — Inter-process writer lock.** Writable native books use an owned
   sidecar lock, competing writers fail with an explicit read-only alternative,
   read-only opens remain allowed, and stale same-host locks are safely reclaimed.

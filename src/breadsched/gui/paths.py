@@ -6,10 +6,10 @@ and tested without a GTK runtime.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from .. import APP_NAME
+from ..gen.utils.user_paths import documents_directory as _documents_directory
 
 __all__ = ["default_book_path", "documents_directory", "BOOK_SUFFIX", "READABLE_SUFFIXES"]
 
@@ -22,17 +22,8 @@ READABLE_SUFFIXES = (BOOK_SUFFIX,)
 
 
 def documents_directory() -> Path:
-    """The user's documents folder, falling back to home.
-
-    ``XDG_DOCUMENTS_DIR`` is honoured where it is set, so a localised or
-    relocated Documents folder is respected rather than assumed to be in English
-    and directly under home.
-    """
-    configured = os.environ.get("XDG_DOCUMENTS_DIR")
-    if configured:
-        return Path(configured).expanduser()
-    documents = Path.home() / "Documents"
-    return documents if documents.is_dir() else Path.home()
+    """Return the platform-appropriate Documents directory."""
+    return _documents_directory(home=Path.home())
 
 
 def default_book_path() -> Path:

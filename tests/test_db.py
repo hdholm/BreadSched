@@ -68,6 +68,22 @@ class TestWriterLock:
         assert not lock_path.exists()
 
 
+class TestSyncedPathWarning:
+    def test_opening_book_under_known_sync_root_warns(
+        self, tmp_path, monkeypatch, breadsched_logs
+    ):
+        synced = tmp_path / "OneDrive"
+        synced.mkdir()
+        monkeypatch.setenv("OneDrive", str(synced))
+        path = synced / "book.breadsched"
+
+        db = DbSQLite()
+        db.load(str(path))
+        db.close()
+
+        assert breadsched_logs.containing("inside OneDrive")
+
+
 class TestPersistence:
     def test_account_survives_a_round_trip(self, tmp_path):
         path = str(tmp_path / "book.breadsched")

@@ -32,8 +32,12 @@ from ..lib.fsa_claim import FsaClaim
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction, UnbalancedError
+from ..utils.logs import get_logger
+from ..utils.user_paths import sync_service_for_path
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
 from .migrations import LATEST_SCHEMA_VERSION, MIGRATIONS
+
+LOG = get_logger(__name__)
 from .verification import BookIssue, verify_domain
 
 __all__ = ["DbSQLite"]
@@ -238,6 +242,15 @@ class DbSQLite(DbBase):
 
         self.path = path
         self.readonly = mode == "r"
+        if path != ":memory:":
+            sync_service = sync_service_for_path(path)
+            if sync_service is not None:
+                LOG.warning(
+                    "book %s is inside %s; SQLite files should not rely on cloud sync "
+                    "as their only copy",
+                    path,
+                    sync_service,
+                )
         self._tolerate_malformed = tolerate_malformed
         self._verification_load_issues.clear()
         # Undo records belong to one open book only.  Reusing a backend instance
