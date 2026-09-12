@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Status is current through patch **0141 — `import: detect QIF and OFX number formats`**.
+Status is current through patch **0142 — `import: detect QIF date order`**.
 
 ## Status legend
 
@@ -104,6 +104,7 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Harden `Money` and amount handling:
   - [x] **0140 — Core parsing/comparison safety.** Ambiguous locale-formatted strings are rejected instead of silently mis-scaled; equality/hash behavior follows Python's numeric contract; non-numeric equality does not raise.
   - [x] **0141 — QIF/OFX number-format parsing.** Detect period-vs-comma decimal conventions from the complete import file, parse grouping explicitly, reject conflicting conventions, and allow an explicit importer override for ambiguous files.
+  - [x] **0142 — QIF date-order parsing.** Detect month-first versus day-first ordering from complete-file evidence, reject conflicting evidence, preserve year-first dates, and allow an explicit importer override for all-ambiguous files.
   - [ ] Extend explicit locale-aware amount parsing to GTK/web user-entry boundaries rather than asking the core `Money` constructor to guess locale.
   - [ ] Remove dimensionally meaningless `Money * Money` behavior as a distinct rate type is introduced.
   - [ ] Introduce a distinct rate concept.
@@ -316,8 +317,7 @@ semantics, not duplicate business rules in presentation code.
   transactions, reconciliation, commodities, schedules, formula loans, and unusual
   but valid structures.
 - [ ] Add multi-currency valuation and exchange-rate/price handling.
-- [ ] Ask for or detect QIF date order instead of assuming month/day.
-- [ ] Expose QIF/OFX number-format selection in import UI when auto-detection is ambiguous (0141 provides importer-level override).
+- [ ] Expose QIF date-order and QIF/OFX number-format selection in import UI when auto-detection is ambiguous (0141/0142 provide importer-level overrides).
 - [ ] Report missing import dates explicitly rather than silently substituting today.
 - [ ] Investigate/cover older GnuCash SQLite timezone/date conventions.
 

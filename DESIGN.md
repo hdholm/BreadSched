@@ -109,9 +109,10 @@ ordinal, not a number reconstructed from the adjusted calendar date.
 External amount text is parsed at the boundary that knows its format. Core `Money`
 construction accepts only unambiguous numeric text; importers and user interfaces
 must not silently reinterpret locale punctuation. QIF/OFX import examines the full
-source for a consistent decimal convention before parsing records. Conflicting
-conventions are reported, and ambiguous files may use an explicit importer format
-override rather than guessing per transaction.
+source for a consistent decimal convention before parsing records. QIF date order is
+likewise inferred once from file-wide evidence (month-first or day-first), never guessed
+record by record. Conflicting conventions are reported, and ambiguous files may use an
+explicit importer format override. Year-first QIF dates remain inherently unambiguous.
 
 The formula language is parsed through a restricted evaluator, never Python
 `eval()`. Formula expressions are treated as untrusted imported/user input and must

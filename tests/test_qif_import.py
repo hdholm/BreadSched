@@ -124,3 +124,49 @@ def test_qif_explicit_number_format_resolves_ambiguous_amount(db, book, tmp_path
     checking = db.get_account(book.checking)
     assert checking is not None
     assert ledger.balance(db, checking.handle, natural_sign=False) == Money("1.234")
+
+
+def test_qif_detects_day_first_dates_for_the_whole_file(db, book, tmp_path):
+    path = tmp_path / "day-first.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D31/03/2026\nT-10.00\nPFirst\nLGroceries\n^\n"
+        "D04/05/2026\nT-20.00\nPSecond\nLGroceries\n^\n"
+    )
+
+    result = qif.import_book(db, path)
+
+    assert result.transactions == 2
+    transactions = sorted(db.iter_transactions(), key=lambda item: item.description)
+    assert [(item.description, item.post_date.isoformat()) for item in transactions] == [
+        ("First", "2026-03-31"),
+        ("Second", "2026-05-04"),
+    ]
+
+
+def test_qif_explicit_date_format_resolves_ambiguous_dates(db, book, tmp_path):
+    path = tmp_path / "ambiguous-date.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D03/04/2026\nT-10.00\nPTransfer\nLGroceries\n^\n"
+    )
+
+    result = qif.import_book(db, path, date_format="day-first")
+
+    assert result.transactions == 1
+    transaction = next(db.iter_transactions())
+    assert transaction.post_date.isoformat() == "2026-04-03"
+
+
+def test_qif_rejects_conflicting_date_orders(db, tmp_path):
+    path = tmp_path / "conflicting-date-order.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D31/03/2026\nT-10.00\nPDay first\nLGroceries\n^\n"
+        "D04/31/2026\nT-20.00\nPMonth first\nLGroceries\n^\n"
+    )
+
+    result = qif.import_book(db, path)
+
+    assert result.transactions == 0
+    assert result.warnings == ["QIF source contains conflicting date orders"]

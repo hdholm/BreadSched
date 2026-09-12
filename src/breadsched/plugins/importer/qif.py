@@ -29,6 +29,9 @@ LOG = get_logger(__name__)
 __all__ = ["import_book", "sniff"]
 
 
+QifDateFormat = Literal["month-first", "day-first"]
+
+
 _QIF_TYPES = {
     "bank": "BANK",
     "cash": "CASH",
@@ -51,16 +54,43 @@ def _stable_handle(kind: str, *parts: object) -> str:
     return uuid5(NAMESPACE_URL, f"breadsched:qif:{kind}:{text}").hex
 
 
-def _parse_date(raw: str) -> date:
+def _date_parts(raw: str) -> tuple[str, str, str]:
     text = raw.strip().replace("'", "/").replace("-", "/")
     parts = [part.strip() for part in text.split("/") if part.strip()]
     if len(parts) != 3:
         raise ValueError(f"unrecognised QIF date {raw!r}")
-    first, second, third = parts
+    return parts[0], parts[1], parts[2]
+
+
+def _detect_date_format(values: list[str]) -> QifDateFormat | None:
+    evidence: set[QifDateFormat] = set()
+    for raw in values:
+        first, second, _third = _date_parts(raw)
+        if len(first) == 4:
+            continue
+        first_value = int(first)
+        second_value = int(second)
+        if first_value > 12 and second_value <= 12:
+            evidence.add("day-first")
+        elif second_value > 12 and first_value <= 12:
+            evidence.add("month-first")
+        elif first_value > 12 and second_value > 12:
+            raise ValueError(f"unrecognised QIF date {raw!r}")
+    if len(evidence) > 1:
+        raise ValueError("QIF source contains conflicting date orders")
+    return next(iter(evidence), None)
+
+
+def _parse_date(raw: str, date_format: QifDateFormat) -> date:
+    first, second, third = _date_parts(raw)
     if len(first) == 4:
         year, month, day = int(first), int(second), int(third)
     else:
-        month, day, year = int(first), int(second), int(third)
+        if date_format == "month-first":
+            month, day = int(first), int(second)
+        else:
+            day, month = int(first), int(second)
+        year = int(third)
         if year < 100:
             year += 2000 if year < 70 else 1900
     return date(year, month, day)
@@ -71,6 +101,18 @@ def _parse_amount(raw: str, number_format: NumberFormat) -> Money:
         return Money(parse_decimal_amount(raw, number_format))
     except ValueError as exc:
         raise ValueError(f"unrecognised QIF amount {raw!r}") from exc
+
+
+
+def _date_texts(records: list[list[str]]) -> list[str]:
+    values: list[str] = []
+    for record in records:
+        if not record or record[0].startswith("!"):
+            continue
+        fields, _split_rows = _transaction_fields(record)
+        if fields.get("D"):
+            values.append(fields["D"])
+    return values
 
 
 def _amount_texts(records: list[list[str]]) -> list[str]:
@@ -199,6 +241,7 @@ def import_book(
     message: str | None = None,
     progress: Callable[[str, int, int], None] | None = None,
     number_format: NumberFormat | Literal["auto"] = "auto",
+    date_format: QifDateFormat | Literal["auto"] = "auto",
 ) -> ImportResult:
     """Import bank/cash/credit-card QIF accounts and transactions.
 
@@ -232,6 +275,17 @@ def import_book(
             )
     else:
         detected_format = number_format
+    if date_format == "auto":
+        try:
+            detected_date_format = _detect_date_format(_date_texts(records))
+        except ValueError as exc:
+            result.warn(str(exc))
+            return result
+        if detected_date_format is None:
+            detected_date_format = "month-first"
+            result.warn("QIF date order is ambiguous; assuming month/day/year")
+    else:
+        detected_date_format = date_format
     with db.transaction(message or f"Import {source.name}", batch=True) as txn:
         sink = ImportSink(db, txn, result)
         done = 0
@@ -261,7 +315,7 @@ def import_book(
                 continue
             fields, split_rows = _transaction_fields(record)
             try:
-                post_date = _parse_date(fields.get("D", ""))
+                post_date = _parse_date(fields.get("D", ""), detected_date_format)
                 amount = _parse_amount(fields.get("T", ""), detected_format)
             except ValueError as exc:
                 result.skip(str(exc), fields.get("P", fields.get("M", "transaction")))

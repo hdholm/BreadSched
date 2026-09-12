@@ -212,8 +212,10 @@ planning and projection capabilities without abandoning a mature existing book.
 Current compatibility includes accounts, transactions, commodities, scheduled
 transactions, formula schedules, reconciliation state, and an expanding set of
 account metadata. QIF and OFX imports detect period-vs-comma decimal conventions
-from the source file rather than silently stripping punctuation. Ambiguous formats can
-be selected explicitly by importer callers.
+from the source file rather than silently stripping punctuation. QIF likewise detects
+month-first versus day-first date order from the complete file when the source gives
+unambiguous evidence. Ambiguous number/date formats can be selected explicitly by
+importer callers instead of being guessed per transaction.
 
 Import problems are reported per record rather than aborting the
 entire book whenever safe recovery is possible.
