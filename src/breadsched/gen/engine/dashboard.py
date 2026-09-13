@@ -40,7 +40,7 @@ from typing import Any, TypedDict
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
-from ..lib.recurrence import PeriodType, Recurrence, add_months
+from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scheduled import ScheduledTransaction
 from . import fsa, ledger, schedule, valuation
 from .escrow import recognition as escrow_recognition
@@ -1094,53 +1094,26 @@ def _credit_card_rows(
     today: date,
     schedules: list[ScheduledTransaction],
 ) -> list[BillRow]:
-    """Account-tied card payments not already represented by a real schedule."""
-    covered: set[str] = set()
-    for sched in schedules:
-        when = (
-            _next_unskipped(sched, today - timedelta(days=1)) or sched.recurrence.last_occurrence()
-        )
-        if when is None:
-            continue
-        for handle, amount in sched.resolved_splits(when=when):
-            account = db.get_account(handle)
-            if account is not None and account.atype is AccountType.CREDIT and amount > 0:
-                covered.add(handle)
-
+    """Account-tied card payments shared with Scheduled and Upcoming."""
     rows: list[BillRow] = []
-    month = date(today.year, today.month, 1)
-    for account in db.iter_accounts():
-        if account.atype is not AccountType.CREDIT or account.hidden:
+    for definition in schedule.account_payment_definitions(db, today, schedules):
+        if definition.amount_due <= 0:
             continue
-        if account.handle in covered or account.payment_day is None:
-            continue
-        balance = ledger.balance_recursive(db, account.handle, as_of=today)
-        if balance <= 0:
-            continue
-        if account.pays_in_full:
-            amount = balance
-        elif account.usual_payment is not None and account.usual_payment > 0:
-            amount = min(balance, account.usual_payment)
-        else:
-            continue
-        due = add_months(month, 0, day=account.payment_day)
-        if due < today:
-            due = add_months(month, 1, day=account.payment_day)
-        recurrence = Recurrence(
-            PeriodType.MONTH,
-            start=add_months(due, -1, day=account.payment_day),
-            day_of_month=account.payment_day,
-        )
+        account = db.get_account(definition.account)
         rows.append(
             BillRow(
-                name=f"{db.full_name(account) or account.name} payment",
-                next_due=due,
-                amount=amount,
+                name=definition.name,
+                next_due=definition.next_due,
+                amount=definition.amount_due,
                 cycle_days=DAYS_PER_MONTH,
-                account=account.handle,
-                recurrence=recurrence,
+                account=definition.account,
+                recurrence=definition.recurrence,
                 generated=True,
-                emergency_amount=(amount if account.emergency_fund_included else Money(0)),
+                emergency_amount=(
+                    definition.amount_due
+                    if account is not None and account.emergency_fund_included
+                    else Money(0)
+                ),
             )
         )
     return rows

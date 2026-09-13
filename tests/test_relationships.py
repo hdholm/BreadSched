@@ -209,6 +209,8 @@ class TestAccountManagement:
                 "400.00",
                 "--payment-day",
                 "22",
+                "--payment-account",
+                "Assets:Checking",
             ]
         )
         capsys.readouterr()
@@ -217,6 +219,23 @@ class TestAccountManagement:
         assert card.carries_balance is True
         assert card.usual_payment == Money("400.00")
         assert card.payment_day == 22
+        assert card.card_payment_account == db.get_account_by_name("Assets:Checking").handle
+        db.close()
+
+        cli(
+            [
+                "account",
+                str(book_path),
+                "edit",
+                "--name",
+                "Liabilities:Visa",
+                "--payment-account",
+                "none",
+            ]
+        )
+        capsys.readouterr()
+        db = open_book(book_path)
+        assert db.get_account_by_name("Liabilities:Visa").card_payment_account is None
         db.close()
 
     def test_a_card_paid_in_full_is_not_a_carried_balance(self, book_path, capsys):
@@ -230,7 +249,9 @@ class TestAccountManagement:
         cli(["account", str(book_path), "list", "--json"])
         rows = json.loads(capsys.readouterr().out)
         assert any(r["name"] == "Liabilities:Visa" for r in rows)
-        assert all({"group", "linked_asset", "card"} <= set(r) for r in rows)
+        assert all(
+            {"group", "linked_asset", "card", "card_payment_account"} <= set(r) for r in rows
+        )
 
 
 class TestInference:
@@ -313,6 +334,16 @@ class TestInference:
         finally:
             db.close()
 
+    def test_the_payment_account_comes_from_cash_to_card_activity(self, book_path):
+        db = open_book(book_path)
+        try:
+            found = inference.infer_card_settings(db)
+            source = next(s for s in found if s.field == "card_payment_account")
+            assert source.value == db.get_account_by_name("Assets:Checking").handle
+            assert source.confidence > 0.9
+        finally:
+            db.close()
+
     def test_nothing_changes_until_the_suggestions_are_applied(self, book_path, capsys):
         cli(["infer", str(book_path)])
         assert "Nothing is changed" in capsys.readouterr().out
@@ -330,6 +361,7 @@ class TestInference:
             assert loan.linked_asset is not None
             assert card.payment_day == 22
             assert card.carries_balance is True
+            assert card.card_payment_account == db.get_account_by_name("Assets:Checking").handle
         finally:
             db.close()
 
@@ -343,28 +375,6 @@ class TestInference:
 
             assert db.undo() is True
             assert db.get_account_by_name("Liabilities:Visa").payment_day is None
-        finally:
-            db.close()
-
-    def test_a_carried_balance_becomes_a_scheduled_estimate(self, book_path, capsys):
-        cli(["infer", str(book_path), "--apply"])
-        capsys.readouterr()
-        db = open_book(book_path)
-        try:
-            card = db.get_account_by_name("Liabilities:Visa")
-            estimate = inference.card_estimate(db, card)
-            assert estimate is not None
-            assert estimate.placeholder is True
-            assert estimate.amount() == Money("400.00")
-        finally:
-            db.close()
-
-    def test_a_card_paid_in_full_gets_no_estimate(self, book_path):
-        db = open_book(book_path)
-        try:
-            card = db.get_account_by_name("Liabilities:Visa")
-            card.pays_in_full = True
-            assert inference.card_estimate(db, card) is None
         finally:
             db.close()
 

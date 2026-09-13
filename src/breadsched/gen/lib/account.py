@@ -282,6 +282,10 @@ class Account(PrimaryObject):
         #: Day of the month a card payment is due, inferred on import where
         #: possible.
         self.payment_day: int | None = None
+        #: Cash account normally used to pay this card. This is BreadSched-owned
+        #: relationship data: GnuCash transactions imply it but do not store it on
+        #: the card account itself.
+        self.card_payment_account: str | None = None
         #: Optional household choice. None means the default (included) for an
         #: eligible type. Ineligible types are always excluded regardless of this
         #: retained preference.
@@ -351,6 +355,7 @@ class Account(PrimaryObject):
                 else None
             ),
             "payment_day": self.payment_day,
+            "card_payment_account": self.card_payment_account,
             "emergency_fund": self.emergency_fund_override,
         }
 
@@ -378,6 +383,8 @@ class Account(PrimaryObject):
         usual = data.get("usual_payment")
         self.usual_payment = Money(*usual) if usual else None
         self.payment_day = data.get("payment_day")
+        payment_account = data.get("card_payment_account")
+        self.card_payment_account = str(payment_account) if payment_account else None
         raw_emergency = data.get("emergency_fund")
         self.emergency_fund_override = bool(raw_emergency) if raw_emergency is not None else None
 

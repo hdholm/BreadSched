@@ -12,14 +12,18 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from ..db.sqlite import DbSQLite
+from ..lib.account import AccountType
 from ..lib.base import create_handle
 from ..lib.money import Money
-from ..lib.recurrence import PeriodType, Recurrence
+from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import Transaction
 
 __all__ = [
     "Occurrence",
+    "AccountPaymentDefinition",
+    "AccountPaymentOccurrence",
+    "account_payment_definitions",
     "already_posted",
     "delete_definition",
     "due_occurrences",
@@ -30,6 +34,7 @@ __all__ = [
     "post_due",
     "post_occurrences",
     "skip_occurrences",
+    "upcoming_occurrences",
 ]
 
 
@@ -47,6 +52,209 @@ class Occurrence:
 
     def instantiate(self) -> Transaction:
         return self.schedule.instantiate(self.when)
+
+
+@dataclass(slots=True)
+class AccountPaymentDefinition:
+    """A monthly card payment whose durable source is the account configuration.
+
+    It deliberately is not a :class:`ScheduledTransaction`: the amount is derived
+    from the live card balance, and saving a copied schedule would create a second
+    source of truth. The definition can be inspected in Scheduled and Upcoming;
+    editing it returns to the card account.
+    """
+
+    account: str
+    name: str
+    recurrence: Recurrence
+    next_due: date
+    amount_due: Money
+    payment_account: str | None
+    pays_in_full: bool
+    handle: str
+    description: str
+    placeholder: bool = False
+    auto_create: bool = False
+    enabled: bool = True
+    variables: dict[str, str] | None = None
+
+    @property
+    def splits(self) -> list[ScheduledSplit]:
+        if self.payment_account is None or self.amount_due <= 0:
+            return []
+        return [
+            ScheduledSplit(self.account, self.amount_due, memo="Card payment"),
+            ScheduledSplit(self.payment_account, -self.amount_due, memo="Card payment"),
+        ]
+
+    def amount(self, *_args, **_kwargs) -> Money:
+        return self.amount_due
+
+
+@dataclass(slots=True)
+class AccountPaymentOccurrence:
+    """One informational firing of an account-linked card payment."""
+
+    schedule: AccountPaymentDefinition
+    when: date
+    amount: Money
+
+    @property
+    def name(self) -> str:
+        return self.schedule.name
+
+
+def _card_accounts_covered_by_schedules(
+    db: DbSQLite,
+    schedules: list[ScheduledTransaction],
+    as_of: date,
+) -> set[str]:
+    """Cards already paid by an enabled explicit schedule."""
+    covered: set[str] = set()
+    for scheduled in schedules:
+        if not scheduled.enabled or not scheduled.usable:
+            continue
+        when = _representative_unresolved_occurrence(db, scheduled, as_of)
+        if when is None:
+            continue
+        for handle, amount in scheduled.resolved_splits(when=when):
+            account = db.get_account(handle)
+            if account is not None and account.atype is AccountType.CREDIT and amount > 0:
+                covered.add(handle)
+    return covered
+
+
+def _representative_unresolved_occurrence(
+    db: DbSQLite,
+    scheduled: ScheduledTransaction,
+    as_of: date,
+) -> date | None:
+    """Return a date proving that a saved definition still covers the account.
+
+    An unbounded or not-yet-finished definition has a current/future occurrence.
+    A bounded definition only remains authoritative after its end while one of its
+    occurrences is still genuinely pending. This prevents a completed one-time or
+    finite schedule from suppressing the account-owned card bill forever.
+    """
+    current_or_future = scheduled.recurrence.next_after(as_of - timedelta(days=1))
+    if current_or_future is not None:
+        return current_or_future
+
+    since = scheduled.last_posted + timedelta(days=1) if scheduled.last_posted else None
+    for when in scheduled.recurrence.occurrences(as_of, since=since):
+        if when in scheduled.skipped or already_posted(db, scheduled.handle, when):
+            continue
+        return when
+    return None
+
+
+def _payment_recorded(
+    db: DbSQLite,
+    account: str,
+    payment_account: str | None,
+    start: date,
+    end: date,
+) -> bool:
+    """Whether an actual cash-to-card payment has occurred in this due window."""
+    for transaction in db.iter_transactions(account=account, start=start, end=end):
+        if transaction.value_for(account) <= 0:
+            continue
+        if payment_account is not None:
+            if transaction.value_for(payment_account) < 0:
+                return True
+            continue
+        for split in transaction.splits:
+            if split.account == account or split.value >= 0:
+                continue
+            source = db.get_account(split.account)
+            if source is not None and source.atype.is_cash_like:
+                return True
+    return False
+
+
+def account_payment_definitions(
+    db: DbSQLite,
+    as_of: date | None = None,
+    schedules: list[ScheduledTransaction] | None = None,
+) -> list[AccountPaymentDefinition]:
+    """Build account-owned card payment definitions without persisting duplicates."""
+    today = as_of or date.today()
+    saved = list(schedules) if schedules is not None else list(db.iter_scheduled())
+    covered = _card_accounts_covered_by_schedules(db, saved, today)
+    month = date(today.year, today.month, 1)
+    definitions: list[AccountPaymentDefinition] = []
+    from . import ledger
+
+    for account in db.iter_accounts():
+        if (
+            account.atype is not AccountType.CREDIT
+            or account.hidden
+            or account.payment_day is None
+            or account.handle in covered
+        ):
+            continue
+        balance = ledger.balance_recursive(db, account.handle, as_of=today)
+        amount = Money(0)
+        if balance > 0:
+            if account.pays_in_full:
+                amount = balance
+            elif account.usual_payment is not None and account.usual_payment > 0:
+                amount = min(balance, account.usual_payment)
+
+        candidate = add_months(month, 0, day=account.payment_day)
+        if today >= candidate and _payment_recorded(
+            db,
+            account.handle,
+            account.card_payment_account,
+            add_months(candidate, -1, day=account.payment_day) + timedelta(days=1),
+            today,
+        ):
+            candidate = add_months(month, 1, day=account.payment_day)
+        recurrence = Recurrence(
+            PeriodType.MONTH,
+            start=candidate,
+            day_of_month=account.payment_day,
+        )
+        name = f"{db.full_name(account) or account.name} payment"
+        definitions.append(
+            AccountPaymentDefinition(
+                account=account.handle,
+                name=name,
+                recurrence=recurrence,
+                next_due=candidate,
+                amount_due=amount,
+                payment_account=account.card_payment_account,
+                pays_in_full=account.pays_in_full,
+                handle=f"account-payment:{account.handle}",
+                description=name,
+                variables={},
+            )
+        )
+    return sorted(definitions, key=lambda item: item.name)
+
+
+def upcoming_occurrences(
+    db: DbSQLite,
+    as_of: date | None = None,
+    horizon_days: int = 30,
+) -> list[Occurrence | AccountPaymentOccurrence]:
+    """Saved due activity plus non-posting account-linked card payments."""
+    today = as_of or date.today()
+    found: list[Occurrence | AccountPaymentOccurrence] = list(
+        due_occurrences(db, as_of=today, horizon_days=horizon_days)
+    )
+    horizon = today + timedelta(days=horizon_days)
+    for definition in account_payment_definitions(db, as_of=today):
+        if definition.amount_due <= 0 or definition.next_due > horizon:
+            continue
+        found.append(
+            AccountPaymentOccurrence(
+                schedule=definition,
+                when=definition.next_due,
+                amount=definition.amount_due,
+            )
+        )
+    return sorted(found, key=lambda item: (item.when, item.name))
 
 
 def duplicate_definition(source: ScheduledTransaction) -> ScheduledTransaction:

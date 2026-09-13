@@ -487,6 +487,7 @@ class ImportSink:
         imported.pays_in_full = existing.pays_in_full
         imported.usual_payment = existing.usual_payment
         imported.payment_day = existing.payment_day
+        imported.card_payment_account = existing.card_payment_account
         imported.emergency_fund_override = existing.emergency_fund_override
 
     def _existing_sibling(

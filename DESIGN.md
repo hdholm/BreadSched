@@ -213,6 +213,30 @@ Formula-driven loans own their payment arithmetic. Projection must not separatel
 inflate a formula loan payment or add generic liability interest to a liability
 whose interest is already represented by schedule formulas.
 
+Credit-card payment configuration is account-owned: paid-in-full versus carried
+balance, usual carried payment, payment day, and optional Bank/Cash payment account
+are one durable definition. Scheduled and Upcoming derive a non-persisted
+`AccountPaymentDefinition` from it, and Dashboard consumes that same definition.
+This avoids a copied schedule becoming a conflicting second source of truth. A
+stable derived handle supports selection, but the editor returns to the account and
+the derived occurrence is never posted automatically.
+
+The current obligation is the live balance for a paid-in-full card or the lesser of
+live balance and usual payment for a carried card. A recognized cash-to-card actual
+within the current payment cycle advances the due date; otherwise an overdue
+obligation remains overdue. Any enabled usable explicit/imported schedule with a
+positive leg against the card suppresses the derived definition. The derived
+definition intentionally does not generate an indefinite Projection recurrence:
+future statement balances are not known, while the underlying purchases and an
+explicit repayment plan are already the explainable forecast inputs. A finished
+bounded schedule stops suppressing the account definition once all of its
+occurrences have been posted or skipped.
+
+Loan creation is an application-service workflow around `LoanTerms`: GTK and web
+collect and validate the same lender-facing terms, preview the shared amortization
+table, and call `create_loan`. The stored schedule uses `ipmt`/`ppmt` formulas and an
+optional opening liability rather than freezing the preview into fixed splits.
+
 ## Projection
 
 Projection advances state through dated financial events and the intervals between

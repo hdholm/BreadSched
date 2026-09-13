@@ -128,6 +128,23 @@ offer a bounded bridge estimate for only the uncovered months. Isolated future
 events do not truncate recurring needs, biennial/triennial history keeps its longer
 cadence and next due date, and a lone completed event is not projected as recurring.
 
+Credit-card payment terms belong to the card account: whether it is paid in full,
+its usual carried-balance payment, payment day, and optional Bank or Cash **Paid
+from** account. The resulting monthly obligation appears consistently in Dashboard,
+Scheduled, and Upcoming. A paid-in-full card uses its current balance; a carried
+card uses the lesser of its balance and usual payment. An actual cash-to-card
+payment advances the cycle, while an unpaid overdue obligation remains due. An
+enabled explicit/imported schedule with a pending or future payment for the same
+card takes precedence. The account-linked row is informational and is never posted
+automatically.
+
+Use **New loan…** in Scheduled to enter an amount borrowed, annual rate, term,
+first payment, loan account, interest expense, and payment account. BreadSched shows
+the calculated level payment and the first year of principal/interest allocation
+before saving. Creating the loan stores one formula-driven monthly schedule and can
+record the opening liability, so Projection starts with both the debt and its
+economically correct amortization. This workflow is available in GTK and web.
+
 ### Scenarios and Projection
 
 Saved scenarios contain assumptions and alternate planned events, not cached
@@ -236,6 +253,8 @@ The GTK4 application is the reference user experience. Its major views include:
   details and safe editing where round-trip fidelity is possible. Editable schedules
   can be duplicated as reviewed drafts; existing ledger transactions can seed new
   drafts; and definitions can be deleted without deleting transactions already posted.
+  Account-linked credit-card payments are shown here without creating duplicate
+  saved schedules, and **New loan…** previews and creates amortizing loans.
 - **Plan** — category and planning-flow views derived from dated planned and actual
   activity, with per-book controls and non-duplicating row, period, and net-cash
   totals.

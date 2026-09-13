@@ -5,7 +5,15 @@ from datetime import date
 import pytest
 
 from breadsched.gen.engine import ledger, schedule
-from breadsched.gen.lib import AccountClass, Money
+from breadsched.gen.lib import (
+    AccountClass,
+    Money,
+    PeriodType,
+    Recurrence,
+    ScheduledSplit,
+    ScheduledTransaction,
+    Transaction,
+)
 
 
 class TestBalances:
@@ -136,6 +144,127 @@ class TestScheduleEngine:
         with db.transaction("Disable") as txn:
             db.commit_scheduled(payday_schedule, txn)
         assert schedule.due_occurrences(db, as_of=date(2026, 6, 1)) == []
+
+    def test_a_card_payment_is_an_account_linked_definition(self, db, funded_book):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        card.card_payment_account = funded_book.checking
+        with db.transaction("Configure card payment") as txn:
+            db.commit_account(card, txn)
+
+        definitions = schedule.account_payment_definitions(db, as_of=date(2026, 2, 20))
+
+        assert len(definitions) == 1
+        payment = definitions[0]
+        assert payment.handle == f"account-payment:{card.handle}"
+        assert payment.next_due == date(2026, 2, 22)
+        assert payment.amount_due == Money("86.40")
+        assert [(split.account, split.amount) for split in payment.splits] == [
+            (funded_book.card, Money("86.40")),
+            (funded_book.checking, Money("-86.40")),
+        ]
+
+        assert schedule.post_due(db, as_of=date(2026, 2, 22), only_auto=False) == []
+        assert schedule.forecast_occurrences(db, date(2026, 2, 20), date(2026, 3, 31)) == []
+
+    def test_an_overdue_card_stays_due_until_an_actual_payment(self, db, funded_book):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        card.card_payment_account = funded_book.checking
+        with db.transaction("Configure card payment") as txn:
+            db.commit_account(card, txn)
+
+        overdue = schedule.account_payment_definitions(db, as_of=date(2026, 2, 25))[0]
+        assert overdue.next_due == date(2026, 2, 22)
+        assert schedule.upcoming_occurrences(db, as_of=date(2026, 2, 25), horizon_days=0)[
+            0
+        ].when == date(2026, 2, 22)
+
+        with db.transaction("Pay card") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 20),
+                    "Card payment",
+                    funded_book.card,
+                    funded_book.checking,
+                    "86.40",
+                ),
+                txn,
+            )
+        following = schedule.account_payment_definitions(db, as_of=date(2026, 2, 25))[0]
+        assert following.next_due == date(2026, 3, 22)
+        assert following.amount_due == Money(0)
+
+    def test_a_payment_on_the_due_date_advances_the_card_cycle(self, db, funded_book):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        card.card_payment_account = funded_book.checking
+        with db.transaction("Configure and pay card") as txn:
+            db.commit_account(card, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 22),
+                    "Card payment",
+                    funded_book.card,
+                    funded_book.checking,
+                    "86.40",
+                ),
+                txn,
+            )
+
+        following = schedule.account_payment_definitions(db, as_of=date(2026, 2, 22))[0]
+
+        assert following.next_due == date(2026, 3, 22)
+
+    def test_a_carried_card_payment_is_capped_at_the_balance(self, db, funded_book):
+        card = db.get_account(funded_book.card)
+        card.pays_in_full = False
+        card.usual_payment = Money("400.00")
+        card.payment_day = 22
+        with db.transaction("Configure carried card") as txn:
+            db.commit_account(card, txn)
+
+        payment = schedule.account_payment_definitions(db, as_of=date(2026, 2, 20))[0]
+        assert payment.amount_due == Money("86.40")
+
+    def test_an_explicit_card_schedule_suppresses_the_account_definition(self, db, funded_book):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        explicit = ScheduledTransaction(
+            name="Explicit card payment",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 2, 22)),
+            splits=[
+                ScheduledSplit(funded_book.card, Money("50.00")),
+                ScheduledSplit(funded_book.checking, Money("-50.00")),
+            ],
+        )
+        with db.transaction("Configure explicit card payment") as txn:
+            db.commit_account(card, txn)
+            db.add_scheduled(explicit, txn)
+
+        assert schedule.account_payment_definitions(db, as_of=date(2026, 2, 20)) == []
+
+    def test_a_completed_bounded_card_schedule_no_longer_suppresses_the_account_definition(
+        self, db, funded_book
+    ):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        explicit = ScheduledTransaction(
+            name="Finished card payment",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 22)),
+            splits=[
+                ScheduledSplit(funded_book.card, Money("50.00")),
+                ScheduledSplit(funded_book.checking, Money("-50.00")),
+            ],
+        )
+        explicit.last_posted = date(2026, 1, 22)
+        with db.transaction("Store completed card schedule") as txn:
+            db.commit_account(card, txn)
+            db.add_scheduled(explicit, txn)
+
+        definitions = schedule.account_payment_definitions(db, as_of=date(2026, 2, 20))
+
+        assert [definition.account for definition in definitions] == [funded_book.card]
 
     def test_duplicate_has_independent_identity_and_pending_state(self, payday_schedule):
         payday_schedule.last_posted = date(2026, 1, 16)

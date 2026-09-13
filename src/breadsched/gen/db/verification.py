@@ -92,6 +92,18 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     account.handle,
                 )
             )
+        if (
+            account.card_payment_account is not None
+            and account.card_payment_account not in accounts
+        ):
+            issues.append(
+                BookIssue(
+                    "account.missing_card_payment_account",
+                    f"account {account.name!r} refers to missing card payment account "
+                    f"{account.card_payment_account}",
+                    account.handle,
+                )
+            )
 
     for account in accounts.values():
         seen: set[str] = set()

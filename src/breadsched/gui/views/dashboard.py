@@ -312,6 +312,15 @@ class DashboardView(BaseView):
         schedule = getattr(bill, "schedule", None)
         if schedule is not None:
             self.manager.open_schedule(schedule.handle)
+        elif bill.generated and bill.account is not None and self.db is not None:
+            account = self.db.get_account(bill.account)
+            if account is None:
+                return
+            from ..dialogs.account_dialog import AccountDialog
+
+            dialog = AccountDialog(self.get_root(), self.db, account=account)
+            dialog.connect("close-request", self.refresh_on_close)
+            dialog.present()
         elif bill.account is not None:
             self.manager.open_register(bill.account)
 

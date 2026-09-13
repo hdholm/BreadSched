@@ -2931,12 +2931,20 @@ class TestAccountEditor:
         dialog.full_check.set_active(False)
         dialog.usual_entry.set_text("400.00")
         dialog.day_spin.set_value(22)
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        payment_index = next(
+            index
+            for index, account in enumerate(dialog.payment_accounts, start=1)
+            if account.handle == checking.handle
+        )
+        dialog.card_payment_picker.set_selected(payment_index)
         dialog._on_save(None)
 
         card = app.db.get_account_by_name("Visa")
         assert card.carries_balance is True
         assert card.usual_payment == Money("400.00")
         assert card.payment_day == 22
+        assert card.card_payment_account == checking.handle
 
     def test_a_card_paid_in_full_keeps_an_editable_payment_day(self, accounts_view, app):
         from breadsched.gen.lib import AccountType

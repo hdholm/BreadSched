@@ -1035,6 +1035,7 @@ def cmd_account(args: argparse.Namespace) -> int:
                 if account.is_root:
                     continue
                 linked = db.get_account(account.linked_asset or "")
+                payment_account = db.get_account(account.card_payment_account or "")
                 rows.append(
                     [
                         db.full_name(account),
@@ -1044,15 +1045,26 @@ def cmd_account(args: argparse.Namespace) -> int:
                         ""
                         if account.atype is not AccountType.CREDIT
                         else ("monthly" if account.pays_in_full else "carries"),
+                        db.full_name(payment_account) if payment_account else "",
                     ]
                 )
             emit(
                 [
-                    {"name": r[0], "type": r[1], "group": r[2], "linked_asset": r[3], "card": r[4]}
+                    {
+                        "name": r[0],
+                        "type": r[1],
+                        "group": r[2],
+                        "linked_asset": r[3],
+                        "card": r[4],
+                        "card_payment_account": r[5],
+                    }
                     for r in rows
                 ],
                 args,
-                table(rows, ["account", "type", "group", "linked asset", "card"]),
+                table(
+                    rows,
+                    ["account", "type", "group", "linked asset", "card", "paid from"],
+                ),
             )
             return 0
 
@@ -1139,6 +1151,18 @@ def _apply_account_options(db: DbSQLite, account: Account, args) -> None:
         account.usual_payment = Money(args.usual_payment)
     if args.payment_day:
         account.payment_day = args.payment_day
+    if args.payment_account is not None:
+        if account.atype is not AccountType.CREDIT:
+            raise CommandError("--payment-account applies only to a Credit card account")
+        if args.payment_account.strip().lower() == "none":
+            account.card_payment_account = None
+            return
+        payment = resolve_account(db, args.payment_account)
+        if not payment.atype.is_cash_like:
+            raise CommandError("--payment-account must name a Bank or Cash account")
+        account.card_payment_account = payment.handle
+    elif account.atype is not AccountType.CREDIT:
+        account.card_payment_account = None
 
 
 def cmd_infer(args: argparse.Namespace) -> int:
@@ -1663,6 +1687,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     account.add_argument("--usual-payment", help="typical payment on a card")
     account.add_argument("--payment-day", type=int)
+    account.add_argument(
+        "--payment-account",
+        help="Bank or Cash account used to pay a card; 'none' clears it",
+    )
     account.add_argument("--opening", help="opening balance to post")
     account.add_argument("--opening-date")
     account.set_defaults(func=cmd_account)

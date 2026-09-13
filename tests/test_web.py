@@ -21,6 +21,8 @@ from gnucash_fixtures import create_book
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
+    Account,
+    AccountType,
     Money,
     PeriodType,
     Recurrence,
@@ -318,6 +320,96 @@ class TestItServes:
         status, payload = client.get("/api/scheduled")
         assert status == 200
         assert set(payload) == {"definitions", "accounts", "upcoming"}
+
+    def test_card_payment_settings_supply_scheduled_and_upcoming_rows(self, client):
+        db = client.database
+        liabilities = db.get_account_by_name("Liabilities")
+        checking = db.get_account_by_name("Assets:Checking")
+        rent = db.get_account_by_name("Expenses:Rent")
+        assert liabilities is not None and checking is not None and rent is not None
+        card = Account(name="Household card", atype=AccountType.CREDIT, parent=liabilities.handle)
+        with db.transaction("Add card with balance") as txn:
+            db.add_account(card, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date.today(), "Card purchase", rent.handle, card.handle, "125.00"
+                ),
+                txn,
+            )
+
+        status, saved = client.post(
+            "/api/account/card",
+            {
+                "handle": card.handle,
+                "pays_in_full": True,
+                "usual_payment": "",
+                "payment_day": "20",
+                "payment_account": checking.handle,
+            },
+        )
+        assert status == 200
+        assert saved["card_payment_account"] == checking.handle
+
+        _status, data = client.get("/api/scheduled?days=90")
+        definition = next(
+            item for item in data["definitions"] if item["linked_account"] == card.handle
+        )
+        assert definition["account_linked"] is True
+        assert Money(definition["amount"]) == Money("125.00")
+        occurrence = next(
+            item for item in data["upcoming"] if item["linked_account"] == card.handle
+        )
+        assert occurrence["account_linked"] is True
+        assert Money(occurrence["amount"]) == Money("125.00")
+
+        status, changed = client.post(
+            "/api/account/type",
+            {"handle": card.handle, "type": "LIABILITY"},
+        )
+        assert status == 200
+        assert changed["type"] == "LIABILITY"
+        assert db.get_account(card.handle).card_payment_account is None
+
+    def test_web_loan_preview_and_creation_use_the_shared_formula_engine(self, client):
+        db = client.database
+        liabilities = db.get_account_by_name("Liabilities")
+        assert liabilities is not None
+        liability = Account(
+            name="Household loan", atype=AccountType.LOAN, parent=liabilities.handle
+        )
+        with db.transaction("Add loan account") as txn:
+            db.add_account(liability, txn)
+
+        _status, options = client.get("/api/loan/options")
+        interest = next(item for item in options["expenses"] if item["name"].endswith(":Rent"))
+        payment = next(
+            item for item in options["payment_accounts"] if item["name"].endswith(":Checking")
+        )
+        values = {
+            "name": "One-year household loan",
+            "principal": "1200.00",
+            "annual_rate": "0",
+            "years": "1",
+            "start": "2026-10-01",
+            "liability": liability.handle,
+            "interest_account": interest["handle"],
+            "payment_account": payment["handle"],
+            "opening_balance": True,
+        }
+
+        status, preview = client.post("/api/loan/preview", values)
+        assert status == 200
+        assert Money(preview["payment"]) == Money("100.00")
+        assert len(preview["rows"]) == 12
+
+        status, created = client.post("/api/loan/save", values)
+        assert status == 200
+        saved = db.get_scheduled(created["handle"])
+        assert saved is not None
+        assert all(split.formula for split in saved.splits)
+        from breadsched.gen.engine import ledger
+
+        assert ledger.balance(db, liability.handle) == Money("1200.00")
 
     def test_scheduled_active_state_can_be_edited(self, client):
         _status, data = client.get("/api/scheduled")

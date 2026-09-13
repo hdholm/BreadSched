@@ -926,6 +926,18 @@ class DbSQLite(DbBase):
                         handle,
                     )
                 )
+            if (
+                account.card_payment_account is not None
+                and self.get_account(account.card_payment_account) is None
+            ):
+                issues.append(
+                    BookIssue(
+                        "account.missing_card_payment_account",
+                        f"account {account.name!r} refers to missing card payment account "
+                        f"{account.card_payment_account}",
+                        handle,
+                    )
+                )
             seen: set[str] = set()
             current = account
             while current.parent is not None:
@@ -1226,6 +1238,15 @@ class DbSQLite(DbBase):
                         BookIssue(
                             "account.missing_linked_asset",
                             f"account {account.name!r} refers to missing linked asset {handle}",
+                            account.handle,
+                        )
+                    )
+                if account.card_payment_account == handle:
+                    issues.append(
+                        BookIssue(
+                            "account.missing_card_payment_account",
+                            f"account {account.name!r} refers to missing card payment account "
+                            f"{handle}",
                             account.handle,
                         )
                     )

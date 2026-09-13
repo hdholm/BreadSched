@@ -18,6 +18,7 @@ from datetime import date, timedelta
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import schedule
+from ...gen.engine.schedule import AccountPaymentDefinition
 from ...gen.lib import PeriodType, ScheduledTransaction
 from ...gen.lib.money import Money
 from ..gi_setup import Gio, Gtk, Pango
@@ -68,6 +69,8 @@ def _is_split(item) -> bool:
 def _kind_of(item) -> str:
     if _is_split(item):
         return ""
+    if isinstance(item, AccountPaymentDefinition):
+        return "Account payment"
     return "Estimate" if item.placeholder else "Commitment"
 
 
@@ -167,7 +170,15 @@ class ScheduledView(BaseView):
         self.definitions_view.append_column(
             column(
                 "Automatic",
-                lambda s: "" if _is_split(s) else ("yes" if s.auto_create else "no"),
+                lambda s: (
+                    ""
+                    if _is_split(s)
+                    else (
+                        "account"
+                        if isinstance(s, AccountPaymentDefinition)
+                        else ("yes" if s.auto_create else "no")
+                    )
+                ),
             )
         )
         self.definitions_view.append_column(
@@ -232,7 +243,8 @@ class ScheduledView(BaseView):
             return
         definitions = Gio.ListStore.new(Row)
         schedules = list(self.db.iter_scheduled())
-        for sched in schedules:
+        account_payments = schedule.account_payment_definitions(self.db, schedules=schedules)
+        for sched in [*schedules, *account_payments]:
             definitions.append(Row(sched))
 
         tree = Gtk.TreeListModel.new(definitions, False, False, self._split_children)
@@ -247,7 +259,7 @@ class ScheduledView(BaseView):
         estimates = sum(1 for s in schedules if s.placeholder)
         self.status.set_text(
             f"{len(schedules)} scheduled: {len(schedules) - estimates} commitment(s), "
-            f"{estimates} estimate(s)"
+            f"{estimates} estimate(s); {len(account_payments)} account-linked payment(s)"
         )
 
     def select_schedule(self, handle: str) -> None:
@@ -266,7 +278,11 @@ class ScheduledView(BaseView):
 
     def _split_children(self, item):
         payload = item.payload if isinstance(item, Row) else item
-        if not isinstance(payload, ScheduledTransaction) or self.db is None or not payload.splits:
+        if (
+            not isinstance(payload, (ScheduledTransaction, AccountPaymentDefinition))
+            or self.db is None
+            or not payload.splits
+        ):
             return None
         store = Gio.ListStore.new(Row)
         for split in payload.splits:
@@ -274,6 +290,8 @@ class ScheduledView(BaseView):
         return store
 
     def _next_text(self, sched) -> str:
+        if isinstance(sched, AccountPaymentDefinition):
+            return sched.next_due.isoformat()
         following = sched.recurrence.next_after(date.today() - timedelta(days=1))
         return following.isoformat() if following else "finished"
 
@@ -301,13 +319,20 @@ class ScheduledView(BaseView):
         payload = unwrap(selected) if selected is not None else None
         selected_schedule = payload is not None and not _is_split(payload)
         self.edit_button.set_sensitive(selected_schedule)
-        self.delete_button.set_sensitive(selected_schedule)
-        self.duplicate_button.set_sensitive(selected_schedule)
+        saved_schedule = isinstance(payload, ScheduledTransaction)
+        self.delete_button.set_sensitive(saved_schedule)
+        self.duplicate_button.set_sensitive(saved_schedule)
 
-    def _selected_schedule(self) -> ScheduledTransaction | None:
+    def _selected_item(self) -> ScheduledTransaction | AccountPaymentDefinition | None:
         selection = self.definitions_view.get_model()
         selected = selection.get_selected_item() if selection is not None else None
         payload = unwrap(selected) if selected is not None else None
+        if isinstance(payload, (ScheduledTransaction, AccountPaymentDefinition)):
+            return payload
+        return None
+
+    def _selected_schedule(self) -> ScheduledTransaction | None:
+        payload = self._selected_item()
         return payload if isinstance(payload, ScheduledTransaction) else None
 
     def _editability_reason(self, sched) -> str:
@@ -381,16 +406,26 @@ class ScheduledView(BaseView):
     def _on_edit_clicked(self, _button) -> None:
         if self.db is None:
             return
-        sched = self._selected_schedule()
-        if sched is None:
+        selected = self._selected_item()
+        if selected is None:
+            return
+        if isinstance(selected, AccountPaymentDefinition):
+            account = self.db.get_account(selected.account)
+            if account is None:
+                return
+            from ..dialogs.account_dialog import AccountDialog
+
+            dialog = AccountDialog(self.get_root(), self.db, account=account)
+            dialog.connect("close-request", self.refresh_on_close)
+            dialog.present()
             return
         from ..dialogs.schedule_dialog import ScheduleDialog
 
-        reason = self._editability_reason(sched)
+        reason = self._editability_reason(selected)
         dialog = ScheduleDialog(
             self.get_root(),
             self.db,
-            source=sched,
+            source=selected,
             read_only_reason=reason or None,
         )
         dialog.connect("close-request", self.refresh_on_close)
@@ -638,7 +673,9 @@ class UpcomingView(BaseView):
         if self.db is None:
             return
         today = date.today()
-        occurrences = schedule.due_occurrences(self.db, as_of=today, horizon_days=self._horizon)
+        occurrences = schedule.upcoming_occurrences(
+            self.db, as_of=today, horizon_days=self._horizon
+        )
         store = Gio.ListStore.new(Row)
         for occurrence in occurrences:
             store.append(Row(occurrence))
@@ -677,7 +714,19 @@ class UpcomingView(BaseView):
         selected = selection.get_item(position) if selection is not None else None
         occurrence = unwrap(selected) if selected is not None else None
         if occurrence is not None:
-            self.manager.open_schedule(occurrence.schedule.handle)
+            if isinstance(occurrence.schedule, AccountPaymentDefinition):
+                db = self.db
+                account = db.get_account(occurrence.schedule.account) if db else None
+                if account is None:
+                    return
+                from ..dialogs.account_dialog import AccountDialog
+
+                assert db is not None
+                dialog = AccountDialog(self.get_root(), db, account=account)
+                dialog.connect("close-request", self.refresh_on_close)
+                dialog.present()
+            else:
+                self.manager.open_schedule(occurrence.schedule.handle)
 
     def _on_post_clicked(self, _button) -> None:
         """Open the same review dialog the book shows on opening.

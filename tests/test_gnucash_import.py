@@ -319,8 +319,12 @@ class TestSqliteImport:
         account.usual_payment = Money("125.00")
         account.payment_day = 18
         account.emergency_fund_override = False
+        card = db.get_account(gnucash_sqlite_path.ids.card)
+        assert card is not None
+        card.card_payment_account = gnucash_sqlite_path.ids.checking
         with db.transaction("Configure imported account") as db_txn:
             db.commit_account(account, db_txn)
+            db.commit_account(card, db_txn)
 
         with sqlite3.connect(gnucash_sqlite_path.path) as source:
             source.execute(
@@ -344,6 +348,9 @@ class TestSqliteImport:
         assert reimported.usual_payment == Money("125.00")
         assert reimported.payment_day == 18
         assert reimported.emergency_fund_override is False
+        reimported_card = db.get_account(gnucash_sqlite_path.ids.card)
+        assert reimported_card is not None
+        assert reimported_card.card_payment_account == gnucash_sqlite_path.ids.checking
 
     def test_incompatible_source_type_change_requires_review_and_keeps_type(
         self, db, gnucash_sqlite_path

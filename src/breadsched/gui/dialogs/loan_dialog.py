@@ -33,7 +33,9 @@ class LoanDialog(Gtk.Window):
         self._liabilities = self._accounts_of(AccountClass.LIABILITY)
         self._expenses = self._accounts_of(AccountClass.EXPENSE)
         self._funding = [
-            a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder
+            a
+            for a in db.iter_accounts()
+            if a.atype.is_cash_like and not a.placeholder and not a.hidden
         ]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -133,7 +135,10 @@ class LoanDialog(Gtk.Window):
         return [
             a
             for a in self.db.iter_accounts()
-            if a.account_class is account_class and not a.placeholder and not a.is_root
+            if a.account_class is account_class
+            and not a.placeholder
+            and not a.is_root
+            and not a.hidden
         ]
 
     def _picker(self, accounts: list) -> Gtk.DropDown:

@@ -463,6 +463,135 @@ function openFsaYearsEditor(account) {
   document.body.append(backdrop);
 }
 
+function openCardPaymentEditor(account, accounts) {
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const full = el("input", {
+    type:"checkbox", checked:account.pays_in_full ? "checked" : null,
+  });
+  const usual = el("input", {
+    inputmode:"decimal", value:account.usual_payment || "", placeholder:"100.00",
+  });
+  const day = el("input", {
+    type:"number", min:"1", max:"28", value:account.payment_day || "",
+    placeholder:"1–28",
+  });
+  const sources = accounts.filter((item)=>
+    !item.placeholder && ["BANK", "CASH"].includes(item.type)
+    && (!item.hidden || item.handle === account.card_payment_account));
+  const payment = el("select", {},
+    el("option", {value:""}, "Choose when recording payment"),
+    sources.map((item)=>el("option", {
+      value:item.handle,
+      selected:item.handle === account.card_payment_account ? "selected" : null,
+    }, item.full_name)));
+  const sync = () => { usual.disabled = full.checked; };
+  full.addEventListener("change", sync);
+  sync();
+  const save = async () => {
+    await post("/api/account/card", {
+      handle:account.handle,
+      pays_in_full:full.checked,
+      usual_payment:usual.value.trim(),
+      payment_day:day.value,
+      payment_account:payment.value,
+    });
+    backdrop.remove();
+    say("Credit-card payment settings saved.");
+    render();
+  };
+  const body = el("section", {class:"detail-dialog"},
+    el("h2", {}, `Card payment — ${account.full_name}`),
+    el("p", {class:"note"},
+      "The account owns this monthly payment definition. An explicit scheduled "
+      + "payment takes precedence, so the same card is never forecast twice."),
+    el("label", {class:"row"}, full, " Pay the current balance in full"),
+    el("label", {}, "Usual payment when carrying a balance", usual),
+    el("label", {}, "Payment day", day),
+    el("label", {}, "Paid from", payment),
+    el("div", {class:"toolbar"},
+      el("span", {style:"flex:1"}),
+      el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()},
+        "Cancel"),
+      el("button", {class:"action primary", type:"button",
+        onclick:()=>save().catch((error)=>say(error.message,"error"))}, "Save")));
+  backdrop.append(body);
+  document.body.append(backdrop);
+}
+
+async function openLoanEditor() {
+  const options = await get("/api/loan/options");
+  if (!options.liabilities.length || !options.expenses.length
+      || !options.payment_accounts.length) {
+    throw new Error("A loan needs a visible liability, interest expense, and Bank or Cash account.");
+  }
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const field = (label, control) => el("label", {}, label, control);
+  const select = (items) => el("select", {}, items.map((item)=>
+    el("option", {value:item.handle}, item.name)));
+  const name = el("input", {placeholder:"Mortgage"});
+  const principal = el("input", {inputmode:"decimal", placeholder:"200000.00"});
+  const rate = el("input", {inputmode:"decimal", placeholder:"6.0"});
+  const years = el("input", {type:"number", min:"1", max:"100", value:"25"});
+  const start = el("input", {type:"date", value:new Date().toISOString().slice(0, 10)});
+  const liability = select(options.liabilities);
+  const interest = select(options.expenses);
+  const payment = select(options.payment_accounts);
+  const opening = el("input", {type:"checkbox", checked:"checked"});
+  const preview = el("div", {class:"stack"});
+  const values = () => ({
+    name:name.value.trim(), principal:principal.value.trim(), annual_rate:rate.value.trim(),
+    years:years.value, start:start.value, liability:liability.value,
+    interest_account:interest.value, payment_account:payment.value,
+    opening_balance:opening.checked,
+  });
+  const showPreview = async () => {
+    const result = await post("/api/loan/preview", values());
+    preview.replaceChildren(
+      el("p", {class:"note"},
+        `Monthly payment ${money(result.payment)}; total interest ${money(result.total_interest)}.`),
+      table(["Payment", {label:"Amount", num:true}, {label:"Interest", num:true},
+        {label:"Principal", num:true}, {label:"Balance", num:true}],
+      result.rows.map((row)=>el("tr", {},
+        el("td", {}, row.period),
+        el("td", {class:"num"}, money(row.payment)),
+        el("td", {class:"num"}, money(row.interest)),
+        el("td", {class:"num"}, money(row.principal)),
+        el("td", {class:"num"}, money(row.balance))))));
+  };
+  const save = async () => {
+    const result = await post("/api/loan/save", values());
+    backdrop.remove();
+    say(`${result.name} created with a monthly payment of ${money(result.payment)}.`);
+    render();
+  };
+  const body = el("section", {class:"detail-dialog wide"},
+    el("h2", {}, "Set up a loan"),
+    el("p", {class:"note"},
+      "Preview the calculated principal and interest split before creating the formula schedule."),
+    field("Name", name), field("Amount borrowed", principal),
+    field("Annual rate (%)", rate), field("Term (years)", years),
+    field("First payment", start), field("Loan account", liability),
+    field("Interest expense", interest), field("Paid from", payment),
+    el("label", {class:"row"}, opening,
+      " Record what is currently owed as an opening balance"),
+    preview,
+    el("div", {class:"toolbar"},
+      el("button", {class:"action", type:"button",
+        onclick:()=>showPreview().catch((error)=>say(error.message,"error"))}, "Preview"),
+      el("span", {style:"flex:1"}),
+      el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()}, "Cancel"),
+      el("button", {class:"action primary", type:"button",
+        onclick:()=>save().catch((error)=>say(error.message,"error"))}, "Create loan")));
+  backdrop.append(body);
+  document.body.append(backdrop);
+}
+
 async function openSecurityPriceEditor() {
   const data = await get("/api/commodities");
   const backdrop = el("div", {
@@ -796,6 +925,11 @@ async function showAccounts() {
       ? el("button", { class:"action", type:"button", onclick:()=>openFsaYearsEditor(account) },
           `${(account.fsa_years || []).length} funding year${(account.fsa_years || []).length === 1 ? "" : "s"}…`)
       : el("span", { class:"muted" }, "—")),
+    el("td", {}, account.type === "CREDIT CARD"
+      ? el("button", {class:"action", type:"button",
+          onclick:()=>openCardPaymentEditor(account, accounts)},
+          account.payment_day ? `Day ${account.payment_day}…` : "Configure…")
+      : el("span", {class:"muted"}, "—")),
     el("td", { class:"num" }, account.valuation_source === "market"
       ? `${account.quantity} ${account.commodity}` : "—"),
     el("td", { class:"num" }, account.valuation_source === "market"
@@ -812,7 +946,8 @@ async function showAccounts() {
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them. Investment values use the latest dated price "
       + "when one is available; otherwise they retain their ledger value."),
-    table(["Account", "Type", "Emergency", "FSA years", { label:"Units", num:true },
+    table(["Account", "Type", "Emergency", "FSA years", "Card payment",
+           { label:"Units", num:true },
            { label:"Price", num:true }, "As of", { label: "Value", num: true }], rows));
 }
 
@@ -857,22 +992,30 @@ async function showRegister() {
 }
 
 async function showScheduled() {
+  if (!state.accounts.length) state.accounts = await get("/api/accounts");
   const data = await get("/api/scheduled?days=90");
   const definitions = data.definitions.map((s) => el("tr", {},
     el("td", {}, el("div", {}, s.name),
+      s.account_linked
+        ? el("div", {class:"muted"}, "Account-linked current obligation")
+        : null,
       s.unsupported_reason
         ? el("div", { class:"muted", title:String(s.source_recurrence || "") },
             `Preserved read-only: ${s.unsupported_reason}`)
         : null),
     el("td", { class: "muted" }, s.frequency),
     el("td", { class: "num" }, money(s.amount)),
-    el("td", { class: "muted" }, s.placeholder ? "estimate" : (s.auto ? "automatic" : "manual")),
+    el("td", { class: "muted" }, s.account_linked ? "account" :
+      (s.placeholder ? "estimate" : (s.auto ? "automatic" : "manual"))),
     el("td", { class: "muted" }, s.enabled ? "enabled" : "disabled"),
     el("td", {}, el("div", { class:"row" },
-      s.simple ? el("button", { class:"action", type:"button",
+      s.account_linked ? el("button", {class:"action", type:"button", onclick:()=>{
+        const account = state.accounts.find((item)=>item.handle === s.linked_account);
+        if (account) openCardPaymentEditor(account, state.accounts);
+      }}, "Edit account…") : s.simple ? el("button", { class:"action", type:"button",
         onclick:()=>openScheduledEditor(data, s) }, "Edit…")
         : el("span", { class:"muted" }, "Complex (desktop view only)"),
-      s.simple ? el("button", { class:"action", type:"button",
+      s.account_linked ? null : s.simple ? el("button", { class:"action", type:"button",
         onclick:()=>openScheduledEditor(data, {
           ...s, handle:null, name:`${s.name} copy`, skipped:[],
         }) }, "Duplicate…") : el("button", { class:"action", type:"button", onclick:async()=>{
@@ -884,7 +1027,7 @@ async function showScheduled() {
             render();
           } catch (error) { say(error.message, "error"); }
         }}, "Duplicate…"),
-      el("button", { class:"action", type:"button", onclick:async()=>{
+      s.account_linked ? null : el("button", { class:"action", type:"button", onclick:async()=>{
         if (!window.confirm(`Delete scheduled transaction "${s.name}"? Already posted transactions remain.`)) return;
         try {
           await post("/api/scheduled/delete", {handle:s.handle});
@@ -896,7 +1039,10 @@ async function showScheduled() {
   const upcoming = data.upcoming.map((o) => el("tr", {
     ondblclick:()=>{
       const source = data.definitions.find((item)=>item.handle === o.schedule);
-      if (source?.simple) openScheduledEditor(data, source);
+      if (source?.account_linked) {
+        const account = state.accounts.find((item)=>item.handle === source.linked_account);
+        if (account) openCardPaymentEditor(account, state.accounts);
+      } else if (source?.simple) openScheduledEditor(data, source);
       else switchTo("Scheduled");
     },
   },
@@ -907,6 +1053,9 @@ async function showScheduled() {
     el("div", { class: "toolbar" },
       el("button", { class: "action", type: "button",
         onclick: () => openScheduledEditor(data, null) }, "New scheduled…"),
+      el("button", {class:"action", type:"button",
+        onclick:()=>openLoanEditor().catch((error)=>say(error.message,"error"))},
+        "New loan…"),
       el("button", { class: "action", type: "button",
         onclick: () => openHistoricalEstimateDialog() }, "Suggest from history…"),
       el("button", {
@@ -920,7 +1069,9 @@ async function showScheduled() {
         },
       }, "Post due transactions")),
     el("p", { class: "note" },
-      "Estimates shape Plan and Projection but are never posted. Complex/formula schedules remain read-only here."),
+      "Estimates shape Plan and Projection but are never posted. Account-linked card payments "
+      + "show the current obligation and are edited on the account; they are not automatically posted. "
+      + "Complex/formula schedules remain read-only here."),
     el("h3", {}, "Upcoming"),
     table(["Due", "Schedule", { label: "Amount", num: true }], upcoming),
     el("h3", {}, "Definitions"),

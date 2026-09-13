@@ -194,12 +194,43 @@ def infer_card_settings(db: DbSQLite, months: int = 12) -> list[Suggestion]:
             continue
 
         payments: list[tuple[date, Money]] = []
+        payment_accounts: Counter[str] = Counter()
         for txn in db.iter_transactions(account=card.handle):
             value = txn.value_for(card.handle)
-            if value > 0:  # a debit to a credit account reduces what is owed
-                payments.append((txn.post_date, value))
+            if value <= 0:  # a debit to a credit account reduces what is owed
+                continue
+            source_handles: set[str] = set()
+            for split in txn.splits:
+                if split.account == card.handle or split.value >= 0:
+                    continue
+                source = db.get_account(split.account)
+                if source is not None and source.atype.is_cash_like:
+                    source_handles.add(source.handle)
+            if not source_handles:
+                continue
+            payments.append((txn.post_date, value))
+            payment_accounts.update(source_handles)
         if not payments:
             continue
+
+        if payment_accounts:
+            source_handle, count = payment_accounts.most_common(1)[0]
+            if card.card_payment_account != source_handle:
+                source = db.get_account(source_handle)
+                suggestions.append(
+                    Suggestion(
+                        account=card.handle,
+                        field="card_payment_account",
+                        value=source_handle,
+                        reason=(
+                            f"{count} of {len(payments)} identified payments came from "
+                            f"{db.full_name(source) if source is not None else source_handle}"
+                        ),
+                        confidence=min(0.95, count / len(payments)),
+                        account_name=db.full_name(card),
+                        value_label=(db.full_name(source) if source is not None else source_handle),
+                    )
+                )
 
         days = Counter(when.day for when, _ in payments)
         day, count = days.most_common(1)[0]
@@ -305,37 +336,3 @@ def apply_suggestions(
             db.commit_account(account, txn)
             applied += 1
     return applied
-
-
-def card_estimate(db: DbSQLite, card: Account):
-    """A scheduled estimate for a card that carries a balance.
-
-    A card being paid down is a real monthly outflow. Left out, a forecast shows
-    money the household does not have; recorded as a commitment, it claims a
-    certainty the payment does not have. An estimate is the honest middle.
-    """
-    from ..lib.recurrence import PeriodType, Recurrence
-    from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
-
-    if not card.carries_balance or not card.usual_payment:
-        return None
-    funding = next(
-        (a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder),
-        None,
-    )
-    if funding is None:
-        return None
-
-    today = date.today()
-    day = card.payment_day or 1
-    start = date(today.year, today.month, min(day, 28))
-    schedule = ScheduledTransaction(
-        name=f"{card.name} payment",
-        recurrence=Recurrence(PeriodType.MONTH, start=start),
-        splits=[
-            ScheduledSplit(card.handle, card.usual_payment),
-            ScheduledSplit(funding.handle, -card.usual_payment),
-        ],
-    )
-    schedule.placeholder = True
-    return schedule

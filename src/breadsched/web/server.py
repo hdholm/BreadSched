@@ -31,6 +31,7 @@ from ..gen.engine import (
     estimates,
     fsa_claims,
     ledger,
+    loans,
     planning,
     projection,
     schedule,
@@ -311,6 +312,14 @@ class Api:
                         "hidden": account.hidden,
                         "emergency_fund_eligible": account.emergency_fund_eligible,
                         "emergency_fund_included": account.emergency_fund_included,
+                        "pays_in_full": account.pays_in_full,
+                        "usual_payment": (
+                            str(account.usual_payment.to_decimal())
+                            if account.usual_payment is not None
+                            else None
+                        ),
+                        "payment_day": account.payment_day,
+                        "card_payment_account": account.card_payment_account,
                         "source_type": (
                             account.source_atype.value if account.source_atype else None
                         ),
@@ -427,6 +436,8 @@ class Api:
         if account_type in {AccountType.ROOT, AccountType.TECHNICAL}:
             raise ValueError("choose a user account type")
         account.atype = account_type
+        if account_type is not AccountType.CREDIT:
+            account.card_payment_account = None
         with self.db.transaction(f"Set account type for {account.name}") as txn:
             self.db.commit_account(account, txn)
         return {"handle": account.handle, "type": account.atype.value}
@@ -444,6 +455,146 @@ class Api:
         return {
             "handle": account.handle,
             "emergency_fund_included": account.emergency_fund_included,
+        }
+
+    def account_card_save(self, payload: dict) -> dict:
+        """Persist the account-owned definition of a credit-card payment."""
+        handle = str(payload.get("handle", ""))
+        account = self.db.get_account(handle)
+        if account is None:
+            raise KeyError(handle)
+        if account.atype is not AccountType.CREDIT:
+            raise ValueError("card payment settings require a Credit card account")
+        raw_full = payload.get("pays_in_full", True)
+        if not isinstance(raw_full, bool):
+            raise ValueError("pays_in_full must be true or false")
+        raw_day = payload.get("payment_day")
+        payment_day = int(raw_day) if raw_day is not None and raw_day != "" else None
+        if payment_day is not None and not 1 <= payment_day <= 28:
+            raise ValueError("payment day must be between 1 and 28")
+        raw_usual = str(payload.get("usual_payment") or "").strip()
+        usual_payment = self._input_money(payload, raw_usual) if raw_usual else None
+        if usual_payment is not None and usual_payment <= 0:
+            raise ValueError("usual payment must be positive")
+        if not raw_full and usual_payment is None:
+            raise ValueError("a card carrying a balance needs a usual payment")
+        payment_handle = str(payload.get("payment_account") or "") or None
+        if payment_handle is not None:
+            payment = self.db.get_account(payment_handle)
+            if payment is None or not payment.atype.is_cash_like or payment.placeholder:
+                raise ValueError("paid from must be a Bank or Cash account")
+            if payment.hidden and payment.handle != account.card_payment_account:
+                raise ValueError("a hidden account cannot fund a new card payment")
+
+        account.pays_in_full = raw_full
+        account.usual_payment = usual_payment
+        account.payment_day = payment_day
+        account.card_payment_account = payment_handle
+        with self.db.transaction(f"Set card payment for {account.name}") as txn:
+            self.db.commit_account(account, txn)
+        return {
+            "handle": account.handle,
+            "pays_in_full": account.pays_in_full,
+            "usual_payment": (
+                str(account.usual_payment.to_decimal())
+                if account.usual_payment is not None
+                else None
+            ),
+            "payment_day": account.payment_day,
+            "card_payment_account": account.card_payment_account,
+        }
+
+    def loan_options(self) -> dict:
+        """Return the accounts accepted by the shared loan creator."""
+
+        def choices(predicate) -> list[dict[str, str]]:
+            return [
+                {"handle": account.handle, "name": self.db.full_name(account)}
+                for account in sorted(self.db.iter_accounts(), key=self.db.full_name)
+                if predicate(account)
+                and not account.is_root
+                and not account.placeholder
+                and not account.hidden
+            ]
+
+        return {
+            "liabilities": choices(lambda account: account.account_class is AccountClass.LIABILITY),
+            "expenses": choices(lambda account: account.account_class is AccountClass.EXPENSE),
+            "payment_accounts": choices(lambda account: account.atype.is_cash_like),
+        }
+
+    def _loan_terms(self, payload: dict) -> loans.LoanTerms:
+        """Validate untrusted web input and build the engine's loan terms."""
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("loan name is required")
+        principal = self._input_money(payload, payload.get("principal", ""))
+        if principal <= 0:
+            raise ValueError("amount borrowed must be positive")
+        try:
+            annual_rate = Decimal(str(payload.get("annual_rate") or "0")) / Decimal(100)
+            years = int(payload.get("years") or 0)
+            start = date.fromisoformat(str(payload.get("start") or ""))
+        except (ValueError, ArithmeticError) as exc:
+            raise ValueError("enter a valid rate, term, and first-payment date") from exc
+        if annual_rate < 0:
+            raise ValueError("annual rate cannot be negative")
+        if not 1 <= years <= 100:
+            raise ValueError("term must be between 1 and 100 years")
+
+        liability = self.db.get_account(str(payload.get("liability") or ""))
+        interest = self.db.get_account(str(payload.get("interest_account") or ""))
+        payment = self.db.get_account(str(payload.get("payment_account") or ""))
+        if (
+            liability is None
+            or liability.account_class is not AccountClass.LIABILITY
+            or liability.placeholder
+            or liability.hidden
+        ):
+            raise ValueError("choose a visible loan or liability account")
+        if (
+            interest is None
+            or interest.account_class is not AccountClass.EXPENSE
+            or interest.placeholder
+            or interest.hidden
+        ):
+            raise ValueError("choose a visible interest expense account")
+        if (
+            payment is None
+            or not payment.atype.is_cash_like
+            or payment.placeholder
+            or payment.hidden
+        ):
+            raise ValueError("choose a visible Bank or Cash payment account")
+        return loans.LoanTerms(
+            name=name,
+            principal=principal,
+            annual_rate=annual_rate,
+            years=years,
+            start=start,
+            liability=liability.handle,
+            interest_account=interest.handle,
+            payment_account=payment.handle,
+        )
+
+    def loan_preview(self, payload: dict) -> dict:
+        terms = self._loan_terms(payload)
+        return {
+            "payment": terms.payment(),
+            "total_interest": terms.total_interest(),
+            "rows": loans.schedule_preview(terms, rows=12),
+        }
+
+    def loan_save(self, payload: dict) -> dict:
+        terms = self._loan_terms(payload)
+        opening_balance = payload.get("opening_balance", True)
+        if not isinstance(opening_balance, bool):
+            raise ValueError("opening_balance must be true or false")
+        saved = loans.create_loan(self.db, terms, opening_balance=opening_balance)
+        return {
+            "handle": saved.handle,
+            "name": saved.name,
+            "payment": terms.payment(),
         }
 
     def account_fsa_years_save(self, payload: dict) -> dict:
@@ -695,7 +846,7 @@ class Api:
         return {"handle": handle, "category": proposal.category_name}
 
     def scheduled(self, days: int = 60) -> dict:
-        occurrences = schedule.due_occurrences(self.db, horizon_days=days)
+        occurrences = schedule.upcoming_occurrences(self.db, horizon_days=days)
         accounts = sorted(
             (
                 account
@@ -705,12 +856,15 @@ class Api:
             key=self.db.full_name,
         )
         definitions = []
-        for item in self.db.iter_scheduled():
+        saved_schedules = list(self.db.iter_scheduled())
+        for item in saved_schedules:
             simple = self._simple_schedule_parts(item)
             frequency = self._frequency_key(item.recurrence)
             definitions.append(
                 {
                     "handle": item.handle,
+                    "account_linked": False,
+                    "linked_account": None,
                     "name": item.name,
                     "frequency": item.recurrence.describe(),
                     "frequency_key": frequency,
@@ -750,6 +904,42 @@ class Api:
                     ],
                 }
             )
+        for payment_definition in schedule.account_payment_definitions(
+            self.db, schedules=saved_schedules
+        ):
+            definitions.append(
+                {
+                    "handle": payment_definition.handle,
+                    "account_linked": True,
+                    "linked_account": payment_definition.account,
+                    "name": payment_definition.name,
+                    "frequency": payment_definition.recurrence.describe(),
+                    "frequency_key": "monthly",
+                    "amount": payment_definition.amount_due,
+                    "enabled": True,
+                    "placeholder": False,
+                    "auto": False,
+                    "growth_policy": "none",
+                    "simple": False,
+                    "unsupported_reason": "",
+                    "source_recurrence": None,
+                    "category": None,
+                    "funding": payment_definition.payment_account,
+                    "planning_flow": None,
+                    "category_memo": "",
+                    "funding_memo": "",
+                    "additional_splits": [],
+                    "account_handles": [split.account for split in payment_definition.splits],
+                    "start": payment_definition.next_due.isoformat(),
+                    "end": None,
+                    "count": None,
+                    "weekend": "none",
+                    "amount_changes": [],
+                    "seasonal_amounts": [],
+                    "skipped": [],
+                    "occurrence_adjustments": [],
+                }
+            )
         return {
             "definitions": definitions,
             "accounts": [
@@ -767,6 +957,10 @@ class Api:
                     "name": occurrence.name,
                     "amount": occurrence.amount,
                     "schedule": occurrence.schedule.handle,
+                    "account_linked": isinstance(
+                        occurrence.schedule, schedule.AccountPaymentDefinition
+                    ),
+                    "linked_account": getattr(occurrence.schedule, "account", None),
                 }
                 for occurrence in occurrences
             ],
@@ -2739,6 +2933,7 @@ ROUTES = {
     "/api/fsa/dashboard": lambda a, q: a.fsa_dashboard(),
     "/api/summary": lambda a, q: a.summary(),
     "/api/accounts": lambda a, q: a.accounts(),
+    "/api/loan/options": lambda a, q: a.loan_options(),
     "/api/commodities": lambda a, q: a.commodities(),
     "/api/fsa/claims": lambda a, q: a.fsa_claims(),
     "/api/register": lambda a, q: a.register(
@@ -2779,6 +2974,7 @@ ROUTES = {
 POST_ROUTES = {
     "/api/dashboard/config": lambda a, body: a.dashboard_config_save(body),
     "/api/account/type": lambda a, body: a.account_type_save(body),
+    "/api/account/card": lambda a, body: a.account_card_save(body),
     "/api/account/emergency-fund": lambda a, body: a.account_emergency_fund_save(body),
     "/api/commodity/price": lambda a, body: a.commodity_price_save(body),
     "/api/plan/settings": lambda a, body: a.plan_settings_save(body),
@@ -2793,6 +2989,8 @@ POST_ROUTES = {
     "/api/scheduled/delete": lambda a, body: a.scheduled_delete(body),
     "/api/scheduled/duplicate": lambda a, body: a.scheduled_duplicate(body),
     "/api/scheduled/draft": lambda a, body: a.scheduled_draft(body),
+    "/api/loan/preview": lambda a, body: a.loan_preview(body),
+    "/api/loan/save": lambda a, body: a.loan_save(body),
     "/api/historical-estimate/accept": lambda a, body: a.historical_estimate_accept(body),
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),

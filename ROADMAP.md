@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline before this development series is **0182 — bounded complex-
-schedule inspection**. The current sequential candidate is **0183**.
+The accepted baseline before this development series is **0183 — main-thread import
+completion**. The current sequential candidate is **0184**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,9 +94,9 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Scheduled-entry and import usability**, now that the Dashboard balance and
-   hierarchy block is implemented in 0161. Mortgage planning-flow semantics require
-   design review.
+1. **NEXT — Register and reconciliation workflows.** Move ordinary two-sided entry
+   into the split-based transaction model, then add statement reconciliation through
+   shared services and GTK/web surfaces.
 2. **Escrow follow-through.** Finish richer refund/adjustment explanations and
    combined mortgage/escrow coverage on the single account-type model.
 
@@ -485,7 +485,7 @@ semantics, not duplicate business rules in presentation code.
   principal, and other economically meaningful balance-sheet flows.
 - [x] Print/export the applied Plan and displayed Projection comparisons through
   self-contained HTML reports, with browser PDF output and GTK/web parity.
-- [ ] Improve explanations of account-kind/split-purpose classification decisions.
+- [ ] Improve explanations of account-type/split-purpose classification decisions.
 - [ ] Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
@@ -507,11 +507,18 @@ semantics, not duplicate business rules in presentation code.
   `GtkColumnView` models from a worker thread and trigger native GTK criticals or a
   segmentation fault. Cover SQLite/XML GnuCash, QIF, OFX, and the GTK callback-thread
   contract; advance the alpha version to `0.2.0a22`.
-- [ ] **Account-linked card payments.** Credit cards with payment days should appear
-  in scheduled/upcoming activity. Design an account-linked payment schedule type
-  if needed, defining statement/current-balance amounts, paid-in-full versus
-  carried-balance rules, date changes, and linkage to actual payment transactions.
-  Prevent duplicate forecasts when an explicit/imported payment schedule exists.
+- [x] **0184 — Account-linked card payments.** Credit cards with payment days appear
+  in Dashboard, Scheduled, and Upcoming through one non-persisted definition owned
+  by the account. Paid-in-full cards use current balance; carried cards use the
+  lesser of balance and usual payment. A BreadSched-owned Bank/Cash relationship is
+  editable in CLI/GTK/web, inferable from payment history, preserved on re-import,
+  and checked for dangling references. Recognized actual payments advance the due
+  cycle, while unpaid overdue obligations remain due. Enabled explicit/imported
+  payment schedules with unresolved or future occurrences suppress the derived
+  definition without letting a completed bounded schedule suppress it forever. The
+  derived definition is informational and is never auto-posted or repeated into
+  Projection with an invented future balance.
+  Advance the alpha version to `0.2.0a23`.
 - [x] **Upcoming transaction activation.** Double-clicking upcoming activity in
   the Upcoming view or Dashboard should open its view/edit workflow. Identify the
   selected occurrence and distinguish editing it from editing the recurring
@@ -541,7 +548,10 @@ semantics, not duplicate business rules in presentation code.
   value. Advance the alpha version to `0.2.0a17`.
 - [ ] Add fixture coverage for native/imported schedules, unusual recurrences,
   formulas, overrides, and bounded schedules.
-- [ ] Add an approachable loan/amortization creation workflow.
+- [x] **0184 — Approachable loan/amortization creation.** Keep the existing GTK
+  preview/create workflow and add web parity over the same `LoanTerms`, amortization
+  preview, formula schedule, and optional opening-liability service. Exclude hidden
+  accounts from all new-loan account choices.
 - [ ] Support per-leg amount timelines in fixed multi-split schedules.
 - [ ] Support additional deterministic advanced/custom recurrence patterns.
 - [ ] Add payroll templates and richer payroll editing.
@@ -576,7 +586,8 @@ semantics, not duplicate business rules in presentation code.
   the scenario-assumption model.
 - [ ] Improve projection caching/reuse without storing stale calculated scenario
   results.
-- [ ] Add cancellation/progress for expensive projections.
+- [x] **0179 — Add cancellation/progress for expensive projections.** GTK Projection
+  uses a cancellable read-only worker and marshals progress/results back to GTK.
 - [ ] Add richer charts, cash-runway comparisons, and deeper account explanations.
 - [ ] Polish Plan/Projection scenario comparisons.
 - [ ] Evolve assumptions toward extensible dated rules (salary changes, retirement,

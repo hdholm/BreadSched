@@ -84,6 +84,15 @@ class AccountDialog(Gtk.Window):
             if a.account_class is AccountClass.ASSET and not a.is_root and not a.atype.is_cash_like
         ]
         self.assets.sort(key=db.full_name)
+        current_payment = account.card_payment_account if account is not None else None
+        self.payment_accounts = [
+            a
+            for a in db.iter_accounts()
+            if a.atype.is_cash_like
+            and not a.placeholder
+            and (not a.hidden or a.handle == current_payment)
+        ]
+        self.payment_accounts.sort(key=db.full_name)
 
         # Built before anything that can emit: setting a dropdown's initial value
         # fires notify::selected, which reaches _validate long before the widgets
@@ -302,6 +311,18 @@ class AccountDialog(Gtk.Window):
             self.day_spin.set_value(account.payment_day)
         card_grid.attach(Gtk.Label(label="Payment day", xalign=0), 0, 1, 1, 1)
         card_grid.attach(self.day_spin, 1, 1, 1, 1)
+
+        self.card_payment_picker = Gtk.DropDown.new_from_strings(
+            ["(choose when recording payment)"]
+            + [db.full_name(item) for item in self.payment_accounts]
+        )
+        if account is not None and account.card_payment_account:
+            for index, payment_account in enumerate(self.payment_accounts, start=1):
+                if payment_account.handle == account.card_payment_account:
+                    self.card_payment_picker.set_selected(index)
+                    break
+        card_grid.attach(Gtk.Label(label="Paid from", xalign=0), 0, 2, 1, 1)
+        card_grid.attach(self.card_payment_picker, 1, 2, 1, 1)
         self.card_box.append(card_grid)
         box.append(self.card_box)
 
@@ -471,6 +492,12 @@ class AccountDialog(Gtk.Window):
             except (ValueError, InvalidOperation, ArithmeticError):
                 account.usual_payment = None
             account.payment_day = int(self.day_spin.get_value())
+            payment_index = self.card_payment_picker.get_selected()
+            account.card_payment_account = (
+                self.payment_accounts[payment_index - 1].handle if payment_index > 0 else None
+            )
+        else:
+            account.card_payment_account = None
         if account.emergency_fund_eligible:
             account.emergency_fund_override = self.emergency_check.get_active()
         return account
