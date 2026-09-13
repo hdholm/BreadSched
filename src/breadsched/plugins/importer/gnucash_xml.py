@@ -20,6 +20,7 @@ from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust
 from ...gen.lib.scheduled import ScheduledSplit, ScheduledTransaction
+from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger
 from .gnucash_common import (
     ImportResult,
@@ -114,6 +115,7 @@ def import_book(
     include_scheduled: bool = True,
     message: str | None = None,
     progress=None,
+    notify: bool = True,
 ) -> ImportResult:
     """Copy a GnuCash XML book into an open BreadSched database.
 
@@ -130,10 +132,12 @@ def import_book(
             return
         try:
             progress(stage, done, total)
+        except OperationCancelled:
+            raise
         except Exception:  # noqa: BLE001 - a broken meter must not stop the import
             LOG.debug("progress callback failed", exc_info=True)
 
-    with db.transaction(message or f"Import {Path(path).name}", batch=True) as txn:
+    with db.transaction(message or f"Import {Path(path).name}", batch=True, notify=notify) as txn:
         sink = ImportSink(db, txn, result)
 
         stream = _open(path)

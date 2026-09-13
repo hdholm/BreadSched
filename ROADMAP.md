@@ -270,9 +270,12 @@ semantics, not duplicate business rules in presentation code.
   for every current web view with print styling that removes navigation and expands
   scrollable report tables. Keep Base and scenario estimate draft types distinct in
   the full-cache extended mypy gate. Advance the alpha version to `0.2.0a14`.
-- [ ] Move long-running Projection/import work off the GTK main thread, with a
-  read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
-  deliberate WAL/recovery policy.
+- [x] **0179 — Responsive Projection and import work.** Move GTK Projection and
+  import work off the main thread, give Projection an independent read-only worker
+  connection, deliver progress/results with `GLib.idle_add`, and cooperatively
+  cancel calculations or atomically roll back imports. Retain deliberate
+  `DELETE`/`FULL` SQLite durability under the single-writer book lock and advance
+  the alpha version to `0.2.0a18`.
 - [ ] Split oversized modules where it improves ownership/testability, especially web
   routing and very large GUI test modules.
 
@@ -679,7 +682,8 @@ semantics, not duplicate business rules in presentation code.
 - [x] Print the current GTK Dashboard, Plan, and Projection and every current web
   view, preserving applied values while keeping print mechanics in the presentation
   boundary. Continue richer scenario/flow reporting as the underlying views grow.
-- [ ] Keep long-running operations responsive with clear progress/cancellation.
+- [x] Keep Projection and import operations responsive with clear progress and
+  cooperative cancellation; extend the same primitive to later expensive workflows.
 
 ## In-application help and documentation
 

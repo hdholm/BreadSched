@@ -31,6 +31,7 @@ from breadsched.gen.lib import (
     ScheduledTransaction,
 )
 from breadsched.gen.plug import IMPORTER, PluginManager
+from breadsched.gen.utils import OperationCancelled
 from breadsched.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
 
 
@@ -62,6 +63,18 @@ class TestFormatDetection:
         manager = PluginManager.instance()
         assert manager.for_file(gnucash_sqlite_path.path, IMPORTER).id == "gnucash-sqlite"
         assert manager.for_file(gnucash_xml_path.path, IMPORTER).id == "gnucash-xml"
+
+
+def test_cancelling_an_import_rolls_back_the_whole_batch(db, gnucash_sqlite_path):
+    before = db.summary()
+
+    def cancel(_stage, _done, _total):
+        raise OperationCancelled()
+
+    with pytest.raises(OperationCancelled):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path, progress=cancel)
+
+    assert db.summary() == before
 
 
 def test_imported_formula_support_is_decided_only_by_the_safe_engine():

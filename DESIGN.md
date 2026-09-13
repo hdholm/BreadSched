@@ -446,6 +446,23 @@ The storage priorities are atomic financial writes, deterministic migrations,
 backups before dangerous transformations, recoverability, undo/redo integrity, and
 realistic performance on long household histories.
 
+GTK long-running work has an explicit ownership boundary. Projection workers open
+their own SQLite connection in read-only mode and return immutable calculation
+results to the GTK thread through `GLib.idle_add`; they never touch widgets. Import
+workers use the application's existing sole writable `DbSQLite` instance because a
+second writer would violate the book lock. The modal import workflow prevents other
+GTK edits while that worker owns its one batch transaction, and cancellation raises
+through importer progress checkpoints so the transaction rolls back in full.
+
+Native books deliberately use SQLite `DELETE` journaling with `synchronous=FULL`,
+not WAL. BreadSched has one explicit writer, while short-lived read-only projection
+connections may coexist between commits. Keeping rollback journaling preserves the
+single-file book model, avoids persistent `-wal`/`-shm` companions that are easy to
+separate during manual copying or cloud synchronization, and gives interrupted
+writes SQLite's established rollback recovery path. Any future WAL change requires
+tested checkpoint, backup, sidecar, and crash-recovery semantics rather than being a
+performance toggle.
+
 Verification should protect invariants without imposing whole-book work on every
 small edit. Cross-cutting metadata that participates in financial workflows must
 obey the same transaction/undo rules as ordinary primary objects. A direct metadata

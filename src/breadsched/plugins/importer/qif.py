@@ -241,6 +241,7 @@ def import_book(
     progress: Callable[[str, int, int], None] | None = None,
     number_format: NumberFormat | Literal["auto"] = "auto",
     date_format: QifDateFormat | Literal["auto"] = "auto",
+    notify: bool = True,
 ) -> ImportResult:
     """Import bank/cash/credit-card QIF accounts and transactions.
 
@@ -283,7 +284,7 @@ def import_book(
             result.warn("QIF date order is ambiguous; assuming month/day/year")
     else:
         detected_date_format = date_format
-    with db.transaction(message or f"Import {source.name}", batch=True) as txn:
+    with db.transaction(message or f"Import {source.name}", batch=True, notify=notify) as txn:
         sink = ImportSink(db, txn, result)
         result.scan("transaction")
         done = 0

@@ -12,6 +12,7 @@ the same scenario selection so both views describe the same future.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import date
 from decimal import Decimal
 from time import monotonic
@@ -19,7 +20,9 @@ from time import monotonic
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
+from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger  # noqa: E402
+from ..background import BackgroundJob
 from ..gi_setup import GLib, Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -69,6 +72,12 @@ class ProjectionView(BaseView):
         self._result: projection.Projection | None = None
         self._updating = False
         self._projection_dirty = True
+        self._job: BackgroundJob[projection.Projection, projection.ProjectionProgress] | None = None
+        self._job_generation = 0
+        self._progress_started = 0.0
+        self._progress_window: Gtk.Window | None = None
+        self._progress_bar: Gtk.ProgressBar | None = None
+        self._progress_label: Gtk.Label | None = None
         self._build()
 
     # ------------------------------------------------------------------ layout
@@ -188,6 +197,7 @@ class ProjectionView(BaseView):
 
     def set_db(self, db: DbSQLite | None) -> None:
         """Attach a book and invalidate, but do not project while hidden."""
+        self._cancel_projection(invalidate=True, wait=True)
         self._projection_dirty = True
         self._comparison = None
         self._result = None
@@ -285,80 +295,107 @@ class ProjectionView(BaseView):
         if self.db is None:
             return
         self._projection_dirty = False
-        try:
-            result = self._project_with_progress(self._collect())
-        except Exception as exc:  # noqa: BLE001 - shown to the user, and logged
-            # A failure here used to escape into the signal handler that triggered
-            # it, where GTK prints it and carries on. The chart kept whatever it
-            # had -- nothing -- and reported "not enough data to plot", which
-            # describes the symptom and hides the cause.
-            LOG.exception("projection failed")
-            self._result = None
-            self.explain_button.set_sensitive(False)
-            self.chart.set_data([], [])
-            self.warning_label.set_text(f"The projection could not be calculated: {exc}")
-            self.warning_label.add_css_class("negative")
-            return
-        self.warning_label.remove_css_class("negative")
-        self._render(result)
+        self._calculate(self._collect(), self._render)
 
-    def _project_with_progress(self, scenario: Scenario) -> projection.Projection:
-        """Calculate one scenario while showing position through its horizon."""
+    def _calculate(
+        self,
+        scenario: Scenario,
+        on_success: Callable[[projection.Projection], None],
+    ) -> None:
+        """Calculate from a read-only worker snapshot and deliver on GTK's loop."""
         if self.db is None:
-            raise RuntimeError("no book is open")
+            return
+        self._cancel_projection()
+        self._job_generation += 1
+        generation = self._job_generation
+        path = self.db.path
+        source_db = self.db
+        snapshot = Scenario.from_dict(scenario.serialize())
+        self._progress_started = monotonic()
+        self.warning_label.remove_css_class("negative")
+        self.warning_label.set_text("Calculating projection…")
 
-        progress_window: Gtk.Window | None = None
-        progress_bar: Gtk.ProgressBar | None = None
-        progress_label: Gtk.Label | None = None
-        started = monotonic()
-        last_fraction = -1.0
-        last_phase = ""
+        def work(cancel, report) -> projection.Projection:
+            worker_db = source_db
+            owns_worker = False
+            if path is not None and path != ":memory:":
+                worker_db = DbSQLite()
+                worker_db.load(path, "r")
+                owns_worker = True
 
-        def on_progress(update: projection.ProjectionProgress) -> None:
-            nonlocal progress_window, progress_bar, progress_label
-            nonlocal last_fraction, last_phase
+            def progress_callback(update: projection.ProjectionProgress) -> None:
+                if cancel.is_set():
+                    raise OperationCancelled()
+                report(update)
 
-            # Fast projections should feel instantaneous rather than flashing a
-            # modal window.  Create the popup lazily only after calculation has
-            # taken long enough that visible feedback is useful.  If the first
-            # callback after the delay is completion, there is nothing useful to
-            # display and we avoid a one-frame 100% popup.
-            if progress_window is None:
-                elapsed = monotonic() - started
-                if elapsed < _PROGRESS_POPUP_DELAY_SECONDS or update.fraction >= 1.0:
-                    return
-                progress_window, progress_bar, progress_label = self._open_progress()
+            try:
+                return projection.project(worker_db, snapshot, progress=progress_callback)
+            finally:
+                if owns_worker:
+                    worker_db.close()
 
-            if (
-                update.phase == last_phase
-                and update.fraction < 1.0
-                and update.fraction - last_fraction < 0.002
-            ):
+        self._job = BackgroundJob()
+        self._job.start(
+            work,
+            lambda update: self._projection_progress(generation, update),
+            lambda result: self._projection_succeeded(generation, result, on_success),
+            lambda exc: self._projection_failed(generation, exc),
+        )
+
+    def _projection_progress(self, generation: int, update: projection.ProjectionProgress) -> None:
+        if generation != self._job_generation:
+            return
+        if self._progress_window is None:
+            elapsed = monotonic() - self._progress_started
+            if elapsed < _PROGRESS_POPUP_DELAY_SECONDS or update.fraction >= 1.0:
                 return
-            last_fraction = update.fraction
-            last_phase = update.phase
-            assert progress_bar is not None
-            assert progress_label is not None
-            progress_bar.set_fraction(update.fraction)
-            progress_bar.set_text(f"{update.fraction:.0%}")
-            progress_label.set_text(
-                f"{update.phase}: {update.current:%b %d, %Y} of {update.end:%b %d, %Y}"
-            )
-            # Projection remains synchronous so a control change has a
-            # deterministic result before its signal handler returns. Pumping the
-            # main context keeps the modal progress window painted between engine
-            # checkpoints without coupling the financial model to GTK or threads.
-            context = GLib.MainContext.default()
-            while context.pending():
-                context.iteration(False)
+            self._open_progress()
+        assert self._progress_bar is not None
+        assert self._progress_label is not None
+        self._progress_bar.set_fraction(update.fraction)
+        self._progress_bar.set_text(f"{update.fraction:.0%}")
+        self._progress_label.set_text(
+            f"{update.phase}: {update.current:%b %d, %Y} of {update.end:%b %d, %Y}"
+        )
 
-        try:
-            return projection.project(self.db, scenario, progress=on_progress)
-        finally:
-            if progress_window is not None:
-                progress_window.close()
+    def _projection_succeeded(
+        self,
+        generation: int,
+        result: projection.Projection,
+        on_success: Callable[[projection.Projection], None],
+    ) -> None:
+        if generation != self._job_generation:
+            return
+        self._close_progress()
+        self.warning_label.remove_css_class("negative")
+        on_success(result)
 
-    def _open_progress(self) -> tuple[Gtk.Window, Gtk.ProgressBar, Gtk.Label]:
+    def _projection_failed(self, generation: int, exc: BaseException) -> None:
+        if generation != self._job_generation:
+            return
+        self._close_progress()
+        if isinstance(exc, OperationCancelled):
+            self._projection_dirty = True
+            self.warning_label.set_text("Projection cancelled.")
+            return
+        LOG.error("projection failed", exc_info=(type(exc), exc, exc.__traceback__))
+        self._result = None
+        self.explain_button.set_sensitive(False)
+        self.chart.set_data([], [])
+        self.warning_label.set_text(f"The projection could not be calculated: {exc}")
+        self.warning_label.add_css_class("negative")
+
+    def _cancel_projection(self, invalidate: bool = False, wait: bool = False) -> None:
+        job = self._job
+        if job is not None and job.active:
+            job.cancel()
+        if invalidate:
+            self._job_generation += 1
+        self._close_progress()
+        if wait and job is not None:
+            job.wait()
+
+    def _open_progress(self) -> None:
         """Create and paint the projection calculation popup."""
         root = self.get_root()
         window = Gtk.Window(title="Calculating projection…", modal=True)
@@ -377,14 +414,25 @@ class ProjectionView(BaseView):
         bar = Gtk.ProgressBar(show_text=True)
         bar.set_text("0%")
         box.append(bar)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: self._cancel_projection())
+        box.append(cancel)
         window.set_child(box)
         window.present()
+        self._progress_window = window
+        self._progress_bar = bar
+        self._progress_label = label
 
-        # Make sure the popup is visible before event expansion starts.
-        context = GLib.MainContext.default()
-        while context.pending():
-            context.iteration(False)
-        return window, bar, label
+    def _close_progress(self) -> None:
+        if self._progress_window is not None:
+            self._progress_window.close()
+        self._progress_window = None
+        self._progress_bar = None
+        self._progress_label = None
+
+    def wait_for_background(self, timeout: float = 10.0) -> bool:
+        """Wait for the current calculation; deterministic support for GUI tests."""
+        return self._job is None or self._job.wait(timeout)
 
     def _render(self, result: projection.Projection) -> None:
         self._result = result
@@ -506,10 +554,16 @@ class ProjectionView(BaseView):
         def on_apply(_b) -> None:
             index = picker.get_selected()
             dialog.close()
-            self._comparison = (
-                self._project_with_progress(self._scenarios[index - 1]) if index > 0 else None
-            )
-            self.recompute()
+            if index == 0:
+                self._comparison = None
+                self.recompute()
+                return
+
+            def comparison_ready(result: projection.Projection) -> None:
+                self._comparison = result
+                self.recompute()
+
+            self._calculate(self._scenarios[index - 1], comparison_ready)
 
         apply_button.connect("clicked", on_apply)
         box.append(apply_button)
@@ -543,6 +597,9 @@ class ProjectionView(BaseView):
                 return
             from ...plugins.export.csv_export import export_projection
 
-            export_projection(self._project_with_progress(self._collect()), file.get_path())
+            def export(calculated: projection.Projection) -> None:
+                export_projection(calculated, file.get_path())
+
+            self._calculate(self._collect(), export)
 
         dialog.save(self.get_root(), None, on_saved)

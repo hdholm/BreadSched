@@ -14,6 +14,7 @@ they got.
 from __future__ import annotations
 
 from pathlib import Path  # noqa: E402
+from typing import Any  # noqa: E402
 
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.plug import (  # noqa: E402
@@ -23,6 +24,9 @@ from ...gen.plug import (  # noqa: E402
     remembered_import_source,
 )
 from ...gen.utils import logs  # noqa: E402
+from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
+from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
+from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
 
 __all__ = ["ImportDialog"]
@@ -40,7 +44,10 @@ class ImportDialog(Gtk.Window):
         super().__init__(title="Import financial data", transient_for=parent, modal=True)
         self.db = db
         self.path: str | None = None
+        self._job: BackgroundJob[ImportResult, tuple[str, int, int]] | None = None
+        self._close_when_done = False
         self.set_default_size(820, 640)
+        self.connect("close-request", self._on_close_request)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -64,9 +71,9 @@ class ImportDialog(Gtk.Window):
         # START, not END: the filename is the informative part of a long path.
         self.path_label.set_ellipsize(Pango.EllipsizeMode.START)
         chooser_row.append(self.path_label)
-        choose_button = Gtk.Button(label="Choose file…")
-        choose_button.connect("clicked", self._on_choose)
-        chooser_row.append(choose_button)
+        self.choose_button = Gtk.Button(label="Choose file…")
+        self.choose_button.connect("clicked", self._on_choose)
+        chooser_row.append(self.choose_button)
         box.append(chooser_row)
 
         self.detected_label = Gtk.Label(xalign=0)
@@ -114,9 +121,13 @@ class ImportDialog(Gtk.Window):
         box.append(scroller)
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
-        close_button = Gtk.Button(label="Close")
-        close_button.connect("clicked", lambda *_: self.close())
-        buttons.append(close_button)
+        self.close_button = Gtk.Button(label="Close")
+        self.close_button.connect("clicked", self._on_close)
+        buttons.append(self.close_button)
+        self.cancel_button = Gtk.Button(label="Cancel import")
+        self.cancel_button.connect("clicked", self._on_cancel)
+        self.cancel_button.set_visible(False)
+        buttons.append(self.cancel_button)
         self.import_button = Gtk.Button(label="Import")
         self.import_button.add_css_class("suggested-action")
         self.import_button.set_sensitive(False)
@@ -154,6 +165,8 @@ class ImportDialog(Gtk.Window):
         Clearing matters: a result left over from the last attempt is worse than no
         result, because it looks like it describes the file now selected.
         """
+        if self._job is not None and self._job.active:
+            return
         self.path = path
         self.path_label.set_text(path)
         self.path_label.remove_css_class("dim")
@@ -180,12 +193,7 @@ class ImportDialog(Gtk.Window):
             self.date_format.set_visible(is_qif)
 
     def _on_progress(self, stage: str, done: int, total: int) -> None:
-        """Show how far the import has got, and keep the window responsive.
-
-        The import runs on the main thread, so the loop is pumped here rather than
-        moved to a worker: a background thread would be writing to the database
-        while the interface reads it, and the meter is not worth that.
-        """
+        """Show worker progress; BackgroundJob invokes this on GTK's main loop."""
         if total > 0:
             self.progress.set_fraction(min(1.0, done / total))
             self.progress.set_text(f"{stage} ({done:,} of {total:,})")
@@ -193,17 +201,6 @@ class ImportDialog(Gtk.Window):
             # An XML book gives no count in advance; pulse rather than pretend.
             self.progress.pulse()
             self.progress.set_text(stage)
-        self._pump()
-
-    @staticmethod
-    def _pump() -> None:
-        context = GLib.MainContext.default()
-        # Bounded: an unbounded drain could process a click that starts a second
-        # import on top of the one already running.
-        for _ in range(20):
-            if not context.pending():
-                break
-            context.iteration(False)
 
     def _clear_result(self) -> None:
         """Reset everything describing the previous attempt."""
@@ -218,59 +215,68 @@ class ImportDialog(Gtk.Window):
     # --------------------------------------------------------------- importing
 
     def _on_import(self, _button) -> None:
-        if self.path is None or self._plugin is None:
+        if (
+            self.path is None
+            or self._plugin is None
+            or (self._job is not None and self._job.active)
+        ):
             return
+        path = self.path
+        plugin = self._plugin
         self._clear_result()
         self.import_button.set_sensitive(False)
+        self.choose_button.set_sensitive(False)
+        self.scheduled_check.set_sensitive(False)
+        self.debug_check.set_sensitive(False)
+        self.number_format.set_sensitive(False)
+        self.date_format.set_sensitive(False)
+        self.cancel_button.set_visible(True)
         self.result_view.set_text("Importing…")
         self.progress.set_visible(True)
         self.progress.set_fraction(0.0)
         self.progress.set_text("Starting")
-        self._pump()
 
         log_path = None
         if self.debug_check.get_active():
             log_path = logs.configure(
                 verbosity=2,
-                path=Path(self.path).with_suffix(".import-log.txt"),
+                path=Path(path).with_suffix(".import-log.txt"),
                 stream=False,
             )
 
-        try:
-            kwargs = {
-                "include_scheduled": self.scheduled_check.get_active(),
-                "progress": self._on_progress,
-            }
-            if self._plugin.id in {"qif", "ofx"}:
-                kwargs["number_format"] = ("auto", "dot", "comma")[
-                    self.number_format.get_selected()
-                ]
-            if self._plugin.id == "qif":
-                kwargs["date_format"] = ("auto", "month-first", "day-first")[
-                    self.date_format.get_selected()
-                ]
-            result = self._plugin.run(self.db, self.path, **kwargs)
-        except Exception as exc:  # noqa: BLE001 - shown to the user, and logged
-            LOG.exception("import of %s failed", self.path)
-            lines = [f"Import failed: {exc}", "", "Nothing was written to the book."]
-            if log_path:
-                lines += ["", f"A detailed log is at {log_path}"]
-            else:
-                lines += [
-                    "",
-                    "Tick the log option above and try again to record what "
-                    "the importer was reading when it stopped.",
-                ]
-            self.result_view.set_text("\n".join(lines))
-            self.result_view.remove_css_class("dim")
-            self.result_view.add_css_class("negative")
-            self.import_button.set_sensitive(True)
-            self.progress.set_visible(False)
-            return
-        finally:
-            logs.configure(verbosity=0)
+        kwargs: dict[str, Any] = {
+            "include_scheduled": self.scheduled_check.get_active(),
+            "notify": False,
+        }
+        if plugin.id in {"qif", "ofx"}:
+            kwargs["number_format"] = ("auto", "dot", "comma")[self.number_format.get_selected()]
+        if plugin.id == "qif":
+            kwargs["date_format"] = ("auto", "month-first", "day-first")[
+                self.date_format.get_selected()
+            ]
 
-        remember_import_source(self.db, self.path)
+        def work(_cancel, report) -> ImportResult:
+            kwargs["progress"] = lambda stage, done, total: report((stage, done, total))
+            try:
+                return plugin.run(self.db, path, **kwargs)
+            finally:
+                logs.configure(verbosity=0)
+
+        self._job = BackgroundJob()
+        self._job.start(
+            work,
+            lambda update: self._on_progress(*update),
+            lambda result: self._import_succeeded(path, result, log_path),
+            lambda exc: self._import_failed(path, exc, log_path),
+        )
+
+    def _import_succeeded(self, path: str, result: ImportResult, log_path: Path | None) -> None:
+        remember_import_source(self.db, path)
+        # The worker suppressed synchronous database callbacks: GTK must only be
+        # notified after commit, here on its own main thread.
+        self.db.emit("database-changed", (self.db,))
+        self.db.emit("undo-available", (bool(self.db.undo_stack),))
+        self.db.emit("redo-available", (False,))
         result.log_path = str(log_path) if log_path else None
         self.progress.set_fraction(1.0)
         self.progress.set_text("Finished")
@@ -281,4 +287,68 @@ class ImportDialog(Gtk.Window):
             result.detail(limit=WARNING_LIMIT) + "\n\nThis import is a single undo step (Ctrl+Z)."
         )
         self.import_button.set_label("Import again")
+        self._finish_import()
+
+    def _import_failed(self, path: str, exc: BaseException, log_path: Path | None) -> None:
+        cancelled = isinstance(exc, OperationCancelled)
+        if not cancelled:
+            LOG.error(
+                "import of %s failed",
+                path,
+                exc_info=(type(exc), exc, exc.__traceback__),
+            )
+        lines = [
+            "Import cancelled." if cancelled else f"Import failed: {exc}",
+            "",
+            "Nothing was written to the book.",
+        ]
+        if log_path:
+            lines += ["", f"A detailed log is at {log_path}"]
+        elif not cancelled:
+            lines += [
+                "",
+                "Tick the log option above and try again to record what "
+                "the importer was reading when it stopped.",
+            ]
+        self.result_view.set_text("\n".join(lines))
+        self.result_view.remove_css_class("dim")
+        if not cancelled:
+            self.result_view.add_css_class("negative")
+        self.progress.set_visible(False)
+        self._finish_import()
+
+    def _finish_import(self) -> None:
         self.import_button.set_sensitive(True)
+        self.choose_button.set_sensitive(True)
+        self.scheduled_check.set_sensitive(True)
+        self.debug_check.set_sensitive(True)
+        self.number_format.set_sensitive(True)
+        self.date_format.set_sensitive(True)
+        self.cancel_button.set_visible(False)
+        if self._close_when_done:
+            self._close_when_done = False
+            self.close()
+
+    def _on_cancel(self, _button) -> None:
+        if self._job is not None:
+            self._job.cancel()
+            self.cancel_button.set_sensitive(False)
+            self.progress.set_text("Cancelling…")
+
+    def _on_close(self, _button) -> None:
+        if self._job is not None and self._job.active:
+            self._close_when_done = True
+            self._on_cancel(_button)
+            return
+        self.close()
+
+    def _on_close_request(self, _window) -> bool:
+        if self._job is None or not self._job.active:
+            return False
+        self._close_when_done = True
+        self._on_cancel(None)
+        return True
+
+    def wait_for_background(self, timeout: float = 10.0) -> bool:
+        """Wait for the current import; deterministic support for GUI tests."""
+        return self._job is None or self._job.wait(timeout)

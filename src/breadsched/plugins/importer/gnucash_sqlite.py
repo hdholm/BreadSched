@@ -16,6 +16,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust
 from ...gen.lib.scheduled import ScheduledSplit, ScheduledTransaction
+from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger
 from .gnucash_common import (
     ImportResult,
@@ -174,6 +175,7 @@ def import_book(
     include_scheduled: bool = True,
     message: str | None = None,
     progress=None,
+    notify: bool = True,
 ) -> ImportResult:
     """Copy a GnuCash SQLite book into an open BreadSched database."""
     result = ImportResult(source=str(path), source_format="sqlite")
@@ -188,7 +190,9 @@ def import_book(
         LOG.debug("source book contains %s", counts)
 
         report = _reporter(progress, counts)
-        with db.transaction(message or f"Import {Path(path).name}", batch=True) as txn:
+        with db.transaction(
+            message or f"Import {Path(path).name}", batch=True, notify=notify
+        ) as txn:
             sink = ImportSink(db, txn, result)
             report("Reading commodities", 0)
             _import_commodities(conn, sink)
@@ -398,6 +402,8 @@ def _reporter(progress, counts: dict):
             return
         try:
             progress(stage, min(done, total), total)
+        except OperationCancelled:
+            raise
         except Exception:  # noqa: BLE001 - a broken meter must not stop the import
             LOG.debug("progress callback failed", exc_info=True)
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import gc
 import importlib
 import itertools
+import threading
 from datetime import date
 from pathlib import Path
 
@@ -65,6 +66,13 @@ CATEGORY_KEYS = [key for key, _label, _icon in CATEGORIES]
 
 
 _APP_IDS = itertools.count()
+
+
+def _projection(window):
+    """Return the Projection view after its worker has delivered the result."""
+    view = window._views["projection"]
+    assert view.wait_for_background()
+    return view
 
 
 @pytest.fixture
@@ -423,6 +431,27 @@ class TestLiveUpdates:
 
 
 class TestProjectionView:
+    def test_projection_uses_a_read_only_worker(self, app, window, populated_book, monkeypatch):
+        from breadsched.gen.engine import projection as engine
+
+        app.open_book(populated_book)
+        window.show_category("projection")
+        view = _projection(window)
+        observed = []
+        original = engine.project
+
+        def inspect_worker(db, scenario, progress=None):
+            observed.append((threading.get_ident(), db.readonly))
+            return original(db, scenario, progress)
+
+        monkeypatch.setattr(engine, "project", inspect_worker)
+        view.recompute()
+        assert view.wait_for_background()
+
+        assert len(observed) == 1
+        assert observed[0][1] is True
+        assert observed[0][0] != threading.get_ident()
+
     def test_collect_preserves_account_rates_without_sharing_the_original_map(
         self, app, window, populated_book
     ):
@@ -436,7 +465,7 @@ class TestProjectionView:
         with app.db.transaction("Add generic projection account") as txn:
             app.db.add_account(account, txn)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
         original = view.scenario.assumptions
         original.per_account[account.handle] = Rate("0.0375")
 
@@ -449,19 +478,20 @@ class TestProjectionView:
     def test_the_chart_receives_series(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
         assert len(view.chart.series) >= 3
         assert len(view.chart.series[0].values) == view.scenario.years * 12
 
     def test_changing_an_assumption_recomputes(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
         before = list(view.chart.series[2].values)
         # This fixture imports a monthly rent schedule but no scheduled income.
         # Scheduled-event projections therefore respond to expense inflation;
         # income growth is intentionally inert until an income schedule exists.
         view._scales["expense_inflation"].set_value(0.10)
+        assert view.wait_for_background()
         assert view.chart.series[2].values != before
 
     def test_hidden_projection_is_only_invalidated_until_viewed(
@@ -469,7 +499,7 @@ class TestProjectionView:
     ):
         app.open_book(populated_book)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
         window.show_category("register")
 
         recomputes = []
@@ -495,14 +525,14 @@ class TestProjectionView:
 
         app.open_book(populated_book)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 800, 400)
         view.chart._draw(view.chart, cairo.Context(surface), 800, 400)
 
     def test_projection_month_explanation_is_available(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
 
         assert view._result is not None
         assert view.explain_button.get_sensitive() is True
@@ -649,6 +679,7 @@ class TestImportDialogState:
     ):
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
         assert dialog.result_view.get_text() != ""
 
         dialog.set_source(gnucash_xml_path.path)
@@ -678,6 +709,7 @@ class TestImportDialogState:
     def test_a_successful_import_reports_what_arrived(self, dialog, gnucash_sqlite_path):
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
         text = dialog.result_view.get_text()
         assert "transactions" in text
         assert "undo step" in text
@@ -688,6 +720,7 @@ class TestImportDialogState:
         dialog.debug_check.set_active(True)
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
         log = Path(gnucash_sqlite_path.path).with_suffix(".import-log.txt")
         assert log.exists()
         assert "importing GnuCash SQLite book" in log.read_text()
@@ -722,6 +755,7 @@ class TestImportDialogState:
 
         dialog.set_source(book.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
         text = dialog.result_view.get_text()
         assert "Import failed" not in text
         assert "Lonely" in text
@@ -1048,8 +1082,9 @@ class TestProjectionRobustness:
     def test_a_long_projection_is_allowed(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
         view.years_spin.set_value(100)
+        assert view.wait_for_background()
         assert view.years_spin.get_value() == 100
         assert len(view.chart.series[0].values) == 1200
 
@@ -1060,13 +1095,14 @@ class TestProjectionRobustness:
 
         app.open_book(populated_book)
         window.show_category("projection")
-        view = window._views["projection"]
+        view = _projection(window)
 
         def explode(*args, **kwargs):
             raise RuntimeError("simulated projection failure")
 
         monkeypatch.setattr(engine, "project", explode)
         view.recompute()
+        assert view.wait_for_background()
         assert "could not be calculated" in view.warning_label.get_text()
         assert "simulated projection failure" in view.warning_label.get_text()
 
@@ -3313,13 +3349,30 @@ class TestImportDialogProgress:
         dialog._on_progress = watching
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
 
         assert seen, "the importer reported no progress at all"
         assert any(stage for stage, _d, _t in seen)
 
+    def test_import_runs_outside_the_gtk_thread(self, dialog, gnucash_sqlite_path, monkeypatch):
+        dialog.set_source(gnucash_sqlite_path.path)
+        observed = []
+        original = dialog._plugin.run
+
+        def inspect_worker(*args, **kwargs):
+            observed.append(threading.get_ident())
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(dialog._plugin, "run", inspect_worker)
+        dialog._on_import(None)
+        assert dialog.wait_for_background()
+
+        assert observed and observed[0] != threading.get_ident()
+
     def test_it_finishes_at_full(self, dialog, gnucash_sqlite_path):
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
         assert dialog.progress.get_fraction() == 1.0
         assert "Finished" in dialog.progress.get_text()
 
@@ -3327,6 +3380,7 @@ class TestImportDialogProgress:
         """An XML book gives no count in advance, so a fraction would be invented."""
         dialog.set_source(gnucash_xml_path.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
         assert "transactions" in dialog.result_view.get_text()
 
     def test_fifty_warnings_are_shown(self, dialog):
@@ -3347,6 +3401,7 @@ class TestImportDialogProgress:
     ):
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)
+        assert dialog.wait_for_background()
         dialog.set_source(gnucash_xml_path.path)
         assert dialog.progress.get_visible() is False
         assert dialog.progress.get_fraction() == 0.0

@@ -50,11 +50,13 @@ class DbTxn:
     Leaving the block normally commits and emits signals; raising rolls back.
     """
 
-    def __init__(self, message: str, db: DbBase, batch: bool = False) -> None:
+    def __init__(self, message: str, db: DbBase, batch: bool = False, notify: bool = True) -> None:
         self.message = message
         self.db = db
         #: Batch mode suppresses per-object signals; used by importers.
         self.batch = batch
+        #: A worker may ask its presentation to marshal the final signals.
+        self.notify = notify
         #: (table, handle, before, after) with ``None`` meaning absent.
         self.records: list[tuple[str, str, dict | None, dict | None]] = []
         self.timestamp: float = 0.0
@@ -129,10 +131,10 @@ class DbBase(Callback, ABC):
     @abstractmethod
     def is_open(self) -> bool: ...
 
-    def transaction(self, message: str, batch: bool = False) -> DbTxn:
+    def transaction(self, message: str, batch: bool = False, notify: bool = True) -> DbTxn:
         if self.readonly:
             raise DbReadonlyError("database is open read-only")
-        return DbTxn(message, self, batch=batch)
+        return DbTxn(message, self, batch=batch, notify=notify)
 
     # Backend hooks -----------------------------------------------------------
 

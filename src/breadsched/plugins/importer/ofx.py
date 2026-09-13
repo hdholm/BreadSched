@@ -156,6 +156,7 @@ def import_book(
     message: str | None = None,
     progress: Callable[[str, int, int], None] | None = None,
     number_format: NumberFormat | Literal["auto"] = "auto",
+    notify: bool = True,
 ) -> ImportResult:
     """Import OFX/QFX bank and credit-card statement transactions."""
     del include_scheduled
@@ -200,7 +201,7 @@ def import_book(
         if progress is not None:
             progress("Reading OFX transactions", done, len(transaction_blocks))
 
-    with db.transaction(message or f"Import {source.name}", batch=True) as txn:
+    with db.transaction(message or f"Import {source.name}", batch=True, notify=notify) as txn:
         sink = ImportSink(db, txn, result)
         result.scan("transaction")
         commodity = sink.commodity("CURRENCY", currency_code, currency_code)

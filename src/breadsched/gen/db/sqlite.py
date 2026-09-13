@@ -1310,13 +1310,14 @@ class DbSQLite(DbBase):
                 self.redo_stack.clear()
             # A batch stays silent through commit: an importer that emitted one signal
             # per row would repaint the account tree tens of thousands of times.
-            if not txn.batch:
+            if txn.notify and not txn.batch:
                 self._emit_for(txn)
             self.block_signals(False)
-            if txn.batch and txn.records:
+            if txn.notify and txn.batch and txn.records:
                 self.emit("database-changed", (self,))
-            self.emit("undo-available", (bool(self.undo_stack),))
-            self.emit("redo-available", (False,))
+            if txn.notify:
+                self.emit("undo-available", (bool(self.undo_stack),))
+                self.emit("redo-available", (False,))
         except Exception:
             if conn is not None:
                 conn.rollback()

@@ -292,6 +292,19 @@ class TestSignals:
                 )
         assert seen == []
 
+    def test_worker_transaction_can_defer_all_notifications(self, db, book):
+        seen = []
+        db.connect("database-changed", lambda *_: seen.append("changed"))
+        db.connect("undo-available", lambda *_: seen.append("undo"))
+        with db.transaction("Background import", batch=True, notify=False) as txn:
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 5), "R", book.rent, book.checking, "1"),
+                txn,
+            )
+
+        assert seen == []
+        assert db.undo_stack
+
     def test_a_failing_listener_does_not_break_the_write(self, db, book):
         db.connect("transaction-add", lambda handles: 1 / 0)
         with db.transaction("Post") as txn:
