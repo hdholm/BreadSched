@@ -141,7 +141,10 @@ later escrow payouts reduce the restricted asset without counting the expense tw
 The GTK4 application is the reference user experience. Its major views include:
 
 - **Dashboard** — household position, scheduled bills, liquidity, emergency-fund
-  information, FSA state, and important linked-account relationships.
+  information, FSA state, and important linked-account relationships. Dashboard
+  groups accept account-style paths such as `Investments:Plan A`; generated headings
+  total their children, account subtrees are counted once, FSA groups report benefit
+  availability rather than custodial balance, and fully repaid loans are omitted.
 - **Accounts** — hierarchical chart of accounts with balances, account kind, and
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit

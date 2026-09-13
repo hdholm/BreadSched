@@ -1399,13 +1399,25 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                     "groups": [
                         {
                             "name": g.name,
+                            "path": g.path,
+                            "depth": g.depth,
+                            "heading": g.heading,
+                            "note": g.note,
                             "kind": g.kind,
                             "total": g.total,
                             "value": g.value,
                             "debt": g.debt,
                             "equity": g.equity,
                             "loan_to_value": g.loan_to_value,
-                            "accounts": [{"name": n, "balance": b} for n, b in g.accounts],
+                            "accounts": [
+                                {
+                                    "name": account.name,
+                                    "balance": account.total,
+                                    "source": account.source,
+                                    "note": account.note,
+                                }
+                                for account in g.accounts
+                            ],
                         }
                         for g in board.groups
                     ],
@@ -1430,6 +1442,9 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         print(f"Dashboard as at {board.as_of}\n")
         rows = []
         for group in board.groups:
+            group_label = f"{'  ' * group.depth}{group.name}"
+            if group.note:
+                group_label = f"{group_label} — {group.note}"
             loan_to_value = group.loan_to_value
             equity = group.equity
             if (
@@ -1440,7 +1455,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             ):
                 rows.append(
                     [
-                        group.name,
+                        group_label,
                         group.value.format(),
                         group.debt.format(),
                         equity.format(parens_negative=True),
@@ -1450,7 +1465,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             else:
                 rows.append(
                     [
-                        group.name,
+                        group_label,
                         "",
                         "",
                         group.total.format(parens_negative=True),

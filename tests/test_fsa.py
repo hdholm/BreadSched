@@ -128,6 +128,15 @@ def test_dashboard_keeps_current_year_when_prior_year_closes(db, book):
     assert statuses[0].remaining == current.election
 
 
+def test_dashboard_does_not_show_a_future_funding_year_before_it_starts(db, book):
+    account = _fsa_account(db, book)
+    assert fsa.dashboard_statuses(db, as_of=date(2026, 6, 30)) == []
+
+    statuses = fsa.dashboard_statuses(db, as_of=date(2026, 7, 1))
+
+    assert [status.account.handle for status in statuses] == [account.handle]
+
+
 def test_dashboard_uses_year_end_when_no_runout_and_keeps_only_latest_closed(db, book):
     account = _fsa_account(db, book)
     first = FsaFundingYear(date(2025, 1, 1), date(2025, 12, 31), Money("1200"))

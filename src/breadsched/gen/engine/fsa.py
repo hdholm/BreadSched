@@ -103,7 +103,11 @@ def dashboard_statuses(
             year_status(db, account, year, as_of=when)
             for year in sorted(account.fsa_years, key=lambda item: item.start, reverse=True)
         ]
-        active = [status for status in account_statuses if status.phase != "closed"]
+        active = [
+            status
+            for status in account_statuses
+            if status.year.start <= when and status.phase != "closed"
+        ]
         closed = [
             status
             for status in account_statuses

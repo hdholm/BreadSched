@@ -6,10 +6,11 @@ them.
 
 Four ideas carry the whole view.
 
-**Groups.** Accounts are gathered into named groups — a property and its mortgage,
-the retirement accounts, the current accounts — and a group of a property plus its
-loan reports equity and loan-to-value, which is the pair of numbers that actually
-answers "how is the house doing".
+**Groups.** Accounts are gathered into colon-delimited paths. Generated parent
+headings total their child groups, while selecting a chart parent includes its
+account subtree exactly once. A group of a property plus its active loans reports
+equity and loan-to-value, which is the pair of numbers that actually answers "how
+is the house doing".
 
 **Normalised bills.** A bill's amount means nothing without its cycle: 619 a
 quarter and 200 a month are not comparable until both are monthly. Every scheduled
@@ -41,13 +42,14 @@ from ..lib.account import Account, AccountClass, AccountKind
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType
 from ..lib.scheduled import ScheduledTransaction
-from . import ledger, schedule
+from . import fsa, ledger, schedule
 
 __all__ = [
     "DashboardConfig",
     "GroupConfig",
     "Dashboard",
     "GroupResult",
+    "GroupAccountResult",
     "BillRow",
     "build",
     "DAYS_PER_MONTH",
@@ -87,7 +89,7 @@ def cycle_days(sched: ScheduledTransaction) -> Decimal:
 
 @dataclass
 class GroupConfig:
-    """A named set of accounts shown as one line on the dashboard."""
+    """Accounts assigned to a colon-delimited dashboard group path."""
 
     name: str
     accounts: list[str] = field(default_factory=list)
@@ -261,16 +263,34 @@ def default_config(db: DbSQLite) -> DashboardConfig:
 
 
 @dataclass
+class GroupAccountResult:
+    """One directly selected account's contribution to a dashboard group."""
+
+    name: str
+    total: Money | None
+    source: str = "ledger"
+    note: str = ""
+
+
+@dataclass
 class GroupResult:
-    """One group's totals."""
+    """One group or generated path heading and its aggregate totals."""
 
     name: str
     kind: str
     total: Money
-    accounts: list[tuple[str, Money]] = field(default_factory=list)
+    path: str = ""
+    depth: int = 0
+    heading: bool = False
+    accounts: list[GroupAccountResult] = field(default_factory=list)
+    note: str = ""
     #: Set for property groups: the value, what is owed, and the ratio.
     value: Money | None = None
     debt: Money | None = None
+    #: Aggregate amount from liquid groups at or beneath this node.
+    liquid: Money = field(default_factory=lambda: Money(0))
+    _assets: Money = field(default_factory=lambda: Money(0), repr=False)
+    _debts: Money = field(default_factory=lambda: Money(0), repr=False)
 
     @property
     def equity(self) -> Money | None:
@@ -375,12 +395,14 @@ class Dashboard:
     # -------------------------------------------------------------- aggregates
 
     def group(self, name: str) -> GroupResult | None:
-        return next((g for g in self.groups if g.name == name), None)
+        return next((g for g in self.groups if g.path == name), None) or next(
+            (g for g in self.groups if g.name == name), None
+        )
 
     def total_of_kind(self, kind: str) -> Money:
         total = Money(0)
         for group in self.groups:
-            if group.kind == kind:
+            if group.depth == 0 and group.kind == kind:
                 total = total + (group.equity or group.total)
         return total
 
@@ -388,6 +410,8 @@ class Dashboard:
     def assets(self) -> Money:
         total = Money(0)
         for group in self.groups:
+            if group.depth:
+                continue
             if group.kind == "liability":
                 continue
             total = total + (group.equity if group.equity is not None else group.total)
@@ -397,6 +421,8 @@ class Dashboard:
     def debts(self) -> Money:
         total = Money(0)
         for group in self.groups:
+            if group.depth:
+                continue
             if group.kind == "liability":
                 total = total + group.total
         return total
@@ -502,14 +528,15 @@ def build(
     today = as_of or date.today()
     config = config or DashboardConfig.load(db)
     board = Dashboard(as_of=today, config=config)
+    paid_off = _paid_off_loans(db, today)
+    resolved = resolve_groups(db, config)
+    board.groups = _hierarchical_results(db, resolved, today, paid_off)
 
-    for group in resolve_groups(db, config):
-        result = _group_result(db, group, today)
-        if result.accounts:
-            board.groups.append(result)
-
-    board.liquid = _liquid_total(db, config, today)
-    bills, income_per_month, next_income = _bills_and_income(db, today, horizon_days)
+    if any(group.kind == "liquid" for group in resolved):
+        board.liquid = sum((group.liquid for group in board.groups if group.depth == 0), Money(0))
+    else:
+        board.liquid = ledger.cash_on_hand(db, as_of=today)
+    bills, income_per_month, next_income = _bills_and_income(db, today, horizon_days, paid_off)
     board.bills = bills
     board.income_per_month = income_per_month
     board.next_income = next_income
@@ -597,7 +624,47 @@ def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
         existing_group.accounts.append(account.handle)
         claimed.add(account.handle)
 
-    return resolved
+    return _deduplicate_group_accounts(db, resolved)
+
+
+def _deduplicate_group_accounts(db: DbSQLite, groups: list[GroupConfig]) -> list[GroupConfig]:
+    """Keep each selected account subtree once, with a selected parent winning.
+
+    Selecting a parent already selects its descendants through recursive balance
+    calculation. This normalization applies across groups as well as within one
+    group so an explicitly repeated child cannot inflate headings or net worth.
+    """
+    selected = {handle for group in groups for handle in group.accounts}
+    owner: dict[str, int] = {}
+    for index, group in enumerate(groups):
+        for handle in group.accounts:
+            if handle in owner:
+                continue
+            account = db.get_account(handle)
+            parent = account.parent if account is not None else None
+            redundant = False
+            visited: set[str] = set()
+            while parent and parent not in visited:
+                if parent in selected:
+                    redundant = True
+                    break
+                visited.add(parent)
+                ancestor = db.get_account(parent)
+                parent = ancestor.parent if ancestor is not None else None
+            if not redundant:
+                owner[handle] = index
+
+    normalized: list[GroupConfig] = []
+    for index, group in enumerate(groups):
+        accounts: list[str] = []
+        seen: set[str] = set()
+        for handle in group.accounts:
+            if owner.get(handle) == index and handle not in seen:
+                accounts.append(handle)
+                seen.add(handle)
+        if accounts:
+            normalized.append(GroupConfig(group.name, accounts, group.kind))
+    return normalized
 
 
 def _sides(db: DbSQLite, group: GroupConfig) -> list:
@@ -631,51 +698,213 @@ def _kind_for(account: Account) -> str:
     return "asset"
 
 
-def _group_result(db: DbSQLite, group: GroupConfig, today: date) -> GroupResult:
-    lines: list[tuple[str, Money]] = []
-    total = Money(0)
-    value = Money(0)
-    debt = Money(0)
+@dataclass
+class _GroupNode:
+    name: str
+    path: str
+    groups: list[GroupConfig] = field(default_factory=list)
+    children: dict[str, _GroupNode] = field(default_factory=dict)
 
-    for handle in group.accounts:
+
+def _group_path(name: str) -> list[str]:
+    parts = [part.strip() for part in name.split(":") if part.strip()]
+    return parts or [name.strip() or "Unnamed"]
+
+
+def _hierarchical_results(
+    db: DbSQLite,
+    groups: list[GroupConfig],
+    today: date,
+    paid_off: set[str],
+) -> list[GroupResult]:
+    """Build generated headings and flattened pre-order rows from group paths."""
+    roots: dict[str, _GroupNode] = {}
+    for group in groups:
+        parts = _group_path(group.name)
+        siblings = roots
+        path_parts: list[str] = []
+        node: _GroupNode | None = None
+        for part in parts:
+            path_parts.append(part)
+            path = ":".join(path_parts)
+            node = siblings.setdefault(part, _GroupNode(part, path))
+            siblings = node.children
+        assert node is not None
+        node.groups.append(group)
+
+    flattened: list[GroupResult] = []
+    for node in roots.values():
+        built = _build_group_node(db, node, today, paid_off, depth=0)
+        if built:
+            flattened.extend(built)
+    return flattened
+
+
+def _build_group_node(
+    db: DbSQLite,
+    node: _GroupNode,
+    today: date,
+    paid_off: set[str],
+    *,
+    depth: int,
+) -> list[GroupResult]:
+    child_rows: list[GroupResult] = []
+    children: list[GroupResult] = []
+    for child in node.children.values():
+        rows = _build_group_node(db, child, today, paid_off, depth=depth + 1)
+        if rows:
+            children.append(rows[0])
+            child_rows.extend(rows)
+
+    direct_kind = node.groups[0].kind if node.groups else None
+    direct_accounts = [handle for group in node.groups for handle in group.accounts]
+    lines, assets, debts, liquid, notes = _direct_group_totals(
+        db, direct_accounts, direct_kind, today, paid_off
+    )
+    for child_result in children:
+        assets = assets + child_result._assets
+        debts = debts + child_result._debts
+        liquid = liquid + child_result.liquid
+        if child_result.note:
+            notes.append(child_result.note)
+
+    if not lines and not children:
+        return []
+    kinds = [group.kind for group in node.groups] + [child.kind for child in children]
+    kind = _combined_group_kind(kinds)
+    if kind == "property" and not debts:
+        kind = "asset"
+    elif kind == "property" and not assets:
+        kind = "liability"
+    mixed = bool(assets and debts)
+    property_like = kind == "property" or mixed
+    total = debts if kind == "liability" and not assets else assets
+    if property_like:
+        total = assets - debts
+    unique_notes = list(dict.fromkeys(note for note in notes if note))
+    result = GroupResult(
+        name=node.name,
+        path=node.path,
+        kind=kind,
+        total=total,
+        depth=depth,
+        heading=bool(children),
+        accounts=lines,
+        note="; ".join(unique_notes),
+        value=assets if property_like else None,
+        debt=debts if property_like else None,
+        liquid=liquid,
+        _assets=assets,
+        _debts=debts,
+    )
+    return [result, *child_rows]
+
+
+def _combined_group_kind(kinds: list[str]) -> str:
+    unique = set(kinds)
+    if not unique:
+        return "asset"
+    if len(unique) == 1:
+        return next(iter(unique))
+    if "property" in unique or ("liability" in unique and len(unique) > 1):
+        return "property"
+    return "asset"
+
+
+def _direct_group_totals(
+    db: DbSQLite,
+    handles: list[str],
+    kind: str | None,
+    today: date,
+    paid_off: set[str],
+) -> tuple[list[GroupAccountResult], Money, Money, Money, list[str]]:
+    lines: list[GroupAccountResult] = []
+    assets = Money(0)
+    debts = Money(0)
+    liquid = Money(0)
+    notes: list[str] = []
+    for handle in handles:
+        if handle in paid_off:
+            continue
         account = db.get_account(handle)
         if account is None:
             continue
-        balance = ledger.balance_recursive(db, handle, as_of=today)
-        lines.append((db.full_name(account) or account.name, balance))
-        total = total + balance
+        line = _account_group_result(db, account, today)
+        lines.append(line)
+        if line.note:
+            notes.append(line.note)
+        amount = line.total if line.total is not None else Money(0)
         if account.account_class is AccountClass.LIABILITY:
-            debt = debt + balance
+            debts = debts + amount
         else:
-            value = value + balance
-
-    result = GroupResult(name=group.name, kind=group.kind, total=total, accounts=lines)
-    if group.kind == "property" or (value and debt):
-        # A property line is only useful as value against loan: either number
-        # alone says nothing about whether the house is an asset yet.
-        result.value = value
-        result.debt = debt
-        result.total = value - debt
-    return result
+            assets = assets + amount
+        if kind == "liquid":
+            liquid = liquid + amount
+    return lines, assets, debts, liquid, notes
 
 
-def _liquid_total(db: DbSQLite, config: DashboardConfig, today: date) -> Money:
-    handles: list[str] = []
-    for group in config.groups:
-        if group.kind == "liquid":
-            handles.extend(group.accounts)
-    if not handles:
-        return ledger.cash_on_hand(db, as_of=today)
-    total = Money(0)
-    for handle in handles:
-        total = total + ledger.balance_recursive(db, handle, as_of=today)
-    return total
+def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupAccountResult:
+    name = db.full_name(account) or account.name
+    if account.kind is not AccountKind.FSA:
+        return GroupAccountResult(
+            name=name,
+            total=ledger.balance_recursive(db, account.handle, as_of=today),
+        )
+    if not account.fsa_years:
+        return GroupAccountResult(
+            name=name,
+            total=None,
+            source="fsa_availability",
+            note=f"{name}: no FSA funding years configured",
+        )
+    applicable = [
+        fsa.year_status(db, account, year, as_of=today)
+        for year in account.fsa_years
+        if year.start <= today <= (year.runout_through or year.through)
+    ]
+    if not applicable:
+        return GroupAccountResult(
+            name=name,
+            total=None,
+            source="fsa_availability",
+            note=f"{name}: no applicable FSA funding year",
+        )
+    total = sum((status.remaining for status in applicable), Money(0))
+    count = len(applicable)
+    return GroupAccountResult(
+        name=name,
+        total=total,
+        source="fsa_availability",
+        note=f"{count} applicable FSA funding year{'s' if count != 1 else ''}",
+    )
+
+
+def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:
+    """Loans with prior ledger activity and no remaining balance as of ``today``."""
+    paid_off: set[str] = set()
+    for account in db.iter_accounts():
+        if account.account_class is not AccountClass.LIABILITY:
+            continue
+        if account.kind is not AccountKind.DEBT and not account.linked_asset:
+            continue
+        if ledger.balance_recursive(db, account.handle, as_of=today):
+            continue
+        subtree = [account, *db.descendants(account.handle)]
+        has_activity = any(
+            Money(row["value_num"], row["value_den"])
+            for item in subtree
+            for row in db.split_rows(item.handle, end=today)
+        )
+        if has_activity:
+            paid_off.update(item.handle for item in subtree)
+    return paid_off
 
 
 def _bills_and_income(
     db: DbSQLite,
     today: date,
     horizon_days: int,
+    paid_off: set[str],
 ) -> tuple[list[BillRow], Money, date | None]:
     """Split the schedules into outflows and income, normalising both.
 
@@ -697,9 +926,19 @@ def _bills_and_income(
         if when is None:
             continue
 
+        legs = list(sched.resolved_splits(when=when))
+        if any(
+            handle in paid_off
+            and amount > 0
+            and (account := db.get_account(handle)) is not None
+            and account.account_class is AccountClass.LIABILITY
+            for handle, amount in legs
+        ):
+            continue
+
         income = Money(0)
         outflow = Money(0)
-        for handle, amount in sched.resolved_splits(when=when):
+        for handle, amount in legs:
             account = db.get_account(handle)
             if account is None:
                 continue

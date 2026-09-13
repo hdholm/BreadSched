@@ -6,9 +6,9 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-Implementation status includes **0157 — card payment days and recent FSA years**;
-0157 remains pending Fedora validation. Unchecked field reports below are requests
-or suspected regressions, not claims that a root cause has already been confirmed.
+The accepted baseline is **0160 — account kinds and initial escrow semantics**.
+Unchecked field reports below are requests or suspected regressions, not claims
+that a root cause has already been confirmed.
 
 ## Status legend
 
@@ -96,32 +96,33 @@ semantics, not duplicate business rules in presentation code.
 1. **NEXT — Historical estimator long-cycle coverage and review workflow.** The
    monthly future-coverage regression is repaired; multi-year recurrences and
    editable drafts still need separate acceptance rules and UI work.
-2. **Dashboard balances and hierarchy**, followed by the scheduled-entry and import
-   usability work below. Mortgage planning-flow semantics require design review.
+2. **Scheduled-entry and import usability**, now that the Dashboard balance and
+   hierarchy block is implemented in 0161. Mortgage planning-flow semantics require
+   design review.
 3. **Account-kind follow-through.** The canonical kind and initial escrow semantics
    landed in 0160; finish richer refund/adjustment explanations and remove the
    temporary compatibility names after supported clients migrate.
 
 ## Dashboard balances and group hierarchy
 
-- [ ] **FSA group availability.** Show remaining funds for the applicable plan
+- [x] **0161 — FSA group availability.** Show remaining funds for the applicable plan
   year(s), using the shared FSA funding-year calculations at the Dashboard's as-of
   date, instead of the custodial account ledger balance. Cover overlapping plan
   years/run-out periods, exhausted and expired years, and missing year definitions.
   GTK and web must present the same result and make unavailable year data explicit.
-- [ ] **Colon-separated group paths.** Accept account-style paths in configuration
+- [x] **0161 — Colon-separated group paths.** Accept account-style paths in configuration
   and account group fields. For example, `Investments:Plan A` and `Investments:Plan B`
   display as `Plan A` and `Plan B` under an `Investments` heading. Each leaf shows its
   own total; each heading shows the sum of its children and any directly assigned
   accounts. Support deeper paths and persist the full paths while displaying local
   names. Compute the hierarchy and totals in the engine for GTK/web/CLI parity.
-- [ ] **Account-subtree deduplication.** A grouped parent account includes its whole
+- [x] **0161 — Account-subtree deduplication.** A grouped parent account includes its whole
   subtree exactly once. Explicitly selected descendants must not appear or be added
   again beneath the same grouped parent. Resolve overlapping group assignments
   consistently so heading/grand totals and liquidity calculations cannot count a
   descendant twice. Cover parent-plus-child selections, nested descendants,
   repeated handles, and mixed assets/liabilities with generic regression fixtures.
-- [ ] **Paid-off loans.** Omit paid-off loan entries from the Dashboard, including
+- [x] **0161 — Paid-off loans.** Omit paid-off loan entries from the Dashboard, including
   loans linked to an asset. Preserve the asset's own visibility and value exactly
   once; a linked asset must not keep a paid-off loan row visible. Test multiple
   loans on one asset and distinguish a zero loan balance from a fully repaid loan

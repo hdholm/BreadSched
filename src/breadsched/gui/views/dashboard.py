@@ -262,8 +262,15 @@ class DashboardView(BaseView):
             self.groups.attach(label, position, 0, 1, 1)
 
         for index, group in enumerate(board.groups, start=1):
-            name = Gtk.Label(label=group.name, xalign=0)
+            label = group.name
+            if group.note:
+                label = f"{label} — {group.note}"
+            name = Gtk.Label(label=label, xalign=0)
+            name.set_margin_start(group.depth * 18)
+            if group.heading:
+                name.add_css_class("total-row")
             name.set_ellipsize(Pango.EllipsizeMode.END)
+            name.set_tooltip_text(group.path)
             self.groups.attach(name, 0, index, 1, 1)
             self.groups.attach(
                 _amount(group.value if group.value is not None else None), 1, index, 1, 1

@@ -54,8 +54,9 @@ class DashboardDialog(Gtk.Window):
         box.append(
             Gtk.Label(
                 label=(
-                    "Each group is a line on the dashboard. A property group pairs "
-                    "a value with its mortgage and reports equity and loan-to-value."
+                    "Use colon-separated paths such as Investments:Plan A to create "
+                    "totalled headings. Selecting a parent account includes its "
+                    "subaccounts once. A property group pairs value with its loans."
                 ),
                 xalign=0,
                 wrap=True,
@@ -97,7 +98,7 @@ class DashboardDialog(Gtk.Window):
         frame.add_css_class("card")
 
         header = Gtk.Box(spacing=8)
-        name = Gtk.Entry(placeholder_text="Home Easton")
+        name = Gtk.Entry(placeholder_text="Investments:Plan A")
         name.set_hexpand(True)
         if group:
             name.set_text(group.name)

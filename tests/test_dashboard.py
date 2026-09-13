@@ -128,7 +128,10 @@ class TestGroups:
         assert household.group("Retirement").loan_to_value is None
 
     def test_group_totals_list_their_accounts(self, household):
-        assert household.group("Cash").accounts == [("Assets:Checking", Money("20000.00"))]
+        accounts = household.group("Cash").accounts
+        assert [(account.name, account.total) for account in accounts] == [
+            ("Assets:Checking", Money("20000.00"))
+        ]
 
     def test_net_worth_counts_equity_not_the_gross_value(self, household):
         # 20,000 cash + 175,000 retirement + 104,261.50 equity.
@@ -383,9 +386,7 @@ class TestLoansPairWithTheirAssets:
     def test_the_pair_is_not_counted_twice(self, db, linked):
         """A house in both a property line and an asset total inflates net worth."""
         board = dashboard.build(db, as_of=TODAY)
-        appearances = [
-            group.name for group in board.groups for handle, _balance in group.accounts if handle
-        ]
+        appearances = [account.name for group in board.groups for account in group.accounts]
         assert len(appearances) == len(set(appearances)) or True
         # 490,200 of house less 385,938.50 of mortgage, and nothing else in the book.
         assert board.net_worth == Money("104261.50")
@@ -471,7 +472,7 @@ class TestAccountGroupField:
 
         cash = board.group("Cash")
         assert cash is not None
-        assert [name for name, _ in cash.accounts] == ["Assets:Checking"]
+        assert [account.name for account in cash.accounts] == ["Assets:Checking"]
         # Savings was not configured anywhere, so its own field places it.
         assert board.group("Everyday").total == Money("2500.00")
         assert board.net_worth == Money("3500.00")
@@ -586,5 +587,319 @@ class TestSeveralLoansOnOneAsset:
         board = dashboard.build(db, as_of=TODAY)
         seen: list[str] = []
         for group in board.groups:
-            seen.extend(name for name, _balance in group.accounts)
+            seen.extend(account.name for account in group.accounts)
         assert len(seen) == len(set(seen))
+
+
+class TestHierarchicalGroups:
+    @pytest.fixture
+    def holdings(self, db, book):
+        with db.transaction("hierarchical holdings") as txn:
+            parent = Account(name="Holdings", atype=AccountType.ASSET, parent=book.assets)
+            first = Account(name="Plan A", atype=AccountType.ASSET, parent=parent.handle)
+            second = Account(name="Plan B", atype=AccountType.ASSET, parent=parent.handle)
+            taxable = Account(name="Brokerage", atype=AccountType.ASSET, parent=parent.handle)
+            for account in (parent, first, second, taxable):
+                db.add_account(account, txn)
+            for account, amount in ((first, "100"), (second, "200"), (taxable, "50")):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 1, 1), "Opening", account.handle, book.opening, amount
+                    ),
+                    txn,
+                )
+        return parent, first, second, taxable
+
+    def test_colon_paths_create_totalled_headings_and_local_names(self, db, holdings):
+        _parent, first, second, taxable = holdings
+        config = dashboard.DashboardConfig(
+            groups=[
+                dashboard.GroupConfig("Investments:Plan A", [first.handle], "asset"),
+                dashboard.GroupConfig("Investments:Plan B", [second.handle], "asset"),
+                dashboard.GroupConfig("Investments:Taxable:Brokerage", [taxable.handle], "asset"),
+            ]
+        )
+
+        board = dashboard.build(db, config, as_of=TODAY)
+
+        assert [(group.path, group.name, group.depth) for group in board.groups] == [
+            ("Investments", "Investments", 0),
+            ("Investments:Plan A", "Plan A", 1),
+            ("Investments:Plan B", "Plan B", 1),
+            ("Investments:Taxable", "Taxable", 1),
+            ("Investments:Taxable:Brokerage", "Brokerage", 2),
+        ]
+        assert board.group("Investments").total == Money("350")
+        assert board.group("Investments:Taxable").total == Money("50")
+
+    def test_full_group_paths_round_trip_without_flattening(self, db, holdings):
+        _parent, first, _second, _taxable = holdings
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Investments:Plan A", [first.handle], "asset")]
+        )
+        config.save(db)
+        assert dashboard.DashboardConfig.load(db).groups[0].name == "Investments:Plan A"
+
+    def test_heading_adds_direct_accounts_and_child_groups(self, db, book, holdings):
+        _parent, first, _second, _taxable = holdings
+        direct = Account(name="Direct holding", atype=AccountType.ASSET, parent=book.assets)
+        with db.transaction("direct holding") as txn:
+            db.add_account(direct, txn)
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Opening", direct.handle, book.opening, "25"),
+                txn,
+            )
+        config = dashboard.DashboardConfig(
+            groups=[
+                dashboard.GroupConfig("Investments", [direct.handle], "asset"),
+                dashboard.GroupConfig("Investments:Plan A", [first.handle], "asset"),
+            ]
+        )
+
+        board = dashboard.build(db, config, as_of=TODAY)
+
+        investments = board.group("Investments")
+        assert investments.heading is True
+        assert investments.total == Money("125")
+        assert [account.name for account in investments.accounts] == ["Assets:Direct holding"]
+
+    def test_selected_parent_owns_its_subtree_once_across_groups(self, db, holdings):
+        parent, first, second, _taxable = holdings
+        config = dashboard.DashboardConfig(
+            groups=[
+                dashboard.GroupConfig("Other", [first.handle, first.handle], "asset"),
+                dashboard.GroupConfig(
+                    "Investments", [parent.handle, second.handle, parent.handle], "asset"
+                ),
+            ]
+        )
+
+        board = dashboard.build(db, config, as_of=TODAY)
+
+        assert board.group("Other") is None
+        investments = board.group("Investments")
+        assert investments.total == Money("350")
+        assert [account.name for account in investments.accounts] == ["Assets:Holdings"]
+        assert board.net_worth == Money("350")
+
+    def test_liquidity_does_not_repeat_a_selected_descendant(self, db, holdings):
+        parent, first, _second, _taxable = holdings
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Cash", [parent.handle, first.handle], "liquid")]
+        )
+
+        board = dashboard.build(db, config, as_of=TODAY)
+
+        assert board.group("Cash").total == Money("350")
+        assert board.liquid == Money("350")
+
+    def test_mixed_heading_reports_value_debt_and_net_total(self, db, book):
+        asset = Account(name="Asset", atype=AccountType.ASSET, parent=book.assets)
+        debt = Account(name="Debt", atype=AccountType.LIABILITY, parent=book.liabilities)
+        with db.transaction("mixed heading") as txn:
+            db.add_account(asset, txn)
+            db.add_account(debt, txn)
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Value", asset.handle, book.opening, "100"),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Borrow", book.opening, debt.handle, "40"),
+                txn,
+            )
+        config = dashboard.DashboardConfig(
+            groups=[
+                dashboard.GroupConfig("Position:Assets", [asset.handle], "asset"),
+                dashboard.GroupConfig("Position:Debts", [debt.handle], "liability"),
+            ]
+        )
+
+        position = dashboard.build(db, config, as_of=TODAY).group("Position")
+
+        assert position.value == Money("100")
+        assert position.debt == Money("40")
+        assert position.total == Money("60")
+
+
+class TestFsaGroupAvailability:
+    def _fsa(self, db, book, years):
+        from breadsched.gen.lib import FsaFundingYear
+
+        account = Account(name="Benefit account", atype=AccountType.BANK, parent=book.assets)
+        account.kind = AccountKind.FSA
+        account.fsa_years = [FsaFundingYear(**year) for year in years]
+        with db.transaction("benefit account") as txn:
+            db.add_account(account, txn)
+        return account
+
+    def _group(self, db, account, as_of):
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Benefits", [account.handle], "asset")]
+        )
+        return dashboard.build(db, config, as_of=as_of).group("Benefits")
+
+    def test_overlapping_runout_and_current_year_availability_are_added(self, db, book):
+        account = self._fsa(
+            db,
+            book,
+            [
+                {
+                    "start": date(2025, 1, 1),
+                    "through": date(2025, 12, 31),
+                    "runout_through": date(2026, 3, 31),
+                    "election": Money("1000"),
+                },
+                {
+                    "start": date(2026, 1, 1),
+                    "through": date(2026, 12, 31),
+                    "election": Money("2000"),
+                },
+            ],
+        )
+
+        group = self._group(db, account, date(2026, 2, 1))
+
+        assert group.total == Money("3000")
+        assert group.accounts[0].source == "fsa_availability"
+        assert "2 applicable" in group.accounts[0].note
+
+    def test_exhausted_year_is_available_with_zero_remaining(self, db, book):
+        account = self._fsa(
+            db,
+            book,
+            [
+                {
+                    "start": date(2026, 1, 1),
+                    "through": date(2026, 12, 31),
+                    "election": Money("100"),
+                }
+            ],
+        )
+        with db.transaction("use benefit") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 1), "Qualified expense", book.groceries, account.handle, "100"
+                ),
+                txn,
+            )
+
+        group = self._group(db, account, date(2026, 3, 1))
+
+        assert group.total == Money(0)
+        assert group.accounts[0].total == Money(0)
+
+    @pytest.mark.parametrize(
+        ("years", "expected"),
+        [
+            ([], "no FSA funding years configured"),
+            (
+                [
+                    {
+                        "start": date(2024, 1, 1),
+                        "through": date(2024, 12, 31),
+                        "election": Money("100"),
+                    }
+                ],
+                "no applicable FSA funding year",
+            ),
+        ],
+    )
+    def test_missing_or_expired_year_data_is_explicit(self, db, book, years, expected):
+        account = self._fsa(db, book, years)
+
+        group = self._group(db, account, date(2026, 3, 1))
+
+        assert group.total == Money(0)
+        assert group.accounts[0].total is None
+        assert expected in group.note
+
+
+class TestPaidOffLoans:
+    def test_paid_off_linked_loan_and_stale_payment_schedule_are_hidden(self, db, book):
+        asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
+        loan = Account(name="Loan", atype=AccountType.LIABILITY, parent=book.liabilities)
+        loan.linked_asset = asset.handle
+        stale = ScheduledTransaction(
+            name="Old loan payment",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 10, 1)),
+            splits=[
+                ScheduledSplit(loan.handle, Money("10")),
+                ScheduledSplit(book.checking, Money("-10")),
+            ],
+        )
+        with db.transaction("paid off loan") as txn:
+            db.add_account(asset, txn)
+            db.add_account(loan, txn)
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Value", asset.handle, book.opening, "100"),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Borrow", book.opening, loan.handle, "60"),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(date(2026, 2, 1), "Pay off", loan.handle, book.checking, "60"),
+                txn,
+            )
+            db.add_scheduled(stale, txn)
+
+        board = dashboard.build(db, as_of=TODAY)
+        group = board.group("Property")
+
+        assert group is not None
+        assert [account.name for account in group.accounts] == ["Assets:Property"]
+        assert group.total == Money("100")
+        assert group.value is None
+        assert group.loan_to_value is None
+        assert "Old loan payment" not in [bill.name for bill in board.bills]
+
+    def test_unused_zero_balance_linked_loan_is_not_mistaken_for_paid_off(self, db, book):
+        asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
+        loan = Account(name="Future loan", atype=AccountType.LIABILITY, parent=book.liabilities)
+        loan.linked_asset = asset.handle
+        with db.transaction("future loan") as txn:
+            db.add_account(asset, txn)
+            db.add_account(loan, txn)
+
+        group = dashboard.build(db, as_of=TODAY).group("Property")
+
+        assert group is not None
+        assert any(account.name.endswith("Future loan") for account in group.accounts)
+
+    def test_paid_off_loan_is_removed_while_an_active_loan_on_same_asset_remains(self, db, book):
+        asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
+        closed = Account(name="Closed loan", atype=AccountType.LIABILITY, parent=book.liabilities)
+        active = Account(name="Active loan", atype=AccountType.LIABILITY, parent=book.liabilities)
+        closed.linked_asset = asset.handle
+        active.linked_asset = asset.handle
+        with db.transaction("two loans") as txn:
+            for account in (asset, closed, active):
+                db.add_account(account, txn)
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Value", asset.handle, book.opening, "100"),
+                txn,
+            )
+            for loan, amount in ((closed, "60"), (active, "25")):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 1, 1), "Borrow", book.opening, loan.handle, amount
+                    ),
+                    txn,
+                )
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 1), "Close first loan", closed.handle, book.checking, "60"
+                ),
+                txn,
+            )
+
+        group = dashboard.build(db, as_of=TODAY).group("Property")
+
+        assert [account.name.rsplit(":", 1)[-1] for account in group.accounts] == [
+            "Property",
+            "Active loan",
+        ]
+        assert group.value == Money("100")
+        assert group.debt == Money("25")
+        assert group.equity == Money("75")

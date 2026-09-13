@@ -124,14 +124,24 @@ class Api:
             "config": {
                 "liquidity_days": config.liquidity_days,
                 "emergency_months": config.emergency_months,
+                "groups": [group.serialize() for group in config.groups],
+                "accounts": [
+                    {"handle": account.handle, "name": self.db.full_name(account)}
+                    for account in self.db.iter_accounts()
+                    if not account.is_root
+                ],
             },
             "groups": [
                 {
                     "name": group.name,
+                    "path": group.path,
+                    "depth": group.depth,
+                    "heading": group.heading,
+                    "note": group.note,
                     "kind": group.kind,
                     "total": str(group.total.to_decimal()),
-                    "value": str(group.value.to_decimal()) if group.value else None,
-                    "debt": str(group.debt.to_decimal()) if group.debt else None,
+                    "value": (str(group.value.to_decimal()) if group.value is not None else None),
+                    "debt": str(group.debt.to_decimal()) if group.debt is not None else None,
                     "equity": (
                         str(group.equity.to_decimal()) if group.equity is not None else None
                     ),
@@ -139,8 +149,17 @@ class Api:
                         float(group.loan_to_value) if group.loan_to_value is not None else None
                     ),
                     "accounts": [
-                        {"name": name, "balance": str(balance.to_decimal())}
-                        for name, balance in group.accounts
+                        {
+                            "name": account.name,
+                            "balance": (
+                                str(account.total.to_decimal())
+                                if account.total is not None
+                                else None
+                            ),
+                            "source": account.source,
+                            "note": account.note,
+                        }
+                        for account in group.accounts
                     ],
                 }
                 for group in board.groups
@@ -198,6 +217,50 @@ class Api:
                 }
                 for bill in board.bills
             ],
+        }
+
+    def dashboard_config_save(self, payload: dict) -> dict:
+        """Persist the same group paths and account selections edited by GTK."""
+        from ..gen.engine import dashboard as engine
+
+        allowed_kinds = {"liquid", "retirement", "asset", "property", "liability"}
+        groups: list[engine.GroupConfig] = []
+        raw_groups = payload.get("groups", [])
+        if not isinstance(raw_groups, list):
+            raise ValueError("dashboard groups must be a list")
+        for raw in raw_groups:
+            if not isinstance(raw, dict):
+                raise ValueError("each dashboard group must be an object")
+            name = str(raw.get("name", "")).strip()
+            if not name:
+                raise ValueError("dashboard group name cannot be empty")
+            kind = str(raw.get("kind", "asset"))
+            if kind not in allowed_kinds:
+                raise ValueError("choose a valid dashboard group kind")
+            handles: list[str] = []
+            raw_handles = raw.get("accounts", [])
+            if not isinstance(raw_handles, list):
+                raise ValueError("dashboard group accounts must be a list")
+            for raw_handle in raw_handles:
+                handle = str(raw_handle)
+                account = self.db.get_account(handle)
+                if account is None or account.is_root:
+                    raise ValueError("dashboard group references an unknown account")
+                if handle not in handles:
+                    handles.append(handle)
+            groups.append(engine.GroupConfig(name, handles, kind))
+
+        config = engine.DashboardConfig.load(self.db)
+        config.groups = groups
+        if "liquidity_days" in payload:
+            config.liquidity_days = min(365, max(1, int(payload["liquidity_days"])))
+        if "emergency_months" in payload:
+            config.emergency_months = min(36, max(1, int(payload["emergency_months"])))
+        config.save(self.db)
+        return {
+            "groups": [group.serialize() for group in config.groups],
+            "liquidity_days": config.liquidity_days,
+            "emergency_months": config.emergency_months,
         }
 
     def summary(self) -> dict:
@@ -2395,6 +2458,7 @@ ROUTES = {
 }
 
 POST_ROUTES = {
+    "/api/dashboard/config": lambda a, body: a.dashboard_config_save(body),
     "/api/account/planning-role": lambda a, body: a.account_planning_role_save(body),
     "/api/account/kind": lambda a, body: a.account_kind_save(body),
     "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),

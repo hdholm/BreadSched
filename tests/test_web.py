@@ -1040,6 +1040,42 @@ class TestDashboardApi:
         _status, payload = client.get("/api/dashboard")
         for group in payload["groups"]:
             assert "loan_to_value" in group and "equity" in group
+            assert {"path", "depth", "heading", "note"} <= set(group)
+
+    def test_group_paths_can_be_configured_and_are_returned_as_a_hierarchy(self, client):
+        _status, accounts = client.get("/api/accounts")
+        checking = next(account for account in accounts if account["name"] == "Checking")
+        retirement = next(account for account in accounts if account["name"] == "401(k)")
+
+        status, saved = client.post(
+            "/api/dashboard/config",
+            {
+                "groups": [
+                    {
+                        "name": "Holdings:Cash",
+                        "kind": "liquid",
+                        "accounts": [checking["handle"], checking["handle"]],
+                    },
+                    {
+                        "name": "Holdings:Retirement",
+                        "kind": "retirement",
+                        "accounts": [retirement["handle"]],
+                    },
+                ]
+            },
+        )
+
+        assert status == 200
+        assert saved["groups"][0]["name"] == "Holdings:Cash"
+        assert saved["groups"][0]["accounts"] == [checking["handle"]]
+        _status, payload = client.get("/api/dashboard")
+        assert [(group["path"], group["depth"]) for group in payload["groups"]] == [
+            ("Holdings", 0),
+            ("Holdings:Cash", 1),
+            ("Holdings:Retirement", 1),
+        ]
+        assert payload["config"]["groups"][0]["name"] == "Holdings:Cash"
+        assert payload["config"]["accounts"]
 
     def test_the_horizons_are_query_parameters(self, client):
         _status, six = client.get("/api/dashboard?emergency_months=6")
@@ -1058,6 +1094,7 @@ class TestDashboardApi:
         assert 'let current = "Dashboard"' in page
         assert '"Dashboard", "Accounts"' in page
         assert "async function showDashboard" in page
+        assert "openDashboardGroupsEditor" in page
         assert '"X-BreadSched-Token"' in page
 
 

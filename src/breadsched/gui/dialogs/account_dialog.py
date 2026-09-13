@@ -187,8 +187,10 @@ class AccountDialog(Gtk.Window):
         grid.attach(notes_scroll, 1, row, 1, 1)
         row += 1
 
-        self.group_entry = Gtk.Entry(placeholder_text="Home Easton")
-        self.group_entry.set_tooltip_text("The dashboard group this account joins")
+        self.group_entry = Gtk.Entry(placeholder_text="Investments:Plan A")
+        self.group_entry.set_tooltip_text(
+            "Colon-separated dashboard path; parent headings total their child groups"
+        )
         if account is not None:
             self.group_entry.set_text(account.group)
         grid.attach(Gtk.Label(label="Dashboard group", xalign=0), 0, row, 1, 1)

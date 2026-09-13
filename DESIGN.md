@@ -150,6 +150,24 @@ nominal behavior. Mixed gross-to-net payroll grows as one balanced income event.
 Economic-sense tests are required in addition to bookkeeping reconciliation. A
 projection that balances mathematically can still be financially wrong.
 
+## Dashboard aggregation
+
+Dashboard group names are account-style colon-delimited paths. The engine builds
+the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting
+local names, depths, headings, and values. A selected chart parent owns its entire
+account subtree. Selected descendants and repeated handles are removed before
+balance calculation, including across groups, so headings, net worth, and liquidity
+cannot count the same ledger value twice.
+
+An FSA-kind account contributes the remaining election availability of every plan
+year applicable on the Dashboard's as-of date, including overlapping run-out and
+current years. Its custodial ledger balance is not a proxy for available benefits.
+Missing or inapplicable funding-year data remains explicitly unavailable rather
+than silently falling back to the ledger. A liability is treated as a paid-off loan
+only when it is loan-classified or asset-linked, has prior ledger activity, and has
+no remaining balance. Such a loan and stale future repayment schedules are omitted,
+while its linked asset remains visible.
+
 ## Ledger types and account kinds
 
 Traditional Income/Expense account classes do not capture every household planning

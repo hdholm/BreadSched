@@ -126,6 +126,7 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .plan-delta.neg { color: var(--bad); }
 .balance-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:16px; }
 .balance-group { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px 16px; }
+.balance-group.group-heading { border-width:2px; }
 .balance-group h3 { margin:0 0 8px; font-size:14px; }
 .balance-group dl { display:grid; grid-template-columns:1fr auto; gap:4px 12px; margin:0; }
 .balance-group dt { color:var(--dim); }
@@ -2050,6 +2051,64 @@ const RENDERERS = {
   Plan: showPlan, Scenarios: showScenarios, Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
 };
 
+function openDashboardGroupsEditor(config) {
+  const backdrop = el("div", { class:"detail-backdrop" });
+  const rows = el("div", { class:"stack" });
+  const kinds = [
+    ["liquid", "Liquid"], ["retirement", "Retirement"], ["asset", "Asset"],
+    ["property", "Property"], ["liability", "Liability"],
+  ];
+  const addGroup = (source=null) => {
+    const name = el("input", {
+      placeholder:"Investments:Plan A", value:source?.name || "",
+    });
+    const kind = el("select", {}, kinds.map(([value, label]) => el("option", {
+      value, selected:value === (source?.kind || "asset") ? "selected" : null,
+    }, label)));
+    const accounts = el("select", { multiple:"multiple", size:"7" },
+      config.accounts.map((account) => el("option", {
+        value:account.handle,
+        selected:(source?.accounts || []).includes(account.handle) ? "selected" : null,
+      }, account.name)));
+    const row = el("div", { class:"card" },
+      el("div", { class:"row" }, name, kind,
+        el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove")),
+      el("label", {}, "Accounts", accounts));
+    row._groupFields = { name, kind, accounts };
+    rows.append(row);
+  };
+  (config.groups || []).forEach(addGroup);
+  const save = async () => {
+    const groups = Array.from(rows.children).map((row) => ({
+      name:row._groupFields.name.value.trim(),
+      kind:row._groupFields.kind.value,
+      accounts:Array.from(row._groupFields.accounts.selectedOptions).map(
+        (option) => option.value),
+    }));
+    if (groups.some((group) => !group.name)) {
+      say("Every dashboard group needs a name.", "error");
+      return;
+    }
+    await post("/api/dashboard/config", {
+      groups,
+      liquidity_days:state.liquidityDays || config.liquidity_days,
+      emergency_months:state.emergencyMonths || config.emergency_months,
+    });
+    backdrop.remove();
+    render();
+  };
+  backdrop.append(el("section", { class:"detail-dialog wide" },
+    el("div", { class:"detail-heading" }, el("h2", {}, "Dashboard groups")),
+    el("p", { class:"note" },
+      "Colon-separated names create totalled headings. Selecting a parent account includes its subaccounts once."),
+    rows,
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:()=>addGroup() }, "Add group"),
+      el("button", { class:"action primary", type:"button", onclick:save }, "Save"),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"))));
+  document.body.append(backdrop);
+}
+
 // The dashboard: what is owned and owed, the liquidity verdict, and the bills.
 // The two horizons are inputs rather than fixed constants, because how much must
 // stay liquid and how long the fund should last are the household's judgement,
@@ -2089,15 +2148,25 @@ async function showDashboard() {
       type: "number", min: "1", max: "36", value: data.config.emergency_months,
       onchange: (e) => { state.emergencyMonths = e.target.value; render(); },
     }),
-    el("label", {}, " months"));
+    el("label", {}, " months"),
+    el("button", { class:"action", type:"button",
+      onclick:()=>openDashboardGroupsEditor(data.config) }, "Configure groups…"));
 
   const groupCards = el("div", { class:"balance-groups" }, data.groups.map((g) =>
-    el("div", {class:"balance-group"}, el("h3",{},g.name), el("dl",{},
+    el("div", {
+      class:`balance-group ${g.heading ? "group-heading" : ""}`,
+      style:`margin-left:${g.depth * 18}px`,
+      title:g.path,
+    }, el("h3",{},g.name), g.note ? el("p", {class:"note"}, g.note) : null, el("dl",{},
       g.value === null ? null : [el("dt",{},"Value"),el("dd",{},money(g.value))],
       g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
       el("dt",{},g.equity === null ? "Total" : "Equity"), el("dd",{},money(g.equity === null ? g.total : g.equity)),
       g.loan_to_value === null ? null : [el("dt",{},"LTV"),el("dd",{},(g.loan_to_value*100).toFixed(1)+"%")
-      ]))));
+      ], ...(g.accounts || []).map((account) => [
+        el("dt", {}, account.name),
+        el("dd", { title:account.note || "" },
+          account.balance === null ? "Unavailable" : money(account.balance)),
+      ])))));
 
   const billRows = data.bills.map((b) => [
     b.name,
