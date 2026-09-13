@@ -1989,6 +1989,39 @@ class TestDerivedPlanView:
         assert quarterly.activity.actual_cash_change == monthly_actual
         assert len(quarterly.activity.periods) < len(monthly.activity.periods)
 
+    def test_applied_controls_are_persisted_with_the_book(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+
+        view.period.set_selected(1)
+        view.measure.set_selected(2)
+        view.apply_button.emit("clicked")
+
+        stored = app.db.get_metadata("plan.view")
+        assert stored["start"] == view._start_date.isoformat()
+        assert stored["end"] == view._end_date.isoformat()
+        assert stored["period"] == "quarter"
+        assert stored["measure"] == "variance"
+
+    def test_plan_grid_includes_row_column_and_net_cash_totals(self, app, window, populated_book):
+        from breadsched.gui.gi_setup import Gtk
+
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        labels = []
+        child = view.grid.get_first_child()
+        while child is not None:
+            if isinstance(child, Gtk.Label):
+                labels.append(child.get_text())
+            child = child.get_next_sibling()
+
+        assert "Total" in labels
+        assert "Income total" in labels
+        assert "Expenses total" in labels
+        assert "Net cash change" in labels
+
     def test_the_primary_plan_view_is_read_only(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("plan")

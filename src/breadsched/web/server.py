@@ -37,6 +37,7 @@ from ..gen.engine import (
     projection,
     schedule,
 )
+from ..gen.engine.activity import PlanMeasure, PlanSettings
 from ..gen.lib import (
     AccountClass,
     AccountType,
@@ -1399,15 +1400,39 @@ class Api:
         self,
         start_month: str | None = None,
         through_month: str | None = None,
-        period: str = "month",
+        period: str | None = None,
         scenario_handle: str | None = None,
         compare_handle: str | None = None,
+        measure: str | None = None,
     ) -> dict:
         """Derived category Plan using the same event stream as the GTK view."""
         today = date.today()
         minimum = self._plan_earliest_data_date().replace(day=1)
         maximum_month = self._plan_maximum_through_month()
         maximum = self._month_end(maximum_month.year, maximum_month.month)
+        defaults = PlanSettings.load(
+            self.db,
+            date(today.year, 1, 1),
+            date(today.year + 1, 12, 31),
+        )
+        use_saved = all(
+            value is None
+            for value in (
+                start_month,
+                through_month,
+                period,
+                scenario_handle,
+                compare_handle,
+                measure,
+            )
+        )
+        if use_saved:
+            start_month = defaults.start.strftime("%Y-%m")
+            through_month = defaults.end.strftime("%Y-%m")
+            period = defaults.period.value
+            scenario_handle = defaults.scenario
+            compare_handle = defaults.compare
+            measure = defaults.measure.value
 
         if start_month is None:
             start = date(today.year, 1, 1)
@@ -1426,6 +1451,12 @@ class Api:
             through = date.fromisoformat(f"{through_month}-01")
             end = self._month_end(through.year, through.month)
 
+        if use_saved:
+            start = max(start, minimum)
+            end = min(end, maximum)
+            if end < start:
+                end = self._month_end(start.year, start.month)
+
         if start < minimum:
             raise ValueError(f"From cannot be earlier than the first book data ({minimum:%b %Y}).")
         if end < start:
@@ -1433,13 +1464,18 @@ class Api:
         if end > maximum:
             raise ValueError(f"Through cannot be later than {maximum_month:%b %Y}.")
 
-        grouping = activity.ReportingPeriod(period)
+        grouping = activity.ReportingPeriod(period or "month")
+        selected_measure = PlanMeasure(measure or "planned")
         scenarios = list(self.db.iter_scenarios())
         if scenario_handle:
             selected = next((item for item in scenarios if item.handle == scenario_handle), None)
             if selected is None:
-                raise KeyError(scenario_handle)
-            scenario = selected
+                if not use_saved:
+                    raise KeyError(scenario_handle)
+                scenario_handle = None
+                scenario = self._base_scenario(start, end)
+            else:
+                scenario = selected
         else:
             scenario = self._base_scenario(start, end)
 
@@ -1449,6 +1485,12 @@ class Api:
         totals = report.activity
 
         comparison: dict[str, object] | None = None
+        if (
+            use_saved
+            and compare_handle not in {None, "__base__"}
+            and not any(item.handle == compare_handle for item in scenarios)
+        ):
+            compare_handle = None
         if compare_handle is not None:
             if compare_handle == "__base__":
                 compare_scenario = self._base_scenario(start, end)
@@ -1569,7 +1611,9 @@ class Api:
                 "minimum": minimum.strftime("%Y-%m"),
                 "maximum": maximum_month.strftime("%Y-%m"),
                 "period": grouping.value,
+                "measure": selected_measure.value,
                 "scenario": scenario_handle,
+                "compare": compare_handle,
                 "scenarios": [
                     {"handle": None, "name": "Base scenario"},
                     *[{"handle": item.handle, "name": item.name} for item in scenarios],
@@ -1601,6 +1645,7 @@ class Api:
                     "planned": row.planned,
                     "actual": row.actual,
                     "variance": row.variance,
+                    "totals": {item.value: row.total(item) for item in PlanMeasure},
                 }
                 for row in report.categories
             ],
@@ -1614,10 +1659,64 @@ class Api:
                     "planned": row.planned,
                     "actual": row.actual,
                     "variance": row.variance,
+                    "totals": {item.value: row.total(item) for item in PlanMeasure},
                 }
                 for row in report.planning_flows
             ],
+            "column_totals": {
+                "income": {
+                    item.value: {
+                        "periods": report.category_totals(AccountClass.INCOME, item),
+                        "total": report.category_grand_total(AccountClass.INCOME, item),
+                    }
+                    for item in PlanMeasure
+                },
+                "expense": {
+                    item.value: {
+                        "periods": report.category_totals(AccountClass.EXPENSE, item),
+                        "total": report.category_grand_total(AccountClass.EXPENSE, item),
+                    }
+                    for item in PlanMeasure
+                },
+                "planning_flows": {
+                    item.value: {
+                        "periods": report.planning_flow_totals(item),
+                        "total": report.planning_flow_grand_total(item),
+                    }
+                    for item in PlanMeasure
+                },
+                "net_cash": {
+                    item.value: {
+                        "periods": report.cash_totals(item),
+                        "total": report.grand_total(item),
+                    }
+                    for item in PlanMeasure
+                },
+            },
         }
+
+    def plan_settings_save(self, payload: dict) -> dict:
+        """Validate and persist the shared per-book Plan presentation."""
+        result = self.plan(
+            str(payload.get("from", "")) or None,
+            str(payload.get("through", "")) or None,
+            str(payload.get("period", "")) or None,
+            str(payload["scenario"]) if payload.get("scenario") else None,
+            str(payload["compare"]) if payload.get("compare") else None,
+            str(payload.get("measure", "")) or None,
+        )
+        controls = result["controls"]
+        start = date.fromisoformat(f"{controls['from']}-01")
+        through = date.fromisoformat(f"{controls['through']}-01")
+        PlanSettings(
+            start=start,
+            end=self._month_end(through.year, through.month),
+            period=activity.ReportingPeriod(str(controls["period"])),
+            measure=PlanMeasure(str(controls["measure"])),
+            scenario=controls["scenario"],
+            compare=(str(payload.get("compare")) if payload.get("compare") else None),
+        ).save(self.db)
+        return controls
 
     def plan_detail(
         self,
@@ -2457,9 +2556,10 @@ ROUTES = {
     "/api/plan": lambda a, q: a.plan(
         q.get("from", [None])[0],
         q.get("through", [None])[0],
-        q.get("period", ["month"])[0],
+        q.get("period", [None])[0],
         q.get("scenario", [None])[0],
         q.get("compare", [None])[0],
+        q.get("measure", [None])[0],
     ),
     "/api/plan/detail": lambda a, q: a.plan_detail(
         q.get("account", [""])[0],
@@ -2482,6 +2582,7 @@ ROUTES = {
 POST_ROUTES = {
     "/api/dashboard/config": lambda a, body: a.dashboard_config_save(body),
     "/api/account/type": lambda a, body: a.account_type_save(body),
+    "/api/plan/settings": lambda a, body: a.plan_settings_save(body),
     "/api/account/planning-role": lambda a, body: a.account_planning_role_save(body),
     "/api/account/kind": lambda a, body: a.account_kind_save(body),
     "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),

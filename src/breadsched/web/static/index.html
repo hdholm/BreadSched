@@ -56,6 +56,8 @@ tbody tr:last-child { border-bottom: 0; }
 tbody tr:hover { background: #f2f6fc; }
 .section-row { font-weight: 600; background: var(--bg); }
 .section-row:hover { background: var(--bg); }
+.total-row { font-weight: 600; border-top: 1px solid var(--border); }
+.grand-total { font-weight: 700; border-top: 2px solid var(--border); }
 td.num, th.num { text-align: right; }
 .neg { color: var(--bad); }
 .pos { color: var(--good); }
@@ -923,14 +925,16 @@ async function showPlan() {
   if (applied.from) params.set("from", applied.from);
   if (applied.through) params.set("through", applied.through);
   if (applied.period) params.set("period", applied.period);
+  if (applied.measure) params.set("measure", applied.measure);
   if (applied.scenario) params.set("scenario", applied.scenario);
   if (applied.compare) params.set("compare", applied.compare);
   const data = await get(`/api/plan${params.size ? `?${params}` : ""}`);
   if (!state.plan) {
     state.plan = {
       from: data.controls.from, through: data.controls.through,
-      period: data.controls.period, scenario: data.controls.scenario, compare: null,
-      measure: "planned",
+      period: data.controls.period, scenario: data.controls.scenario,
+      compare: data.controls.compare,
+      measure: data.controls.measure,
     };
   }
   const currentPlan = state.plan;
@@ -966,19 +970,25 @@ async function showPlan() {
     [["planned", "Plan"], ["actual", "Actual"], ["variance", "Variance"]].map(([value, label]) =>
       el("option", { value, selected: value === currentPlan.measure ? "selected" : null }, label)));
 
-  const controls = el("form", { class: "toolbar", onsubmit: (event) => {
+  const controls = el("form", { class: "toolbar", onsubmit: async (event) => {
     event.preventDefault();
     const values = Object.fromEntries(new FormData(event.target).entries());
     if (values.through < values.from) {
       say("Through must be the same month as From or later.", "error");
       return;
     }
-    state.plan = {
+    const nextPlan = {
       from: values.from, through: values.through, period: values.period,
       scenario: values.scenario || null, compare: values.compare || null,
       measure: values.measure,
     };
-    render();
+    try {
+      await post("/api/plan/settings", nextPlan);
+      state.plan = nextPlan;
+      render();
+    } catch (error) {
+      say(error.message, "error");
+    }
   } },
     el("label", {}, "Scenario ", scenario),
     el("label", {}, "Compare with ", compare),
@@ -1011,8 +1021,17 @@ async function showPlan() {
       el("div", { class: "label" }, "Actuals to review"),
       el("div", { class: "value" }, summary.unresolved_actuals)));
 
-  const headers = ["Category", ...data.periods.map((item) => ({ label: item.label, num: true }))];
+  const headers = ["Category",
+    ...data.periods.map((item) => ({ label: item.label, num: true })),
+    { label: "Total", num: true }];
   const rows = [];
+  const totalRow = (label, totals, extraClass="") => el("tr", { class: `total-row ${extraClass}` },
+    el("td", {}, label),
+    ...totals.periods.map((value) => el("td", {
+      class: value == null ? "num muted" : cls(value),
+    }, value == null ? "—" : money(value))),
+    el("td", { class: totals.total == null ? "num muted" : cls(totals.total) },
+      totals.total == null ? "—" : money(totals.total)));
   for (const [kind, heading] of [["income", "Income"], ["expense", "Expenses"]]) {
     rows.push(el("tr", { class: "section-row" },
       el("td", { colspan: String(headers.length) }, heading)));
@@ -1037,8 +1056,14 @@ async function showPlan() {
               deltas && deltas[index] != null ? el("span", {
                 class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
                 title: `Active scenario minus ${comparison.name}`,
-              }, `Δ ${money(deltas[index])}`) : null)))));
+              }, `Δ ${money(deltas[index])}`) : null)))),
+        el("td", {
+          class: category.totals[currentPlan.measure] == null
+            ? "num muted" : cls(category.totals[currentPlan.measure]),
+        }, category.totals[currentPlan.measure] == null
+          ? "—" : money(category.totals[currentPlan.measure]))));
     }
+    rows.push(totalRow(`${heading} total`, data.column_totals[kind][currentPlan.measure]));
   }
 
   if (data.planning_flows?.length) {
@@ -1064,9 +1089,18 @@ async function showPlan() {
             }, `Δ ${money(deltas[index])}`) : null)));
       rows.push(el("tr", {},
         el("td", { title: flow.full_name }, flow.name),
-        ...cells));
+        ...cells,
+        el("td", {
+          class: flow.totals[currentPlan.measure] == null
+            ? "num muted" : cls(flow.totals[currentPlan.measure]),
+        }, flow.totals[currentPlan.measure] == null
+          ? "—" : money(flow.totals[currentPlan.measure]))));
     }
+    rows.push(totalRow("Planning-flow total",
+      data.column_totals.planning_flows[currentPlan.measure]));
   }
+  rows.push(totalRow("Net cash change",
+    data.column_totals.net_cash[currentPlan.measure], "grand-total"));
 
   const planTable = table(headers, rows);
   planTable.classList.add("plan-table");
@@ -1079,7 +1113,9 @@ async function showPlan() {
       + "Changes to the controls take effect only when Apply is pressed."),
     el("p", { class: "note" },
       "Income and expense values are derived from exact-dated scheduled/estimated "
-      + "and actual transaction splits; reporting periods do not store budget values."),
+      + "and actual transaction splits; reporting periods do not store budget values. "
+      + "Section totals count outermost category rollups once. Net cash change is the "
+      + "grand total; variance totals include only periods through today."),
     eventPanel, planTable);
 }
 

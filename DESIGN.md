@@ -86,6 +86,21 @@ cash flow: an annual insurance premium, weekly groceries, and a twice-monthly pa
 schedule retain their real timing instead of being converted into fictional monthly
 transactions.
 
+Plan presentation state is per-book metadata because its selected horizon and saved
+scenario refer to that book. GTK and web share the same From, Through, reporting
+period, measure, scenario, and comparison record. Applying controls persists them;
+merely editing controls does not rewrite the Plan or its financial events.
+
+Plan totals preserve hierarchy and dimensions. A displayed category row totals its
+own rollup across the selected reporting periods. Section column totals use only
+outermost active category rollups, so a parent and descendant cannot both contribute
+the same ledger value. Planning flows total separately because contributions,
+benefit funding, debt principal, and similar flows explain household commitments but
+are not interchangeable with Income/Expense categories. The bottom grand total is
+net cash change computed from the event stream, not a sum of unlike category and
+balance-sheet values. Planned totals cover the selected horizon; variance totals
+include only reporting periods that have begun by the report's as-of date.
+
 Scheduled commitments and estimates use the same underlying event model. Estimates
 accepted from historical analysis become planned activity themselves; rerunning the
 analysis therefore asks only for residual unplanned need rather than repeatedly

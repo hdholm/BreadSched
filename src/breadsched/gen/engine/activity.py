@@ -8,7 +8,7 @@ changes the underlying plan or projection.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from enum import Enum
@@ -41,6 +41,8 @@ __all__ = [
     "CategoryReport",
     "PlanningFlowActivity",
     "PeriodActivity",
+    "PlanMeasure",
+    "PlanSettings",
     "ReportingPeriod",
     "build_activity_report",
     "build_category_report",
@@ -55,6 +57,58 @@ class ReportingPeriod(str, Enum):
     MONTH = "month"
     QUARTER = "quarter"
     YEAR = "year"
+
+
+class PlanMeasure(str, Enum):
+    """Which derived amount a Plan table displays."""
+
+    PLANNED = "planned"
+    ACTUAL = "actual"
+    VARIANCE = "variance"
+
+
+@dataclass(frozen=True, slots=True)
+class PlanSettings:
+    """Per-book Plan presentation state shared by GTK and web."""
+
+    start: date
+    end: date
+    period: ReportingPeriod = ReportingPeriod.MONTH
+    measure: PlanMeasure = PlanMeasure.PLANNED
+    scenario: str | None = None
+    compare: str | None = None
+
+    KEY = "plan.view"
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat(),
+            "period": self.period.value,
+            "measure": self.measure.value,
+            "scenario": self.scenario,
+            "compare": self.compare,
+        }
+
+    @classmethod
+    def load(cls, db: DbSQLite, default_start: date, default_end: date) -> PlanSettings:
+        stored = db.get_metadata(cls.KEY, None)
+        if not isinstance(stored, dict):
+            return cls(default_start, default_end)
+        try:
+            return cls(
+                start=date.fromisoformat(str(stored["start"])),
+                end=date.fromisoformat(str(stored["end"])),
+                period=ReportingPeriod(str(stored.get("period", "month"))),
+                measure=PlanMeasure(str(stored.get("measure", "planned"))),
+                scenario=(str(stored["scenario"]) if stored.get("scenario") else None),
+                compare=(str(stored["compare"]) if stored.get("compare") else None),
+            )
+        except (KeyError, TypeError, ValueError):
+            return cls(default_start, default_end)
+
+    def save(self, db: DbSQLite) -> None:
+        db.set_metadata(self.KEY, self.serialize())
 
 
 @dataclass(frozen=True, slots=True)
@@ -267,6 +321,16 @@ class CategoryActivity:
     actual: list[Money]
     variance: list[Money | None]
 
+    def values(self, measure: PlanMeasure) -> Sequence[Money | None]:
+        if measure is PlanMeasure.PLANNED:
+            return self.planned
+        if measure is PlanMeasure.ACTUAL:
+            return self.actual
+        return self.variance
+
+    def total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.values(measure))
+
 
 @dataclass(frozen=True, slots=True)
 class CategoryPlannedDetail:
@@ -359,6 +423,16 @@ class PlanningFlowActivity:
     actual: list[Money]
     variance: list[Money | None]
 
+    def values(self, measure: PlanMeasure) -> Sequence[Money | None]:
+        if measure is PlanMeasure.PLANNED:
+            return self.planned
+        if measure is PlanMeasure.ACTUAL:
+            return self.actual
+        return self.variance
+
+    def total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.values(measure))
+
 
 @dataclass(slots=True)
 class CategoryReport:
@@ -383,6 +457,49 @@ class CategoryReport:
     @property
     def expenses(self) -> tuple[CategoryActivity, ...]:
         return tuple(row for row in self.categories if row.account_class is AccountClass.EXPENSE)
+
+    def category_totals(
+        self, account_class: AccountClass, measure: PlanMeasure
+    ) -> list[Money | None]:
+        """Column totals using only outermost rollups of one category class."""
+        rows = [row for row in self.categories if row.account_class is account_class]
+        roots = [
+            row
+            for row in rows
+            if not any(
+                row.full_name.startswith(f"{candidate.full_name}:")
+                for candidate in rows
+                if candidate is not row
+            )
+        ]
+        return _sum_columns([row.values(measure) for row in roots], len(self.activity.periods))
+
+    def category_grand_total(
+        self, account_class: AccountClass, measure: PlanMeasure
+    ) -> Money | None:
+        return _sum_optional(self.category_totals(account_class, measure))
+
+    def planning_flow_totals(self, measure: PlanMeasure) -> list[Money | None]:
+        return _sum_columns(
+            [row.values(measure) for row in self.planning_flows],
+            len(self.activity.periods),
+        )
+
+    def planning_flow_grand_total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.planning_flow_totals(measure))
+
+    def cash_totals(self, measure: PlanMeasure) -> list[Money | None]:
+        if measure is PlanMeasure.PLANNED:
+            return [period.planned_cash_change for period in self.activity.periods]
+        if measure is PlanMeasure.ACTUAL:
+            return [period.actual_cash_change for period in self.activity.periods]
+        return [
+            period.cash_variance if period.start <= self.as_of else None
+            for period in self.activity.periods
+        ]
+
+    def grand_total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.cash_totals(measure))
 
 
 def explain_category_period(
@@ -657,6 +774,16 @@ def _sum_money(values: Iterable[Money]) -> Money:
     for value in values:
         total = total + value
     return total
+
+
+def _sum_optional(values: Iterable[Money | None]) -> Money | None:
+    present = [value for value in values if value is not None]
+    return _sum_money(present) if present else None
+
+
+def _sum_columns(rows: Iterable[Sequence[Money | None]], width: int) -> list[Money | None]:
+    materialized = list(rows)
+    return [_sum_optional(row[index] for row in materialized) for index in range(width)]
 
 
 def _period_start(when: date, period: ReportingPeriod) -> date:

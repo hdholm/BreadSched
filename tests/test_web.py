@@ -198,6 +198,40 @@ class TestItServes:
         assert "Checking" in by_name
         assert Money(by_name["Checking"]["balance"]) == Money("2400.00")
 
+    def test_plan_settings_and_totals_are_shared_through_the_book(self, client):
+        _status, initial = client.get("/api/plan")
+        status, controls = client.post(
+            "/api/plan/settings",
+            {
+                "from": initial["controls"]["from"],
+                "through": initial["controls"]["through"],
+                "period": "quarter",
+                "measure": "variance",
+                "scenario": None,
+                "compare": None,
+            },
+        )
+        assert status == 200
+        assert controls["from"] == initial["controls"]["from"]
+        assert controls["through"] == initial["controls"]["through"]
+        assert controls["period"] == "quarter"
+        assert controls["measure"] == "variance"
+
+        _status, plan = client.get("/api/plan")
+
+        assert plan["controls"]["from"] == initial["controls"]["from"]
+        assert plan["controls"]["through"] == initial["controls"]["through"]
+        assert plan["controls"]["period"] == "quarter"
+        assert plan["controls"]["measure"] == "variance"
+        assert set(plan["column_totals"]) == {
+            "income",
+            "expense",
+            "planning_flows",
+            "net_cash",
+        }
+        for row in plan["categories"]:
+            assert set(row["totals"]) == {"planned", "actual", "variance"}
+
     def test_account_type_can_be_changed_without_losing_source_type(self, client):
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")
@@ -687,6 +721,7 @@ class TestPlanApi:
             "comparison",
             "categories",
             "planning_flows",
+            "column_totals",
         }
         by_name = {row["full_name"]: row for row in payload["categories"]}
         assert "Income:Salary" in by_name
@@ -736,6 +771,30 @@ class TestPlanApi:
         _status, payload = client.get(f"/api/plan?{query}")
         assert payload["comparison"]["handle"] is None
         assert payload["comparison"]["name"] == "Base scenario"
+
+    def test_saved_scenario_and_comparison_are_restored(self, client):
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        _status, initial = client.get("/api/plan")
+        status, controls = client.post(
+            "/api/plan/settings",
+            {
+                "from": initial["controls"]["from"],
+                "through": initial["controls"]["through"],
+                "period": "month",
+                "measure": "planned",
+                "scenario": scenario["handle"],
+                "compare": "__base__",
+            },
+        )
+        assert status == 200
+        assert controls["scenario"] == scenario["handle"]
+        assert controls["compare"] == "__base__"
+
+        _status, restored = client.get("/api/plan")
+
+        assert restored["controls"]["scenario"] == scenario["handle"]
+        assert restored["controls"]["compare"] == "__base__"
+        assert restored["comparison"]["name"] == "Base scenario"
 
     def test_plan_rejects_comparison_with_the_active_scenario(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})

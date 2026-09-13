@@ -7,7 +7,7 @@ plans discussed during development belong here rather than only in chat history.
 reprioritizes roadmap work must update this file in the same patch.
 
 The accepted baseline is **0161 — hierarchical, account-aware dashboard groups**.
-The current candidate is **0162 — one semantic account type and explicit dashboards**.
+The current candidate series is **0162–0163**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -358,16 +358,20 @@ semantics, not duplicate business rules in presentation code.
   and the mapping rationale. Remove inferred dashboard groups, honor only explicit
   account/config assignments, and omit hidden direct members. Begin PEP 440 alpha
   versioning at `0.2.0a1` from one authoritative version source.
+- [x] **0163 — Persistent Plan controls and complete totals.** Store From, Through,
+  Group by, Show, scenario, and comparison per book for GTK/web parity. Add a Total
+  column for every category and planning-flow row, non-duplicating section totals
+  for every reporting period, and a Net cash change grand-total row. Limit variance
+  totals to applicable as-of periods and advance the alpha version to `0.2.0a2`.
 - [ ] **Escrow follow-through.** Add dedicated explanations for refunds, manual
   adjustments, negative escrow balances, and combined mortgage/escrow payments;
   expand imported GnuCash fixtures and scenario override tests for those cases.
   Remove the temporary `/api/account/planning-role` request compatibility endpoint
-  after older web clients have migrated to `/api/account/kind`.
-- [ ] **Row and column totals.** Add totals across reporting periods for each row
-  and totals down each period column, including a clearly explained grand total.
-  Apply the same rules to actual, planned, and variance values. Do not count both
-  a category parent and its children or mix cash transfers with expense totals
-  without explicitly defined semantics; keep GTK and web consistent.
+  after older web clients have migrated to `/api/account/type`.
+- [x] **Row and column totals.** Totals across periods and down each period column
+  cover planned, actual, and variance values consistently. Category section totals
+  count outermost rollups once; planning flows remain separate; Net cash change is
+  the grand total rather than a sum of unlike financial dimensions.
 - [ ] **Mortgage cash flow and liability projection — design review required.**
   Evaluate showing the whole mortgage payment credited from the cash/asset account
   in Plan while principal reduces the loan liability in Projection and interest

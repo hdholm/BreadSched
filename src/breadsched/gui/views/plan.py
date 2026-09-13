@@ -12,12 +12,14 @@ from datetime import date
 
 from ...gen.engine.activity import (
     CategoryReport,
+    PlanMeasure,
+    PlanSettings,
     ReportingPeriod,
     build_category_report,
     explain_category_period,
     explain_planning_flow_period,
 )
-from ...gen.lib import Scenario
+from ...gen.lib import Money, Scenario
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -72,6 +74,7 @@ class PlanView(BaseView):
         self._updating_controls = False
         self._scenarios: list[Scenario] = []
         self._scenario_handle: str | None = selected_scenario_handle(manager)
+        self._compare_handle: str | None = None
         self._updating_scenarios = False
         self._build()
 
@@ -193,12 +196,19 @@ class PlanView(BaseView):
         self.append(scroll)
 
     def set_db(self, db) -> None:
-        """Attach a book and restore the default display horizon for that book."""
+        """Attach a book and restore its last applied Plan presentation."""
         today = date.today()
-        self._start_date = date(today.year, 1, 1)
-        self._end_date = date(today.year + 1, 12, 31)
-        self._period_index = 0
-        self._measure_index = 0
+        settings = PlanSettings.load(
+            db,
+            date(today.year, 1, 1),
+            date(today.year + 1, 12, 31),
+        )
+        self._start_date = settings.start
+        self._end_date = settings.end
+        self._period_index = list(ReportingPeriod).index(settings.period)
+        self._measure_index = list(PlanMeasure).index(settings.measure)
+        self._scenario_handle = settings.scenario
+        self._compare_handle = settings.compare
         self._bounds_initialized = False
         self._updating_controls = True
         try:
@@ -392,6 +402,9 @@ class PlanView(BaseView):
             ReportingPeriod.YEAR,
         )[self._period_index]
 
+    def _measure(self) -> PlanMeasure:
+        return (PlanMeasure.PLANNED, PlanMeasure.ACTUAL, PlanMeasure.VARIANCE)[self._measure_index]
+
     @staticmethod
     def _month_end(year: int, month: int) -> date:
         return date(year, month, monthrange(year, month)[1])
@@ -488,11 +501,21 @@ class PlanView(BaseView):
             self._validate_controls(show_message=True)
 
     def _on_apply(self, _button) -> None:
+        if self.db is None:
+            return
         if not self._validate_controls(show_message=True):
             return
         self._start_date, self._end_date = self._pending_range()
         self._period_index = self.period.get_selected()
         self._measure_index = self.measure.get_selected()
+        PlanSettings(
+            start=self._start_date,
+            end=self._end_date,
+            period=self._grouping(),
+            measure=self._measure(),
+            scenario=self._scenario_handle,
+            compare=self._compare_handle,
+        ).save(self.db)
         self.control_status.set_text(
             f"Showing {self._start_date:%b %Y} through {self._end_date:%b %Y}."
         )
@@ -542,8 +565,12 @@ class PlanView(BaseView):
             label = Gtk.Label(label=period.label, xalign=1)
             label.add_css_class("heading")
             self.grid.attach(label, col, 0, 1, 1)
+        total_heading = Gtk.Label(label="Total", xalign=1)
+        total_heading.add_css_class("heading")
+        self.grid.attach(total_heading, len(periods) + 1, 0, 1, 1)
 
         row_index = 1
+        measure = self._measure()
         sections = (("Income", self._report.income), ("Expenses", self._report.expenses))
         for section_name, rows in sections:
             section = Gtk.Label(label=section_name, xalign=0)
@@ -554,7 +581,7 @@ class PlanView(BaseView):
                 name = Gtk.Label(label=("   " * category.depth) + category.name, xalign=0)
                 name.set_tooltip_text(category.full_name)
                 self.grid.attach(name, 0, row_index, 1, 1)
-                values = (category.planned, category.actual, category.variance)[self._measure_index]
+                values = category.values(measure)
                 for col, value in enumerate(values, 1):
                     period = periods[col - 1]
                     label = Gtk.Label(
@@ -566,7 +593,15 @@ class PlanView(BaseView):
                     button.set_tooltip_text(f"Explain {category.full_name} — {period.label}")
                     button.connect("clicked", self._on_plan_cell_clicked, category, period)
                     self.grid.attach(button, col, row_index, 1, 1)
+                self._attach_total(category.total(measure), len(periods) + 1, row_index)
                 row_index += 1
+            account_class = rows[0].account_class if rows else None
+            if account_class is not None:
+                row_index = self._attach_summary_row(
+                    f"{section_name} total",
+                    self._report.category_totals(account_class, measure),
+                    row_index,
+                )
 
         if self._report.planning_flows:
             section = Gtk.Label(label="Planning flows", xalign=0)
@@ -577,7 +612,7 @@ class PlanView(BaseView):
                 name = Gtk.Label(label=flow.name, xalign=0)
                 name.set_tooltip_text(flow.full_name)
                 self.grid.attach(name, 0, row_index, 1, 1)
-                values = (flow.planned, flow.actual, flow.variance)[self._measure_index]
+                values = flow.values(measure)
                 for col, value in enumerate(values, 1):
                     period = periods[col - 1]
                     label = Gtk.Label(
@@ -589,7 +624,46 @@ class PlanView(BaseView):
                     button.set_tooltip_text(f"Explain {flow.name} — {period.label}")
                     button.connect("clicked", self._on_flow_cell_clicked, flow, period)
                     self.grid.attach(button, col, row_index, 1, 1)
+                self._attach_total(flow.total(measure), len(periods) + 1, row_index)
                 row_index += 1
+            row_index = self._attach_summary_row(
+                "Planning-flow total",
+                self._report.planning_flow_totals(measure),
+                row_index,
+            )
+
+        self._attach_summary_row(
+            "Net cash change",
+            self._report.cash_totals(measure),
+            row_index,
+            grand=True,
+        )
+
+    def _attach_total(self, value, column: int, row: int, *, heading: bool = False) -> None:
+        label = Gtk.Label(
+            label=value.format(parens_negative=True) if value is not None else "—",
+            xalign=1,
+        )
+        if heading:
+            label.add_css_class("heading")
+        self.grid.attach(label, column, row, 1, 1)
+
+    def _attach_summary_row(self, name: str, values, row: int, *, grand: bool = False) -> int:
+        assert self._report is not None
+        label = Gtk.Label(label=name, xalign=0)
+        label.add_css_class("heading")
+        self.grid.attach(label, 0, row, 1, 1)
+        for column, value in enumerate(values, 1):
+            self._attach_total(value, column, row, heading=True)
+        total = self._report.grand_total(self._measure()) if grand else None
+        if not grand:
+            present = [value for value in values if value is not None]
+            if present:
+                total = Money(0)
+                for value in present:
+                    total = total + value
+        self._attach_total(total, len(values) + 1, row, heading=True)
+        return row + 1
 
     def _on_flow_cell_clicked(self, _button, flow, period) -> None:
         if self.db is None:

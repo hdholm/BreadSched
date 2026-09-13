@@ -87,6 +87,14 @@ budget cells. Its inputs are:
 Month, quarter, and year views aggregate those same dated events. Changing the
 reporting period does not move the underlying financial event.
 
+The last applied From, Through, Group by, Show, scenario, and comparison controls
+are stored with the book and shared by GTK and web. Every category and planning-flow
+row has a total across the selected horizon. Each period also has Income, Expenses,
+and Planning-flow section totals calculated from outermost category rollups so a
+parent and its children are never added twice. The final Net cash change row is the
+financially meaningful grand total; variance totals include only periods through
+the report's as-of date.
+
 When an actual transaction resolves a scheduled/planned occurrence, BreadSched
 retains the original planned occurrence identity and expected amount. Later edits
 to the schedule therefore do not rewrite historical budget-versus-actual results.
@@ -169,7 +177,8 @@ The GTK4 application is the reference user experience. Its major views include:
 - **Scheduled** — recurring commitments and estimates, including imported schedule
   details and safe editing where round-trip fidelity is possible.
 - **Plan** — category and planning-flow views derived from dated planned and actual
-  activity.
+  activity, with per-book controls and non-duplicating row, period, and net-cash
+  totals.
 - **Review** — resolution of actual transactions against planned occurrences and
   related household workflows.
 - **Projection** — saved assumptions and scenarios projected forward from the

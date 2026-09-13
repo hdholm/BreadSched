@@ -260,6 +260,62 @@ class TestCategoryPlanning:
         assert parent.planned == [Money("125.00")]
         assert utility.planned == [Money("125.00")]
 
+    def test_totals_do_not_add_parent_and_child_rollups_twice(self, db, book):
+        bill = _monthly_bill(book, start=date(2026, 3, 7), amount="125.00")
+        with db.transaction("utility estimate") as txn:
+            db.add_scheduled(bill, txn)
+
+        report = activity.build_category_report(
+            db,
+            date(2026, 3, 1),
+            date(2026, 3, 31),
+            as_of=date(2026, 3, 15),
+        )
+
+        assert report.category_totals(
+            AccountType.EXPENSE.account_class, activity.PlanMeasure.PLANNED
+        ) == [Money("125.00")]
+        assert report.category_grand_total(
+            AccountType.EXPENSE.account_class, activity.PlanMeasure.PLANNED
+        ) == Money("125.00")
+        assert report.grand_total(activity.PlanMeasure.PLANNED) == Money("-125.00")
+
+    def test_row_and_variance_totals_follow_the_selected_horizon(self, db, book):
+        bill = _monthly_bill(book, start=date(2026, 1, 7), amount="100.00")
+        with db.transaction("three month estimate") as txn:
+            db.add_scheduled(bill, txn)
+
+        report = activity.build_category_report(
+            db,
+            date(2026, 1, 1),
+            date(2026, 3, 31),
+            as_of=date(2026, 2, 15),
+        )
+        utility = next(item for item in report.expenses if item.account == book.utilities)
+
+        assert utility.total(activity.PlanMeasure.PLANNED) == Money("300.00")
+        assert utility.variance == [Money("-100.00"), Money("-100.00"), None]
+        assert utility.total(activity.PlanMeasure.VARIANCE) == Money("-200.00")
+        assert report.cash_totals(activity.PlanMeasure.VARIANCE) == [
+            Money("100.00"),
+            Money("100.00"),
+            None,
+        ]
+
+    def test_plan_settings_round_trip_through_book_metadata(self, db):
+        settings = activity.PlanSettings(
+            start=date(2027, 4, 1),
+            end=date(2028, 6, 30),
+            period=activity.ReportingPeriod.QUARTER,
+            measure=activity.PlanMeasure.VARIANCE,
+            scenario="scenario-id",
+            compare="__base__",
+        )
+
+        settings.save(db)
+
+        assert activity.PlanSettings.load(db, date(2026, 1, 1), date(2026, 12, 31)) == settings
+
     def test_future_period_variance_is_not_applicable_but_actual_is_retained(self, db, book):
         bill = _monthly_bill(book, start=date(2026, 1, 7), amount="100.00")
         future_actual = Transaction.simple(
