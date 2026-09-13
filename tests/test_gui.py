@@ -540,6 +540,15 @@ class TestProjectionView:
 
 
 class TestDialogs:
+    def test_book_verification_runs_read_only_in_the_background(self, app, window, populated_book):
+        from breadsched.gui.dialogs.verification_dialog import VerificationDialog
+
+        app.open_book(populated_book)
+        dialog = VerificationDialog(window, populated_book)
+        assert dialog.wait_for_background()
+        assert dialog.heading.get_text() == "No problems found"
+        assert "relationships are clean" in dialog.details.get_text()
+
     def test_the_transaction_dialog_starts_with_two_splits(self, app, window, populated_book):
         from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
 
@@ -3200,6 +3209,7 @@ class TestStartScreen:
         actions = _menu_actions(menu)
         assert "app.import-new" in actions
         assert "app.import" in actions
+        assert {"app.backup", "app.restore", "app.verify"} <= set(actions)
 
     def test_the_default_book_is_named_but_not_created(self, tmp_path, monkeypatch):
         from breadsched.gui import paths

@@ -463,6 +463,15 @@ writes SQLite's established rollback recovery path. Any future WAL change requir
 tested checkpoint, backup, sidecar, and crash-recovery semantics rather than being a
 performance toggle.
 
+Backup and restore use SQLite's backup API rather than filesystem copying. Restore
+verifies the source logically and physically, holds the same canonical destination
+writer lock used by a live book, creates a pre-restore backup before an authorized
+replacement, writes and re-verifies a temporary database, removes stale SQLite
+sidecars, and only then atomically installs it. A restore therefore cannot replace
+the pathname beneath another live writer. Verification opens malformed books in a
+special tolerant read-only mode so damage is reported rather than decoded into
+ordinary engine state.
+
 Verification should protect invariants without imposing whole-book work on every
 small edit. Cross-cutting metadata that participates in financial workflows must
 obey the same transaction/undo rules as ordinary primary objects. A direct metadata

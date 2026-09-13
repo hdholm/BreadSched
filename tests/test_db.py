@@ -3,6 +3,8 @@
 import json
 import socket
 import sqlite3
+import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -984,6 +986,54 @@ class TestUserBackups:
             DbSQLite.restore_backup(str(source), str(destination))
         assert not destination.exists()
 
+    def test_restore_refuses_to_replace_a_book_with_a_live_writer(self, tmp_path):
+        source_path = tmp_path / "source.breadsched"
+        backup_path = tmp_path / "source.backup"
+        destination = tmp_path / "open.breadsched"
+        source = DbSQLite()
+        source.load(str(source_path))
+        source.backup_to(str(backup_path))
+        source.close()
+
+        live = DbSQLite()
+        live.load(str(destination))
+        try:
+            with pytest.raises(DbError, match="already open for writing"):
+                DbSQLite.restore_backup(str(backup_path), str(destination), overwrite=True)
+        finally:
+            live.close()
+
+
+def test_delete_journal_recovers_an_interrupted_write(tmp_path):
+    path = tmp_path / "interrupted.breadsched"
+    db = DbSQLite()
+    db.load(str(path))
+    db.close()
+    script = """
+import os
+import sqlite3
+import sys
+
+connection = sqlite3.connect(sys.argv[1])
+connection.execute('PRAGMA journal_mode=DELETE')
+connection.execute('PRAGMA synchronous=FULL')
+connection.execute('BEGIN IMMEDIATE')
+connection.execute(
+    \"INSERT OR REPLACE INTO metadata(key,value) VALUES ('interrupted', 'true')\"
+)
+os._exit(7)
+"""
+    result = subprocess.run([sys.executable, "-c", script, str(path)], check=False)
+    assert result.returncode == 7
+
+    recovered = DbSQLite()
+    recovered.load(str(path))
+    try:
+        assert recovered.get_metadata("interrupted") is None
+        assert recovered.verification_report().ok
+    finally:
+        recovered.close()
+
 
 class TestDerivedIndexVerification:
     @pytest.mark.parametrize(
@@ -1112,7 +1162,7 @@ class TestObjectIdentityVerification:
 
 
 class TestRestoreSidecars:
-    def test_restore_removes_stale_destination_wal_and_shm(self, tmp_path):
+    def test_restore_removes_stale_destination_sidecars(self, tmp_path):
         source_path = tmp_path / "source.breadsched"
         backup_path = tmp_path / "source.backup"
         destination = tmp_path / "destination.breadsched"
@@ -1130,10 +1180,12 @@ class TestRestoreSidecars:
         target.close()
         Path(str(destination) + "-wal").write_bytes(b"stale wal")
         Path(str(destination) + "-shm").write_bytes(b"stale shm")
+        Path(str(destination) + "-journal").write_bytes(b"stale journal")
 
         DbSQLite.restore_backup(str(backup_path), str(destination), overwrite=True)
         assert not Path(str(destination) + "-wal").exists()
         assert not Path(str(destination) + "-shm").exists()
+        assert not Path(str(destination) + "-journal").exists()
         restored = DbSQLite()
         restored.load(str(destination), mode="r")
         try:

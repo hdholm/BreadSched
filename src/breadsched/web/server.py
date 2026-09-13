@@ -288,6 +288,10 @@ class Api:
             "scenarios": [s.name for s in self.db.iter_scenarios()],
         }
 
+    def verify(self) -> dict[str, object]:
+        """Run physical and logical checks without modifying the open book."""
+        return self.db.verification_report().as_dict()
+
     def accounts(self) -> list[dict]:
         """The chart of accounts as a flat list carrying its own depth."""
         rows: list[dict] = []
@@ -2769,6 +2773,7 @@ ROUTES = {
         int(q["years"][0]) if q.get("years") else None,
     ),
     "/api/import": lambda a, q: a.import_defaults(),
+    "/api/verify": lambda a, q: a.verify(),
 }
 
 POST_ROUTES = {

@@ -198,7 +198,7 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
   <div id="view"></div>
 </main>
 <script>
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Verify"];
 let current = "Dashboard";
 let state = {
   accounts: [], account: null, plan: null, review: null,
@@ -2278,10 +2278,29 @@ async function showImport() {
     el("div", { class:"panel", style:"padding:16px" }, form, result));
 }
 
+async function showVerify() {
+  const data = await get("/api/verify");
+  const rerun = el("button", {class:"action", onclick:()=>showVerify()}, "Verify again");
+  const findings = [];
+  (data.sqlite || []).forEach((problem) => findings.push(
+    el("li", {}, `SQLite: ${problem}`)));
+  (data.issues || []).forEach((issue) => findings.push(
+    el("li", {}, `${issue.code}: ${issue.message}`)));
+  main.replaceChildren(
+    el("div", {class:"toolbar"}, rerun),
+    el("div", {class:"panel scenario-panel"},
+      el("h2", {}, data.ok ? "No problems found" : "Book verification found problems"),
+      data.ok
+        ? el("p", {}, "SQLite integrity and BreadSched financial relationships are clean.")
+        : el("ul", {}, findings)),
+  );
+}
+
 const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
+  Verify: showVerify,
 };
 
 async function showFsaDashboard() {

@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0177 — account-controlled emergency funds**.
-The current candidate is **0178 — preserve protected schedules**.
+The accepted baseline before this development series is **0175 — printable current
+reports**. The current sequential candidates are **0176–0180**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -653,12 +653,20 @@ semantics, not duplicate business rules in presentation code.
 
 ## Storage, integrity, and recovery
 
-- [ ] Maintain explicit schema migrations with transactional migration tests and
-  automatic safety backups as persistent models evolve.
-- [ ] Strengthen backup/restore and crash-recovery UX.
-- [ ] Test interrupted writes, failed migrations, and recovery behavior under the
+- [x] Current supported schema transitions are explicit, transactional, covered by
+  migration tests, and create automatic safety backups. Apply the same rule to each
+  future persistent-model change.
+- [x] **0180 — Verifiable recovery workflows.** Add GTK backup, restore-as-new, and
+  background Verify Book workflows plus a web Verify view; share physical/logical
+  verification results with CLI. Lock restore destinations against live writers,
+  verify temporary restored copies before atomic installation, remove stale journal
+  sidecars, and preserve overwritten books first. Advance the alpha version to
+  `0.2.0a19`.
+- [x] Strengthen backup/restore and crash-recovery UX with verified restore and
+  discoverable GTK/CLI workflows.
+- [x] Test interrupted writes, failed migrations, and recovery behavior under the
   chosen journaling/WAL policy.
-- [ ] Keep database concurrency ownership/locking explicit and testable for desktop
+- [x] Keep database concurrency ownership/locking explicit and testable for desktop
   and web access.
 - [ ] Expand executable invariants: balanced transactions, no orphaned splits,
   commodity consistency, schedule idempotency, reconciliation preservation, and
@@ -666,7 +674,7 @@ semantics, not duplicate business rules in presentation code.
   - [x] **0148 — Explicit chart-root semantics.** Only `ROOT` accounts are treated
     as roots by engines; a normal rooted chart reports parentless non-root accounts
     as integrity findings instead of silently dropping them from Projection.
-- [ ] Add a user-visible **Verify book** / diagnostic workflow before a stable release.
+- [x] Add user-visible GTK/web **Verify book** diagnostics before a stable release.
 - [ ] Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
 

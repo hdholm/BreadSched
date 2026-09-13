@@ -268,26 +268,16 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 def cmd_verify(args: argparse.Namespace) -> int:
     """Check SQLite integrity and logical book invariants without modifying the book."""
-    db = DbSQLite()
-    db.load_for_verification(args.book)
-    try:
-        sqlite_issues = db.integrity_problems()
-        logical = db.verify_book()
-        payload = {
-            "ok": not sqlite_issues and not logical,
-            "sqlite": sqlite_issues,
-            "issues": [issue.as_dict() for issue in logical],
-        }
-        if payload["ok"]:
-            emit(payload, args, "Book verification passed: SQLite and logical checks are clean")
-            return 0
-        lines = ["Book verification failed:"]
-        lines.extend(f"  sqlite: {problem}" for problem in sqlite_issues)
-        lines.extend(f"  {issue.code}: {issue.message}" for issue in logical)
-        emit(payload, args, "\n".join(lines))
-        return 1
-    finally:
-        db.close()
+    report = DbSQLite.verify_path(args.book)
+    payload = report.as_dict()
+    if report.ok:
+        emit(payload, args, "Book verification passed: SQLite and logical checks are clean")
+        return 0
+    lines = ["Book verification failed:"]
+    lines.extend(f"  sqlite: {problem}" for problem in report.sqlite)
+    lines.extend(f"  {issue.code}: {issue.message}" for issue in report.issues)
+    emit(payload, args, "\n".join(lines))
+    return 1
 
 
 def cmd_accounts(args: argparse.Namespace) -> int:

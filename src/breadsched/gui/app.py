@@ -120,6 +120,9 @@ class BreadSchedApplication(Gtk.Application):
             ("undo", self.on_undo, "<Control>z"),
             ("redo", self.on_redo, "<Control><Shift>z"),
             ("export", self.on_export, None),
+            ("backup", self.on_backup, None),
+            ("restore", self.on_restore, None),
+            ("verify", self.on_verify, None),
             ("post-scheduled", self.on_post_scheduled, None),
             ("new-transaction", self.on_new_transaction, "<Control>t"),
             ("about", self.on_about, None),
@@ -134,7 +137,16 @@ class BreadSchedApplication(Gtk.Application):
         # A widget bound to an action takes its sensitivity from that action and
         # ignores set_sensitive(), so undo/redo availability must be expressed here
         # rather than on the button.
-        for name in ("undo", "redo", "import", "export", "post-scheduled", "new-transaction"):
+        for name in (
+            "undo",
+            "redo",
+            "import",
+            "export",
+            "backup",
+            "verify",
+            "post-scheduled",
+            "new-transaction",
+        ):
             self.actions[name].set_enabled(False)
 
     # ------------------------------------------------------------------- book
@@ -156,7 +168,7 @@ class BreadSchedApplication(Gtk.Application):
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book_path", str(Path(path).resolve()))
         self.settings.save()
-        for name in ("import", "export", "post-scheduled", "new-transaction"):
+        for name in ("import", "export", "backup", "verify", "post-scheduled", "new-transaction"):
             self.set_action_enabled(name, True)
         for window in self.get_windows():
             if isinstance(window, ViewManager):
@@ -351,6 +363,72 @@ class BreadSchedApplication(Gtk.Application):
 
         dialog.save(self.props.active_window, None, on_saved)
 
+    def on_backup(self, *_args) -> None:
+        """Create a consistent snapshot of the current open book."""
+        if self.db is None or self.book_path is None:
+            return
+        dialog = Gtk.FileDialog(
+            title="Back up book",
+            initial_name=f"{Path(self.book_path).name}.backup",
+        )
+
+        def on_saved(file_dialog, result) -> None:
+            try:
+                file = file_dialog.save_finish(result)
+            except GLib.Error:
+                return
+            try:
+                assert self.db is not None
+                destination = self.db.backup_to(file.get_path(), overwrite=True)
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user
+                self._report(f"Could not back up the book: {exc}")
+                return
+            self._report(f"Backup created at {destination}")
+
+        dialog.save(self.props.active_window, None, on_saved)
+
+    def on_restore(self, *_args) -> None:
+        """Restore a verified backup as a book, never over the currently open file."""
+        choose = Gtk.FileDialog(title="Choose a BreadSched backup")
+        choose.open(self.props.active_window, None, self._on_restore_source_chosen)
+
+    def _on_restore_source_chosen(self, dialog, result) -> None:
+        try:
+            source = dialog.open_finish(result).get_path()
+        except GLib.Error:
+            return
+        save = Gtk.FileDialog(title="Restore backup as", initial_name="restored.breadsched")
+        save.save(
+            self.props.active_window,
+            None,
+            lambda d, r: self._on_restore_target_chosen(d, r, source),
+        )
+
+    def _on_restore_target_chosen(self, dialog, result, source: str) -> None:
+        try:
+            target = dialog.save_finish(result).get_path()
+        except GLib.Error:
+            return
+        if self.book_path is not None and Path(target).resolve() == Path(self.book_path).resolve():
+            self._report(
+                "Restore the backup as a different file. The currently open book "
+                "cannot be replaced underneath its live database connection."
+            )
+            return
+        try:
+            restored = DbSQLite.restore_backup(source, target, overwrite=Path(target).exists())
+            self.open_book(restored)
+        except Exception as exc:  # noqa: BLE001 - surfaced to the user
+            self._report(f"Could not restore the backup: {exc}")
+
+    def on_verify(self, *_args) -> None:
+        """Open the read-only full-book verification workflow."""
+        if self.book_path is None:
+            return
+        from .dialogs.verification_dialog import VerificationDialog
+
+        VerificationDialog(self.props.active_window, self.book_path).present()
+
     def on_post_scheduled(self, *_args) -> None:
         window = self.props.active_window
         if window is not None:
@@ -403,6 +481,11 @@ def build_menu_model() -> Gio.Menu:
     transfer.append("Import GnuCash Book into _Current Book…", "app.import")
     transfer.append("_Export Transactions…", "app.export")
     file_menu.append_section(None, transfer)
+    safety = Gio.Menu()
+    safety.append("_Back Up Current Book…", "app.backup")
+    safety.append("_Restore Backup as New Book…", "app.restore")
+    safety.append("_Verify Current Book…", "app.verify")
+    file_menu.append_section(None, safety)
     quit_section = Gio.Menu()
     quit_section.append("_Print Current View…", "win.print-view")
     quit_section.append("_Quit", "app.quit")

@@ -35,7 +35,7 @@ from ..utils.logs import get_logger
 from ..utils.user_paths import sync_service_for_path
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
 from .migrations import LATEST_SCHEMA_VERSION, MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
-from .verification import BookIssue, verify_domain
+from .verification import BookIssue, BookVerification, verify_domain
 
 LOG = get_logger(__name__)
 
@@ -380,7 +380,7 @@ class DbSQLite(DbBase):
 
     @staticmethod
     def _remove_sqlite_sidecars(path: Path) -> None:
-        for suffix in ("-wal", "-shm"):
+        for suffix in ("-wal", "-shm", "-journal"):
             Path(str(path) + suffix).unlink(missing_ok=True)
 
     def backup_to(self, destination: str, *, overwrite: bool = False) -> str:
@@ -440,40 +440,68 @@ class DbSQLite(DbBase):
         if target.exists() and not overwrite:
             raise DbError(f"restore destination already exists: {target}")
 
-        verifier = cls()
-        verifier.load_for_verification(str(source_path))
-        try:
-            sqlite_issues = verifier.integrity_problems()
-            logical_issues = verifier.verify_book()
-            if sqlite_issues:
-                raise DbError("backup failed SQLite integrity check: " + "; ".join(sqlite_issues))
-            if logical_issues:
-                first = logical_issues[0]
-                raise DbError(f"backup failed logical verification: {first.code}: {first.message}")
-        finally:
-            verifier.close()
+        report = cls.verify_path(str(source_path))
+        if report.sqlite:
+            raise DbError("backup failed SQLite integrity check: " + "; ".join(report.sqlite))
+        if report.issues:
+            first = report.issues[0]
+            raise DbError(f"backup failed logical verification: {first.code}: {first.message}")
 
-        if target.exists():
-            old = cls()
-            old.load(str(target), mode="r")
-            try:
-                old.backup_to(str(target) + ".pre-restore.bak", overwrite=True)
-            finally:
-                old.close()
-
+        # Hold the ordinary writer lock for the destination throughout preservation
+        # and replacement. Replacing a pathname beneath a live SQLite connection
+        # can split two writers across different inodes and corrupt either copy.
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(target.name + ".restore.tmp")
-        temporary.unlink(missing_ok=True)
-        source_conn = sqlite3.connect(source_path)
-        restored = sqlite3.connect(temporary)
+        guard = cls()
+        guard._acquire_book_lock(str(target))
         try:
-            source_conn.backup(restored)
-            restored.commit()
+            if target.exists():
+                # Opening writable while our external writer guard is held lets
+                # SQLite recover a genuine hot rollback journal before we preserve
+                # the destination. A read-only open cannot perform that recovery.
+                recovery = sqlite3.connect(target)
+                try:
+                    rows = recovery.execute("PRAGMA integrity_check").fetchall()
+                    problems = [str(row[0]) for row in rows if str(row[0]).lower() != "ok"]
+                    if problems:
+                        raise DbError(
+                            "existing destination failed SQLite recovery: " + "; ".join(problems)
+                        )
+                finally:
+                    recovery.close()
+                old = cls()
+                old.load(str(target), mode="r")
+                try:
+                    old.backup_to(str(target) + ".pre-restore.bak", overwrite=True)
+                finally:
+                    old.close()
+
+            temporary = target.with_name(target.name + ".restore.tmp")
+            temporary.unlink(missing_ok=True)
+            source_conn = sqlite3.connect(source_path)
+            restored = sqlite3.connect(temporary)
+            try:
+                source_conn.backup(restored)
+                restored.commit()
+            except Exception:
+                restored.close()
+                source_conn.close()
+                temporary.unlink(missing_ok=True)
+                raise
+            else:
+                restored.close()
+                source_conn.close()
+            try:
+                copied = cls.verify_path(str(temporary))
+            except Exception:
+                temporary.unlink(missing_ok=True)
+                raise
+            if not copied.ok:
+                temporary.unlink(missing_ok=True)
+                raise DbError("restored copy failed verification before installation")
+            cls._remove_sqlite_sidecars(target)
+            os.replace(temporary, target)
         finally:
-            restored.close()
-            source_conn.close()
-        cls._remove_sqlite_sidecars(target)
-        os.replace(temporary, target)
+            guard._release_book_lock()
         return str(target)
 
     def _backup_before_migration(self, version: int) -> str | None:
@@ -486,6 +514,20 @@ class DbSQLite(DbBase):
         """Return SQLite integrity failures; an empty list means the file is sound."""
         rows = self._require().execute("PRAGMA integrity_check").fetchall()
         return [str(row[0]) for row in rows if str(row[0]).lower() != "ok"]
+
+    def verification_report(self) -> BookVerification:
+        """Return one combined physical/logical verification result."""
+        return BookVerification(tuple(self.integrity_problems()), tuple(self.verify_book()))
+
+    @classmethod
+    def verify_path(cls, path: str) -> BookVerification:
+        """Verify a native book read-only, tolerating malformed object records."""
+        verifier = cls()
+        verifier.load_for_verification(path)
+        try:
+            return verifier.verification_report()
+        finally:
+            verifier.close()
 
     def _record_malformed(self, table: str, handle: str, exc: Exception) -> None:
         key = (table, handle)

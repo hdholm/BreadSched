@@ -289,6 +289,7 @@ breadsched init household.breadsched
 breadsched import household.breadsched accounts.gnucash
 breadsched verify household.breadsched
 breadsched backup household.breadsched household.backup
+breadsched restore household.backup restored-household.breadsched
 breadsched accounts household.breadsched
 breadsched register household.breadsched "Assets:Checking Account" --limit 20
 breadsched balance household.breadsched --as-of 2026-06-30
@@ -296,6 +297,13 @@ breadsched balance household.breadsched --as-of 2026-06-30
 
 Use `breadsched --help` and each subcommand's `--help` for the currently supported
 command surface.
+
+GTK exposes **Back Up Current Book**, **Restore Backup as New Book**, and **Verify
+Current Book** in the File menu. Verification runs read-only in the background and
+checks both the SQLite file and BreadSched's financial relationships. The web
+interface provides the same read-only verification report in its Verify view.
+Restoring over a file held by a live writer is refused; GTK restores to a different
+path and opens that verified result.
 
 ## GnuCash compatibility
 

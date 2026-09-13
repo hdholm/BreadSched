@@ -15,7 +15,7 @@ from ..lib.transaction import UnbalancedError
 if TYPE_CHECKING:
     from .base import DbBase
 
-__all__ = ["BookIssue", "verify_domain"]
+__all__ = ["BookIssue", "BookVerification", "verify_domain"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +26,25 @@ class BookIssue:
 
     def as_dict(self) -> dict[str, str | None]:
         return {"code": self.code, "message": self.message, "handle": self.handle}
+
+
+@dataclass(frozen=True, slots=True)
+class BookVerification:
+    """Combined physical SQLite and logical financial-book findings."""
+
+    sqlite: tuple[str, ...] = ()
+    issues: tuple[BookIssue, ...] = ()
+
+    @property
+    def ok(self) -> bool:
+        return not self.sqlite and not self.issues
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "ok": self.ok,
+            "sqlite": list(self.sqlite),
+            "issues": [issue.as_dict() for issue in self.issues],
+        }
 
 
 def verify_domain(db: DbBase) -> list[BookIssue]:

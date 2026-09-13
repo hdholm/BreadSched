@@ -204,6 +204,11 @@ class TestItServes:
         assert status == 200
         assert payload
 
+    def test_verify_reports_a_clean_book(self, client):
+        status, payload = client.get("/api/verify")
+        assert status == 200
+        assert payload == {"ok": True, "sqlite": [], "issues": []}
+
     def test_accounts_carry_balances(self, client):
         _status, payload = client.get("/api/accounts")
         by_name = {row["name"]: row for row in payload}
