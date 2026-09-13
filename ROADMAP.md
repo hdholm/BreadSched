@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline before this development series is **0175 — printable current
-reports**. The current sequential candidates are **0176–0180**.
+The accepted baseline before this development series is **0180 — verifiable recovery
+workflows**. The current sequential candidate is **0181**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -270,6 +270,11 @@ semantics, not duplicate business rules in presentation code.
   for every current web view with print styling that removes navigation and expands
   scrollable report tables. Keep Base and scenario estimate draft types distinct in
   the full-cache extended mypy gate. Advance the alpha version to `0.2.0a14`.
+- [x] **0181 — Wait for printable Projection state.** Synchronize the GTK print
+  boundary with an in-flight Projection worker before reading the visible result.
+  Report a bounded wait failure rather than silently leaving the preceding preview
+  open, strengthen the GUI regression to require one new preview per action, and
+  advance the alpha version to `0.2.0a20`.
 - [x] **0179 — Responsive Projection and import work.** Move GTK Projection and
   import work off the main thread, give Projection an independent read-only worker
   connection, deliver progress/results with `GLib.idle_add`, and cooperatively

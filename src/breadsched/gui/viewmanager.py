@@ -368,6 +368,9 @@ class ViewManager(Gtk.ApplicationWindow):
             return
         try:
             view.flush_refresh()
+            wait_for_background = getattr(view, "wait_for_background", None)
+            if callable(wait_for_background) and not wait_for_background():
+                raise TimeoutError("the current report is still calculating")
             document = view.printable_html()
             if not document:
                 return

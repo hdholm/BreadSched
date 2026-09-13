@@ -542,7 +542,10 @@ different dates, grouping, measure, scenario, assumptions, or values. The GTK
 application emits a private self-contained HTML preview and delegates printer/PDF
 selection to the system browser; this avoids a separate GTK-only pagination model
 and remains usable on GTK4 versions without a native printing API. Temporary
-previews are owner-readable and removed when the application exits.
+previews are owner-readable and removed when the application exits. A synchronous
+print boundary waits for an in-flight background calculation before it reads the
+visible view's result; a bounded timeout reports failure instead of reusing a stale
+or previously opened report.
 
 The web interface prints its current rendered view directly. Print-specific CSS
 removes navigation and editing actions, restores tables hidden by screen scroll

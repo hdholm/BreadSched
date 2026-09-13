@@ -245,7 +245,8 @@ the default browser using the values already applied in the view; the browser's
 print dialog can send it to a printer or save it as PDF. Plan output retains its
 applied date range, grouping, measure, scenario, and totals. Projection output
 includes its annual assumptions, chart, year-end table, warnings, and any displayed
-comparison.
+comparison. If a Projection calculation is still running, printing waits briefly
+for that calculation so it cannot silently reopen the preceding report instead.
 
 Start the GTK application with:
 

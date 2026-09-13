@@ -921,7 +921,9 @@ class TestMenuBarAndToolbar:
         ):
             window.show_category(key)
             assert window.print_action.get_enabled() is True
+            previews_before = len(opened)
             window.print_action.activate(None)
+            assert len(opened) == previews_before + 1
             assert f"<h1>{heading}</h1>" in opened[-1]
 
         window.show_category("accounts")
