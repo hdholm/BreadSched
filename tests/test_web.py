@@ -1080,7 +1080,7 @@ class TestDashboardApi:
     def test_groups_carry_equity_and_ltv_where_they_apply(self, client):
         _status, payload = client.get("/api/dashboard")
         for group in payload["groups"]:
-            assert "loan_to_value" in group and "equity" in group
+            assert {"loan_to_value", "loan_end", "equity"} <= set(group)
             assert {"path", "depth", "heading", "note"} <= set(group)
 
     def test_group_paths_can_be_configured_and_are_returned_as_a_hierarchy(self, client):

@@ -14,6 +14,50 @@ Migration = Callable[[sqlite3.Connection], None]
 MIN_SUPPORTED_SCHEMA_VERSION = 3
 
 
+def _single_account_type(data: dict[str, object]) -> str:
+    """Collapse the former ledger-type/account-kind pair into one type."""
+    raw_type = str(data.get("atype", "ASSET")).strip().upper().replace("_", " ")
+    legacy_kind = str(data.get("kind", data.get("planning_role", "ordinary"))).strip().lower()
+    semantic_types = {
+        "retirement": "RETIREMENT",
+        "fsa": "FSA",
+        "investment": "INVESTMENT",
+        "escrow": "ESCROW",
+    }
+    if legacy_kind in semantic_types:
+        return semantic_types[legacy_kind]
+    if legacy_kind == "debt":
+        return "CREDIT CARD" if raw_type in {"CREDIT", "CREDIT CARD"} else "LOAN"
+    aliases = {
+        "CREDIT": "CREDIT CARD",
+        "STOCK": "INVESTMENT",
+        "MUTUAL": "INVESTMENT",
+        "CURRENCY": "ASSET",
+        "RECEIVABLE": "ASSET",
+        "PAYABLE": "LIABILITY",
+        "TRADING": "TECHNICAL",
+    }
+    supported = {
+        "ROOT",
+        "BANK",
+        "CASH",
+        "ASSET",
+        "INVESTMENT",
+        "RETIREMENT",
+        "FSA",
+        "ESCROW",
+        "CREDIT CARD",
+        "LOAN",
+        "LIABILITY",
+        "INCOME",
+        "EXPENSE",
+        "EQUITY",
+        "TECHNICAL",
+    }
+    normalized = aliases.get(raw_type, raw_type)
+    return normalized if normalized in supported else "ASSET"
+
+
 def v3_to_v4(conn: sqlite3.Connection) -> None:
     """Remove the retired Budget domain from the supported a3 format."""
     obsolete_fields = {
@@ -33,8 +77,22 @@ def v3_to_v4(conn: sqlite3.Connection) -> None:
     conn.execute("DELETE FROM metadata WHERE key='current_budget'")
 
 
-MIGRATIONS: dict[int, Migration] = {3: v3_to_v4}
-LATEST_SCHEMA_VERSION = 4
+def v4_to_v5(conn: sqlite3.Connection) -> None:
+    """Repair account rows left in the former two-field representation."""
+    for handle, raw in conn.execute("SELECT handle, blob FROM account").fetchall():
+        data = json.loads(raw)
+        account_type = _single_account_type(data)
+        data["atype"] = account_type
+        data.pop("kind", None)
+        data.pop("planning_role", None)
+        conn.execute(
+            "UPDATE account SET atype=?, blob=? WHERE handle=?",
+            (account_type, json.dumps(data, separators=(",", ":")), handle),
+        )
+
+
+MIGRATIONS: dict[int, Migration] = {3: v3_to_v4, 4: v4_to_v5}
+LATEST_SCHEMA_VERSION = 5
 
 __all__ = [
     "LATEST_SCHEMA_VERSION",

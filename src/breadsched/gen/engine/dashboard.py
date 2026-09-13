@@ -203,6 +203,8 @@ class GroupResult:
     #: Set for property groups: the value, what is owed, and the ratio.
     value: Money | None = None
     debt: Money | None = None
+    #: Latest bounded repayment date among active loans in this group.
+    loan_end: date | None = None
     #: Aggregate amount from liquid groups at or beneath this node.
     liquid: Money = field(default_factory=lambda: Money(0))
     _assets: Money = field(default_factory=lambda: Money(0), repr=False)
@@ -475,9 +477,10 @@ def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
     """Resolve only explicitly configured, visible account memberships.
 
     Dashboard configuration wins over the account's own group field. An account
-    claimed by one explicit source is omitted from later sources, and a selected
-    chart parent wins over selected descendants so no ledger value is counted
-    twice. Hidden accounts are never direct dashboard members.
+    claimed by one explicit source is omitted from later sources. Stored
+    asset/loan links complete an already requested property group but never create
+    one. A selected chart parent wins over selected descendants so no ledger value
+    is counted twice. Hidden accounts are never direct dashboard members.
     """
     resolved: list[GroupConfig] = []
     claimed: set[str] = set()
@@ -505,7 +508,43 @@ def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
         existing_group.accounts.append(account.handle)
         claimed.add(account.handle)
 
+    _enrich_linked_properties(db, resolved, claimed)
     return _deduplicate_group_accounts(db, resolved)
+
+
+def _enrich_linked_properties(db: DbSQLite, groups: list[GroupConfig], claimed: set[str]) -> None:
+    """Complete an explicit property group from its stored loan/asset links.
+
+    A relationship is supporting configuration, not an implicit Dashboard group:
+    at least one side must already be assigned. Explicit membership elsewhere wins,
+    so enrichment never steals an account from another configured group.
+    """
+    pairs = linked_pairs(db)
+    by_asset: dict[str, tuple[Account, list[Account]]] = {}
+    for loan, asset in pairs:
+        if asset.handle not in by_asset:
+            by_asset[asset.handle] = (asset, [])
+        by_asset[asset.handle][1].append(loan)
+
+    for group in groups:
+        direct = set(group.accounts)
+        related_assets = {
+            asset.handle for loan, asset in pairs if asset.handle in direct or loan.handle in direct
+        }
+        if not related_assets:
+            continue
+        for asset_handle in related_assets:
+            asset, loans = by_asset[asset_handle]
+            for account in (asset, *loans):
+                if account.hidden or account.handle in claimed:
+                    continue
+                group.accounts.append(account.handle)
+                claimed.add(account.handle)
+        if any(
+            asset.handle in group.accounts and any(loan.handle in group.accounts for loan in loans)
+            for asset, loans in by_asset.values()
+        ):
+            group.kind = "property"
 
 
 def _deduplicate_group_accounts(db: DbSQLite, groups: list[GroupConfig]) -> list[GroupConfig]:
@@ -642,12 +681,17 @@ def _build_group_node(
     lines, assets, debts, liquid, notes = _direct_group_totals(
         db, direct_accounts, direct_kind, today, paid_off
     )
+    loan_end = _loan_end_date(db, direct_accounts, paid_off)
     for child_result in children:
         assets = assets + child_result._assets
         debts = debts + child_result._debts
         liquid = liquid + child_result.liquid
         if child_result.note:
             notes.append(child_result.note)
+        if child_result.loan_end is not None and (
+            loan_end is None or child_result.loan_end > loan_end
+        ):
+            loan_end = child_result.loan_end
 
     if not lines and not children:
         return []
@@ -674,6 +718,7 @@ def _build_group_node(
         note="; ".join(unique_notes),
         value=assets if property_like else None,
         debt=debts if property_like else None,
+        loan_end=loan_end if property_like else None,
         liquid=liquid,
         _assets=assets,
         _debts=debts,
@@ -758,6 +803,31 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
         source="fsa_availability",
         note=f"{count} applicable FSA funding year{'s' if count != 1 else ''}",
     )
+
+
+def _loan_end_date(db: DbSQLite, handles: list[str], paid_off: set[str]) -> date | None:
+    """Latest finite scheduled repayment date for loans selected by a group."""
+    loans: set[str] = set()
+    for handle in handles:
+        account = db.get_account(handle)
+        if account is None:
+            continue
+        for candidate in (account, *db.descendants(account.handle)):
+            if candidate.handle in paid_off:
+                continue
+            if candidate.account_class is not AccountClass.LIABILITY:
+                continue
+            if candidate.atype is AccountType.LOAN or candidate.linked_asset:
+                loans.add(candidate.handle)
+
+    latest: date | None = None
+    for scheduled in db.iter_scheduled():
+        if not scheduled.enabled or not any(split.account in loans for split in scheduled.splits):
+            continue
+        last = scheduled.recurrence.last_occurrence()
+        if last is not None and (latest is None or last > latest):
+            latest = last
+    return latest
 
 
 def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:

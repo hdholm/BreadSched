@@ -256,7 +256,8 @@ class DashboardView(BaseView):
         board = self.board
         assert board is not None
 
-        for position, heading in enumerate(("Group", "Value", "Owed", "Equity / total", "LTV")):
+        headings = ("Group", "Value", "Owed", "Equity / total", "LTV", "Loan end")
+        for position, heading in enumerate(headings):
             label = Gtk.Label(label=heading, xalign=1 if position else 0)
             label.add_css_class("summary-label")
             self.groups.attach(label, position, 0, 1, 1)
@@ -289,6 +290,13 @@ class DashboardView(BaseView):
             self.groups.attach(
                 Gtk.Label(label=f"{ratio:.1%}" if ratio is not None else "", xalign=1),
                 4,
+                index,
+                1,
+                1,
+            )
+            self.groups.attach(
+                Gtk.Label(label=str(group.loan_end or ""), xalign=1),
+                5,
                 index,
                 1,
                 1,

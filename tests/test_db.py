@@ -356,11 +356,30 @@ class TestSchemaMigration:
         with db.transaction("Supported baseline objects") as txn:
             scheduled = ScheduledTransaction(name="Estimate")
             scenario = Scenario(name="Plan")
+            card = Account(name="Card", atype=AccountType.CREDIT)
+            benefit = Account(name="Benefit", atype=AccountType.FSA)
             db.add_scheduled(scheduled, txn)
             db.add_scenario(scenario, txn)
+            db.add_account(card, txn)
+            db.add_account(benefit, txn)
         db.close()
 
         conn = sqlite3.connect(path)
+        for account, legacy_type, legacy_kind in (
+            (card, "CREDIT", "debt"),
+            (benefit, "ASSET", "fsa"),
+        ):
+            raw = json.loads(
+                conn.execute(
+                    "SELECT blob FROM account WHERE handle=?", (account.handle,)
+                ).fetchone()[0]
+            )
+            raw["atype"] = legacy_type
+            raw["kind"] = legacy_kind
+            conn.execute(
+                "UPDATE account SET atype=?, blob=? WHERE handle=?",
+                (legacy_type, json.dumps(raw, separators=(",", ":")), account.handle),
+            )
         for table, handle, fields in (
             ("scheduled", scheduled.handle, {"budgets": ["old"], "budgets_decided": True}),
             (
@@ -387,19 +406,30 @@ class TestSchemaMigration:
         conn.execute("INSERT INTO schema_migration(version) VALUES (3)")
         conn.commit()
         conn.close()
-        return scheduled.handle, scenario.handle
+        return scheduled.handle, scenario.handle, card.handle, benefit.handle
 
     def test_supported_baseline_is_backed_up_and_cleaned(self, tmp_path):
         path = tmp_path / "a3.breadsched"
-        scheduled, scenario = self._make_schema_3_book(path)
+        scheduled, scenario, card, benefit = self._make_schema_3_book(path)
 
         db = DbSQLite()
         db.load(str(path))
 
-        assert db.get_metadata("schema_version") == 4
+        assert db.get_metadata("schema_version") == 5
         assert db.get_metadata("current_budget") is None
         assert "budgets" not in db.get_scheduled(scheduled).serialize()
         assert "basis" not in db.get_scenario(scenario).serialize()
+        assert db.get_account(card).atype is AccountType.CREDIT
+        assert db.get_account(benefit).atype is AccountType.FSA
+        for handle, expected in ((card, "CREDIT CARD"), (benefit, "FSA")):
+            stored_type, raw_blob = (
+                db._require()
+                .execute("SELECT atype, blob FROM account WHERE handle=?", (handle,))
+                .fetchone()
+            )
+            assert stored_type == expected
+            assert json.loads(raw_blob)["atype"] == expected
+            assert "kind" not in json.loads(raw_blob)
         assert (
             db._require()
             .execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='budget'")
@@ -411,7 +441,7 @@ class TestSchemaMigration:
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [3, 4]
+        ] == [3, 4, 5]
         db.close()
 
         backup = tmp_path / "a3.breadsched.pre-migration-v3.bak"
@@ -430,6 +460,31 @@ class TestSchemaMigration:
             )
         finally:
             old.close()
+
+    def test_schema_4_book_stranded_by_the_old_decoder_is_repaired(self, tmp_path):
+        from breadsched.gen.db.migrations import v3_to_v4
+
+        path = tmp_path / "stranded-schema-4.breadsched"
+        _scheduled, _scenario, card, benefit = self._make_schema_3_book(path)
+        conn = sqlite3.connect(path)
+        try:
+            v3_to_v4(conn)
+            conn.execute("UPDATE metadata SET value='4' WHERE key='schema_version'")
+            conn.execute("INSERT INTO schema_migration(version) VALUES (4)")
+            conn.commit()
+        finally:
+            conn.close()
+
+        db = DbSQLite()
+        db.load(str(path))
+        try:
+            assert db.get_metadata("schema_version") == 5
+            assert db.get_account(card).atype is AccountType.CREDIT
+            assert db.get_account(benefit).atype is AccountType.FSA
+        finally:
+            db.close()
+
+        assert (tmp_path / "stranded-schema-4.breadsched.pre-migration-v4.bak").exists()
 
     def test_formats_before_a3_are_rejected(self, tmp_path):
         path = tmp_path / "unsupported.breadsched"
@@ -484,7 +539,7 @@ class TestSchemaMigration:
         assert not (tmp_path / "a3-readonly.breadsched.pre-migration-v3.bak").exists()
 
     def test_new_books_report_clean_integrity(self, db):
-        assert db.get_metadata("schema_version") == 4
+        assert db.get_metadata("schema_version") == 5
         assert db.integrity_problems() == []
 
 

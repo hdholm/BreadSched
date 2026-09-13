@@ -168,8 +168,10 @@ The GTK4 application is the reference user experience. Its major views include:
   groups accept explicit account-style paths such as `Investments:Plan A`; generated
   headings total their children, account subtrees are counted once, hidden accounts
   are not direct group members, FSA groups report benefit availability rather than
-  custodial balance, and fully repaid loans are omitted. Unassigned accounts do not
-  appear in dashboard groups.
+  custodial balance, and fully repaid loans are omitted. Assigning either side of a
+  linked property/loan pair includes its unassigned companion so the group reports
+  equity, LTV, and the latest bounded repayment date. A link by itself still creates
+  no group, and unassigned accounts do not appear in dashboard groups.
 - **Accounts** — hierarchical chart of accounts with balances, account type, and
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit

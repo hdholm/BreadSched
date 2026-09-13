@@ -2175,6 +2175,7 @@ async function showDashboard() {
       g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
       el("dt",{},g.equity === null ? "Total" : "Equity"), el("dd",{},money(g.equity === null ? g.total : g.equity)),
       g.loan_to_value === null ? null : [el("dt",{},"LTV"),el("dd",{},(g.loan_to_value*100).toFixed(1)+"%")
+      ], g.loan_end === null ? null : [el("dt",{},"Loan end"),el("dd",{},g.loan_end)
       ], ...(g.accounts || []).map((account) => [
         el("dt", {}, account.name),
         el("dd", { title:account.note || "" },

@@ -1212,6 +1212,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                             "debt": g.debt,
                             "equity": g.equity,
                             "loan_to_value": g.loan_to_value,
+                            "loan_end": g.loan_end,
                             "accounts": [
                                 {
                                     "name": account.name,
@@ -1263,6 +1264,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         group.debt.format(),
                         equity.format(parens_negative=True),
                         f"{loan_to_value:.1%}",
+                        str(group.loan_end or ""),
                     ]
                 )
             else:
@@ -1273,9 +1275,16 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         "",
                         group.total.format(parens_negative=True),
                         "",
+                        str(group.loan_end or ""),
                     ]
                 )
-        print(table(rows, ["group", "value", "owed", "equity / total", "LTV"], right={1, 2, 3, 4}))
+        print(
+            table(
+                rows,
+                ["group", "value", "owed", "equity / total", "LTV", "loan end"],
+                right={1, 2, 3, 4},
+            )
+        )
 
         print()
         headline = [

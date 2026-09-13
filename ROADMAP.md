@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0164 — safe Plan detachment**.
-The current candidate is **0165 — clean schema-4 event-planning core**.
+The accepted baseline is **0165 — clean schema-4 event-planning core**.
+The current candidate is **0166 — complete schema migration and linked properties**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -180,6 +180,16 @@ semantics, not duplicate business rules in presentation code.
   with a safety backup; reject older native development formats explicitly while
   preserving all external GnuCash/QIF/OFX/QFX import paths. Remove obsolete product
   naming and advance the alpha version to `0.2.0a4`.
+- [x] **0166 — Complete schema migration and linked properties.** Add an idempotent
+  schema-4-to-5 repair that rewrites every account blob and derived account-type
+  index, including the former account-kind semantics and GnuCash type aliases,
+  before strict decoding runs. This covers both direct schema-3 upgrades and books
+  stranded after 0165 committed schema 4 before encountering an old account row.
+  On the Dashboard, an explicitly assigned asset or loan pulls in visible,
+  otherwise-unassigned companions from its stored link so
+  property value, debt, equity, and LTV remain together without restoring inferred
+  default groups. Report the latest bounded enabled repayment date as the loan end
+  across engine, GTK, web, and CLI, and advance the alpha version to `0.2.0a5`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.

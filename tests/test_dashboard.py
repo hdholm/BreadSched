@@ -323,12 +323,11 @@ class TestCli:
 
 
 class TestLoansPairWithTheirAssets:
-    """A loan that names its asset shows as a property line without being grouped.
+    """A loan link completes an explicitly requested property group.
 
-    The link is what the importer's inference produces, and recording it is
-    pointless if the dashboard then ignores it. Equity and loan-to-value are the
-    two numbers people look for; leaving the house in an asset total and the
-    mortgage in a debt total shows both halves and neither answer.
+    A link alone does not create an implicit Dashboard group. Once either side is
+    explicitly assigned, however, the relationship supplies the missing companion
+    so equity and loan-to-value describe the property rather than half of it.
     """
 
     @pytest.fixture
@@ -374,6 +373,88 @@ class TestLoansPairWithTheirAssets:
         assert group.equity == Money("104261.50")
         assert group.loan_to_value == Decimal("0.7873")
 
+    def test_grouping_only_the_asset_adds_its_linked_loan(self, db, linked):
+        house, mortgage = linked
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig(house.name, [house.handle], "asset")]
+        )
+
+        group = dashboard.build(db, config, as_of=TODAY).group(house.name)
+
+        assert [account.name for account in group.accounts] == [
+            "Assets:Home Easton",
+            "Liabilities:Mortgage Easton",
+        ]
+        assert group.kind == "property"
+        assert group.loan_to_value == Decimal("0.7873")
+
+    def test_the_account_group_field_also_adds_the_linked_loan(self, db, linked):
+        house, _mortgage = linked
+        house.group = "Property"
+        with db.transaction("group property") as txn:
+            db.commit_account(house, txn)
+
+        group = dashboard.build(db, as_of=TODAY).group("Property")
+
+        assert group.kind == "property"
+        assert group.loan_to_value == Decimal("0.7873")
+
+    def test_grouping_only_the_loan_adds_its_linked_asset(self, db, linked):
+        house, mortgage = linked
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig(house.name, [mortgage.handle], "liability")]
+        )
+
+        group = dashboard.build(db, config, as_of=TODAY).group(house.name)
+
+        assert {account.name for account in group.accounts} == {
+            "Assets:Home Easton",
+            "Liabilities:Mortgage Easton",
+        }
+        assert group.loan_to_value == Decimal("0.7873")
+
+    def test_a_bounded_repayment_schedule_supplies_the_loan_end(self, db, book, linked):
+        house, mortgage = linked
+        repayment = ScheduledTransaction(
+            name="Repayment",
+            recurrence=Recurrence(
+                PeriodType.MONTH,
+                start=date(2026, 10, 1),
+                count=3,
+            ),
+            splits=[
+                ScheduledSplit(mortgage.handle, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        with db.transaction("repayment schedule") as txn:
+            db.add_scheduled(repayment, txn)
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig(house.name, [house.handle], "asset")]
+        )
+
+        group = dashboard.build(db, config, as_of=TODAY).group(house.name)
+
+        assert group.loan_end == date(2026, 12, 1)
+
+    def test_an_unbounded_repayment_does_not_invent_a_loan_end(self, db, book, linked):
+        house, mortgage = linked
+        repayment = ScheduledTransaction(
+            name="Open-ended repayment",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 10, 1)),
+            splits=[
+                ScheduledSplit(mortgage.handle, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        with db.transaction("repayment schedule") as txn:
+            db.add_scheduled(repayment, txn)
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig(house.name, [house.handle], "asset")]
+        )
+
+        assert dashboard.build(db, config, as_of=TODAY).group(house.name).loan_end is None
+
     def test_the_pair_is_not_counted_twice(self, db, linked):
         """A house in both a property line and an asset total inflates net worth."""
         house, mortgage = linked
@@ -401,6 +482,24 @@ class TestLoansPairWithTheirAssets:
         assert names.count("The house") == 1
         assert house.name not in names
         assert board.net_worth == Money("104261.50")
+
+    def test_a_companion_explicitly_assigned_elsewhere_is_not_stolen(self, db, linked):
+        house, mortgage = linked
+        config = dashboard.DashboardConfig(
+            groups=[
+                dashboard.GroupConfig("Property", [house.handle], "asset"),
+                dashboard.GroupConfig("Debt", [mortgage.handle], "liability"),
+            ]
+        )
+
+        board = dashboard.build(db, config, as_of=TODAY)
+
+        assert [account.name for account in board.group("Property").accounts] == [
+            "Assets:Home Easton"
+        ]
+        assert [account.name for account in board.group("Debt").accounts] == [
+            "Liabilities:Mortgage Easton"
+        ]
 
     def test_a_loan_with_no_asset_stays_a_plain_debt(self, db, book):
         debt = Account(name="Other debt", atype=AccountType.LIABILITY, parent=book.liabilities)

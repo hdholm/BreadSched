@@ -146,6 +146,7 @@ class Api:
                     "loan_to_value": (
                         float(group.loan_to_value) if group.loan_to_value is not None else None
                     ),
+                    "loan_end": group.loan_end.isoformat() if group.loan_end is not None else None,
                     "accounts": [
                         {
                             "name": account.name,

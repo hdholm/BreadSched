@@ -183,6 +183,15 @@ only when it is loan-classified or asset-linked, has prior ledger activity, and 
 no remaining balance. Such a loan and stale future repayment schedules are omitted,
 while its linked asset remains visible.
 
+An asset/loan link does not create an implicit Dashboard group. Once either side is
+explicitly assigned through book configuration or the account's group field, the
+engine adds unassigned, visible companions from that relationship and treats the
+result as a property group. Explicit membership in another group is never stolen.
+This preserves the no-default-groups rule while making one deliberate property
+selection sufficient for value, debt, equity, and LTV. The group's loan end is the
+latest final occurrence of its enabled, finitely bounded repayment schedules;
+unbounded schedules do not imply a payoff date.
+
 ## Account types and imported source types
 
 An account has one user-visible, BreadSched-owned type. Its accounting class, debit
@@ -295,7 +304,13 @@ root.
 SQLite is the native persistence engine. Schema 3, written by BreadSched 0.2.0a3,
 is the native compatibility baseline. Earlier development schemas have no supported
 upgrade path and are rejected explicitly. Schema 3 receives one transactional,
-pre-backed-up cleanup to schema 4, which removes the retired monthly Budget domain.
+pre-backed-up cleanup to schema 4, which removes the retired monthly Budget domain,
+then a schema-5 account normalization. The latter rewrites every account blob from
+the former ledger-type/account-kind representation to the single account type before
+strict object decoding begins. It is intentionally safe for schema-4 books whose
+earlier cleanup committed before strict decoding exposed an unconverted row. Merely
+opening a schema-3 book in an earlier release did not rewrite untouched account rows,
+so migrations cannot depend on a prior in-memory compatibility decoder having run.
 Future persistent-model changes still require explicit forward migrations from the
 supported baseline. This native-book policy is independent of external GnuCash,
 QIF, OFX, and QFX import compatibility.

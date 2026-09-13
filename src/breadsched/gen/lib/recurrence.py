@@ -230,6 +230,21 @@ class Recurrence:
                 return adjusted
         return None
 
+    def last_occurrence(self) -> date | None:
+        """The final adjusted firing, or ``None`` for an unbounded rule."""
+        if self.period is not PeriodType.ONCE and self.end is None and self.count is None:
+            return None
+        last: date | None = None
+        for number, raw in self._numbered_raw_occurrences():
+            if self.count is not None and number > self.count:
+                break
+            if self.end is not None and raw > self.end:
+                break
+            last = self._adjust(raw)
+            if self.period is PeriodType.ONCE:
+                break
+        return last
+
     def index_of(self, when: date) -> int:
         """Which adjusted occurrence ``when`` is, counting the first as 1."""
         window_start = when - timedelta(days=7)

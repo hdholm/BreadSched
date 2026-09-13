@@ -113,6 +113,23 @@ class TestLimits:
         assert rule.next_after(date(2026, 1, 15)) == date(2026, 2, 1)
         assert rule.next_after(date(2026, 3, 1)) is None
 
+    def test_last_occurrence_reports_a_count_limited_rule(self):
+        rule = Recurrence(PeriodType.MONTH, start=date(2026, 1, 1), count=3)
+        assert rule.last_occurrence() == date(2026, 3, 1)
+
+    def test_last_occurrence_reports_an_end_limited_rule(self):
+        rule = Recurrence(
+            PeriodType.MONTH,
+            start=date(2026, 1, 31),
+            end=date(2026, 3, 15),
+            day_of_month=31,
+        )
+        assert rule.last_occurrence() == date(2026, 2, 28)
+
+    def test_last_occurrence_is_unavailable_for_an_unbounded_rule(self):
+        rule = Recurrence(PeriodType.MONTH, start=date(2026, 1, 1))
+        assert rule.last_occurrence() is None
+
     def test_interval_must_be_positive(self):
         with pytest.raises(ValueError):
             Recurrence(PeriodType.MONTH, interval=0)
