@@ -115,6 +115,11 @@ book. Choosing **Review…** opens the normal Base or scenario schedule editor w
 the inferred accounts, amount, cadence, dates, and seasonal values populated. The
 proposal is added only after **Save**; cancelling leaves the book unchanged, and a
 later analysis measures coverage from the values that were actually saved.
+Known future coverage is matched against an exact rolling twelve-month window.
+When a continuing replacement begins partway through that window, BreadSched can
+offer a bounded bridge estimate for only the uncovered months. Isolated future
+events do not truncate recurring needs, biennial/triennial history keeps its longer
+cadence and next due date, and a lone completed event is not projected as recurring.
 
 ### Scenarios and Projection
 

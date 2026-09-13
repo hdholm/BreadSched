@@ -693,6 +693,139 @@ class TestHistoricalEstimateProposals:
         )
         assert proposal.amount == Money("100")
 
+    def test_partial_year_replacement_creates_only_an_uncovered_bridge(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        replacement = ScheduledTransaction(
+            name="Known replacement",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 10, 5)),
+            splits=[
+                ScheduledSplit(book.rent, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        without_replacement = Scenario(
+            name="Without replacement",
+            schedule_overrides=[ScenarioSchedule.from_scheduled(replacement, enabled=False)],
+        )
+        historical_months = [
+            *[date(2025, month, 5) for month in range(4, 13)],
+            *[date(2026, month, 5) for month in range(1, 4)],
+        ]
+        with db.transaction("History and future replacement") as txn:
+            db.add_scheduled(replacement, txn)
+            db.add_scenario(without_replacement, txn)
+            for when in historical_months:
+                db.add_transaction(
+                    Transaction.simple(when, "Rent", book.rent, book.checking, "100"),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=12
+            )
+            if item.category == book.rent
+        )
+        assert proposal.amount == Money("100")
+        assert proposal.recurrence.start == date(2026, 4, 1)
+        assert proposal.recurrence.end == date(2026, 9, 30)
+        assert proposal.scheduled_amount == Money("600")
+
+        alternate = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db,
+                as_of=date(2026, 4, 20),
+                months=12,
+                scenario_handle=without_replacement.handle,
+            )
+            if item.category == book.rent
+        )
+        assert alternate.amount == Money("100")
+        assert alternate.recurrence.end is None
+        assert alternate.scheduled_amount == Money("0")
+
+    def test_isolated_future_event_does_not_end_a_monthly_estimate(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        isolated = ScheduledTransaction(
+            name="Known one-time cost",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 10, 5)),
+            splits=[
+                ScheduledSplit(book.rent, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        historical_months = [
+            *[date(2025, month, 5) for month in range(4, 13)],
+            *[date(2026, month, 5) for month in range(1, 4)],
+        ]
+        with db.transaction("History and isolated future cost") as txn:
+            db.add_scheduled(isolated, txn)
+            for when in historical_months:
+                db.add_transaction(
+                    Transaction.simple(when, "Rent", book.rent, book.checking, "100"),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=12
+            )
+            if item.category == book.rent
+        )
+        assert proposal.amount == Money("100")
+        assert proposal.recurrence.end is None
+        assert proposal.scheduled_amount == Money("100")
+
+    def test_infers_multi_year_cadence_and_next_due_date(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Biennial history") as txn:
+            for when in (date(2022, 9, 10), date(2024, 9, 10)):
+                db.add_transaction(
+                    Transaction.simple(when, "Treatment", book.utilities, book.checking, "600"),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 1, 20), months=48, min_active_months=2
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.amount == Money("600")
+        assert proposal.recurrence.period is PeriodType.YEAR
+        assert proposal.recurrence.interval == 2
+        assert proposal.recurrence.start == date(2026, 9, 10)
+        assert "every 2 years" in proposal.reason
+
+    def test_single_historical_event_is_only_proposed_once(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("One-time history") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 3, 5), "One-time", book.utilities, book.checking, "600"
+                ),
+                txn,
+            )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3, min_active_months=1
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.recurrence.period is PeriodType.ONCE
+        assert proposal.recurrence.start == date(2026, 4, 1)
+        assert proposal.amount == Money("600")
+
     def test_partial_estimates_converge_in_selected_future_plan(self, db, book):
         from breadsched.gen.engine import estimates
 

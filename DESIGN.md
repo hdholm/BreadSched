@@ -138,8 +138,13 @@ to an earlier schedule. The selected future plan supplies coverage: committed
 schedules and planning-only estimates contribute their category splits once, using
 the next twelve planning months as a calendar-month profile. Historical scheduled
 occurrences are not also subtracted, since a schedule may have ended or changed
-amounts. Longer recurrence cycles and partial-year transitions need explicit
-cadence-aware coverage before this profile can represent them reliably.
+amounts. Calendar-month matching retains the exact future year/month rather than
+collapsing it to a month number. Sustained full coverage through the remainder of
+that rolling year may bound a monthly bridge estimate before the replacement starts;
+an isolated future event cannot do so. Annual, biennial, and triennial history keeps
+its inferred interval and advances the last observed date to the next due date.
+One observed event alone is insufficient evidence for recurrence and is therefore
+offered only as a reviewed one-time draft.
 
 When an actual resolves a planned occurrence, BreadSched preserves the original
 occurrence identity, planned date, and expected value so later schedule changes do

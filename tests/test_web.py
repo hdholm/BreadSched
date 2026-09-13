@@ -1820,7 +1820,7 @@ def test_historical_estimate_proposals_and_acceptance(client):
     rent = next(item for item in data["proposals"] if item["category_name"].endswith("Rent"))
     assert rent["funding_name"].endswith("Checking")
     assert Money(rent["amount"]) == Money("1800.00")
-    assert rent["frequency_key"] == "monthly"
+    assert rent["frequency_key"] == "once"
     assert rent["seasonal_amounts"] == []
     assert data["targets"][0]["name"] == "Base"
 

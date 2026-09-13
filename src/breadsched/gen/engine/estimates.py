@@ -7,6 +7,7 @@ Projection, Review, and scenarios continue to consume one event model.
 
 from __future__ import annotations
 
+from calendar import monthrange
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -112,7 +113,7 @@ def _planned_category_profiles(
     db: DbSQLite,
     start: date,
     scenario_handle: str | None,
-) -> dict[tuple[str, int], Money]:
+) -> dict[tuple[str, date], Money]:
     """Existing future coverage by category and calendar month.
 
     Historical ledger activity is the gross need, including transactions resolved
@@ -123,7 +124,7 @@ def _planned_category_profiles(
     treating a past occurrence and its future replacement as separate coverage.
     """
     end = _add_months(start, 12) - timedelta(days=1)
-    totals: dict[tuple[str, int], Money] = {}
+    totals: dict[tuple[str, date], Money] = {}
     accounts = {account.handle: account for account in db.iter_accounts()}
     for event in _target_events(db, start, end, scenario_handle):
         _, covered = escrow_recognition(
@@ -136,10 +137,16 @@ def _planned_category_profiles(
                 AccountClass.EXPENSE,
             ):
                 continue
-            key = (account.handle, event.planned_date.month)
+            key = (account.handle, _month_start(event.planned_date))
             amount = split.amount * account.sign() - covered.get(account.handle, Money(0))
             totals[key] = totals.get(key, Money(0)) + amount
     return totals
+
+
+def _corresponding_future_month(historical: date, future_start: date) -> date:
+    """Map a historical calendar month into the exact rolling future year."""
+    year = future_start.year + (historical.month < future_start.month)
+    return date(year, historical.month, 1)
 
 
 def _residual_after_scheduled(actual: Money, scheduled: Money) -> tuple[Money, Money]:
@@ -153,6 +160,36 @@ def _residual_after_scheduled(actual: Money, scheduled: Money) -> tuple[Money, M
     return residual, actual - residual
 
 
+def _bridge_end_before_continuing_coverage(
+    account: str,
+    future_start: date,
+    planned: dict[tuple[str, date], Money],
+    gross_by_month: dict[int, list[Money]],
+    gross_default: Money,
+) -> date | None:
+    """End a monthly bridge before sustained full coverage begins.
+
+    Two or more fully covered months through the end of the rolling future year
+    are required. That distinguishes a continuing replacement from an isolated
+    annual or one-time event, which must not truncate otherwise uncovered months.
+    """
+    covered: list[bool] = []
+    for offset in range(12):
+        month = _add_months(future_start, offset)
+        samples = gross_by_month.get(month.month, [])
+        need = _typical_amount(samples) if samples else gross_default
+        residual, _applied = _residual_after_scheduled(
+            need, planned.get((account, month), Money(0))
+        )
+        covered.append(not residual)
+    for offset in range(1, 11):
+        if not any(not value for value in covered[:offset]):
+            continue
+        if all(covered[offset:]):
+            return _add_months(future_start, offset) - timedelta(days=1)
+    return None
+
+
 def _unscheduled_dates(db: DbSQLite, category: str, start: date, end: date) -> list[date]:
     dates: list[date] = []
     for txn in db.iter_transactions(account=category, start=start, end=end):
@@ -163,9 +200,19 @@ def _unscheduled_dates(db: DbSQLite, category: str, start: date, end: date) -> l
     return sorted(dates)
 
 
-def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence, str, Decimal]:
+def _next_yearly_start(last: date, interval: int, floor: date) -> date:
+    """Advance an observed annual cadence to its first future occurrence."""
+    year = last.year + interval
+    candidate = date(year, last.month, min(last.day, monthrange(year, last.month)[1]))
+    while candidate < floor:
+        year += interval
+        candidate = date(year, last.month, min(last.day, monthrange(year, last.month)[1]))
+    return candidate
+
+
+def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None, str, Decimal]:
     if len(dates) < 2:
-        return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
+        return Recurrence(PeriodType.ONCE, start=start), "once (single observation)", Decimal("1")
     gaps = [(later - earlier).days for earlier, later in zip(dates[:-1], dates[1:], strict=True)]
     typical_gap = float(median(gaps))
     if 5 <= typical_gap <= 9:
@@ -180,12 +227,18 @@ def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence, str, 
             "fortnightly",
             Decimal(26) / Decimal(12),
         )
-    if 300 <= typical_gap <= 430:
-        return (
-            Recurrence(PeriodType.YEAR, start=start),
-            "annual",
-            Decimal(1) / Decimal(12),
-        )
+    for years in range(1, 4):
+        if abs(typical_gap - 365.2425 * years) <= 70:
+            cadence = "annual" if years == 1 else f"every {years} years"
+            return (
+                Recurrence(
+                    PeriodType.YEAR,
+                    interval=years,
+                    start=_next_yearly_start(dates[-1], years, start),
+                ),
+                cadence,
+                Decimal("1"),
+            )
     return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
 
 
@@ -276,6 +329,7 @@ def propose_historical_estimates(
         monthly: list[Money] = []
         monthly_by_month: dict[int, list[Money]] = {}
         gross_monthly: list[Money] = []
+        gross_by_month: dict[int, list[Money]] = {}
         txn_count = 0
         applied_scheduled_total = Money(0)
         for offset in range(months):
@@ -294,7 +348,9 @@ def propose_historical_estimates(
                     txn_count += 1
             if total:
                 gross_monthly.append(total)
-            scheduled = planned_profiles.get((account.handle, start.month), Money(0))
+                gross_by_month.setdefault(start.month, []).append(total)
+            future_month = _corresponding_future_month(start, current_month)
+            scheduled = planned_profiles.get((account.handle, future_month), Money(0))
             residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
             applied_scheduled_total = applied_scheduled_total + applied_scheduled
             if residual:
@@ -315,6 +371,16 @@ def propose_historical_estimates(
             _unscheduled_dates(db, account.handle, history_start, history_end),
             current_month,
         )
+        if recurrence is None:
+            continue
+        if recurrence.period is PeriodType.MONTH and recurrence.interval == 1:
+            recurrence.end = _bridge_end_before_continuing_coverage(
+                account.handle,
+                current_month,
+                planned_profiles,
+                gross_by_month,
+                _typical_amount(gross_monthly),
+            )
         amount = (monthly_residual / occurrences_per_month).quantize(100)
         seasonal_amounts = (
             _seasonal_amounts(monthly_by_month)

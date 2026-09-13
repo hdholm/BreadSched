@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0170 — scheduled lifecycle and navigation**.
-The current candidate is **0171 — reviewed historical-estimate drafts**.
+The accepted baseline is **0171 — reviewed historical-estimate drafts**.
+The current candidate is **0172 — cadence-safe historical coverage**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,13 +94,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Historical estimator long-cycle coverage and review workflow.** The
-   monthly future-coverage regression is repaired; multi-year recurrences and
-   editable drafts still need separate acceptance rules and UI work.
-2. **Scheduled-entry and import usability**, now that the Dashboard balance and
+1. **NEXT — Scheduled-entry and import usability**, now that the Dashboard balance and
    hierarchy block is implemented in 0161. Mortgage planning-flow semantics require
    design review.
-3. **Escrow follow-through.** Finish richer refund/adjustment explanations and
+2. **Escrow follow-through.** Finish richer refund/adjustment explanations and
    combined mortgage/escrow coverage on the single account-type model.
 
 ## Dashboard balances and group hierarchy
@@ -235,6 +232,12 @@ semantics, not duplicate business rules in presentation code.
   Save the user's final values and make Cancel a no-op. Keep one GTK/web suggestion
   window per book/context, foreground it on repeated requests, and advance the alpha
   version to `0.2.0a10`.
+- [x] **0172 — Cadence-safe historical coverage.** Match planned coverage to exact
+  year/months in the rolling future window. Bound monthly bridge estimates before a
+  sustained part-year replacement begins without letting an isolated future event
+  hide recurring need. Infer annual, biennial, and triennial amounts and next dates
+  without annualizing active-month values; represent a lone completed event only as
+  a reviewed one-time draft; and advance the alpha version to `0.2.0a11`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -358,7 +361,7 @@ semantics, not duplicate business rules in presentation code.
   count, even if they began after history; expired, inactive, and scenario-suppressed
   schedules do not. Cover updated amounts, partial/full acceptance, and explain
   historical median, applied future coverage, and remaining median separately.
-- [ ] **Long-cycle and partial-year future coverage.** The next twelve planning
+- [x] **0172 — Long-cycle and partial-year future coverage.** The next twelve planning
   months establish one future sample of each calendar month. A schedule every two
   or three years, a seasonal schedule that only begins partway through the future
   year, or a scenario with changing coverage needs cadence-aware matching of
