@@ -97,7 +97,7 @@ the report's as-of date.
 
 When an actual transaction resolves a scheduled/planned occurrence, BreadSched
 retains the original planned occurrence identity and expected amount. Later edits
-to the schedule therefore do not rewrite historical budget-versus-actual results.
+to the schedule therefore do not rewrite historical plan-versus-actual results.
 
 ### Scheduled transactions
 
@@ -269,9 +269,12 @@ its continuing work is tracked in the roadmap.
 
 ## Book files and safety
 
-BreadSched native books use the `.breadsched` suffix and SQLite storage. Verify and
-backup operations are available from the CLI, and schema migrations are expected to
-preserve recoverability. A writable book is protected by a small sidecar lock file;
+BreadSched native books use the `.breadsched` suffix and SQLite storage. Version
+0.2.0a3 is the oldest supported native-book format. Opening one writable upgrades
+it to the current format after making a pre-migration backup; older development
+formats are rejected rather than guessed. This native-format boundary does not
+affect GnuCash, QIF, OFX, or QFX import. Verify and backup operations are available
+from the CLI. A writable book is protected by a small sidecar lock file;
 a second process may still open the book read-only, but cannot become a competing
 writer. Clean shutdown removes the lock, and a stale same-host lock is reclaimed when
 its recorded process no longer exists.

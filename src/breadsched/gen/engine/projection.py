@@ -1,12 +1,8 @@
-"""Multi-year cash-flow projection.
+"""Multi-year cash-flow projection over a chronological planning-event stream.
 
-New schedule-driven scenarios are calculated as a chronological event stream.
 Scheduled transactions and one-off plan items change state on their actual planned
 dates; interest and investment assumptions accrue over the exact interval between
 events. Months remain reporting buckets only.
-
-Legacy budget/combined scenarios keep the period engine temporarily so existing
-books remain readable while the planning UI migrates to scheduled-event budgeting.
 """
 
 from __future__ import annotations
@@ -19,12 +15,12 @@ from decimal import Decimal
 from typing import Literal, TypedDict
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass, AccountType
+from ..lib.account import Account, AccountClass
 from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
-from ..lib.scenario import Assumptions, ProjectionBasis, Scenario, ScenarioSchedule
+from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
-from . import ledger, planning, schedule
+from . import ledger, planning
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -40,7 +36,6 @@ __all__ = [
 ]
 
 _ONE = Decimal(1)
-_TWELFTH = Decimal(1) / Decimal(12)
 # Projection growth rates originate as finite-precision Decimals. Converting them
 # directly to exact Money rationals and compounding forever lets denominators grow
 # without bound, eventually making bigint gcd/multiplication dominate runtime.
@@ -133,16 +128,6 @@ def _report_progress(
     span = max(1, (end - start).days)
     elapsed = min(span, max(0, (current - start).days))
     callback(ProjectionProgress(current=current, end=end, fraction=elapsed / span, phase=phase))
-
-
-def monthly_rate(annual: Rate | Decimal) -> Decimal:
-    """Convert an annual nominal rate to the equivalent monthly compounding rate."""
-    value = annual.decimal if isinstance(annual, Rate) else annual
-    if value == 0:
-        return Decimal(0)
-    if value <= -1:
-        raise ValueError("annual rate must be greater than -100%")
-    return (_ONE + value) ** _TWELFTH - _ONE
 
 
 @dataclass(slots=True)
@@ -238,8 +223,8 @@ class MonthLedger:
         for handle in liability_handles:
             movement = self.liability_movements.get(handle)
             if movement is None:
-                # Backward-compatible month ledgers produced by the legacy period
-                # engine recorded only principal reductions as debt payments.
+                # Older callers may provide principal reductions without the
+                # more general liability-movement field.
                 movement = -self.debt_payments.get(handle, Money(0))
             expected = (
                 self.opening_liabilities.get(handle, Money(0))
@@ -357,7 +342,7 @@ class Projection:
 
     scenario: Scenario
     rows: list[MonthRow] = field(default_factory=list)
-    #: Assumptions that could not be applied, e.g. a budget that was deleted.
+    #: Events or assumptions that could not be applied.
     warnings: list[str] = field(default_factory=list)
 
     # ------------------------------------------------------------------ series
@@ -546,80 +531,6 @@ def _resolve_rate(
     if account.atype.is_investment:
         return assumptions.investment_return
     return Rate(0)
-
-
-def _dated_growth_factor(
-    scenario: Scenario,
-    field: Literal["income_growth", "expense_inflation"],
-    month: date,
-    completed_years: int,
-) -> Decimal:
-    """Compound annual budget escalation using assumptions at each anniversary.
-
-    Income and expense budget growth has historically stepped once per projection
-    year. Preserve that behavior while allowing the rate used for each future
-    annual step to change over time. A period beginning mid-year therefore affects
-    the next annual budget escalation; interest/return rates take effect monthly.
-    """
-    if completed_years <= 0:
-        return _ONE
-    factor = _ONE
-    for year in range(1, completed_years + 1):
-        anniversary = add_months(scenario.start.replace(day=1), year * 12, day=1)
-        if anniversary > month:
-            break
-        assumptions = scenario.assumptions_for(anniversary)
-        rate = (
-            assumptions.income_growth if field == "income_growth" else assumptions.expense_inflation
-        )
-        factor *= _ONE + rate.decimal
-    return factor
-
-
-# ------------------------------------------------------------------ the model
-
-
-@dataclass(slots=True)
-class _MonthFlows:
-    """Accumulates one month's movements, routed by account class.
-
-    A budget line names only one side of a movement, so the other side is inferred
-    to be cash (``funded_from_cash``). A scheduled transaction names both sides, so
-    nothing is inferred and each split is booked exactly where it falls.
-    """
-
-    income: Money = field(default_factory=lambda: Money(0))
-    expense: Money = field(default_factory=lambda: Money(0))
-    cash_delta: Money = field(default_factory=lambda: Money(0))
-    debt_payments: Money = field(default_factory=lambda: Money(0))
-    contributions: dict = field(default_factory=dict)
-
-    def apply(self, account: Account, amount: Money, funded_from_cash: bool = True) -> None:
-        cls = account.account_class
-        if cls is AccountClass.INCOME:
-            # Income accounts carry credit balances, so a pay cheque posts a
-            # negative split value against the income account.
-            self.income = self.income + (amount if funded_from_cash else -amount)
-            if funded_from_cash:
-                self.cash_delta = self.cash_delta + amount
-        elif cls is AccountClass.EXPENSE:
-            self.expense = self.expense + amount
-            if funded_from_cash:
-                self.cash_delta = self.cash_delta - amount
-        elif account.is_spendable_cash:
-            self.cash_delta = self.cash_delta + amount
-        elif cls is AccountClass.ASSET:
-            self.contributions[account.handle] = (
-                self.contributions.get(account.handle, Money(0)) + amount
-            )
-            if account.atype is AccountType.ESCROW and funded_from_cash:
-                self.expense = self.expense + amount
-            if funded_from_cash:
-                self.cash_delta = self.cash_delta - amount
-        elif cls is AccountClass.LIABILITY:
-            self.debt_payments = self.debt_payments + amount
-            if funded_from_cash:
-                self.cash_delta = self.cash_delta - amount
 
 
 @dataclass(slots=True)
@@ -1009,222 +920,7 @@ def project(
     db: DbSQLite, scenario: Scenario, progress: ProgressCallback | None = None
 ) -> Projection:
     """Run a scenario, optionally reporting calendar progress through its horizon."""
-    if scenario.basis is ProjectionBasis.SCHEDULED:
-        return _project_events(db, scenario, progress)
-    return _project_periodic(db, scenario, progress)
-
-
-def _project_periodic(
-    db: DbSQLite, scenario: Scenario, progress: ProgressCallback | None = None
-) -> Projection:
-    """Run ``scenario`` against the ledger and return month-by-month results."""
-    result = Projection(scenario=scenario)
-    start = scenario.start.replace(day=1)
-    day_before = date.fromordinal(start.toordinal() - 1)
-    end = add_months(start, scenario.months, day=1) - timedelta(days=1)
-    _report_progress(progress, start, start, end, "Preparing projection")
-
-    budget = db.get_budget(scenario.budget) if scenario.budget else None
-    if scenario.budget and budget is None:
-        result.warnings.append("the scenario's budget no longer exists; using schedules only")
-    use_budget = budget is not None and scenario.basis in (
-        ProjectionBasis.BUDGET,
-        ProjectionBasis.COMBINED,
-    )
-    use_schedules = scenario.basis in (ProjectionBasis.SCHEDULED, ProjectionBasis.COMBINED)
-
-    # Accounts driven by a schedule are excluded from the budget under COMBINED,
-    # so rent stated in both places is charged once.
-    scheduled_accounts: set[str] = set()
-    if use_schedules and scenario.basis is ProjectionBasis.COMBINED:
-        for sched in db.iter_scheduled():
-            if sched.enabled and sched.in_budget(scenario.budget):
-                scheduled_accounts.update(split.account for split in sched.splits)
-
-    # --- opening position ---------------------------------------------------
-    cash = Money(0)
-    holdings: dict[str, Money] = {}
-    debts: dict[str, Money] = {}
-    accounts: dict[str, Account] = {}
-
-    for account in db.iter_accounts():
-        if account.is_root or account.placeholder or account.exclude_from_projection:
-            continue
-        accounts[account.handle] = account
-        opening = scenario.opening_overrides.get(account.handle)
-        if opening is None:
-            opening = ledger.balance(db, account.handle, as_of=day_before)
-        if account.is_spendable_cash:
-            cash = cash + opening
-        elif account.account_class is AccountClass.ASSET:
-            holdings[account.handle] = opening
-        elif account.account_class is AccountClass.LIABILITY:
-            debts[account.handle] = opening
-
-    one_offs_by_month: dict[int, list] = {}
-    for item in scenario.one_offs:
-        index = (item.when.year - start.year) * 12 + (item.when.month - start.month)
-        if 0 <= index < scenario.months:
-            one_offs_by_month.setdefault(index, []).append(item)
-
-    # --- month loop ---------------------------------------------------------
-    for index in range(scenario.months):
-        month = add_months(start, index, day=1)
-        month_end = date.fromordinal(add_months(start, index + 1, day=1).toordinal() - 1)
-        _report_progress(progress, month, start, end, "Calculating reporting period")
-        year = index // 12
-        assumptions = scenario.assumptions_for(month)
-        income_factor = _dated_growth_factor(scenario, "income_growth", month, year)
-        expense_factor = _dated_growth_factor(scenario, "expense_inflation", month, year)
-        cash_rate = monthly_rate(assumptions.cash_interest)
-
-        cash_open = cash
-        holdings_open = dict(holdings)
-        liabilities_open = dict(debts)
-        flows = _MonthFlows()
-
-        # Budget lines ------------------------------------------------------
-        if use_budget and budget is not None:
-            period = _budget_period(budget, month, scenario.extend_budget)
-            if period is not None:
-                for handle, line in budget.lines.items():
-                    if handle in scheduled_accounts:
-                        continue
-                    budget_account = accounts.get(handle) or db.get_account(handle)
-                    if budget_account is None or budget_account.exclude_from_projection:
-                        continue
-                    amount = line.amount(period)
-                    if not amount:
-                        continue
-                    factor = (
-                        income_factor
-                        if budget_account.account_class is AccountClass.INCOME
-                        else expense_factor
-                    )
-                    flows.apply(budget_account, (amount * factor).quantize(100))
-
-        # Scheduled transactions --------------------------------------------
-        if use_schedules:
-            for occurrence in schedule.forecast_occurrences(db, month, month_end):
-                sched = occurrence.schedule
-                # A projection belongs to a budget, so it only sees the flows that
-                # budget includes. Without this every projection is the same one.
-                if not sched.in_budget(scenario.budget):
-                    continue
-                # strict=False: a template whose calculated legs disagree is a
-                # problem with that schedule, not a reason to abandon a forty-year
-                # forecast. The residual is reported once, below, naming it.
-                try:
-                    legs = sched.resolved_splits(when=occurrence.when)
-                except Exception as exc:  # noqa: BLE001 - one schedule, not the run
-                    _warn_once(
-                        result,
-                        f"scheduled transaction {sched.name!r} could not be "
-                        f"calculated ({exc}); it is left out of this projection",
-                    )
-                    continue
-
-                residual = Money(0)
-                for _account, amount in legs:
-                    residual = residual + amount
-                # Formula legs balance to full precision, not to the cent, so a
-                # sub-cent residue is arithmetic noise rather than a broken
-                # schedule and must not be reported as one.
-                if residual.quantize(100):
-                    _warn_once(
-                        result,
-                        f"scheduled transaction {sched.name!r} does not balance: its "
-                        f"calculated legs differ by {residual}. The forecast uses "
-                        f"them as they stand, so its totals carry that difference.",
-                    )
-
-                for handle, amount in legs:
-                    scheduled_account = accounts.get(handle) or db.get_account(handle)
-                    if scheduled_account is None or scheduled_account.exclude_from_projection:
-                        continue
-                    # A schedule states both sides of the movement itself, so each
-                    # split is booked where it lands and nothing is inferred.
-                    flows.apply(scheduled_account, amount, funded_from_cash=False)
-                funding, covered = escrow_recognition(legs, accounts)
-                flows.expense = flows.expense + funding - _sum(covered.values())
-
-        # One-off events ----------------------------------------------------
-        for item in one_offs_by_month.get(index, []):
-            event_account = accounts.get(item.account) or db.get_account(item.account)
-            if event_account is None:
-                flows.cash_delta = flows.cash_delta + item.amount
-            else:
-                flows.apply(event_account, item.amount)
-
-        # Compounding -------------------------------------------------------
-        interest_earned = (cash_open * cash_rate).quantize(100) if cash_rate else Money(0)
-
-        investment_growth = Money(0)
-        investment_growth_by_account: dict[str, Money] = {}
-        for handle, balance in list(holdings.items()):
-            account = accounts[handle]
-            rate = monthly_rate(_resolve_rate(assumptions, account))
-            growth = (balance * rate).quantize(100) if rate else Money(0)
-            investment_growth = investment_growth + growth
-            investment_growth_by_account[handle] = growth
-            holdings[handle] = balance + growth + flows.contributions.get(handle, Money(0))
-        for handle, amount in flows.contributions.items():
-            if handle not in holdings:
-                holdings[handle] = amount
-
-        interest_charged = Money(0)
-        liability_interest_by_account: dict[str, Money] = {}
-        for handle, owed in list(debts.items()):
-            account = accounts[handle]
-            rate = monthly_rate(_resolve_rate(assumptions, account))
-            charge = (owed * rate).quantize(100) if (rate and owed > 0) else Money(0)
-            interest_charged = interest_charged + charge
-            liability_interest_by_account[handle] = charge
-            debts[handle] = owed + charge
-
-        applied_debt_payments: dict[str, Money] = {}
-        if flows.debt_payments:
-            applied_debt_payments = _apply_payments(debts, flows.debt_payments)
-
-        cash = cash_open + flows.cash_delta + interest_earned
-        month_ledger = MonthLedger(
-            opening_cash=cash_open,
-            opening_holdings=holdings_open,
-            opening_liabilities=liabilities_open,
-            cash_flow=flows.cash_delta,
-            cash_interest=interest_earned,
-            holding_contributions=dict(flows.contributions),
-            investment_growth=investment_growth_by_account,
-            liability_interest=liability_interest_by_account,
-            debt_payments=applied_debt_payments,
-            closing_cash=cash,
-            closing_holdings=dict(holdings),
-            closing_liabilities=dict(debts),
-        )
-        if not month_ledger.reconciles():
-            raise RuntimeError(f"projection month {month:%Y-%m} does not reconcile")
-
-        result.rows.append(
-            MonthRow(
-                index=index,
-                month=month,
-                cash_open=cash_open,
-                income=flows.income,
-                expense=flows.expense,
-                contributions=_sum(flows.contributions.values()),
-                debt_payments=flows.debt_payments,
-                interest_earned=interest_earned,
-                investment_growth=investment_growth,
-                interest_charged=interest_charged,
-                cash_close=cash,
-                holdings=_sum(holdings.values()),
-                liabilities=_sum(debts.values()),
-                ledger=month_ledger,
-            )
-        )
-
-    _report_progress(progress, end, start, end, "Complete")
-    return result
+    return _project_events(db, scenario, progress)
 
 
 def _warn_once(result: Projection, message: str) -> None:
@@ -1238,41 +934,6 @@ def _sum(values) -> Money:
     for value in values:
         total = total + value
     return total
-
-
-def _apply_payments(debts: dict[str, Money], payment: Money) -> dict[str, Money]:
-    """Spread a payment across debts and return the amount applied per account."""
-    remaining = payment
-    applied_by_account: dict[str, Money] = {}
-    for handle in sorted(debts, key=lambda h: debts[h], reverse=True):
-        if remaining <= 0:
-            break
-        owed = debts[handle]
-        if owed <= 0:
-            continue
-        applied = owed if owed < remaining else remaining
-        debts[handle] = owed - applied
-        applied_by_account[handle] = applied
-        remaining = remaining - applied
-    return applied_by_account
-
-
-def _budget_period(budget, month: date, extend: bool) -> int | None:
-    """Which budget period covers ``month``, wrapping past the end if allowed.
-
-    Wrapping repeats the budget's seasonal shape rather than flat-lining it, so a
-    December that always costs more keeps costing more in year four.
-    """
-    period = budget.period_for(month)
-    if period is not None:
-        return period
-    if not extend or budget.periods == 0:
-        return None
-    months_in = (month.year - budget.start.year) * 12 + (month.month - budget.start.month)
-    if months_in < 0:
-        return None
-    index = months_in // budget.kind.months
-    return index % budget.periods
 
 
 class ComparisonRow(TypedDict):

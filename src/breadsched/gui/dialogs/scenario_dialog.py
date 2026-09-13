@@ -43,8 +43,7 @@ class SaveScenarioDialog(Gtk.Window):
         summary = Gtk.Label(xalign=0, wrap=True)
         summary.add_css_class("dim")
         summary.set_text(
-            f"{scenario.years} years from {scenario.start:%b %Y}, "
-            f"{scenario.basis.value} basis.\n"
+            f"{scenario.years} years from {scenario.start:%b %Y}.\n"
             f"Income growth {assumptions.income_growth:.2%}, "
             f"expense inflation {assumptions.expense_inflation:.2%}, "
             f"investment return {assumptions.investment_return:.2%}, "
@@ -77,8 +76,6 @@ class SaveScenarioDialog(Gtk.Window):
         target.name = name
         target.description = self.description_entry.get_text().strip()
         target.years = self.scenario.years
-        target.basis = self.scenario.basis
-        target.budget = self.scenario.budget
         target.start = self.scenario.start
         target.assumptions = self.scenario.assumptions
         target.opening_overrides = dict(self.scenario.opening_overrides)

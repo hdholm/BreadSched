@@ -1,4 +1,4 @@
-"""Derived budget/actual reporting over dated planning events.
+"""Derived plan/actual reporting over dated planning events.
 
 The planning engine is event driven.  This module deliberately introduces display
 periods only after planned occurrences and actual ledger transactions already have
@@ -916,7 +916,6 @@ def build_activity_report(
     end: date,
     *,
     period: ReportingPeriod | str = ReportingPeriod.MONTH,
-    budget_handle: str | None = None,
     scenario: Scenario | None = None,
 ) -> ActivityReport:
     """Aggregate exact-dated planned and actual activity for display.
@@ -935,13 +934,7 @@ def build_activity_report(
     planned = (
         scenario_events(db, scenario, start, end)
         if scenario is not None
-        else scheduled_events(
-            db,
-            start,
-            end,
-            budget_handle=budget_handle,
-            include_actualized=True,
-        )
+        else scheduled_events(db, start, end, include_actualized=True)
     )
     for event in planned:
         bucket = _index_for(periods, event.planned_date)
@@ -984,7 +977,7 @@ def build_category_report(
     """Derive category-period values from planned occurrences and actual splits.
 
     Income and expense accounts are the reporting dimension. Asset/liability
-    transfers therefore affect projection state but never become budget expense.
+    transfers therefore affect projection state but never become planning expense.
     Parent category rows are roll-ups of their descendants.
     """
     activity = build_activity_report(db, start, end, period=period, scenario=scenario)

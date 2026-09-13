@@ -50,6 +50,7 @@ typecheck-extended:
 	mypy src/breadsched/cli src/breadsched/web src/breadsched/gui
 
 build:
+	rm -rf build dist
 	python -m build
 
 check: lint format-check typecheck typecheck-extended test demo build

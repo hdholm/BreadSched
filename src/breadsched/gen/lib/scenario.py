@@ -16,7 +16,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
-from enum import Enum
 from typing import Any
 
 from .base import PrimaryObject, create_handle
@@ -32,23 +31,12 @@ from .scheduled import (
 )
 
 __all__ = [
-    "ProjectionBasis",
     "OneOff",
     "ScenarioSchedule",
     "Assumptions",
     "AssumptionPeriod",
     "Scenario",
 ]
-
-
-class ProjectionBasis(str, Enum):
-    """Where the forecast's recurring cash movements come from."""
-
-    BUDGET = "budget"
-    SCHEDULED = "scheduled"
-    #: Both, with scheduled transactions winning: any account driven by a schedule
-    #: is skipped in the budget so the same rent is not counted twice.
-    COMBINED = "combined"
 
 
 class OneOff:
@@ -454,8 +442,6 @@ class Scenario(PrimaryObject):
         description: str = "",
         start: date | None = None,
         years: int = 5,
-        basis: ProjectionBasis | str = ProjectionBasis.SCHEDULED,
-        budget: str | None = None,
         assumptions: Assumptions | None = None,
         assumption_periods: list[AssumptionPeriod] | None = None,
         schedule_overrides: list[ScenarioSchedule] | None = None,
@@ -465,17 +451,12 @@ class Scenario(PrimaryObject):
         self.description = description
         self.start = start or date.today().replace(day=1)
         self.years = years
-        self.basis = ProjectionBasis(basis) if not isinstance(basis, ProjectionBasis) else basis
-        #: Handle of the budget that supplies recurring amounts, if any.
-        self.budget = budget
         self.assumptions = assumptions or Assumptions()
         self.assumption_periods = list(assumption_periods or [])
         self.schedule_overrides = list(schedule_overrides or [])
         #: Pretend an account starts at this balance instead of its ledger balance.
         self.opening_overrides: dict[str, Money] = {}
         self.one_offs: list[OneOff] = []
-        #: When the budget runs out of periods, repeat its final year with growth.
-        self.extend_budget = True
 
     def assumptions_for(self, when: date) -> Assumptions:
         """Return the assumptions in force on ``when``.
@@ -507,8 +488,6 @@ class Scenario(PrimaryObject):
             "description": self.description,
             "start": self.start.isoformat(),
             "years": self.years,
-            "basis": self.basis.value,
-            "budget": self.budget,
             "assumptions": self.assumptions.serialize(),
             "assumption_periods": [p.serialize() for p in self.assumption_periods],
             "schedule_overrides": [item.serialize() for item in self.schedule_overrides],
@@ -516,7 +495,6 @@ class Scenario(PrimaryObject):
                 k: [v.numerator, v.denominator] for k, v in self.opening_overrides.items()
             },
             "one_offs": [o.serialize() for o in self.one_offs],
-            "extend_budget": self.extend_budget,
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -524,8 +502,6 @@ class Scenario(PrimaryObject):
         self.description = data.get("description", "")
         self.start = date.fromisoformat(data["start"])
         self.years = data.get("years", 5)
-        self.basis = ProjectionBasis(data.get("basis", "combined"))
-        self.budget = data.get("budget")
         self.assumptions = Assumptions.from_dict(data.get("assumptions", {}))
         self.assumption_periods = [
             AssumptionPeriod.from_dict(item) for item in data.get("assumption_periods", [])
@@ -537,7 +513,6 @@ class Scenario(PrimaryObject):
             k: Money(*v) for k, v in data.get("opening_overrides", {}).items()
         }
         self.one_offs = [OneOff.from_dict(o) for o in data.get("one_offs", [])]
-        self.extend_budget = data.get("extend_budget", True)
 
     def __repr__(self) -> str:
-        return f"<Scenario {self.name!r} {self.years}y basis={self.basis.value}>"
+        return f"<Scenario {self.name!r} {self.years}y>"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..gen.lib import Assumptions, ProjectionBasis, Scenario
+from ..gen.lib import Assumptions, Scenario
 
 __all__ = [
     "baseline_scenario",
@@ -33,7 +33,6 @@ def baseline_scenario(manager, db=None) -> Scenario:
             name="Base scenario",
             start=date.today().replace(month=1, day=1),
             years=10,
-            basis=ProjectionBasis.SCHEDULED,
         )
         if db is not None:
             stored = db.get_metadata(_BASE_ASSUMPTIONS_KEY, None)

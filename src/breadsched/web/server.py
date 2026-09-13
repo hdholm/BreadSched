@@ -28,8 +28,6 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
-    budgeting,
-    cashflow,
     estimates,
     fsa_claims,
     ledger,
@@ -52,7 +50,6 @@ from ..gen.lib import (
     PeriodType,
     PlanningFlowKind,
     PlanningResolution,
-    ProjectionBasis,
     Recurrence,
     Scenario,
     ScenarioSchedule,
@@ -272,7 +269,6 @@ class Api:
             "transactions": counts["txn"],
             "cash": ledger.cash_on_hand(self.db),
             "net_worth": ledger.net_worth(self.db),
-            "budgets": [b.name for b in self.db.iter_budgets()],
             "scenarios": [s.name for s in self.db.iter_scenarios()],
         }
 
@@ -331,38 +327,6 @@ class Api:
         with self.db.transaction(f"Set account type for {account.name}") as txn:
             self.db.commit_account(account, txn)
         return {"handle": account.handle, "type": account.atype.value}
-
-    def account_kind_save(self, payload: dict) -> dict:
-        """Compatibility endpoint for the former account-kind web client."""
-        account = self.db.get_account(str(payload.get("handle", "")))
-        if account is None:
-            raise KeyError(str(payload.get("handle", "")))
-        legacy = str(payload.get("kind", "ordinary"))
-        mapping = {
-            "retirement": AccountType.RETIREMENT,
-            "fsa": AccountType.FSA,
-            "investment": AccountType.INVESTMENT,
-            "escrow": AccountType.ESCROW,
-            "debt": (
-                AccountType.CREDIT if account.atype is AccountType.CREDIT else AccountType.LOAN
-            ),
-        }
-        account_type = mapping.get(legacy)
-        if account_type is None:
-            return {"handle": account.handle, "type": account.atype.value, "kind": legacy}
-        result = self.account_type_save({"handle": account.handle, "type": account_type.value})
-        return {**result, "kind": legacy}
-
-    def account_planning_role_save(self, payload: dict) -> dict:
-        """Compatibility endpoint for older web clients."""
-        migrated = dict(payload)
-        migrated["kind"] = payload.get("planning_role", "ordinary")
-        result = self.account_kind_save(migrated)
-        return {
-            "handle": result["handle"],
-            "kind": result["kind"],
-            "planning_role": result["kind"],
-        }
 
     def account_fsa_years_save(self, payload: dict) -> dict:
         handle = str(payload.get("handle", ""))
@@ -702,7 +666,6 @@ class Api:
             name="Base scenario",
             start=start,
             years=max(1, end.year - start.year + 1),
-            basis=ProjectionBasis.SCHEDULED,
         )
         stored = self.db.get_metadata("planning.base_assumptions", None)
         if isinstance(stored, dict):
@@ -1924,52 +1887,6 @@ class Api:
             "candidates": candidates,
         }
 
-    def budget(self, name: str | None = None) -> dict:
-        budgets = list(self.db.iter_budgets())
-        if name:
-            budgets = [b for b in budgets if b.name == name]
-        if not budgets:
-            return {"budget": None, "labels": [], "lines": []}
-        report = cashflow.build_report(self.db, budgets[0])
-        return {
-            "budget": report.budget.name,
-            "kind": report.budget.kind.value,
-            "labels": report.labels,
-            "shortfalls": report.shortfall_periods(),
-            "net": [report.net_cash_flow(p) for p in range(report.budget.periods)],
-            "net_actual": [
-                report.net_cash_flow(p, actual=True) for p in range(report.budget.periods)
-            ],
-            "lines": [
-                {
-                    "account": line.name,
-                    "class": line.account_class.value,
-                    "budgeted": [p.budgeted for p in line.periods],
-                    "actual": [p.actual for p in line.periods],
-                    "total_budgeted": line.budgeted_total,
-                    "total_actual": line.actual_total,
-                    "variance": line.variance_total,
-                }
-                for line in report.lines
-            ],
-        }
-
-    def coverage(self, name: str | None = None) -> list[dict]:
-        budgets = list(self.db.iter_budgets())
-        if name:
-            budgets = [b for b in budgets if b.name == name]
-        if not budgets:
-            return []
-        return [
-            {
-                "account": row.name,
-                "budgeted": row.budgeted,
-                "scheduled": row.scheduled,
-                "unexplained": row.unexplained,
-            }
-            for row in budgeting.coverage(self.db, budgets[0])
-        ]
-
     def _projection_draft(
         self, scenario_handle: str | None = None, years: int | None = None
     ) -> Scenario:
@@ -1993,15 +1910,6 @@ class Api:
         if years < 1 or years > 100:
             raise ValueError("projection years must be between 1 and 100")
         scenario.years = years
-        basis = str(payload.get("basis", scenario.basis.value))
-        try:
-            scenario.basis = ProjectionBasis(basis)
-        except ValueError:
-            raise ValueError("choose a valid projection basis") from None
-        budget = str(payload.get("budget") or "").strip() or None
-        if budget is not None and self.db.get_budget(budget) is None:
-            raise ValueError("choose a valid budget")
-        scenario.budget = budget
         scenario.assumptions = self._assumptions_from_payload(
             payload.get("assumptions", scenario.assumptions.serialize()),
             scenario.assumptions,
@@ -2016,8 +1924,6 @@ class Api:
                 "handle": None if base else scenario.handle,
                 "name": scenario.name,
                 "years": scenario.years,
-                "basis": scenario.basis.value,
-                "budget": scenario.budget,
                 "assumptions": scenario.assumptions.serialize(),
             },
             "controls": {
@@ -2027,9 +1933,6 @@ class Api:
                         {"handle": item.handle, "name": item.name}
                         for item in self.db.iter_scenarios()
                     ],
-                ],
-                "budgets": [
-                    {"handle": item.handle, "name": item.name} for item in self.db.iter_budgets()
                 ],
             },
             "summary": result.summary(),
@@ -2571,8 +2474,6 @@ ROUTES = {
     "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
     "/api/scenarios": lambda a, q: a.scenarios(),
     "/api/scenario/events": lambda a, q: a.scenario_events(q.get("handle", [None])[0]),
-    "/api/budget": lambda a, q: a.budget(q.get("name", [None])[0]),
-    "/api/coverage": lambda a, q: a.coverage(q.get("name", [None])[0]),
     "/api/projection": lambda a, q: a.projection(
         q.get("scenario", [None])[0],
         int(q["years"][0]) if q.get("years") else None,
@@ -2583,8 +2484,6 @@ POST_ROUTES = {
     "/api/dashboard/config": lambda a, body: a.dashboard_config_save(body),
     "/api/account/type": lambda a, body: a.account_type_save(body),
     "/api/plan/settings": lambda a, body: a.plan_settings_save(body),
-    "/api/account/planning-role": lambda a, body: a.account_planning_role_save(body),
-    "/api/account/kind": lambda a, body: a.account_kind_save(body),
     "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),
     "/api/fsa/claim/save": lambda a, body: a.fsa_claim_save(body),
     "/api/fsa/claim/delete": lambda a, body: a.fsa_claim_delete(body),

@@ -232,14 +232,13 @@ class TestLoanSetup:
 
     def test_a_projection_shows_the_debt_falling(self, db, terms):
         from breadsched.gen.engine import projection
-        from breadsched.gen.lib import ProjectionBasis, Scenario
+        from breadsched.gen.lib import Scenario
 
         create_loan(db, terms)
         scenario = Scenario(
             name="With a mortgage",
             start=date(2026, 1, 1),
             years=5,
-            basis=ProjectionBasis.SCHEDULED,
         )
         result = projection.project(db, scenario)
         assert result.rows[-1].liabilities < result.rows[0].liabilities
@@ -247,14 +246,13 @@ class TestLoanSetup:
 
     def test_formula_loan_projection_follows_its_amortisation_table(self, db, terms):
         from breadsched.gen.engine import projection
-        from breadsched.gen.lib import ProjectionBasis, Scenario
+        from breadsched.gen.lib import Scenario
 
         create_loan(db, terms)
         scenario = Scenario(
             name="Economic consistency",
             start=date(2026, 1, 1),
             years=5,
-            basis=ProjectionBasis.SCHEDULED,
             assumptions=Assumptions(
                 income_growth="0.04",
                 expense_inflation="0.03",

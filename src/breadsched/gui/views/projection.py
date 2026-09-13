@@ -18,7 +18,7 @@ from time import monotonic
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
-from ...gen.lib import Assumptions, ProjectionBasis, Scenario  # noqa: E402
+from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.utils.logs import get_logger  # noqa: E402
 from ..gi_setup import GLib, Gtk
 from ..planning_context import (
@@ -37,12 +37,6 @@ LOG = get_logger(__name__)
 
 _PROGRESS_POPUP_DELAY_SECONDS = 0.5
 
-_BASIS_ORDER = [
-    ProjectionBasis.SCHEDULED,
-    ProjectionBasis.BUDGET,
-    ProjectionBasis.COMBINED,
-]
-
 _ASSUMPTIONS = [
     ("income_growth", "Income growth", -0.05, 0.15, 0.03),
     ("expense_inflation", "Expense inflation", -0.02, 0.15, 0.025),
@@ -60,7 +54,6 @@ class ProjectionView(BaseView):
         "scenario-add",
         "scenario-update",
         "scenario-delete",
-        "budget-update",
         "transaction-add",
     )
 
@@ -168,23 +161,6 @@ class ProjectionView(BaseView):
         years_box.append(self.years_spin)
         box.append(years_box)
 
-        basis_box = Gtk.Box(spacing=8)
-        basis_box.append(Gtk.Label(label="Driven by", xalign=0))
-        self.basis_picker = Gtk.DropDown.new_from_strings(
-            ["Scheduled events", "Legacy budget", "Legacy budget + schedules"]
-        )
-        self.basis_picker.set_selected(_BASIS_ORDER.index(self.scenario.basis))
-        self.basis_picker.connect("notify::selected", self._on_input_changed)
-        basis_box.append(self.basis_picker)
-        box.append(basis_box)
-
-        budget_box = Gtk.Box(spacing=8)
-        budget_box.append(Gtk.Label(label="Budget", xalign=0))
-        self.budget_picker = Gtk.DropDown()
-        self.budget_picker.connect("notify::selected", self._on_input_changed)
-        budget_box.append(self.budget_picker)
-        box.append(budget_box)
-
         scroller = Gtk.ScrolledWindow(child=box)
         scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         return scroller
@@ -242,7 +218,6 @@ class ProjectionView(BaseView):
         self._updating = True
         try:
             self._populate_scenarios()
-            self._populate_budgets()
         finally:
             self._updating = False
         self.recompute()
@@ -276,7 +251,6 @@ class ProjectionView(BaseView):
 
     def _load_scenario_controls(self) -> None:
         self.years_spin.set_value(self.scenario.years)
-        self.basis_picker.set_selected(_BASIS_ORDER.index(self.scenario.basis))
         for key, scale in self._scales.items():
             scale.set_value(float(getattr(self.scenario.assumptions, key)))
 
@@ -287,36 +261,9 @@ class ProjectionView(BaseView):
         if self._is_visible():
             self.schedule_refresh()
 
-    def _populate_budgets(self) -> None:
-        if self.db is None:
-            return
-        self._budgets = list(self.db.iter_budgets())
-        model = Gtk.StringList()
-        model.append("None")
-        for budget in self._budgets:
-            model.append(budget.name)
-        self.budget_picker.set_model(model)
-        if (
-            self.scenario.budget is None
-            and self._budgets
-            and self.scenario.basis is not ProjectionBasis.SCHEDULED
-        ):
-            self.scenario.budget = self._budgets[0].handle
-        for index, budget in enumerate(self._budgets):
-            if budget.handle == self.scenario.budget:
-                self.budget_picker.set_selected(index + 1)
-                break
-
     def _collect(self) -> Scenario:
         """Read controls into the selected draft without sharing saved DB objects."""
         self.scenario.years = int(self.years_spin.get_value())
-        self.scenario.basis = _BASIS_ORDER[self.basis_picker.get_selected()]
-        selected = self.budget_picker.get_selected()
-        self.scenario.budget = (
-            self._budgets[selected - 1].handle
-            if 0 < selected <= len(getattr(self, "_budgets", []))
-            else None
-        )
         rates = {
             key: Decimal(str(round(scale.get_value(), 4))) for key, scale in self._scales.items()
         }
@@ -510,7 +457,6 @@ class ProjectionView(BaseView):
         self._updating = True
         try:
             self._load_scenario_controls()
-            self._populate_budgets()
             self.save_button.set_label(
                 "Save scenario changes" if chosen is not None else "Save base as scenario"
             )

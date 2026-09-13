@@ -293,7 +293,7 @@ class Money:
     def allocate(self, parts: int) -> list[Money]:
         """Split into ``parts`` cent-exact amounts that sum back to ``self``.
 
-        Used when a yearly budget figure has to be spread across months without
+        Used when a yearly planning figure has to be spread across months without
         losing or inventing a cent.
         """
         if parts < 1:

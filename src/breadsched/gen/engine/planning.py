@@ -234,7 +234,6 @@ def scheduled_events(
     start: date,
     end: date,
     *,
-    budget_handle: str | None = None,
     include_disabled: bool = False,
     include_actualized: bool = True,
     exclude_handles: set[str] | None = None,
@@ -242,7 +241,7 @@ def scheduled_events(
     """Generate recurring plan events in chronological order.
 
     Skipped dates are deliberately absent from the plan.  Posted/matched dates are
-    retained as actualized events so historical budget-vs-actual reporting can
+    retained as actualized events so historical plan-vs-actual reporting can
     preserve both the original estimate and the ledger fact.
     """
     linked = _linked_actuals(db) if include_actualized else {}
@@ -252,8 +251,6 @@ def scheduled_events(
         if schedule.handle in excluded:
             continue
         if not schedule.enabled and not include_disabled:
-            continue
-        if not schedule.in_budget(budget_handle):
             continue
         for when in schedule.recurrence.occurrences(end, since=start):
             if when in schedule.skipped:
@@ -358,7 +355,6 @@ def scenario_events(
         db,
         start,
         end,
-        budget_handle=scenario.budget,
         exclude_handles=replaced,
     )
     events.extend(_scenario_scheduled_events(db, scenario, start, end))
@@ -394,14 +390,10 @@ def unresolved_events(
     db: DbSQLite,
     start: date,
     end: date,
-    *,
-    budget_handle: str | None = None,
 ) -> list[PlannedEvent]:
     """Expected scheduled occurrences that have not yet been resolved to an actual."""
     return [
-        event
-        for event in scheduled_events(db, start, end, budget_handle=budget_handle)
-        if event.status is EventStatus.EXPECTED
+        event for event in scheduled_events(db, start, end) if event.status is EventStatus.EXPECTED
     ]
 
 
@@ -486,7 +478,6 @@ def match_candidates(
     transaction: Transaction,
     *,
     window_days: int = 7,
-    budget_handle: str | None = None,
 ) -> list[MatchCandidate]:
     """Rank unresolved schedule occurrences near ``transaction`` conservatively.
 
@@ -507,7 +498,6 @@ def match_candidates(
         db,
         start,
         end,
-        budget_handle=budget_handle,
         include_actualized=True,
     ):
         if event.status is EventStatus.ACTUALIZED:

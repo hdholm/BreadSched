@@ -1,8 +1,8 @@
-"""Create a scheduled transaction, or a budget-only estimate.
+"""Create a scheduled transaction, or a planning-only estimate.
 
 The two are the same object with one flag between them, and the dialog says so
 plainly rather than hiding it: a *commitment* is posted to the ledger when it falls
-due, while an *estimate* shapes budgets and forecasts and is never posted. Choosing
+due, while an *estimate* shapes plans and forecasts and is never posted. Choosing
 wrongly is the difference between a forecast and a fabricated ledger, so the choice
 is made explicitly here rather than inferred.
 
@@ -147,7 +147,7 @@ class ScheduleDialog(Gtk.Window):
         self.kind = Gtk.DropDown.new_from_strings(
             [
                 "Commitment - posted to the ledger when due",
-                "Estimate - shapes budgets only, never posted",
+                "Estimate - shapes plans only, never posted",
             ]
         )
         grid.attach(Gtk.Label(label="Kind", xalign=0), 0, row, 1, 1)

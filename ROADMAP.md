@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0161 — hierarchical, account-aware dashboard groups**.
-The current candidate series is **0162–0164**.
+The accepted baseline is **0164 — safe Plan detachment**.
+The current candidate is **0165 — clean schema-4 event-planning core**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -72,8 +72,8 @@ semantics, not duplicate business rules in presentation code.
   `verify_book()` remains the exhaustive diagnostic.
 - [x] **0136 — Transactional metadata/FSA claims.** Direct metadata commits cannot
   escape an active `DbTxn`; transactional metadata participates in undo/redo; FSA
-  claims are first-class persisted records migrated from legacy metadata and save
-  atomically with reimbursement split classifications.
+  claims are first-class persisted records and save atomically with reimbursement
+  split classifications.
 - [x] **0138 — First expanded quality gates.** A dedicated serial performance gate
   measures single-write cost on a synthetic 30,000-transaction household book;
   Hypothesis-based recurrence properties exercise randomized intervals, dates,
@@ -100,9 +100,8 @@ semantics, not duplicate business rules in presentation code.
 2. **Scheduled-entry and import usability**, now that the Dashboard balance and
    hierarchy block is implemented in 0161. Mortgage planning-flow semantics require
    design review.
-3. **Account-kind follow-through.** The canonical kind and initial escrow semantics
-   landed in 0160; finish richer refund/adjustment explanations and remove the
-   temporary compatibility names after supported clients migrate.
+3. **Escrow follow-through.** Finish richer refund/adjustment explanations and
+   combined mortgage/escrow coverage on the single account-type model.
 
 ## Dashboard balances and group hierarchy
 
@@ -156,10 +155,6 @@ semantics, not duplicate business rules in presentation code.
   - [x] Continue pytest-xdist rollout: core/non-GTK uses `pytest -n auto`; GTK stays
     serial and the realistic performance gate runs separately with `-n 0`.
   - [x] Preserve `make test-ordered` / `pytest -n 0` as a deterministic diagnostic path.
-- [x] **0139 — Repair stale legacy-budget CLI lookups.** Documented `activity`,
-  `plan-unresolved`, and `plan-matches` budget filters use the supported database
-  iteration API instead of a nonexistent `get_budget_by_name` method, with CLI
-  regressions covering the documented options.
 - [ ] Harden `Money` and amount handling:
   - [x] **0140 — Core parsing/comparison safety.** Ambiguous locale-formatted strings are rejected instead of silently mis-scaled; equality/hash behavior follows Python's numeric contract; non-numeric equality does not raise.
   - [x] **0141 — QIF/OFX number-format parsing.** Detect period-vs-comma decimal conventions from the complete import file, parse grouping explicitly, reject conflicting conventions, and allow an explicit importer override for ambiguous files.
@@ -179,8 +174,12 @@ semantics, not duplicate business rules in presentation code.
   sidecar lock, competing writers fail with an explicit read-only alternative,
   read-only opens remain allowed, stale same-host locks are safely reclaimed, and
   canonical path identity prevents a symlink alias from bypassing the writer lock.
-- [ ] Finish the deliberate legacy Budget-domain migration after mapping every
-  remaining CLI/Dashboard/cash-flow/Projection dependency.
+- [x] **0165 — Clean schema-4 event-planning core.** Remove the retired monthly
+  Budget domain, its alternate projection engine, compatibility commands/routes,
+  and pre-0.2.0a3 native migrations. Keep one transactional schema-3-to-4 cleanup
+  with a safety backup; reject older native development formats explicitly while
+  preserving all external GnuCash/QIF/OFX/QFX import paths. Remove obsolete product
+  naming and advance the alpha version to `0.2.0a4`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -237,8 +236,8 @@ semantics, not duplicate business rules in presentation code.
   concepts are separate from ordinary custodial ledger balance.
 - [x] Claims/service episodes support multiple payment links, allocations,
   reimbursements, refunds, rejections, and Review/Dashboard workflows.
-- [x] FSA claims are first-class transactional persisted objects with migration from
-  legacy metadata and atomic undo/redo with linked split classifications.
+- [x] FSA claims are first-class transactional persisted objects with atomic
+  undo/redo and linked split classifications.
 
 ## Import and interoperability
 
@@ -344,17 +343,17 @@ semantics, not duplicate business rules in presentation code.
   scheduled contribution from cash to escrow is the planning expense at funding
   time even though the ledger debit increases an asset. Later scheduled payments
   from escrow to tax, insurance, or other expense accounts are draws against that
-  already budgeted amount, not a second planning expense. Keep both ledger legs
+  already planned amount, not a second planning expense. Keep both ledger legs
   intact for balances and show escrow balance rising and falling on the correct
-  dates in Projection; distinguish budgeted expense from cash movement and net-worth
+  dates in Projection; distinguish planned expense from cash movement and net-worth
   changes. Shared recognition covers scheduled and actual funding/draw cycles,
   partial payouts, category Plan totals, historical estimates, Dashboard grouping,
   and Projection state/explanations without changing ledger splits.
 - [x] **0162 — One semantic account type and explicit dashboards.** Replace the
   user-visible ledger-type/account-kind pair with one BreadSched-owned type whose
   accounting class and planning behavior are derived. Retain exact GnuCash source
-  type as read-only provenance; map old books deterministically; preserve the local
-  type on re-import and report cross-class conflicts. Document every visible type
+  type as read-only provenance; preserve the local type on re-import and report
+  cross-class conflicts. Document every visible type
   and the mapping rationale. Remove inferred dashboard groups, honor only explicit
   account/config assignments, and omit hidden direct members. Begin PEP 440 alpha
   versioning at `0.2.0a1` from one authoritative version source.
@@ -370,8 +369,7 @@ semantics, not duplicate business rules in presentation code.
 - [ ] **Escrow follow-through.** Add dedicated explanations for refunds, manual
   adjustments, negative escrow balances, and combined mortgage/escrow payments;
   expand imported GnuCash fixtures and scenario override tests for those cases.
-  Remove the temporary `/api/account/planning-role` request compatibility endpoint
-  after older web clients have migrated to `/api/account/type`.
+  Keep the account-type API and UI aligned as explanations expand.
 - [x] **Row and column totals.** Totals across periods and down each period column
   cover planned, actual, and variance values consistently. Category section totals
   count outermost rollups once; planning flows remain separate; Net cash change is

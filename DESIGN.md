@@ -220,12 +220,6 @@ STOCK/MUTUAL to Investment, the flow/equity/root types directly, and TRADING to
 Technical. GnuCash alone does not identify an FSA, Escrow, Retirement account, or
 Loan; those types require explicit selection or stronger reviewed evidence.
 
-Older persisted ledger-type/account-kind pairs migrate with the specialized kind
-taking precedence. Debt plus CREDIT becomes Credit card; other Debt accounts become
-Loan. Ordinary legacy STOCK/MUTUAL accounts become Investment and the other legacy
-types follow the conservative source mapping. Explicit split purposes continue to
-override inferred behavior without changing either ledger leg.
-
 Inference precedence is:
 
 1. explicit split planning-purpose override;
@@ -298,10 +292,17 @@ root.
 
 ## Storage and transactions
 
-SQLite is the native persistence engine. The design priorities are atomic financial
-writes, deterministic migrations, backups before dangerous transformations,
-recoverability, undo/redo integrity, and realistic performance on long household
-histories.
+SQLite is the native persistence engine. Schema 3, written by BreadSched 0.2.0a3,
+is the native compatibility baseline. Earlier development schemas have no supported
+upgrade path and are rejected explicitly. Schema 3 receives one transactional,
+pre-backed-up cleanup to schema 4, which removes the retired monthly Budget domain.
+Future persistent-model changes still require explicit forward migrations from the
+supported baseline. This native-book policy is independent of external GnuCash,
+QIF, OFX, and QFX import compatibility.
+
+The storage priorities are atomic financial writes, deterministic migrations,
+backups before dangerous transformations, recoverability, undo/redo integrity, and
+realistic performance on long household histories.
 
 Verification should protect invariants without imposing whole-book work on every
 small edit. Cross-cutting metadata that participates in financial workflows must
@@ -313,9 +314,7 @@ in rollback, undo, and redo.
 Financial workflow records should not be stored as opaque metadata collections when
 they have their own identity and lifecycle. FSA claims are first-class primary
 objects: one claim save transaction can update linked reimbursement split
-classifications and the claim row atomically, and one undo reverses both. Schema
-migrations move legacy claim metadata into the primary-object table before normal
-book use.
+classifications and the claim row atomically, and one undo reverses both.
 
 
 ### Performance and randomized correctness gates
@@ -323,7 +322,7 @@ book use.
 Performance regressions should be guarded at the operation boundary rather than by
 timing unrelated setup. The performance gate therefore creates one realistic
 synthetic 30,000-transaction history outside the measured interval, then times both
-one ordinary commit and a 30-year projection. Budgets are intentionally much looser
+one ordinary commit and a 30-year projection. Timing limits are intentionally much looser
 than normal performance while remaining below the historical regressions they are
 intended to catch.
 

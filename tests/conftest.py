@@ -31,7 +31,6 @@ from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
     Account,
     AccountType,
-    Budget,
     Money,
     PeriodType,
     Recurrence,
@@ -200,22 +199,6 @@ def funded_book(db, book):
             txn,
         )
     return book
-
-
-@pytest.fixture
-def monthly_budget(db, book):
-    """A twelve-month cash-flow budget for 2026."""
-    budget = Budget(name="2026", start=date(2026, 1, 1), periods=12)
-    budget.set_monthly(book.salary, "4200.00")
-    budget.set_monthly(book.rent, "1800.00")
-    budget.set_monthly(book.groceries, "600.00")
-    budget.set_monthly(book.utilities, "150.00")
-    # Heating is seasonal: the point of per-period amounts.
-    budget.set_amount(book.utilities, 0, "310.00")
-    budget.set_amount(book.utilities, 1, "290.00")
-    with db.transaction("Add budget") as txn:
-        db.add_budget(budget, txn)
-    return budget
 
 
 @pytest.fixture

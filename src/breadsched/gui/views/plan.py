@@ -174,7 +174,7 @@ class PlanView(BaseView):
         note = Gtk.Label(
             label=(
                 "Income and expense values are derived from exact-dated scheduled/estimated "
-                "and actual transaction splits; reporting periods do not store budget values."
+                "and actual transaction splits; reporting periods do not store planning values."
             ),
             xalign=0,
             wrap=True,
@@ -304,7 +304,6 @@ class PlanView(BaseView):
         scenario = Scenario(
             start=self._start_date,
             years=max(1, self._end_date.year - self._start_date.year + 1),
-            basis=base.basis,
             assumptions=Assumptions.from_dict(base.assumptions.serialize()),
         )
         SaveScenarioDialog(self.get_root(), self.db, scenario).present()

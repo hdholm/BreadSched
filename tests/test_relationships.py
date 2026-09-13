@@ -1,4 +1,4 @@
-"""Account relationships, inference, and budgets that can differ from each other.
+"""Account relationships, inference, and scheduled planning events.
 
 An imported book states what happened, not what it means. A mortgage never names
 the house it bought; a card's due date exists only as a pattern in its payments.
@@ -16,7 +16,7 @@ import pytest
 
 from breadsched.cli.main import main as cli
 from breadsched.gen.db.sqlite import DbSQLite
-from breadsched.gen.engine import budgeting, inference
+from breadsched.gen.engine import inference
 from breadsched.gen.lib import Money
 
 
@@ -27,7 +27,7 @@ def book_path(tmp_path, capsys):
     for name, kind, parent in (
         ("Home Easton", "ASSET", "Assets"),
         ("Mortgage Easton", "LIABILITY", "Liabilities"),
-        ("Visa", "CREDIT", "Liabilities"),
+        ("Visa", "CREDIT CARD", "Liabilities"),
         ("Checking", "BANK", "Assets"),
     ):
         cli(["account", str(path), "add", "--name", name, "--type", kind, "--parent", parent])
@@ -370,8 +370,8 @@ class TestInference:
 
 
 @pytest.fixture
-def budgeted(book_path, capsys):
-    """A book with one estimate and one budget built from it."""
+def planned(book_path, capsys):
+    """A book with one monthly estimate."""
     cli(
         [
             "estimate",
@@ -391,170 +391,15 @@ def budgeted(book_path, capsys):
             "2026-01-01",
         ]
     )
-    cli(["budget-new", str(book_path), "--name", "Base", "--start", "2026-01-01"])
     capsys.readouterr()
     return book_path
 
 
-class TestMultipleBudgets:
-    def test_a_budget_can_be_cloned(self, budgeted, capsys):
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        capsys.readouterr()
-        db = open_book(budgeted)
-        try:
-            assert {b.name for b in db.iter_budgets()} == {"Base", "Tighter"}
-        finally:
-            db.close()
-
-    def test_the_clone_carries_the_figures_but_its_own_identity(self, budgeted, capsys):
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        capsys.readouterr()
-        db = open_book(budgeted)
-        try:
-            base = next(b for b in db.iter_budgets() if b.name == "Base")
-            clone = next(b for b in db.iter_budgets() if b.name == "Tighter")
-            assert clone.handle != base.handle
-            assert clone.lines.keys() == base.lines.keys()
-        finally:
-            db.close()
-
-    def test_editing_the_clone_leaves_the_original_alone(self, budgeted, capsys):
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        capsys.readouterr()
-        db = open_book(budgeted)
-        try:
-            clone = next(b for b in db.iter_budgets() if b.name == "Tighter")
-            account = next(iter(clone.lines))
-            before = next(b for b in db.iter_budgets() if b.name == "Base").amount(account, 0)
-            clone.set_amount(account, 0, "1.00")
-            with db.transaction("edit") as txn:
-                db.commit_budget(clone, txn)
-            after = next(b for b in db.iter_budgets() if b.name == "Base").amount(account, 0)
-            assert after == before
-        finally:
-            db.close()
-
-    def test_the_clone_inherits_the_schedules(self, budgeted, capsys):
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        capsys.readouterr()
-        db = open_book(budgeted)
-        try:
-            clone = next(b for b in db.iter_budgets() if b.name == "Tighter")
-            assert any(s.in_budget(clone.handle) for s in db.iter_scheduled())
-        finally:
-            db.close()
-
-    def test_a_schedule_can_be_removed_from_one_budget_only(self, budgeted, capsys):
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        cli(
-            [
-                "budget-member",
-                str(budgeted),
-                "remove",
-                "--budget",
-                "Tighter",
-                "--schedule",
-                "Groceries",
-            ]
-        )
-        capsys.readouterr()
-        db = open_book(budgeted)
-        try:
-            base = next(b for b in db.iter_budgets() if b.name == "Base")
-            clone = next(b for b in db.iter_budgets() if b.name == "Tighter")
-            sched = next(s for s in db.iter_scheduled() if s.name == "Groceries")
-            assert sched.in_budget(base.handle) is True
-            assert sched.in_budget(clone.handle) is False
-        finally:
-            db.close()
-
-    def test_membership_defaults_to_every_budget(self, budgeted):
-        """A schedule created before budgets existed must not vanish from them."""
-        db = open_book(budgeted)
-        try:
-            sched = next(s for s in db.iter_scheduled() if s.name == "Groceries")
-            assert sched.budgets == []
-            assert sched.in_budget("anything") is True
-        finally:
-            db.close()
-
-    def test_the_budget_a_flow_is_removed_from_stops_counting_it(self, budgeted, capsys):
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        cli(
-            [
-                "budget-member",
-                str(budgeted),
-                "remove",
-                "--budget",
-                "Tighter",
-                "--schedule",
-                "Groceries",
-            ]
-        )
-        capsys.readouterr()
-        db = open_book(budgeted)
-        try:
-            clone = next(b for b in db.iter_budgets() if b.name == "Tighter")
-            rebuilt = budgeting.from_schedules(
-                db,
-                name="check",
-                start=date(2026, 1, 1),
-                periods=12,
-                budget_handle=clone.handle,
-            )
-            assert not rebuilt.lines
-        finally:
-            db.close()
-
-    def test_a_current_budget_can_be_chosen(self, budgeted, capsys):
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        cli(["budget-use", str(budgeted), "Tighter"])
-        capsys.readouterr()
-        db = open_book(budgeted)
-        try:
-            assert budgeting.current_budget(db).name == "Tighter"
-        finally:
-            db.close()
-
-    def test_the_dashboard_uses_the_plan_not_legacy_budget_selection(self, budgeted, capsys):
-        from breadsched.gen.engine import dashboard
-
-        cli(["budget-clone", str(budgeted), "Base", "Tighter"])
-        cli(
-            [
-                "budget-member",
-                str(budgeted),
-                "remove",
-                "--budget",
-                "Tighter",
-                "--schedule",
-                "Groceries",
-            ]
-        )
-        cli(["budget-use", str(budgeted), "Tighter"])
-        capsys.readouterr()
-
-        db = open_book(budgeted)
-        try:
-            board = dashboard.build(db, as_of=date(2026, 6, 1))
-            assert "Groceries" in [bill.name for bill in board.bills]
-            assert "budget" not in board.summary()
-        finally:
-            db.close()
-
-    def test_a_single_budget_needs_no_nomination(self, budgeted):
-        db = open_book(budgeted)
-        try:
-            assert budgeting.current_budget(db).name == "Base"
-        finally:
-            db.close()
-
-
 class TestBillFrequency:
-    def test_the_cycle_reads_as_the_schedules_own_frequency(self, budgeted, capsys):
+    def test_the_cycle_reads_as_the_schedules_own_frequency(self, planned, capsys):
         from breadsched.gen.engine import dashboard
 
-        db = open_book(budgeted)
+        db = open_book(planned)
         try:
             board = dashboard.build(db, as_of=date(2026, 6, 1))
             bill = next(b for b in board.bills if b.name == "Groceries")
@@ -596,10 +441,10 @@ class TestBillFrequency:
         finally:
             db.close()
 
-    def test_a_bill_carries_the_schedule_it_came_from(self, budgeted):
+    def test_a_bill_carries_the_schedule_it_came_from(self, planned):
         from breadsched.gen.engine import dashboard
 
-        db = open_book(budgeted)
+        db = open_book(planned)
         try:
             board = dashboard.build(db, as_of=date(2026, 6, 1))
             bill = next(b for b in board.bills if b.name == "Groceries")
@@ -607,106 +452,3 @@ class TestBillFrequency:
             assert db.get_scheduled(bill.schedule.handle) is not None
         finally:
             db.close()
-
-
-class TestMembershipIsDecidable:
-    """Removing a flow from the only budget must take it out, not put it back."""
-
-    def test_an_undecided_flow_counts_everywhere(self, budgeted):
-        db = open_book(budgeted)
-        try:
-            sched = next(s for s in db.iter_scheduled() if s.name == "Groceries")
-            assert sched.budgets_decided is False
-            assert sched.in_budget("anything") is True
-        finally:
-            db.close()
-
-    def test_removing_from_the_only_budget_excludes_it(self, budgeted, capsys):
-        """An empty list used to read as 'every budget', which inverted the answer."""
-        cli(
-            [
-                "budget-member",
-                str(budgeted),
-                "remove",
-                "--budget",
-                "Base",
-                "--schedule",
-                "Groceries",
-            ]
-        )
-        capsys.readouterr()
-
-        db = open_book(budgeted)
-        try:
-            base = next(b for b in db.iter_budgets() if b.name == "Base")
-            sched = next(s for s in db.iter_scheduled() if s.name == "Groceries")
-            assert sched.budgets == []
-            assert sched.budgets_decided is True
-            assert sched.in_budget(base.handle) is False
-        finally:
-            db.close()
-
-    def test_the_budget_then_has_no_lines(self, budgeted, capsys):
-        cli(
-            [
-                "budget-member",
-                str(budgeted),
-                "remove",
-                "--budget",
-                "Base",
-                "--schedule",
-                "Groceries",
-            ]
-        )
-        capsys.readouterr()
-
-        db = open_book(budgeted)
-        try:
-            base = next(b for b in db.iter_budgets() if b.name == "Base")
-            rebuilt = budgeting.from_schedules(
-                db,
-                name="check",
-                start=date(2026, 1, 1),
-                periods=12,
-                budget_handle=base.handle,
-            )
-            assert not rebuilt.lines
-        finally:
-            db.close()
-
-    def test_adding_it_back_restores_it(self, budgeted, capsys):
-        cli(
-            [
-                "budget-member",
-                str(budgeted),
-                "remove",
-                "--budget",
-                "Base",
-                "--schedule",
-                "Groceries",
-            ]
-        )
-        cli(["budget-member", str(budgeted), "add", "--budget", "Base", "--schedule", "Groceries"])
-        capsys.readouterr()
-
-        db = open_book(budgeted)
-        try:
-            base = next(b for b in db.iter_budgets() if b.name == "Base")
-            sched = next(s for s in db.iter_scheduled() if s.name == "Groceries")
-            assert sched.in_budget(base.handle) is True
-        finally:
-            db.close()
-
-    def test_an_older_book_with_a_list_is_read_as_decided(self):
-        """Books written before the flag recorded membership only as a list."""
-        from breadsched.gen.lib import ScheduledTransaction
-
-        sched = ScheduledTransaction(name="Rent")
-        data = sched.serialize()
-        data["budgets"] = ["abc"]
-        data.pop("budgets_decided")
-
-        restored = ScheduledTransaction.from_dict(data)
-        assert restored.budgets_decided is True
-        assert restored.in_budget("abc") is True
-        assert restored.in_budget("other") is False

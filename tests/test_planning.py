@@ -11,7 +11,6 @@ from breadsched.gen.lib import (
     Assumptions,
     Money,
     PeriodType,
-    ProjectionBasis,
     Recurrence,
     Scenario,
     ScenarioSchedule,
@@ -36,8 +35,8 @@ def _flat() -> Assumptions:
 
 
 class TestEventDomain:
-    def test_new_scenarios_are_schedule_driven_by_default(self):
-        assert Scenario().basis is ProjectionBasis.SCHEDULED
+    def test_scenarios_do_not_carry_a_projection_basis(self):
+        assert not hasattr(Scenario(), "basis")
 
     def test_schedule_occurrences_keep_their_exact_dates(self, db, book):
         payday = ScheduledTransaction(
@@ -354,7 +353,6 @@ class TestEventDrivenProjection:
                 name="Event dates",
                 start=date(2026, 1, 1),
                 years=1,
-                basis=ProjectionBasis.SCHEDULED,
                 assumptions=_flat(),
             ),
         )
@@ -386,7 +384,6 @@ class TestEventDrivenProjection:
                 name="Raises",
                 start=date(2026, 1, 1),
                 years=2,
-                basis=ProjectionBasis.SCHEDULED,
                 assumptions=Assumptions(
                     income_growth="0.10",
                     expense_inflation="0",
@@ -419,7 +416,6 @@ class TestEventDrivenProjection:
                 name="Inflation",
                 start=date(2026, 1, 1),
                 years=2,
-                basis=ProjectionBasis.SCHEDULED,
                 assumptions=Assumptions(
                     income_growth="0",
                     expense_inflation="0.05",
@@ -450,7 +446,6 @@ class TestEventDrivenProjection:
             name="Timing",
             start=date(2026, 1, 1),
             years=1,
-            basis=ProjectionBasis.SCHEDULED,
             assumptions=_flat(),
         )
         scenario.assumptions.per_account[book.brokerage] = Decimal("0.12")
@@ -489,7 +484,6 @@ class TestEventDrivenProjection:
             name="Named debt",
             start=date(2026, 1, 1),
             years=1,
-            basis=ProjectionBasis.SCHEDULED,
             assumptions=_flat(),
         )
         scenario.assumptions.per_account[book.card] = Decimal("0")

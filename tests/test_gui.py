@@ -50,7 +50,6 @@ pytestmark = [
 from breadsched import APP_ID  # noqa: E402
 from breadsched.gen.db.sqlite import DbSQLite  # noqa: E402
 from breadsched.gen.lib import (  # noqa: E402
-    Budget,
     Money,
     PeriodType,
     Recurrence,
@@ -104,23 +103,12 @@ def window(app):
 
 @pytest.fixture
 def populated_book(tmp_path, gnucash_sqlite_path):
-    """A real book on disk with imported data, a budget and a schedule."""
+    """A real book on disk with imported data and a schedule."""
     from breadsched.cli.main import main as cli
-    from breadsched.gen.db.sqlite import DbSQLite
 
     path = tmp_path / "gui.breadsched"
     cli(["init", str(path)])
     cli(["import", str(path), gnucash_sqlite_path.path])
-
-    db = DbSQLite()
-    db.load(str(path))
-    accounts = {db.full_name(a): a.handle for a in db.iter_accounts()}
-    budget = Budget(name="2026", start=date(2026, 1, 1), periods=12)
-    budget.set_monthly(accounts["Income:Salary"], "4200.00")
-    budget.set_monthly(accounts["Expenses:Rent"], "1800.00")
-    with db.transaction("Budget") as txn:
-        db.add_budget(budget, txn)
-    db.close()
     return str(path)
 
 
@@ -1958,7 +1946,6 @@ class TestPlanToolbarIcon:
 
     def test_plan_is_a_visible_category(self):
         assert any(key == "plan" for key, _label, _icon in CATEGORIES)
-        assert all(key != "budget" for key, _label, _icon in CATEGORIES)
 
 
 class TestDerivedPlanView:
@@ -2036,7 +2023,6 @@ class TestDerivedPlanView:
         window.show_category("plan")
         view = window._views["plan"]
         assert not hasattr(view, "_commit")
-        assert not hasattr(view, "budget_picker")
 
     def test_plan_values_are_actionable_buttons(self, app, window, populated_book):
         from breadsched.gui.gi_setup import Gtk
@@ -2861,13 +2847,10 @@ class TestDashboardBillsLinkToSchedules:
         view._on_bill_activated(view.bills_view, 0)
         assert window.stack.get_visible_child_name() == "scheduled"
 
-    def test_the_dashboard_uses_plan_schedules_without_a_budget_selector(
-        self, app, window, populated_book
-    ):
+    def test_the_dashboard_uses_plan_schedules(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("dashboard")
         view = window._views["dashboard"]
-        assert not hasattr(view, "budget_label")
         assert view.board is not None
         assert view.board.bills
 

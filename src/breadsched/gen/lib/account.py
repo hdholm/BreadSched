@@ -93,21 +93,7 @@ class AccountType(str, Enum):
     @classmethod
     def parse(cls, value: str) -> AccountType:
         normalized = str(value).strip().upper().replace("_", " ")
-        legacy = {
-            "CREDIT": cls.CREDIT,
-            "STOCK": cls.INVESTMENT,
-            "MUTUAL": cls.INVESTMENT,
-            "CURRENCY": cls.ASSET,
-            "RECEIVABLE": cls.ASSET,
-            "PAYABLE": cls.LIABILITY,
-            "TRADING": cls.TECHNICAL,
-        }
-        if normalized in legacy:
-            return legacy[normalized]
-        try:
-            return cls(normalized)
-        except ValueError:
-            return cls.ASSET
+        return cls(normalized)
 
     @property
     def account_class(self) -> AccountClass:
@@ -341,9 +327,7 @@ class Account(PrimaryObject):
 
     def _unserialize(self, data: dict[str, Any]) -> None:
         self.name = data["name"]
-        raw_type = str(data["atype"])
-        legacy_kind = str(data.get("kind", data.get("planning_role", "ordinary")))
-        self.atype = _migrate_account_type(raw_type, legacy_kind)
+        self.atype = AccountType.parse(str(data["atype"]))
         self.parent = data.get("parent")
         self.commodity = data.get("commodity")
         self.code = data.get("code", "")
@@ -368,19 +352,3 @@ class Account(PrimaryObject):
 
     def __repr__(self) -> str:
         return f"<Account {self.name!r} {self.atype.value}>"
-
-
-def _migrate_account_type(raw_type: str, legacy_kind: str) -> AccountType:
-    """Map the former ledger-type/account-kind pair to one semantic type."""
-    kind = legacy_kind.strip().lower()
-    if kind == "retirement":
-        return AccountType.RETIREMENT
-    if kind == "fsa":
-        return AccountType.FSA
-    if kind == "investment":
-        return AccountType.INVESTMENT
-    if kind == "escrow":
-        return AccountType.ESCROW
-    if kind == "debt":
-        return AccountType.CREDIT if raw_type.strip().upper() == "CREDIT" else AccountType.LOAN
-    return AccountType.parse(raw_type)

@@ -21,7 +21,6 @@ from datetime import date
 from typing import Any, Literal
 
 from ..lib.account import Account
-from ..lib.budget import Budget
 from ..lib.commodity import Commodity
 from ..lib.fsa_claim import FsaClaim
 from ..lib.scenario import Scenario
@@ -95,9 +94,6 @@ class DbBase(Callback, ABC):
         "scheduled-add": (list,),
         "scheduled-update": (list,),
         "scheduled-delete": (list,),
-        "budget-add": (list,),
-        "budget-update": (list,),
-        "budget-delete": (list,),
         "scenario-add": (list,),
         "scenario-update": (list,),
         "scenario-delete": (list,),
@@ -223,18 +219,6 @@ class DbBase(Callback, ABC):
 
     @abstractmethod
     def iter_scheduled(self) -> Iterator[ScheduledTransaction]: ...
-
-    @abstractmethod
-    def add_budget(self, budget: Budget, txn: DbTxn) -> str: ...
-
-    @abstractmethod
-    def commit_budget(self, budget: Budget, txn: DbTxn) -> None: ...
-
-    @abstractmethod
-    def get_budget(self, handle: str) -> Budget | None: ...
-
-    @abstractmethod
-    def iter_budgets(self) -> Iterator[Budget]: ...
 
     @abstractmethod
     def add_scenario(self, scenario: Scenario, txn: DbTxn) -> str: ...

@@ -25,8 +25,6 @@ from ..gen.db.base import DbError
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
-    budgeting,
-    cashflow,
     inference,
     ledger,
     planning,
@@ -40,13 +38,12 @@ from ..gen.lib import (
     Account,
     AccountType,
     Assumptions,
-    Budget,
     Money,
-    PeriodKind,
     PeriodType,
-    ProjectionBasis,
     Recurrence,
     Scenario,
+    ScheduledSplit,
+    ScheduledTransaction,
     Transaction,
 )
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
@@ -534,93 +531,6 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
         db.close()
 
 
-def cmd_budget(args: argparse.Namespace) -> int:
-    db = open_book(args.book, "r")
-    try:
-        budgets = list(db.iter_budgets())
-        if args.name:
-            budgets = [b for b in budgets if b.name == args.name]
-            if not budgets:
-                raise CommandError(f"no budget named {args.name!r}")
-        elif not budgets:
-            raise CommandError("this book has no budgets yet")
-        budget = budgets[0]
-        report = cashflow.build_report(db, budget)
-
-        rows = []
-        payload = []
-        for line in report.lines:
-            rows.append(
-                [
-                    line.name,
-                    line.budgeted_total.format(),
-                    line.actual_total.format(),
-                    line.variance_total.format(parens_negative=True),
-                ]
-            )
-            payload.append(
-                {
-                    "account": line.name,
-                    "budgeted": line.budgeted_total,
-                    "actual": line.actual_total,
-                    "variance": line.variance_total,
-                }
-            )
-        summary = report.annual_summary()
-        actual_summary = report.annual_summary(actual=True)
-        rows.append(["", "", "", ""])
-        rows.append(
-            [
-                "Income for the period",
-                summary["income"].format(),
-                actual_summary["income"].format(),
-                "",
-            ]
-        )
-        rows.append(
-            [
-                "Expenses for the period",
-                summary["expense"].format(),
-                actual_summary["expense"].format(),
-                "",
-            ]
-        )
-        rows.append(
-            [
-                "NET CASH FLOW",
-                summary["net"].format(parens_negative=True),
-                actual_summary["net"].format(parens_negative=True),
-                (actual_summary["net"] - summary["net"]).format(parens_negative=True),
-            ]
-        )
-        text = table(rows, ["account", "budgeted", "actual", "variance"], right={1, 2, 3})
-        shortfalls = report.shortfall_periods()
-        if shortfalls:
-            text += "\n\nPlanned shortfall in: " + ", ".join(report.labels[p] for p in shortfalls)
-        emit(
-            {
-                "budget": budget.name,
-                "lines": payload,
-                "totals": {
-                    "budgeted": summary,
-                    "actual": actual_summary,
-                    "net_cash_flow": summary["net"],
-                    "shortfall_periods": [report.labels[p] for p in shortfalls],
-                },
-            },
-            args,
-            text,
-        )
-        return 0
-    finally:
-        db.close()
-
-
-def _budget_by_name(db: DbSQLite, name: str) -> Budget | None:
-    """Return a legacy Budget by exact name without relying on SQLite-only helpers."""
-    return next((budget for budget in db.iter_budgets() if budget.name == name), None)
-
-
 def cmd_activity(args: argparse.Namespace) -> int:
     """Show event-driven plan versus actuals in display-only time buckets."""
     db = open_book(args.book, "r")
@@ -629,18 +539,11 @@ def cmd_activity(args: argparse.Namespace) -> int:
         end = parse_date(args.end)
         if start is None or end is None:
             raise CommandError("activity requires --start and --end")
-        budget_handle = None
-        if args.budget:
-            budget = _budget_by_name(db, args.budget)
-            if budget is None:
-                raise CommandError(f"no budget named {args.budget!r}")
-            budget_handle = budget.handle
         report = activity.build_activity_report(
             db,
             start,
             end,
             period=activity.ReportingPeriod(args.period),
-            budget_handle=budget_handle,
         )
         rows = [
             [
@@ -677,15 +580,6 @@ def cmd_activity(args: argparse.Namespace) -> int:
         db.close()
 
 
-def _budget_handle(db: DbSQLite, name: str | None) -> str | None:
-    if not name:
-        return None
-    budget = _budget_by_name(db, name)
-    if budget is None:
-        raise CommandError(f"no budget named {name!r}")
-    return budget.handle
-
-
 def cmd_plan_unresolved(args: argparse.Namespace) -> int:
     """List unresolved scheduled expectations over an exact date horizon."""
     db = open_book(args.book, "r")
@@ -694,9 +588,7 @@ def cmd_plan_unresolved(args: argparse.Namespace) -> int:
         end = parse_date(args.end)
         if start is None or end is None:
             raise CommandError("plan-unresolved requires --start and --end")
-        events = planning.unresolved_events(
-            db, start, end, budget_handle=_budget_handle(db, args.budget)
-        )
+        events = planning.unresolved_events(db, start, end)
         rows = [
             [
                 event.key,
@@ -721,12 +613,7 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
     db = open_book(args.book, "r")
     try:
         transaction = _find_transaction(db, args.transaction)
-        candidates = planning.match_candidates(
-            db,
-            transaction,
-            window_days=args.window_days,
-            budget_handle=_budget_handle(db, args.budget),
-        )
+        candidates = planning.match_candidates(db, transaction, window_days=args.window_days)
         payload = [
             {
                 "occurrence": candidate.event.as_dict(),
@@ -888,10 +775,7 @@ def cmd_project(args: argparse.Namespace) -> int:
 
         summary = result.summary()
         if not args.json:
-            print(
-                f"Scenario: {scenario.name}  ({scenario.basis.value} basis, "
-                f"{scenario.years} years from {scenario.start})"
-            )
+            print(f"Scenario: {scenario.name}  ({scenario.years} years from {scenario.start})")
             print(
                 f"  income growth {scenario.assumptions.income_growth:.1%}   "
                 f"expense inflation {scenario.assumptions.expense_inflation:.1%}   "
@@ -929,17 +813,10 @@ def _scenario_for(db: DbSQLite, args: argparse.Namespace) -> Scenario:
             scenario.years = args.years
         return scenario
 
-    budgets = list(db.iter_budgets())
-    if args.budget:
-        budgets = [b for b in budgets if b.name == args.budget]
-        if not budgets:
-            raise CommandError(f"no budget named {args.budget!r}")
     return Scenario(
         name=args.name or "ad hoc",
         start=parse_date(args.start) or date.today().replace(day=1),
         years=args.years or 5,
-        basis=ProjectionBasis(args.basis),
-        budget=budgets[0].handle if budgets else None,
         assumptions=Assumptions(
             income_growth=args.income_growth,
             expense_inflation=args.inflation,
@@ -959,7 +836,6 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                     {
                         "name": s.name,
                         "years": s.years,
-                        "basis": s.basis.value,
                         "income_growth": s.assumptions.income_growth,
                         "expense_inflation": s.assumptions.expense_inflation,
                         "investment_return": s.assumptions.investment_return,
@@ -972,15 +848,14 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                         [
                             s.name,
                             str(s.years),
-                            s.basis.value,
                             f"{s.assumptions.income_growth:.1%}",
                             f"{s.assumptions.expense_inflation:.1%}",
                             f"{s.assumptions.investment_return:.1%}",
                         ]
                         for s in scenarios
                     ],
-                    ["name", "years", "basis", "income", "inflation", "return"],
-                    right={1, 3, 4, 5},
+                    ["name", "years", "income", "inflation", "return"],
+                    right={1, 2, 3, 4},
                 ),
             )
             return 0
@@ -993,7 +868,6 @@ def cmd_scenario(args: argparse.Namespace) -> int:
             existing = db.get_scenario_by_name(args.name)
             scenario = existing or Scenario(name=args.name)
             scenario.years = args.years or scenario.years
-            scenario.basis = ProjectionBasis(args.basis)
             scenario.start = parse_date(args.start) or scenario.start
             scenario.assumptions = Assumptions(
                 income_growth=args.income_growth,
@@ -1001,14 +875,6 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                 investment_return=args.investment_return,
                 cash_interest=args.cash_interest,
             )
-            budgets = list(db.iter_budgets())
-            if args.budget:
-                match = [b for b in budgets if b.name == args.budget]
-                if not match:
-                    raise CommandError(f"no budget named {args.budget!r}")
-                scenario.budget = match[0].handle
-            elif budgets and scenario.budget is None:
-                scenario.budget = budgets[0].handle
             with db.transaction(f"Save scenario {args.name}") as txn:
                 if existing:
                     db.commit_scenario(scenario, txn)
@@ -1317,69 +1183,6 @@ def cmd_infer(args: argparse.Namespace) -> int:
         db.close()
 
 
-def cmd_budget_clone(args: argparse.Namespace) -> int:
-    db = open_book(args.book)
-    try:
-        source = next((b for b in db.iter_budgets() if b.name == args.source), None)
-        if source is None:
-            raise CommandError(f"no budget named {args.source!r}")
-        if any(b.name == args.name for b in db.iter_budgets()):
-            raise CommandError(f"a budget named {args.name!r} already exists")
-        copy = budgeting.clone_budget(db, source, args.name)
-        emit(
-            {"handle": copy.handle, "name": copy.name},
-            args,
-            f"Cloned {source.name!r} as {copy.name!r} with {len(copy.lines)} line(s)",
-        )
-        return 0
-    finally:
-        db.close()
-
-
-def cmd_budget_use(args: argparse.Namespace) -> int:
-    """Nominate the budget the dashboard and new projections follow."""
-    db = open_book(args.book)
-    try:
-        budget = _budget_by_name(db, args.name)
-        if budget is None:
-            raise CommandError(f"no budget named {args.name!r}")
-        budgeting.set_current_budget(db, budget)
-        emit({"current": budget.name}, args, f"Now using budget {budget.name!r}")
-        return 0
-    finally:
-        db.close()
-
-
-def cmd_budget_member(args: argparse.Namespace) -> int:
-    """Add or remove a scheduled flow from a budget."""
-    db = open_book(args.book)
-    try:
-        budget = _budget_by_name(db, args.budget)
-        if budget is None:
-            raise CommandError(f"no budget named {args.budget!r}")
-        sched = next((s for s in db.iter_scheduled() if s.name == args.schedule), None)
-        if sched is None:
-            raise CommandError(f"no scheduled transaction named {args.schedule!r}")
-
-        handles = [b.handle for b in db.iter_budgets()]
-        if args.action == "add":
-            sched.add_to_budget(budget.handle, handles)
-        else:
-            sched.remove_from_budget(budget.handle, handles)
-        with db.transaction(f"{args.action} {sched.name} in {budget.name}") as txn:
-            db.commit_scheduled(sched, txn)
-
-        emit(
-            {"schedule": sched.name, "budgets": sched.budgets},
-            args,
-            f"{sched.name!r} is now "
-            f"{'in' if sched.in_budget(budget.handle) else 'out of'} {budget.name!r}",
-        )
-        return 0
-    finally:
-        db.close()
-
-
 def cmd_dashboard(args: argparse.Namespace) -> int:
     """The overview: what is owned, what is owed, and what must stay liquid."""
     db = open_book(args.book, "r")
@@ -1522,68 +1325,6 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         db.close()
 
 
-def cmd_budget_new(args: argparse.Namespace) -> int:
-    """Create a budget from the recurring flows the book already knows about."""
-    db = open_book(args.book)
-    try:
-        if next((b for b in db.iter_budgets() if b.name == args.name), None):
-            raise CommandError(
-                f"a budget named {args.name!r} already exists; delete it or choose another name"
-            )
-        start = parse_date(args.start) or date(date.today().year, 1, 1)
-        budget = budgeting.from_schedules(
-            db,
-            name=args.name,
-            start=start,
-            periods=args.periods,
-            kind=args.kind,
-            include_placeholders=not args.no_estimates,
-            flows_only=not args.include_transfers,
-        )
-        if not budget.lines and not args.allow_empty:
-            raise CommandError(
-                "no scheduled transactions contribute to this budget. Import a book "
-                "with schedules, or add estimates with 'breadsched estimate add'."
-            )
-        with db.transaction(f"Create budget {args.name}") as txn:
-            db.add_budget(budget, txn)
-
-        rows = []
-        payload = []
-        for handle, line in budget.lines.items():
-            account = db.get_account(handle)
-            name = db.full_name(account) if account else handle
-            amounts = [line.amount(i) for i in range(budget.periods)]
-            lumpy = len({a.to_decimal() for a in amounts}) > 1
-            rows.append(
-                [
-                    name,
-                    budget.period_label(0),
-                    amounts[0].format(),
-                    line.total().format(),
-                    "varies" if lumpy else "level",
-                ]
-            )
-            payload.append(
-                {
-                    "account": name,
-                    "total": line.total(),
-                    "amounts": amounts,
-                    "varies": lumpy,
-                }
-            )
-        emit(
-            {"budget": budget.name, "periods": budget.periods, "lines": payload},
-            args,
-            f"Created budget {budget.name!r} with {len(budget.lines)} line(s) "
-            f"over {budget.periods} {budget.kind.value}(s)\n\n"
-            + table(rows, ["account", "first period", "amount", "total", "shape"], right={2, 3}),
-        )
-        return 0
-    finally:
-        db.close()
-
-
 def cmd_estimate(args: argparse.Namespace) -> int:
     """Manage placeholder flows: recurring estimates that are never posted."""
     db = open_book(
@@ -1632,13 +1373,16 @@ def cmd_estimate(args: argparse.Namespace) -> int:
             interval=args.interval,
             start=parse_date(args.start) or date.today().replace(day=1),
         )
-        sched = budgeting.placeholder_schedule(
+        value = Money(args.amount)
+        sched = ScheduledTransaction(
             name=args.name,
-            account=account.handle,
-            counter_account=funding.handle,
-            amount=Money(args.amount),
             recurrence=recurrence,
+            splits=[
+                ScheduledSplit(account.handle, value),
+                ScheduledSplit(funding.handle, -value),
+            ],
         )
+        sched.placeholder = True
         with db.transaction(f"Add estimate {args.name}") as txn:
             db.add_scheduled(sched, txn)
         emit(
@@ -1704,45 +1448,10 @@ def cmd_plugins(args: argparse.Namespace) -> int:
     return 0
 
 
-def cmd_budget_set(args: argparse.Namespace) -> int:
-    db = open_book(args.book)
-    try:
-        budget = _budget_by_name(db, args.name)
-        created = budget is None
-        if budget is None:
-            budget = Budget(
-                name=args.name,
-                start=parse_date(args.start) or date(date.today().year, 1, 1),
-                periods=args.periods,
-            )
-        account = resolve_account(db, args.account)
-        if args.period is None:
-            budget.set_monthly(account.handle, args.amount)
-        else:
-            budget.set_amount(account.handle, args.period, args.amount)
-        with db.transaction(f"Budget {account.name}") as txn:
-            if created:
-                db.add_budget(budget, txn)
-            else:
-                db.commit_budget(budget, txn)
-        emit(
-            {"budget": budget.name, "account": db.full_name(account), "amount": args.amount},
-            args,
-            f"{budget.name}: {db.full_name(account)} = {Money(args.amount).format()}"
-            + (" every period" if args.period is None else f" in period {args.period}"),
-        )
-        return 0
-    finally:
-        db.close()
-
-
-# --------------------------------------------------------------------- parser
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="breadsched",
-        description="Cash-flow ledger, budget and multi-year projection tool.",
+        description="Household ledger, event-driven Plan, and multi-year projection tool.",
     )
     parser.add_argument("--version", action="store_true", help="print the version and exit")
     subparsers = parser.add_subparsers(dest="command")
@@ -1857,10 +1566,6 @@ def build_parser() -> argparse.ArgumentParser:
     sched.add_argument("--all", action="store_true", help="with --post, include manual schedules")
     sched.set_defaults(func=cmd_scheduled)
 
-    budget = add("budget", "Budget versus actual")
-    budget.add_argument("--name", help="which budget (defaults to the first)")
-    budget.set_defaults(func=cmd_budget)
-
     activity_cmd = add(
         "activity",
         "Event-driven plan versus actuals, grouped only for display",
@@ -1873,10 +1578,6 @@ def build_parser() -> argparse.ArgumentParser:
         choices=[period.value for period in activity.ReportingPeriod],
         help="display grouping; does not change event dates",
     )
-    activity_cmd.add_argument(
-        "--budget",
-        help="limit scheduled flows to members of this legacy budget",
-    )
     activity_cmd.set_defaults(func=cmd_activity)
 
     plan_unresolved = add(
@@ -1885,7 +1586,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan_unresolved.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
     plan_unresolved.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
-    plan_unresolved.add_argument("--budget", help="limit occurrences to one legacy budget")
     plan_unresolved.set_defaults(func=cmd_plan_unresolved)
 
     plan_matches = add(
@@ -1894,7 +1594,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan_matches.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_matches.add_argument("--window-days", type=int, default=7)
-    plan_matches.add_argument("--budget", help="limit candidates to one legacy budget")
     plan_matches.set_defaults(func=cmd_plan_matches)
 
     plan_resolve = add("plan-resolve", "Match an actual transaction to a planned occurrence")
@@ -1913,15 +1612,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     plan_unexpected.add_argument("transaction", help="transaction handle, or a unique prefix")
     plan_unexpected.set_defaults(func=cmd_plan_unexpected)
-
-    budget_set = add("budget-set", "Set a budget amount for an account")
-    budget_set.add_argument("--name", required=True, help="budget name")
-    budget_set.add_argument("--account", required=True)
-    budget_set.add_argument("--amount", required=True)
-    budget_set.add_argument("--period", type=int, help="period index; omit to set all")
-    budget_set.add_argument("--periods", type=int, default=12)
-    budget_set.add_argument("--start")
-    budget_set.set_defaults(func=cmd_budget_set)
 
     account = add("account", "Add, edit, list or remove accounts")
     account.add_argument("action", choices=["list", "add", "edit", "remove"])
@@ -1951,21 +1641,6 @@ def build_parser() -> argparse.ArgumentParser:
     infer.add_argument("--min-confidence", type=float, default=0.6)
     infer.set_defaults(func=cmd_infer)
 
-    clone = add("budget-clone", "Copy a budget, with its projection and members")
-    clone.add_argument("source")
-    clone.add_argument("name")
-    clone.set_defaults(func=cmd_budget_clone)
-
-    use = add("budget-use", "Choose the budget the dashboard follows")
-    use.add_argument("name")
-    use.set_defaults(func=cmd_budget_use)
-
-    member = add("budget-member", "Add or remove a scheduled flow from a budget")
-    member.add_argument("action", choices=["add", "remove"])
-    member.add_argument("--budget", required=True)
-    member.add_argument("--schedule", required=True)
-    member.set_defaults(func=cmd_budget_member)
-
     dash = add("dashboard", "Overview of balances, bills and liquidity")
     dash.add_argument("--as-of")
     dash.add_argument(
@@ -1977,30 +1652,7 @@ def build_parser() -> argparse.ArgumentParser:
     dash.add_argument("--limit", type=int, default=40, help="bills to list")
     dash.set_defaults(func=cmd_dashboard)
 
-    budget_new = add("budget-new", "Create a budget from scheduled flows")
-    budget_new.add_argument("--name", required=True)
-    budget_new.add_argument("--start", help="first period (YYYY-MM-DD)")
-    budget_new.add_argument("--periods", type=int, default=12)
-    budget_new.add_argument(
-        "--kind",
-        default="month",
-        choices=[k.value for k in PeriodKind],
-        help="length of each budget period",
-    )
-    budget_new.add_argument(
-        "--no-estimates",
-        action="store_true",
-        help="use only committed schedules, ignoring placeholder estimates",
-    )
-    budget_new.add_argument(
-        "--include-transfers",
-        action="store_true",
-        help="also budget transfers and debt payments, not just income and expenses",
-    )
-    budget_new.add_argument("--allow-empty", action="store_true")
-    budget_new.set_defaults(func=cmd_budget_new)
-
-    estimate = add("estimate", "Recurring estimates that shape budgets but never post")
+    estimate = add("estimate", "Recurring Plan estimates that never post")
     estimate.add_argument("action", choices=["list", "add", "remove"])
     estimate.add_argument("--name")
     estimate.add_argument("--account", help="the income or expense account")
@@ -2031,8 +1683,6 @@ def build_parser() -> argparse.ArgumentParser:
         sub.add_argument("--inflation", default="0.025", help="annual expense inflation")
         sub.add_argument("--investment-return", default="0.06", help="annual, nominal")
         sub.add_argument("--cash-interest", default="0.01")
-        sub.add_argument("--basis", default="scheduled", choices=[b.value for b in ProjectionBasis])
-        sub.add_argument("--budget", help="budget name to drive recurring amounts")
 
     project_cmd = add("project", "Run a multi-year projection")
     project_cmd.add_argument("--scenario", help="use a saved scenario")

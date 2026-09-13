@@ -26,7 +26,6 @@ from typing import Any, TypeVar
 
 from ..lib.account import Account
 from ..lib.base import PrimaryObject
-from ..lib.budget import Budget
 from ..lib.commodity import Commodity
 from ..lib.fsa_claim import FsaClaim
 from ..lib.scenario import Scenario
@@ -35,7 +34,7 @@ from ..lib.transaction import Transaction, UnbalancedError
 from ..utils.logs import get_logger
 from ..utils.user_paths import sync_service_for_path
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
-from .migrations import LATEST_SCHEMA_VERSION, MIGRATIONS
+from .migrations import LATEST_SCHEMA_VERSION, MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
 from .verification import BookIssue, verify_domain
 
 LOG = get_logger(__name__)
@@ -86,11 +85,6 @@ CREATE TABLE IF NOT EXISTS scheduled (
     name   TEXT NOT NULL,
     blob   TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS budget (
-    handle TEXT PRIMARY KEY,
-    name   TEXT NOT NULL,
-    blob   TEXT NOT NULL
-);
 CREATE TABLE IF NOT EXISTS scenario (
     handle TEXT PRIMARY KEY,
     name   TEXT NOT NULL,
@@ -115,7 +109,6 @@ _TABLES: dict[str, tuple[type, str]] = {
     "account": (Account, "account"),
     "txn": (Transaction, "transaction"),
     "scheduled": (ScheduledTransaction, "scheduled"),
-    "budget": (Budget, "budget"),
     "scenario": (Scenario, "scenario"),
     "fsa_claim": (FsaClaim, "fsa-claim"),
 }
@@ -332,6 +325,11 @@ class DbSQLite(DbBase):
             raise DbError(
                 f"book was written by a newer version (schema {version}); upgrade BreadSched"
             )
+        if version < MIN_SUPPORTED_SCHEMA_VERSION:
+            raise DbError(
+                f"book schema {version} predates the supported BreadSched 0.2.0a3 "
+                f"baseline (schema {MIN_SUPPORTED_SCHEMA_VERSION})"
+            )
         if version < SCHEMA_VERSION:
             if self.readonly:
                 raise DbError(
@@ -510,7 +508,6 @@ class DbSQLite(DbBase):
             "account": ("parent", "name", "atype"),
             "txn": ("post_date", "description"),
             "scheduled": ("name",),
-            "budget": ("name",),
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
         }
@@ -521,7 +518,6 @@ class DbSQLite(DbBase):
             ("account", "atype"): "",
             ("txn", "description"): "",
             ("scheduled", "name"): "",
-            ("budget", "name"): "",
             ("scenario", "name"): "",
             ("fsa_claim", "service_date"): "",
             ("fsa_claim", "provider"): "",
@@ -930,50 +926,8 @@ class DbSQLite(DbBase):
                             handle,
                         )
                     )
-            if scheduled.budgets_decided:
-                for budget_handle in scheduled.budgets:
-                    if self.get_budget(budget_handle) is None:
-                        issues.append(
-                            BookIssue(
-                                "scheduled.missing_budget",
-                                f"scheduled transaction {scheduled.name!r} "
-                                "refers to missing budget "
-                                f"{budget_handle}",
-                                handle,
-                            )
-                        )
-
-        elif table == "budget":
-            budget = Budget.from_dict(data)
-            if budget.scenario is not None and self.get_scenario(budget.scenario) is None:
-                issues.append(
-                    BookIssue(
-                        "budget.missing_scenario",
-                        f"budget {budget.name!r} refers to missing scenario {budget.scenario}",
-                        handle,
-                    )
-                )
-            for account_handle in budget.lines:
-                if self.get_account(account_handle) is None:
-                    issues.append(
-                        BookIssue(
-                            "budget.missing_account",
-                            f"budget {budget.name!r} contains a line for missing account "
-                            f"{account_handle}",
-                            handle,
-                        )
-                    )
-
         elif table == "scenario":
             scenario = Scenario.from_dict(data)
-            if scenario.budget is not None and self.get_budget(scenario.budget) is None:
-                issues.append(
-                    BookIssue(
-                        "scenario.missing_budget",
-                        f"scenario {scenario.name!r} refers to missing budget {scenario.budget}",
-                        handle,
-                    )
-                )
             refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
             refs.update(item.account for item in scenario.one_offs)
             for period in scenario.assumption_periods:
@@ -1034,7 +988,6 @@ class DbSQLite(DbBase):
             "account": ("parent", "name", "atype"),
             "txn": ("post_date", "description"),
             "scheduled": ("name",),
-            "budget": ("name",),
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
         }
@@ -1045,7 +998,6 @@ class DbSQLite(DbBase):
             ("account", "atype"): "",
             ("txn", "description"): "",
             ("scheduled", "name"): "",
-            ("budget", "name"): "",
             ("scenario", "name"): "",
             ("fsa_claim", "service_date"): "",
             ("fsa_claim", "provider"): "",
@@ -1182,15 +1134,6 @@ class DbSQLite(DbBase):
                             scheduled.handle,
                         )
                     )
-            for budget in self.iter_budgets():
-                if handle in budget.lines:
-                    issues.append(
-                        BookIssue(
-                            "budget.missing_account",
-                            f"budget {budget.name!r} contains a line for missing account {handle}",
-                            budget.handle,
-                        )
-                    )
             for scenario in self.iter_scenarios():
                 refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
                 refs.update(item.account for item in scenario.one_offs)
@@ -1257,38 +1200,6 @@ class DbSQLite(DbBase):
                             f"scheduled transaction {scheduled.name!r} refers to missing currency "
                             f"{handle}",
                             scheduled.handle,
-                        )
-                    )
-
-        elif table == "budget":
-            for scheduled in self.iter_scheduled():
-                if scheduled.budgets_decided and handle in scheduled.budgets:
-                    issues.append(
-                        BookIssue(
-                            "scheduled.missing_budget",
-                            f"scheduled transaction {scheduled.name!r} refers to missing budget "
-                            f"{handle}",
-                            scheduled.handle,
-                        )
-                    )
-            for scenario in self.iter_scenarios():
-                if scenario.budget == handle:
-                    issues.append(
-                        BookIssue(
-                            "scenario.missing_budget",
-                            f"scenario {scenario.name!r} refers to missing budget {handle}",
-                            scenario.handle,
-                        )
-                    )
-
-        elif table == "scenario":
-            for budget in self.iter_budgets():
-                if budget.scenario == handle:
-                    issues.append(
-                        BookIssue(
-                            "budget.missing_scenario",
-                            f"budget {budget.name!r} refers to missing scenario {handle}",
-                            budget.handle,
                         )
                     )
 
@@ -1564,7 +1475,7 @@ class DbSQLite(DbBase):
             if obj is not None:
                 yield obj
 
-    # --------------------------------------------------- scheduled / budget etc
+    # --------------------------------------------------- scheduled / scenarios
 
     def add_scheduled(self, sched: ScheduledTransaction, txn: DbTxn) -> str:
         return self._write(sched, txn, "scheduled")
@@ -1582,25 +1493,6 @@ class DbSQLite(DbBase):
     def iter_scheduled(self) -> Iterator[ScheduledTransaction]:
         for row in self._require().execute("SELECT handle, blob FROM scheduled ORDER BY name"):
             obj = self._decode_row("scheduled", row["handle"], row["blob"], ScheduledTransaction)
-            if obj is not None:
-                yield obj
-
-    def add_budget(self, budget: Budget, txn: DbTxn) -> str:
-        return self._write(budget, txn, "budget")
-
-    def commit_budget(self, budget: Budget, txn: DbTxn) -> None:
-        self._write(budget, txn, "budget")
-
-    def remove_budget(self, handle: str, txn: DbTxn) -> None:
-        self._delete("budget", handle, txn)
-
-    def get_budget(self, handle: str) -> Budget | None:
-        data = self._read("budget", handle)
-        return Budget.from_dict(data) if data else None
-
-    def iter_budgets(self) -> Iterator[Budget]:
-        for row in self._require().execute("SELECT handle, blob FROM budget ORDER BY name"):
-            obj = self._decode_row("budget", row["handle"], row["blob"], Budget)
             if obj is not None:
                 yield obj
 
@@ -1702,7 +1594,6 @@ class DbSQLite(DbBase):
                 "txn",
                 "split_index",
                 "scheduled",
-                "budget",
                 "scenario",
                 "fsa_claim",
             )

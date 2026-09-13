@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """End-to-end demonstration.
 
-Builds a GnuCash book, imports it, budgets against it, adds a schedule, saves two
+Builds a GnuCash book, imports it, adds planning schedules, saves two
 scenarios, and prints twenty-year forecasts under both. Run it from the repository
 root with ``python examples/demo.py``.
 """
@@ -29,13 +29,11 @@ from gnucash_fixtures import (  # noqa: E402
 )
 
 from breadsched.gen.db.sqlite import DbSQLite  # noqa: E402
-from breadsched.gen.engine import cashflow, ledger, projection, schedule  # noqa: E402
+from breadsched.gen.engine import ledger, projection, schedule  # noqa: E402
 from breadsched.gen.lib import (  # noqa: E402
     Assumptions,
-    Budget,
     Money,
     PeriodType,
-    ProjectionBasis,
     Recurrence,
     Scenario,
     ScheduledSplit,
@@ -180,28 +178,34 @@ def main() -> int:
             f"{row.amount.format('$'):>12}  {row.running.format('$'):>12}"
         )
 
-    rule("3. Budget versus actual, first quarter")
-    budget = Budget(name="2026", start=date(2026, 1, 1), periods=12)
-    budget.set_monthly(accounts["Income:Salary"], "6200.00")
-    budget.set_monthly(accounts["Expenses:Rent"], "2100.00")
-    budget.set_monthly(accounts["Expenses:Groceries"], "700.00")
-    budget.set_monthly(accounts["Expenses:Utilities"], "180.00")
-    budget.set_amount(accounts["Expenses:Utilities"], 0, "340.00")
-    budget.set_amount(accounts["Expenses:Utilities"], 1, "320.00")
-    with db.transaction("Add 2026 budget") as txn:
-        db.add_budget(budget, txn)
-
-    report = cashflow.build_report(db, budget)
-    print(f"   {'account':<24}{'budgeted':>12}{'actual':>12}{'variance':>12}")
-    for line in report.lines:
-        first_quarter = line.periods[:3]
-        budgeted = sum((p.budgeted for p in first_quarter), Money(0))
-        actual = sum((p.actual for p in first_quarter), Money(0))
-        print(
-            f"   {line.name:<24}{budgeted.format('$'):>12}"
-            f"{actual.format('$'):>12}{(actual - budgeted).format('$'):>12}"
-        )
-    print(f"   Planned monthly surplus: {report.net_cash_flow(3).format('$')}")
+    rule("3. Add exact-dated planning schedules")
+    plans = (
+        ("Salary", "Income:Salary", "-6200.00", 1),
+        ("Rent", "Expenses:Rent", "2100.00", 2),
+        ("Groceries", "Expenses:Groceries", "700.00", 5),
+        ("Utilities", "Expenses:Utilities", "180.00", 15),
+    )
+    with db.transaction("Add household plan") as txn:
+        for name, account_name, amount, day in plans:
+            value = Money(amount)
+            planned_item = ScheduledTransaction(
+                name=name,
+                recurrence=Recurrence(
+                    PeriodType.MONTH,
+                    start=date(2026, 4, day),
+                ),
+                splits=[
+                    ScheduledSplit(accounts[account_name], value),
+                    ScheduledSplit(checking, -value),
+                ],
+            )
+            planned_item.placeholder = True
+            db.add_scheduled(
+                planned_item,
+                txn,
+            )
+    planned = schedule.forecast_occurrences(db, date(2026, 4, 1), date(2026, 4, 30))
+    print(f"   April contains {len(planned)} exact-dated planned events")
 
     rule("4. Add a scheduled monthly investment")
     with db.transaction("Add investing schedule") as txn:
@@ -225,8 +229,6 @@ def main() -> int:
         name="Base case",
         start=date(2026, 4, 1),
         years=20,
-        basis=ProjectionBasis.COMBINED,
-        budget=budget.handle,
         assumptions=Assumptions(
             income_growth="0.03",
             expense_inflation="0.025",
@@ -238,8 +240,6 @@ def main() -> int:
         name="Long recession",
         start=date(2026, 4, 1),
         years=20,
-        basis=ProjectionBasis.COMBINED,
-        budget=budget.handle,
         assumptions=Assumptions(
             income_growth="0.00",
             expense_inflation="0.05",

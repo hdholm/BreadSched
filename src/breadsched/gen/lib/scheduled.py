@@ -179,7 +179,7 @@ class ScheduledSplit:
         """The amount this leg contributes, evaluating a formula if there is one.
 
         An imported formula may name variables only GnuCash can supply. Raising
-        here would take down whatever asked -- a list view, a projection, a budget
+        here would take down whatever asked -- a list view, a projection, or Plan
         -- long after the import that accepted it, so an unresolvable formula
         contributes nothing and says so in the log. The text stays on the split, so
         the user can still see and fix it.
@@ -260,9 +260,9 @@ class ScheduledTransaction(PrimaryObject):
         )
         self.last_posted: date | None = None
         self.variables: dict[str, str] = {}
-        #: A budget-only item: a planning figure rather than a commitment. It shapes
-        #: budgets and forecasts and is never posted to the ledger, which is how a
-        #: household budgets "about 600 a month on groceries" without pretending it
+        #: An estimated item: a planning figure rather than a commitment. It shapes
+        #: Plan and forecasts and is never posted to the ledger, which is how a
+        #: household plans "about 600 a month on groceries" without pretending it
         #: is a standing order that will arrive on the 3rd. Its periodicity is
         #: respected exactly as a real schedule's is.
         self.placeholder: bool = False
@@ -270,16 +270,6 @@ class ScheduledTransaction(PrimaryObject):
         #: again. Recorded per date rather than by moving ``last_posted``, because
         #: skipping March must not also dismiss February.
         self.skipped: list[date] = sorted(set(skipped or []))
-        #: Budgets this flow is part of, by budget handle.
-        self.budgets: list[str] = []
-        #: Whether membership has ever been decided for this flow. Until it has,
-        #: the flow counts towards every budget, so a schedule created before
-        #: budgets existed is not silently missing from the plan.
-        #:
-        #: A flag rather than "empty means all": removing a flow from the only
-        #: budget in the book empties the list, and without this that would read
-        #: as putting it back into every budget instead of taking it out.
-        self.budgets_decided: bool = False
 
     # ------------------------------------------------------------- realisation
 
@@ -431,35 +421,6 @@ class ScheduledTransaction(PrimaryObject):
         """Whether occurrences may become real ledger entries."""
         return self.enabled and not self.placeholder
 
-    def in_budget(self, budget_handle: str | None) -> bool:
-        """Whether this flow counts towards ``budget_handle``.
-
-        An empty membership list means "all budgets": the alternative is that
-        every schedule created before budgets existed silently vanishes from them.
-        """
-        if budget_handle is None or not self.budgets_decided:
-            return True
-        return budget_handle in self.budgets
-
-    def add_to_budget(self, budget_handle: str, all_budgets: list[str]) -> None:
-        """Include this flow in one budget.
-
-        Turning an implicit "all" into an explicit list has to enumerate the other
-        budgets first, or adding a schedule to one budget would remove it from
-        every other without saying so.
-        """
-        if not self.budgets_decided:
-            self.budgets = list(all_budgets)
-            self.budgets_decided = True
-        if budget_handle not in self.budgets:
-            self.budgets.append(budget_handle)
-
-    def remove_from_budget(self, budget_handle: str, all_budgets: list[str]) -> None:
-        if not self.budgets_decided:
-            self.budgets = list(all_budgets)
-            self.budgets_decided = True
-        self.budgets = [h for h in self.budgets if h != budget_handle]
-
     def skip(self, when: date) -> None:
         """Treat ``when`` as dealt with, without posting anything for it."""
         if when not in self.skipped:
@@ -492,8 +453,6 @@ class ScheduledTransaction(PrimaryObject):
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
             "skipped": [when.isoformat() for when in self.skipped],
-            "budgets": list(self.budgets),
-            "budgets_decided": self.budgets_decided,
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -526,10 +485,6 @@ class ScheduledTransaction(PrimaryObject):
         self.variables = dict(data.get("variables", {}))
         self.placeholder = data.get("placeholder", False)
         self.skipped = [date.fromisoformat(d) for d in data.get("skipped", [])]
-        self.budgets = list(data.get("budgets", []))
-        # Older books recorded membership only as a list; a non-empty one there
-        # means the question had been answered.
-        self.budgets_decided = data.get("budgets_decided", bool(self.budgets))
 
     def __repr__(self) -> str:
         return f"<ScheduledTransaction {self.name!r} {self.recurrence.describe()}>"

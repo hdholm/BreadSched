@@ -14,7 +14,7 @@ from pathlib import Path
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.projection import Projection
 
-__all__ = ["export_transactions", "export_projection", "export_budget_report"]
+__all__ = ["export_transactions", "export_projection"]
 
 
 def export_transactions(
@@ -73,25 +73,3 @@ def export_projection(projection: Projection, path: str | Path) -> int:
                 + [str(getattr(row, name).to_decimal()) for name in fields[1:]]
             )
     return len(projection.rows)
-
-
-def export_budget_report(report, path: str | Path) -> int:
-    """Budget versus actual, one row per account with a column pair per period."""
-    with open(path, "w", newline="", encoding="utf-8") as handle:
-        writer = csv.writer(handle)
-        header = ["account", "class"]
-        for label in report.labels:
-            header += [f"{label} budget", f"{label} actual"]
-        header += ["total budget", "total actual", "variance"]
-        writer.writerow(header)
-        for line in report.lines:
-            row = [line.name, line.account_class.value]
-            for period in line.periods:
-                row += [str(period.budgeted.to_decimal()), str(period.actual.to_decimal())]
-            row += [
-                str(line.budgeted_total.to_decimal()),
-                str(line.actual_total.to_decimal()),
-                str(line.variance_total.to_decimal()),
-            ]
-            writer.writerow(row)
-    return len(report.lines)

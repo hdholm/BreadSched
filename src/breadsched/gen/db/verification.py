@@ -33,7 +33,6 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
     issues: list[BookIssue] = []
     accounts = {account.handle: account for account in db.iter_accounts()}
     commodities = {commodity.handle for commodity in db.iter_commodities()}
-    budgets = {budget.handle: budget for budget in db.iter_budgets()}
     scenarios = {scenario.handle: scenario for scenario in db.iter_scenarios()}
 
     # Account graph and references. A normal chart has one explicit ROOT account;
@@ -128,7 +127,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     )
                 )
 
-    # Planning objects contain account/budget references too.
+    # Planning objects contain account references too.
     for sched in db.iter_scheduled():
         if sched.currency is not None and sched.currency not in commodities:
             issues.append(
@@ -149,47 +148,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         sched.handle,
                     )
                 )
-        if sched.budgets_decided:
-            for handle in sched.budgets:
-                if handle not in budgets:
-                    issues.append(
-                        BookIssue(
-                            "scheduled.missing_budget",
-                            f"scheduled transaction {sched.name!r} "
-                            f"refers to missing budget {handle}",
-                            sched.handle,
-                        )
-                    )
-
-    for budget in budgets.values():
-        if budget.scenario is not None and budget.scenario not in scenarios:
-            issues.append(
-                BookIssue(
-                    "budget.missing_scenario",
-                    f"budget {budget.name!r} refers to missing scenario {budget.scenario}",
-                    budget.handle,
-                )
-            )
-        for account_handle in budget.lines:
-            if account_handle not in accounts:
-                issues.append(
-                    BookIssue(
-                        "budget.missing_account",
-                        f"budget {budget.name!r} "
-                        f"contains a line for missing account {account_handle}",
-                        budget.handle,
-                    )
-                )
-
     for scenario in scenarios.values():
-        if scenario.budget is not None and scenario.budget not in budgets:
-            issues.append(
-                BookIssue(
-                    "scenario.missing_budget",
-                    f"scenario {scenario.name!r} refers to missing budget {scenario.budget}",
-                    scenario.handle,
-                )
-            )
         refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
         refs.update(item.account for item in scenario.one_offs)
         for period in scenario.assumption_periods:

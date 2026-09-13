@@ -1113,7 +1113,7 @@ async function showPlan() {
       + "Changes to the controls take effect only when Apply is pressed."),
     el("p", { class: "note" },
       "Income and expense values are derived from exact-dated scheduled/estimated "
-      + "and actual transaction splits; reporting periods do not store budget values. "
+      + "and actual transaction splits; reporting periods do not store planning values. "
       + "Section totals count outermost category rollups once. Net cash change is the "
       + "grand total; variance totals include only periods through today."),
     eventPanel, planTable);
@@ -1778,28 +1778,12 @@ async function showProjection() {
         }, item.name);
       }));
 
-  const basis = el("select", { name: "basis" }, [
-    ["scheduled", "Scheduled events"],
-    ["budget", "Legacy budget"],
-    ["combined", "Legacy budget + schedules"],
-  ].map(([value, label]) => el("option", {
-    value, selected: value === scenarioData.basis ? "selected" : null,
-  }, label)));
-  const budget = el("select", { name: "budget" },
-    el("option", { value: "" }, "None"),
-    data.controls.budgets.map((item) => el("option", {
-      value: item.handle,
-      selected: item.handle === scenarioData.budget ? "selected" : null,
-    }, item.name)));
-
   const form = el("form", { class: "panel scenario-panel", onsubmit: async (event) => {
     event.preventDefault();
     const values = new FormData(event.target);
     const payload = {
       handle: scenarioData.handle,
       years: Number(values.get("years")),
-      basis: values.get("basis"),
-      budget: values.get("budget") || null,
       assumptions: readAssumptions(event.target, "projection_"),
     };
     try {
@@ -1828,8 +1812,6 @@ async function showProjection() {
         type: "number", name: "years", min: "1", max: "100", step: "1",
         value: scenarioData.years,
       })),
-      el("label", {}, "Driven by ", basis),
-      el("label", {}, "Budget ", budget),
       el("button", { class: "action primary", type: "submit" }, "Apply"),
       el("button", {
         class: "action", type: "button",
@@ -1839,8 +1821,6 @@ async function showProjection() {
             state.projectionData = await post("/api/projection/save", {
               handle: scenarioData.handle,
               years: Number(values.get("years")),
-              basis: values.get("basis"),
-              budget: values.get("budget") || null,
               assumptions: readAssumptions(form, "projection_"),
             });
             say(scenarioData.handle
@@ -1854,7 +1834,7 @@ async function showProjection() {
     assumptionInputs(scenarioData.assumptions, "projection_"),
     el("p", { class: "note" },
       "Apply recalculates this draft without saving it. Base saves only its annual assumptions; "
-      + "saved scenarios also retain their projection horizon and source settings."));
+      + "saved scenarios also retain their projection horizon."));
 
   const cards = el("div", { class: "cards" },
     [["Ending net worth", s.ending_net_worth], ["Ending cash", s.ending_cash],
@@ -1940,8 +1920,6 @@ async function openProjectionDetail(index) {
     const data = await post("/api/projection/explain", {
       handle: scenario.handle,
       years: scenario.years,
-      basis: scenario.basis,
-      budget: scenario.budget,
       assumptions: scenario.assumptions,
       month_index: index,
     });

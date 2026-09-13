@@ -8,7 +8,6 @@ from .account import (
     GnuCashAccountType,
 )
 from .base import PrimaryObject, create_handle
-from .budget import Budget, BudgetLine, PeriodKind
 from .commodity import DEFAULT_CURRENCY, Commodity
 from .formula import FormulaError, evaluate
 from .fsa_claim import (
@@ -23,7 +22,6 @@ from .scenario import (
     AssumptionPeriod,
     Assumptions,
     OneOff,
-    ProjectionBasis,
     Scenario,
     ScenarioSchedule,
 )
@@ -57,20 +55,16 @@ __all__ = [
     "GnuCashAccountType",
     "AssumptionPeriod",
     "Assumptions",
-    "Budget",
-    "BudgetLine",
     "Commodity",
     "DEFAULT_CURRENCY",
     "FormulaError",
     "Money",
     "OneOff",
-    "PeriodKind",
     "Rate",
     "PeriodType",
     "PlanningFlowKind",
     "PlanningResolution",
     "PrimaryObject",
-    "ProjectionBasis",
     "ReconcileState",
     "Recurrence",
     "Scenario",

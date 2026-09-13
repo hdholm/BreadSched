@@ -371,7 +371,7 @@ class TestTheResolverItself:
         assert module_exists(target)
 
     def test_it_resolves_a_package_import(self):
-        target = resolve_relative(SRC / "gui" / "views" / "budget.py", 3, "gen.lib")
+        target = resolve_relative(SRC / "gui" / "views" / "projection.py", 3, "gen.lib")
         assert module_exists(target)
 
     def test_it_reports_climbing_above_the_package_root(self):

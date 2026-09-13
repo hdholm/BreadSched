@@ -81,7 +81,7 @@ def post_due(
     candidates = [
         occ
         for occ in due_occurrences(db, as_of=today, horizon_days=0)
-        # A placeholder describes a budget expectation, not a transaction that
+        # A placeholder describes a planning expectation, not a transaction that
         # will happen; posting one would invent a ledger entry.
         if occ.when <= today
         and not occ.schedule.placeholder

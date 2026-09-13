@@ -253,14 +253,13 @@ class TestItServes:
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")
         status, migrated = client.post(
-            "/api/account/planning-role",
-            {"handle": retirement["handle"], "planning_role": "fsa"},
+            "/api/account/type",
+            {"handle": retirement["handle"], "type": "FSA"},
         )
         assert status == 200
         assert migrated == {
             "handle": retirement["handle"],
-            "kind": "fsa",
-            "planning_role": "fsa",
+            "type": "FSA",
         }
         status, payload = client.post(
             "/api/account/fsa-years",
@@ -529,8 +528,6 @@ class TestItServes:
             {
                 "handle": None,
                 "years": 3,
-                "basis": "scheduled",
-                "budget": None,
                 "assumptions": {
                     "income_growth": "0.03",
                     "expense_inflation": "0.025",
@@ -556,8 +553,6 @@ class TestItServes:
             {
                 "handle": handle,
                 "years": 12,
-                "basis": "scheduled",
-                "budget": None,
                 "assumptions": {
                     "income_growth": "0.01",
                     "expense_inflation": "0.02",
@@ -582,8 +577,6 @@ class TestItServes:
             {
                 "handle": handle,
                 "years": 10,
-                "basis": "scheduled",
-                "budget": None,
                 "assumptions": {
                     "income_growth": "0.0",
                     "expense_inflation": "0.0",
@@ -599,8 +592,6 @@ class TestItServes:
                 "handle": None,
                 "compare_handle": handle,
                 "years": 3,
-                "basis": "scheduled",
-                "budget": None,
                 "assumptions": {
                     "income_growth": "0.02",
                     "expense_inflation": "0.03",
@@ -626,8 +617,6 @@ class TestItServes:
                 "handle": handle,
                 "compare_handle": None,
                 "years": 2,
-                "basis": "scheduled",
-                "budget": None,
                 "assumptions": scenario["assumptions"],
             },
         )
@@ -649,8 +638,6 @@ class TestItServes:
                     "handle": handle,
                     "compare_handle": handle,
                     "years": 3,
-                    "basis": "scheduled",
-                    "budget": None,
                     "assumptions": scenario["assumptions"],
                 },
             )
@@ -664,8 +651,6 @@ class TestItServes:
             {
                 "handle": handle,
                 "years": 14,
-                "basis": "scheduled",
-                "budget": None,
                 "assumptions": {
                     "income_growth": "0.015",
                     "expense_inflation": "0.0275",
@@ -686,8 +671,6 @@ class TestItServes:
             {
                 "handle": None,
                 "years": 20,
-                "basis": "scheduled",
-                "budget": None,
                 "assumptions": {
                     "income_growth": "0.02",
                     "expense_inflation": "0.03",
@@ -1697,8 +1680,8 @@ def test_fsa_claim_can_use_multiple_allocations(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")
     client.post(
-        "/api/account/kind",
-        {"handle": fsa_account["handle"], "kind": "fsa"},
+        "/api/account/type",
+        {"handle": fsa_account["handle"], "type": "FSA"},
     )
     client.post(
         "/api/account/fsa-years",
@@ -1837,8 +1820,8 @@ def test_review_can_attach_actual_to_existing_fsa_claim(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")
     client.post(
-        "/api/account/kind",
-        {"handle": fsa_account["handle"], "kind": "fsa"},
+        "/api/account/type",
+        {"handle": fsa_account["handle"], "type": "FSA"},
     )
     client.post(
         "/api/account/fsa-years",
@@ -1933,8 +1916,8 @@ def test_fsa_claim_candidates_share_funding_year_window(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")
     client.post(
-        "/api/account/kind",
-        {"handle": fsa_account["handle"], "kind": "fsa"},
+        "/api/account/type",
+        {"handle": fsa_account["handle"], "type": "FSA"},
     )
     client.post(
         "/api/account/fsa-years",
