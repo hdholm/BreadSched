@@ -177,6 +177,7 @@ let state = {
   projectionData: null, projectionHandle: null, projectionCompareHandle: null,
   projectionComparison: null,
 };
+let historicalEstimateDialog = null;
 
 const el = (tag, attrs = {}, ...kids) => {
   const node = document.createElement(tag);
@@ -873,7 +874,16 @@ async function showScheduled() {
 }
 
 async function openHistoricalEstimateDialog() {
+  if (historicalEstimateDialog?.isConnected) {
+    historicalEstimateDialog.querySelector("button")?.focus();
+    return;
+  }
   const backdrop = el("div", { class: "detail-backdrop" });
+  historicalEstimateDialog = backdrop;
+  const close = () => {
+    backdrop.remove();
+    if (historicalEstimateDialog === backdrop) historicalEstimateDialog = null;
+  };
   const body = el("div", {});
   const months = el("input", { type:"number", min:"3", max:"120", value:"12" });
   const target = el("select", {});
@@ -896,16 +906,45 @@ async function openHistoricalEstimateDialog() {
         el("td", { class:"muted" }, `${Math.round(item.confidence * 100)}%`),
         el("td", {}, el("button", { class:"action", type:"button", onclick:async()=>{
           try {
-            await post("/api/historical-estimate/accept", {
-              category:item.category, months:data.months, scenario:target.value || null,
-            });
-            say(`Added estimate for ${item.category_name}.`);
-            await load();
+            if (!target.value) {
+              const schedules = await get("/api/scheduled?days=90");
+              const draft = {
+                handle:null, name:`Estimated ${item.category_name}`,
+                category:item.category, funding:item.funding, amount:item.amount,
+                frequency_key:item.frequency_key || "monthly", start:item.start,
+                end:null, count:null, weekend:"none", enabled:true,
+                placeholder:true, auto:false, growth_policy:"auto",
+                planning_flow:null, category_memo:"", funding_memo:"",
+                additional_splits:[], account_handles:[item.category, item.funding],
+                amount_changes:[], seasonal_amounts:item.seasonal_amounts || [],
+                skipped:[], occurrence_adjustments:[],
+              };
+              close();
+              openScheduledEditor(schedules, draft);
+            } else {
+              const plan = await get("/api/plan");
+              state.plan = {
+                from:plan.controls.from, through:plan.controls.through,
+                period:plan.controls.period, scenario:target.value,
+                compare:null, measure:plan.controls.measure,
+              };
+              state.scenarioEvent = {kind:"add", draft:{
+                name:`Estimated ${item.category_name}`,
+                category:item.category, funding:item.funding, amount:item.amount,
+                frequency:item.frequency_key || "monthly", start:item.start,
+                end:null, count:null, weekend:"none", growth_policy:"auto",
+                planning_flow:null, additional_splits:[], amount_changes:[],
+                seasonal_amounts:item.seasonal_amounts || [], skipped:[],
+                occurrence_adjustments:[],
+              }};
+              close();
+              switchTo("Plan");
+            }
           } catch (error) { say(error.message, "error"); }
-        }}, "Add"))));
+        }}, "Review…"))));
       body.replaceChildren(
         el("p", { class:"note" }, data.proposals.length
-          ? "Proposals use the median of active completed months and become ordinary monthly estimates when accepted."
+          ? "Proposals use completed activity after known schedules. Review and adjust one in the normal editor; it is not added until you choose Save."
           : "No categories have enough completed historical activity for a proposal."),
         table(["Category", "Direction", "Cadence", {label:"Estimate", num:true},
           "Evidence", "Confidence", ""], rows));
@@ -916,7 +955,7 @@ async function openHistoricalEstimateDialog() {
     el("label", {}, "History months ", months),
     el("label", {}, "Add to ", target),
     el("button", { class:"action", type:"button", onclick:load }, "Analyze"),
-    el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"));
+    el("button", { class:"action", type:"button", onclick:close }, "Close"));
   backdrop.append(el("section", { class:"detail-dialog wide" },
     el("div", { class:"detail-heading" }, el("h2", {}, "Suggest estimates from history")),
     controls, body));
@@ -1026,6 +1065,7 @@ function openScheduledEditor(data, source) {
         planning_flow: values.planning_flow || null, amount: values.amount,
         additional_splits: additionalSplits.values(),
         amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
+        seasonal_amounts: source?.seasonal_amounts || [],
         skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
         frequency: values.frequency, start: values.start,
         end: values.end || null, count: values.count || null, weekend: values.weekend,
@@ -1035,7 +1075,7 @@ function openScheduledEditor(data, source) {
     } catch (error) { say(error.message, "error"); }
   });
   backdrop.append(el("section", { class:"detail-dialog" },
-    el("div", { class:"detail-heading" }, el("h2", {}, source ? "Edit scheduled transaction" : "New scheduled transaction")),
+    el("div", { class:"detail-heading" }, el("h2", {}, source?.handle ? "Edit scheduled transaction" : "New scheduled transaction")),
     el("p", { class:"note" }, "Fixed-split schedules are editable. Additional splits can represent payroll deductions, retirement/FSA funding, debt principal, and similar plan flows. Formula schedules remain read-only."), form));
   document.body.append(backdrop);
 }
@@ -1325,11 +1365,11 @@ async function scenarioEventPanel(handle, fromMonth) {
     const simpleBase = data.baseline.filter(x=>x.simple);
     let source = mode.kind === "alter" ? simpleBase.find(x=>x.handle===mode.source) || simpleBase[0] : null;
     const categories = data.accounts.filter(a=>a.class==="income" || a.class==="expense");
-    const category = source?.category || categories[0]?.handle || "";
-    const funding = source?.funding || data.accounts.find(a=>a.handle!==category)?.handle || "";
     const sourceSelect = mode.kind === "alter" ? el("select", {name:"source", onchange:e=>{state.scenarioEvent={kind:"alter",source:e.target.value};render();}}, simpleBase.map(x=>el("option",{value:x.handle,selected:x.handle===source?.handle?"selected":null},x.name))) : null;
     const existing = mode.kind === "alter" ? data.changes.find((x)=>x.source_schedule===source?.handle && x.enabled) : null;
-    const editSource = existing || source;
+    const editSource = mode.draft || existing || source;
+    const category = editSource?.category || categories[0]?.handle || "";
+    const funding = editSource?.funding || data.accounts.find(a=>a.handle!==category)?.handle || "";
     const planningFlow = editSource?.planning_flow || "";
     const growthPolicy = editSource?.growth_policy || "auto";
     let refreshTimeline = () => {};
@@ -1343,7 +1383,7 @@ async function scenarioEventPanel(handle, fromMonth) {
     const preview = schedulePreviewNode();
     const additionalSplits = planningSplitEditor(
       data.accounts, editSource?.additional_splits || [], changed);
-    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
+    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, seasonal_amounts:editSource?.seasonal_amounts || [], skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
       el("label", {}, "Projection growth", el("select", {name:"growth_policy"},

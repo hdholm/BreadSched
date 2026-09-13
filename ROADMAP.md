@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0169 — import memory and hidden-account entry safety**.
-The current candidate is **0170 — scheduled lifecycle and navigation**.
+The accepted baseline is **0170 — scheduled lifecycle and navigation**.
+The current candidate is **0171 — reviewed historical-estimate drafts**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -229,6 +229,12 @@ semantics, not duplicate business rules in presentation code.
   rows into their schedule/account workflow without posting. Preserve schedule
   memos through the web editor, protect hidden accounts at new-schedule boundaries,
   and advance the alpha version to `0.2.0a9`.
+- [x] **0171 — Reviewed historical-estimate drafts.** Make Suggest from History open
+  an unsaved, populated Base or saved-scenario schedule editor instead of writing
+  immediately. Preserve inferred cadence and seasonal values through GTK/web review;
+  Save the user's final values and make Cancel a no-op. Keep one GTK/web suggestion
+  window per book/context, foreground it on repeated requests, and advance the alpha
+  version to `0.2.0a10`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -363,11 +369,11 @@ semantics, not duplicate business rules in presentation code.
 - [x] **0159 — Count all future split categories.** Future committed and estimated
   multi-split events contribute each income/expense leg, including repeated legs
   and refunds to the same category, with exact signed totals.
-- [ ] **Review before acceptance.** The suggestion's Add action should open the
+- [x] **0171 — Review before acceptance.** The suggestion's action opens the
   populated Add Scheduled Transaction editor for adjustments to amount, accounts,
   recurrence, dates, and splits. Commit only after Save; Cancel must leave no new
   schedule. Reanalysis must use the actual saved values.
-- [ ] **One suggestion window per book/context.** Repeating Suggest from History
+- [x] **0171 — One suggestion window per book/context.** Repeating Suggest from History
   should foreground the existing window, not create another. Handle closing,
   changing books, and scenario changes without stale references.
 - [x] **0159 — Stable Add placement in GTK.** Place each suggestion's Add button

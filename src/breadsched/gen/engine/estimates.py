@@ -1,7 +1,7 @@
 """Historical category activity turned into reviewable planning estimates.
 
 The analyzer deliberately produces suggestions rather than silently changing the
-book. Accepted suggestions become ordinary scheduled estimates, so Plan,
+book. Saved suggestions become ordinary scheduled estimates, so Plan,
 Projection, Review, and scenarios continue to consume one event model.
 """
 
@@ -25,6 +25,8 @@ from .escrow import recognition as escrow_recognition
 __all__ = [
     "HistoricalEstimateProposal",
     "accept_historical_estimate",
+    "draft_historical_estimate",
+    "draft_scenario_estimate",
     "propose_historical_estimates",
 ]
 
@@ -354,6 +356,49 @@ def propose_historical_estimates(
     return sorted(proposals, key=lambda item: item.category_name)
 
 
+def _proposal_splits(db: DbSQLite, proposal: HistoricalEstimateProposal) -> list[ScheduledSplit]:
+    category = db.get_account(proposal.category)
+    funding = db.get_account(proposal.funding)
+    if category is None or funding is None:
+        raise ValueError("proposal accounts no longer exist")
+    signed = proposal.amount * category.sign()
+    return [
+        ScheduledSplit(category.handle, signed),
+        ScheduledSplit(funding.handle, -signed),
+    ]
+
+
+def draft_historical_estimate(
+    db: DbSQLite, proposal: HistoricalEstimateProposal
+) -> ScheduledTransaction:
+    """Build an editable, unsaved Base estimate from one analyzer proposal."""
+    name = f"Estimated {proposal.category_name}"
+    draft = ScheduledTransaction(
+        name=name,
+        recurrence=Recurrence.from_dict(proposal.recurrence.serialize()),
+        splits=_proposal_splits(db, proposal),
+        auto_create=False,
+        seasonal_amounts=[
+            ScheduledMonthAmount.from_dict(item.serialize()) for item in proposal.seasonal_amounts
+        ],
+    )
+    draft.placeholder = True
+    return draft
+
+
+def draft_scenario_estimate(db: DbSQLite, proposal: HistoricalEstimateProposal) -> ScenarioSchedule:
+    """Build an editable, unsaved scenario estimate from one analyzer proposal."""
+    return ScenarioSchedule(
+        name=f"Estimated {proposal.category_name}",
+        recurrence=Recurrence.from_dict(proposal.recurrence.serialize()),
+        splits=_proposal_splits(db, proposal),
+        placeholder=True,
+        seasonal_amounts=[
+            ScheduledMonthAmount.from_dict(item.serialize()) for item in proposal.seasonal_amounts
+        ],
+    )
+
+
 def accept_historical_estimate(
     db: DbSQLite,
     proposal: HistoricalEstimateProposal,
@@ -361,26 +406,9 @@ def accept_historical_estimate(
     scenario_handle: str | None = None,
 ) -> str:
     """Persist a proposal as an ordinary Base or scenario estimate."""
-    category = db.get_account(proposal.category)
-    funding = db.get_account(proposal.funding)
-    if category is None or funding is None:
-        raise ValueError("proposal accounts no longer exist")
-    signed = proposal.amount * category.sign()
-    splits = [
-        ScheduledSplit(category.handle, signed),
-        ScheduledSplit(funding.handle, -signed),
-    ]
-    name = f"Estimated {proposal.category_name}"
 
     if scenario_handle is None:
-        baseline_schedule = ScheduledTransaction(
-            name=name,
-            recurrence=proposal.recurrence,
-            splits=splits,
-            auto_create=False,
-            seasonal_amounts=list(proposal.seasonal_amounts),
-        )
-        baseline_schedule.placeholder = True
+        baseline_schedule = draft_historical_estimate(db, proposal)
         with db.transaction(f"Add historical estimate {proposal.category_name}") as txn:
             db.add_scheduled(baseline_schedule, txn)
         return baseline_schedule.handle
@@ -388,13 +416,7 @@ def accept_historical_estimate(
     scenario = db.get_scenario(scenario_handle)
     if scenario is None:
         raise ValueError("saved scenario no longer exists")
-    scenario_schedule = ScenarioSchedule(
-        name=name,
-        recurrence=proposal.recurrence,
-        splits=splits,
-        placeholder=True,
-        seasonal_amounts=list(proposal.seasonal_amounts),
-    )
+    scenario_schedule = draft_scenario_estimate(db, proposal)
     scenario.schedule_overrides.append(scenario_schedule)
     with db.transaction(f"Add historical estimate to {scenario.name}") as txn:
         db.commit_scenario(scenario, txn)

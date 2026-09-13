@@ -978,6 +978,50 @@ class TestHistoricalEstimateProposals:
         assert saved.amount(when=date(2026, 4, 10)) == Money("100.00")
         assert saved.amount(when=date(2026, 7, 10)) == Money("240.00")
 
+    def test_review_drafts_preserve_the_proposal_without_writing(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        with db.transaction("Seasonal history") as txn:
+            for year in (2024, 2025):
+                for month in range(1, 13):
+                    db.add_transaction(
+                        Transaction.simple(
+                            date(year, month, 10),
+                            "Utilities",
+                            book.utilities,
+                            book.checking,
+                            "240" if month in (1, 2, 7, 8) else "100",
+                        ),
+                        txn,
+                    )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 1, 20), months=24
+            )
+            if item.category == book.utilities
+        )
+        schedules_before = list(db.iter_scheduled())
+
+        base = estimates.draft_historical_estimate(db, proposal)
+        alternate = estimates.draft_scenario_estimate(db, proposal)
+
+        assert list(db.iter_scheduled()) == schedules_before
+        assert base.placeholder is True
+        assert base.auto_create is False
+        assert base.recurrence.serialize() == proposal.recurrence.serialize()
+        assert alternate.recurrence.serialize() == proposal.recurrence.serialize()
+        assert [item.serialize() for item in base.seasonal_amounts] == [
+            item.serialize() for item in proposal.seasonal_amounts
+        ]
+        assert [item.serialize() for item in alternate.seasonal_amounts] == [
+            item.serialize() for item in proposal.seasonal_amounts
+        ]
+        assert base.seasonal_amounts[0] is not proposal.seasonal_amounts[0]
+        assert alternate.seasonal_amounts[0] is not proposal.seasonal_amounts[0]
+
     def test_accepted_base_estimate_is_subtracted_on_reanalysis(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import Transaction

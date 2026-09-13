@@ -110,6 +110,12 @@ Imported schedules that BreadSched cannot reproduce safely remain inspectable
 rather than being silently simplified. Supported fixed and formula schedule forms
 can be edited while preserving their stored semantics.
 
+Suggest from History produces reviewable drafts rather than writing directly to the
+book. Choosing **Review…** opens the normal Base or scenario schedule editor with
+the inferred accounts, amount, cadence, dates, and seasonal values populated. The
+proposal is added only after **Save**; cancelling leaves the book unchanged, and a
+later analysis measures coverage from the values that were actually saved.
+
 ### Scenarios and Projection
 
 Saved scenarios contain assumptions and alternate planned events, not cached

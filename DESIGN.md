@@ -126,10 +126,13 @@ net cash change computed from the event stream, not a sum of unlike category and
 balance-sheet values. Planned totals cover the selected horizon; variance totals
 include only reporting periods that have begun by the report's as-of date.
 
-Scheduled commitments and estimates use the same underlying event model. Estimates
-accepted from historical analysis become planned activity themselves; rerunning the
-analysis therefore asks only for residual unplanned need rather than repeatedly
-suggesting the same amount.
+Scheduled commitments and estimates use the same underlying event model. Historical
+analysis produces an unsaved schedule draft; Base and saved-scenario UIs must route
+that draft through their ordinary schedule editor before persistence. The draft
+preserves inferred cadence and seasonal month amounts, but the user's reviewed
+values are authoritative. Cancelling performs no write. Once saved, the estimate
+becomes planned activity itself, so rerunning analysis asks only for residual
+unplanned need rather than repeatedly suggesting the same amount.
 Historical category actuals supply gross inferred need, including actuals matched
 to an earlier schedule. The selected future plan supplies coverage: committed
 schedules and planning-only estimates contribute their category splits once, using

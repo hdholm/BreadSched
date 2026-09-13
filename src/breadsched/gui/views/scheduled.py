@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import schedule
 from ...gen.lib import PeriodType, ScheduledTransaction
 from ...gen.lib.money import Money
@@ -72,7 +73,14 @@ class ScheduledView(BaseView):
 
     def __init__(self, manager) -> None:
         super().__init__(manager)
+        self._suggest_dialog: Gtk.Window | None = None
         self._build()
+
+    def set_db(self, db: DbSQLite | None) -> None:
+        if self._suggest_dialog is not None and db is not self.db:
+            self._suggest_dialog.close()
+            self._suggest_dialog = None
+        super().set_db(db)
 
     def _build(self) -> None:
         bar = Gtk.Box(spacing=8)
@@ -406,10 +414,20 @@ class ScheduledView(BaseView):
     def _on_suggest_clicked(self, _button) -> None:
         if self.db is None:
             return
+        if self._suggest_dialog is not None:
+            self._suggest_dialog.present()
+            return
         from ..dialogs.historical_estimates_dialog import HistoricalEstimatesDialog
 
         dialog = HistoricalEstimatesDialog(self.get_root(), self.db)
-        dialog.connect("close-request", self.refresh_on_close)
+        self._suggest_dialog = dialog
+
+        def closed(*_args) -> bool:
+            self._suggest_dialog = None
+            self.refresh()
+            return False
+
+        dialog.connect("close-request", closed)
         dialog.present()
 
     def _on_loan_clicked(self, _button) -> None:

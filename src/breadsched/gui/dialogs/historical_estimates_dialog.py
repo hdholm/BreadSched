@@ -48,7 +48,7 @@ class HistoricalEstimatesDialog(Gtk.Window):
         note = Gtk.Label(
             label=(
                 "Suggestions use completed historical activity after known schedules. "
-                "Accepting one creates an ordinary editable estimate."
+                "Review opens the normal editor; nothing is added until you choose Save."
             ),
             xalign=0,
             wrap=True,
@@ -92,7 +92,7 @@ class HistoricalEstimatesDialog(Gtk.Window):
         self.status.set_text(f"{len(proposals)} proposal(s)")
         for proposal in proposals:
             row = Gtk.Box(spacing=10)
-            add = Gtk.Button(label="Add")
+            add = Gtk.Button(label="Review…")
             add.connect("clicked", self._on_add, proposal)
             row.append(add)
             label = Gtk.Label(
@@ -118,11 +118,30 @@ class HistoricalEstimatesDialog(Gtk.Window):
 
     def _on_add(self, button, proposal) -> None:
         try:
-            estimates.accept_historical_estimate(
-                self.db, proposal, scenario_handle=self._scenario_handle()
-            )
+            scenario_handle = self._scenario_handle()
+            if scenario_handle is None:
+                from .schedule_dialog import ScheduleDialog
+
+                draft = estimates.draft_historical_estimate(self.db, proposal)
+                dialog = ScheduleDialog(self, self.db, source=draft, creating=True)
+            else:
+                from .scenario_schedule_dialog import ScenarioScheduleDialog
+
+                scenario = self.db.get_scenario(scenario_handle)
+                if scenario is None:
+                    raise ValueError("saved scenario no longer exists")
+                draft = estimates.draft_scenario_estimate(self.db, proposal)
+                dialog = ScenarioScheduleDialog(self, self.db, scenario, current=draft)
         except ValueError as exc:
             self.status.set_text(str(exc))
             return
         button.set_sensitive(False)
-        self.status.set_text(f"Added estimate for {proposal.category_name}.")
+
+        def finished(*_args) -> bool:
+            button.set_sensitive(True)
+            self._reload()
+            return False
+
+        dialog.connect("close-request", finished)
+        dialog.present()
+        self.status.set_text(f"Review the estimate for {proposal.category_name}, then Save.")

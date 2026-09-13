@@ -330,6 +330,34 @@ class TestItServes:
         item = next(row for row in data["definitions"] if row["handle"] == created["handle"])
         assert item["enabled"] is True
 
+    def test_scheduled_review_preserves_seasonal_amounts(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        status, created = client.post(
+            "/api/scheduled/save",
+            {
+                "name": "Seasonal estimate",
+                "category": category["handle"],
+                "funding": funding["handle"],
+                "amount": "25.00",
+                "frequency": "monthly",
+                "start": "2026-01-01",
+                "placeholder": True,
+                "seasonal_amounts": [
+                    {"month": 1, "amount": "40.00"},
+                    {"month": 7, "amount": "10.00"},
+                ],
+            },
+        )
+        assert status == 200
+        _status, data = client.get("/api/scheduled")
+        item = next(row for row in data["definitions"] if row["handle"] == created["handle"])
+        assert item["seasonal_amounts"] == [
+            {"month": 1, "amount": "40.00"},
+            {"month": 7, "amount": "10.00"},
+        ]
+
     def test_occurrence_options_follow_recurrence_and_weekend_adjustment(self, client):
         status, payload = client.post(
             "/api/scheduled/occurrences",
@@ -1586,6 +1614,7 @@ class TestScenarioEventWebParity:
                 "funding": bank["handle"],
                 "planning_flow": "debt_principal",
                 "amount": "1500.00",
+                "seasonal_amounts": [{"month": 7, "amount": "1600.00"}],
                 "frequency": "monthly",
                 "start": "2026-03-01",
                 "weekend": "none",
@@ -1596,6 +1625,7 @@ class TestScenarioEventWebParity:
         assert saved["changes"][0]["amount"] == "1500.00"
         assert saved["changes"][0]["planning_flow"] == "debt_principal"
         assert saved["changes"][0]["growth_policy"] == "inflation"
+        assert saved["changes"][0]["seasonal_amounts"] == [{"month": 7, "amount": "1600.00"}]
 
     def test_scenario_estimate_can_carry_fixed_multisplit_classifications(
         self, scenario_event_client
@@ -1780,6 +1810,8 @@ class TestScenarioEventWebParity:
         assert '"Add estimate…"' in page
         assert '"Alter baseline…"' in page
         assert '"Suppress baseline…"' in page
+        assert '"Review…"' in page
+        assert "historicalEstimateDialog" in page
 
 
 def test_historical_estimate_proposals_and_acceptance(client):
@@ -1788,6 +1820,8 @@ def test_historical_estimate_proposals_and_acceptance(client):
     rent = next(item for item in data["proposals"] if item["category_name"].endswith("Rent"))
     assert rent["funding_name"].endswith("Checking")
     assert Money(rent["amount"]) == Money("1800.00")
+    assert rent["frequency_key"] == "monthly"
+    assert rent["seasonal_amounts"] == []
     assert data["targets"][0]["name"] == "Base"
 
     status, result = client.post(

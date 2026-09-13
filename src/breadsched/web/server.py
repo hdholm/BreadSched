@@ -55,6 +55,7 @@ from ..gen.lib import (
     Scenario,
     ScenarioSchedule,
     ScheduledAmountChange,
+    ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
@@ -630,6 +631,11 @@ class Api:
                     "destination_name": item.destination_name,
                     "start": item.recurrence.start,
                     "frequency": item.recurrence.describe(),
+                    "frequency_key": self._frequency_key(item.recurrence),
+                    "seasonal_amounts": [
+                        {"month": value.month, "amount": value.amount}
+                        for value in item.seasonal_amounts
+                    ],
                     "scheduled_amount": item.scheduled_amount,
                     "active_months": item.active_months,
                     "transaction_count": item.transaction_count,
@@ -707,6 +713,10 @@ class Api:
                     "amount_changes": [
                         {"start": change.start.isoformat(), "amount": change.amount}
                         for change in item.amount_changes
+                    ],
+                    "seasonal_amounts": [
+                        {"month": value.month, "amount": value.amount}
+                        for value in item.seasonal_amounts
                     ],
                     "skipped": [when.isoformat() for when in item.skipped],
                     "occurrence_adjustments": [
@@ -1186,6 +1196,9 @@ class Api:
                 {"start": change.start.isoformat(), "amount": change.amount}
                 for change in item.amount_changes
             ],
+            "seasonal_amounts": [
+                {"month": value.month, "amount": value.amount} for value in item.seasonal_amounts
+            ],
             "skipped": [when.isoformat() for when in item.skipped],
             "occurrence_adjustments": [
                 {"when": change.when.isoformat(), "amount": change.amount}
@@ -1233,6 +1246,10 @@ class Api:
                         {"start": change.start.isoformat(), "amount": change.amount}
                         for change in item.amount_changes
                     ],
+                    "seasonal_amounts": [
+                        {"month": value.month, "amount": value.amount}
+                        for value in item.seasonal_amounts
+                    ],
                     "skipped": [when.isoformat() for when in item.skipped],
                     "occurrence_adjustments": [
                         {"when": change.when.isoformat(), "amount": change.amount}
@@ -1270,6 +1287,33 @@ class Api:
             seen.add(when)
             changes.append(ScheduledAmountChange(when, amount))
         return sorted(changes, key=lambda item: item.start)
+
+    @staticmethod
+    def _parse_seasonal_amounts(payload: dict) -> list[ScheduledMonthAmount]:
+        raw_amounts = payload.get("seasonal_amounts") or []
+        if not isinstance(raw_amounts, list):
+            raise ValueError("seasonal amounts must be a list")
+        amounts = []
+        seen = set()
+        for raw in raw_amounts:
+            if not isinstance(raw, dict):
+                raise ValueError("seasonal amount entry is invalid")
+            try:
+                raw_month = raw.get("month")
+                if raw_month is None:
+                    raise ValueError
+                month = int(raw_month)
+                amount = abs(Api._input_money(payload, raw.get("amount") or ""))
+                item = ScheduledMonthAmount(month, amount)
+            except (TypeError, ValueError, ArithmeticError):
+                raise ValueError(
+                    "seasonal amounts require a month from 1 through 12 and a positive amount"
+                ) from None
+            if month in seen:
+                raise ValueError("seasonal amount months must be unique")
+            seen.add(month)
+            amounts.append(item)
+        return sorted(amounts, key=lambda item: item.month)
 
     @staticmethod
     def _parse_skipped(payload: dict, recurrence: Recurrence) -> list[date]:
@@ -1485,7 +1529,13 @@ class Api:
             placeholder=source.placeholder if source is not None else True,
             growth_policy=growth_policy,
             amount_changes=self._parse_amount_changes(payload, start),
-            seasonal_amounts=list(source.seasonal_amounts) if source is not None else [],
+            seasonal_amounts=(
+                self._parse_seasonal_amounts(payload)
+                if "seasonal_amounts" in payload
+                else list(source.seasonal_amounts)
+                if source is not None
+                else []
+            ),
             skipped=skipped,
             occurrence_adjustments=adjustments,
         )
@@ -2562,6 +2612,13 @@ class Api:
         item.placeholder = bool(payload.get("placeholder", False))
         item.growth_policy = growth_policy
         item.amount_changes = amount_changes
+        item.seasonal_amounts = (
+            self._parse_seasonal_amounts(payload)
+            if "seasonal_amounts" in payload
+            else list(existing.seasonal_amounts)
+            if existing is not None
+            else []
+        )
         item.skipped = skipped
         item.occurrence_adjustments = adjustments
         if "enabled" in payload:
