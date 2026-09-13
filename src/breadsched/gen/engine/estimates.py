@@ -127,7 +127,7 @@ def _planned_category_profiles(
     totals: dict[tuple[str, date], Money] = {}
     accounts = {account.handle: account for account in db.iter_accounts()}
     for event in _target_events(db, start, end, scenario_handle):
-        _, covered = escrow_recognition(
+        escrow = escrow_recognition(
             ((split.account, split.amount) for split in event.expected_splits), accounts
         )
         for split in event.expected_splits:
@@ -138,7 +138,11 @@ def _planned_category_profiles(
             ):
                 continue
             key = (account.handle, _month_start(event.planned_date))
-            amount = split.amount * account.sign() - covered.get(account.handle, Money(0))
+            amount = (
+                split.amount * account.sign()
+                - escrow.covered_expenses.get(account.handle, Money(0))
+                + escrow.restored_expenses.get(account.handle, Money(0))
+            )
             totals[key] = totals.get(key, Money(0)) + amount
     return totals
 
@@ -338,11 +342,15 @@ def propose_historical_estimates(
             total = Money(0)
             for txn in db.iter_transactions(account=account.handle, start=start, end=end):
                 value = txn.value_for(account.handle) * account.sign()
-                _, covered = escrow_recognition(
+                escrow = escrow_recognition(
                     ((split.account, split.value) for split in txn.splits),
                     accounts_by_handle,
                 )
-                value = value - covered.get(account.handle, Money(0))
+                value = (
+                    value
+                    - escrow.covered_expenses.get(account.handle, Money(0))
+                    + escrow.restored_expenses.get(account.handle, Money(0))
+                )
                 if value:
                     total = total + value
                     txn_count += 1

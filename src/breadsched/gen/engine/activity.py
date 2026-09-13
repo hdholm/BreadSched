@@ -346,6 +346,7 @@ class CategoryPlannedDetail:
     variance: Money | None
     actual_transaction: str | None
     actual_date: date | None
+    explanation: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,6 +363,7 @@ class CategoryActualDetail:
     expected: Money | None
     variance: Money | None
     date_variance_days: int | None
+    explanation: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -548,11 +550,14 @@ def explain_category_period(
             else:
                 total = total + split.amount
         if account.account_class is AccountClass.EXPENSE:
-            _, covered = escrow_recognition(
+            escrow = escrow_recognition(
                 ((split.account, split.amount) for split in splits), accounts
             )
             total = total - _sum_money(
-                amount for handle, amount in covered.items() if handle in included
+                amount for handle, amount in escrow.covered_expenses.items() if handle in included
+            )
+            total = total + _sum_money(
+                amount for handle, amount in escrow.restored_expenses.items() if handle in included
             )
         return total
 
@@ -585,6 +590,10 @@ def explain_category_period(
                     variance=actual_value - expected if actual_value is not None else None,
                     actual_transaction=event.actual_transaction,
                     actual_date=event.actual_date,
+                    explanation=escrow_recognition(
+                        ((split.account, split.amount) for split in event.expected_splits),
+                        accounts,
+                    ).explanations(accounts),
                 )
             )
 
@@ -615,6 +624,10 @@ def explain_category_period(
                     expected=matched_expected,
                     variance=value - matched_expected if matched_expected is not None else None,
                     date_variance_days=actual.date_variance_days,
+                    explanation=escrow_recognition(
+                        ((split.account, split.value) for split in transaction.splits),
+                        accounts,
+                    ).explanations(accounts),
                 )
             )
 
@@ -653,6 +666,8 @@ def explain_planning_flow_period(
 
     def flow_amount(splits: Iterable[PlannedSplit]) -> Money:
         split_tuple = tuple(splits)
+        if kind is PlanningFlowKind.ESCROW_FUNDING:
+            return _escrow_planning_flows(split_tuple, accounts).get(account_handle, Money(0))
         total = Money(0)
         for split in split_tuple:
             if split.account != account_handle:
@@ -689,6 +704,10 @@ def explain_planning_flow_period(
                     variance=actual_value - expected if actual_value is not None else None,
                     actual_transaction=event.actual_transaction,
                     actual_date=event.actual_date,
+                    explanation=escrow_recognition(
+                        ((split.account, split.amount) for split in event.expected_splits),
+                        accounts,
+                    ).explanations(accounts),
                 )
             )
 
@@ -721,6 +740,10 @@ def explain_planning_flow_period(
                     expected=matched_expected,
                     variance=value - matched_expected if matched_expected is not None else None,
                     date_variance_days=actual.date_variance_days,
+                    explanation=escrow_recognition(
+                        ((split.account, split.value) for split in transaction.splits),
+                        accounts,
+                    ).explanations(accounts),
                 )
             )
 
@@ -760,13 +783,27 @@ def _inferred_planning_flow(
             return PlanningFlowKind.RETIREMENT_INCOME
     if account.atype is AccountType.FSA and split.amount > 0:
         return PlanningFlowKind.BENEFIT_FUNDING
-    if account.atype is AccountType.ESCROW and split.amount > 0:
-        return PlanningFlowKind.ESCROW_FUNDING
     if account.atype is AccountType.LOAN and split.amount > 0:
         if any(peer and peer.atype is AccountType.LOAN for peer in peers):
             return None
         return PlanningFlowKind.DEBT_PRINCIPAL
     return None
+
+
+def _escrow_planning_flows(
+    splits: tuple[PlannedSplit, ...], accounts: dict[str, Account]
+) -> dict[str, Money]:
+    """Return exact signed escrow Plan rows, honoring explicit split overrides."""
+    result = escrow_recognition(
+        ((split.account, split.amount) for split in splits), accounts
+    ).planning_flows
+    explicit: dict[str, Money] = {}
+    for split in splits:
+        if split.planning_flow is PlanningFlowKind.ESCROW_FUNDING:
+            explicit[split.account] = explicit.get(split.account, Money(0)) + split.amount
+    for handle, amount in explicit.items():
+        result[handle] = amount
+    return result
 
 
 def _sum_money(values: Iterable[Money]) -> Money:
@@ -873,10 +910,8 @@ def _split_totals(
             AccountClass.LIABILITY,
         ):
             cash = cash - split.amount
-    funding, covered = escrow_recognition(
-        ((split.account, split.amount) for split in splits), accounts
-    )
-    return cash, income, expense + funding - _sum_money(covered.values())
+    escrow = escrow_recognition(((split.account, split.amount) for split in splits), accounts)
+    return cash, income, expense + escrow.planning_expense_adjustment
 
 
 def _actual_activity(
@@ -1001,11 +1036,16 @@ def build_category_report(
 
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
-            _, covered = escrow_recognition(
+            escrow = escrow_recognition(
                 ((split.account, split.amount) for split in event.expected_splits), accounts
             )
+            for handle, value in _escrow_planning_flows(event.expected_splits, accounts).items():
+                values = flow_amounts(flow_planned, PlanningFlowKind.ESCROW_FUNDING, handle)
+                values[period_index] = values[period_index] + value
             for planned_split in event.expected_splits:
                 flow_kind = _inferred_planning_flow(planned_split, event.expected_splits, accounts)
+                if flow_kind is PlanningFlowKind.ESCROW_FUNDING:
+                    continue
                 if flow_kind is not None:
                     values = flow_amounts(flow_planned, flow_kind, planned_split.account)
                     values[period_index] = values[period_index] + flow_kind.plan_amount(
@@ -1019,9 +1059,12 @@ def build_category_report(
                     values[period_index] = values[period_index] - planned_split.amount
                 elif account.account_class is AccountClass.EXPENSE:
                     values[period_index] = values[period_index] + planned_split.amount
-            for handle, amount in covered.items():
+            for handle, amount in escrow.covered_expenses.items():
                 values = amounts(direct_planned, handle)
                 values[period_index] = values[period_index] - amount
+            for handle, amount in escrow.restored_expenses.items():
+                values = amounts(direct_planned, handle)
+                values[period_index] = values[period_index] + amount
         for actual in bucket.actual_transactions:
             transaction = db.get_transaction(actual.transaction)
             if transaction is None:
@@ -1030,13 +1073,18 @@ def build_category_report(
                 PlannedSplit(split.account, split.value, split.planning_flow)
                 for split in transaction.splits
             )
-            _, covered = escrow_recognition(
+            escrow = escrow_recognition(
                 ((split.account, split.amount) for split in actual_planned_splits), accounts
             )
+            for handle, value in _escrow_planning_flows(actual_planned_splits, accounts).items():
+                values = flow_amounts(flow_actual, PlanningFlowKind.ESCROW_FUNDING, handle)
+                values[period_index] = values[period_index] + value
             for actual_split, planned_view in zip(
                 transaction.splits, actual_planned_splits, strict=True
             ):
                 flow_kind = _inferred_planning_flow(planned_view, actual_planned_splits, accounts)
+                if flow_kind is PlanningFlowKind.ESCROW_FUNDING:
+                    continue
                 if flow_kind is not None:
                     values = flow_amounts(flow_actual, flow_kind, actual_split.account)
                     values[period_index] = values[period_index] + flow_kind.plan_amount(
@@ -1050,9 +1098,12 @@ def build_category_report(
                     values[period_index] = values[period_index] - actual_split.value
                 elif account.account_class is AccountClass.EXPENSE:
                     values[period_index] = values[period_index] + actual_split.value
-            for handle, amount in covered.items():
+            for handle, amount in escrow.covered_expenses.items():
                 values = amounts(direct_actual, handle)
                 values[period_index] = values[period_index] - amount
+            for handle, amount in escrow.restored_expenses.items():
+                values = amounts(direct_actual, handle)
+                values[period_index] = values[period_index] + amount
 
     active = set(direct_planned) | set(direct_actual)
     for handle in list(active):

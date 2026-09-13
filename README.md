@@ -208,6 +208,23 @@ Technical, and paid-in-full Credit card accounts are always excluded. A card pai
 in full still affects near-term liquidity; its underlying expense categories, not
 the card payment itself, determine emergency need.
 
+### Escrow planning treatment
+
+Escrow is kept on the balanced ledger as a restricted asset, but Plan recognizes
+the household cost when cash or income funds the escrow account. A later tax,
+insurance, or similar payment from escrow is shown as a draw and does not count the
+covered expense a second time. If cash pays part of the same charge directly, only
+that uncovered part is new expense.
+
+Refunds and corrections are distinguished rather than treating every escrow deposit
+as new spending. A vendor credit returned to escrow restores restricted funds and is
+planning-neutral; money returned from escrow to spendable cash reverses prior
+expense. Transfers between escrow accounts and Equity/manual balance corrections
+change balances without creating household expense. A combined mortgage payment
+shows escrow funding and interest as expense while principal only reduces the loan.
+Projection keeps a negative escrow balance visible and warns when an event creates
+or worsens the shortfall.
+
 ### Security quantities, prices, and current value
 
 Investment and Retirement accounts may name a non-currency commodity such as a

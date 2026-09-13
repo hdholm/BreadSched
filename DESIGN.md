@@ -495,6 +495,26 @@ A later expense-account payment out of escrow reduces the asset but subtracts th
 covered portion from planning expense, including proportional treatment of partial
 escrow payments. The ledger transaction remains unchanged and balanced throughout.
 
+Escrow recognition is a shared transaction-boundary interpretation, not a mutation
+of splits or account classes. It first removes transfers between escrow accounts,
+then allocates draws across positive expense legs and vendor credits across escrow
+restorations. A remaining positive escrow movement is funding only when the event
+has a spendable-cash outflow or income source; otherwise it is a manual/balance-sheet
+adjustment. A remaining negative movement reverses planning expense only when it is
+returned to spendable cash; otherwise it is an adjustment. Allocations are exact and
+proportional when multiple escrow or expense accounts share one transaction.
+
+This distinction makes combined mortgage payments dimensionally clear without
+settling the separate mortgage Plan-presentation design question: interest remains
+ordinary expense, escrow funding is an `ESCROW_FUNDING` planning flow and expense,
+and principal remains a `DEBT_PRINCIPAL` flow that reduces the liability. Plan detail,
+Projection detail, web responses, and printable Projection reports use explanations
+from the same recognition result. Projection does not hide or clamp a negative
+escrow holding; it preserves the reconciled state and emits a warning when an event
+creates or worsens the shortfall. Exact imported GnuCash ledger facts remain source
+owned, while the locally selected Escrow account type remains BreadSched owned on
+re-import.
+
 ## Platform user paths
 
 Per-user settings belong in the platform's normal configuration location rather than

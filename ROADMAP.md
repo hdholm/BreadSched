@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline before this development series is **0184 — account-linked card
-payments**. The current sequential candidates are **0185–0186**.
+The current accepted baseline is **0186 — explicit investment activity**. The
+current sequential candidate is **0187 — escrow follow-through**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,10 +94,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Escrow follow-through.** Finish richer refund/adjustment explanations and
-   combined mortgage/escrow coverage on the single account-type model.
-2. **Imported account fidelity.** Expand representative GnuCash fixtures and safely
+1. **NEXT — Imported account fidelity.** Expand representative GnuCash fixtures and safely
    expose remaining account metadata without destructive normalization.
+2. **Plan classification explanations.** Make unresolved/unexpected and inferred
+   account-type/split-purpose decisions easier to inspect and correct.
 
 ## Dashboard balances and group hierarchy
 
@@ -467,10 +467,17 @@ semantics, not duplicate business rules in presentation code.
   book-close/view-detach lifecycle before attempting to restore persisted Plan
   controls. Cover direct detachment in the GTK regression suite and advance the
   alpha version to `0.2.0a3`.
-- [ ] **Escrow follow-through.** Add dedicated explanations for refunds, manual
-  adjustments, negative escrow balances, and combined mortgage/escrow payments;
-  expand imported GnuCash fixtures and scenario override tests for those cases.
-  Keep the account-type API and UI aligned as explanations expand.
+- [x] **0187 — Escrow follow-through.** Distinguish cash/income-funded deposits,
+  expense-covering draws, vendor-credit restorations, cash refunds, internal escrow
+  transfers, and manual/Equity balance corrections without changing balanced ledger
+  splits. Cash refunds reverse prior planning expense; restorations and corrections
+  are neutral. Keep partial draws exact and proportional. Explain the shared result
+  in GTK/web Plan and Projection detail and printable Projection reports; keep
+  negative projected balances visible and warn when an event creates or worsens a
+  shortfall. Combined loan payments recognize interest plus escrow funding while
+  principal only reduces the liability. Cover scenario overrides and a representative
+  GnuCash account retyped locally as Escrow and preserved on re-import. Advance the
+  alpha version to `0.2.0a26`.
 - [x] **Row and column totals.** Totals across periods and down each period column
   cover planned, actual, and variance values consistently. Category section totals
   count outermost rollups once; planning flows remain separate; Net cash change is

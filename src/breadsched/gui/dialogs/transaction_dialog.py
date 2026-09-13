@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import fsa_claims, investment
+from ...gen.engine import escrow, fsa_claims, investment
 from ...gen.lib import (
     InvestmentActivityKind,
     Money,
@@ -215,6 +215,22 @@ class TransactionDialog(Gtk.Window):
             )
             header.attach(Gtk.Label(label="Imported notes", xalign=0), 0, 4, 1, 1)
             header.attach(imported_notes, 1, 4, 1, 1)
+
+        self.escrow_treatment: Gtk.Label | None = None
+        if transaction is not None:
+            accounts = {account.handle: account for account in db.iter_accounts()}
+            explanation = escrow.recognition(
+                ((split.account, split.value) for split in transaction.splits), accounts
+            ).explanations(accounts)
+            if explanation:
+                self.escrow_treatment = Gtk.Label(
+                    label="\n".join(explanation),
+                    xalign=0,
+                    wrap=True,
+                    selectable=True,
+                )
+                header.attach(Gtk.Label(label="Escrow treatment", xalign=0), 0, 5, 1, 1)
+                header.attach(self.escrow_treatment, 1, 5, 1, 1)
 
         caption = Gtk.Box(spacing=8)
         splits_label = Gtk.Label(label="Splits", xalign=0)

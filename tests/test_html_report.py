@@ -4,6 +4,8 @@ from datetime import date
 
 from breadsched.gen.engine import activity, dashboard, projection
 from breadsched.gen.lib import (
+    Account,
+    AccountType,
     Money,
     PeriodType,
     Recurrence,
@@ -92,6 +94,20 @@ def test_plan_report_uses_selected_measure_horizon_totals_and_scenario(db, book)
 
 
 def test_projection_report_includes_chart_assumptions_year_end_values_and_comparison(db, book):
+    escrow = Account(name="Property escrow", atype=AccountType.ESCROW, parent=book.assets)
+    with db.transaction("Printable escrow") as txn:
+        db.add_account(escrow, txn)
+        db.add_scheduled(
+            ScheduledTransaction(
+                name="Fund escrow",
+                recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 2, 1)),
+                splits=[
+                    ScheduledSplit(escrow.handle, Money("75")),
+                    ScheduledSplit(book.checking, Money("-75")),
+                ],
+            ),
+            txn,
+        )
     primary = projection.project(
         db,
         Scenario(name="Base <draft>", start=date(2026, 1, 1), years=1),
@@ -116,3 +132,5 @@ def test_projection_report_includes_chart_assumptions_year_end_values_and_compar
     assert "Investment income" in document
     assert "Investment fees" in document
     assert "Retirement rollovers" in document
+    assert "Escrow treatment" in document
+    assert "funded from household cash/income is recognized now" in document

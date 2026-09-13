@@ -323,12 +323,18 @@ def projection_report(
     warnings = (
         f'<p class="warnings">{escape("  ".join(result.warnings))}</p>' if result.warnings else ""
     )
+    escrow_items = [
+        f"<li>{escape(row.label)}: {escape(message)}</li>"
+        for row in result.rows
+        for message in row.ledger.escrow_explanations
+    ]
+    escrow = f"<h2>Escrow treatment</h2><ul>{''.join(escrow_items)}</ul>" if escrow_items else ""
     start = result.rows[0].month.isoformat() if result.rows else str(result.scenario.start or "")
     end = result.rows[-1].month.isoformat() if result.rows else ""
     prefix = f"{book_name} · " if book_name else ""
     subtitle = f"{prefix}{result.scenario.name} · {start} through {end}"
     body = (
-        f"{cards}{warnings}<h2>Projection chart</h2>{chart}"
+        f"{cards}{warnings}{escrow}<h2>Projection chart</h2>{chart}"
         f"<h2>Annual assumptions</h2>{assumptions_table}"
         f"{comparison_table}<h2>Year-end values</h2>{annual}"
     )

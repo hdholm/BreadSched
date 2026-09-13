@@ -2335,6 +2335,7 @@ class Api:
                     "variance": item.variance,
                     "actual_transaction": item.actual_transaction,
                     "actual_date": item.actual_date,
+                    "explanation": list(item.explanation),
                 }
                 for item in detail.planned_events
             ],
@@ -2350,6 +2351,7 @@ class Api:
                     "expected": item.expected,
                     "variance": item.variance,
                     "date_variance_days": item.date_variance_days,
+                    "explanation": list(item.explanation),
                 }
                 for item in detail.actual_transactions
             ],
@@ -2594,6 +2596,7 @@ class Api:
             "net_worth": detail.net_worth,
             "assumptions": detail.assumptions.serialize(),
             "events": [event.as_dict() for event in detail.events],
+            "escrow_explanations": list(detail.escrow_explanations),
         }
 
     def projection(self, scenario_handle: str | None = None, years: int | None = None) -> dict:

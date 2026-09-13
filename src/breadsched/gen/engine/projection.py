@@ -15,7 +15,7 @@ from decimal import Decimal
 from typing import Literal, TypedDict
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
@@ -159,6 +159,8 @@ class MonthLedger:
     #: Signed principal movement in natural debt-balance terms. Positive means
     #: more debt, negative means principal was paid down.
     liability_movements: dict[str, Money] = field(default_factory=dict)
+    #: User-facing reasons for escrow recognition in this reporting month.
+    escrow_explanations: list[str] = field(default_factory=list)
     #: Exact dated plan events that contributed to this reporting month.
     events: list[planning.PlannedEvent] = field(default_factory=list)
     closing_cash: Money = field(default_factory=lambda: Money(0))
@@ -200,6 +202,7 @@ class MonthLedger:
             "liability_interest": dict(self.liability_interest),
             "debt_payments": dict(self.debt_payments),
             "liability_movements": dict(self.liability_movements),
+            "escrow_explanations": list(self.escrow_explanations),
             "events": [event.as_dict() for event in self.events],
             "closing_cash": self.closing_cash,
             "closing_holdings": dict(self.closing_holdings),
@@ -364,6 +367,7 @@ class ProjectionMonthDetail:
     events: tuple[planning.PlannedEvent, ...]
     holdings: tuple[ProjectionAccountDetail, ...]
     liabilities: tuple[ProjectionAccountDetail, ...]
+    escrow_explanations: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -547,6 +551,7 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
         events=tuple(ledger.events),
         holdings=tuple(holdings),
         liabilities=tuple(liabilities),
+        escrow_explanations=tuple(ledger.escrow_explanations),
     )
 
 
@@ -606,6 +611,7 @@ class _EventMonthFlows:
     liability_movements: dict[str, Money] = field(default_factory=dict)
     debt_payments: dict[str, Money] = field(default_factory=dict)
     events: list[planning.PlannedEvent] = field(default_factory=list)
+    escrow_explanations: list[str] = field(default_factory=list)
 
 
 def _period_growth_rate(annual: Rate | Decimal, days: int) -> Rate:
@@ -774,6 +780,7 @@ def _record_holding_activity(
 
 def _apply_event(
     db: DbSQLite,
+    result: Projection,
     scenario: Scenario,
     timeline: _AssumptionTimeline,
     event: planning.PlannedEvent,
@@ -790,6 +797,12 @@ def _apply_event(
     factor = _event_escalation_factor(
         scenario, timeline, event, accounts, schedule_growth_policies, formula_schedule_handles
     )
+    escrow_before = {
+        split.account: holdings.get(split.account, Money(0))
+        for split in event.splits
+        if (account := accounts.get(split.account)) is not None
+        and account.atype is AccountType.ESCROW
+    }
     for planned_split in event.splits:
         account = accounts.get(planned_split.account)
         if account is None or account.exclude_from_projection:
@@ -840,8 +853,23 @@ def _apply_event(
     effective_legs = (
         (split.account, (split.amount * factor).quantize(100)) for split in event.splits
     )
-    funding, covered = escrow_recognition(effective_legs, accounts)
-    flows.expense = flows.expense + funding - _sum(covered.values())
+    escrow = escrow_recognition(effective_legs, accounts)
+    flows.expense = flows.expense + escrow.planning_expense_adjustment
+    for message in escrow.explanations(accounts):
+        if message not in flows.escrow_explanations:
+            flows.escrow_explanations.append(message)
+    for handle in escrow.movements:
+        balance = holdings.get(handle, Money(0))
+        before = escrow_before.get(handle, Money(0))
+        if balance < 0 and (before >= 0 or balance < before):
+            account = accounts[handle]
+            _warn_once(
+                result,
+                f"escrow account {account.name!r} falls below zero by "
+                f"{(-balance).format()} after {event.description!r} on "
+                f"{event.when:%Y-%m-%d}; the event remains included and the "
+                "shortfall is visible in projected holdings",
+            )
     return cash
 
 
@@ -952,6 +980,7 @@ def _project_events(
             )
             cash = _apply_event(
                 db,
+                result,
                 scenario,
                 timeline,
                 event,
@@ -994,6 +1023,7 @@ def _project_events(
             liability_interest=dict(flows.liability_interest),
             debt_payments=dict(flows.debt_payments),
             liability_movements=dict(flows.liability_movements),
+            escrow_explanations=list(flows.escrow_explanations),
             events=list(flows.events),
             closing_cash=cash,
             closing_holdings=dict(holdings),

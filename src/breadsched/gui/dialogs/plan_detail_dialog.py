@@ -74,19 +74,25 @@ class PlanDetailDialog(Gtk.Window):
         outer.append(close)
 
     @staticmethod
-    def _table(headers: tuple[str, ...], rows: Sequence[tuple[str, ...]]) -> Gtk.Widget:
+    def _table(
+        headers: tuple[str, ...],
+        rows: Sequence[tuple[str, ...]],
+        *,
+        numeric_start: int,
+    ) -> Gtk.Widget:
         grid = Gtk.Grid(column_spacing=12, row_spacing=5)
         grid.set_margin_top(8)
         grid.set_margin_bottom(8)
         grid.set_margin_start(8)
         grid.set_margin_end(8)
         for col, heading in enumerate(headers):
-            label = Gtk.Label(label=heading, xalign=0 if col < 4 else 1)
+            label = Gtk.Label(label=heading, xalign=0 if col < numeric_start else 1)
             label.add_css_class("heading")
             grid.attach(label, col, 0, 1, 1)
         for row_index, row in enumerate(rows, 1):
             for col, text in enumerate(row):
-                label = Gtk.Label(label=text, xalign=0 if col < 4 else 1)
+                label = Gtk.Label(label=text, xalign=0 if col < numeric_start else 1)
+                label.set_wrap(col == numeric_start - 1)
                 label.set_selectable(True)
                 grid.attach(label, col, row_index, 1, 1)
         scroll = Gtk.ScrolledWindow(child=grid)
@@ -101,6 +107,7 @@ class PlanDetailDialog(Gtk.Window):
                 item.description,
                 _SOURCE_NAMES.get(item.source, item.source),
                 item.status,
+                "\n".join(item.explanation) or "—",
                 item.expected.format(parens_negative=True),
                 "—" if item.actual is None else item.actual.format(parens_negative=True),
                 "—" if item.variance is None else item.variance.format(parens_negative=True),
@@ -110,8 +117,18 @@ class PlanDetailDialog(Gtk.Window):
         if not rows:
             return Gtk.Label(label="No planned occurrences contribute to this cell.")
         return self._table(
-            ("Planned", "Description", "Source", "Status", "Expected", "Actual", "Variance"),
+            (
+                "Planned",
+                "Description",
+                "Source",
+                "Status",
+                "Escrow treatment",
+                "Expected",
+                "Actual",
+                "Variance",
+            ),
             rows,
+            numeric_start=5,
         )
 
     def _actual_page(self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail) -> Gtk.Widget:
@@ -120,6 +137,7 @@ class PlanDetailDialog(Gtk.Window):
                 item.post_date.isoformat(),
                 item.description,
                 item.resolution.value,
+                "\n".join(item.explanation) or "—",
                 item.amount.format(parens_negative=True),
                 "—" if item.expected is None else item.expected.format(parens_negative=True),
                 "—" if item.variance is None else item.variance.format(parens_negative=True),
@@ -134,10 +152,12 @@ class PlanDetailDialog(Gtk.Window):
                 "Posted",
                 "Description",
                 "Resolution",
+                "Escrow treatment",
                 "Actual",
                 "Expected",
                 "Variance",
                 "Date Δ days",
             ),
             rows,
+            numeric_start=4,
         )

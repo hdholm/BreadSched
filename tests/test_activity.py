@@ -490,6 +490,73 @@ class TestPlanningFlowClassification:
         report = activity.build_activity_report(db, date(2026, 1, 1), date(2026, 1, 31))
         assert report.periods[0].actual_expense == Money("40")
 
+    def test_escrow_refunds_and_restorations_do_not_create_phantom_funding(self, db, book):
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+        with db.transaction("Escrow corrections") as txn:
+            db.add_account(escrow, txn)
+            restored = Transaction(post_date=date(2026, 1, 10), description="Vendor credit")
+            restored.add_split(Split(book.utilities, Money("-25")))
+            restored.add_split(Split(escrow.handle, Money("25")))
+            db.add_transaction(restored, txn)
+            returned = Transaction(post_date=date(2026, 1, 20), description="Cash refund")
+            returned.add_split(Split(escrow.handle, Money("-30")))
+            returned.add_split(Split(book.checking, Money("30")))
+            db.add_transaction(returned, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        utilities = next(row for row in report.categories if row.account == book.utilities)
+        escrow_flow = next(
+            row for row in report.planning_flows if row.kind is PlanningFlowKind.ESCROW_FUNDING
+        )
+
+        assert utilities.actual == [Money(0)]
+        assert escrow_flow.actual == [Money("-30")]
+        assert report.activity.periods[0].actual_expense == Money("-30")
+
+    def test_combined_mortgage_payment_counts_interest_and_escrow_but_not_principal(self, db, book):
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+        loan = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        payment = ScheduledTransaction(
+            name="Mortgage payment",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(loan.handle, Money("800")),
+                ScheduledSplit(book.utilities, Money("200")),
+                ScheduledSplit(escrow.handle, Money("300")),
+                ScheduledSplit(book.checking, Money("-1300")),
+            ],
+        )
+        with db.transaction("Mortgage with escrow") as txn:
+            db.add_account(escrow, txn)
+            db.add_account(loan, txn)
+            db.add_scheduled(payment, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        escrow_flow = next(
+            row for row in report.planning_flows if row.kind is PlanningFlowKind.ESCROW_FUNDING
+        )
+        principal_flow = next(
+            row for row in report.planning_flows if row.kind is PlanningFlowKind.DEBT_PRINCIPAL
+        )
+
+        assert report.activity.periods[0].planned_expense == Money("500")
+        assert escrow_flow.planned == [Money("300")]
+        assert principal_flow.planned == [Money("800")]
+        detail = activity.explain_planning_flow_period(
+            db,
+            PlanningFlowKind.ESCROW_FUNDING,
+            escrow.handle,
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+        )
+        assert "principal only reduces the liability" in " ".join(
+            detail.planned_events[0].explanation
+        )
+
     def test_classified_balance_sheet_splits_appear_in_plan(self, db, book):
         contribution = ScheduledTransaction(
             name="401k contribution",

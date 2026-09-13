@@ -133,6 +133,13 @@ class ProjectionDetailDialog(Gtk.Window):
         )
 
         self.content.append(Gtk.Label(label="Exact planned events", xalign=0))
+        if detail.escrow_explanations:
+            explanation = Gtk.Label(
+                label="\n".join(detail.escrow_explanations),
+                xalign=0,
+            )
+            explanation.set_wrap(True)
+            self.content.append(explanation)
         event_rows = [
             (
                 event.when.isoformat(),

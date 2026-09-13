@@ -953,8 +953,7 @@ def _flow_amounts(db: DbSQLite, sched: ScheduledTransaction, when: date) -> tupl
         for handle, _amount in legs
         if (account := db.get_account(handle)) is not None
     }
-    escrow_funding, escrow_covered = escrow_recognition(legs, accounts)
-    outflow = outflow + escrow_funding
+    escrow = escrow_recognition(legs, accounts)
     for handle, amount in legs:
         account = accounts.get(handle)
         if account is None:
@@ -962,10 +961,10 @@ def _flow_amounts(db: DbSQLite, sched: ScheduledTransaction, when: date) -> tupl
         if account.account_class is AccountClass.INCOME:
             income = income - amount  # income accounts carry credit balances
         elif account.account_class is AccountClass.EXPENSE:
-            outflow = outflow + amount - escrow_covered.get(handle, Money(0))
+            outflow = outflow + amount
         elif account.account_class is AccountClass.LIABILITY and amount > 0:
             outflow = outflow + amount
-    return income, outflow
+    return income, outflow + escrow.planning_expense_adjustment
 
 
 def _emergency_outflow(db: DbSQLite, sched: ScheduledTransaction, when: date) -> Money:
@@ -981,7 +980,7 @@ def _emergency_outflow(db: DbSQLite, sched: ScheduledTransaction, when: date) ->
         for handle, _amount in legs
         if (account := db.get_account(handle)) is not None
     }
-    _funding, escrow_covered = escrow_recognition(legs, accounts)
+    escrow = escrow_recognition(legs, accounts)
     positive: dict[str, Money] = {}
     for handle, amount in legs:
         if amount > 0:
@@ -993,7 +992,7 @@ def _emergency_outflow(db: DbSQLite, sched: ScheduledTransaction, when: date) ->
         if account is None or not account.emergency_fund_included:
             continue
         if account.account_class is AccountClass.EXPENSE:
-            amount = amount - escrow_covered.get(handle, Money(0))
+            amount = amount - escrow.covered_expenses.get(handle, Money(0))
         if amount > 0:
             total = total + amount
     return total

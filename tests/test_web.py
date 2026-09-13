@@ -878,6 +878,7 @@ class TestItServes:
         assert "accounts" in payload["holdings"]
         assert "accounts" in payload["liabilities"]
         assert payload["assumptions"]["investment_return"] == "0.06"
+        assert payload["escrow_explanations"] == []
 
     def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
@@ -1142,6 +1143,41 @@ class TestPlanApi:
         assert detail["planned"][0]["source"] == "scheduled"
         assert detail["planned"][0]["status"] == "expected"
         assert detail["actuals"][0]["resolution"] == "unresolved"
+
+    def test_plan_detail_exposes_shared_escrow_treatment(self, client):
+        assets = client.database.get_account_by_name("Assets")
+        checking = client.database.get_account_by_name("Assets:Checking")
+        assert assets is not None and checking is not None
+        escrow = Account(
+            name="Property escrow",
+            atype=AccountType.ESCROW,
+            parent=assets.handle,
+        )
+        funding = ScheduledTransaction(
+            name="Fund property escrow",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(escrow.handle, Money("100")),
+                ScheduledSplit(checking.handle, Money("-100")),
+            ],
+        )
+        with client.database.transaction("Escrow fixture") as txn:
+            client.database.add_account(escrow, txn)
+            client.database.add_scheduled(funding, txn)
+
+        query = urllib.parse.urlencode(
+            {
+                "account": escrow.handle,
+                "start": "2026-01-01",
+                "end": "2026-01-31",
+                "flow_kind": "escrow_funding",
+            }
+        )
+        status, detail = client.get(f"/api/plan/detail?{query}")
+
+        assert status == 200
+        assert Money(detail["summary"]["planned"]) == Money("100")
+        assert "recognized now" in " ".join(detail["planned"][0]["explanation"])
 
     def test_plan_detail_exposes_matched_variance_and_timing(self, review_client):
         review_client.post(

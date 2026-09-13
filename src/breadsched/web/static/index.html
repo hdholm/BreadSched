@@ -1631,7 +1631,8 @@ async function openPlanDetail(category, period, scenarioHandle, periodLabel, flo
     }[value] || value);
     const plannedRows = data.planned.map((item) => el("tr", {},
       el("td", {}, item.date),
-      el("td", {}, item.description),
+      el("td", {}, item.description,
+        ...(item.explanation || []).map((line) => el("div", { class: "note" }, line))),
       el("td", { class: "muted" }, sourceName(item.source)),
       el("td", { class: "muted" }, item.status),
       el("td", { class: cls(item.expected) }, money(item.expected)),
@@ -1641,7 +1642,8 @@ async function openPlanDetail(category, period, scenarioHandle, periodLabel, flo
         item.variance == null ? "—" : money(item.variance))));
     const actualRows = data.actuals.map((item) => el("tr", {},
       el("td", {}, item.date),
-      el("td", {}, item.description),
+      el("td", {}, item.description,
+        ...(item.explanation || []).map((line) => el("div", { class: "note" }, line))),
       el("td", { class: "muted" }, item.resolution),
       el("td", { class: cls(item.amount) }, money(item.amount)),
       el("td", { class: item.expected == null ? "num muted" : cls(item.expected) },
@@ -2474,6 +2476,8 @@ async function openProjectionDetail(index) {
         el("div", { class: "label" }, label),
         el("div", { class: "value" }, `${(Number(value) * 100).toFixed(2)}%`)))),
       el("h3", {}, "Exact planned events"),
+      ...(data.escrow_explanations || []).map((line) =>
+        el("p", { class: "note" }, line)),
       eventRows.length ? table(["Date", "Description", "Source", "Status",
         {label:"Expected",num:true}, {label:"Actual",num:true}, {label:"Variance",num:true}], eventRows)
         : el("p", { class: "note" }, "No planned events occur in this month."),

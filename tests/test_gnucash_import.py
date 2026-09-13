@@ -19,7 +19,7 @@ from gnucash_fixtures import (
     write_transaction,
 )
 
-from breadsched.gen.engine import ledger, valuation
+from breadsched.gen.engine import activity, ledger, valuation
 from breadsched.gen.lib import (
     AccountType,
     FsaFundingYear,
@@ -164,6 +164,65 @@ class TestSqliteImport:
             transaction.planning_resolution is PlanningResolution.HISTORICAL
             for transaction in transactions
         )
+
+    def test_imported_bank_account_can_keep_local_escrow_semantics_on_reimport(
+        self, db, gnucash_sqlite_path
+    ):
+        escrow_guid = new_guid()
+        funding_guid = new_guid()
+        draw_guid = new_guid()
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            write_account(
+                source,
+                escrow_guid,
+                "Property escrow",
+                "BANK",
+                gnucash_sqlite_path.ids.assets,
+                gnucash_sqlite_path.ids.currency,
+            )
+            write_transaction(
+                source,
+                funding_guid,
+                gnucash_sqlite_path.ids.currency,
+                date(2026, 1, 5),
+                "Fund property escrow",
+                [
+                    (escrow_guid, 10000, 100, ""),
+                    (gnucash_sqlite_path.ids.checking, -10000, 100, ""),
+                ],
+            )
+            write_transaction(
+                source,
+                draw_guid,
+                gnucash_sqlite_path.ids.currency,
+                date(2026, 1, 20),
+                "Escrow insurance draw",
+                [
+                    (gnucash_sqlite_path.ids.rent, 8000, 100, ""),
+                    (escrow_guid, -8000, 100, ""),
+                ],
+            )
+            source.commit()
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        escrow = db.get_account(escrow_guid)
+        assert escrow is not None
+        escrow.atype = AccountType.ESCROW
+        with db.transaction("Classify imported escrow") as txn:
+            db.commit_account(escrow, txn)
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        escrow_flow = next(
+            row for row in report.planning_flows if row.kind is PlanningFlowKind.ESCROW_FUNDING
+        )
+        rent = next(row for row in report.categories if row.account == gnucash_sqlite_path.ids.rent)
+
+        assert db.get_account(escrow_guid).atype is AccountType.ESCROW
+        assert escrow_flow.actual == [Money("100")]
+        assert rent.actual == [Money("1800")]
 
     def test_multi_split_transactions_keep_every_leg(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)

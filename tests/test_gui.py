@@ -700,6 +700,34 @@ class TestDialogs:
         assert preserved.investment_activity is InvestmentActivityKind.CONTRIBUTION
         assert preserved.fsa_year_start == date(2026, 1, 1)
 
+    def test_transaction_editor_explains_an_escrow_balance_adjustment(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType, Split
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        root = app.db.root_account()
+        assert root is not None
+        adjustment = Account(
+            name="Balance adjustment",
+            atype=AccountType.EQUITY,
+            parent=root.handle,
+        )
+        escrow = Account(name="Property escrow", atype=AccountType.ESCROW, parent=root.handle)
+        correction = Transaction(post_date=date(2026, 2, 1), description="Escrow correction")
+        correction.add_split(Split(escrow.handle, Money("25")))
+        correction.add_split(Split(adjustment.handle, Money("-25")))
+        with app.db.transaction("Escrow correction") as txn:
+            app.db.add_account(adjustment, txn)
+            app.db.add_account(escrow, txn)
+            app.db.add_transaction(correction, txn)
+
+        dialog = TransactionDialog(window, app.db, transaction=correction)
+
+        assert dialog.escrow_treatment is not None
+        assert "manual balance adjustment" in dialog.escrow_treatment.get_text()
+
 
 class TestImportDialogState:
     """Selecting a second file must not leave the first file's outcome on screen."""

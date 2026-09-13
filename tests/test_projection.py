@@ -504,6 +504,52 @@ class TestMonthlyStateLedger:
         assert rows[1].holdings == Money("20")
         assert all(row.ledger.reconciles() for row in rows)
 
+    def test_scenario_escrow_override_explains_a_negative_balance(self, db, book):
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+        draw = ScheduledTransaction(
+            name="Annual escrow draw",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 20)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("80")),
+                ScheduledSplit(escrow.handle, Money("-80")),
+            ],
+        )
+        with db.transaction("Escrow opening and schedule") as txn:
+            db.add_account(escrow, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 31),
+                    "Opening restricted balance",
+                    escrow.handle,
+                    book.opening,
+                    "100",
+                ),
+                txn,
+            )
+            db.add_scheduled(draw, txn)
+
+        alternate = ScenarioSchedule.from_scheduled(draw)
+        alternate.splits = [
+            ScheduledSplit(book.utilities, Money("120")),
+            ScheduledSplit(escrow.handle, Money("-120")),
+        ]
+        scenario = Scenario(
+            name="Higher insurance",
+            start=date(2026, 1, 1),
+            years=1,
+            assumptions=flat_assumptions(),
+            schedule_overrides=[alternate],
+        )
+
+        result = projection.project(db, scenario)
+        detail = projection.explain_month(db, result, 0)
+
+        assert result.rows[0].expense == Money(0)
+        assert result.rows[0].holdings == Money("-20")
+        assert any("falls below zero by 20.00" in warning for warning in result.warnings)
+        assert any("draw covers expense" in line for line in detail.escrow_explanations)
+        assert result.rows[0].ledger.reconciles()
+
     def test_each_month_reconciles_from_opening_to_closing_state(self, db, funded_book):
         scenario = Scenario(
             name="Explainable",
