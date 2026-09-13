@@ -352,6 +352,17 @@ function occurrenceTimelineEditor(label, initial, withAmount, onChanged=()=>{}) 
   };
 }
 
+const INVESTMENT_ACTIVITY_OPTIONS = [
+  ["", "Ordinary investment activity"],
+  ["contribution", "Contribution"],
+  ["withdrawal", "Taxable withdrawal"],
+  ["retirement_distribution", "Retirement distribution"],
+  ["dividend", "Reinvested dividend"],
+  ["interest", "Reinvested interest"],
+  ["fee", "Investment fee"],
+  ["rollover", "Retirement rollover"],
+];
+
 function planningSplitEditor(accounts, initial, onChanged=()=>{}) {
   const rows = el("div", {});
   const purposes = [
@@ -371,10 +382,17 @@ function planningSplitEditor(accounts, initial, onChanged=()=>{}) {
     const memo = el("input", { placeholder:"Memo", value:item.memo || "" });
     const purpose = el("select", {}, purposes.map(([value,label])=>
       el("option", { value, selected:value===(item.planning_flow || "") ? "selected" : null }, label)));
+    const activity = el("select", {}, INVESTMENT_ACTIVITY_OPTIONS.map(([value,label])=>
+      el("option", { value, selected:value===(item.investment_activity || "") ? "selected" : null }, label)));
+    const direction = el("select", {}, [["normal","Normal direction"],["opposite","Opposite direction"]]
+      .map(([value,label])=>el("option", {
+        value, selected:value===(item.direction || "normal") ? "selected" : null,
+      }, label)));
     const remove = el("button", { class:"action", type:"button", onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
-    row.append(account, amount, purpose, memo, remove);
+    row.append(account, amount, purpose, activity, direction, memo, remove);
     rows.append(row);
-    [account, amount, purpose].forEach((control)=>control.addEventListener("change", onChanged));
+    [account, amount, purpose, activity, direction]
+      .forEach((control)=>control.addEventListener("change", onChanged));
   };
   (initial || []).forEach(addRow);
   box.append(el("p", { class:"note" },
@@ -388,6 +406,7 @@ function planningSplitEditor(accounts, initial, onChanged=()=>{}) {
       const amount=inputs[0].value.trim();
       if (!amount) throw new Error("Additional splits: enter an amount or remove the empty row.");
       return {account:selects[0].value, amount, planning_flow:selects[1].value || null,
+        investment_activity:selects[2].value || null, direction:selects[3].value,
         memo:inputs[1].value.trim()};
     }),
   };
@@ -1227,6 +1246,7 @@ async function openHistoricalEstimateDialog() {
                 end:null, count:null, weekend:"none", enabled:true,
                 placeholder:true, auto:false, growth_policy:"auto",
                 planning_flow:null, category_memo:"", funding_memo:"",
+                investment_activity:null,
                 additional_splits:[], account_handles:[item.category, item.funding],
                 amount_changes:[], seasonal_amounts:item.seasonal_amounts || [],
                 skipped:[], occurrence_adjustments:[],
@@ -1245,7 +1265,8 @@ async function openHistoricalEstimateDialog() {
                 category:item.category, funding:item.funding, amount:item.amount,
                 frequency:item.frequency_key || "monthly", start:item.start,
                 end:null, count:null, weekend:"none", growth_policy:"auto",
-                planning_flow:null, additional_splits:[], amount_changes:[],
+                planning_flow:null, investment_activity:null,
+                additional_splits:[], amount_changes:[],
                 seasonal_amounts:item.seasonal_amounts || [], skipped:[],
                 occurrence_adjustments:[],
               }};
@@ -1278,7 +1299,6 @@ async function openHistoricalEstimateDialog() {
 function openScheduledEditor(data, source) {
   const referenced = new Set(source?.account_handles || []);
   const accounts = data.accounts.filter((a) => !a.hidden || referenced.has(a.handle));
-  const flowAccounts = accounts.filter((a) => a.class === "income" || a.class === "expense");
   const backdrop = el("div", { class: "detail-backdrop" });
   const form = el("form", { class: "entry" });
   const field = (label, control) => el("label", {}, label, control);
@@ -1296,7 +1316,8 @@ function openScheduledEditor(data, source) {
   const preview = schedulePreviewNode();
   const additionalSplits = planningSplitEditor(
     accounts, source?.additional_splits || [], changed);
-  const category = select("category", flowAccounts.map((a) => [a.handle, a.name]), source?.category || flowAccounts[0]?.handle);
+  const category = select("category", accounts.map((a) => [a.handle, a.name]),
+    source?.category || accounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
   const growthPolicy = select("growth_policy", [
     ["auto", "Automatic from schedule contents"],
@@ -1311,6 +1332,8 @@ function openScheduledEditor(data, source) {
     ["debt_principal", "Debt principal"],
     ["retirement_income", "Retirement distribution"],
   ], source?.planning_flow || "");
+  const investmentActivity = select(
+    "investment_activity", INVESTMENT_ACTIVITY_OPTIONS, source?.investment_activity || "");
   const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
     ["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],
     ["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]], source?.frequency_key || "monthly");
@@ -1320,8 +1343,9 @@ function openScheduledEditor(data, source) {
     field("Status", select("enabled", [["true","Active"],["false","Inactive"]], source?.enabled === false ? "false" : "true")),
     field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]], source?.placeholder ? "estimate" : "commitment")),
     field("Projection growth", growthPolicy),
-    field("Category", category), field("Paid from / into", funding),
+    field("Category / investment account", category), field("Paid from / into", funding),
     field("Planning purpose override", planningFlow),
+    field("Investment activity", investmentActivity),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
     field("Category memo", el("input", { name:"category_memo", value:source?.category_memo || "" })),
     field("Funding memo", el("input", { name:"funding_memo", value:source?.funding_memo || "" })),
@@ -1375,6 +1399,7 @@ function openScheduledEditor(data, source) {
         category: values.category, funding: values.funding,
         category_memo: values.category_memo, funding_memo: values.funding_memo,
         planning_flow: values.planning_flow || null, amount: values.amount,
+        investment_activity: values.investment_activity || null,
         additional_splits: additionalSplits.values(),
         amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
         seasonal_amounts: source?.seasonal_amounts || [],
@@ -1676,13 +1701,14 @@ async function scenarioEventPanel(handle, fromMonth) {
   } else if (mode && (mode.kind === "add" || mode.kind === "alter")) {
     const simpleBase = data.baseline.filter(x=>x.simple);
     let source = mode.kind === "alter" ? simpleBase.find(x=>x.handle===mode.source) || simpleBase[0] : null;
-    const categories = data.accounts.filter(a=>a.class==="income" || a.class==="expense");
+    const categories = data.accounts;
     const sourceSelect = mode.kind === "alter" ? el("select", {name:"source", onchange:e=>{state.scenarioEvent={kind:"alter",source:e.target.value};render();}}, simpleBase.map(x=>el("option",{value:x.handle,selected:x.handle===source?.handle?"selected":null},x.name))) : null;
     const existing = mode.kind === "alter" ? data.changes.find((x)=>x.source_schedule===source?.handle && x.enabled) : null;
     const editSource = mode.draft || existing || source;
     const category = editSource?.category || categories[0]?.handle || "";
     const funding = editSource?.funding || data.accounts.find(a=>a.handle!==category)?.handle || "";
     const planningFlow = editSource?.planning_flow || "";
+    const investmentActivity = editSource?.investment_activity || "";
     const growthPolicy = editSource?.growth_policy || "auto";
     let refreshTimeline = () => {};
     const changed = () => refreshTimeline();
@@ -1695,20 +1721,23 @@ async function scenarioEventPanel(handle, fromMonth) {
     const preview = schedulePreviewNode();
     const additionalSplits = planningSplitEditor(
       data.accounts, editSource?.additional_splits || [], changed);
-    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, seasonal_amounts:editSource?.seasonal_amounts || [], skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
+    const form = el("form", { class:"scenario-fields", onsubmit:async(e)=>{e.preventDefault(); const v=Object.fromEntries(new FormData(e.target)); const amount_changes=futureEditor.values().map((item)=>({start:item.when, amount:item.amount})); const skipped=skipEditor.values(); const occurrence_adjustments=oneTimeEditor.values(); await post("/api/scenario/event/save", {handle, source_schedule:mode.kind==="alter"?v.source:null, name:v.name, growth_policy:v.growth_policy, category:v.category, funding:v.funding, planning_flow:v.planning_flow || null, investment_activity:v.investment_activity || null, amount:v.amount, additional_splits:additionalSplits.values(), amount_changes, seasonal_amounts:editSource?.seasonal_amounts || [], skipped, occurrence_adjustments, frequency:v.frequency, start:v.start, end:v.end, count:v.count, weekend:v.weekend}); state.scenarioEvent=null; say("Scenario event saved."); render(); } },
       sourceSelect ? el("label", {}, "Baseline schedule", sourceSelect) : null,
       el("label", {}, "Name", el("input", {name:"name", required:"required", value:editSource?.name || ""})),
       el("label", {}, "Projection growth", el("select", {name:"growth_policy"},
         [["auto","Automatic from schedule contents"],["none","No growth - fixed nominal amount"],
          ["income","Income growth"],["inflation","Expense inflation"]].map(([value,label])=>
           el("option",{value,selected:value===growthPolicy?"selected":null},label)))),
-      el("label", {}, "Income / expense category", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
+      el("label", {}, "Category / investment account", el("select", {name:"category"}, categories.map(a=>el("option",{value:a.handle,selected:a.handle===category?"selected":null},a.name)))),
       el("label", {}, "Paid from / into", el("select", {name:"funding"}, data.accounts.map(a=>el("option",{value:a.handle,selected:a.handle===funding?"selected":null},a.name)))),
       el("label", {}, "Planning purpose override", el("select", {name:"planning_flow"},
         [["","Ordinary transfer"],["retirement_saving","Retirement saving"],
          ["benefit_funding","Benefit / FSA funding"],["debt_principal","Debt principal"],
          ["retirement_income","Retirement distribution"]].map(([value,label])=>
           el("option",{value,selected:value===planningFlow?"selected":null},label)))),
+      el("label", {}, "Investment activity", el("select", {name:"investment_activity"},
+        INVESTMENT_ACTIVITY_OPTIONS.map(([value,label])=>
+          el("option",{value,selected:value===investmentActivity?"selected":null},label)))),
       el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
       additionalSplits.node,
       futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
@@ -2396,10 +2425,14 @@ async function openProjectionDetail(index) {
       assumptions: scenario.assumptions,
       month_index: index,
     });
-    const accountRows = (items) => items.map((item) => el("tr", {},
+    const activityText = (item) => Object.entries(item.activities || {})
+      .filter(([_key,value]) => Number(value) !== 0)
+      .map(([key,value]) => `${key.replaceAll("_", " ")}: ${money(value)}`).join("; ") || "—";
+    const accountRows = (items, showActivity=false) => items.map((item) => el("tr", {},
       el("td", {}, item.name),
       el("td", { class: cls(item.opening) }, money(item.opening)),
       el("td", { class: cls(item.movement) }, money(item.movement)),
+      showActivity ? el("td", {}, activityText(item)) : null,
       el("td", { class: cls(item.accrual) }, money(item.accrual)),
       el("td", { class: cls(item.closing) }, money(item.closing)),
       el("td", { class: "num muted" }, `${(Number(item.annual_rate) * 100).toFixed(2)}%`)));
@@ -2446,9 +2479,9 @@ async function openProjectionDetail(index) {
         : el("p", { class: "note" }, "No planned events occur in this month."),
       el("h3", {}, "Investment accounts"),
       data.holdings.accounts.length ? table(["Account", {label:"Opening",num:true},
-        {label:"Contributions",num:true}, {label:"Growth",num:true},
+        {label:"Movement",num:true}, "Activity", {label:"Growth",num:true},
         {label:"Closing",num:true}, {label:"Annual rate",num:true}],
-        accountRows(data.holdings.accounts))
+        accountRows(data.holdings.accounts, true))
         : el("p", { class: "note" }, "No projected investment accounts."),
       el("h3", {}, "Liability accounts"),
       data.liabilities.accounts.length ? table(["Account", {label:"Opening",num:true},
@@ -2484,6 +2517,16 @@ async function showEntry() {
     el("label", {}, "From (money leaves)", options("from")),
     el("label", {}, "To (money arrives)", options("to")),
     el("label", {}, "Amount", el("input", { name: "amount", required: "required", placeholder: "0.00" })),
+    el("label", {}, "Investment activity (optional)",
+      el("select", { name: "investment_activity" },
+        el("option", { value: "" }, "Ordinary transaction"),
+        el("option", { value: "contribution" }, "Contribution"),
+        el("option", { value: "withdrawal" }, "Taxable withdrawal"),
+        el("option", { value: "retirement_distribution" }, "Retirement distribution"),
+        el("option", { value: "dividend" }, "Reinvested dividend"),
+        el("option", { value: "interest" }, "Reinvested interest"),
+        el("option", { value: "fee" }, "Investment fee"),
+        el("option", { value: "rollover" }, "Retirement rollover"))),
     openClaims.length ? el("label", {}, "FSA claim (optional)",
       el("select", { name: "fsa_claim" },
         el("option", { value: "" }, "Do not attach"),

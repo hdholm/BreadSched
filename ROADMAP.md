@@ -7,7 +7,7 @@ plans discussed during development belong here rather than only in chat history.
 reprioritizes roadmap work must update this file in the same patch.
 
 The accepted baseline before this development series is **0184 — account-linked card
-payments**. The current sequential candidate is **0185**.
+payments**. The current sequential candidates are **0185–0186**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,12 +94,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Investment activity foundations.** Classify contributions,
-   distributions, dividends/interest, fees, withdrawals, and rollovers in the shared
-   transaction/schedule model, then make Projection transitions and explanations use
-   those meanings without introducing cost-basis guesses.
-2. **Escrow follow-through.** Finish richer refund/adjustment explanations and
+1. **NEXT — Escrow follow-through.** Finish richer refund/adjustment explanations and
    combined mortgage/escrow coverage on the single account-type model.
+2. **Imported account fidelity.** Expand representative GnuCash fixtures and safely
+   expose remaining account metadata without destructive normalization.
 
 ## Dashboard balances and group hierarchy
 
@@ -565,11 +563,21 @@ semantics, not duplicate business rules in presentation code.
 
 ## Investment and retirement modeling
 
-- [ ] Model scheduled investment contributions and distributions explicitly.
-- [ ] Separate contributions, performance, dividends/interest, fees, and withdrawals
-  in both state transitions and explanations.
-- [ ] Distinguish taxable investment withdrawals, retirement distributions, and
-  rollovers; retirement-to-retirement rollovers must remain economically neutral.
+- [x] **0186 — Explicit investment activity.** Persist contribution, taxable
+  withdrawal, retirement distribution, reinvested dividend/interest, fee, and
+  rollover classifications on actual, scheduled, and scenario splits. Expose them
+  through GTK/web editing and preserve BreadSched-owned classifications on
+  unambiguous GnuCash re-import. Direct Bank-to-Investment schedules no longer need
+  an artificial Income/Expense anchor.
+- [x] **0186 — Reconciled Projection attribution.** Separate contributions,
+  performance, investment income, fees, taxable withdrawals, retirement
+  distributions, and rollovers in state transitions, month/account explanations,
+  summaries, CSV/web output, and printable reports. Retain compatible inference for
+  unclassified movements without introducing tax, lot, or cost-basis guesses.
+- [x] **0186 — Retirement-context validation.** Taxable withdrawals and retirement
+  distributions require the appropriate account context. A rollover requires two
+  distinct retirement-context accounts whose classified legs balance; it remains
+  economically neutral in total holdings. Advance the alpha version to `0.2.0a25`.
 - [ ] Add retirement drawdown behavior and dated scenario support for withdrawal
   patterns.
 - [ ] Use per-account and dated account-specific return/rate assumptions throughout

@@ -17,7 +17,13 @@ from .base import PrimaryObject
 from .formula import FormulaError, evaluate
 from .money import Money
 from .recurrence import Recurrence
-from .transaction import PlanningFlowKind, PlanningResolution, Split, Transaction
+from .transaction import (
+    InvestmentActivityKind,
+    PlanningFlowKind,
+    PlanningResolution,
+    Split,
+    Transaction,
+)
 
 __all__ = [
     "ScheduleGrowthPolicy",
@@ -146,7 +152,14 @@ def scheduled_occurrence_preview(
 class ScheduledSplit:
     """One leg of a template, with either a fixed amount or a formula."""
 
-    __slots__ = ("account", "amount", "formula", "memo", "planning_flow")
+    __slots__ = (
+        "account",
+        "amount",
+        "formula",
+        "memo",
+        "planning_flow",
+        "investment_activity",
+    )
 
     def __init__(
         self,
@@ -155,6 +168,7 @@ class ScheduledSplit:
         formula: str = "",
         memo: str = "",
         planning_flow: PlanningFlowKind | str | None = None,
+        investment_activity: InvestmentActivityKind | str | None = None,
     ) -> None:
         self.account = account
         self.amount = (
@@ -173,6 +187,13 @@ class ScheduledSplit:
             else planning_flow
             if isinstance(planning_flow, PlanningFlowKind)
             else PlanningFlowKind(planning_flow)
+        )
+        self.investment_activity = (
+            None
+            if investment_activity is None
+            else investment_activity
+            if isinstance(investment_activity, InvestmentActivityKind)
+            else InvestmentActivityKind(investment_activity)
         )
 
     def resolve(self, variables: dict[str, Any] | None = None) -> Money:
@@ -205,6 +226,9 @@ class ScheduledSplit:
             "formula": self.formula,
             "memo": self.memo,
             "planning_flow": self.planning_flow.value if self.planning_flow else None,
+            "investment_activity": (
+                self.investment_activity.value if self.investment_activity else None
+            ),
         }
 
     @classmethod
@@ -216,6 +240,7 @@ class ScheduledSplit:
             formula=data.get("formula", ""),
             memo=data.get("memo", ""),
             planning_flow=data.get("planning_flow"),
+            investment_activity=data.get("investment_activity"),
         )
 
 
@@ -414,6 +439,7 @@ class ScheduledTransaction(PrimaryObject):
                     value,
                     memo=split.memo,
                     planning_flow=split.planning_flow,
+                    investment_activity=split.investment_activity,
                 )
             )
         if strict:

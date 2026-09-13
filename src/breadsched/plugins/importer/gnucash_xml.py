@@ -29,6 +29,7 @@ from .gnucash_common import (
     money_from_fraction,
     parse_amount_text,
     parse_gnc_date,
+    preserve_breadsched_schedule_state,
     recurrence_interval,
 )
 
@@ -582,6 +583,7 @@ def _read_schedule(
             "imported without amounts"
         )
     balance_template_splits(schedule, sink.result)
+    preserve_breadsched_schedule_state(schedule, db.get_scheduled(schedule.handle))
     db.add_scheduled(schedule, txn)
     sink.result.scheduled += 1
     LOG.debug(

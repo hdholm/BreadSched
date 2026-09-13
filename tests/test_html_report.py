@@ -110,3 +110,9 @@ def test_projection_report_includes_chart_assumptions_year_end_values_and_compar
     assert "Base &lt;draft&gt; versus Alternative" in document
     assert "Dec 2026" in document
     assert "Net worth difference" in document
+    assert "Contributions" in document
+    assert "Taxable withdrawals" in document
+    assert "Retirement distributions" in document
+    assert "Investment income" in document
+    assert "Investment fees" in document
+    assert "Retirement rollovers" in document

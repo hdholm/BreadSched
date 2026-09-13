@@ -165,11 +165,31 @@ class ProjectionDetailDialog(Gtk.Window):
             self.content.append(Gtk.Label(label="No planned events occur in this month."))
 
         self.content.append(Gtk.Label(label="Investment accounts", xalign=0))
+
+        def activity_text(item) -> str:
+            labels = {
+                "contributions": "contributed",
+                "withdrawals": "withdrawn",
+                "retirement_distributions": "distributed",
+                "investment_income": "dividend/interest",
+                "fees": "fees",
+                "rollovers": "rollover",
+            }
+            return (
+                "; ".join(
+                    f"{labels[key]} {self._money(value)}"
+                    for key, value in item.activities.items()
+                    if value
+                )
+                or "—"
+            )
+
         holding_rows = [
             (
                 item.name,
                 self._money(item.opening),
                 self._money(item.movement),
+                activity_text(item),
                 self._money(item.accrual),
                 self._money(item.closing),
                 f"{item.annual_rate:.2%}",
@@ -179,7 +199,7 @@ class ProjectionDetailDialog(Gtk.Window):
         if holding_rows:
             self.content.append(
                 self._table(
-                    ("Account", "Opening", "Contributions", "Growth", "Closing", "Rate"),
+                    ("Account", "Opening", "Movement", "Activity", "Growth", "Closing", "Rate"),
                     holding_rows,
                 )
             )

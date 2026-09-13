@@ -190,10 +190,12 @@ class PlanningSplitListEditor(_ListEditor):
         on_changed: Callable[..., None],
         account_names: list[str],
         purpose_labels: list[str],
+        activity_labels: list[str] | None = None,
     ) -> None:
         super().__init__(on_changed)
         self._account_names = account_names
         self._purpose_labels = purpose_labels
+        self._activity_labels = activity_labels or ["Ordinary investment activity"]
         add = Gtk.Button(label="Add split", halign=Gtk.Align.START)
         add.add_css_class("flat")
         add.connect("clicked", lambda *_: self.add_row())
@@ -204,6 +206,7 @@ class PlanningSplitListEditor(_ListEditor):
         account_index: int = 0,
         amount: str = "",
         purpose_index: int = 0,
+        activity_index: int = 0,
         memo: str = "",
         direction_index: int = 0,
     ) -> None:
@@ -215,6 +218,8 @@ class PlanningSplitListEditor(_ListEditor):
         value.set_text(amount)
         purpose = Gtk.DropDown.new_from_strings(self._purpose_labels)
         purpose.set_selected(purpose_index)
+        activity = Gtk.DropDown.new_from_strings(self._activity_labels)
+        activity.set_selected(activity_index)
         direction = Gtk.DropDown.new_from_strings(["Normal direction", "Opposite direction"])
         direction.set_selected(direction_index)
         direction.set_tooltip_text(
@@ -226,6 +231,7 @@ class PlanningSplitListEditor(_ListEditor):
         account.connect("notify::selected", self._on_changed)
         value.connect("changed", self._on_changed)
         purpose.connect("notify::selected", self._on_changed)
+        activity.connect("notify::selected", self._on_changed)
         direction.connect("notify::selected", self._on_changed)
         memo_entry.connect("changed", self._on_changed)
         remove = Gtk.Button(icon_name="list-remove-symbolic")
@@ -235,28 +241,37 @@ class PlanningSplitListEditor(_ListEditor):
         row.append(account)
         row.append(value)
         row.append(purpose)
+        row.append(activity)
         row.append(direction)
         row.append(memo_entry)
         row.append(remove)
         self._rows.append(row)
-        self._row_data.append((row, account, value, purpose, direction, memo_entry))
+        self._row_data.append((row, account, value, purpose, activity, direction, memo_entry))
         self._on_changed()
 
-    def set_values(self, values: Iterable[tuple[int, str, int, str, int]]) -> None:
+    def set_values(self, values: Iterable[tuple[int, str, int, int, str, int]]) -> None:
         while child := self._rows.get_first_child():
             self._rows.remove(child)
         self._row_data.clear()
-        for account_index, amount, purpose_index, memo, direction_index in values:
-            self.add_row(account_index, amount, purpose_index, memo, direction_index)
+        for account_index, amount, purpose_index, activity_index, memo, direction_index in values:
+            self.add_row(
+                account_index,
+                amount,
+                purpose_index,
+                activity_index,
+                memo,
+                direction_index,
+            )
 
-    def values(self) -> list[tuple[int, str, int, str, int]]:
+    def values(self) -> list[tuple[int, str, int, int, str, int]]:
         return [
             (
                 account.get_selected(),
                 value.get_text().strip(),
                 purpose.get_selected(),
+                activity.get_selected(),
                 memo.get_text().strip(),
                 direction.get_selected(),
             )
-            for _row, account, value, purpose, direction, memo in self._row_data
+            for _row, account, value, purpose, activity, direction, memo in self._row_data
         ]

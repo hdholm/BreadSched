@@ -28,6 +28,7 @@ from ...gen.lib.commodity import Commodity, CommodityPrice
 from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType
+from ...gen.lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ...gen.lib.transaction import (
     PlanningResolution,
     ReconcileState,
@@ -46,6 +47,7 @@ __all__ = [
     "ImportSink",
     "detect_format",
     "parse_gnc_date",
+    "preserve_breadsched_schedule_state",
     "recurrence_interval",
 ]
 
@@ -695,6 +697,7 @@ class ImportSink:
             if prior is None:
                 continue
             split.planning_flow = prior.planning_flow
+            split.investment_activity = prior.investment_activity
             split.fsa_year_start = prior.fsa_year_start
 
     def _imbalance_account(self, currency: str | None) -> str:
@@ -769,6 +772,32 @@ def balance_template_splits(schedule, result: ImportResult | None = None) -> boo
             f"leg; balanced it against the other at {-resolved[present]}"
         )
     return True
+
+
+def preserve_breadsched_schedule_state(
+    imported: ScheduledTransaction,
+    existing: ScheduledTransaction | None,
+) -> None:
+    """Retain local split classifications when a source schedule is refreshed.
+
+    Scheduled splits have no stable GnuCash GUID of their own. A classification is
+    therefore retained only when its account occurs exactly once in both versions;
+    ambiguous/restructured templates deliberately receive no stale annotation.
+    """
+    if existing is None:
+        return
+    prior_by_account: dict[str, list[ScheduledSplit]] = {}
+    imported_by_account: dict[str, list[ScheduledSplit]] = {}
+    for split in existing.splits:
+        prior_by_account.setdefault(split.account, []).append(split)
+    for split in imported.splits:
+        imported_by_account.setdefault(split.account, []).append(split)
+    for account, incoming in imported_by_account.items():
+        prior = prior_by_account.get(account, [])
+        if len(incoming) != 1 or len(prior) != 1:
+            continue
+        incoming[0].planning_flow = prior[0].planning_flow
+        incoming[0].investment_activity = prior[0].investment_activity
 
 
 def _split_source_facts(split: Split) -> tuple[object, ...]:

@@ -23,6 +23,7 @@ from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
     Account,
     AccountType,
+    InvestmentActivityKind,
     Money,
     PeriodType,
     Recurrence,
@@ -667,6 +668,11 @@ class TestItServes:
         rent = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
         checking = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
         retirement = next(a for a in data["accounts"] if a["name"].endswith(":401(k)"))
+        retirement_account = client.database.get_account(retirement["handle"])
+        assert retirement_account is not None
+        retirement_account.atype = AccountType.RETIREMENT
+        with client.database.transaction("Classify retirement account") as txn:
+            client.database.commit_account(retirement_account, txn)
         status, created = client.post(
             "/api/scheduled/save",
             {
@@ -686,6 +692,7 @@ class TestItServes:
                         "account": retirement["handle"],
                         "amount": "500.00",
                         "planning_flow": "retirement_saving",
+                        "investment_activity": "contribution",
                         "memo": "employee contribution",
                     },
                 ],
@@ -712,6 +719,7 @@ class TestItServes:
                 "amount": "500.00",
                 "memo": "employee contribution",
                 "planning_flow": "retirement_saving",
+                "investment_activity": "contribution",
             },
         ]
 
@@ -720,6 +728,68 @@ class TestItServes:
             row for row in plan["planning_flows"] if row["kind"] == "retirement_saving"
         )
         assert Money(retirement_flow["planned"][0]) == Money("500.00")
+
+    def test_fixed_schedule_can_directly_classify_an_investment_contribution(self, client):
+        _status, data = client.get("/api/scheduled")
+        checking = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        holding = next(a for a in data["accounts"] if a["name"].endswith(":401(k)"))
+        account = client.database.get_account(holding["handle"])
+        assert account is not None
+        account.atype = AccountType.INVESTMENT
+        with client.database.transaction("Classify investment fixture") as txn:
+            client.database.commit_account(account, txn)
+
+        status, created = client.post(
+            "/api/scheduled/save",
+            {
+                "name": "Direct contribution",
+                "category": holding["handle"],
+                "funding": checking["handle"],
+                "amount": "250.00",
+                "investment_activity": "contribution",
+                "frequency": "monthly",
+                "start": "2026-02-01",
+            },
+        )
+
+        assert status == 200
+        scheduled = client.database.get_scheduled(created["handle"])
+        assert scheduled is not None
+        assert scheduled.splits[0].amount == Money("250.00")
+        assert scheduled.splits[0].investment_activity is InvestmentActivityKind.CONTRIBUTION
+        _status, refreshed = client.get("/api/scheduled")
+        item = next(row for row in refreshed["definitions"] if row["handle"] == created["handle"])
+        assert item["simple"] is True
+        assert item["investment_activity"] == "contribution"
+
+    def test_two_leg_investment_income_keeps_the_holding_as_the_edit_anchor(self, client):
+        _status, data = client.get("/api/scheduled")
+        income = next(a for a in data["accounts"] if a["name"].endswith(":Salary"))
+        holding = next(a for a in data["accounts"] if a["name"].endswith(":401(k)"))
+        account = client.database.get_account(holding["handle"])
+        assert account is not None
+        account.atype = AccountType.INVESTMENT
+        with client.database.transaction("Classify investment fixture") as txn:
+            client.database.commit_account(account, txn)
+
+        _status, created = client.post(
+            "/api/scheduled/save",
+            {
+                "name": "Reinvested income",
+                "category": holding["handle"],
+                "funding": income["handle"],
+                "amount": "18.00",
+                "investment_activity": "dividend",
+                "frequency": "quarterly",
+                "start": "2026-03-31",
+            },
+        )
+        _status, refreshed = client.get("/api/scheduled")
+        item = next(row for row in refreshed["definitions"] if row["handle"] == created["handle"])
+
+        assert item["category"] == holding["handle"]
+        assert item["funding"] == income["handle"]
+        assert item["investment_activity"] == "dividend"
 
     def test_scheduled_definition_can_be_deleted_without_removing_posted_history(self, client):
         _status, data = client.get("/api/scheduled")
@@ -1236,6 +1306,29 @@ class TestWriting:
         _status, accounts = client.get("/api/accounts")
         balance = next(a["balance"] for a in accounts if a["name"] == "Checking")
         assert Money(balance) == Money("2354.33")
+
+    def test_a_transaction_can_classify_an_investment_contribution(self, client):
+        retirement = client.database.get_account_by_name("Assets:401(k)")
+        assert retirement is not None
+        retirement.atype = AccountType.RETIREMENT
+        with client.database.transaction("Classify retirement account") as txn:
+            client.database.commit_account(retirement, txn)
+        status, payload = client.post(
+            "/api/transaction",
+            {
+                "date": "2026-02-02",
+                "description": "Investment contribution",
+                "from": "Assets:Checking",
+                "to": "Assets:401(k)",
+                "amount": "125.00",
+                "investment_activity": "contribution",
+            },
+        )
+        assert status == 200
+        transaction = client.database.get_transaction(payload["handle"])
+        assert transaction is not None
+        holding_split = next(split for split in transaction.splits if split.value > 0)
+        assert holding_split.investment_activity is InvestmentActivityKind.CONTRIBUTION
 
     def test_hidden_accounts_are_reported_but_refused_for_new_entries(self, client):
         hidden = client.database.get_account_by_name("Expenses:Rent")
@@ -1772,6 +1865,7 @@ def scenario_event_client(book_path):
 
     class Client:
         token = httpd.token
+        database = db
 
         def get(self, path: str):
             request = urllib.request.Request(
@@ -1896,6 +1990,48 @@ class TestScenarioEventWebParity:
                 "planning_flow": "retirement_saving",
             },
         ]
+
+    def test_scenario_can_directly_schedule_an_investment_contribution(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        holding = next(
+            account for account in events["accounts"] if account["name"].endswith("401(k)")
+        )
+        bank = next(
+            account for account in events["accounts"] if account["name"].endswith("Checking")
+        )
+        account = scenario_event_client.database.get_account(holding["handle"])
+        assert account is not None
+        account.atype = AccountType.INVESTMENT
+        with scenario_event_client.database.transaction("Classify investment fixture") as txn:
+            scenario_event_client.database.commit_account(account, txn)
+
+        status, saved = scenario_event_client.post(
+            "/api/scenario/event/save",
+            {
+                "handle": scenario["handle"],
+                "name": "Scenario contribution",
+                "category": holding["handle"],
+                "funding": bank["handle"],
+                "investment_activity": "contribution",
+                "amount": "300.00",
+                "frequency": "monthly",
+                "start": "2026-03-01",
+                "weekend": "none",
+            },
+        )
+
+        assert status == 200
+        change = saved["changes"][0]
+        assert change["investment_activity"] == "contribution"
+        stored = scenario_event_client.database.get_scenario(scenario["handle"])
+        assert stored is not None
+        assert (
+            stored.schedule_overrides[0].splits[0].investment_activity
+            is InvestmentActivityKind.CONTRIBUTION
+        )
 
     def test_scenario_estimate_can_skip_and_override_occurrences(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)

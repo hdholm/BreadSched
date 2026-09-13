@@ -304,6 +304,7 @@ def from_transaction(transaction: Transaction) -> ScheduledTransaction:
                 split.value,
                 memo=split.memo,
                 planning_flow=split.planning_flow,
+                investment_activity=split.investment_activity,
             )
             for split in transaction.splits
         ],

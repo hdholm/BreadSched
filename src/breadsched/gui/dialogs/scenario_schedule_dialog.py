@@ -12,9 +12,11 @@ from collections.abc import Callable
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine import investment
 from ...gen.lib import (
     AccountClass,
     FormulaError,
+    InvestmentActivityKind,
     Money,
     PeriodType,
     PlanningFlowKind,
@@ -72,6 +74,11 @@ _PLANNING_FLOWS = [
     ("Retirement distribution", PlanningFlowKind.RETIREMENT_INCOME),
 ]
 
+_INVESTMENT_ACTIVITIES = [
+    ("Ordinary investment activity", None),
+    *[(kind.label, kind) for kind in InvestmentActivityKind],
+]
+
 
 class ScenarioScheduleDialog(Gtk.Window):
     """Create a scenario estimate or replace one baseline schedule."""
@@ -98,6 +105,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         self._formula_entries: list[tuple[int, Gtk.Entry]] = []
         self._formula_originals: list[str] = []
         self._formula_variables_original = ""
+        self._category_ledger_direction: int | None = None
         self.set_default_size(580, 500)
         self._accounts = sorted(
             (
@@ -162,7 +170,7 @@ class ScenarioScheduleDialog(Gtk.Window):
 
         self.category = Gtk.DropDown.new_from_strings(self._names)
         self.category.connect("notify::selected", self._validate)
-        grid.attach(Gtk.Label(label="Income / expense category", xalign=0), 0, row, 1, 1)
+        grid.attach(Gtk.Label(label="Category / investment account", xalign=0), 0, row, 1, 1)
         grid.attach(self.category, 1, row, 1, 1)
         row += 1
 
@@ -181,6 +189,14 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.planning_flow, 1, row, 1, 1)
         row += 1
 
+        self.investment_activity = Gtk.DropDown.new_from_strings(
+            [label for label, _kind in _INVESTMENT_ACTIVITIES]
+        )
+        self.investment_activity.connect("notify::selected", self._validate)
+        grid.attach(Gtk.Label(label="Investment activity", xalign=0), 0, row, 1, 1)
+        grid.attach(self.investment_activity, 1, row, 1, 1)
+        row += 1
+
         self.amount_entry = Gtk.Entry(placeholder_text="0.00")
         self.amount_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Amount", xalign=0), 0, row, 1, 1)
@@ -191,6 +207,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             self._validate,
             self._names,
             [label for label, _kind in _PLANNING_FLOWS],
+            [label for label, _kind in _INVESTMENT_ACTIVITIES],
         )
         label = Gtk.Label(label="Additional splits", xalign=0, valign=Gtk.Align.START)
         label.set_tooltip_text(
@@ -347,18 +364,24 @@ class ScenarioScheduleDialog(Gtk.Window):
             self._protect_formula_fields(source)
             return
 
-        flow_split = None
-        for split in source.splits:
-            account = self.db.get_account(split.account)
-            if account is not None and account.account_class in (
-                AccountClass.INCOME,
-                AccountClass.EXPENSE,
-            ):
-                flow_split = split
-                break
+        investment_flows = [
+            split for split in source.splits if split.investment_activity is not None
+        ]
+        flow_split = investment_flows[0] if len(source.splits) == 2 and investment_flows else None
+        if flow_split is None:
+            for split in source.splits:
+                account = self.db.get_account(split.account)
+                if account is not None and account.account_class in (
+                    AccountClass.INCOME,
+                    AccountClass.EXPENSE,
+                ):
+                    flow_split = split
+                    break
+        if flow_split is None and investment_flows:
+            flow_split = investment_flows[0]
         if flow_split is None or any(split.formula for split in source.splits):
             self.status.set_text(
-                "This schedule uses formulas or has no income/expense anchor. "
+                "This schedule uses formulas or has no editable category/activity anchor. "
                 "Suppression is supported, but this fixed-split editor cannot rewrite it."
             )
             self.status.add_css_class("negative")
@@ -396,10 +419,25 @@ class ScenarioScheduleDialog(Gtk.Window):
                 0,
             )
         )
+        self.investment_activity.set_selected(
+            next(
+                (
+                    index
+                    for index, (_label, kind) in enumerate(_INVESTMENT_ACTIVITIES)
+                    if kind is flow_split.investment_activity
+                ),
+                0,
+            )
+        )
         category = self.db.get_account(flow_split.account)
-        amount = flow_split.resolve(source.variables)
-        if category is not None:
-            amount = amount * category.sign()
+        resolved = flow_split.resolve(source.variables)
+        amount = resolved
+        if flow_split.investment_activity is not None:
+            amount = abs(resolved)
+            if flow_split.investment_activity.direction == 0:
+                self._category_ledger_direction = 1 if resolved >= 0 else -1
+        elif category is not None:
+            amount = resolved * category.sign()
         self.amount_entry.set_text(abs(amount).format())
         extra_values = []
         for split in others:
@@ -417,6 +455,14 @@ class ScenarioScheduleDialog(Gtk.Window):
                 ),
                 0,
             )
+            activity_index = next(
+                (
+                    index
+                    for index, (_label, kind) in enumerate(_INVESTMENT_ACTIVITIES)
+                    if kind is split.investment_activity
+                ),
+                0,
+            )
             resolved = split.resolve(source.variables)
             normal_amount = (
                 split.planning_flow.plan_amount(resolved)
@@ -429,6 +475,7 @@ class ScenarioScheduleDialog(Gtk.Window):
                     account_index,
                     str(abs(normal_amount).to_decimal()),
                     purpose_index,
+                    activity_index,
                     split.memo or "",
                     direction_index,
                 )
@@ -448,6 +495,7 @@ class ScenarioScheduleDialog(Gtk.Window):
             self.category,
             self.funding,
             self.planning_flow,
+            self.investment_activity,
             self.amount_entry,
             self.additional_splits,
             self.amount_changes_editor,
@@ -721,13 +769,18 @@ class ScenarioScheduleDialog(Gtk.Window):
             if self.category.get_selected() == self.funding.get_selected():
                 problems.append("choose two different accounts")
             category = self._accounts[self.category.get_selected()]
-            if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
-                problems.append("choose an income or expense category")
+            investment_activity = _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
+            if (
+                category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
+                and investment_activity is None
+            ):
+                problems.append("choose an income/expense category or an investment activity")
             selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
             for (
                 account_index,
                 raw_amount,
                 _purpose_index,
+                _activity_index,
                 _memo,
                 _direction,
             ) in self.additional_splits.values():
@@ -797,27 +850,44 @@ class ScenarioScheduleDialog(Gtk.Window):
         assert amount is not None
         category = self._accounts[self.category.get_selected()]
         funding = self._accounts[self.funding.get_selected()]
-        signed = amount * category.sign()
+        investment_activity = _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
+        signed = (
+            amount * investment_activity.direction
+            if investment_activity is not None and investment_activity.direction
+            else amount * self._category_ledger_direction
+            if self._category_ledger_direction is not None
+            else amount * category.sign()
+        )
         extra_splits = []
         extra_total = Money(0)
         for (
             account_index,
             raw_amount,
             purpose_index,
+            activity_index,
             memo,
             direction_index,
         ) in self.additional_splits.values():
             account = self._accounts[account_index]
             extra_amount = Money(parse_user_amount(raw_amount))
             purpose = _PLANNING_FLOWS[purpose_index][1]
+            investment_activity = _INVESTMENT_ACTIVITIES[activity_index][1]
             value = (
-                purpose.ledger_amount(extra_amount)
+                extra_amount * investment_activity.direction
+                if investment_activity is not None and investment_activity.direction
+                else purpose.ledger_amount(extra_amount)
                 if purpose is not None
                 else extra_amount * account.sign() * (-1 if direction_index == 1 else 1)
             )
             extra_total = extra_total + value
             extra_splits.append(
-                ScheduledSplit(account.handle, value, memo=memo, planning_flow=purpose)
+                ScheduledSplit(
+                    account.handle,
+                    value,
+                    memo=memo,
+                    planning_flow=purpose,
+                    investment_activity=investment_activity,
+                )
             )
         funding_value = -(signed + extra_total)
         placeholder = True
@@ -829,12 +899,21 @@ class ScenarioScheduleDialog(Gtk.Window):
             name=self.name_entry.get_text().strip(),
             recurrence=recurrence,
             splits=[
-                ScheduledSplit(category.handle, signed),
+                ScheduledSplit(
+                    category.handle,
+                    signed,
+                    investment_activity=investment_activity,
+                ),
                 *extra_splits,
                 ScheduledSplit(
                     funding.handle,
                     funding_value,
                     planning_flow=_PLANNING_FLOWS[self.planning_flow.get_selected()][1],
+                    investment_activity=(
+                        InvestmentActivityKind.ROLLOVER
+                        if investment_activity is InvestmentActivityKind.ROLLOVER
+                        else None
+                    ),
                 ),
             ],
             source_schedule=self.source.handle if self.source is not None else None,
@@ -855,6 +934,10 @@ class ScenarioScheduleDialog(Gtk.Window):
 
     def _on_save(self, _button) -> None:
         change = self.build()
+        problems = investment.scheduled_activity_problems(self.db, change)
+        if problems:
+            self.status.set_text("; ".join(problems))
+            return
         if change.source_schedule is not None:
             self.scenario.schedule_overrides = [
                 existing

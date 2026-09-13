@@ -19,7 +19,12 @@ from ..db.sqlite import DbSQLite
 from ..lib.money import Money
 from ..lib.scenario import OneOff, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction
-from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
+from ..lib.transaction import (
+    InvestmentActivityKind,
+    PlanningFlowKind,
+    PlanningResolution,
+    Transaction,
+)
 
 __all__ = [
     "EventSource",
@@ -61,12 +66,16 @@ class PlannedSplit:
     account: str
     amount: Money
     planning_flow: PlanningFlowKind | None = None
+    investment_activity: InvestmentActivityKind | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
             "account": self.account,
             "amount": self.amount,
             "planning_flow": (self.planning_flow.value if self.planning_flow is not None else None),
+            "investment_activity": (
+                self.investment_activity.value if self.investment_activity is not None else None
+            ),
         }
 
 
@@ -166,7 +175,12 @@ def _positive_total(splits: tuple[PlannedSplit, ...]) -> Money:
 
 def _transaction_splits(transaction: Transaction) -> tuple[PlannedSplit, ...]:
     return tuple(
-        PlannedSplit(split.account, split.value, split.planning_flow)
+        PlannedSplit(
+            split.account,
+            split.value,
+            split.planning_flow,
+            split.investment_activity,
+        )
         for split in transaction.splits
     )
 
@@ -191,7 +205,7 @@ def _scheduled_event(
     actual: Transaction | None,
 ) -> PlannedEvent:
     expected = tuple(
-        PlannedSplit(account, amount, split.planning_flow)
+        PlannedSplit(account, amount, split.planning_flow, split.investment_activity)
         for split, (account, amount) in zip(
             schedule.splits, schedule.resolved_splits(when=when), strict=True
         )
@@ -270,7 +284,7 @@ def _scenario_schedule_event(
     actual: Transaction | None,
 ) -> PlannedEvent:
     expected = tuple(
-        PlannedSplit(account, amount, split.planning_flow)
+        PlannedSplit(account, amount, split.planning_flow, split.investment_activity)
         for split, (account, amount) in zip(
             schedule.splits, schedule.resolved_splits(when), strict=True
         )
@@ -415,9 +429,16 @@ def actualize_transaction(transaction: Transaction, event: PlannedEvent) -> Tran
         for split in event.expected_splits
         if split.planning_flow is not None
     }
+    planned_investment_activities = {
+        split.account: split.investment_activity
+        for split in event.expected_splits
+        if split.investment_activity is not None
+    }
     for split in transaction.splits:
         if split.planning_flow is None and split.account in planned_flows:
             split.planning_flow = planned_flows[split.account]
+        if split.investment_activity is None and split.account in planned_investment_activities:
+            split.investment_activity = planned_investment_activities[split.account]
     if event.source is EventSource.SCHEDULED:
         transaction.scheduled_from = event.source_handle
     return transaction

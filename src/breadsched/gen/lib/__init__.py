@@ -36,6 +36,7 @@ from .scheduled import (
     scheduled_occurrence_preview,
 )
 from .transaction import (
+    InvestmentActivityKind,
     PlanningFlowKind,
     PlanningResolution,
     ReconcileState,
@@ -54,6 +55,7 @@ __all__ = [
     "FsaClaimSplitLink",
     "FsaFundingYear",
     "GnuCashAccountType",
+    "InvestmentActivityKind",
     "AssumptionPeriod",
     "Assumptions",
     "Commodity",

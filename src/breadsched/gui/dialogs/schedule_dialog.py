@@ -17,8 +17,10 @@ import re
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine import investment
 from ...gen.lib import (
     FormulaError,
+    InvestmentActivityKind,
     Money,
     PeriodType,
     PlanningFlowKind,
@@ -72,6 +74,11 @@ _PLANNING_FLOWS = [
     ("Benefit / FSA funding", PlanningFlowKind.BENEFIT_FUNDING),
     ("Debt principal", PlanningFlowKind.DEBT_PRINCIPAL),
     ("Retirement distribution", PlanningFlowKind.RETIREMENT_INCOME),
+]
+
+_INVESTMENT_ACTIVITIES = [
+    ("Ordinary investment activity", None),
+    *[(kind.label, kind) for kind in InvestmentActivityKind],
 ]
 
 
@@ -203,6 +210,14 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.planning_flow, 1, row, 1, 1)
         row += 1
 
+        self.investment_activity = Gtk.DropDown.new_from_strings(
+            [label for label, _kind in _INVESTMENT_ACTIVITIES]
+        )
+        self.investment_activity.connect("notify::selected", self._validate)
+        grid.attach(Gtk.Label(label="Investment activity", xalign=0), 0, row, 1, 1)
+        grid.attach(self.investment_activity, 1, row, 1, 1)
+        row += 1
+
         self.amount_entry = Gtk.Entry(placeholder_text="0.00")
         self.amount_entry.connect("changed", self._validate)
         grid.attach(Gtk.Label(label="Amount", xalign=0), 0, row, 1, 1)
@@ -223,6 +238,7 @@ class ScheduleDialog(Gtk.Window):
             self._validate,
             self._names,
             [label for label, _kind in _PLANNING_FLOWS],
+            [label for label, _kind in _INVESTMENT_ACTIVITIES],
         )
         label = Gtk.Label(label="Additional splits", xalign=0, valign=Gtk.Align.START)
         label.set_tooltip_text(
@@ -395,9 +411,15 @@ class ScheduleDialog(Gtk.Window):
             account_name = self.db.full_name(account) if account is not None else split.account
             value = f"formula {split.formula!r}" if split.formula else str(split.amount or Money(0))
             purpose = split.planning_flow.label if split.planning_flow is not None else "(none)"
+            activity = (
+                split.investment_activity.label
+                if split.investment_activity is not None
+                else "(none)"
+            )
             memo = split.memo or "(none)"
             lines.append(
-                f"  {index}. {account_name}: {value}; planning purpose {purpose}; memo {memo}"
+                f"  {index}. {account_name}: {value}; planning purpose {purpose}; "
+                f"investment activity {activity}; memo {memo}"
             )
         if source.variables:
             lines.extend(["", "Formula variables:"])
@@ -459,6 +481,7 @@ class ScheduleDialog(Gtk.Window):
             self.category,
             self.funding,
             self.planning_flow,
+            self.investment_activity,
             self.amount_entry,
             self.category_memo_entry,
             self.funding_memo_entry,
@@ -577,14 +600,19 @@ class ScheduleDialog(Gtk.Window):
             if account is None or split.formula:
                 continue
             parts.append((account, split))
-        flow = next(
-            (item for item in parts if item[0].account_class.value in {"income", "expense"}),
-            None,
-        )
+        investment_flows = [item for item in parts if item[1].investment_activity is not None]
+        flow = investment_flows[0] if len(parts) == 2 and investment_flows else None
+        if flow is None:
+            flow = next(
+                (item for item in parts if item[0].account_class.value in {"income", "expense"}),
+                None,
+            )
         if flow is None:
             planning_flows = [item for item in parts if item[1].planning_flow is not None]
             if planning_flows:
                 flow = planning_flows[0]
+        if flow is None and investment_flows:
+            flow = investment_flows[0]
         if flow is None:
             ordinary_balance_splits = [
                 item
@@ -653,10 +681,24 @@ class ScheduleDialog(Gtk.Window):
                         0,
                     )
                 )
+                self.investment_activity.set_selected(
+                    next(
+                        (
+                            index
+                            for index, (_label, kind) in enumerate(_INVESTMENT_ACTIVITIES)
+                            if kind is flow_split.investment_activity
+                        ),
+                        0,
+                    )
+                )
                 resolved_flow = flow_split.resolve(source.variables)
                 if flow_split.planning_flow is not None:
                     self._category_planning_flow = flow_split.planning_flow
                     amount = flow_split.planning_flow.plan_amount(resolved_flow)
+                elif flow_split.investment_activity is not None:
+                    amount = abs(resolved_flow)
+                    if flow_split.investment_activity.direction == 0:
+                        self._category_ledger_direction = 1 if resolved_flow >= 0 else -1
                 else:
                     amount = abs(resolved_flow * flow_account.sign())
                 self.amount_entry.set_text(str(amount.to_decimal()))
@@ -679,6 +721,14 @@ class ScheduleDialog(Gtk.Window):
                         ),
                         0,
                     )
+                    activity_index = next(
+                        (
+                            index
+                            for index, (_label, kind) in enumerate(_INVESTMENT_ACTIVITIES)
+                            if kind is split.investment_activity
+                        ),
+                        0,
+                    )
                     resolved = split.resolve(source.variables)
                     normal_amount = (
                         split.planning_flow.plan_amount(resolved)
@@ -691,6 +741,7 @@ class ScheduleDialog(Gtk.Window):
                             account_index,
                             str(abs(normal_amount).to_decimal()),
                             purpose_index,
+                            activity_index,
                             split.memo or "",
                             direction_index,
                         )
@@ -893,6 +944,7 @@ class ScheduleDialog(Gtk.Window):
             _account_index,
             raw_amount,
             _purpose_index,
+            _activity_index,
             _memo,
             _direction,
         ) in self.additional_splits.values():
@@ -970,8 +1022,11 @@ class ScheduleDialog(Gtk.Window):
             schedule.description = schedule.name
         schedule.recurrence = recurrence
         planning_kind = _PLANNING_FLOWS[self.planning_flow.get_selected()][1]
+        investment_activity = _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
         if self._category_planning_flow is not None:
             category_value = self._category_planning_flow.ledger_amount(amount)
+        elif investment_activity is not None and investment_activity.direction:
+            category_value = amount * investment_activity.direction
         elif self._category_ledger_direction is not None:
             category_value = amount * self._category_ledger_direction
         else:
@@ -982,20 +1037,30 @@ class ScheduleDialog(Gtk.Window):
             account_index,
             raw_amount,
             purpose_index,
+            activity_index,
             memo,
             direction_index,
         ) in self.additional_splits.values():
             account = self._accounts[account_index]
             extra_amount = Money(parse_user_amount(raw_amount))
             purpose = _PLANNING_FLOWS[purpose_index][1]
+            investment_activity = _INVESTMENT_ACTIVITIES[activity_index][1]
             value = (
-                purpose.ledger_amount(extra_amount)
+                extra_amount * investment_activity.direction
+                if investment_activity is not None and investment_activity.direction
+                else purpose.ledger_amount(extra_amount)
                 if purpose is not None
                 else extra_amount * account.sign() * (-1 if direction_index == 1 else 1)
             )
             extra_total = extra_total + value
             extra_splits.append(
-                ScheduledSplit(account.handle, value, memo=memo, planning_flow=purpose)
+                ScheduledSplit(
+                    account.handle,
+                    value,
+                    memo=memo,
+                    planning_flow=purpose,
+                    investment_activity=investment_activity,
+                )
             )
         funding_value = -(category_value + extra_total)
         schedule.splits = [
@@ -1004,6 +1069,7 @@ class ScheduleDialog(Gtk.Window):
                 category_value,
                 memo=self.category_memo_entry.get_text().strip(),
                 planning_flow=self._category_planning_flow,
+                investment_activity=investment_activity,
             ),
             *extra_splits,
             ScheduledSplit(
@@ -1011,6 +1077,11 @@ class ScheduleDialog(Gtk.Window):
                 funding_value,
                 memo=self.funding_memo_entry.get_text().strip(),
                 planning_flow=planning_kind,
+                investment_activity=(
+                    InvestmentActivityKind.ROLLOVER
+                    if investment_activity is InvestmentActivityKind.ROLLOVER
+                    else None
+                ),
             ),
         ]
         schedule.enabled = self.enabled_check.get_active()
@@ -1024,6 +1095,10 @@ class ScheduleDialog(Gtk.Window):
 
     def _on_save(self, _button) -> None:
         schedule = self.build()
+        problems = investment.scheduled_activity_problems(self.db, schedule)
+        if problems:
+            self.status.set_text("; ".join(problems))
+            return
         action = "Add" if self.creating else "Update"
         with self.db.transaction(f"{action} scheduled {schedule.name}") as txn:
             if self.creating:

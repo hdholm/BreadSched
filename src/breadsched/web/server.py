@@ -30,6 +30,7 @@ from ..gen.engine import (
     activity,
     estimates,
     fsa_claims,
+    investment,
     ledger,
     loans,
     planning,
@@ -49,6 +50,7 @@ from ..gen.lib import (
     FsaClaimRejection,
     FsaClaimSplitLink,
     FsaFundingYear,
+    InvestmentActivityKind,
     Money,
     PeriodType,
     PlanningFlowKind,
@@ -974,6 +976,7 @@ class Api:
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
                     "planning_flow": simple["planning_flow"] if simple else None,
+                    "investment_activity": (simple["investment_activity"] if simple else None),
                     "category_memo": simple["category_memo"] if simple else "",
                     "funding_memo": simple["funding_memo"] if simple else "",
                     "additional_splits": (simple["additional_splits"] if simple else []),
@@ -1021,6 +1024,7 @@ class Api:
                     "category": None,
                     "funding": payment_definition.payment_account,
                     "planning_flow": None,
+                    "investment_activity": None,
                     "category_memo": "",
                     "funding_memo": "",
                     "additional_splits": [],
@@ -1084,6 +1088,7 @@ class Api:
             "category": simple["category"],
             "funding": simple["funding"],
             "planning_flow": simple["planning_flow"],
+            "investment_activity": simple["investment_activity"],
             "category_memo": simple["category_memo"],
             "funding_memo": simple["funding_memo"],
             "additional_splits": simple["additional_splits"],
@@ -1407,15 +1412,21 @@ class Api:
     def _simple_schedule_parts(self, scheduled) -> dict | None:
         if len(scheduled.splits) < 2 or any(split.formula for split in scheduled.splits):
             return None
-        flow = None
-        for split in scheduled.splits:
-            account = self.db.get_account(split.account)
-            if account is not None and account.account_class in (
-                AccountClass.INCOME,
-                AccountClass.EXPENSE,
-            ):
-                flow = split
-                break
+        investment_flows = [
+            split for split in scheduled.splits if split.investment_activity is not None
+        ]
+        flow = investment_flows[0] if len(scheduled.splits) == 2 and investment_flows else None
+        if flow is None:
+            for split in scheduled.splits:
+                account = self.db.get_account(split.account)
+                if account is not None and account.account_class in (
+                    AccountClass.INCOME,
+                    AccountClass.EXPENSE,
+                ):
+                    flow = split
+                    break
+        if flow is None:
+            flow = investment_flows[0] if investment_flows else None
         if flow is None:
             return None
         others = [split for split in scheduled.splits if split is not flow]
@@ -1433,7 +1444,12 @@ class Api:
             return None
         account = self.db.get_account(flow.account)
         assert account is not None
-        amount = flow.resolve(scheduled.variables) * account.sign()
+        resolved_flow = flow.resolve(scheduled.variables)
+        amount = (
+            abs(resolved_flow)
+            if flow.investment_activity is not None
+            else resolved_flow * account.sign()
+        )
         additional = []
         for split in others:
             if split is funding:
@@ -1442,8 +1458,15 @@ class Api:
             if extra_account is None:
                 return None
             resolved = split.resolve(scheduled.variables)
+            normal_direction = (
+                split.investment_activity.direction
+                if split.investment_activity is not None and split.investment_activity.direction
+                else extra_account.sign()
+            )
             normal_amount = (
-                split.planning_flow.plan_amount(resolved)
+                abs(resolved)
+                if split.investment_activity is not None
+                else split.planning_flow.plan_amount(resolved)
                 if split.planning_flow is not None
                 else resolved * extra_account.sign()
             )
@@ -1456,6 +1479,10 @@ class Api:
                     split.planning_flow.value if split.planning_flow is not None else None
                 ),
             }
+            if split.investment_activity is not None:
+                row["investment_activity"] = split.investment_activity.value
+            if resolved * normal_direction < 0:
+                row["direction"] = "opposite"
             if split.memo:
                 row["memo"] = split.memo
             additional.append(row)
@@ -1467,6 +1494,9 @@ class Api:
             "funding_memo": funding.memo,
             "planning_flow": (
                 funding.planning_flow.value if funding.planning_flow is not None else None
+            ),
+            "investment_activity": (
+                flow.investment_activity.value if flow.investment_activity is not None else None
             ),
             "additional_splits": additional,
         }
@@ -1500,6 +1530,7 @@ class Api:
             "funding": simple["funding"] if simple else None,
             "amount": simple["amount"] if simple else None,
             "planning_flow": simple["planning_flow"] if simple else None,
+            "investment_activity": simple["investment_activity"] if simple else None,
             "additional_splits": simple["additional_splits"] if simple else [],
             "frequency": self._frequency_key(item.recurrence),
             "start": item.recurrence.start.isoformat(),
@@ -1705,8 +1736,20 @@ class Api:
                 purpose = PlanningFlowKind(raw_purpose) if raw_purpose else None
             except ValueError:
                 raise ValueError("choose a valid planning purpose") from None
+            raw_activity = str(raw.get("investment_activity") or "").strip()
+            try:
+                investment_activity = InvestmentActivityKind(raw_activity) if raw_activity else None
+            except ValueError:
+                raise ValueError("choose a valid investment activity") from None
+            direction = str(raw.get("direction") or "normal")
+            if direction not in {"normal", "opposite"}:
+                raise ValueError("choose a valid additional split direction")
             value = (
-                purpose.ledger_amount(amount) if purpose is not None else amount * account.sign()
+                amount * investment_activity.direction
+                if investment_activity is not None and investment_activity.direction
+                else purpose.ledger_amount(amount)
+                if purpose is not None
+                else amount * account.sign() * (-1 if direction == "opposite" else 1)
             )
             splits.append(
                 ScheduledSplit(
@@ -1714,6 +1757,7 @@ class Api:
                     value,
                     memo=str(raw.get("memo") or "").strip(),
                     planning_flow=purpose,
+                    investment_activity=investment_activity,
                 )
             )
             total = total + value
@@ -1740,8 +1784,18 @@ class Api:
         funding = self.db.get_account(funding_handle)
         if category is None or funding is None:
             raise ValueError("choose valid accounts")
-        if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
-            raise ValueError("choose an income or expense category")
+        investment_activity_raw = str(payload.get("investment_activity") or "").strip()
+        try:
+            investment_activity = (
+                InvestmentActivityKind(investment_activity_raw) if investment_activity_raw else None
+            )
+        except ValueError:
+            raise ValueError("choose a valid investment activity") from None
+        if (
+            category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
+            and investment_activity is None
+        ):
+            raise ValueError("choose income/expense or an investment activity")
         try:
             amount = abs(self._input_money(payload, payload.get("amount", "")))
         except (ValueError, ArithmeticError):
@@ -1792,7 +1846,11 @@ class Api:
         adjustments = self._parse_occurrence_adjustments(payload, recurrence)
         if set(skipped) & {item.when for item in adjustments}:
             raise ValueError("an occurrence cannot be both skipped and overridden")
-        signed = amount * category.sign()
+        signed = (
+            amount * investment_activity.direction
+            if investment_activity is not None and investment_activity.direction
+            else amount * category.sign()
+        )
         planning_flow_raw = str(payload.get("planning_flow") or "").strip()
         try:
             planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
@@ -1830,12 +1888,21 @@ class Api:
             name=name,
             recurrence=recurrence,
             splits=[
-                ScheduledSplit(category.handle, signed),
+                ScheduledSplit(
+                    category.handle,
+                    signed,
+                    investment_activity=investment_activity,
+                ),
                 *additional_splits,
                 ScheduledSplit(
                     funding.handle,
                     -(signed + additional_total),
                     planning_flow=planning_flow,
+                    investment_activity=(
+                        InvestmentActivityKind.ROLLOVER
+                        if investment_activity is InvestmentActivityKind.ROLLOVER
+                        else None
+                    ),
                 ),
             ],
             source_schedule=source_handle,
@@ -1853,6 +1920,9 @@ class Api:
             skipped=skipped,
             occurrence_adjustments=adjustments,
         )
+        activity_problems = investment.scheduled_activity_problems(self.db, change)
+        if activity_problems:
+            raise ValueError("; ".join(activity_problems))
         if source_handle:
             scenario.schedule_overrides = [
                 item
@@ -2486,6 +2556,7 @@ class Api:
                 "accrual": item.accrual,
                 "closing": item.closing,
                 "annual_rate": item.annual_rate,
+                "activities": dict(item.activities),
             }
 
         return {
@@ -2502,7 +2573,13 @@ class Api:
             "expense": detail.expense,
             "holdings": {
                 "opening": detail.holdings_open,
-                "movement": detail.holding_contributions,
+                "movement": detail.holding_movements,
+                "contributions": detail.holding_contributions,
+                "withdrawals": detail.holding_withdrawals,
+                "retirement_distributions": detail.retirement_distributions,
+                "investment_income": detail.investment_income,
+                "fees": detail.investment_fees,
+                "rollovers": detail.holding_rollovers,
                 "growth": detail.investment_growth,
                 "closing": detail.holdings_close,
                 "accounts": [account_row(item) for item in detail.holdings],
@@ -2618,8 +2695,40 @@ class Api:
         txn = Transaction(post_date=when, description=payload.get("description", "").strip())
         txn.notes = str(payload.get("notes") or "").strip()
         memo = payload.get("memo", "")
-        txn.add_split(Split(debit.handle, amount, memo=memo))
-        txn.add_split(Split(credit.handle, -amount, memo=memo))
+        investment_raw = str(payload.get("investment_activity") or "").strip()
+        try:
+            investment_activity = InvestmentActivityKind(investment_raw) if investment_raw else None
+        except ValueError:
+            raise ValueError("choose a valid investment activity") from None
+        debit_activity = (
+            investment_activity
+            if investment_activity is not None and investment_activity.direction >= 0
+            else None
+        )
+        credit_activity = (
+            investment_activity
+            if investment_activity is not None and investment_activity.direction <= 0
+            else None
+        )
+        txn.add_split(
+            Split(
+                debit.handle,
+                amount,
+                memo=memo,
+                investment_activity=debit_activity,
+            )
+        )
+        txn.add_split(
+            Split(
+                credit.handle,
+                -amount,
+                memo=memo,
+                investment_activity=credit_activity,
+            )
+        )
+        activity_problems = investment.activity_problems(self.db, txn.splits)
+        if activity_problems:
+            raise ValueError("; ".join(activity_problems))
         with self.db.transaction(f"Add {txn.description}") as batch:
             self.db.add_transaction(txn, batch)
         claim_handle = str(payload.get("fsa_claim") or "").strip()
@@ -2797,8 +2906,18 @@ class Api:
         funding = self.db.get_account(funding_handle)
         if category is None or funding is None:
             raise ValueError("scheduled account no longer exists")
-        if category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
-            raise ValueError("category must be an income or expense account")
+        investment_activity_raw = str(payload.get("investment_activity") or "").strip()
+        try:
+            investment_activity = (
+                InvestmentActivityKind(investment_activity_raw) if investment_activity_raw else None
+            )
+        except ValueError:
+            raise ValueError("choose a valid investment activity") from None
+        if (
+            category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
+            and investment_activity is None
+        ):
+            raise ValueError("category must be income/expense or have investment activity")
 
         try:
             amount = self._input_money(payload, payload.get("amount") or "0")
@@ -2873,7 +2992,11 @@ class Api:
         item.name = name
         if existing is None or item.description == old_name:
             item.description = name
-        signed = amount * category.sign()
+        signed = (
+            amount * investment_activity.direction
+            if investment_activity is not None and investment_activity.direction
+            else amount * category.sign()
+        )
         planning_flow_raw = str(payload.get("planning_flow") or "").strip()
         try:
             planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
@@ -2915,6 +3038,7 @@ class Api:
                 category.handle,
                 signed,
                 memo=category_memo,
+                investment_activity=investment_activity,
             ),
             *additional_splits,
             ScheduledSplit(
@@ -2922,6 +3046,11 @@ class Api:
                 -(signed + additional_total),
                 memo=funding_memo,
                 planning_flow=planning_flow,
+                investment_activity=(
+                    InvestmentActivityKind.ROLLOVER
+                    if investment_activity is InvestmentActivityKind.ROLLOVER
+                    else None
+                ),
             ),
         ]
         item.placeholder = bool(payload.get("placeholder", False))
@@ -2943,6 +3072,10 @@ class Api:
         item.auto_create = bool(payload.get("auto", False))
         if item.placeholder:
             item.auto_create = False
+
+        activity_problems = investment.scheduled_activity_problems(self.db, item)
+        if activity_problems:
+            raise ValueError("; ".join(activity_problems))
 
         action = "Update" if existing is not None else "Add"
         with self.db.transaction(f"{action} scheduled {item.name}") as txn:

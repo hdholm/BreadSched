@@ -103,6 +103,42 @@ automatic quote retrieval, lot/cost-basis accounting, and projected market price
 are separate concerns and must not be approximated by treating monetary amounts as
 prices or quantities.
 
+### Investment activity semantics
+
+Investment activity is an optional split classification, separate from both the
+account type and the planning-flow classification. The account type says what the
+holding is; the investment activity says why one exact dated movement changed it;
+a planning-flow classification says how a balance-sheet movement appears in Plan.
+These dimensions may coexist on one split without changing its double-entry value
+or commodity quantity.
+
+The supported activity vocabulary is contribution, taxable withdrawal, retirement
+distribution, reinvested dividend, reinvested interest, investment fee, and
+retirement rollover. Contributions and reinvested income increase a holding;
+withdrawals, distributions, and fees decrease it. Taxable withdrawals are invalid
+inside a Retirement context, while retirement distributions require that context.
+A rollover requires at least two distinct retirement-context accounts and its
+classified investment legs must sum to zero. These rules are shared validation used
+by GTK and web transaction, baseline-schedule, and scenario-schedule writes.
+
+Projection records the signed holding movement once for reconciliation, then
+attributes that same movement to the appropriate explanatory bucket. Contributions,
+withdrawals, retirement distributions, investment income, fees, and gross rollover
+amounts are therefore explanatory views of the state transition, not extra money
+applied to it. Rollover legs net to zero in total holdings. Market growth remains a
+separate accrual effect. This separation prevents contributions from being mistaken
+for performance and prevents a rollover from being reported as a withdrawal plus a
+new contribution.
+
+For compatibility with existing unclassified books, a positive investment movement
+is inferred as a contribution and a negative movement as a taxable withdrawal or
+retirement distribution according to account context. That fallback cannot infer
+dividends, interest, fees, or rollovers and must not invent tax or cost-basis facts.
+Explicit classifications are BreadSched-owned. Stable transaction split identities
+retain them across GnuCash re-import; scheduled splits have no stable source identity,
+so re-import retains a classification only when the account occurs exactly once in
+both the prior and incoming template.
+
 ## Event-driven planning
 
 BreadSched's Plan is derived from actual, scheduled, and estimated dated events.

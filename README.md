@@ -228,6 +228,31 @@ source GUIDs.
 Direct security-to-reporting-currency quotes are supported now; foreign-exchange
 conversion, automatic quote downloads, lots, and cost basis remain future work.
 
+### Investment activity
+
+Investment meaning belongs on the split that changes the Investment or Retirement
+holding. Transaction and fixed-schedule editors in GTK and web can classify that
+leg explicitly:
+
+- **Contribution** increases an investment or retirement holding from household funds.
+- **Taxable withdrawal** decreases a non-retirement investment holding.
+- **Retirement distribution** decreases a Retirement account or an Investment
+  account nested beneath a Retirement parent.
+- **Reinvested dividend** and **Reinvested interest** increase the holding while
+  identifying the increase as investment income rather than a contribution.
+- **Investment fee** decreases the holding and is reported separately from a withdrawal.
+- **Retirement rollover** moves value between two retirement-context holdings. Both
+  holding legs are classified, must balance each other, and do not change total holdings.
+
+Projection separates these activities from market performance in its monthly
+state transition, detail view, CSV, web response, and printable summary. Older or
+unclassified investment movements retain the compatible fallback—an increase is a
+contribution and a decrease is a withdrawal/distribution according to retirement
+context—but explicit classification is required to distinguish income, fees, and
+rollovers. These classifications do not calculate tax, lots, or cost basis.
+BreadSched-owned classifications survive GnuCash re-import when a schedule leg can
+be matched unambiguously by account.
+
 ## Primary GTK4 workflow
 
 The GTK4 application is the reference user experience. Its major views include:

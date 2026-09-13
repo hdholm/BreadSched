@@ -24,6 +24,7 @@ from breadsched.gen.lib import (
     AccountType,
     FsaFundingYear,
     GnuCashAccountType,
+    InvestmentActivityKind,
     Money,
     PlanningFlowKind,
     PlanningResolution,
@@ -398,6 +399,7 @@ class TestSqliteImport:
         transaction.planning_resolution = PlanningResolution.MATCHED
         transaction.rejected_plan_occurrences = ["other:occurrence"]
         transaction.splits[0].planning_flow = PlanningFlowKind.RETIREMENT_SAVING
+        transaction.splits[0].investment_activity = InvestmentActivityKind.CONTRIBUTION
         transaction.splits[0].fsa_year_start = date(2026, 1, 1)
         with db.transaction("Annotate imported transaction") as db_txn:
             db.commit_transaction(transaction, db_txn)
@@ -422,6 +424,7 @@ class TestSqliteImport:
             split for split in reimported.splits if split.handle == transaction.splits[0].handle
         )
         assert annotated_split.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert annotated_split.investment_activity is InvestmentActivityKind.CONTRIBUTION
         assert annotated_split.fsa_year_start == date(2026, 1, 1)
 
     def test_import_is_a_single_undoable_step(self, db, gnucash_sqlite_path):
@@ -487,6 +490,27 @@ class TestSqliteScheduledImport:
     def test_scheduled_import_can_be_skipped(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path, include_scheduled=False)
         assert list(db.iter_scheduled()) == []
+
+    def test_reimport_preserves_unambiguous_local_investment_classification(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        schedule = db.get_scheduled(gnucash_sqlite_path.ids.sched)
+        assert account is not None and schedule is not None
+        account.atype = AccountType.INVESTMENT
+        checking_split = next(split for split in schedule.splits if split.account == account.handle)
+        checking_split.investment_activity = InvestmentActivityKind.WITHDRAWAL
+        with db.transaction("Classify investment schedule") as txn:
+            db.commit_account(account, txn)
+            db.commit_scheduled(schedule, txn)
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        restored = db.get_scheduled(schedule.handle)
+        assert restored is not None
+        restored_split = next(split for split in restored.splits if split.account == account.handle)
+        assert restored_split.investment_activity is InvestmentActivityKind.WITHDRAWAL
 
 
 class TestStandaloneReaders:

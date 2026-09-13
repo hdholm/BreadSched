@@ -20,7 +20,8 @@ from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
-from . import planning, valuation
+from ..lib.transaction import InvestmentActivityKind
+from . import investment, planning, valuation
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -145,7 +146,13 @@ class MonthLedger:
     opening_liabilities: dict[str, Money]
     cash_flow: Money
     cash_interest: Money
+    holding_movements: dict[str, Money]
     holding_contributions: dict[str, Money]
+    holding_withdrawals: dict[str, Money]
+    retirement_distributions: dict[str, Money]
+    investment_income: dict[str, Money]
+    investment_fees: dict[str, Money]
+    holding_rollovers: dict[str, Money]
     investment_growth: dict[str, Money]
     liability_interest: dict[str, Money]
     debt_payments: dict[str, Money]
@@ -182,7 +189,13 @@ class MonthLedger:
             "opening_liabilities": dict(self.opening_liabilities),
             "cash_flow": self.cash_flow,
             "cash_interest": self.cash_interest,
+            "holding_movements": dict(self.holding_movements),
             "holding_contributions": dict(self.holding_contributions),
+            "holding_withdrawals": dict(self.holding_withdrawals),
+            "retirement_distributions": dict(self.retirement_distributions),
+            "investment_income": dict(self.investment_income),
+            "investment_fees": dict(self.investment_fees),
+            "holding_rollovers": dict(self.holding_rollovers),
             "investment_growth": dict(self.investment_growth),
             "liability_interest": dict(self.liability_interest),
             "debt_payments": dict(self.debt_payments),
@@ -200,14 +213,14 @@ class MonthLedger:
 
         holding_handles = (
             set(self.opening_holdings)
-            | set(self.holding_contributions)
+            | set(self.holding_movements)
             | set(self.investment_growth)
             | set(self.closing_holdings)
         )
         for handle in holding_handles:
             expected = (
                 self.opening_holdings.get(handle, Money(0))
-                + self.holding_contributions.get(handle, Money(0))
+                + self.holding_movements.get(handle, Money(0))
                 + self.investment_growth.get(handle, Money(0))
             )
             if self.closing_holdings.get(handle, Money(0)) != expected:
@@ -246,6 +259,11 @@ class MonthRow:
     income: Money
     expense: Money
     contributions: Money
+    withdrawals: Money
+    retirement_distributions: Money
+    investment_income: Money
+    investment_fees: Money
+    rollovers: Money
     debt_payments: Money
     interest_earned: Money
     investment_growth: Money
@@ -280,6 +298,11 @@ class MonthRow:
             "income",
             "expense",
             "contributions",
+            "withdrawals",
+            "retirement_distributions",
+            "investment_income",
+            "investment_fees",
+            "rollovers",
             "debt_payments",
             "interest_earned",
             "investment_growth",
@@ -306,6 +329,7 @@ class ProjectionAccountDetail:
     accrual: Money
     closing: Money
     annual_rate: Decimal
+    activities: dict[str, Money] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -322,7 +346,13 @@ class ProjectionMonthDetail:
     income: Money
     expense: Money
     holdings_open: Money
+    holding_movements: Money
     holding_contributions: Money
+    holding_withdrawals: Money
+    retirement_distributions: Money
+    investment_income: Money
+    investment_fees: Money
+    holding_rollovers: Money
     investment_growth: Money
     holdings_close: Money
     liabilities_open: Money
@@ -404,6 +434,12 @@ class Projection:
             "minimum_cash": self.minimum_cash,
             "total_income": self.total("income"),
             "total_expense": self.total("expense"),
+            "total_contributions": self.total("contributions"),
+            "total_withdrawals": self.total("withdrawals"),
+            "total_retirement_distributions": self.total("retirement_distributions"),
+            "total_investment_income": self.total("investment_income"),
+            "total_investment_fees": self.total("investment_fees"),
+            "total_rollovers": self.total("rollovers"),
             "total_growth": self.total("investment_growth"),
             "first_shortfall": shortfall.label if shortfall else None,
             "warnings": list(self.warnings),
@@ -424,6 +460,7 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
 
     holding_handles = sorted(
         set(ledger.opening_holdings)
+        | set(ledger.holding_movements)
         | set(ledger.holding_contributions)
         | set(ledger.investment_growth)
         | set(ledger.closing_holdings),
@@ -437,10 +474,18 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
             handle=handle,
             name=account_name(handle),
             opening=ledger.opening_holdings.get(handle, Money(0)),
-            movement=ledger.holding_contributions.get(handle, Money(0)),
+            movement=ledger.holding_movements.get(handle, Money(0)),
             accrual=ledger.investment_growth.get(handle, Money(0)),
             closing=ledger.closing_holdings.get(handle, Money(0)),
             annual_rate=rate,
+            activities={
+                "contributions": ledger.holding_contributions.get(handle, Money(0)),
+                "withdrawals": ledger.holding_withdrawals.get(handle, Money(0)),
+                "retirement_distributions": ledger.retirement_distributions.get(handle, Money(0)),
+                "investment_income": ledger.investment_income.get(handle, Money(0)),
+                "fees": ledger.investment_fees.get(handle, Money(0)),
+                "rollovers": ledger.holding_rollovers.get(handle, Money(0)),
+            },
         )
         if any((detail.opening, detail.movement, detail.accrual, detail.closing)):
             holdings.append(detail)
@@ -482,7 +527,15 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
         income=row.income,
         expense=row.expense,
         holdings_open=ledger.holdings_open,
+        holding_movements=_sum(ledger.holding_movements.values()),
         holding_contributions=_sum(ledger.holding_contributions.values()),
+        holding_withdrawals=_sum(ledger.holding_withdrawals.values()),
+        retirement_distributions=_sum(ledger.retirement_distributions.values()),
+        investment_income=_sum(ledger.investment_income.values()),
+        investment_fees=_sum(ledger.investment_fees.values()),
+        holding_rollovers=_sum(
+            amount for amount in ledger.holding_rollovers.values() if amount > 0
+        ),
         investment_growth=_sum(ledger.investment_growth.values()),
         holdings_close=ledger.holdings_close,
         liabilities_open=ledger.liabilities_open,
@@ -541,7 +594,13 @@ class _EventMonthFlows:
     expense: Money = field(default_factory=lambda: Money(0))
     cash_flow: Money = field(default_factory=lambda: Money(0))
     cash_interest: Money = field(default_factory=lambda: Money(0))
+    holding_movements: dict[str, Money] = field(default_factory=dict)
     holding_contributions: dict[str, Money] = field(default_factory=dict)
+    holding_withdrawals: dict[str, Money] = field(default_factory=dict)
+    retirement_distributions: dict[str, Money] = field(default_factory=dict)
+    investment_income: dict[str, Money] = field(default_factory=dict)
+    investment_fees: dict[str, Money] = field(default_factory=dict)
+    holding_rollovers: dict[str, Money] = field(default_factory=dict)
     investment_growth: dict[str, Money] = field(default_factory=dict)
     liability_interest: dict[str, Money] = field(default_factory=dict)
     liability_movements: dict[str, Money] = field(default_factory=dict)
@@ -677,7 +736,44 @@ def _event_escalation_factor(
     return timeline.escalation(field, completed_years)
 
 
+def _record_holding_activity(
+    db: DbSQLite,
+    account: Account,
+    amount: Money,
+    kind: InvestmentActivityKind | None,
+    flows: _EventMonthFlows,
+) -> None:
+    """Attribute a signed holding movement without changing its ledger effect."""
+    flows.holding_movements[account.handle] = (
+        flows.holding_movements.get(account.handle, Money(0)) + amount
+    )
+    if not account.atype.is_investment:
+        return
+    if kind is None:
+        if amount > 0:
+            kind = InvestmentActivityKind.CONTRIBUTION
+        elif investment.retirement_context(db, account):
+            kind = InvestmentActivityKind.RETIREMENT_DISTRIBUTION
+        else:
+            kind = InvestmentActivityKind.WITHDRAWAL
+
+    if kind is InvestmentActivityKind.CONTRIBUTION:
+        target, reported = flows.holding_contributions, amount
+    elif kind is InvestmentActivityKind.WITHDRAWAL:
+        target, reported = flows.holding_withdrawals, -amount
+    elif kind is InvestmentActivityKind.RETIREMENT_DISTRIBUTION:
+        target, reported = flows.retirement_distributions, -amount
+    elif kind in {InvestmentActivityKind.DIVIDEND, InvestmentActivityKind.INTEREST}:
+        target, reported = flows.investment_income, amount
+    elif kind is InvestmentActivityKind.FEE:
+        target, reported = flows.investment_fees, -amount
+    else:
+        target, reported = flows.holding_rollovers, amount
+    target[account.handle] = target.get(account.handle, Money(0)) + reported
+
+
 def _apply_event(
+    db: DbSQLite,
     scenario: Scenario,
     timeline: _AssumptionTimeline,
     event: planning.PlannedEvent,
@@ -716,8 +812,12 @@ def _apply_event(
             flows.cash_flow = flows.cash_flow + amount
         elif cls is AccountClass.ASSET:
             holdings[account.handle] = holdings.get(account.handle, Money(0)) + amount
-            flows.holding_contributions[account.handle] = (
-                flows.holding_contributions.get(account.handle, Money(0)) + amount
+            _record_holding_activity(
+                db,
+                account,
+                amount,
+                planned_split.investment_activity,
+                flows,
             )
             if event.funded_from_cash:
                 cash = cash - amount
@@ -851,6 +951,7 @@ def _project_events(
                 schedule_driven_liabilities,
             )
             cash = _apply_event(
+                db,
                 scenario,
                 timeline,
                 event,
@@ -882,7 +983,13 @@ def _project_events(
             opening_liabilities=liabilities_open,
             cash_flow=flows.cash_flow,
             cash_interest=flows.cash_interest,
+            holding_movements=dict(flows.holding_movements),
             holding_contributions=dict(flows.holding_contributions),
+            holding_withdrawals=dict(flows.holding_withdrawals),
+            retirement_distributions=dict(flows.retirement_distributions),
+            investment_income=dict(flows.investment_income),
+            investment_fees=dict(flows.investment_fees),
+            holding_rollovers=dict(flows.holding_rollovers),
             investment_growth=dict(flows.investment_growth),
             liability_interest=dict(flows.liability_interest),
             debt_payments=dict(flows.debt_payments),
@@ -910,6 +1017,11 @@ def _project_events(
                 income=flows.income,
                 expense=flows.expense,
                 contributions=_sum(flows.holding_contributions.values()),
+                withdrawals=_sum(flows.holding_withdrawals.values()),
+                retirement_distributions=_sum(flows.retirement_distributions.values()),
+                investment_income=_sum(flows.investment_income.values()),
+                investment_fees=_sum(flows.investment_fees.values()),
+                rollovers=_sum(amount for amount in flows.holding_rollovers.values() if amount > 0),
                 debt_payments=_sum(flows.debt_payments.values()),
                 interest_earned=flows.cash_interest,
                 investment_growth=_sum(flows.investment_growth.values()),

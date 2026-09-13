@@ -25,6 +25,7 @@ from .gnucash_common import (
     money_from_pair,
     open_gnucash_sqlite,
     parse_gnc_date,
+    preserve_breadsched_schedule_state,
     recurrence_interval,
 )
 
@@ -551,6 +552,7 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
                 f"scheduled transaction {sched.name!r} has no readable template splits"
             )
         balance_template_splits(sched, sink.result)
+        preserve_breadsched_schedule_state(sched, db.get_scheduled(sched.handle))
         db.add_scheduled(sched, txn)
         sink.result.scheduled += 1
 

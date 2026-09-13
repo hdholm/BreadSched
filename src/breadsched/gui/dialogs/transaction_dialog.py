@@ -18,12 +18,24 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import fsa_claims
-from ...gen.lib import Money, ReconcileState, Split, Transaction, UnbalancedError
+from ...gen.engine import fsa_claims, investment
+from ...gen.lib import (
+    InvestmentActivityKind,
+    Money,
+    ReconcileState,
+    Split,
+    Transaction,
+    UnbalancedError,
+)
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 
 __all__ = ["TransactionDialog"]
+
+_INVESTMENT_ACTIVITIES = [
+    ("Ordinary", None),
+    *[(kind.label, kind) for kind in InvestmentActivityKind],
+]
 
 
 class SplitEditor:
@@ -32,7 +44,13 @@ class SplitEditor:
     def __init__(self, dialog: TransactionDialog, split: Split | None = None) -> None:
         self.dialog = dialog
         self.handle = split.handle if split else None
+        self.original_account = split.account if split else None
+        self.quantity = split.quantity if split else None
+        self.action = split.action if split else ""
         self.reconcile = split.reconcile if split else ReconcileState.NOT_RECONCILED
+        self.reconcile_date = split.reconcile_date if split else None
+        self.planning_flow = split.planning_flow if split else None
+        self.fsa_year_start = split.fsa_year_start if split else None
 
         self.box = Gtk.Box(spacing=8)
         self.account = Gtk.DropDown.new_from_strings(dialog.account_names or ["(none)"])
@@ -50,6 +68,15 @@ class SplitEditor:
         self.amount.connect("changed", dialog.revalidate)
         self.box.append(self.amount)
 
+        self.investment_activity = Gtk.DropDown.new_from_strings(
+            [label for label, _kind in _INVESTMENT_ACTIVITIES]
+        )
+        self.investment_activity.set_tooltip_text(
+            "Classify a contribution, distribution, investment income, fee, or rollover"
+        )
+        self.investment_activity.connect("notify::selected", dialog.revalidate)
+        self.box.append(self.investment_activity)
+
         self.remove = Gtk.Button(icon_name="list-remove-symbolic")
         self.remove.set_tooltip_text("Remove this split")
         self.remove.connect("clicked", lambda *_: dialog.remove_split(self))
@@ -61,7 +88,17 @@ class SplitEditor:
                     self.account.set_selected(index)
                     break
             self.memo.set_text(split.memo)
-            self.amount.set_text(f"{split.value.to_decimal():.2f}")
+            self.amount.set_text(str(split.value.to_decimal()))
+            self.investment_activity.set_selected(
+                next(
+                    (
+                        index
+                        for index, (_label, kind) in enumerate(_INVESTMENT_ACTIVITIES)
+                        if kind is split.investment_activity
+                    ),
+                    0,
+                )
+            )
 
     @property
     def account_handle(self) -> str | None:
@@ -83,6 +120,10 @@ class SplitEditor:
     @property
     def is_blank(self) -> bool:
         return not self.amount.get_text().strip()
+
+    @property
+    def activity(self) -> InvestmentActivityKind | None:
+        return _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
 
 
 class TransactionDialog(Gtk.Window):
@@ -365,15 +406,24 @@ class TransactionDialog(Gtk.Window):
             account_handle = editor.account_handle
             if account_handle is None:
                 raise ValueError("Choose an account for every split")
-            splits.append(
-                Split(
-                    account=account_handle,
-                    value=value,
-                    memo=editor.memo.get_text().strip(),
-                    reconcile=editor.reconcile,
-                    handle=editor.handle,
-                )
+            split = Split(
+                account=account_handle,
+                value=value,
+                quantity=(
+                    editor.quantity
+                    if editor.quantity is not None and account_handle == editor.original_account
+                    else value
+                ),
+                memo=editor.memo.get_text().strip(),
+                action=editor.action,
+                reconcile=editor.reconcile,
+                handle=editor.handle,
+                planning_flow=editor.planning_flow,
+                investment_activity=editor.activity,
+                fsa_year_start=editor.fsa_year_start,
             )
+            split.reconcile_date = editor.reconcile_date
+            splits.append(split)
         target.splits = splits
         return target
 
@@ -382,6 +432,11 @@ class TransactionDialog(Gtk.Window):
             target = self.build()
         except ValueError as exc:
             self.status.set_text(str(exc))
+            return
+        activity_problems = investment.activity_problems(self.db, target.splits)
+        if activity_problems:
+            self.status.set_text("; ".join(activity_problems))
+            self.status.add_css_class("negative")
             return
         try:
             with self.db.transaction(

@@ -647,6 +647,59 @@ class TestDialogs:
         assert editing.account_names[hidden_index].endswith(" (hidden)")
         assert editing.splits[0].account_handle == hidden.handle
 
+    def test_transaction_editor_preserves_split_metadata_it_does_not_edit(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import (
+            Account,
+            AccountType,
+            InvestmentActivityKind,
+            PlanningFlowKind,
+            ReconcileState,
+            Split,
+        )
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        root = app.db.root_account()
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        assert root is not None and bank is not None
+        holding = Account(
+            name="Generic fund",
+            atype=AccountType.INVESTMENT,
+            parent=root.handle,
+        )
+        with app.db.transaction("Add investment fixture") as txn:
+            app.db.add_account(holding, txn)
+
+        classified = Split(
+            holding.handle,
+            Money("12.34"),
+            quantity=Money("1.2345"),
+            memo="Exact holding leg",
+            action="Buy",
+            reconcile=ReconcileState.CLEARED,
+            planning_flow=PlanningFlowKind.RETIREMENT_SAVING,
+            investment_activity=InvestmentActivityKind.CONTRIBUTION,
+            fsa_year_start=date(2026, 1, 1),
+        )
+        classified.reconcile_date = date(2026, 2, 1)
+        existing = Transaction(post_date=date(2026, 2, 1), description="Invest")
+        existing.add_split(classified)
+        existing.add_split(Split(bank.handle, Money("-12.34")))
+
+        rebuilt = TransactionDialog(window, app.db, transaction=existing).build()
+        preserved = rebuilt.split_for(holding.handle)
+
+        assert preserved is not None
+        assert preserved.quantity == Money("1.2345")
+        assert preserved.action == "Buy"
+        assert preserved.reconcile is ReconcileState.CLEARED
+        assert preserved.reconcile_date == date(2026, 2, 1)
+        assert preserved.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert preserved.investment_activity is InvestmentActivityKind.CONTRIBUTION
+        assert preserved.fsa_year_start == date(2026, 1, 1)
+
 
 class TestImportDialogState:
     """Selecting a second file must not leave the first file's outcome on screen."""
@@ -1379,6 +1432,45 @@ class TestScheduleEntry:
             ),
             (bank.handle, Money("-150.00"), None),
         ]
+
+    def test_fixed_investment_activity_is_editable_as_the_primary_amount(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType, InvestmentActivityKind
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        root = app.db.root_account()
+        assert bank is not None and root is not None
+        holding = Account(
+            name="Long-term fund",
+            atype=AccountType.INVESTMENT,
+            parent=root.handle,
+        )
+        with app.db.transaction("add investment account") as txn:
+            app.db.add_account(holding, txn)
+        source = ScheduledTransaction(
+            name="Invest monthly",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(
+                    holding.handle,
+                    Money("200.00"),
+                    investment_activity=InvestmentActivityKind.CONTRIBUTION,
+                ),
+                ScheduledSplit(bank.handle, Money("-200.00")),
+            ],
+        )
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        rebuilt = dialog.build()
+
+        classified = rebuilt.splits[0]
+        assert classified.account == holding.handle
+        assert classified.amount == Money("200.00")
+        assert classified.investment_activity is InvestmentActivityKind.CONTRIBUTION
+        assert rebuilt.instantiate(date(2026, 1, 1)).is_balanced()
 
     def test_fixed_multiple_planning_purpose_legs_are_editable(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType, PlanningFlowKind
@@ -2316,6 +2408,46 @@ class TestDerivedPlanView:
         assert estimate.placeholder is True
         assert estimate.recurrence.period is PeriodType.WEEK
         assert estimate.recurrence.interval == 1
+
+    def test_scenario_dialog_can_schedule_a_direct_investment_contribution(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import (
+            Account,
+            AccountType,
+            InvestmentActivityKind,
+            Scenario,
+        )
+        from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        app.open_book(populated_book)
+        root = app.db.root_account()
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        assert root is not None and bank is not None
+        holding = Account(
+            name="Scenario fund",
+            atype=AccountType.INVESTMENT,
+            parent=root.handle,
+        )
+        scenario = Scenario(name="Save more")
+        with app.db.transaction("Add investment scenario") as txn:
+            app.db.add_account(holding, txn)
+            app.db.add_scenario(scenario, txn)
+
+        dialog = ScenarioScheduleDialog(window, app.db, scenario)
+        dialog_names = [app.db.full_name(account) for account in dialog._accounts]
+        dialog.name_entry.set_text("Monthly investment")
+        dialog.category.set_selected(dialog_names.index(app.db.full_name(holding)))
+        dialog.funding.set_selected(dialog_names.index(app.db.full_name(bank)))
+        dialog.investment_activity.set_selected(1)
+        dialog.amount_entry.set_text("250.00")
+        dialog._on_save(None)
+
+        saved = app.db.get_scenario(scenario.handle)
+        assert saved is not None
+        classified = saved.schedule_overrides[0].splits[0]
+        assert classified.account == holding.handle
+        assert classified.investment_activity is InvestmentActivityKind.CONTRIBUTION
 
     def test_alternate_schedule_changes_only_the_saved_scenario(self, app, window, populated_book):
         from breadsched.gen.lib import (

@@ -275,6 +275,16 @@ def projection_report(
             ("Ending cash", _money(result.ending_cash), result.ending_cash < 0),
             ("Lowest cash", _money(result.minimum_cash), result.minimum_cash < 0),
             ("Total growth", _money(result.total("investment_growth")), False),
+            ("Contributions", _money(result.total("contributions")), False),
+            ("Taxable withdrawals", _money(result.total("withdrawals")), False),
+            (
+                "Retirement distributions",
+                _money(result.total("retirement_distributions")),
+                False,
+            ),
+            ("Investment income", _money(result.total("investment_income")), False),
+            ("Investment fees", _money(result.total("investment_fees")), False),
+            ("Retirement rollovers", _money(result.total("rollovers")), False),
             ("Cash runs out", shortfall.label if shortfall else "Never", shortfall is not None),
         ]
     )

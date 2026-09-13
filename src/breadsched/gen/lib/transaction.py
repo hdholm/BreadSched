@@ -16,6 +16,7 @@ from .base import PrimaryObject, create_handle
 from .money import Money
 
 __all__ = [
+    "InvestmentActivityKind",
     "PlanningFlowKind",
     "PlanningResolution",
     "ReconcileState",
@@ -85,6 +86,47 @@ class ReconcileState(str, Enum):
     VOID = "v"
 
 
+class InvestmentActivityKind(str, Enum):
+    """Economic meaning of a movement through an investment holding."""
+
+    CONTRIBUTION = "contribution"
+    WITHDRAWAL = "withdrawal"
+    RETIREMENT_DISTRIBUTION = "retirement_distribution"
+    DIVIDEND = "dividend"
+    INTEREST = "interest"
+    FEE = "fee"
+    ROLLOVER = "rollover"
+
+    @property
+    def label(self) -> str:
+        return {
+            InvestmentActivityKind.CONTRIBUTION: "Contribution",
+            InvestmentActivityKind.WITHDRAWAL: "Taxable withdrawal",
+            InvestmentActivityKind.RETIREMENT_DISTRIBUTION: "Retirement distribution",
+            InvestmentActivityKind.DIVIDEND: "Reinvested dividend",
+            InvestmentActivityKind.INTEREST: "Reinvested interest",
+            InvestmentActivityKind.FEE: "Investment fee",
+            InvestmentActivityKind.ROLLOVER: "Retirement rollover",
+        }[self]
+
+    @property
+    def direction(self) -> int:
+        """Required holding-value direction; zero means either rollover leg."""
+        if self in {
+            InvestmentActivityKind.CONTRIBUTION,
+            InvestmentActivityKind.DIVIDEND,
+            InvestmentActivityKind.INTEREST,
+        }:
+            return 1
+        if self in {
+            InvestmentActivityKind.WITHDRAWAL,
+            InvestmentActivityKind.RETIREMENT_DISTRIBUTION,
+            InvestmentActivityKind.FEE,
+        }:
+            return -1
+        return 0
+
+
 class Split:
     """One leg of a transaction: an amount posted against one account."""
 
@@ -98,6 +140,7 @@ class Split:
         "reconcile",
         "reconcile_date",
         "planning_flow",
+        "investment_activity",
         "fsa_year_start",
     )
 
@@ -111,6 +154,7 @@ class Split:
         reconcile: ReconcileState = ReconcileState.NOT_RECONCILED,
         handle: str | None = None,
         planning_flow: PlanningFlowKind | str | None = None,
+        investment_activity: InvestmentActivityKind | str | None = None,
         fsa_year_start: date | str | None = None,
     ) -> None:
         self.handle = handle or create_handle()
@@ -135,6 +179,13 @@ class Split:
             if isinstance(planning_flow, PlanningFlowKind)
             else PlanningFlowKind(planning_flow)
         )
+        self.investment_activity = (
+            None
+            if investment_activity is None
+            else investment_activity
+            if isinstance(investment_activity, InvestmentActivityKind)
+            else InvestmentActivityKind(investment_activity)
+        )
 
     @property
     def is_debit(self) -> bool:
@@ -151,6 +202,9 @@ class Split:
             "reconcile": self.reconcile.value,
             "reconcile_date": self.reconcile_date.isoformat() if self.reconcile_date else None,
             "planning_flow": self.planning_flow.value if self.planning_flow else None,
+            "investment_activity": (
+                self.investment_activity.value if self.investment_activity else None
+            ),
             "fsa_year_start": (self.fsa_year_start.isoformat() if self.fsa_year_start else None),
         }
 
@@ -165,6 +219,7 @@ class Split:
             reconcile=ReconcileState(data.get("reconcile", "n")),
             handle=data["handle"],
             planning_flow=data.get("planning_flow"),
+            investment_activity=data.get("investment_activity"),
             fsa_year_start=data.get("fsa_year_start"),
         )
         raw = data.get("reconcile_date")
