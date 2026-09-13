@@ -128,6 +128,26 @@ class TestXmlScheduledTransactions:
         assert imported.recurrence.interval == 1
         assert imported.recurrence.occurrences(date(2027, 1, 1)) == [date(2026, 1, 1)]
 
+    def test_an_unknown_recurrence_is_preserved_but_does_not_fire(self, db, tmp_path):
+        source = create_xml_book(tmp_path / "custom.gnucash", compress=False)
+        path = tmp_path / "custom.gnucash"
+        path.write_text(
+            source.body.replace(
+                "<recurrence:period_type>month</recurrence:period_type>",
+                "<recurrence:period_type>custom-cycle</recurrence:period_type>",
+            )
+        )
+
+        result = gnucash_xml.import_book(db, path)
+        imported = db.get_scheduled(source.schedule)
+
+        assert imported is not None
+        assert imported.source_recurrence is not None
+        assert "custom-cycle" in str(imported.source_recurrence)
+        assert imported.usable is False
+        assert schedule.forecast_occurrences(db, date(2026, 1, 1), date(2027, 1, 1)) == []
+        assert any("excluded from planning and posting" in item for item in result.warnings)
+
     def test_template_splits_resolve_to_real_accounts(self, db, xml_book):
         """The slot indirection: the template split names the real account."""
         gnucash_xml.import_book(db, xml_book.path)
@@ -202,6 +222,19 @@ def test_sqlite_once_recurrence_accepts_gnucashs_zero_multiplier(db, gnucash_sql
     assert imported.recurrence.period.value == "once"
     assert imported.recurrence.interval == 1
     assert imported.recurrence.occurrences(date(2027, 1, 1)) == [date(2026, 1, 1)]
+
+
+def test_sqlite_unknown_recurrence_is_preserved_but_does_not_fire(db, gnucash_sqlite_path):
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE recurrences SET recurrence_period_type='custom-cycle'")
+
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    imported = db.get_scheduled(gnucash_sqlite_path.ids.sched)
+
+    assert imported is not None
+    assert imported.source_recurrence["recurrence_period_type"] == "custom-cycle"
+    assert imported.usable is False
+    assert schedule.due_occurrences(db, as_of=date(2027, 1, 1)) == []
 
 
 class TestMergingIntoAnExistingBook:

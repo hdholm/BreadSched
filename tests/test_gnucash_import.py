@@ -27,6 +27,8 @@ from breadsched.gen.lib import (
     Money,
     PlanningFlowKind,
     PlanningResolution,
+    ScheduledSplit,
+    ScheduledTransaction,
 )
 from breadsched.gen.plug import IMPORTER, PluginManager
 from breadsched.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
@@ -62,9 +64,15 @@ class TestFormatDetection:
         assert manager.for_file(gnucash_xml_path.path, IMPORTER).id == "gnucash-xml"
 
 
-def test_sqlite_formula_filter_uses_only_the_safe_engine():
-    assert gnucash_sqlite._is_supported_formula("ipmt(0.05 / 12:period:360:200000)")
-    assert not gnucash_sqlite._is_supported_formula("__import__('os').system('false')")
+def test_imported_formula_support_is_decided_only_by_the_safe_engine():
+    supported = ScheduledTransaction(
+        splits=[ScheduledSplit("account", formula="ipmt(0.05 / 12:period:360:200000)")]
+    )
+    unsafe = ScheduledTransaction(
+        splits=[ScheduledSplit("account", formula="__import__('os').system('false')")]
+    )
+    assert supported.formula_problem() is None
+    assert "unknown function" in unsafe.formula_problem()
 
 
 class TestDateParsing:

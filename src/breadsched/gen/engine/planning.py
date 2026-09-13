@@ -250,6 +250,8 @@ def scheduled_events(
     for schedule in db.iter_scheduled():
         if schedule.handle in excluded:
             continue
+        if not schedule.usable:
+            continue
         if not schedule.enabled and not include_disabled:
             continue
         for when in schedule.recurrence.occurrences(end, since=start):

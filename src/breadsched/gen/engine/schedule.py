@@ -24,6 +24,7 @@ __all__ = [
     "delete_definition",
     "due_occurrences",
     "duplicate_definition",
+    "duplicate_saved_definition",
     "forecast_occurrences",
     "from_transaction",
     "post_due",
@@ -59,6 +60,27 @@ def duplicate_definition(source: ScheduledTransaction) -> ScheduledTransaction:
         duplicate.description = duplicate.name
     duplicate.last_posted = None
     duplicate.skipped = []
+    return duplicate
+
+
+def duplicate_saved_definition(
+    db: DbSQLite, handle: str, *, name: str | None = None
+) -> ScheduledTransaction:
+    """Persist an exact independent copy, including protected custom structure."""
+    source = db.get_scheduled(handle)
+    if source is None:
+        raise KeyError(handle)
+    duplicate = duplicate_definition(source)
+    if name is not None:
+        chosen = name.strip()
+        if not chosen:
+            raise ValueError("give the copied schedule a name")
+        old_name = duplicate.name
+        duplicate.name = chosen
+        if duplicate.description == old_name:
+            duplicate.description = chosen
+    with db.transaction(f"Duplicate scheduled {source.name}") as txn:
+        db.add_scheduled(duplicate, txn)
     return duplicate
 
 
@@ -121,6 +143,8 @@ def due_occurrences(
     today = as_of or date.today()
     found: list[Occurrence] = []
     for sched in db.iter_scheduled():
+        if not sched.usable:
+            continue
         if not sched.enabled:
             continue
         advance = horizon_days if horizon_days is not None else sched.advance_days
@@ -229,6 +253,8 @@ def forecast_occurrences(
     """
     found: list[Occurrence] = []
     for sched in db.iter_scheduled():
+        if not sched.usable:
+            continue
         if not sched.enabled and not include_disabled:
             continue
         for when in sched.recurrence.occurrences(end, since=start):

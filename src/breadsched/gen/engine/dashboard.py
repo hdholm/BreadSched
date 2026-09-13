@@ -912,6 +912,8 @@ def _loan_end_date(db: DbSQLite, handles: list[str], paid_off: set[str]) -> date
 
     latest: date | None = None
     for scheduled in db.iter_scheduled():
+        if not scheduled.usable:
+            continue
         if not scheduled.enabled or not any(split.account in loans for split in scheduled.splits):
             continue
         last = scheduled.recurrence.last_occurrence()
@@ -1152,7 +1154,7 @@ def _pending_cash_flow(
 ) -> tuple[list[BillRow], Money, date | None, list[tuple[date, Money]]]:
     """Build dated pending income and bills, plus income used by liquidity."""
     horizon = today + timedelta(days=horizon_days)
-    schedules = [sched for sched in db.iter_scheduled() if sched.enabled]
+    schedules = [sched for sched in db.iter_scheduled() if sched.enabled and sched.usable]
     due_by_schedule: dict[str, list[date]] = {}
     for occurrence in schedule.due_occurrences(db, as_of=today, horizon_days=0):
         due_by_schedule.setdefault(occurrence.schedule.handle, []).append(occurrence.when)

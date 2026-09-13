@@ -606,6 +606,40 @@ class TestItServes:
         assert created["handle"] not in {item["handle"] for item in refreshed["definitions"]}
         assert client.database.summary()["txn"] == before_transactions
 
+    def test_a_protected_schedule_can_be_duplicated_exactly(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        source = ScheduledTransaction(
+            name="Protected source",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 3, 1)),
+            splits=[
+                ScheduledSplit(category["handle"], formula="external_value"),
+                ScheduledSplit(funding["handle"], formula="-(external_value)"),
+            ],
+        )
+        source.source_recurrence = {"period": "custom-cycle"}
+        source.unsupported_reason = "custom source recurrence"
+        with client.database.transaction("Protected source") as txn:
+            client.database.add_scheduled(source, txn)
+
+        status, copied = client.post(
+            "/api/scheduled/duplicate",
+            {"handle": source.handle, "name": "Reviewed protected copy"},
+        )
+
+        assert status == 200
+        duplicate = client.database.get_scheduled(copied["handle"])
+        assert duplicate is not None
+        assert duplicate.handle != source.handle
+        assert duplicate.source_recurrence == source.source_recurrence
+        assert [split.formula for split in duplicate.splits] == [
+            "external_value",
+            "-(external_value)",
+        ]
+        assert duplicate.last_posted is None
+        assert duplicate.skipped == []
+
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")
         assert len(payload["rows"]) == 36

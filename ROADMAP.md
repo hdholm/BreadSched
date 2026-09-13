@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0176 — precise import outcome history**.
-The current candidate is **0177 — account-controlled emergency funds**.
+The accepted baseline is **0177 — account-controlled emergency funds**.
+The current candidate is **0178 — preserve protected schedules**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -498,11 +498,13 @@ semantics, not duplicate business rules in presentation code.
   schedule draft from an existing transaction for review. All split accounts,
   amounts, memos, and planning purposes are copied; the user chooses any recurrence
   or date changes before saving a new independent definition.
-- [ ] **Finish duplication of protected custom schedules.** Editable fixed/formula
+- [x] **0178 — Finish duplication of protected custom schedules.** Editable fixed/formula
   schedules can be duplicated into reviewed drafts with independent identity and
   occurrence state. Extend this safely to imported/custom structures that remain
   read-only because the current editor cannot round-trip every recurrence or split
-  feature.
+  feature. Exact-copy review in GTK/web preserves protected source recurrence,
+  formulas, splits, and metadata with a new identity while clearing completed and
+  skipped occurrence state.
 - [x] **Delete schedules.** Provide a discoverable deletion action with appropriate
   confirmation and atomic undo/redo. Retain already posted transactions and handle
   scenario overrides, pending occurrences, resolutions, and imported-source
@@ -510,8 +512,11 @@ semantics, not duplicate business rules in presentation code.
 
 - [ ] Continue widening safe editing only where complete split/recurrence/import
   semantics can be round-tripped without guessing.
-- [ ] Preserve unsupported custom recurrence/formula structures losslessly in
-  inspectable read-only form.
+- [x] **0178 — Preserve unsupported custom recurrence/formula structures losslessly**
+  in inspectable read-only form. Retain original source representations and reasons;
+  exclude them from planning, projection, and posting rather than silently mapping
+  an unknown recurrence to monthly or replacing an unknown formula with a fixed
+  value. Advance the alpha version to `0.2.0a17`.
 - [ ] Add fixture coverage for native/imported schedules, unusual recurrences,
   formulas, overrides, and bounded schedules.
 - [ ] Add an approachable loan/amortization creation workflow.
@@ -596,7 +601,7 @@ semantics, not duplicate business rules in presentation code.
 - [x] **0174 — Supported scheduled formulas.** GnuCash formulas representable by the
   current safe formula language retain arithmetic/functions, recurrence ordinals,
   and per-leg dynamics in both import formats.
-- [ ] **Unsupported scheduled-formula preservation.** Preserve expressions outside
+- [x] **0178 — Unsupported scheduled-formula preservation.** Preserve expressions outside
   the current safe language with actionable reasons rather than silently discarding
   them or enabling unrestricted evaluation. Add reviewed translation/variable
   mapping only where semantics are known.

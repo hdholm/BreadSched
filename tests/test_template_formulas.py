@@ -147,24 +147,19 @@ class TestFormulaImports:
         assert april.is_balanced()
         assert max(split.value for split in april.splits) == Money("104")
 
-    def test_a_two_leg_schedule_is_balanced_against_its_good_side(self, db, tmp_path):
-        """One unusable leg out of two is not a guess: the other side determines it.
-
-        Left half-resolved, this is the schedule that made a whole projection fail
-        with "could not be calculated".
-        """
+    def test_an_unusable_leg_is_preserved_instead_of_rewritten(self, db, tmp_path):
         path = book_with_formula(tmp_path, "rent_amount * 2")
         result = gnucash_xml.import_book(db, path)
 
         sched = next(iter(db.iter_scheduled()))
-        assert sched.imbalance() == Money(0)
-        assert sched.instantiate(date(2026, 4, 1)).is_balanced()
-        assert any("balanced it against the other" in w for w in result.warnings)
+        assert sched.splits[0].formula == "rent_amount * 2"
+        assert sched.usable is False
+        assert any("preserved unsupported formula" in w for w in result.warnings)
 
-    def test_the_repair_is_reported_not_silent(self, db, tmp_path):
+    def test_the_preservation_reason_is_reported_not_silent(self, db, tmp_path):
         path = book_with_formula(tmp_path, "rent_amount * 2")
         result = gnucash_xml.import_book(db, path)
-        assert any("unusable formula" in w for w in result.warnings)
+        assert any("unknown variable" in w for w in result.warnings)
 
     def test_the_import_completes_whatever_the_formula(self, db, tmp_path):
         """The ledger must arrive even when a schedule cannot be understood."""
@@ -172,6 +167,9 @@ class TestFormulaImports:
         result = gnucash_xml.import_book(db, path)
         assert result.transactions == 1
         assert result.accounts == 5
+        schedule = next(iter(db.iter_scheduled()))
+        assert schedule.splits[0].formula == "%%nonsense%%"
+        assert schedule.usable is False
 
     def test_an_empty_formula_does_not_crash(self, db, tmp_path):
         path = book_with_formula(tmp_path, "")

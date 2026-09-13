@@ -794,6 +794,14 @@ def _project_events(
                 schedule_driven_liabilities.add(liability_account.handle)
 
     for scheduled_tx in db.iter_scheduled():
+        if not scheduled_tx.usable:
+            reason = scheduled_tx.unsupported_reason or scheduled_tx.formula_problem()
+            _warn_once(
+                result,
+                f"scheduled transaction {scheduled_tx.name!r} is preserved but excluded "
+                f"from projection: {reason}",
+            )
+            continue
         record_formula_schedule(scheduled_tx)
     for scenario_schedule in scenario.schedule_overrides:
         record_formula_schedule(scenario_schedule)

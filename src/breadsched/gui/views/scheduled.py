@@ -291,9 +291,7 @@ class ScheduledView(BaseView):
         selected_schedule = payload is not None and not _is_split(payload)
         self.edit_button.set_sensitive(selected_schedule)
         self.delete_button.set_sensitive(selected_schedule)
-        self.duplicate_button.set_sensitive(
-            selected_schedule and not self._editability_reason(payload)
-        )
+        self.duplicate_button.set_sensitive(selected_schedule)
 
     def _selected_schedule(self) -> ScheduledTransaction | None:
         selection = self.definitions_view.get_model()
@@ -304,6 +302,13 @@ class ScheduledView(BaseView):
     def _editability_reason(self, sched) -> str:
         if sched is None or _is_split(sched):
             return "No scheduled transaction is selected."
+        if sched.unsupported_reason:
+            return sched.unsupported_reason
+        if formula_problem := sched.formula_problem():
+            return (
+                f"This imported formula cannot currently be evaluated ({formula_problem}). "
+                "Its original text remains preserved."
+            )
         has_formula = any(split.formula for split in sched.splits)
         supported_periods = {
             PeriodType.DAY,
@@ -384,10 +389,15 @@ class ScheduledView(BaseView):
         if self.db is None:
             return
         source = self._selected_schedule()
-        if source is None or self._editability_reason(source):
+        if source is None:
             return
         from ..dialogs.schedule_dialog import ScheduleDialog
 
+        reason = self._editability_reason(source)
+        if reason:
+            dialog = ScheduleDuplicateDialog(self.get_root(), self.db, source, reason, self.refresh)
+            dialog.present()
+            return
         draft = schedule.duplicate_definition(source)
         dialog = ScheduleDialog(self.get_root(), self.db, source=draft, creating=True)
         dialog.connect("close-request", self.refresh_on_close)
@@ -438,6 +448,65 @@ class ScheduledView(BaseView):
         dialog = LoanDialog(self.get_root(), self.db)
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
+
+
+class ScheduleDuplicateDialog(Gtk.Window):
+    """Name and confirm an exact copy of a protected schedule definition."""
+
+    def __init__(self, parent, db, scheduled, reason: str, saved_callback) -> None:
+        super().__init__(title="Duplicate scheduled transaction", transient_for=parent, modal=True)
+        self.db = db
+        self.scheduled = scheduled
+        self.saved_callback = saved_callback
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(18)
+        self.set_child(box)
+        box.append(
+            Gtk.Label(
+                label=(
+                    f"{reason}\n\nThe recurrence, formulas, splits, source details, "
+                    "and other protected fields will be copied exactly. Completed "
+                    "and skipped occurrence state will be cleared."
+                ),
+                xalign=0,
+                wrap=True,
+            )
+        )
+        self.name_entry = Gtk.Entry(text=f"{scheduled.name} copy")
+        self.name_entry.connect("changed", self._validate)
+        box.append(Gtk.Label(label="Copy name", xalign=0))
+        box.append(self.name_entry)
+        self.status = Gtk.Label(xalign=0)
+        box.append(self.status)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: self.close())
+        buttons.append(cancel)
+        self.save_button = Gtk.Button(label="Create exact copy")
+        self.save_button.add_css_class("suggested-action")
+        self.save_button.connect("clicked", self._confirm)
+        buttons.append(self.save_button)
+        box.append(buttons)
+        self._validate()
+
+    def _validate(self, *_args) -> None:
+        valid = bool(self.name_entry.get_text().strip())
+        self.save_button.set_sensitive(valid)
+        self.status.set_text("" if valid else "Give the copied schedule a name.")
+
+    def _confirm(self, _button) -> None:
+        try:
+            schedule.duplicate_saved_definition(
+                self.db, self.scheduled.handle, name=self.name_entry.get_text()
+            )
+        except (KeyError, ValueError) as exc:
+            self.status.set_text(str(exc))
+            self.status.add_css_class("negative")
+            return
+        self.close()
+        self.saved_callback()
 
 
 class ScheduleDeleteDialog(Gtk.Window):

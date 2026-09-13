@@ -13,7 +13,6 @@ from datetime import date
 from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust
 from ...gen.lib.scheduled import ScheduledSplit, ScheduledTransaction
@@ -483,9 +482,8 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
         ).fetchone()
         if recurrence is None:
             continue
-        period = PERIOD_MAP.get(
-            (recurrence["recurrence_period_type"] or "month").lower(), PeriodType.MONTH
-        )
+        raw_period = (recurrence["recurrence_period_type"] or "month").lower()
+        period = PERIOD_MAP.get(raw_period, PeriodType.MONTH)
         try:
             start = parse_gnc_date(recurrence["recurrence_period_start"])
             end = parse_gnc_date(row["end_date"]) if row["end_date"] else None
@@ -526,6 +524,14 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
             auto_create=_source_flag(row["auto_create"]),
             advance_days=row["adv_creation"] or 0,
         )
+        if raw_period not in PERIOD_MAP:
+            sched.source_recurrence = dict(recurrence)
+            sched.unsupported_reason = f"GnuCash recurrence period {raw_period!r} is not supported"
+            sink.result.warn(
+                f"scheduled transaction {sched.name!r} preserves unsupported "
+                f"recurrence period {raw_period!r}; it is inspectable but excluded "
+                "from planning and posting"
+            )
         sched.splits = _template_splits(conn, sink, row["template_act_guid"])
         if not sched.splits:
             # Without a usable template the schedule is a name and a rule; keep it
@@ -585,19 +591,8 @@ def _template_splits(
                 ScheduledSplit(
                     account=sink.resolve(target),
                     amount=amount,
-                    formula=formula if _is_supported_formula(formula) else "",
+                    formula=formula,
                     memo=row["memo"] or "",
                 )
             )
     return splits
-
-
-def _is_supported_formula(text: str) -> bool:
-    """Return whether the current safe engine can resolve a GnuCash expression."""
-    if not text:
-        return False
-    try:
-        evaluate(text, {"period": 1, "i": 1})
-    except FormulaError:
-        return False
-    return True

@@ -25,6 +25,7 @@ from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.account import Account, AccountType, GnuCashAccountType
 from ...gen.lib.commodity import Commodity, CommodityPrice
+from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType
 from ...gen.lib.transaction import (
@@ -731,6 +732,20 @@ def balance_template_splits(schedule, result: ImportResult | None = None) -> boo
     """
     if len(schedule.splits) != 2:
         return False
+    context = schedule.context(schedule.recurrence.start)
+    for split in schedule.splits:
+        if not split.formula:
+            continue
+        try:
+            evaluate(split.formula, context)
+        except (FormulaError, ValueError, ArithmeticError) as exc:
+            if result is not None:
+                result.warn(
+                    f"scheduled transaction {schedule.name!r} preserved unsupported "
+                    f"formula {split.formula!r}: {exc}; it is inspectable but excluded "
+                    "from planning and posting until translated"
+                )
+            return False
     resolved = [split.resolve(schedule.variables) for split in schedule.splits]
     if not (resolved[0] + resolved[1]):
         return False  # already balances

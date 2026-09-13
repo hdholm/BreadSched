@@ -716,6 +716,8 @@ class Api:
                     "auto": item.auto_create,
                     "growth_policy": item.growth_policy.value,
                     "simple": simple is not None and frequency is not None,
+                    "unsupported_reason": item.unsupported_reason or item.formula_problem(),
+                    "source_recurrence": item.source_recurrence,
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
                     "planning_flow": simple["planning_flow"] if simple else None,
@@ -2663,6 +2665,15 @@ class Api:
         deleted = schedule.delete_definition(self.db, handle)
         return {"handle": deleted.handle, "name": deleted.name}
 
+    def scheduled_duplicate(self, payload: dict) -> dict:
+        """Save an independent exact copy, including editor-protected fields."""
+        copied = schedule.duplicate_saved_definition(
+            self.db,
+            str(payload.get("handle") or ""),
+            name=str(payload.get("name") or ""),
+        )
+        return {"handle": copied.handle, "name": copied.name}
+
     def import_local(self, payload: dict) -> dict:
         path = str(payload.get("path") or "").strip()
         if not path:
@@ -2775,6 +2786,7 @@ POST_ROUTES = {
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),
     "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
     "/api/scheduled/delete": lambda a, body: a.scheduled_delete(body),
+    "/api/scheduled/duplicate": lambda a, body: a.scheduled_duplicate(body),
     "/api/scheduled/draft": lambda a, body: a.scheduled_draft(body),
     "/api/historical-estimate/accept": lambda a, body: a.historical_estimate_accept(body),
     "/api/review/match": lambda a, body: a.review_match(body),

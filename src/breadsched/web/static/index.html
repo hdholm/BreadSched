@@ -859,7 +859,11 @@ async function showRegister() {
 async function showScheduled() {
   const data = await get("/api/scheduled?days=90");
   const definitions = data.definitions.map((s) => el("tr", {},
-    el("td", {}, s.name),
+    el("td", {}, el("div", {}, s.name),
+      s.unsupported_reason
+        ? el("div", { class:"muted", title:String(s.source_recurrence || "") },
+            `Preserved read-only: ${s.unsupported_reason}`)
+        : null),
     el("td", { class: "muted" }, s.frequency),
     el("td", { class: "num" }, money(s.amount)),
     el("td", { class: "muted" }, s.placeholder ? "estimate" : (s.auto ? "automatic" : "manual")),
@@ -871,7 +875,15 @@ async function showScheduled() {
       s.simple ? el("button", { class:"action", type:"button",
         onclick:()=>openScheduledEditor(data, {
           ...s, handle:null, name:`${s.name} copy`, skipped:[],
-        }) }, "Duplicate…") : null,
+        }) }, "Duplicate…") : el("button", { class:"action", type:"button", onclick:async()=>{
+          const name = window.prompt("Name for the exact protected copy", `${s.name} copy`);
+          if (name == null) return;
+          try {
+            await post("/api/scheduled/duplicate", {handle:s.handle, name});
+            say("Protected schedule copied exactly for independent review.");
+            render();
+          } catch (error) { say(error.message, "error"); }
+        }}, "Duplicate…"),
       el("button", { class:"action", type:"button", onclick:async()=>{
         if (!window.confirm(`Delete scheduled transaction "${s.name}"? Already posted transactions remain.`)) return;
         try {

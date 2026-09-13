@@ -151,6 +151,22 @@ class TestScheduleEngine:
             split.serialize() for split in payday_schedule.splits
         ]
 
+    def test_protected_definition_can_be_saved_as_an_exact_copy(self, db, payday_schedule):
+        payday_schedule.unsupported_reason = "custom recurrence"
+        payday_schedule.source_recurrence = {"source": "custom-cycle"}
+        with db.transaction("Protect custom schedule") as txn:
+            db.commit_scheduled(payday_schedule, txn)
+
+        copied = schedule.duplicate_saved_definition(
+            db, payday_schedule.handle, name="Reviewed custom copy"
+        )
+
+        assert copied.handle != payday_schedule.handle
+        assert copied.name == "Reviewed custom copy"
+        assert copied.unsupported_reason == "custom recurrence"
+        assert copied.source_recurrence == {"source": "custom-cycle"}
+        assert db.get_scheduled(copied.handle) is not None
+
     def test_actual_becomes_an_unsaved_one_time_template(self, db, book):
         from breadsched.gen.lib import PlanningFlowKind, Split, Transaction
 
@@ -272,7 +288,7 @@ class TestUnbalancedSchedules:
 
         assert len(result.rows) == 24, "the projection must still run"
         assert any("Mortgage" in warning for warning in result.warnings)
-        assert any("does not balance" in warning for warning in result.warnings)
+        assert any("excluded from projection" in warning for warning in result.warnings)
 
     def test_the_warning_is_not_repeated_for_every_month(self, db, book, lopsided):
         from breadsched.gen.engine import projection

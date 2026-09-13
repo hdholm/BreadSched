@@ -157,6 +157,14 @@ skips, amount changes, and formula-driven splits are part of the schedule semant
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 
+Unsupported source structure is data, not permission to guess. BreadSched retains
+the original formula text and source recurrence representation, exposes an
+actionable read-only reason, and excludes the definition from planning, projection,
+and posting. A protected definition can be copied exactly with a new identity and
+cleared completed/skipped-occurrence state; this does not claim the copied source
+structure has become executable. Editing/translation is enabled only after the
+current recurrence and bounded formula engines can validate the result.
+
 Import acceptance for a GnuCash formula is defined by the same bounded AST evaluator
 that executes it, not by a second character whitelist. Safe arithmetic, supported
 financial functions, and the occurrence variables `period`/`i` therefore behave the

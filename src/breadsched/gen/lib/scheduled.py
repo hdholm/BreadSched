@@ -270,6 +270,10 @@ class ScheduledTransaction(PrimaryObject):
         #: again. Recorded per date rather than by moving ``last_posted``, because
         #: skipping March must not also dismiss February.
         self.skipped: list[date] = sorted(set(skipped or []))
+        #: Exact importer-owned recurrence representation when the source cannot be
+        #: mapped safely to BreadSched's recurrence model.
+        self.source_recurrence: dict[str, Any] | str | None = None
+        self.unsupported_reason: str = ""
 
     # ------------------------------------------------------------- realisation
 
@@ -416,10 +420,27 @@ class ScheduledTransaction(PrimaryObject):
             txn.validate()
         return txn
 
+    def formula_problem(self, when: date | None = None) -> str | None:
+        """Explain the first formula that the safe evaluator cannot resolve."""
+        context = self.context(when or self.recurrence.start)
+        for split in self.splits:
+            if not split.formula:
+                continue
+            try:
+                evaluate(split.formula, context)
+            except (FormulaError, ValueError, ArithmeticError) as exc:
+                return f"formula {split.formula!r}: {exc}"
+        return None
+
+    @property
+    def usable(self) -> bool:
+        """Whether the definition can safely participate in calculations/posting."""
+        return not self.unsupported_reason and self.formula_problem() is None
+
     @property
     def postable(self) -> bool:
         """Whether occurrences may become real ledger entries."""
-        return self.enabled and not self.placeholder
+        return self.enabled and not self.placeholder and self.usable
 
     def skip(self, when: date) -> None:
         """Treat ``when`` as dealt with, without posting anything for it."""
@@ -453,6 +474,8 @@ class ScheduledTransaction(PrimaryObject):
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
             "skipped": [when.isoformat() for when in self.skipped],
+            "source_recurrence": self.source_recurrence,
+            "unsupported_reason": self.unsupported_reason,
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -485,6 +508,8 @@ class ScheduledTransaction(PrimaryObject):
         self.variables = dict(data.get("variables", {}))
         self.placeholder = data.get("placeholder", False)
         self.skipped = [date.fromisoformat(d) for d in data.get("skipped", [])]
+        self.source_recurrence = data.get("source_recurrence")
+        self.unsupported_reason = str(data.get("unsupported_reason", ""))
 
     def __repr__(self) -> str:
         return f"<ScheduledTransaction {self.name!r} {self.recurrence.describe()}>"

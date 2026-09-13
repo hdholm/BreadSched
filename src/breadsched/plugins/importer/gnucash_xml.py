@@ -507,10 +507,8 @@ def _read_schedule(
         return
 
     recurrence_node = element.find("sx:schedule/gnc:recurrence", NS)
-    period = _PERIODS.get(
-        _text(recurrence_node, "recurrence:period_type", "month").lower(),
-        PeriodType.MONTH,
-    )
+    raw_period = _text(recurrence_node, "recurrence:period_type", "month").lower()
+    period = _PERIODS.get(raw_period, PeriodType.MONTH)
     multiplier = _text(recurrence_node, "recurrence:mult", "1")
     start = (
         # An Element with no children is falsey, so identity is the only safe test.
@@ -547,6 +545,16 @@ def _read_schedule(
         advance_days=int(_text(element, "sx:advanceCreateDays", "0") or 0),
     )
     schedule.last_posted = _gdate(element.find("sx:last", NS))
+    if raw_period not in _PERIODS:
+        schedule.source_recurrence = (
+            ET.tostring(recurrence_node, encoding="unicode") if recurrence_node is not None else ""
+        )
+        schedule.unsupported_reason = f"GnuCash recurrence period {raw_period!r} is not supported"
+        sink.result.warn(
+            f"scheduled transaction {name!r} preserves unsupported recurrence "
+            f"period {raw_period!r}; it is inspectable but excluded from planning "
+            "and posting"
+        )
 
     template_account = _text(element, "sx:templ-acct")
     for raw in template_splits.get(template_account, []):

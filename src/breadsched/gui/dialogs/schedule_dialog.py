@@ -408,6 +408,8 @@ class ScheduleDialog(Gtk.Window):
                 f"  {item.when.isoformat()}: {item.amount}"
                 for item in source.occurrence_adjustments
             )
+        if source.source_recurrence is not None:
+            lines.extend(["", "Original source recurrence:", f"  {source.source_recurrence}"])
         return "\n".join(lines)
 
     def _load_formula_source(self, source: ScheduledTransaction) -> None:
