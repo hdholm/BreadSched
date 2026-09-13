@@ -305,6 +305,8 @@ class Api:
                         "class": account.account_class.value,
                         "placeholder": account.placeholder,
                         "hidden": account.hidden,
+                        "emergency_fund_eligible": account.emergency_fund_eligible,
+                        "emergency_fund_included": account.emergency_fund_included,
                         "source_type": (
                             account.source_atype.value if account.source_atype else None
                         ),
@@ -424,6 +426,21 @@ class Api:
         with self.db.transaction(f"Set account type for {account.name}") as txn:
             self.db.commit_account(account, txn)
         return {"handle": account.handle, "type": account.atype.value}
+
+    def account_emergency_fund_save(self, payload: dict) -> dict:
+        handle = str(payload.get("handle", ""))
+        account = self.db.get_account(handle)
+        if account is None:
+            raise KeyError(handle)
+        if not account.emergency_fund_eligible:
+            raise ValueError("this account type is always excluded from the emergency fund")
+        account.emergency_fund_override = bool(payload.get("included"))
+        with self.db.transaction(f"Set emergency-fund treatment for {account.name}") as txn:
+            self.db.commit_account(account, txn)
+        return {
+            "handle": account.handle,
+            "emergency_fund_included": account.emergency_fund_included,
+        }
 
     def account_fsa_years_save(self, payload: dict) -> dict:
         handle = str(payload.get("handle", ""))
@@ -2746,6 +2763,7 @@ ROUTES = {
 POST_ROUTES = {
     "/api/dashboard/config": lambda a, body: a.dashboard_config_save(body),
     "/api/account/type": lambda a, body: a.account_type_save(body),
+    "/api/account/emergency-fund": lambda a, body: a.account_emergency_fund_save(body),
     "/api/commodity/price": lambda a, body: a.commodity_price_save(body),
     "/api/plan/settings": lambda a, body: a.plan_settings_save(body),
     "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),

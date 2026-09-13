@@ -486,6 +486,7 @@ class ImportSink:
         imported.pays_in_full = existing.pays_in_full
         imported.usual_payment = existing.usual_payment
         imported.payment_day = existing.payment_day
+        imported.emergency_fund_override = existing.emergency_fund_override
 
     def _existing_sibling(
         self, parent: str | None, name: str, atype: GnuCashAccountType

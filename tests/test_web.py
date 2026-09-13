@@ -1306,6 +1306,25 @@ class TestDashboardApi:
         assert isinstance(payload["summary"]["net_worth"], str)
         float(payload["summary"]["net_worth"])
 
+    def test_account_emergency_fund_choice_round_trips(self, client):
+        _status, accounts = client.get("/api/accounts")
+        expense = next(account for account in accounts if account["type"] == "EXPENSE")
+        bank = next(account for account in accounts if account["type"] == "BANK")
+        assert expense["emergency_fund_eligible"] is True
+        assert expense["emergency_fund_included"] is True
+        assert bank["emergency_fund_eligible"] is False
+
+        status, saved = client.post(
+            "/api/account/emergency-fund",
+            {"handle": expense["handle"], "included": False},
+        )
+
+        assert status == 200
+        assert saved["emergency_fund_included"] is False
+        _status, refreshed = client.get("/api/accounts")
+        changed = next(account for account in refreshed if account["handle"] == expense["handle"])
+        assert changed["emergency_fund_included"] is False
+
     def test_the_page_opens_on_the_dashboard(self, client):
         _status, body, _headers = client.raw("/")
         page = body.decode()

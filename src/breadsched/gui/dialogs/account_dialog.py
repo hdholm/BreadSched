@@ -245,6 +245,17 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.hidden_check, 1, row, 1, 1)
         row += 1
 
+        self.emergency_check = Gtk.CheckButton(label="Carry in emergency fund")
+        self.emergency_check.set_tooltip_text(
+            "Include recurring activity against this account when sizing the "
+            "no-income emergency fund"
+        )
+        self.emergency_check.set_active(
+            account.emergency_fund_override is not False if account is not None else True
+        )
+        grid.attach(self.emergency_check, 1, row, 1, 1)
+        row += 1
+
         self.opening_entry = Gtk.Entry(placeholder_text="0.00")
         self.opening_entry.set_sensitive(not editing)
         self.opening_entry.set_tooltip_text(
@@ -380,6 +391,7 @@ class AccountDialog(Gtk.Window):
         self.loan_box.set_visible(account_type is AccountType.LOAN)
         self.card_box.set_visible(account_type is AccountType.CREDIT)
         self._on_card_changed()
+        self._refresh_emergency_control()
         self._validate()
 
     def _on_card_changed(self, *_args) -> None:
@@ -388,6 +400,15 @@ class AccountDialog(Gtk.Window):
         carrying = not self.full_check.get_active()
         self.usual_entry.set_sensitive(carrying)
         self.day_spin.set_sensitive(True)
+        self._refresh_emergency_control()
+
+    def _refresh_emergency_control(self) -> None:
+        if not self._ready:
+            return
+        eligible = self.selected_type.supports_emergency_fund and not (
+            self.selected_type is AccountType.CREDIT and self.full_check.get_active()
+        )
+        self.emergency_check.set_visible(eligible)
 
     def _validate(self, *_args) -> None:
         if not self._ready:
@@ -450,6 +471,8 @@ class AccountDialog(Gtk.Window):
             except (ValueError, InvalidOperation, ArithmeticError):
                 account.usual_payment = None
             account.payment_day = int(self.day_spin.get_value())
+        if account.emergency_fund_eligible:
+            account.emergency_fund_override = self.emergency_check.get_active()
         return account
 
     def _on_save(self, _button) -> None:

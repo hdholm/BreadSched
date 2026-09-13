@@ -437,6 +437,97 @@ class TestLiquidityAndEmergencyFund:
         assert household.available > Money(0)
         assert household.emergency_shortfall != household.required_liquid
 
+    def test_an_expense_can_be_excluded_without_hiding_the_bill(self, db, book):
+        expense = db.get_account(book.groceries)
+        assert expense is not None
+        expense.emergency_fund_override = False
+        bill = ScheduledTransaction(
+            name="Optional service",
+            recurrence=Recurrence(PeriodType.MONTH, start=TODAY),
+            splits=[
+                ScheduledSplit(expense.handle, Money("90")),
+                ScheduledSplit(book.checking, Money("-90")),
+            ],
+        )
+        with db.transaction("Optional recurring service") as txn:
+            db.commit_account(expense, txn)
+            db.add_scheduled(bill, txn)
+
+        board = dashboard.build(db, as_of=TODAY)
+
+        assert board.monthly_outgoings == Money("90")
+        assert board.emergency_monthly_outgoings == Money(0)
+        assert board.emergency_fund == Money(0)
+
+    def test_loan_principal_and_interest_count_once_as_components(self, db, book):
+        root = db.root_account()
+        loan = Account(name="Loan", atype=AccountType.LOAN, parent=root.handle)
+        payment = ScheduledTransaction(
+            name="Loan payment",
+            recurrence=Recurrence(PeriodType.MONTH, start=TODAY),
+            splits=[
+                ScheduledSplit(loan.handle, Money("800")),
+                ScheduledSplit(book.rent, Money("200")),
+                ScheduledSplit(book.checking, Money("-1000")),
+            ],
+        )
+        with db.transaction("Loan") as txn:
+            db.add_account(loan, txn)
+            db.add_scheduled(payment, txn)
+
+        board = dashboard.build(db, as_of=TODAY)
+
+        assert board.emergency_monthly_outgoings == Money("1000")
+
+    def test_escrow_funding_counts_but_its_later_draw_does_not(self, db, book):
+        root = db.root_account()
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=root.handle)
+        funding = ScheduledTransaction(
+            name="Escrow funding",
+            recurrence=Recurrence(PeriodType.MONTH, start=TODAY),
+            splits=[
+                ScheduledSplit(escrow.handle, Money("120")),
+                ScheduledSplit(book.checking, Money("-120")),
+            ],
+        )
+        draw = ScheduledTransaction(
+            name="Escrow draw",
+            recurrence=Recurrence(PeriodType.MONTH, start=TODAY),
+            splits=[
+                ScheduledSplit(book.rent, Money("120")),
+                ScheduledSplit(escrow.handle, Money("-120")),
+            ],
+        )
+        with db.transaction("Escrow") as txn:
+            db.add_account(escrow, txn)
+            db.add_scheduled(funding, txn)
+            db.add_scheduled(draw, txn)
+
+        board = dashboard.build(db, as_of=TODAY)
+
+        assert board.monthly_outgoings == Money("120")
+        assert board.emergency_monthly_outgoings == Money("120")
+
+    def test_a_paid_in_full_card_payment_is_not_an_emergency_expense(self, db, book):
+        root = db.root_account()
+        card = Account(name="Card", atype=AccountType.CREDIT, parent=root.handle)
+        payment = ScheduledTransaction(
+            name="Card payment",
+            recurrence=Recurrence(PeriodType.MONTH, start=TODAY),
+            splits=[
+                ScheduledSplit(card.handle, Money("250")),
+                ScheduledSplit(book.checking, Money("-250")),
+            ],
+        )
+        with db.transaction("Card") as txn:
+            db.add_account(card, txn)
+            db.add_scheduled(payment, txn)
+
+        board = dashboard.build(db, as_of=TODAY)
+
+        assert board.monthly_outgoings == Money("250")
+        assert board.emergency_monthly_outgoings == Money(0)
+
 
 class TestConfiguration:
     def test_the_config_round_trips_through_the_book(self, db, household):

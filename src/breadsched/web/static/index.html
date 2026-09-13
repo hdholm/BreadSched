@@ -768,7 +768,6 @@ async function showAccounts() {
         await post("/api/account/type", {
           handle: account.handle, type: event.target.value,
         });
-        account.type = event.target.value;
         render();
       },
     }, ([
@@ -781,6 +780,18 @@ async function showAccounts() {
     ]).map(([value, label]) => el("option", {
       value, selected: account.type === value ? "selected" : null,
     }, label)))),
+    el("td", {}, account.emergency_fund_eligible
+      ? el("input", {
+          type:"checkbox", checked:account.emergency_fund_included ? "checked" : null,
+          title:"Carry recurring activity in the no-income emergency fund",
+          onchange: async (event) => {
+            await post("/api/account/emergency-fund", {
+              handle:account.handle, included:event.target.checked,
+            });
+            account.emergency_fund_included = event.target.checked;
+          },
+        })
+      : el("span", { class:"muted", title:"This type is always excluded" }, "—")),
     el("td", {}, account.type === "FSA"
       ? el("button", { class:"action", type:"button", onclick:()=>openFsaYearsEditor(account) },
           `${(account.fsa_years || []).length} funding year${(account.fsa_years || []).length === 1 ? "" : "s"}…`)
@@ -801,7 +812,7 @@ async function showAccounts() {
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them. Investment values use the latest dated price "
       + "when one is available; otherwise they retain their ledger value."),
-    table(["Account", "Type", "FSA years", { label:"Units", num:true },
+    table(["Account", "Type", "Emergency", "FSA years", { label:"Units", num:true },
            { label:"Price", num:true }, "As of", { label: "Value", num: true }], rows));
 }
 
@@ -2373,6 +2384,7 @@ async function showDashboard() {
     tile(`Needed in ${data.config.liquidity_days} days`, money(s.required_liquid)),
     tile("Available", money(s.available), Number(s.available) < 0),
     tile(`Emergency fund (${data.config.emergency_months} mo)`, money(s.emergency_fund)),
+    tile("Emergency outgoings / mo", money(s.emergency_monthly_outgoings)),
     tile("Months covered", s.months_covered,
          Number(s.months_covered) < Number(data.config.emergency_months)),
     short ? tile("Short of the fund", money(s.emergency_shortfall), true) : null);

@@ -170,6 +170,14 @@ Root and Technical types are structural/import-only and are not ordinary user
 accounts. Explicit split planning purposes remain available when one transaction's
 meaning needs to override normal account-type inference.
 
+Expense, Loan, general Liability, Escrow, and carried-balance Credit card accounts
+can be included in or excluded from emergency-fund sizing. They are included by
+default; clear **Carry in emergency fund** for costs that stop when household income
+stops. Cash, Bank, Asset, Investment, Retirement, FSA, Income, Equity, Root,
+Technical, and paid-in-full Credit card accounts are always excluded. A card paid
+in full still affects near-term liquidity; its underlying expense categories, not
+the card payment itself, determine emergency need.
+
 ### Security quantities, prices, and current value
 
 Investment and Retirement accounts may name a non-currency commodity such as a

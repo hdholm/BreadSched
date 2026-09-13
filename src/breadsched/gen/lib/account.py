@@ -123,6 +123,17 @@ class AccountType(str, Enum):
         """Balances that compound at an assumed rate of return."""
         return self in (AccountType.INVESTMENT, AccountType.RETIREMENT)
 
+    @property
+    def supports_emergency_fund(self) -> bool:
+        """Whether this type can represent an expense retained after income stops."""
+        return self in {
+            AccountType.EXPENSE,
+            AccountType.LOAN,
+            AccountType.LIABILITY,
+            AccountType.ESCROW,
+            AccountType.CREDIT,
+        }
+
 
 class GnuCashAccountType(str, Enum):
     """Exact source classification retained only for GnuCash interoperability."""
@@ -271,6 +282,10 @@ class Account(PrimaryObject):
         #: Day of the month a card payment is due, inferred on import where
         #: possible.
         self.payment_day: int | None = None
+        #: Optional household choice. None means the default (included) for an
+        #: eligible type. Ineligible types are always excluded regardless of this
+        #: retained preference.
+        self.emergency_fund_override: bool | None = None
 
     # -------------------------------------------------------------- convenience
 
@@ -290,6 +305,19 @@ class Account(PrimaryObject):
     @property
     def is_spendable_cash(self) -> bool:
         return self.atype.is_cash_like
+
+    @property
+    def emergency_fund_eligible(self) -> bool:
+        if not self.atype.supports_emergency_fund:
+            return False
+        return self.atype is not AccountType.CREDIT or self.carries_balance
+
+    @property
+    def emergency_fund_included(self) -> bool:
+        """Whether positive economic activity contributes to fund sizing."""
+        if not self.emergency_fund_eligible:
+            return False
+        return self.emergency_fund_override is not False
 
     def sign(self) -> int:
         """Multiplier that turns a raw split total into a displayed balance."""
@@ -323,6 +351,7 @@ class Account(PrimaryObject):
                 else None
             ),
             "payment_day": self.payment_day,
+            "emergency_fund": self.emergency_fund_override,
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -349,6 +378,8 @@ class Account(PrimaryObject):
         usual = data.get("usual_payment")
         self.usual_payment = Money(*usual) if usual else None
         self.payment_day = data.get("payment_day")
+        raw_emergency = data.get("emergency_fund")
+        self.emergency_fund_override = bool(raw_emergency) if raw_emergency is not None else None
 
     def __repr__(self) -> str:
         return f"<Account {self.name!r} {self.atype.value}>"

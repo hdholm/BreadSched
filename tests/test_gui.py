@@ -2872,6 +2872,24 @@ class TestAccountEditor:
         assert reopened.day_spin.get_sensitive() is True
         assert reopened.day_spin.get_value_as_int() == 17
 
+    def test_emergency_fund_choice_only_appears_for_eligible_accounts(self, accounts_view, app):
+        from breadsched.gen.lib import AccountType
+        from breadsched.gui.dialogs.account_dialog import _TYPES
+
+        dialog = self._dialog(accounts_view)
+        dialog.type_picker.set_selected(_TYPES.index(AccountType.BANK))
+        assert dialog.emergency_check.get_visible() is False
+        dialog.type_picker.set_selected(_TYPES.index(AccountType.EXPENSE))
+        assert dialog.emergency_check.get_visible() is True
+        assert dialog.emergency_check.get_active() is True
+        dialog.name_entry.set_text("Optional expense")
+        dialog.emergency_check.set_active(False)
+        dialog._on_save(None)
+
+        account = app.db.get_account_by_name("Optional expense")
+        assert account.emergency_fund_eligible is True
+        assert account.emergency_fund_included is False
+
     def test_a_loan_can_name_its_asset(self, accounts_view, app):
         from breadsched.gen.lib import Account, AccountType
         from breadsched.gui.dialogs.account_dialog import _TYPES

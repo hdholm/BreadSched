@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0175 — printable current reports**.
-The current candidate is **0176 — precise import outcome history**.
+The accepted baseline is **0176 — precise import outcome history**.
+The current candidate is **0177 — account-controlled emergency funds**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -101,6 +101,21 @@ semantics, not duplicate business rules in presentation code.
    combined mortgage/escrow coverage on the single account-type model.
 
 ## Dashboard balances and group hierarchy
+
+- [x] **0177 — Account-controlled emergency-fund expenses.** Add an explicit account
+  setting for whether activity against that account must be carried when sizing the
+  emergency fund; do not try to infer whether an expense stops when household
+  income stops. Only the qualifying legs of actual, scheduled, and estimated
+  transactions tied to opted-in eligible accounts contribute to emergency-fund
+  outgoings, without counting their cash/funding counterparts again. Cash, Bank,
+  Investment, FSA, Income, and Equity accounts are always non-emergency and do not
+  expose the setting. Asset and Retirement are also fixed-excluded; Escrow, Expense,
+  Loan, general Liability, and carried-balance Credit card default included and may
+  opt out. Paid-in-full cards remain liquidity-only. Apply the setting to positive
+  economic legs, counting loan principal and interest as components without counting
+  cash funding, and count escrow funding without counting its later draw again.
+  Preserve the choice across GnuCash re-import; expose GTK/web controls and shared
+  Dashboard explanations. Advance the alpha version to `0.2.0a16`.
 
 - [x] **0161 — FSA group availability.** Show remaining funds for the applicable plan
   year(s), using the shared FSA funding-year calculations at the Dashboard's as-of

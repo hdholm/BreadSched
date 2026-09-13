@@ -113,6 +113,11 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
                 False,
             ),
             (
+                "Emergency outgoings / mo",
+                _money(summary["emergency_monthly_outgoings"]),
+                False,
+            ),
+            (
                 "Months covered",
                 f"{summary['months_covered']:g}",
                 summary["months_covered"] < board.config.emergency_months,

@@ -1318,6 +1318,10 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             ],
             ["Months covered", f"{summary['months_covered']}"],
             ["Outgoings, monthly", summary["monthly_outgoings"].format()],
+            [
+                "Emergency outgoings, monthly",
+                summary["emergency_monthly_outgoings"].format(),
+            ],
             ["Income, monthly", summary["income_per_month"].format()],
         ]
         print(table(headline, ["measure", "amount"], right={1}))

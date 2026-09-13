@@ -247,6 +247,21 @@ than the general household Dashboard. This separation is presentational: shared 
 engines remain authoritative, and an explicitly configured FSA account can still
 contribute its benefit availability to a user-defined balance group.
 
+Emergency-fund sizing is an explicit household classification, not an inference
+from whether past spending happened to correlate with income. Expense, Loan,
+general Liability, Escrow, and carried-balance Credit card accounts may opt out and
+default to included. Cash, Bank, Asset, Investment, Retirement, FSA, Income, Equity,
+Root, Technical, and paid-in-full cards are structurally excluded. The setting is
+BreadSched-owned and survives source re-import.
+
+Only positive economically meaningful legs contribute. Cash/bank funding legs do
+not; loan principal and interest are distinct components whose sum is counted once;
+escrow funding counts when its account is included, while the later escrow-funded
+expense is suppressed; and a paid-in-full card payment affects liquidity without
+becoming a second expense. Actual history changes the run rate only after the user
+accepts it as a schedule or estimate. Future commitments and accepted estimates
+therefore remain the dated source of emergency outgoings.
+
 ### Pending cash flow and income-triggered reserves
 
 The general Dashboard presents the next unresolved or future occurrence of each

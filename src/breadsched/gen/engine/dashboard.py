@@ -43,6 +43,7 @@ from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledTransaction
 from . import fsa, ledger, schedule, valuation
+from .escrow import recognition as escrow_recognition
 
 __all__ = [
     "DashboardConfig",
@@ -240,6 +241,7 @@ class BillRow:
     account: str | None = None
     recurrence: Recurrence | None = None
     generated: bool = False
+    emergency_amount: Money = field(default_factory=lambda: Money(0))
 
     @property
     def frequency(self) -> str:
@@ -265,6 +267,10 @@ class BillRow:
     def annual(self) -> Money:
         return (self.amount * (DAYS_PER_YEAR / self.cycle_days)).quantize(100)
 
+    @property
+    def emergency_monthly(self) -> Money:
+        return (self.emergency_amount * (DAYS_PER_MONTH / self.cycle_days)).quantize(100)
+
     def days_until(self, today: date) -> int:
         return (self.next_due - today).days
 
@@ -289,6 +295,7 @@ class DashboardSummary(TypedDict):
     emergency_shortfall: Money
     months_covered: Decimal
     monthly_outgoings: Money
+    emergency_monthly_outgoings: Money
     annual_outgoings: Money
     income_per_month: Money
     next_income: date | None
@@ -370,6 +377,11 @@ class Dashboard:
             total = total + bill.annual
         return total
 
+    @property
+    def emergency_monthly_outgoings(self) -> Money:
+        """Recurring costs explicitly retained when household income stops."""
+        return sum((bill.emergency_monthly for bill in self._normalised_bills()), Money(0))
+
     def _normalised_bills(self) -> list[BillRow]:
         """One representative row per recurring obligation.
 
@@ -445,7 +457,7 @@ class Dashboard:
     @property
     def emergency_fund(self) -> Money:
         """What the household would need to run with no income at all."""
-        return (self.monthly_outgoings * self.config.emergency_months).quantize(100)
+        return (self.emergency_monthly_outgoings * self.config.emergency_months).quantize(100)
 
     @property
     def available(self) -> Money:
@@ -460,7 +472,7 @@ class Dashboard:
     @property
     def months_covered(self) -> Decimal:
         """How long the liquid balance would last with no income."""
-        monthly = self.monthly_outgoings
+        monthly = self.emergency_monthly_outgoings
         if not monthly:
             return Decimal(0)
         return (self.liquid.rate() / monthly.rate()).quantize(Decimal("0.01"))
@@ -478,6 +490,7 @@ class Dashboard:
             "emergency_shortfall": self.emergency_shortfall,
             "months_covered": self.months_covered,
             "monthly_outgoings": self.monthly_outgoings,
+            "emergency_monthly_outgoings": self.emergency_monthly_outgoings,
             "annual_outgoings": self.annual_outgoings,
             "income_per_month": self.income_per_month,
             "next_income": self.next_income,
@@ -932,17 +945,56 @@ def _flow_amounts(db: DbSQLite, sched: ScheduledTransaction, when: date) -> tupl
     """Return positive income and household outflow for one occurrence."""
     income = Money(0)
     outflow = Money(0)
-    for handle, amount in sched.resolved_splits(when=when):
-        account = db.get_account(handle)
+    legs = list(sched.resolved_splits(when=when))
+    accounts = {
+        handle: account
+        for handle, _amount in legs
+        if (account := db.get_account(handle)) is not None
+    }
+    escrow_funding, escrow_covered = escrow_recognition(legs, accounts)
+    outflow = outflow + escrow_funding
+    for handle, amount in legs:
+        account = accounts.get(handle)
         if account is None:
             continue
         if account.account_class is AccountClass.INCOME:
             income = income - amount  # income accounts carry credit balances
         elif account.account_class is AccountClass.EXPENSE:
-            outflow = outflow + amount
+            outflow = outflow + amount - escrow_covered.get(handle, Money(0))
         elif account.account_class is AccountClass.LIABILITY and amount > 0:
             outflow = outflow + amount
     return income, outflow
+
+
+def _emergency_outflow(db: DbSQLite, sched: ScheduledTransaction, when: date) -> Money:
+    """Return the non-duplicated portion retained when income stops.
+
+    The choice belongs to the economically meaningful positive leg. Cash/bank
+    funding legs are credits and never counted. Escrow draws reduce a previously
+    funded restricted asset, so their covered expense legs are suppressed.
+    """
+    legs = list(sched.resolved_splits(when=when))
+    accounts = {
+        handle: account
+        for handle, _amount in legs
+        if (account := db.get_account(handle)) is not None
+    }
+    _funding, escrow_covered = escrow_recognition(legs, accounts)
+    positive: dict[str, Money] = {}
+    for handle, amount in legs:
+        if amount > 0:
+            positive[handle] = positive.get(handle, Money(0)) + amount
+
+    total = Money(0)
+    for handle, amount in positive.items():
+        account = accounts.get(handle)
+        if account is None or not account.emergency_fund_included:
+            continue
+        if account.account_class is AccountClass.EXPENSE:
+            amount = amount - escrow_covered.get(handle, Money(0))
+        if amount > 0:
+            total = total + amount
+    return total
 
 
 def _next_unskipped(sched: ScheduledTransaction, after: date) -> date | None:
@@ -1086,6 +1138,7 @@ def _credit_card_rows(
                 account=account.handle,
                 recurrence=recurrence,
                 generated=True,
+                emergency_amount=(amount if account.emergency_fund_included else Money(0)),
             )
         )
     return rows
@@ -1175,6 +1228,7 @@ def _pending_cash_flow(
                 schedule=sched,
                 estimate=sched.placeholder,
                 recurrence=sched.recurrence,
+                emergency_amount=_emergency_outflow(db, sched, when),
             )
             bills.append(bill)
             pending.append(bill)
