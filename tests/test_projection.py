@@ -6,7 +6,6 @@ from decimal import Decimal
 from breadsched.gen.engine import projection
 from breadsched.gen.lib import (
     Account,
-    AccountKind,
     AccountType,
     AssumptionPeriod,
     Assumptions,
@@ -710,7 +709,7 @@ class TestScenarioPersistence:
 class TestMonthlyStateLedger:
     def test_escrow_is_restricted_asset_and_expense_is_recognized_when_funded(self, db, book):
         escrow = Account(name="Escrow", atype=AccountType.BANK, parent=book.assets)
-        escrow.kind = AccountKind.ESCROW
+        escrow.atype = AccountType.ESCROW
         funding = ScheduledTransaction(
             name="Fund escrow",
             recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 5)),

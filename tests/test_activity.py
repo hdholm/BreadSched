@@ -5,7 +5,6 @@ from datetime import date
 from breadsched.gen.engine import activity, planning
 from breadsched.gen.lib import (
     Account,
-    AccountKind,
     AccountType,
     Money,
     PeriodType,
@@ -316,7 +315,7 @@ class TestPlanningFlowClassification:
     def test_account_kinds_infer_common_balance_sheet_flows(self, db, book):
         brokerage = db.get_account(book.brokerage)
         assert brokerage is not None
-        brokerage.kind = AccountKind.RETIREMENT
+        brokerage.atype = AccountType.RETIREMENT
         with db.transaction("mark retirement") as txn:
             db.commit_account(brokerage, txn)
             db.add_transaction(
@@ -342,9 +341,9 @@ class TestPlanningFlowClassification:
     def test_fsa_and_debt_kinds_infer_funding_and_principal(self, db, book):
         brokerage = db.get_account(book.brokerage)
         assert brokerage is not None
-        brokerage.kind = AccountKind.FSA
+        brokerage.atype = AccountType.FSA
         debt = Account(name="Loan", atype=AccountType.LIABILITY, parent=book.root)
-        debt.kind = AccountKind.DEBT
+        debt.atype = AccountType.LOAN
         with db.transaction("mark benefit and debt") as txn:
             db.commit_account(brokerage, txn)
             db.add_account(debt, txn)
@@ -372,8 +371,8 @@ class TestPlanningFlowClassification:
         brokerage = db.get_account(book.brokerage)
         savings = db.get_account(book.savings)
         assert brokerage is not None and savings is not None
-        brokerage.kind = AccountKind.RETIREMENT
-        savings.kind = AccountKind.RETIREMENT
+        brokerage.atype = AccountType.RETIREMENT
+        savings.atype = AccountType.RETIREMENT
         with db.transaction("mark retirement accounts") as txn:
             db.commit_account(brokerage, txn)
             db.commit_account(savings, txn)
@@ -395,7 +394,7 @@ class TestPlanningFlowClassification:
             atype=AccountType.BANK,
             parent=book.assets,
         )
-        escrow.kind = AccountKind.ESCROW
+        escrow.atype = AccountType.ESCROW
         with db.transaction("Escrow cycle") as txn:
             db.add_account(escrow, txn)
             db.add_transaction(
@@ -423,7 +422,7 @@ class TestPlanningFlowClassification:
 
     def test_partial_escrow_payout_only_suppresses_the_covered_expense(self, db, book):
         escrow = Account(name="Escrow", atype=AccountType.ASSET, parent=book.assets)
-        escrow.kind = AccountKind.ESCROW
+        escrow.atype = AccountType.ESCROW
         with db.transaction("Partial payout") as txn:
             db.add_account(escrow, txn)
             payout = Transaction(post_date=date(2026, 1, 20), description="Partial escrow payout")

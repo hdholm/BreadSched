@@ -22,7 +22,7 @@ from typing import Any
 
 from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib.account import Account, AccountKind, AccountType
+from ...gen.lib.account import Account, AccountType, GnuCashAccountType
 from ...gen.lib.commodity import Commodity
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import (
@@ -251,10 +251,11 @@ class ImportSink:
         existing root, and an account matching an existing sibling by name and type
         is adopted rather than duplicated.
         """
-        parsed = AccountType.parse(atype)
+        parsed = GnuCashAccountType.parse(atype)
+        account_type = parsed.to_account_type()
         mapped_parent = self._remap.get(parent, parent) if parent else None
 
-        if parsed is AccountType.ROOT and mapped_parent is None:
+        if parsed is GnuCashAccountType.ROOT and mapped_parent is None:
             existing_root = self.db.root_account()
             if existing_root is not None:
                 self._remap[guid] = existing_root.handle
@@ -264,20 +265,15 @@ class ImportSink:
 
         existing = self.db.get_account(guid)
         if existing is not None:
-            if existing.kind is not AccountKind.ORDINARY and not existing.kind.supports(
-                parsed.account_class
-            ):
+            if existing.account_class is not parsed.account_class:
                 self.result.warn(
-                    f"account {name!r} changed GnuCash ledger class; retained its "
-                    "existing type and BreadSched kind for review"
+                    f"account {name!r} changed GnuCash accounting class; retained its "
+                    "BreadSched type for review"
                 )
-                existing.source_atype = parsed
-                self.db.commit_account(existing, self.txn)
-                return existing
             account = Account(
                 handle=guid,
                 name=name,
-                atype=parsed,
+                atype=existing.atype,
                 parent=mapped_parent,
                 commodity=commodity,
                 code=code,
@@ -305,7 +301,7 @@ class ImportSink:
         account = Account(
             handle=guid,
             name=name,
-            atype=parsed,
+            atype=account_type,
             parent=mapped_parent,
             commodity=commodity,
             code=code,
@@ -324,7 +320,7 @@ class ImportSink:
     @staticmethod
     def _preserve_breadsched_account_state(imported: Account, existing: Account) -> None:
         """Keep BreadSched-owned account configuration across source re-import."""
-        imported.kind = existing.kind
+        imported.atype = existing.atype
         imported.fsa_years = list(existing.fsa_years)
         imported.annual_return = existing.annual_return
         imported.annual_interest = existing.annual_interest
@@ -336,11 +332,15 @@ class ImportSink:
         imported.payment_day = existing.payment_day
 
     def _existing_sibling(
-        self, parent: str | None, name: str, atype: AccountType
+        self, parent: str | None, name: str, atype: GnuCashAccountType
     ) -> Account | None:
         """An account already under ``parent`` with the same name and type."""
         for candidate in self.db.child_accounts(parent):
-            if candidate.name == name and (candidate.source_atype or candidate.atype) is atype:
+            same_source = candidate.source_atype is atype
+            native_match = (
+                candidate.source_atype is None and candidate.atype is atype.to_account_type()
+            )
+            if candidate.name == name and (same_source or native_match):
                 return candidate
         return None
 

@@ -16,7 +16,6 @@ import pytest
 from breadsched.gen.engine import dashboard
 from breadsched.gen.lib import (
     Account,
-    AccountKind,
     AccountType,
     Money,
     PeriodType,
@@ -261,35 +260,28 @@ class TestConfiguration:
         """It names accounts; carrying it between books would mislead."""
         assert db.get_metadata("dashboard") is not None
 
-    def test_a_book_with_no_config_still_shows_something(self, db, book):
+    def test_a_book_with_no_assignments_has_no_groups(self, db, book):
         board = dashboard.build(db, as_of=TODAY)
-        assert board.groups, "an unconfigured dashboard should still be useful"
-        assert any(group.kind == "liquid" for group in board.groups)
+        assert board.groups == []
 
-    def test_the_default_puts_cash_and_investments_apart(self, db, book):
+    def test_the_default_configuration_is_empty(self, db, book):
         config = dashboard.default_config(db)
-        kinds = {group.kind for group in config.groups}
-        assert "liquid" in kinds and "retirement" in kinds
+        assert config.groups == []
 
-    def test_account_kinds_override_default_dashboard_buckets(self, db, book):
-        with db.transaction("account kinds") as txn:
+    def test_account_types_do_not_create_implicit_groups(self, db, book):
+        with db.transaction("account types") as txn:
             checking = db.get_account(book.checking)
             savings = db.get_account(book.savings)
             brokerage = db.get_account(book.brokerage)
             assert checking is not None and savings is not None and brokerage is not None
-            checking.kind = AccountKind.FSA
-            savings.kind = AccountKind.RETIREMENT
-            brokerage.kind = AccountKind.INVESTMENT
+            checking.atype = AccountType.FSA
+            savings.atype = AccountType.RETIREMENT
+            brokerage.atype = AccountType.INVESTMENT
             db.commit_account(checking, txn)
             db.commit_account(savings, txn)
             db.commit_account(brokerage, txn)
 
-        groups = {group.name: group for group in dashboard.default_config(db).groups}
-
-        assert book.checking in groups["FSA / benefits"].accounts
-        assert book.savings in groups["Retirement"].accounts
-        assert book.brokerage in groups["Investments"].accounts
-        assert "Cash" not in groups
+        assert dashboard.build(db, as_of=TODAY).groups == []
 
 
 class TestCli:
@@ -368,16 +360,15 @@ class TestLoansPairWithTheirAssets:
             db.commit_account(mortgage, txn)
         return house, mortgage
 
-    def test_a_property_line_appears_without_any_configuration(self, db, linked):
-        house, _mortgage = linked
-        board = dashboard.build(db, as_of=TODAY)
-        group = board.group(house.name)
-        assert group is not None, "the linked pair produced no property line"
-        assert group.kind == "property"
+    def test_a_linked_property_requires_explicit_configuration(self, db, linked):
+        assert dashboard.build(db, as_of=TODAY).groups == []
 
     def test_it_reports_equity_and_loan_to_value(self, db, linked):
-        house, _mortgage = linked
-        group = dashboard.build(db, as_of=TODAY).group(house.name)
+        house, mortgage = linked
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig(house.name, [house.handle, mortgage.handle], "property")]
+        )
+        group = dashboard.build(db, config, as_of=TODAY).group(house.name)
         assert group.value == Money("490200.00")
         assert group.debt == Money("385938.50")
         assert group.equity == Money("104261.50")
@@ -385,17 +376,19 @@ class TestLoansPairWithTheirAssets:
 
     def test_the_pair_is_not_counted_twice(self, db, linked):
         """A house in both a property line and an asset total inflates net worth."""
-        board = dashboard.build(db, as_of=TODAY)
+        house, mortgage = linked
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig(house.name, [house.handle, mortgage.handle], "property")]
+        )
+        board = dashboard.build(db, config, as_of=TODAY)
         appearances = [account.name for group in board.groups for account in group.accounts]
         assert len(appearances) == len(set(appearances)) or True
         # 490,200 of house less 385,938.50 of mortgage, and nothing else in the book.
         assert board.net_worth == Money("104261.50")
 
-    def test_the_default_configuration_pairs_them_too(self, db, linked):
+    def test_the_default_configuration_does_not_pair_linked_accounts(self, db, linked):
         config = dashboard.default_config(db)
-        property_groups = [g for g in config.groups if g.kind == "property"]
-        assert len(property_groups) == 1
-        assert set(property_groups[0].accounts) == {linked[0].handle, linked[1].handle}
+        assert config.groups == []
 
     def test_an_explicit_group_still_wins(self, db, linked):
         """A configuration that already pairs them must not be duplicated."""
@@ -410,7 +403,12 @@ class TestLoansPairWithTheirAssets:
         assert board.net_worth == Money("104261.50")
 
     def test_a_loan_with_no_asset_stays_a_plain_debt(self, db, book):
-        config = dashboard.default_config(db)
+        debt = Account(name="Other debt", atype=AccountType.LIABILITY, parent=book.liabilities)
+        with db.transaction("generic debt") as txn:
+            db.add_account(debt, txn)
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Debt", [debt.handle], "liability")]
+        )
         board = dashboard.build(db, config, as_of=TODAY)
         for group in board.groups:
             assert group.loan_to_value is None
@@ -483,6 +481,42 @@ class TestAccountGroupField:
         )
         assert dashboard.build(db, config, as_of=TODAY).group("Nothing here") is None
 
+    def test_a_hidden_direct_member_is_omitted_from_rows_and_totals(self, db, grouped):
+        with db.transaction("hide grouped account") as txn:
+            checking = db.get_account(grouped.checking)
+            assert checking is not None
+            checking.hidden = True
+            db.commit_account(checking, txn)
+
+        group = dashboard.build(db, as_of=TODAY).group("Everyday")
+
+        assert group is not None
+        assert [account.name for account in group.accounts] == ["Assets:Savings"]
+        assert group.total == Money("2500.00")
+
+    def test_a_hidden_descendant_remains_in_a_selected_parent_total(self, db, book):
+        with db.transaction("group parent and hide child") as txn:
+            parent = Account(name="Parent", atype=AccountType.ASSET, parent=book.assets)
+            parent.group = "Assets"
+            child = Account(
+                name="Hidden child",
+                atype=AccountType.ASSET,
+                parent=parent.handle,
+                hidden=True,
+            )
+            db.add_account(parent, txn)
+            db.add_account(child, txn)
+            db.add_transaction(
+                Transaction.simple(date(2026, 1, 1), "Value", child.handle, book.opening, "75"),
+                txn,
+            )
+
+        group = dashboard.build(db, as_of=TODAY).group("Assets")
+
+        assert group is not None
+        assert [account.name for account in group.accounts] == ["Assets:Parent"]
+        assert group.total == Money("75")
+
 
 class TestSeveralLoansOnOneAsset:
     """A house with two mortgages is one line, and keeps its value.
@@ -504,6 +538,7 @@ class TestSeveralLoansOnOneAsset:
                 ("Home B", AccountType.ASSET, book.assets, "500000.00"),
             ):
                 account = Account(name=name, atype=kind, parent=parent)
+                account.group = name
                 db.add_account(account, txn)
                 made[name] = account
                 db.add_transaction(
@@ -520,6 +555,7 @@ class TestSeveralLoansOnOneAsset:
             ):
                 loan = Account(name=name, atype=AccountType.LIABILITY, parent=book.liabilities)
                 loan.linked_asset = made[asset].handle
+                loan.group = asset
                 db.add_account(loan, txn)
                 made[name] = loan
                 db.add_transaction(
@@ -573,15 +609,9 @@ class TestSeveralLoansOnOneAsset:
         assert lines[0].value == Money("500000.00")
         assert lines[0].debt == Money("217386.69")
 
-    def test_the_default_configuration_also_gathers_them(self, db, houses):
+    def test_the_default_configuration_remains_empty(self, db, houses):
         config = dashboard.default_config(db)
-        home_a = [g for g in config.groups if g.name == "Home A"]
-        assert len(home_a) == 1
-        assert set(home_a[0].accounts) == {
-            houses["Home A"].handle,
-            houses["Mortgage A1"].handle,
-            houses["Mortgage A2"].handle,
-        }
+        assert config.groups == []
 
     def test_no_account_appears_in_two_groups(self, db, houses):
         board = dashboard.build(db, as_of=TODAY)
@@ -726,7 +756,7 @@ class TestFsaGroupAvailability:
         from breadsched.gen.lib import FsaFundingYear
 
         account = Account(name="Benefit account", atype=AccountType.BANK, parent=book.assets)
-        account.kind = AccountKind.FSA
+        account.atype = AccountType.FSA
         account.fsa_years = [FsaFundingYear(**year) for year in years]
         with db.transaction("benefit account") as txn:
             db.add_account(account, txn)
@@ -818,6 +848,8 @@ class TestPaidOffLoans:
     def test_paid_off_linked_loan_and_stale_payment_schedule_are_hidden(self, db, book):
         asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
         loan = Account(name="Loan", atype=AccountType.LIABILITY, parent=book.liabilities)
+        asset.group = "Property"
+        loan.group = "Property"
         loan.linked_asset = asset.handle
         stale = ScheduledTransaction(
             name="Old loan payment",
@@ -857,6 +889,8 @@ class TestPaidOffLoans:
     def test_unused_zero_balance_linked_loan_is_not_mistaken_for_paid_off(self, db, book):
         asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
         loan = Account(name="Future loan", atype=AccountType.LIABILITY, parent=book.liabilities)
+        asset.group = "Property"
+        loan.group = "Property"
         loan.linked_asset = asset.handle
         with db.transaction("future loan") as txn:
             db.add_account(asset, txn)
@@ -871,6 +905,9 @@ class TestPaidOffLoans:
         asset = Account(name="Property", atype=AccountType.ASSET, parent=book.assets)
         closed = Account(name="Closed loan", atype=AccountType.LIABILITY, parent=book.liabilities)
         active = Account(name="Active loan", atype=AccountType.LIABILITY, parent=book.liabilities)
+        asset.group = "Property"
+        closed.group = "Property"
+        active.group = "Property"
         closed.linked_asset = asset.handle
         active.linked_asset = asset.handle
         with db.transaction("two loans") as txn:

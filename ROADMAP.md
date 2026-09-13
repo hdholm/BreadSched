@@ -6,7 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0160 — account kinds and initial escrow semantics**.
+The accepted baseline is **0161 — hierarchical, account-aware dashboard groups**.
+The current candidate is **0162 — one semantic account type and explicit dashboards**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -194,9 +195,9 @@ semantics, not duplicate business rules in presentation code.
   not stored monthly budget cells.
 - [x] Base and saved scenarios support dated assumptions and scenario-specific
   estimate add/alter/suppress behavior.
-- [x] Account kinds are independent of GnuCash-compatible ledger types, with explicit
-  split planning purpose as an override; Retirement, FSA/benefit, Loan/debt,
-  Investment, and Escrow kinds feed planning semantics.
+- [x] Every account has one semantic BreadSched type, with accounting class and
+  planning behavior derived from it. Exact imported GnuCash source type is retained
+  separately and explicit split planning purpose remains an override.
 - [x] Schedule growth policy is persisted for baseline/scenario schedules and exposed
   in GTK4 and web.
 - [x] Formula-loan projection is protected from double interest and generic inflation,
@@ -221,8 +222,8 @@ semantics, not duplicate business rules in presentation code.
 
 ## Accounts and GnuCash account fidelity
 
-- [x] Accounts view includes Account kind; Account, Ledger type, Account kind, Description,
-  and Balance are hierarchy-aware sortable columns.
+- [x] Accounts view uses the single BreadSched account type; Account, Type,
+  Description, and Balance are hierarchy-aware sortable columns.
 - [x] Account editor preserves ordinary non-placeholder parents without allowing
   cycles.
 - [x] Imported commodity/security, hidden flag, account notes, and per-account
@@ -248,7 +249,8 @@ semantics, not duplicate business rules in presentation code.
 
 ## Dashboard / UI architecture
 
-- [x] Dashboard account grouping honors account kinds.
+- [x] Dashboard groups are explicit and account-owned or configuration-owned; there
+  are no inferred default groups. Hidden accounts are not direct group members.
 - [x] Dashboard bills are schedule/Plan driven and do not depend on a hidden legacy
   current-budget selector.
 - [x] GTK4 is the canonical/reference interface; web parity is required for financial
@@ -329,7 +331,7 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Provide richer explanations of history, cadence, trend, seasonality, and
   residual calculation, with interactive adjustment before acceptance.
 - [ ] Refine category-specific seasonality/cadence inference.
-- [ ] Interpret investment, retirement, debt-principal, and FSA-kind history correctly
+- [ ] Interpret investment, retirement, debt-principal, and FSA history correctly
   rather than treating all balance-sheet flows as ordinary Income/Expense activity.
 
 ## Plan and planning-flow reporting
@@ -348,6 +350,14 @@ semantics, not duplicate business rules in presentation code.
   changes. Shared recognition covers scheduled and actual funding/draw cycles,
   partial payouts, category Plan totals, historical estimates, Dashboard grouping,
   and Projection state/explanations without changing ledger splits.
+- [x] **0162 — One semantic account type and explicit dashboards.** Replace the
+  user-visible ledger-type/account-kind pair with one BreadSched-owned type whose
+  accounting class and planning behavior are derived. Retain exact GnuCash source
+  type as read-only provenance; map old books deterministically; preserve the local
+  type on re-import and report cross-class conflicts. Document every visible type
+  and the mapping rationale. Remove inferred dashboard groups, honor only explicit
+  account/config assignments, and omit hidden direct members. Begin PEP 440 alpha
+  versioning at `0.2.0a1` from one authoritative version source.
 - [ ] **Escrow follow-through.** Add dedicated explanations for refunds, manual
   adjustments, negative escrow balances, and combined mortgage/escrow payments;
   expand imported GnuCash fixtures and scenario override tests for those cases.
@@ -467,13 +477,11 @@ semantics, not duplicate business rules in presentation code.
   inactive XML/SQLite schedules, toggling source state on re-import, and exclusion
   from due and projected activity. GTK and web editors display and save the active
   state explicitly, including for formula-backed schedules in GTK.
-- [x] **0160 — Account type changes on re-import.** Respect authoritative GnuCash
-  account type changes within the same ledger class while retaining stable identities
-  and BreadSched-owned account kinds. Record source type separately; retain the prior
-  effective type and report a review warning when a source change crosses ledger
-  classes and would invalidate a nonordinary kind. Commodity/precision, schedules,
-  and existing-transaction follow-through remain part of their dedicated roadmap
-  work.
+- [x] **0162 — Account type preservation on re-import.** Refresh the exact
+  source-owned GnuCash type while retaining the user-owned BreadSched type and stable
+  identity. Report cross-class conflicts for review rather than silently changing
+  planning behavior or display signs. Commodity/precision, schedules, and
+  existing-transaction follow-through remain part of their dedicated roadmap work.
 - [ ] **Supported scheduled formulas.** Investigate valid GnuCash formulas being
   ignored even though the current safe formula system can represent them. Cover
   parsing/translation, variables, recurrence ordinals, and per-leg formulas in both
@@ -555,7 +563,7 @@ Documentation responsibilities are intentionally separated:
 Remaining documentation work:
 
 - [ ] Build full user documentation and in-application help for Accounts, registers,
-  Scheduled transactions, Plan, Review/Actuals, Projection, scenarios, account kinds,
+  Scheduled transactions, Plan, Review/Actuals, Projection, scenarios, account types,
   imports, reconciliation, and backup/recovery.
 - [ ] Add a generic-household walkthrough that creates a comprehensive chart of
   accounts, recurring income/expenses, savings/debt/retirement flows, and Base plan.
@@ -566,7 +574,7 @@ Remaining documentation work:
 - [ ] Explain how actual transactions resolve planned/scheduled occurrences while
   preserving expected date/amount for variance history.
 - [ ] Explain commitments vs estimates, convergent historical estimation, planning
-  account kinds/split purposes, GnuCash compatibility, growth policies, formula schedules,
+  account types/split purposes, GnuCash compatibility, growth policies, formula schedules,
   and Projection explanations.
 - [ ] Prefer versioned shared help content that GTK and web can both surface where
   practical; add smoke/link tests against stale views/terminology.

@@ -122,7 +122,7 @@ def book(db):
         assets = add("Assets", AccountType.ASSET, root.handle, placeholder=True)
         checking = add("Checking", AccountType.BANK, assets.handle)
         savings = add("Savings", AccountType.BANK, assets.handle)
-        brokerage = add("Brokerage", AccountType.MUTUAL, assets.handle)
+        brokerage = add("Brokerage", AccountType.INVESTMENT, assets.handle)
         brokerage.annual_return = Decimal("0.07")
         db.commit_account(brokerage, txn)
 

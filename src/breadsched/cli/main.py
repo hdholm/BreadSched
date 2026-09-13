@@ -1927,7 +1927,7 @@ def build_parser() -> argparse.ArgumentParser:
     account.add_argument("action", choices=["list", "add", "edit", "remove"])
     account.add_argument("--name", help="account name, or path when editing")
     account.add_argument("--rename")
-    account.add_argument("--type", help="BANK, CREDIT, EXPENSE, ...")
+    account.add_argument("--type", help="BANK, CREDIT CARD, LOAN, FSA, EXPENSE, ...")
     account.add_argument("--parent")
     account.add_argument("--description")
     account.add_argument("--code")

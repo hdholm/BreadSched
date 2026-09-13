@@ -1,10 +1,9 @@
-"""Accounts and the account-type taxonomy.
+"""Accounts and their household-finance types.
 
-The ledger-type list is deliberately identical to GnuCash's
-``accounts.account_type`` column so that an imported book keeps its source
-classification instead of being flattened into something lossy. BreadSched's
-independent account kind supplies household-planning behavior such as retirement,
-FSA, debt, investment, and escrow treatment.
+An account has one BreadSched-owned type.  Its accounting class and planning
+behaviour are derived from that type, so users never have to choose a potentially
+contradictory ledger-type/account-kind pair.  Imported accounts separately retain
+their exact GnuCash source type for re-import and diagnostics.
 """
 
 from __future__ import annotations
@@ -21,9 +20,9 @@ from .money import Money
 __all__ = [
     "Account",
     "AccountClass",
-    "AccountKind",
     "AccountType",
     "FsaFundingYear",
+    "GnuCashAccountType",
 ]
 
 
@@ -34,35 +33,6 @@ class AccountClass(str, Enum):
     EXPENSE = "expense"
     EQUITY = "equity"
     ROOT = "root"
-
-
-class AccountKind(str, Enum):
-    """BreadSched account behavior, independent of its GnuCash ledger type."""
-
-    ORDINARY = "ordinary"
-    RETIREMENT = "retirement"
-    FSA = "fsa"
-    DEBT = "debt"
-    INVESTMENT = "investment"
-    ESCROW = "escrow"
-
-    @property
-    def label(self) -> str:
-        return {
-            AccountKind.ORDINARY: "Ordinary",
-            AccountKind.RETIREMENT: "Retirement",
-            AccountKind.FSA: "FSA / benefit",
-            AccountKind.DEBT: "Loan / debt",
-            AccountKind.INVESTMENT: "Investment",
-            AccountKind.ESCROW: "Escrow",
-        }[self]
-
-    def supports(self, account_class: AccountClass) -> bool:
-        if self is AccountKind.ORDINARY:
-            return True
-        if self is AccountKind.DEBT:
-            return account_class is AccountClass.LIABILITY
-        return account_class is AccountClass.ASSET
 
 
 @dataclass(frozen=True)
@@ -102,26 +72,40 @@ class FsaFundingYear:
 
 
 class AccountType(str, Enum):
+    """The single user-visible classification of a BreadSched account."""
+
     ROOT = "ROOT"
     BANK = "BANK"
     CASH = "CASH"
     ASSET = "ASSET"
-    CREDIT = "CREDIT"
+    INVESTMENT = "INVESTMENT"
+    RETIREMENT = "RETIREMENT"
+    FSA = "FSA"
+    ESCROW = "ESCROW"
+    CREDIT = "CREDIT CARD"
+    LOAN = "LOAN"
     LIABILITY = "LIABILITY"
-    STOCK = "STOCK"
-    MUTUAL = "MUTUAL"
-    CURRENCY = "CURRENCY"
     INCOME = "INCOME"
     EXPENSE = "EXPENSE"
     EQUITY = "EQUITY"
-    RECEIVABLE = "RECEIVABLE"
-    PAYABLE = "PAYABLE"
-    TRADING = "TRADING"
+    TECHNICAL = "TECHNICAL"
 
     @classmethod
     def parse(cls, value: str) -> AccountType:
+        normalized = str(value).strip().upper().replace("_", " ")
+        legacy = {
+            "CREDIT": cls.CREDIT,
+            "STOCK": cls.INVESTMENT,
+            "MUTUAL": cls.INVESTMENT,
+            "CURRENCY": cls.ASSET,
+            "RECEIVABLE": cls.ASSET,
+            "PAYABLE": cls.LIABILITY,
+            "TRADING": cls.TECHNICAL,
+        }
+        if normalized in legacy:
+            return legacy[normalized]
         try:
-            return cls(str(value).strip().upper())
+            return cls(normalized)
         except ValueError:
             return cls.ASSET
 
@@ -151,7 +135,41 @@ class AccountType(str, Enum):
     @property
     def is_investment(self) -> bool:
         """Balances that compound at an assumed rate of return."""
-        return self in (AccountType.STOCK, AccountType.MUTUAL)
+        return self in (AccountType.INVESTMENT, AccountType.RETIREMENT)
+
+
+class GnuCashAccountType(str, Enum):
+    """Exact source classification retained only for GnuCash interoperability."""
+
+    ROOT = "ROOT"
+    BANK = "BANK"
+    CASH = "CASH"
+    ASSET = "ASSET"
+    CREDIT = "CREDIT"
+    LIABILITY = "LIABILITY"
+    STOCK = "STOCK"
+    MUTUAL = "MUTUAL"
+    CURRENCY = "CURRENCY"
+    INCOME = "INCOME"
+    EXPENSE = "EXPENSE"
+    EQUITY = "EQUITY"
+    RECEIVABLE = "RECEIVABLE"
+    PAYABLE = "PAYABLE"
+    TRADING = "TRADING"
+
+    @classmethod
+    def parse(cls, value: str) -> GnuCashAccountType:
+        try:
+            return cls(str(value).strip().upper())
+        except ValueError:
+            return cls.ASSET
+
+    @property
+    def account_class(self) -> AccountClass:
+        return _GNUCASH_CLASS_OF[self]
+
+    def to_account_type(self) -> AccountType:
+        return _BREADSCHED_TYPE_FOR_SOURCE[self]
 
 
 _CLASS_OF: dict[AccountType, AccountClass] = {
@@ -159,17 +177,53 @@ _CLASS_OF: dict[AccountType, AccountClass] = {
     AccountType.BANK: AccountClass.ASSET,
     AccountType.CASH: AccountClass.ASSET,
     AccountType.ASSET: AccountClass.ASSET,
-    AccountType.STOCK: AccountClass.ASSET,
-    AccountType.MUTUAL: AccountClass.ASSET,
-    AccountType.CURRENCY: AccountClass.ASSET,
-    AccountType.RECEIVABLE: AccountClass.ASSET,
-    AccountType.TRADING: AccountClass.ASSET,
+    AccountType.INVESTMENT: AccountClass.ASSET,
+    AccountType.RETIREMENT: AccountClass.ASSET,
+    AccountType.FSA: AccountClass.ASSET,
+    AccountType.ESCROW: AccountClass.ASSET,
     AccountType.CREDIT: AccountClass.LIABILITY,
+    AccountType.LOAN: AccountClass.LIABILITY,
     AccountType.LIABILITY: AccountClass.LIABILITY,
-    AccountType.PAYABLE: AccountClass.LIABILITY,
     AccountType.INCOME: AccountClass.INCOME,
     AccountType.EXPENSE: AccountClass.EXPENSE,
     AccountType.EQUITY: AccountClass.EQUITY,
+    AccountType.TECHNICAL: AccountClass.ASSET,
+}
+
+_GNUCASH_CLASS_OF: dict[GnuCashAccountType, AccountClass] = {
+    GnuCashAccountType.ROOT: AccountClass.ROOT,
+    GnuCashAccountType.BANK: AccountClass.ASSET,
+    GnuCashAccountType.CASH: AccountClass.ASSET,
+    GnuCashAccountType.ASSET: AccountClass.ASSET,
+    GnuCashAccountType.STOCK: AccountClass.ASSET,
+    GnuCashAccountType.MUTUAL: AccountClass.ASSET,
+    GnuCashAccountType.CURRENCY: AccountClass.ASSET,
+    GnuCashAccountType.RECEIVABLE: AccountClass.ASSET,
+    GnuCashAccountType.TRADING: AccountClass.ASSET,
+    GnuCashAccountType.CREDIT: AccountClass.LIABILITY,
+    GnuCashAccountType.LIABILITY: AccountClass.LIABILITY,
+    GnuCashAccountType.PAYABLE: AccountClass.LIABILITY,
+    GnuCashAccountType.INCOME: AccountClass.INCOME,
+    GnuCashAccountType.EXPENSE: AccountClass.EXPENSE,
+    GnuCashAccountType.EQUITY: AccountClass.EQUITY,
+}
+
+_BREADSCHED_TYPE_FOR_SOURCE: dict[GnuCashAccountType, AccountType] = {
+    GnuCashAccountType.ROOT: AccountType.ROOT,
+    GnuCashAccountType.BANK: AccountType.BANK,
+    GnuCashAccountType.CASH: AccountType.CASH,
+    GnuCashAccountType.ASSET: AccountType.ASSET,
+    GnuCashAccountType.STOCK: AccountType.INVESTMENT,
+    GnuCashAccountType.MUTUAL: AccountType.INVESTMENT,
+    GnuCashAccountType.CURRENCY: AccountType.ASSET,
+    GnuCashAccountType.RECEIVABLE: AccountType.ASSET,
+    GnuCashAccountType.TRADING: AccountType.TECHNICAL,
+    GnuCashAccountType.CREDIT: AccountType.CREDIT,
+    GnuCashAccountType.LIABILITY: AccountType.LIABILITY,
+    GnuCashAccountType.PAYABLE: AccountType.LIABILITY,
+    GnuCashAccountType.INCOME: AccountType.INCOME,
+    GnuCashAccountType.EXPENSE: AccountType.EXPENSE,
+    GnuCashAccountType.EQUITY: AccountType.EQUITY,
 }
 
 SEPARATOR = ":"
@@ -204,9 +258,8 @@ class Account(PrimaryObject):
         self.hidden = hidden
         self.commodity_scu = commodity_scu
         self.notes = ""
-        self.kind = AccountKind.ORDINARY
-        #: Last source-owned GnuCash ledger type, distinct from BreadSched's kind.
-        self.source_atype: AccountType | None = None
+        #: Last source-owned GnuCash type, distinct from BreadSched's account type.
+        self.source_atype: GnuCashAccountType | None = None
         self.fsa_years: list[FsaFundingYear] = []
 
         # Projection hints.  These are what turn a chart of accounts into a model.
@@ -250,7 +303,7 @@ class Account(PrimaryObject):
 
     @property
     def is_spendable_cash(self) -> bool:
-        return self.atype.is_cash_like and self.kind is AccountKind.ORDINARY
+        return self.atype.is_cash_like
 
     def sign(self) -> int:
         """Multiplier that turns a raw split total into a displayed balance."""
@@ -270,7 +323,6 @@ class Account(PrimaryObject):
             "hidden": self.hidden,
             "commodity_scu": self.commodity_scu,
             "notes": self.notes,
-            "kind": self.kind.value,
             "source_atype": self.source_atype.value if self.source_atype is not None else None,
             "fsa_years": [year.serialize() for year in self.fsa_years],
             "annual_return": str(self.annual_return),
@@ -289,7 +341,9 @@ class Account(PrimaryObject):
 
     def _unserialize(self, data: dict[str, Any]) -> None:
         self.name = data["name"]
-        self.atype = AccountType.parse(data["atype"])
+        raw_type = str(data["atype"])
+        legacy_kind = str(data.get("kind", data.get("planning_role", "ordinary")))
+        self.atype = _migrate_account_type(raw_type, legacy_kind)
         self.parent = data.get("parent")
         self.commodity = data.get("commodity")
         self.code = data.get("code", "")
@@ -299,9 +353,8 @@ class Account(PrimaryObject):
         raw_scu = data.get("commodity_scu")
         self.commodity_scu = int(raw_scu) if raw_scu is not None else None
         self.notes = data.get("notes", "")
-        self.kind = AccountKind(data.get("kind", data.get("planning_role", "ordinary")))
         raw_source_type = data.get("source_atype")
-        self.source_atype = AccountType.parse(raw_source_type) if raw_source_type else None
+        self.source_atype = GnuCashAccountType.parse(raw_source_type) if raw_source_type else None
         self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))
@@ -315,3 +368,19 @@ class Account(PrimaryObject):
 
     def __repr__(self) -> str:
         return f"<Account {self.name!r} {self.atype.value}>"
+
+
+def _migrate_account_type(raw_type: str, legacy_kind: str) -> AccountType:
+    """Map the former ledger-type/account-kind pair to one semantic type."""
+    kind = legacy_kind.strip().lower()
+    if kind == "retirement":
+        return AccountType.RETIREMENT
+    if kind == "fsa":
+        return AccountType.FSA
+    if kind == "investment":
+        return AccountType.INVESTMENT
+    if kind == "escrow":
+        return AccountType.ESCROW
+    if kind == "debt":
+        return AccountType.CREDIT if raw_type.strip().upper() == "CREDIT" else AccountType.LOAN
+    return AccountType.parse(raw_type)

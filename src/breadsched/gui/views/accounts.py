@@ -86,14 +86,7 @@ class AccountTreeView(BaseView):
         self.column_view.set_show_row_separators(False)
         self.column_view.add_css_class("data-table")
         self.column_view.append_column(self._name_column())
-        self.column_view.append_column(column("Ledger type", lambda a: a.atype.value))
-        self.column_view.append_column(
-            column(
-                "Account kind",
-                lambda a: a.kind.label,
-                sort_key=lambda a: a.kind.label.casefold(),
-            )
-        )
+        self.column_view.append_column(column("Type", lambda a: a.atype.value))
         self.column_view.append_column(column("Description", lambda a: a.description, expand=True))
         self.column_view.append_column(column("Balance", self._format_balance, numeric=True))
         self.column_view.connect("activate", self._on_activated)

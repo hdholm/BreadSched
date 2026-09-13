@@ -123,18 +123,33 @@ Formula-driven schedules are fixed by default in `auto` mode so, for example, a
 formula mortgage is not inflated merely because one leg posts to interest expense.
 Mixed gross-to-net payroll schedules grow as one balanced event under income growth.
 
-### Ledger types and account kinds
+### Account types
 
-GnuCash-compatible ledger types control accounting signs and preserve imported
-classification. A separate BreadSched account kind provides household meaning where
-ordinary Income/Expense classification is insufficient. Current kinds include
-ordinary, retirement, FSA/benefit, loan/debt, investment, and escrow. Explicit split
-planning purposes can override inference when needed.
+Every account has one visible BreadSched type. The type determines both its ordinary
+accounting class and its household-planning behavior; there is no separate account
+kind to configure. Imported accounts retain their exact GnuCash source type as
+read-only interoperability information, but that source label does not overwrite a
+BreadSched type selected by the user.
 
-These classifications let Plan and Projection distinguish activities such as
-retirement saving, retirement distribution, FSA funding, debt principal, and escrow
-funding from ordinary transfers. Escrow funding is recognized as planning expense;
-later escrow payouts reduce the restricted asset without counting the expense twice.
+| Type | Meaning |
+| --- | --- |
+| **Cash** | Immediately spendable physical or on-hand funds. |
+| **Bank** | Immediately spendable institutional funds, with bank-statement, reconciliation, import, and payment-source workflows. |
+| **Asset** | General property or non-liquid value that contributes to net worth but is not assumed to be available cash. |
+| **Investment** | Market-valued holdings with returns, contributions, withdrawals, and future security/price/lot support. |
+| **Retirement** | Restricted or tax-advantaged saving with retirement-contribution and distribution semantics. Investment descendants inherit the retirement context. |
+| **FSA / benefit** | Benefit availability determined by plan-year elections and claims rather than the custodial ledger balance. |
+| **Escrow** | Restricted funds whose contributions are planning expense and whose later disbursements must not count the same expense twice. |
+| **Credit card** | A revolving purchase and payment channel with a statement cycle, payment day, paid-in-full state, and optional interest. |
+| **Loan** | Amortizing debt with principal, interest, a payment schedule, and an optional linked asset. |
+| **Liability** | An obligation for which BreadSched should not assume credit-card or amortizing-loan behavior. |
+| **Income** | A household inflow category rather than a balance-sheet account. |
+| **Expense** | A household consumption or outflow category. |
+| **Equity** | Opening balances and ledger adjustments; normally an advanced account. |
+
+Root and Technical types are structural/import-only and are not ordinary user
+accounts. Explicit split planning purposes remain available when one transaction's
+meaning needs to override normal account-type inference.
 
 ## Primary GTK4 workflow
 
@@ -142,10 +157,12 @@ The GTK4 application is the reference user experience. Its major views include:
 
 - **Dashboard** — household position, scheduled bills, liquidity, emergency-fund
   information, FSA state, and important linked-account relationships. Dashboard
-  groups accept account-style paths such as `Investments:Plan A`; generated headings
-  total their children, account subtrees are counted once, FSA groups report benefit
-  availability rather than custodial balance, and fully repaid loans are omitted.
-- **Accounts** — hierarchical chart of accounts with balances, account kind, and
+  groups accept explicit account-style paths such as `Investments:Plan A`; generated
+  headings total their children, account subtrees are counted once, hidden accounts
+  are not direct group members, FSA groups report benefit availability rather than
+  custodial balance, and fully repaid loans are omitted. Unassigned accounts do not
+  appear in dashboard groups.
+- **Accounts** — hierarchical chart of accounts with balances, account type, and
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit
   terminology.
@@ -233,7 +250,7 @@ history. Their supported and pending formats are tracked in `ROADMAP.md`.
 
 ## FSA / benefit planning
 
-FSA-kind accounts can carry funding years with election and run-out information.
+FSA accounts can carry funding years with election and run-out information.
 BreadSched separates benefit availability from the custodial ledger balance and can
 associate service/claim episodes with healthcare payments, reimbursements,
 allocations, refunds, and rejected reimbursement attempts.

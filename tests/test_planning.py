@@ -7,7 +7,6 @@ from decimal import Decimal
 from breadsched.gen.engine import planning, projection, schedule
 from breadsched.gen.lib import (
     Account,
-    AccountKind,
     AccountType,
     Assumptions,
     Money,
@@ -567,7 +566,7 @@ class TestHistoricalEstimateProposals:
         from breadsched.gen.engine import estimates
 
         escrow = Account(name="Escrow", atype=AccountType.ASSET, parent=book.assets)
-        escrow.kind = AccountKind.ESCROW
+        escrow.atype = AccountType.ESCROW
         payout = ScheduledTransaction(
             name="Escrow payout",
             recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 4, 5)),

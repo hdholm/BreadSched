@@ -30,8 +30,8 @@ _HEADINGS = {
     AccountType.LIABILITY: ("Payment", "Increase"),
     AccountType.INCOME: ("Charge", "Income"),
     AccountType.EXPENSE: ("Expense", "Rebate"),
-    AccountType.STOCK: ("Buy", "Sell"),
-    AccountType.MUTUAL: ("Buy", "Sell"),
+    AccountType.INVESTMENT: ("Buy", "Sell"),
+    AccountType.RETIREMENT: ("Contribution", "Distribution"),
     AccountType.EQUITY: ("Decrease", "Increase"),
 }
 

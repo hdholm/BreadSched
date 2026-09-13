@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "breadsched"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Event-driven cash-flow planning and multi-year projection tool with GnuCash compatibility"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,6 +44,9 @@ breadsched-gtk = "breadsched.gui.launcher:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "breadsched.__version__"}
 
 [tool.setuptools.package-data]
 breadsched = ["gui/resources/*.css", "plugins/**/*.gpr.py"]

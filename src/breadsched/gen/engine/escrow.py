@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
-from ..lib.account import Account, AccountClass, AccountKind
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 
 __all__ = ["recognition"]
@@ -29,7 +29,7 @@ def recognition(
         account = accounts.get(handle)
         if account is None:
             continue
-        if account.kind is AccountKind.ESCROW:
+        if account.atype is AccountType.ESCROW:
             net_escrow = net_escrow + amount
         elif account.account_class is AccountClass.EXPENSE and amount > 0:
             expenses[handle] = expenses.get(handle, Money(0)) + amount

@@ -12,7 +12,6 @@ from breadsched.gen.db.base import DbError
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
     Account,
-    AccountKind,
     AccountType,
     Budget,
     Commodity,
@@ -25,17 +24,27 @@ from breadsched.gen.lib import (
 )
 
 
-def test_legacy_planning_role_migrates_to_account_kind():
+def test_legacy_planning_role_migrates_to_account_type():
     raw = Account(name="Benefits", atype=AccountType.BANK).serialize()
-    raw.pop("kind")
     raw.pop("source_atype")
     raw["planning_role"] = "fsa"
 
     migrated = Account.from_dict(raw)
 
-    assert migrated.kind is AccountKind.FSA
+    assert migrated.atype is AccountType.FSA
     assert migrated.source_atype is None
     assert "planning_role" not in migrated.serialize()
+
+
+def test_legacy_ledger_type_and_kind_pair_migrate_to_one_type():
+    raw = Account(name="Mortgage", atype=AccountType.LIABILITY).serialize()
+    raw["atype"] = "LIABILITY"
+    raw["kind"] = "debt"
+
+    migrated = Account.from_dict(raw)
+
+    assert migrated.atype is AccountType.LOAN
+    assert "kind" not in migrated.serialize()
 
 
 class TestWriterLock:

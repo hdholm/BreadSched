@@ -19,7 +19,6 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
     Account,
     AccountClass,
-    AccountKind,
     AccountType,
     FsaFundingYear,
     Money,
@@ -30,8 +29,11 @@ from ..gi_setup import Gtk
 
 __all__ = ["AccountDialog"]
 
-_TYPES: list[AccountType] = [t for t in AccountType if t is not AccountType.ROOT]
-_KINDS = list(AccountKind)
+_TYPES: list[AccountType] = [
+    account_type
+    for account_type in AccountType
+    if account_type not in {AccountType.ROOT, AccountType.TECHNICAL}
+]
 
 
 class AccountDialog(Gtk.Window):
@@ -108,11 +110,17 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.name_entry, 1, row, 1, 1)
         row += 1
 
-        self.type_picker = Gtk.DropDown.new_from_strings([t.value for t in _TYPES])
+        self.types = list(_TYPES)
+        if account is not None and account.atype not in self.types:
+            self.types.append(account.atype)
+        self.type_picker = Gtk.DropDown.new_from_strings([t.value for t in self.types])
         if account is not None:
-            self.type_picker.set_selected(_TYPES.index(account.atype))
+            self.type_picker.set_selected(self.types.index(account.atype))
         self.type_picker.connect("notify::selected", self._on_type_changed)
-        grid.attach(Gtk.Label(label="Ledger type (GnuCash)", xalign=0), 0, row, 1, 1)
+        self.type_picker.set_tooltip_text(
+            "BreadSched account behavior; an imported GnuCash type is retained separately"
+        )
+        grid.attach(Gtk.Label(label="Account type", xalign=0), 0, row, 1, 1)
         grid.attach(self.type_picker, 1, row, 1, 1)
         row += 1
 
@@ -195,17 +203,6 @@ class AccountDialog(Gtk.Window):
             self.group_entry.set_text(account.group)
         grid.attach(Gtk.Label(label="Dashboard group", xalign=0), 0, row, 1, 1)
         grid.attach(self.group_entry, 1, row, 1, 1)
-        row += 1
-
-        self.kind_picker = Gtk.DropDown.new_from_strings([kind.label for kind in _KINDS])
-        if account is not None:
-            self.kind_picker.set_selected(_KINDS.index(account.kind))
-        self.kind_picker.set_tooltip_text(
-            "BreadSched account behavior; GnuCash ledger type is preserved separately"
-        )
-        self.kind_picker.connect("notify::selected", self._on_kind_changed)
-        grid.attach(Gtk.Label(label="Account kind", xalign=0), 0, row, 1, 1)
-        grid.attach(self.kind_picker, 1, row, 1, 1)
         row += 1
 
         self.fsa_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -321,7 +318,7 @@ class AccountDialog(Gtk.Window):
 
     @property
     def selected_type(self) -> AccountType:
-        return _TYPES[self.type_picker.get_selected()]
+        return self.types[self.type_picker.get_selected()]
 
     def _add_fsa_year_row(self, funding_year: FsaFundingYear | None = None) -> None:
         row = Gtk.Box(spacing=6)
@@ -374,26 +371,15 @@ class AccountDialog(Gtk.Window):
                 raise ValueError("FSA funding years cannot overlap")
         return years
 
-    def _on_kind_changed(self, *_args) -> None:
-        if not self._ready:
-            return
-        kind = _KINDS[self.kind_picker.get_selected()]
-        self.fsa_box.set_visible(kind is AccountKind.FSA)
-        self._validate()
-
     def _on_type_changed(self, *_args) -> None:
-        """Only show the fields that mean something for this kind of account."""
+        """Only show fields that mean something for the selected account type."""
         if not self._ready:
             return
-        kind = self.selected_type
-        allowed_kinds = [item for item in _KINDS if item.supports(kind.account_class)]
-        selected_kind = _KINDS[self.kind_picker.get_selected()]
-        if selected_kind not in allowed_kinds:
-            self.kind_picker.set_selected(_KINDS.index(AccountKind.ORDINARY))
-        self.loan_box.set_visible(kind.account_class is AccountClass.LIABILITY)
-        self.card_box.set_visible(kind is AccountType.CREDIT)
+        account_type = self.selected_type
+        self.fsa_box.set_visible(account_type is AccountType.FSA)
+        self.loan_box.set_visible(account_type is AccountType.LOAN)
+        self.card_box.set_visible(account_type is AccountType.CREDIT)
         self._on_card_changed()
-        self._on_kind_changed()
         self._validate()
 
     def _on_card_changed(self, *_args) -> None:
@@ -418,10 +404,7 @@ class AccountDialog(Gtk.Window):
                     problems.append("commodity SCU must be a positive integer")
             except ValueError:
                 problems.append("commodity SCU must be a positive integer")
-        kind = _KINDS[self.kind_picker.get_selected()]
-        if not kind.supports(self.selected_type.account_class):
-            problems.append("account kind is not valid for this ledger type")
-        if kind is AccountKind.FSA:
+        if self.selected_type is AccountType.FSA:
             try:
                 self._fsa_year_values()
             except (ValueError, InvalidOperation, ArithmeticError) as exc:
@@ -445,8 +428,7 @@ class AccountDialog(Gtk.Window):
         scu_text = self.commodity_scu_entry.get_text().strip()
         account.commodity_scu = int(scu_text) if scu_text else None
         account.group = self.group_entry.get_text().strip()
-        account.kind = _KINDS[self.kind_picker.get_selected()]
-        if account.kind is AccountKind.FSA:
+        if account.atype is AccountType.FSA:
             account.fsa_years = self._fsa_year_values()
         account.placeholder = self.placeholder_check.get_active()
         account.hidden = self.hidden_check.get_active()
@@ -456,7 +438,7 @@ class AccountDialog(Gtk.Window):
         index = self.asset_picker.get_selected()
         account.linked_asset = (
             self.assets[index - 1].handle
-            if account.atype.account_class is AccountClass.LIABILITY and index > 0
+            if account.atype is AccountType.LOAN and index > 0
             else None
         )
 

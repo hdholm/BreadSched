@@ -198,23 +198,22 @@ class TestItServes:
         assert "Checking" in by_name
         assert Money(by_name["Checking"]["balance"]) == Money("2400.00")
 
-    def test_account_kind_can_be_changed_without_changing_ledger_type(self, client):
+    def test_account_type_can_be_changed_without_losing_source_type(self, client):
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")
-        assert retirement["kind"] == "ordinary"
-        ledger_type = retirement["type"]
+        source_type = retirement["source_type"]
 
         status, payload = client.post(
-            "/api/account/kind",
-            {"handle": retirement["handle"], "kind": "retirement"},
+            "/api/account/type",
+            {"handle": retirement["handle"], "type": "RETIREMENT"},
         )
         assert status == 200
-        assert payload["kind"] == "retirement"
+        assert payload["type"] == "RETIREMENT"
 
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")
-        assert retirement["kind"] == "retirement"
-        assert retirement["type"] == ledger_type
+        assert retirement["type"] == "RETIREMENT"
+        assert retirement["source_type"] == source_type
 
     def test_fsa_funding_years_can_be_configured(self, client):
         _status, accounts = client.get("/api/accounts")

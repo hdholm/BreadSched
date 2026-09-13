@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import Literal, TypedDict
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass, AccountKind
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, ProjectionBasis, Scenario, ScenarioSchedule
@@ -612,7 +612,7 @@ class _MonthFlows:
             self.contributions[account.handle] = (
                 self.contributions.get(account.handle, Money(0)) + amount
             )
-            if account.kind is AccountKind.ESCROW and funded_from_cash:
+            if account.atype is AccountType.ESCROW and funded_from_cash:
                 self.expense = self.expense + amount
             if funded_from_cash:
                 self.cash_delta = self.cash_delta - amount

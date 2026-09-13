@@ -159,7 +159,7 @@ account subtree. Selected descendants and repeated handles are removed before
 balance calculation, including across groups, so headings, net worth, and liquidity
 cannot count the same ledger value twice.
 
-An FSA-kind account contributes the remaining election availability of every plan
+An FSA account contributes the remaining election availability of every plan
 year applicable on the Dashboard's as-of date, including overlapping run-out and
 current years. Its custodial ledger balance is not a proxy for available benefits.
 Missing or inapplicable funding-year data remains explicitly unavailable rather
@@ -168,27 +168,53 @@ only when it is loan-classified or asset-linked, has prior ledger activity, and 
 no remaining balance. Such a loan and stale future repayment schedules are omitted,
 while its linked asset remains visible.
 
-## Ledger types and account kinds
+## Account types and imported source types
 
-Traditional Income/Expense account classes do not capture every household planning
-flow. Each account therefore has two independent classifications. Its ledger type
-(`BANK`, `ASSET`, `CREDIT`, and the other GnuCash-compatible values) controls debit
-and credit signs, account class, and source interoperability. Its BreadSched account
-kind (`Ordinary`, `Retirement`, `FSA`, `Loan`, `Investment`, or `Escrow`) controls
-household planning behavior. Optional explicit split purposes can override the
-inferred behavior without changing the underlying double-entry transaction.
+An account has one user-visible, BreadSched-owned type. Its accounting class, debit
+or credit display sign, liquidity, and household-planning behavior are derived from
+that type. A separate user-editable planning role or account kind is deliberately
+not part of the model: it exposed implementation detail, permitted combinations
+with no distinct meaning, and required users to reconcile two classifications.
 
-Older books' `planning_role` field migrates to the canonical `kind` field when read.
-The old write endpoint remains temporarily available for older web clients, but the
-domain model, persistence, and current interfaces use account kind. A GnuCash source
-type is recorded separately and re-import may refresh the ledger type without
-erasing the BreadSched kind. A source change across ledger classes is retained for
-review rather than silently making a kind invalid.
+The visible balance-sheet types are Cash, Bank, Asset, Investment, Retirement,
+FSA/benefit, Escrow, Credit card, Loan, and Liability. Income, Expense, and Equity
+retain their ledger meanings. Root is structural and Technical preserves imported
+bookkeeping accounts that should not participate in ordinary household planning.
+Cash and Bank deliberately share a liquid accounting class but remain distinct
+workflow types: institutional accounts have statement, reconciliation, import, and
+payment-source behavior that physical cash does not. Asset means non-liquid general
+value. Credit card remains a revolving payment channel even when it carries a
+balance; Loan is amortizing debt; Liability is the generic fallback that assumes
+neither workflow.
+
+Investment describes market-valued holdings. Retirement describes the restricted
+or tax-advantaged wrapper and controls contribution/distribution planning. In a
+hierarchical chart a Retirement parent may contain Investment children, whose
+activity inherits retirement context; a flat retirement account simply has the
+Retirement type. FSA and Escrow remain first-class types because neither can be
+modelled correctly as a generic asset: FSA availability follows elections and
+claims, while Escrow recognizes expense when funded and suppresses duplicate
+expense recognition when disbursed.
+
+An imported account also records the exact latest GnuCash source type. This
+read-only provenance supports re-import, diagnostics, and future round-trip work but
+does not drive planning after initial mapping. Native accounts have no source type.
+Initial source mapping is conservative: BANK to Bank, CASH to Cash, ASSET/CURRENCY/
+RECEIVABLE to Asset, CREDIT to Credit card, LIABILITY/PAYABLE to Liability,
+STOCK/MUTUAL to Investment, the flow/equity/root types directly, and TRADING to
+Technical. GnuCash alone does not identify an FSA, Escrow, Retirement account, or
+Loan; those types require explicit selection or stronger reviewed evidence.
+
+Older persisted ledger-type/account-kind pairs migrate with the specialized kind
+taking precedence. Debt plus CREDIT becomes Credit card; other Debt accounts become
+Loan. Ordinary legacy STOCK/MUTUAL accounts become Investment and the other legacy
+types follow the conservative source mapping. Explicit split purposes continue to
+override inferred behavior without changing either ledger leg.
 
 Inference precedence is:
 
 1. explicit split planning-purpose override;
-2. account kind plus transaction direction/context;
+2. account type plus transaction direction/context;
 3. ordinary Income/Expense behavior;
 4. otherwise neutral.
 
@@ -210,11 +236,14 @@ transaction, schedule, formula, commodity, and reconciliation semantics should b
 preserved rather than normalized simply because BreadSched exposes a smaller UI.
 
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
-GnuCash account GUID, source-owned chart fields (name, type, parent, commodity, code,
-description, notes, placeholder/hidden state, and commodity SCU) may refresh from
-the source, while BreadSched-owned account kind, FSA funding years, projection-rate
-overrides, projection exclusion, dashboard grouping, linked-asset/card behavior,
-usual payment, and payment day are retained.
+GnuCash account GUID, source-owned chart fields (name, source type, parent,
+commodity, code, description, notes, placeholder/hidden state, and commodity SCU)
+may refresh from the source, while the BreadSched account type, FSA funding years,
+projection-rate overrides, projection exclusion, dashboard grouping,
+linked-asset/card behavior, usual payment, and payment day are retained. A source
+type change is reported. If its accounting class conflicts with the retained
+BreadSched type, the conflict requires review rather than silently changing local
+semantics or display signs.
 
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile

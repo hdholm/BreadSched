@@ -38,7 +38,7 @@ from decimal import Decimal
 from typing import Any, TypedDict
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass, AccountKind
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType
 from ..lib.scheduled import ScheduledTransaction
@@ -165,98 +165,14 @@ class DashboardConfig:
 
 
 def default_config(db: DbSQLite) -> DashboardConfig:
-    """A sensible dashboard for a book that has never configured one.
+    """Return an empty dashboard until accounts are explicitly assigned.
 
-    Derived from the chart of accounts: cash accounts are the liquid group,
-    investment accounts the retirement group, and every liability its own line.
-    A first view that shows real numbers is worth more than an empty one with an
-    invitation to configure it.
+    ``db`` remains in the signature for API compatibility. Account-level group
+    assignments are merged by :func:`resolve_groups`; nothing is inferred from
+    account type, balance class, or linked-loan relationships.
     """
-    liquid, retirement, fsa_accounts, investments = [], [], [], []
-    liabilities, other_assets = [], []
-    for account in db.iter_accounts():
-        if account.is_root or account.placeholder or account.exclude_from_projection:
-            continue
-        if account.kind is AccountKind.RETIREMENT:
-            retirement.append(account.handle)
-        elif account.kind is AccountKind.FSA:
-            fsa_accounts.append(account.handle)
-        elif account.kind is AccountKind.INVESTMENT:
-            investments.append(account.handle)
-        elif account.account_class is AccountClass.LIABILITY:
-            liabilities.append(account.handle)
-        elif account.is_spendable_cash:
-            liquid.append(account.handle)
-        elif account.atype.is_investment:
-            retirement.append(account.handle)
-        elif account.account_class is AccountClass.ASSET:
-            other_assets.append(account.handle)
-
-    # A loan and its asset belong together; leaving them in the generic asset and
-    # debt totals hides the equity, which is the number people look for.
-    paired: set[str] = set()
-    property_groups: list[GroupConfig] = []
-    # All the loans on one asset share a line: a house with two mortgages has one
-    # equity figure, and a group per loan would count the house once each.
-    loans_by_asset: dict[str, list[Account]] = {}
-    for loan, asset in linked_pairs(db):
-        loans_by_asset.setdefault(asset.handle, []).append(loan)
-
-    for asset_handle, loans in loans_by_asset.items():
-        property_asset = db.get_account(asset_handle)
-        if property_asset is None:
-            continue
-        property_groups.append(
-            GroupConfig(
-                name=property_asset.group or property_asset.name,
-                accounts=[asset_handle] + [loan.handle for loan in loans],
-                kind="property",
-            )
-        )
-        paired.add(asset_handle)
-        paired.update(loan.handle for loan in loans)
-
-    liquid = [h for h in liquid if h not in paired]
-    retirement = [h for h in retirement if h not in paired]
-    fsa_accounts = [h for h in fsa_accounts if h not in paired]
-    investments = [h for h in investments if h not in paired]
-    liabilities = [h for h in liabilities if h not in paired]
-    other_assets = [h for h in other_assets if h not in paired]
-
-    # An account naming its own group is answering this question directly, so it
-    # is honoured here rather than only filling gaps: the default configuration
-    # mentions every account, and a field that only applied to unmentioned ones
-    # would never do anything.
-    named: dict[str, GroupConfig] = {}
-    for bucket in (liquid, retirement, fsa_accounts, investments, other_assets, liabilities):
-        for handle in list(bucket):
-            named_account = db.get_account(handle)
-            if named_account is None or not named_account.group:
-                continue
-            group = named.get(named_account.group)
-            if group is None:
-                group = GroupConfig(
-                    name=named_account.group, accounts=[], kind=_kind_for(named_account)
-                )
-                named[named_account.group] = group
-            group.accounts.append(handle)
-            bucket.remove(handle)
-            paired.add(handle)
-
-    groups = list(property_groups) + list(named.values())
-    if liquid:
-        groups.append(GroupConfig("Cash", liquid, "liquid"))
-    if retirement:
-        groups.append(GroupConfig("Retirement", retirement, "retirement"))
-    if fsa_accounts:
-        groups.append(GroupConfig("FSA / benefits", fsa_accounts, "asset"))
-    if investments:
-        groups.append(GroupConfig("Investments", investments, "asset"))
-    if other_assets:
-        groups.append(GroupConfig("Other assets", other_assets, "asset"))
-    if liabilities:
-        groups.append(GroupConfig("Debts", liabilities, "liability"))
-    return DashboardConfig(groups=groups)
+    del db
+    return DashboardConfig()
 
 
 # -------------------------------------------------------------------- results
@@ -556,65 +472,30 @@ def linked_pairs(db: DbSQLite) -> list[tuple[Account, Account]]:
 
 
 def resolve_groups(db: DbSQLite, config: DashboardConfig) -> list[GroupConfig]:
-    """Work out the groups to show, from the configuration *and* the accounts.
+    """Resolve only explicitly configured, visible account memberships.
 
-    Three sources, in this order:
-
-    1. **A loan naming its asset**, where the configuration does not already put
-       the two together. All the loans secured on one asset join a single line —
-       a house with two mortgages has one equity figure, not two, and giving each
-       loan its own line would count the house twice.
-    2. **The dashboard configuration**, which is the explicit answer and beats
-       anything inferred.
-    3. **An account naming a group**, for accounts the configuration does not
-       mention. This is a default placement, not an override: taking an account
-       out of a group it was deliberately put in is how a property line loses its
-       house and reports a value of zero against its mortgage.
-
-    An account claimed by an earlier rule is dropped from the later ones rather
-    than appearing twice, since a house counted in both a property line and an
-    asset total inflates net worth by the whole value of the house.
+    Dashboard configuration wins over the account's own group field. An account
+    claimed by one explicit source is omitted from later sources, and a selected
+    chart parent wins over selected descendants so no ledger value is counted
+    twice. Hidden accounts are never direct dashboard members.
     """
     resolved: list[GroupConfig] = []
     claimed: set[str] = set()
 
-    # 1. Loans gathered onto the asset they are secured on.
-    paired_in_config = {
-        handle for group in config.groups if _pairs_a_loan(db, group) for handle in group.accounts
-    }
-    by_asset: dict[str, list[Account]] = {}
-    for loan, asset in linked_pairs(db):
-        if loan.handle in paired_in_config and asset.handle in paired_in_config:
-            continue
-        by_asset.setdefault(asset.handle, []).append(loan)
-
-    for asset_handle, loans in by_asset.items():
-        resolved_asset = db.get_account(asset_handle)
-        if resolved_asset is None:
-            continue
-        name = resolved_asset.group or resolved_asset.name
-        resolved.append(
-            GroupConfig(
-                name=name,
-                accounts=[asset_handle] + [loan.handle for loan in loans],
-                kind="property",
-            )
-        )
-        claimed.add(asset_handle)
-        claimed.update(loan.handle for loan in loans)
-
-    # 2. The configured groups.
     for group in config.groups:
-        remaining = [h for h in group.accounts if h not in claimed]
+        remaining = []
+        for handle in group.accounts:
+            account = db.get_account(handle)
+            if account is not None and not account.hidden and handle not in claimed:
+                remaining.append(handle)
         if not remaining:
             continue
         resolved.append(GroupConfig(name=group.name, accounts=remaining, kind=group.kind))
         claimed.update(remaining)
 
-    # 3. Accounts naming a group the configuration did not place them in.
     by_name = {group.name: group for group in resolved}
     for account in db.iter_accounts():
-        if not account.group or account.handle in claimed or account.is_root:
+        if not account.group or account.handle in claimed or account.is_root or account.hidden:
             continue
         existing_group = by_name.get(account.group)
         if existing_group is None:
@@ -669,7 +550,11 @@ def _deduplicate_group_accounts(db: DbSQLite, groups: list[GroupConfig]) -> list
 
 def _sides(db: DbSQLite, group: GroupConfig) -> list:
     """The accounts of a group, skipping any that have gone."""
-    return [a for a in (db.get_account(h) for h in group.accounts) if a is not None]
+    return [
+        account
+        for account in (db.get_account(handle) for handle in group.accounts)
+        if account is not None and not account.hidden
+    ]
 
 
 def _pairs_a_loan(db: DbSQLite, group: GroupConfig) -> bool:
@@ -681,13 +566,9 @@ def _pairs_a_loan(db: DbSQLite, group: GroupConfig) -> bool:
 
 
 def _kind_for(account: Account) -> str:
-    if account.kind is AccountKind.RETIREMENT:
+    if account.atype is AccountType.RETIREMENT:
         return "retirement"
-    if account.kind in {
-        AccountKind.FSA,
-        AccountKind.INVESTMENT,
-        AccountKind.ESCROW,
-    }:
+    if account.atype in {AccountType.FSA, AccountType.INVESTMENT, AccountType.ESCROW}:
         return "asset"
     if account.account_class is AccountClass.LIABILITY:
         return "liability"
@@ -827,7 +708,7 @@ def _direct_group_totals(
         if handle in paid_off:
             continue
         account = db.get_account(handle)
-        if account is None:
+        if account is None or account.hidden:
             continue
         line = _account_group_result(db, account, today)
         lines.append(line)
@@ -845,7 +726,7 @@ def _direct_group_totals(
 
 def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupAccountResult:
     name = db.full_name(account) or account.name
-    if account.kind is not AccountKind.FSA:
+    if account.atype is not AccountType.FSA:
         return GroupAccountResult(
             name=name,
             total=ledger.balance_recursive(db, account.handle, as_of=today),
@@ -885,7 +766,7 @@ def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:
     for account in db.iter_accounts():
         if account.account_class is not AccountClass.LIABILITY:
             continue
-        if account.kind is not AccountKind.DEBT and not account.linked_asset:
+        if account.atype is not AccountType.LOAN and not account.linked_asset:
             continue
         if ledger.balance_recursive(db, account.handle, as_of=today):
             continue

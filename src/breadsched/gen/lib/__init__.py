@@ -3,9 +3,9 @@
 from .account import (
     Account,
     AccountClass,
-    AccountKind,
     AccountType,
     FsaFundingYear,
+    GnuCashAccountType,
 )
 from .base import PrimaryObject, create_handle
 from .budget import Budget, BudgetLine, PeriodKind
@@ -48,13 +48,13 @@ from .transaction import (
 __all__ = [
     "Account",
     "AccountClass",
-    "AccountKind",
     "AccountType",
     "FsaClaim",
     "FsaClaimAllocation",
     "FsaClaimRejection",
     "FsaClaimSplitLink",
     "FsaFundingYear",
+    "GnuCashAccountType",
     "AssumptionPeriod",
     "Assumptions",
     "Budget",

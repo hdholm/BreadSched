@@ -14,7 +14,7 @@ from datetime import date, timedelta
 from enum import Enum
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass, AccountKind
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Scenario
@@ -627,26 +627,26 @@ def _inferred_planning_flow(
     splits: Iterable[PlannedSplit],
     accounts: dict[str, Account],
 ) -> PlanningFlowKind | None:
-    """Return explicit split purpose or infer one from account kind and context."""
+    """Return explicit split purpose or infer one from account type and context."""
     if split.planning_flow is not None:
         return split.planning_flow
     account = accounts.get(split.account)
     if account is None:
         return None
     peers = [accounts.get(item.account) for item in splits if item.account != split.account]
-    if account.kind is AccountKind.RETIREMENT:
-        if any(peer and peer.kind is AccountKind.RETIREMENT for peer in peers):
+    if account.atype is AccountType.RETIREMENT:
+        if any(peer and peer.atype is AccountType.RETIREMENT for peer in peers):
             return None
         if split.amount > 0:
             return PlanningFlowKind.RETIREMENT_SAVING
         if split.amount < 0:
             return PlanningFlowKind.RETIREMENT_INCOME
-    if account.kind is AccountKind.FSA and split.amount > 0:
+    if account.atype is AccountType.FSA and split.amount > 0:
         return PlanningFlowKind.BENEFIT_FUNDING
-    if account.kind is AccountKind.ESCROW and split.amount > 0:
+    if account.atype is AccountType.ESCROW and split.amount > 0:
         return PlanningFlowKind.ESCROW_FUNDING
-    if account.kind is AccountKind.DEBT and split.amount > 0:
-        if any(peer and peer.kind is AccountKind.DEBT for peer in peers):
+    if account.atype is AccountType.LOAN and split.amount > 0:
+        if any(peer and peer.atype is AccountType.LOAN for peer in peers):
             return None
         return PlanningFlowKind.DEBT_PRINCIPAL
     return None

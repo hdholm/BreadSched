@@ -442,7 +442,9 @@ class TestProjectionView:
 
         app.open_book(populated_book)
         root = app.db.root_account()
-        account = Account(name="Generic investment", atype=AccountType.STOCK, parent=root.handle)
+        account = Account(
+            name="Generic investment", atype=AccountType.INVESTMENT, parent=root.handle
+        )
         with app.db.transaction("Add generic projection account") as txn:
             app.db.add_account(account, txn)
         window.show_category("projection")
@@ -971,8 +973,7 @@ class TestColumnBehaviour:
         columns = self._columns(window._views["accounts"])
         assert [column.get_title() for column in columns] == [
             "Account",
-            "Ledger type",
-            "Account kind",
+            "Type",
             "Description",
             "Balance",
         ]
@@ -2666,7 +2667,7 @@ class TestAccountEditor:
             app.db.add_account(parent, txn)
             child = Account(
                 name="Imported child",
-                atype=AccountType.MUTUAL,
+                atype=AccountType.INVESTMENT,
                 parent=parent.handle,
                 commodity=commodity.handle,
                 hidden=True,
@@ -2694,14 +2695,14 @@ class TestAccountEditor:
         assert rebuilt.commodity_scu == 1000
         assert rebuilt.notes == "Generic imported account note"
 
-    def test_loan_fields_only_show_for_a_liability(self, accounts_view, app):
+    def test_loan_fields_only_show_for_a_loan(self, accounts_view, app):
         from breadsched.gen.lib import AccountType
         from breadsched.gui.dialogs.account_dialog import _TYPES
 
         dialog = self._dialog(accounts_view)
         dialog.type_picker.set_selected(_TYPES.index(AccountType.BANK))
         assert dialog.loan_box.get_visible() is False
-        dialog.type_picker.set_selected(_TYPES.index(AccountType.LIABILITY))
+        dialog.type_picker.set_selected(_TYPES.index(AccountType.LOAN))
         assert dialog.loan_box.get_visible() is True
 
     def test_card_fields_only_show_for_a_card(self, accounts_view, app):
@@ -2768,7 +2769,7 @@ class TestAccountEditor:
 
         dialog = self._dialog(accounts_view)
         dialog.name_entry.set_text("Mortgage")
-        dialog.type_picker.set_selected(_TYPES.index(AccountType.LIABILITY))
+        dialog.type_picker.set_selected(_TYPES.index(AccountType.LOAN))
         index = next(i for i, a in enumerate(dialog.assets, start=1) if a.handle == house.handle)
         dialog.asset_picker.set_selected(index)
         dialog._on_save(None)

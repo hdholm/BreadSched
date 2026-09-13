@@ -652,26 +652,25 @@ async function showAccounts() {
             class: "clickable",
             onclick: () => { state.account = account.handle; switchTo("Register"); },
           }, account.name)),
-    el("td", { class: "muted" }, account.type),
     el("td", {}, el("select", {
       onchange: async (event) => {
-        await post("/api/account/kind", {
-          handle: account.handle, kind: event.target.value,
+        await post("/api/account/type", {
+          handle: account.handle, type: event.target.value,
         });
-        account.kind = event.target.value;
+        account.type = event.target.value;
         render();
       },
     }, ([
-      ["ordinary", "Ordinary"],
-      ...(account.class === "asset" ? [
-        ["retirement", "Retirement"], ["fsa", "FSA / benefit"],
-        ["investment", "Investment"], ["escrow", "Escrow"],
-      ] : []),
-      ...(account.class === "liability" ? [["debt", "Loan / debt"]] : []),
+      ["BANK", "Bank"], ["CASH", "Cash"], ["ASSET", "Asset"],
+      ["INVESTMENT", "Investment"], ["RETIREMENT", "Retirement"],
+      ["FSA", "FSA / benefit"], ["ESCROW", "Escrow"],
+      ["CREDIT CARD", "Credit card"], ["LOAN", "Loan"],
+      ["LIABILITY", "Liability"], ["INCOME", "Income"],
+      ["EXPENSE", "Expense"], ["EQUITY", "Equity"],
     ]).map(([value, label]) => el("option", {
-      value, selected: account.kind === value ? "selected" : null,
+      value, selected: account.type === value ? "selected" : null,
     }, label)))),
-    el("td", {}, account.kind === "fsa"
+    el("td", {}, account.type === "FSA"
       ? el("button", { class:"action", type:"button", onclick:()=>openFsaYearsEditor(account) },
           `${(account.fsa_years || []).length} funding year${(account.fsa_years || []).length === 1 ? "" : "s"}…`)
       : el("span", { class:"muted" }, "—")),
@@ -681,7 +680,7 @@ async function showAccounts() {
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them."),
-    table(["Account", "Ledger type", "Account kind", "FSA years",
+    table(["Account", "Type", "FSA years",
            { label: "Balance", num: true }], rows));
 }
 
