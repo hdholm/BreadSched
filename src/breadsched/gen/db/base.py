@@ -23,6 +23,7 @@ from typing import Any, Literal
 from ..lib.account import Account
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
+from ..lib.reconciliation import Reconciliation
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
@@ -107,6 +108,9 @@ class DbBase(Callback, ABC):
         "fsa-claim-add": (list,),
         "fsa-claim-update": (list,),
         "fsa-claim-delete": (list,),
+        "reconciliation-add": (list,),
+        "reconciliation-update": (list,),
+        "reconciliation-delete": (list,),
         "database-changed": (object,),
         "undo-available": (bool,),
         "redo-available": (bool,),
@@ -284,6 +288,20 @@ class DbBase(Callback, ABC):
 
     @abstractmethod
     def iter_fsa_claims(self) -> Iterator[FsaClaim]: ...
+
+    # ---------------------------------------------------------- reconciliation
+
+    @abstractmethod
+    def add_reconciliation(self, reconciliation: Reconciliation, txn: DbTxn) -> str: ...
+
+    @abstractmethod
+    def commit_reconciliation(self, reconciliation: Reconciliation, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def get_reconciliation(self, handle: str) -> Reconciliation | None: ...
+
+    @abstractmethod
+    def iter_reconciliations(self, account: str | None = None) -> Iterator[Reconciliation]: ...
 
     # ---------------------------------------------------------------- metadata
 

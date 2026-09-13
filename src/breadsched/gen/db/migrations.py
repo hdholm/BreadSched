@@ -124,8 +124,30 @@ def v5_to_v6(conn: sqlite3.Connection) -> None:
     )
 
 
-MIGRATIONS: dict[int, Migration] = {3: v3_to_v4, 4: v4_to_v5, 5: v5_to_v6}
-LATEST_SCHEMA_VERSION = 6
+def v6_to_v7(conn: sqlite3.Connection) -> None:
+    """Add auditable account-statement reconciliation sessions."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS reconciliation (
+            handle         TEXT PRIMARY KEY,
+            account        TEXT NOT NULL,
+            statement_date TEXT NOT NULL,
+            status         TEXT NOT NULL,
+            blob           TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_reconciliation_account_date
+            ON reconciliation(account, statement_date);
+        """
+    )
+
+
+MIGRATIONS: dict[int, Migration] = {
+    3: v3_to_v4,
+    4: v4_to_v5,
+    5: v5_to_v6,
+    6: v6_to_v7,
+}
+LATEST_SCHEMA_VERSION = 7
 
 __all__ = [
     "LATEST_SCHEMA_VERSION",

@@ -381,6 +381,31 @@ Inference precedence is:
 
 Transfers that carry no household planning meaning should remain neutral.
 
+## Statement reconciliation
+
+A reconciliation is a persisted, account-scoped statement session, not transient UI
+state. It owns an exact ending balance, statement date, checked split handles,
+lifecycle status, timestamps, and an append-only lifecycle audit. Only asset and
+liability posting accounts participate; income, expense, equity, roots, and
+placeholders do not represent statement balances.
+
+The shared reconciliation service derives the opening balance from previously
+reconciled or frozen splits through the statement date. Non-void, unreconciled and
+cleared splits through that date are candidates; Cleared candidates start checked.
+The displayed difference is always statement ending balance minus the account's
+natural-sign opening-plus-checked balance. GTK and web merely present this shared
+calculation.
+
+Finishing is permitted only at an exact zero difference. It atomically changes every
+checked split to Reconciled with the statement date and records completion of the
+session. Cancelling records the abandoned session without changing ledger state.
+Only the latest completed statement may be reopened, which atomically returns its
+recorded splits to Cleared and preserves the lifecycle audit. This ordering prevents
+a correction from invalidating later statement openings invisibly. Full book
+verification reports missing, cross-account, duplicated, or subsequently changed
+splits referenced by reconciliation history. Imported reconcile states remain
+ledger facts and are included in opening balances rather than rewritten on import.
+
 ## Scenario model
 
 Scenarios change assumptions and planned activity without rewriting the base ledger.

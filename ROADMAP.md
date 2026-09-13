@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline before this development series is **0183 — main-thread import
-completion**. The current sequential candidate is **0184**.
+The accepted baseline before this development series is **0184 — account-linked card
+payments**. The current sequential candidate is **0185**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,9 +94,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Register and reconciliation workflows.** Move ordinary two-sided entry
-   into the split-based transaction model, then add statement reconciliation through
-   shared services and GTK/web surfaces.
+1. **NEXT — Investment activity foundations.** Classify contributions,
+   distributions, dividends/interest, fees, withdrawals, and rollovers in the shared
+   transaction/schedule model, then make Projection transitions and explanations use
+   those meanings without introducing cost-basis guesses.
 2. **Escrow follow-through.** Finish richer refund/adjustment explanations and
    combined mortgage/escrow coverage on the single account-type model.
 
@@ -371,7 +372,7 @@ semantics, not duplicate business rules in presentation code.
   new transaction/split entry in GTK and web. When editing a transaction already
   referencing a hidden account, preserve and identify that existing selection;
   filtering must never silently replace a stored split account.
-- [ ] **One split-based transaction model.** Present ordinary entry as two splits
+- [x] **0185 — One split-based transaction model.** Present ordinary entry as two splits
   by default, with the same split model, validation, and editing path used for
   additional legs. Retain atomic balanced postings and avoid separate financial
   semantics for a two-account shortcut.
@@ -386,12 +387,16 @@ semantics, not duplicate business rules in presentation code.
 
 ## Reconciliation
 
-- [ ] Add first-class account reconciliation: statement date, ending balance,
+- [x] **0185 — Add first-class account reconciliation:** statement date, ending balance,
   cleared/reconciled state, running difference, completion, cancel/restart, and
   auditable persistence.
-- [ ] Put reconciliation rules in shared domain/application services first; GTK and
+- [x] Put reconciliation rules in shared domain/application services first; GTK and
   web are presentations of the same workflow.
-- [ ] Cover reopened/corrected statements and preservation of imported reconcile state.
+- [x] Cover reopened/corrected statements and preservation of imported reconcile state.
+  Persist statement sessions and append-only lifecycle events; finish and reopen
+  split changes atomically, require latest-first correction, and verify stored split
+  references. GTK and web registers share the same exact difference calculation.
+  Advance the alpha version to `0.2.0a24` and native schema to 7.
 
 ## Historical estimator
 

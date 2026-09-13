@@ -330,6 +330,20 @@ interface provides the same read-only verification report in its Verify view.
 Restoring over a file held by a live writer is refused; GTK restores to a different
 path and opens that verified result.
 
+## Statement reconciliation
+
+Bank, Cash, Asset, Investment, Retirement, FSA, Escrow, Credit card, Loan,
+Liability, and Technical registers can be reconciled against a dated statement.
+Choose **Reconcile…**, enter the statement date and ending balance, then check the
+eligible entries until the exact running difference reaches zero. Already-cleared
+entries begin checked. Finishing changes the selected splits to reconciled in the
+same atomic book operation that completes the persisted statement session.
+
+Cancel leaves ledger splits unchanged and retains an audit record. The most recent
+completed statement can be reopened for correction; its entries return to Cleared
+until it is balanced and finished again. Later completed statements must be reopened
+first. The web register exposes the same workflow through the shared engine.
+
 ## GnuCash compatibility
 
 BreadSched can import GnuCash SQLite and compressed-XML books and preserves source

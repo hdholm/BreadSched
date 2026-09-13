@@ -951,6 +951,108 @@ async function showAccounts() {
            { label:"Price", num:true }, "As of", { label: "Value", num: true }], rows));
 }
 
+async function openReconciliation(account) {
+  const data = await get(`/api/reconciliation?account=${encodeURIComponent(account.handle)}`);
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const reload = async () => {
+    backdrop.remove();
+    await openReconciliation(account);
+  };
+  let content;
+  if (!data.open) {
+    const statementDate = el("input", {
+      type:"date", value:new Date().toISOString().slice(0, 10),
+    });
+    const ending = el("input", {inputmode:"decimal", placeholder:"0.00"});
+    const actions = [
+      el("button", {class:"action primary", type:"button", onclick:async()=>{
+        try {
+          await post("/api/reconciliation/start", {
+            account:account.handle,
+            statement_date:statementDate.value,
+            ending_balance:ending.value.trim(),
+          });
+          await reload();
+        } catch (error) { say(error.message, "error"); }
+      }}, "Start reconciliation"),
+    ];
+    const completed = data.history.find((item)=>item.status === "completed");
+    if (completed) actions.push(
+      el("button", {class:"action", type:"button", onclick:async()=>{
+        try {
+          await post("/api/reconciliation/reopen", {handle:completed.handle});
+          await reload();
+        } catch (error) { say(error.message, "error"); }
+      }}, `Reopen ${completed.statement_date}`));
+    content = el("div", {class:"stack"},
+      el("p", {class:"note"},
+        "Already-cleared entries start checked. Ledger states change only when the "
+        + "statement difference is zero and you finish."),
+      el("label", {}, "Statement date", statementDate),
+      el("label", {}, "Ending balance", ending),
+      el("div", {class:"toolbar"}, actions));
+  } else {
+    const session = data.open;
+    const ending = el("input", {
+      inputmode:"decimal", value:String(session.ending_balance),
+    });
+    const checks = session.candidates.map((item)=>{
+      const check = el("input", {
+        type:"checkbox", checked:item.selected ? "checked" : null,
+        value:item.split,
+      });
+      return {item, check, row:el("tr", {},
+        el("td", {}, check),
+        el("td", {}, item.date),
+        el("td", {}, item.description || "(no description)"),
+        el("td", {class:`num ${cls(item.amount)}`}, money(item.amount)),
+        el("td", {class:"muted"}, item.state === "c" ? "cleared" : "not cleared"))};
+    });
+    const save = async () => {
+      await post("/api/reconciliation/update", {
+        handle:session.handle,
+        ending_balance:ending.value.trim(),
+        selected_splits:checks.filter(({check})=>check.checked).map(({item})=>item.split),
+      });
+      await reload();
+    };
+    content = el("div", {class:"stack"},
+      el("p", {class:"note"}, `Statement through ${session.statement_date}`),
+      el("label", {}, "Ending balance", ending),
+      el("p", {class:session.balanced ? "note" : "note negative"},
+        `Prior reconciled ${money(session.opening_balance)} · Checked `
+        + `${money(session.selected_balance)} · Difference ${money(session.difference)}`),
+      table(["✓", "Date", "Description", {label:"Amount", num:true}, "State"],
+        checks.map(({row})=>row)),
+      el("div", {class:"toolbar"},
+        el("button", {class:"action", type:"button", onclick:()=>save().catch(
+          (error)=>say(error.message, "error"))}, "Save checks"),
+        el("button", {class:"action", type:"button", onclick:async()=>{
+          await post("/api/reconciliation/cancel", {handle:session.handle});
+          await reload();
+        }}, "Cancel reconciliation"),
+        el("span", {style:"flex:1"}),
+        el("button", {class:"action primary", type:"button", disabled:!session.balanced,
+          onclick:async()=>{
+            try {
+              await post("/api/reconciliation/complete", {handle:session.handle});
+              backdrop.remove();
+              say("Statement reconciled.");
+              render();
+            } catch (error) { say(error.message, "error"); }
+          }}, "Finish")));
+  }
+  const body = el("section", {class:"detail-dialog wide"},
+    el("h2", {}, `Reconcile — ${data.account.name}`), content,
+    el("div", {class:"toolbar"}, el("span", {style:"flex:1"}),
+      el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()}, "Close")));
+  backdrop.append(body);
+  document.body.append(backdrop);
+}
+
 async function showRegister() {
   if (!state.accounts.length) state.accounts = await get("/api/accounts");
   const usable = state.accounts.filter((a) => !a.placeholder && a.depth > 0);
@@ -986,6 +1088,10 @@ async function showRegister() {
 
   return el("div", {},
     el("div", { class: "toolbar" }, picker,
+      el("button", {class:"action", type:"button", onclick:()=>{
+        const account = usable.find((item)=>item.handle === state.account);
+        if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
+      }}, "Reconcile…"),
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
     table(["Date", "Num", "Description", "Transfer",
            { label: "Amount", num: true }, { label: "Balance", num: true }, ""], rows));

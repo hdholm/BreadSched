@@ -381,6 +381,16 @@ class TestRegister:
         view.show_account(app.db.get_account_by_name("Credit Card").handle)
         assert view.debit_column.get_title() == "Payment"
 
+    def test_reconciliation_is_available_for_statement_accounts(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("register")
+        view = window._views["register"]
+        view.show_account(app.db.get_account_by_name("Assets:Checking Account").handle)
+        assert view.reconcile_button.get_sensitive() is True
+
+        view.show_account(app.db.get_account_by_name("Expenses:Rent").handle)
+        assert view.reconcile_button.get_sensitive() is False
+
 
 class TestRegisterSelection:
     """Repopulating the account picker must not silently change the account."""

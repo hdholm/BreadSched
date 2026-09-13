@@ -34,6 +34,7 @@ from ..gen.engine import (
     loans,
     planning,
     projection,
+    reconciliation,
     schedule,
     valuation,
 )
@@ -778,6 +779,100 @@ class Api:
                 for row in rows
             ],
         }
+
+    def reconciliation(self, account_handle: str) -> dict:
+        """Return the current statement workflow and its auditable history."""
+        account = self.db.get_account(account_handle)
+        if account is None:
+            raise KeyError(account_handle)
+        current = reconciliation.open_for_account(self.db, account_handle)
+        current_state = reconciliation.summary(self.db, current) if current else None
+        return {
+            "account": {"handle": account.handle, "name": self.db.full_name(account)},
+            "open": (
+                {
+                    "handle": current.handle,
+                    "statement_date": current.statement_date,
+                    "ending_balance": current.ending_balance,
+                    "opening_balance": current_state.opening_balance,
+                    "selected_balance": current_state.selected_balance,
+                    "difference": current_state.difference,
+                    "balanced": current_state.balanced,
+                    "selected_splits": list(current.selected_splits),
+                    "candidates": [
+                        {
+                            "transaction": item.transaction,
+                            "split": item.split,
+                            "date": item.post_date,
+                            "description": item.description,
+                            "amount": item.amount,
+                            "state": item.state.value,
+                            "selected": item.selected,
+                        }
+                        for item in current_state.candidates
+                    ],
+                }
+                if current is not None and current_state is not None
+                else None
+            ),
+            "history": [
+                {
+                    "handle": item.handle,
+                    "statement_date": item.statement_date,
+                    "ending_balance": item.ending_balance,
+                    "status": item.status.value,
+                    "completed_at": item.completed_at,
+                    "cancelled_at": item.cancelled_at,
+                    "events": [
+                        {"action": event.action, "at": event.occurred_at}
+                        for event in item.audit_events
+                    ],
+                }
+                for item in reversed(list(self.db.iter_reconciliations(account_handle)))
+            ],
+        }
+
+    def reconciliation_start(self, payload: dict) -> dict:
+        account = str(payload.get("account") or "")
+        try:
+            statement_date = date.fromisoformat(str(payload.get("statement_date") or ""))
+        except ValueError as exc:
+            raise ValueError("enter a valid statement date") from exc
+        ending = self._input_money(payload, payload.get("ending_balance", ""))
+        started = reconciliation.start(self.db, account, statement_date, ending)
+        return {"handle": started.handle, "status": started.status.value}
+
+    def reconciliation_update(self, payload: dict) -> dict:
+        handle = str(payload.get("handle") or "")
+        raw_splits = payload.get("selected_splits", [])
+        if not isinstance(raw_splits, list) or not all(
+            isinstance(item, str) for item in raw_splits
+        ):
+            raise ValueError("selected_splits must be a list of split handles")
+        ending = (
+            self._input_money(payload, payload["ending_balance"])
+            if "ending_balance" in payload
+            else None
+        )
+        state = reconciliation.update(
+            self.db,
+            handle,
+            split_handles=raw_splits,
+            ending_balance=ending,
+        )
+        return {"handle": handle, "difference": state.difference, "balanced": state.balanced}
+
+    def reconciliation_complete(self, payload: dict) -> dict:
+        completed = reconciliation.complete(self.db, str(payload.get("handle") or ""))
+        return {"handle": completed.handle, "status": completed.status.value}
+
+    def reconciliation_cancel(self, payload: dict) -> dict:
+        cancelled = reconciliation.cancel(self.db, str(payload.get("handle") or ""))
+        return {"handle": cancelled.handle, "status": cancelled.status.value}
+
+    def reconciliation_reopen(self, payload: dict) -> dict:
+        reopened = reconciliation.reopen(self.db, str(payload.get("handle") or ""))
+        return {"handle": reopened.handle, "status": reopened.status.value}
 
     def historical_estimates(
         self,
@@ -2939,6 +3034,7 @@ ROUTES = {
     "/api/register": lambda a, q: a.register(
         q.get("account", [""])[0], int(q.get("limit", ["250"])[0])
     ),
+    "/api/reconciliation": lambda a, q: a.reconciliation(q.get("account", [""])[0]),
     "/api/scheduled": lambda a, q: a.scheduled(int(q.get("days", ["60"])[0])),
     "/api/historical-estimates": lambda a, q: a.historical_estimates(
         int(q.get("months", ["12"])[0]),
@@ -2982,6 +3078,11 @@ POST_ROUTES = {
     "/api/fsa/claim/save": lambda a, body: a.fsa_claim_save(body),
     "/api/fsa/claim/delete": lambda a, body: a.fsa_claim_delete(body),
     "/api/transaction": lambda a, body: a.add_transaction(body),
+    "/api/reconciliation/start": lambda a, body: a.reconciliation_start(body),
+    "/api/reconciliation/update": lambda a, body: a.reconciliation_update(body),
+    "/api/reconciliation/complete": lambda a, body: a.reconciliation_complete(body),
+    "/api/reconciliation/cancel": lambda a, body: a.reconciliation_cancel(body),
+    "/api/reconciliation/reopen": lambda a, body: a.reconciliation_reopen(body),
     "/api/import": lambda a, body: a.import_local(body),
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),

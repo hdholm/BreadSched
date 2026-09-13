@@ -316,6 +316,49 @@ class TestItServes:
         assert payload["account"] == "Assets:Checking"
         assert len(payload["rows"]) == 2
 
+    def test_reconciliation_uses_the_shared_statement_workflow(self, client):
+        _status, accounts = client.get("/api/accounts")
+        checking = next(a for a in accounts if a["name"] == "Checking")
+
+        status, started = client.post(
+            "/api/reconciliation/start",
+            {
+                "account": checking["handle"],
+                "statement_date": date.today().isoformat(),
+                "ending_balance": "0",
+            },
+        )
+        assert status == 200
+        assert started["status"] == "open"
+
+        _status, state = client.get(
+            "/api/reconciliation?" + urllib.parse.urlencode({"account": checking["handle"]})
+        )
+        current = state["open"]
+        target = Money(current["opening_balance"]) + sum(
+            (Money(item["amount"]) for item in current["candidates"]), Money(0)
+        )
+        status, updated = client.post(
+            "/api/reconciliation/update",
+            {
+                "handle": current["handle"],
+                "ending_balance": str(target.to_decimal()),
+                "selected_splits": [item["split"] for item in current["candidates"]],
+            },
+        )
+        assert status == 200
+        assert updated["balanced"] is True
+
+        status, completed = client.post(
+            "/api/reconciliation/complete", {"handle": current["handle"]}
+        )
+        assert status == 200
+        assert completed["status"] == "completed"
+
+        status, reopened = client.post("/api/reconciliation/reopen", {"handle": current["handle"]})
+        assert status == 200
+        assert reopened["status"] == "open"
+
     def test_scheduled_transactions_are_listed(self, client):
         status, payload = client.get("/api/scheduled")
         assert status == 200

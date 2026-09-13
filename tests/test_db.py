@@ -431,7 +431,7 @@ class TestSchemaMigration:
         db = DbSQLite()
         db.load(str(path))
 
-        assert db.get_metadata("schema_version") == 6
+        assert db.get_metadata("schema_version") == 7
         assert db.get_metadata("current_budget") is None
         assert "budgets" not in db.get_scheduled(scheduled).serialize()
         assert "basis" not in db.get_scenario(scenario).serialize()
@@ -457,7 +457,7 @@ class TestSchemaMigration:
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [3, 4, 5, 6]
+        ] == [3, 4, 5, 6, 7]
         db.close()
 
         backup = tmp_path / "a3.breadsched.pre-migration-v3.bak"
@@ -494,7 +494,7 @@ class TestSchemaMigration:
         db = DbSQLite()
         db.load(str(path))
         try:
-            assert db.get_metadata("schema_version") == 6
+            assert db.get_metadata("schema_version") == 7
             assert db.get_account(card).atype is AccountType.CREDIT
             assert db.get_account(benefit).atype is AccountType.FSA
         finally:
@@ -555,7 +555,7 @@ class TestSchemaMigration:
         assert not (tmp_path / "a3-readonly.breadsched.pre-migration-v3.bak").exists()
 
     def test_new_books_report_clean_integrity(self, db):
-        assert db.get_metadata("schema_version") == 6
+        assert db.get_metadata("schema_version") == 7
         assert db.integrity_problems() == []
 
     def test_schema_5_backfills_indexed_security_quantities(self, tmp_path):
@@ -611,7 +611,7 @@ class TestSchemaMigration:
                 .fetchone()
             )
             assert Money(row[0], row[1]) == Money("7.5")
-            assert migrated.get_metadata("schema_version") == 6
+            assert migrated.get_metadata("schema_version") == 7
         finally:
             migrated.close()
 

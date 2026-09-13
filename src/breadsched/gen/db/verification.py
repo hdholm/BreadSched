@@ -10,7 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from ..lib.transaction import UnbalancedError
+from ..lib.reconciliation import ReconciliationStatus
+from ..lib.transaction import ReconcileState, UnbalancedError
 
 if TYPE_CHECKING:
     from .base import DbBase
@@ -120,6 +121,62 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                 break
             seen.add(current.handle)
             current = accounts[current.parent]
+
+    splits = {
+        split.handle: split
+        for transaction in db.iter_transactions()
+        for split in transaction.splits
+    }
+    for reconciliation in db.iter_reconciliations():
+        if reconciliation.account not in accounts:
+            issues.append(
+                BookIssue(
+                    "reconciliation.missing_account",
+                    f"reconciliation {reconciliation.handle} refers to missing account "
+                    f"{reconciliation.account}",
+                    reconciliation.handle,
+                )
+            )
+        if len(reconciliation.selected_splits) != len(set(reconciliation.selected_splits)):
+            issues.append(
+                BookIssue(
+                    "reconciliation.duplicate_split",
+                    f"reconciliation {reconciliation.handle} contains a split more than once",
+                    reconciliation.handle,
+                )
+            )
+        for split_handle in reconciliation.selected_splits:
+            split = splits.get(split_handle)
+            if split is None:
+                issues.append(
+                    BookIssue(
+                        "reconciliation.missing_split",
+                        f"reconciliation {reconciliation.handle} refers to missing split "
+                        f"{split_handle}",
+                        reconciliation.handle,
+                    )
+                )
+            elif split.account != reconciliation.account:
+                issues.append(
+                    BookIssue(
+                        "reconciliation.wrong_account",
+                        f"reconciliation {reconciliation.handle} includes split {split_handle} "
+                        f"from another account",
+                        reconciliation.handle,
+                    )
+                )
+            elif reconciliation.status is ReconciliationStatus.COMPLETED and (
+                split.reconcile is not ReconcileState.RECONCILED
+                or split.reconcile_date != reconciliation.statement_date
+            ):
+                issues.append(
+                    BookIssue(
+                        "reconciliation.changed_split",
+                        f"completed reconciliation {reconciliation.handle} no longer agrees "
+                        f"with split {split_handle}",
+                        reconciliation.handle,
+                    )
+                )
 
     for price in db.iter_prices():
         if price.commodity not in commodities:

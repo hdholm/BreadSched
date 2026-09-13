@@ -16,7 +16,7 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.engine import ledger  # noqa: E402
-from ...gen.lib.account import AccountType  # noqa: E402
+from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap  # noqa: E402
 
@@ -121,6 +121,11 @@ class RegisterView(BaseView):
         add_button.connect("clicked", self._on_add_clicked)
         bar.append(add_button)
 
+        self.reconcile_button = Gtk.Button(label="Reconcile…")
+        self.reconcile_button.set_tooltip_text("Compare this account with a statement")
+        self.reconcile_button.connect("clicked", self._on_reconcile_clicked)
+        bar.append(self.reconcile_button)
+
         self.column_view = Gtk.ColumnView()
         self.column_view.set_show_row_separators(True)
         self.column_view.connect("activate", self._on_activated)
@@ -190,6 +195,10 @@ class RegisterView(BaseView):
         account = self.db.get_account(self.account_handle)
         if account is None:
             return
+        self.reconcile_button.set_sensitive(
+            not account.placeholder
+            and account.account_class in {AccountClass.ASSET, AccountClass.LIABILITY}
+        )
         debit, credit = column_headings(account.atype)
         self.debit_column.set_title(debit)
         self.credit_column.set_title(credit)
@@ -342,5 +351,17 @@ class RegisterView(BaseView):
             default_account=self.account_handle,
             default_date=date.today(),
         )
+        dialog.connect("close-request", self.refresh_on_close)
+        dialog.present()
+
+    def _on_reconcile_clicked(self, _button) -> None:
+        if self.db is None or self.account_handle is None:
+            return
+        account = self.db.get_account(self.account_handle)
+        if account is None:
+            return
+        from ..dialogs.reconciliation_dialog import ReconciliationDialog
+
+        dialog = ReconciliationDialog(self.get_root(), self.db, account)
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()

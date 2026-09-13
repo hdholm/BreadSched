@@ -28,6 +28,7 @@ from ..lib.account import Account
 from ..lib.base import PrimaryObject
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
+from ..lib.reconciliation import Reconciliation
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction, UnbalancedError
@@ -109,6 +110,15 @@ CREATE TABLE IF NOT EXISTS fsa_claim (
     blob         TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_fsa_claim_service_date ON fsa_claim(service_date);
+CREATE TABLE IF NOT EXISTS reconciliation (
+    handle         TEXT PRIMARY KEY,
+    account        TEXT NOT NULL,
+    statement_date TEXT NOT NULL,
+    status         TEXT NOT NULL,
+    blob           TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_reconciliation_account_date
+    ON reconciliation(account, statement_date);
 CREATE TABLE IF NOT EXISTS schema_migration (
     version    INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -124,6 +134,7 @@ _TABLES: dict[str, tuple[type, str]] = {
     "scheduled": (ScheduledTransaction, "scheduled"),
     "scenario": (Scenario, "scenario"),
     "fsa_claim": (FsaClaim, "fsa-claim"),
+    "reconciliation": (Reconciliation, "reconciliation"),
 }
 
 
@@ -566,6 +577,7 @@ class DbSQLite(DbBase):
             "scheduled": ("name",),
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
+            "reconciliation": ("account", "statement_date", "status"),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -581,6 +593,9 @@ class DbSQLite(DbBase):
             ("scenario", "name"): "",
             ("fsa_claim", "service_date"): "",
             ("fsa_claim", "provider"): "",
+            ("reconciliation", "account"): "",
+            ("reconciliation", "statement_date"): "",
+            ("reconciliation", "status"): "",
         }
         for table, columns in derived_specs.items():
             selected = ", ".join(("handle", *columns, "blob"))
@@ -800,6 +815,18 @@ class DbSQLite(DbBase):
                 "INSERT OR REPLACE INTO fsa_claim(handle,service_date,provider,blob) "
                 "VALUES (?,?,?,?)",
                 (handle, data.get("service_date", ""), data.get("provider", ""), blob),
+            )
+        elif table == "reconciliation":
+            conn.execute(
+                "INSERT OR REPLACE INTO reconciliation"
+                "(handle,account,statement_date,status,blob) VALUES (?,?,?,?,?)",
+                (
+                    handle,
+                    data.get("account", ""),
+                    data.get("statement_date", ""),
+                    data.get("status", ""),
+                    blob,
+                ),
             )
         else:
             conn.execute(
@@ -1066,6 +1093,48 @@ class DbSQLite(DbBase):
         elif table == "fsa_claim":
             issues.extend(self._verify_fsa_claim_references(FsaClaim.from_dict(data)))
 
+        elif table == "reconciliation":
+            issues.extend(self._verify_reconciliation_references(Reconciliation.from_dict(data)))
+
+        return issues
+
+    def _verify_reconciliation_references(self, reconciliation: Reconciliation) -> list[BookIssue]:
+        issues: list[BookIssue] = []
+        if self.get_account(reconciliation.account) is None:
+            issues.append(
+                BookIssue(
+                    "reconciliation.missing_account",
+                    f"reconciliation {reconciliation.handle} refers to missing account "
+                    f"{reconciliation.account}",
+                    reconciliation.handle,
+                )
+            )
+            return issues
+        split_accounts = {
+            split.handle: split.account
+            for transaction in self.iter_transactions()
+            for split in transaction.splits
+        }
+        for split_handle in reconciliation.selected_splits:
+            split_account = split_accounts.get(split_handle)
+            if split_account is None:
+                issues.append(
+                    BookIssue(
+                        "reconciliation.missing_split",
+                        f"reconciliation {reconciliation.handle} refers to missing split "
+                        f"{split_handle}",
+                        reconciliation.handle,
+                    )
+                )
+            elif split_account != reconciliation.account:
+                issues.append(
+                    BookIssue(
+                        "reconciliation.wrong_account",
+                        f"reconciliation {reconciliation.handle} includes split {split_handle} "
+                        f"from another account",
+                        reconciliation.handle,
+                    )
+                )
         return issues
 
     def _verify_fsa_claim_references(self, claim: FsaClaim) -> list[BookIssue]:
@@ -1111,6 +1180,7 @@ class DbSQLite(DbBase):
             "scheduled": ("name",),
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
+            "reconciliation": ("account", "statement_date", "status"),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -1126,6 +1196,9 @@ class DbSQLite(DbBase):
             ("scenario", "name"): "",
             ("fsa_claim", "service_date"): "",
             ("fsa_claim", "provider"): "",
+            ("reconciliation", "account"): "",
+            ("reconciliation", "statement_date"): "",
+            ("reconciliation", "status"): "",
         }
         columns = columns_by_table[table]
         selected = ", ".join(("handle", *columns))
@@ -1250,6 +1323,15 @@ class DbSQLite(DbBase):
                             account.handle,
                         )
                     )
+            for reconciliation in self.iter_reconciliations(account=handle):
+                issues.append(
+                    BookIssue(
+                        "reconciliation.missing_account",
+                        f"reconciliation {reconciliation.handle} refers to missing account "
+                        f"{handle}",
+                        reconciliation.handle,
+                    )
+                )
             row = (
                 self._require()
                 .execute("SELECT txn FROM split_index WHERE account=? LIMIT 1", (handle,))
@@ -1297,6 +1379,22 @@ class DbSQLite(DbBase):
                     )
 
         elif table == "txn":
+            existing_splits = {
+                split.handle
+                for transaction in self.iter_transactions()
+                for split in transaction.splits
+            }
+            for reconciliation in self.iter_reconciliations():
+                for split_handle in reconciliation.selected_splits:
+                    if split_handle not in existing_splits:
+                        issues.append(
+                            BookIssue(
+                                "reconciliation.missing_split",
+                                f"reconciliation {reconciliation.handle} refers to missing "
+                                f"split {split_handle}",
+                                reconciliation.handle,
+                            )
+                        )
             for claim in self.iter_fsa_claims():
                 links = [*claim.payments, *claim.refunds]
                 links.extend(
@@ -1741,6 +1839,30 @@ class DbSQLite(DbBase):
             "SELECT handle, blob FROM fsa_claim ORDER BY service_date, handle"
         ):
             obj = self._decode_row("fsa_claim", row["handle"], row["blob"], FsaClaim)
+            if obj is not None:
+                yield obj
+
+    # ---------------------------------------------------------- reconciliation
+
+    def add_reconciliation(self, reconciliation: Reconciliation, txn: DbTxn) -> str:
+        return self._write(reconciliation, txn, "reconciliation")
+
+    def commit_reconciliation(self, reconciliation: Reconciliation, txn: DbTxn) -> None:
+        self._write(reconciliation, txn, "reconciliation")
+
+    def get_reconciliation(self, handle: str) -> Reconciliation | None:
+        data = self._read("reconciliation", handle)
+        return Reconciliation.from_dict(data) if data else None
+
+    def iter_reconciliations(self, account: str | None = None) -> Iterator[Reconciliation]:
+        sql = "SELECT handle, blob FROM reconciliation"
+        params: list[str] = []
+        if account is not None:
+            sql += " WHERE account=?"
+            params.append(account)
+        sql += " ORDER BY statement_date, handle"
+        for row in self._require().execute(sql, params):
+            obj = self._decode_row("reconciliation", row["handle"], row["blob"], Reconciliation)
             if obj is not None:
                 yield obj
 
