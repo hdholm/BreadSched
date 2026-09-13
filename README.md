@@ -287,6 +287,9 @@ workflows can override that detection when a file is ambiguous. QIF likewise det
 month-first versus day-first date order from the complete file when the source gives
 unambiguous evidence. Ambiguous number/date formats can be selected explicitly by
 importer callers instead of being guessed per transaction.
+GnuCash SQLite and XML scheduled formulas that the bounded BreadSched formula
+engine can evaluate—including safe financial functions and occurrence variables—
+remain dynamic after import. Arbitrary Python execution is never enabled.
 The last successfully imported source is remembered separately for each BreadSched
 book and preselected the next time that book's GTK or web import workflow opens. A
 remembered path is only presentation state: it never triggers an import automatically,

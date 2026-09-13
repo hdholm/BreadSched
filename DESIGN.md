@@ -157,6 +157,12 @@ skips, amount changes, and formula-driven splits are part of the schedule semant
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 
+Import acceptance for a GnuCash formula is defined by the same bounded AST evaluator
+that executes it, not by a second character whitelist. Safe arithmetic, supported
+financial functions, and the occurrence variables `period`/`i` therefore behave the
+same in SQLite and XML imports. Expressions outside that language never gain broader
+execution privileges merely because they came from a trusted local book.
+
 Schedule lifecycle operations distinguish a reusable definition from its ledger
 history. A duplicate receives a new stable handle and clears `last_posted` and skip
 state, while retaining the template's split accounts, values, memos, planning

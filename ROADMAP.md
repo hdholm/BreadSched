@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0172 — cadence-safe historical coverage**.
-The current candidate is **0173 — imported transaction notes**.
+The accepted baseline is **0173 — imported transaction notes**.
+The current candidate is **0174 — safe SQLite scheduled formulas**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -243,6 +243,11 @@ semantics, not duplicate business rules in presentation code.
   and XML imports. Refresh source notes while retaining local notes on re-import;
   expose both in GTK transaction details and web registers, allow GTK/web entry of
   local notes, and advance the alpha version to `0.2.0a12`.
+- [x] **0174 — Safe SQLite scheduled formulas.** Replace SQLite import's character
+  whitelist with validation by the same bounded formula engine used at runtime.
+  Preserve supported arithmetic, financial functions, and `period`/`i` occurrence
+  variables dynamically with XML parity, retain the no-arbitrary-code boundary,
+  and advance the alpha version to `0.2.0a13`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -565,11 +570,13 @@ semantics, not duplicate business rules in presentation code.
   identity. Report cross-class conflicts for review rather than silently changing
   planning behavior or display signs. Commodity/precision, schedules, and
   existing-transaction follow-through remain part of their dedicated roadmap work.
-- [ ] **Supported scheduled formulas.** Investigate valid GnuCash formulas being
-  ignored even though the current safe formula system can represent them. Cover
-  parsing/translation, variables, recurrence ordinals, and per-leg formulas in both
-  import formats. Preserve unsupported expressions with actionable reasons rather
-  than silently discarding them or enabling unrestricted evaluation.
+- [x] **0174 — Supported scheduled formulas.** GnuCash formulas representable by the
+  current safe formula language retain arithmetic/functions, recurrence ordinals,
+  and per-leg dynamics in both import formats.
+- [ ] **Unsupported scheduled-formula preservation.** Preserve expressions outside
+  the current safe language with actionable reasons rather than silently discarding
+  them or enabling unrestricted evaluation. Add reviewed translation/variable
+  mapping only where semantics are known.
 - [x] **0173 — Transaction-level notes/memos.** GnuCash notes outside individual
   splits are imported and exposed by the transaction editor/display.
   Preserve and expose them separately from split memos, including on authoritative

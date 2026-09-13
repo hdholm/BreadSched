@@ -62,6 +62,11 @@ class TestFormatDetection:
         assert manager.for_file(gnucash_xml_path.path, IMPORTER).id == "gnucash-xml"
 
 
+def test_sqlite_formula_filter_uses_only_the_safe_engine():
+    assert gnucash_sqlite._is_supported_formula("ipmt(0.05 / 12:period:360:200000)")
+    assert not gnucash_sqlite._is_supported_formula("__import__('os').system('false')")
+
+
 class TestDateParsing:
     @pytest.mark.parametrize(
         "raw,expected",
@@ -370,6 +375,31 @@ class TestSqliteScheduledImport:
         sched = db.get_scheduled(gnucash_sqlite_path.ids.sched)
         accounts = {split.account for split in sched.splits}
         assert accounts == {gnucash_sqlite_path.ids.rent, gnucash_sqlite_path.ids.checking}
+
+    def test_supported_template_formulas_remain_dynamic(self, db, gnucash_sqlite_path):
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.row_factory = sqlite3.Row
+            targets = {
+                row["guid_val"]: row["obj_guid"]
+                for row in source.execute(
+                    "SELECT obj_guid, guid_val FROM slots WHERE name = 'sched-xaction/account'"
+                )
+            }
+            for target, slot_name in (
+                (gnucash_sqlite_path.ids.rent, "sched-xaction/debit-formula"),
+                (gnucash_sqlite_path.ids.checking, "sched-xaction/credit-formula"),
+            ):
+                source.execute(
+                    "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+                    (targets[target], slot_name, 4, "100 + period"),
+                )
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        sched = db.get_scheduled(gnucash_sqlite_path.ids.sched)
+        assert all(split.formula for split in sched.splits)
+        april = sched.instantiate(date(2026, 4, 1))
+        assert april.is_balanced()
+        assert max(split.value for split in april.splits) == Money("104")
 
     def test_the_imported_schedule_produces_a_balanced_transaction(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)

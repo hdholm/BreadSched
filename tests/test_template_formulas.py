@@ -138,6 +138,15 @@ class TestFormulaImports:
         gnucash_xml.import_book(db, path)
         assert next(iter(db.iter_scheduled())).amount() == Money("1800.00")
 
+    def test_a_supported_period_formula_remains_dynamic(self, db, tmp_path):
+        path = book_with_formula(tmp_path, "100 + period", "100 + period")
+        gnucash_xml.import_book(db, path)
+        sched = next(iter(db.iter_scheduled()))
+        assert all(split.formula for split in sched.splits)
+        april = sched.instantiate(date(2026, 4, 1))
+        assert april.is_balanced()
+        assert max(split.value for split in april.splits) == Money("104")
+
     def test_a_two_leg_schedule_is_balanced_against_its_good_side(self, db, tmp_path):
         """One unusable leg out of two is not a guess: the other side determines it.
 

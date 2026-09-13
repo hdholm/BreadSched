@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust
 from ...gen.lib.scheduled import ScheduledSplit, ScheduledTransaction
@@ -578,15 +579,19 @@ def _template_splits(
                 ScheduledSplit(
                     account=sink.resolve(target),
                     amount=amount,
-                    formula=formula if _is_simple_formula(formula) else "",
+                    formula=formula if _is_supported_formula(formula) else "",
                     memo=row["memo"] or "",
                 )
             )
     return splits
 
 
-def _is_simple_formula(text: str) -> bool:
-    """GnuCash formulas may reference other splits; only arithmetic is portable."""
+def _is_supported_formula(text: str) -> bool:
+    """Return whether the current safe engine can resolve a GnuCash expression."""
     if not text:
         return False
-    return all(ch.isdigit() or ch in "+-*/(). " for ch in text)
+    try:
+        evaluate(text, {"period": 1, "i": 1})
+    except FormulaError:
+        return False
+    return True
