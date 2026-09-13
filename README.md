@@ -292,6 +292,10 @@ book and preselected the next time that book's GTK or web import workflow opens.
 remembered path is only presentation state: it never triggers an import automatically,
 and imported source files remain read-only.
 
+GnuCash transaction-level notes are retained separately from split memos and from
+BreadSched-authored notes. Imported notes are visible but read-only and refresh from
+the source on re-import; local notes remain editable and are not overwritten.
+
 Import problems are reported per record rather than aborting the
 entire book whenever safe recovery is possible.
 

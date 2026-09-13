@@ -349,11 +349,12 @@ semantics or display signs.
 
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile
-state) may refresh from the source, while BreadSched-owned transaction notes,
+state) and source transaction notes may refresh from the source. Source notes have
+their own read-only field because BreadSched-authored transaction notes,
 plan-resolution/link state, rejected matches, and split planning/FSA classifications
-are retained. Split-level annotations are retained only when the same source split
-GUID still exists, so a materially replaced source split cannot inherit stale
-BreadSched state.
+are retained across re-import. Split-level annotations are retained only when the
+same source split GUID still exists, so a materially replaced source split cannot
+inherit stale BreadSched state.
 
 Longer-term separation of imported ledger state from BreadSched classifications/resolutions is
 preferred where it makes synchronization safer.

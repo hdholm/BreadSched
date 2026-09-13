@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0171 — reviewed historical-estimate drafts**.
-The current candidate is **0172 — cadence-safe historical coverage**.
+The accepted baseline is **0172 — cadence-safe historical coverage**.
+The current candidate is **0173 — imported transaction notes**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -238,6 +238,11 @@ semantics, not duplicate business rules in presentation code.
   hide recurring need. Infer annual, biennial, and triennial amounts and next dates
   without annualizing active-month values; represent a lone completed event only as
   a reviewed one-time draft; and advance the alpha version to `0.2.0a11`.
+- [x] **0173 — Imported transaction notes.** Preserve GnuCash transaction-level
+  notes separately from split memos and BreadSched-authored notes in both SQLite
+  and XML imports. Refresh source notes while retaining local notes on re-import;
+  expose both in GTK transaction details and web registers, allow GTK/web entry of
+  local notes, and advance the alpha version to `0.2.0a12`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -565,8 +570,8 @@ semantics, not duplicate business rules in presentation code.
   parsing/translation, variables, recurrence ordinals, and per-leg formulas in both
   import formats. Preserve unsupported expressions with actionable reasons rather
   than silently discarding them or enabling unrestricted evaluation.
-- [ ] **Transaction-level notes/memos.** Determine whether GnuCash notes outside
-  individual splits are lost on import or omitted by the transaction editor/display.
+- [x] **0173 — Transaction-level notes/memos.** GnuCash notes outside individual
+  splits are imported and exposed by the transaction editor/display.
   Preserve and expose them separately from split memos, including on authoritative
   source updates, while respecting ownership of locally authored notes.
 - [x] **Remember the import source.** Each destination book remembers its last

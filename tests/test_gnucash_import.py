@@ -296,10 +296,20 @@ class TestSqliteImport:
         assert any("retained its BreadSched type" in warning for warning in result.warnings)
 
     def test_reimport_preserves_breadsched_owned_annotations(self, db, gnucash_sqlite_path):
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.row_factory = sqlite3.Row
+            source_guid = source.execute(
+                "SELECT guid FROM transactions WHERE description = 'Supermarket'"
+            ).fetchone()["guid"]
+            source.execute(
+                "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+                (source_guid, "notes", 4, "Imported shopping note"),
+            )
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         transaction = next(
             item for item in db.iter_transactions() if item.description == "Supermarket"
         )
+        assert transaction.source_notes == "Imported shopping note"
         transaction.notes = "planning note"
         transaction.planned_occurrence = "schedule:occurrence"
         transaction.planned_for = date(2026, 1, 14)
@@ -311,10 +321,17 @@ class TestSqliteImport:
         with db.transaction("Annotate imported transaction") as db_txn:
             db.commit_transaction(transaction, db_txn)
 
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE slots SET string_val=? WHERE obj_guid=? AND name='notes'",
+                ("Revised imported note", transaction.handle),
+            )
+
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         reimported = db.get_transaction(transaction.handle)
         assert reimported is not None
         assert reimported.notes == "planning note"
+        assert reimported.source_notes == "Revised imported note"
         assert reimported.planned_occurrence == "schedule:occurrence"
         assert reimported.planned_for == date(2026, 1, 14)
         assert reimported.planned_amount == Money("75.00")
@@ -440,6 +457,7 @@ class TestXmlImport:
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         txn = db.get_transaction(gnucash_xml_path.ids.txn2)
         assert txn.num == "DD"
+        assert txn.source_notes == "Imported transaction note"
         assert txn.split_for(gnucash_xml_path.ids.util).memo == "quarterly"
 
     def test_non_dollar_commodities_survive(self, db, gnucash_xml_path):

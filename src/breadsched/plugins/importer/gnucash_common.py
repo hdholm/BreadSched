@@ -430,6 +430,7 @@ class ImportSink:
         currency: str | None,
         num: str,
         splits: list[dict[str, Any]],
+        source_notes: str = "",
     ) -> Transaction | None:
         """Build and store one transaction.
 
@@ -450,6 +451,7 @@ class ImportSink:
         # records must not enter BreadSched's plan-resolution review queue en
         # masse. On re-import, BreadSched-owned planning state is merged below.
         txn_obj.planning_resolution = PlanningResolution.HISTORICAL
+        txn_obj.source_notes = source_notes
         subject = txn_obj.describe()
 
         if not splits:

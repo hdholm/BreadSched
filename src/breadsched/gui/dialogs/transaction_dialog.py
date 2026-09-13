@@ -151,6 +151,30 @@ class TransactionDialog(Gtk.Window):
         header.attach(Gtk.Label(label="Number", xalign=0), 0, 2, 1, 1)
         header.attach(self.num_entry, 1, 2, 1, 1)
 
+        self.notes_view = Gtk.TextView()
+        self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.notes_view.set_size_request(-1, 64)
+        if transaction is not None and transaction.notes:
+            self.notes_view.get_buffer().set_text(transaction.notes)
+        notes_scroll = Gtk.ScrolledWindow(child=self.notes_view)
+        notes_scroll.set_min_content_height(64)
+        header.attach(Gtk.Label(label="BreadSched notes", xalign=0), 0, 3, 1, 1)
+        header.attach(notes_scroll, 1, 3, 1, 1)
+
+        if transaction is not None and transaction.source_notes:
+            imported_notes = Gtk.Label(
+                label=transaction.source_notes,
+                xalign=0,
+                wrap=True,
+                selectable=True,
+            )
+            imported_notes.add_css_class("dim")
+            imported_notes.set_tooltip_text(
+                "Read-only notes from the import source; refreshed on re-import"
+            )
+            header.attach(Gtk.Label(label="Imported notes", xalign=0), 0, 4, 1, 1)
+            header.attach(imported_notes, 1, 4, 1, 1)
+
         caption = Gtk.Box(spacing=8)
         splits_label = Gtk.Label(label="Splits", xalign=0)
         splits_label.add_css_class("total-row")
@@ -330,6 +354,8 @@ class TransactionDialog(Gtk.Window):
         target.post_date = when
         target.description = self.description_entry.get_text().strip() or "(no description)"
         target.num = self.num_entry.get_text().strip()
+        notes_start, notes_end = self.notes_view.get_buffer().get_bounds()
+        target.notes = self.notes_view.get_buffer().get_text(notes_start, notes_end, True).strip()
 
         splits: list[Split] = []
         for editor in self.splits:

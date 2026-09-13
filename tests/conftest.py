@@ -426,6 +426,10 @@ GNUCASH_XML = """<?xml version="1.0" encoding="utf-8" ?>
     <trn:date-posted><ts:date>2026-03-28 10:59:00 +0000</ts:date></trn:date-posted>
     <trn:description>Electricity</trn:description>
     <trn:num>DD</trn:num>
+    <trn:slots>
+      <slot><slot:key>notes</slot:key>
+        <slot:value type="string">Imported transaction note</slot:value></slot>
+    </trn:slots>
     <trn:splits>
       <trn:split>
         <split:id type="guid">{split3}</split:id>

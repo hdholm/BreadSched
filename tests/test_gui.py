@@ -1787,6 +1787,13 @@ class TestEditingFromTheRegister:
         dialog._on_save(None)
         assert app.db.get_transaction(transaction.handle).description == ("Corrected description")
 
+    def test_breadsched_notes_are_edited_separately(self, register, app):
+        dialog, transaction = self._dialog_for(register)
+        dialog.notes_view.get_buffer().set_text("Local planning note")
+        dialog._on_save(None)
+        saved = app.db.get_transaction(transaction.handle)
+        assert saved.notes == "Local planning note"
+
     def test_an_amount_edit_keeps_the_book_balanced(self, register, app):
         from breadsched.gen.lib import Money
 

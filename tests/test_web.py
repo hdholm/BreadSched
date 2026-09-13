@@ -1016,6 +1016,7 @@ class TestWriting:
                 "from": "Assets:Checking",
                 "to": "Expenses:Rent",
                 "amount": "125.00",
+                "notes": "Entered from the web",
             },
         )
         assert status == 200
@@ -1024,6 +1025,13 @@ class TestWriting:
         _status, accounts = client.get("/api/accounts")
         balance = next(a["balance"] for a in accounts if a["name"] == "Checking")
         assert Money(balance) == Money("2275.00")
+        checking = next(a["handle"] for a in accounts if a["name"] == "Checking")
+        _status, register = client.get(
+            "/api/register?" + urllib.parse.urlencode({"account": checking})
+        )
+        posted = next(row for row in register["rows"] if row["description"] == "Web entry")
+        assert posted["notes"] == "Entered from the web"
+        assert posted["source_notes"] == ""
 
     def test_a_transaction_accepts_comma_decimal_browser_input(self, client):
         status, payload = client.post(

@@ -195,7 +195,10 @@ class Transaction(PrimaryObject):
         self.description = description
         self.currency = currency
         self.num = num
+        #: Notes owned by BreadSched and editable independently of an import source.
         self.notes = ""
+        #: Read-only transaction notes refreshed from the external source on re-import.
+        self.source_notes = ""
         self.scheduled_from: str | None = None  # handle of the originating schedule
         #: Stable identity of the plan occurrence this transaction resolved.
         self.planned_occurrence: str | None = None
@@ -295,6 +298,7 @@ class Transaction(PrimaryObject):
             "currency": self.currency,
             "num": self.num,
             "notes": self.notes,
+            "source_notes": self.source_notes,
             "scheduled_from": self.scheduled_from,
             "planned_occurrence": self.planned_occurrence,
             "planned_for": self.planned_for.isoformat() if self.planned_for else None,
@@ -313,6 +317,7 @@ class Transaction(PrimaryObject):
         self.currency = data.get("currency")
         self.num = data.get("num", "")
         self.notes = data.get("notes", "")
+        self.source_notes = data.get("source_notes", "")
         self.scheduled_from = data.get("scheduled_from")
         self.planned_occurrence = data.get("planned_occurrence")
         raw_planned_for = data.get("planned_for")

@@ -423,6 +423,16 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
                 "reconcile": row["reconcile_state"],
             }
         )
+    source_notes = (
+        {
+            row["obj_guid"]: row["string_val"] or ""
+            for row in conn.execute(
+                "SELECT obj_guid, string_val FROM slots WHERE name = 'notes' ORDER BY id"
+            )
+        }
+        if _table_exists(conn, "slots")
+        else {}
+    )
 
     done = 0
     for row in conn.execute("SELECT * FROM transactions ORDER BY post_date"):
@@ -453,6 +463,7 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
             currency=row["currency_guid"],
             num=row["num"] or "",
             splits=splits_by_txn.get(row["guid"], []),
+            source_notes=source_notes.get(row["guid"], ""),
         )
 
 

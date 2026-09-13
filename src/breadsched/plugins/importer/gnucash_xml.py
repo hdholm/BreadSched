@@ -269,7 +269,12 @@ def _copy_slots(slots: ET.Element) -> ET.Element:
 
 
 def _slot_value(element: ET.Element, key: str) -> str | None:
-    for slot in element.findall("act:slots/slot", NS) + element.findall("slots/slot", NS):
+    slots = (
+        element.findall("act:slots/slot", NS)
+        + element.findall("trn:slots/slot", NS)
+        + element.findall("slots/slot", NS)
+    )
+    for slot in slots:
         if _text(slot, "slot:key") == key:
             value = slot.find("slot:value", NS)
             if value is not None:
@@ -389,6 +394,7 @@ def _read_transaction(element: ET.Element, sink: ImportSink) -> None:
         currency=_text(element, "trn:currency/cmdty:id") or None,
         num=_text(element, "trn:num"),
         splits=splits,
+        source_notes=_slot_value(element, "notes") or "",
     )
 
 

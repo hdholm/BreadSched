@@ -597,6 +597,8 @@ class Api:
                     "date": row.post_date,
                     "num": row.transaction.num,
                     "description": row.description,
+                    "notes": row.transaction.notes,
+                    "source_notes": row.transaction.source_notes,
                     "transfer": row.transfer_label(self.db),
                     "amount": row.amount,
                     "balance": row.running,
@@ -2302,6 +2304,7 @@ class Api:
         when = date.fromisoformat(payload.get("date") or date.today().isoformat())
         amount = self._input_money(payload, payload["amount"])
         txn = Transaction(post_date=when, description=payload.get("description", "").strip())
+        txn.notes = str(payload.get("notes") or "").strip()
         memo = payload.get("memo", "")
         txn.add_split(Split(debit.handle, amount, memo=memo))
         txn.add_split(Split(credit.handle, -amount, memo=memo))
