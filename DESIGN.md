@@ -362,6 +362,15 @@ are retained across re-import. Split-level annotations are retained only when th
 same source split GUID still exists, so a materially replaced source split cannot
 inherit stale BreadSched state.
 
+Import reporting follows that ownership boundary. A successfully read source
+transaction is **new** when its stable identity is absent, **refreshed** when any
+source-owned ledger fact differs, and **unchanged** otherwise; split classifications
+use the same source-owned comparison and also report removed source splits. Skipped
+records retain stable identities and reasons per source path. Their history is
+updated inside the import transaction, so a failed/rolled-back import cannot claim
+that an issue was introduced or resolved. A later run can consequently distinguish
+new, repeated, and now-resolved source problems without parsing warning prose.
+
 Longer-term separation of imported ledger state from BreadSched classifications/resolutions is
 preferred where it makes synchronization safer.
 

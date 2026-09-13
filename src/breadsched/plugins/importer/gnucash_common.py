@@ -14,6 +14,7 @@ the forecasting" a workable arrangement.
 from __future__ import annotations
 
 import gzip
+import hashlib
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -37,6 +38,8 @@ from ...gen.utils.logs import get_logger
 
 LOG = get_logger(__name__)
 
+_SKIPPED_HISTORY_KEY = "import.skipped_history"
+
 __all__ = [
     "ImportResult",
     "ImportSink",
@@ -57,6 +60,16 @@ class ImportResult:
     prices: int = 0
     scheduled: int = 0
     skipped: int = 0
+    transactions_new: int = 0
+    transactions_refreshed: int = 0
+    transactions_unchanged: int = 0
+    splits_new: int = 0
+    splits_refreshed: int = 0
+    splits_unchanged: int = 0
+    splits_removed: int = 0
+    skipped_new: int = 0
+    skipped_repeated: int = 0
+    skipped_resolved: int = 0
     warnings: list[str] = field(default_factory=list)
     #: One entry per rejected record: (reason, identification). Kept separate from
     #: warnings so a caller can report counts by reason without parsing prose.
@@ -64,10 +77,29 @@ class ImportResult:
     source: str = ""
     source_format: str = ""
     log_path: str | None = None
+    resolved_skipped_details: list[tuple[str, str]] = field(default_factory=list)
+    _skipped_records: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
+    _scanned_kinds: set[str] = field(default_factory=set, repr=False)
+    _had_skip_history: bool = field(default=False, repr=False)
 
-    def skip(self, reason: str, subject: str) -> None:
+    def scan(self, kind: str) -> None:
+        """Declare that this import examined all source records of ``kind``."""
+        self._scanned_kinds.add(kind)
+
+    def skip(
+        self,
+        reason: str,
+        subject: str,
+        *,
+        identity: str | None = None,
+        kind: str = "record",
+    ) -> None:
         self.skipped += 1
         self.skipped_details.append((reason, subject))
+        self.scan(kind)
+        stable_identity = identity or hashlib.sha256(subject.encode()).hexdigest()
+        key = f"{kind}:{stable_identity}"
+        self._skipped_records[key] = {"reason": reason, "subject": subject, "kind": kind}
         message = f"skipped {subject}: {reason}"
         self.warnings.append(message)
         LOG.warning(message)
@@ -82,6 +114,42 @@ class ImportResult:
         for reason, _subject in self.skipped_details:
             counts[reason] = counts.get(reason, 0) + 1
         return counts
+
+    def finish(self, db: DbSQLite, txn: DbTxn) -> None:
+        """Compare and transactionally retain skipped records for this source."""
+        raw_history = db.get_metadata(_SKIPPED_HISTORY_KEY, {})
+        history = raw_history if isinstance(raw_history, dict) else {}
+        source_path = str(Path(self.source).expanduser().resolve(strict=False))
+        source_key = f"{self.source_format}:{source_path}"
+        raw_previous = history.get(source_key, {})
+        previous = raw_previous if isinstance(raw_previous, dict) else {}
+        self._had_skip_history = source_key in history
+
+        retained = {
+            key: value
+            for key, value in previous.items()
+            if isinstance(value, dict) and value.get("kind") not in self._scanned_kinds
+        }
+        previous_scanned = {
+            key: value
+            for key, value in previous.items()
+            if isinstance(value, dict) and value.get("kind") in self._scanned_kinds
+        }
+        for key, value in self._skipped_records.items():
+            prior = previous_scanned.get(key)
+            if prior is not None and prior.get("reason") == value["reason"]:
+                self.skipped_repeated += 1
+            else:
+                self.skipped_new += 1
+        for key, value in previous_scanned.items():
+            if key not in self._skipped_records:
+                self.skipped_resolved += 1
+                self.resolved_skipped_details.append(
+                    (str(value.get("reason", "unknown reason")), str(value.get("subject", key)))
+                )
+
+        history[source_key] = retained | self._skipped_records
+        db.set_metadata(_SKIPPED_HISTORY_KEY, history, txn)
 
     def describe(self) -> str:
         parts = [
@@ -100,6 +168,25 @@ class ImportResult:
     def detail(self, limit: int = 20) -> str:
         """A multi-line report: the summary, why things were skipped, then warnings."""
         lines = [self.describe()]
+        if self.transactions:
+            lines.append(
+                "Transactions: "
+                f"{self.transactions_new} new, {self.transactions_refreshed} refreshed, "
+                f"{self.transactions_unchanged} unchanged"
+            )
+            split_line = (
+                f"Splits: {self.splits_new} new, {self.splits_refreshed} refreshed, "
+                f"{self.splits_unchanged} unchanged"
+            )
+            if self.splits_removed:
+                split_line += f", {self.splits_removed} removed"
+            lines.append(split_line)
+        if self._had_skip_history or self.skipped or self.skipped_resolved:
+            lines.append(
+                "Skipped since previous import: "
+                f"{self.skipped_new} new, {self.skipped_repeated} repeated, "
+                f"{self.skipped_resolved} resolved"
+            )
         reasons = self.reasons()
         if reasons:
             lines.append("")
@@ -439,6 +526,7 @@ class ImportSink:
         Nothing raises: an exception would abort the enclosing batch and roll back
         every transaction imported so far.
         """
+        self.result.scan("transaction")
         existing = self.db.get_transaction(guid)
         txn_obj = Transaction(
             handle=guid,
@@ -455,7 +543,12 @@ class ImportSink:
         subject = txn_obj.describe()
 
         if not splits:
-            self.result.skip("no splits in the source record", subject)
+            self.result.skip(
+                "no splits in the source record",
+                subject,
+                identity=guid,
+                kind="transaction",
+            )
             return None
 
         for raw in splits:
@@ -468,6 +561,8 @@ class ImportSink:
                 self.result.skip(
                     f"references account {raw['account'][:8]}, which is not in the book",
                     subject,
+                    identity=guid,
+                    kind="transaction",
                 )
                 return None
             txn_obj.add_split(
@@ -496,7 +591,12 @@ class ImportSink:
         if len(txn_obj.splits) == 1 and not residual:
             # A lone zero-value split carries no information and cannot be balanced
             # into anything meaningful.
-            self.result.skip("only one split, with no value", subject)
+            self.result.skip(
+                "only one split, with no value",
+                subject,
+                identity=guid,
+                kind="transaction",
+            )
             return None
 
         if residual or len(txn_obj.splits) < 2:
@@ -517,12 +617,54 @@ class ImportSink:
         except UnbalancedError as exc:
             # Belt and braces: if a record is still not storable, drop that one
             # record rather than losing the import.
-            self.result.skip(f"could not be repaired ({exc})", subject)
+            self.result.skip(
+                f"could not be repaired ({exc})",
+                subject,
+                identity=guid,
+                kind="transaction",
+            )
             return None
 
         self.result.transactions += 1
         self.result.splits += len(txn_obj.splits)
+        self._count_transaction_change(existing, txn_obj)
         return txn_obj
+
+    def _count_transaction_change(
+        self, existing: Transaction | None, imported: Transaction
+    ) -> None:
+        """Classify source-owned ledger facts without counting local annotations."""
+        current_splits = [_split_source_facts(split) for split in imported.splits]
+        if existing is None:
+            self.result.transactions_new += 1
+            self.result.splits_new += len(current_splits)
+            return
+
+        prior_splits = [_split_source_facts(split) for split in existing.splits]
+        if _transaction_source_facts(existing) == _transaction_source_facts(imported):
+            self.result.transactions_unchanged += 1
+        else:
+            self.result.transactions_refreshed += 1
+
+        prior_by_handle = {split.handle: split for split in existing.splits}
+        matched_prior: set[int] = set()
+        for index, split in enumerate(imported.splits):
+            current = current_splits[index]
+            matching_index: int | None = None
+            if split.handle in prior_by_handle:
+                matching_index = existing.splits.index(prior_by_handle[split.handle])
+            elif index < len(prior_splits) and index not in matched_prior:
+                # Formats without split IDs still have deterministic split order.
+                matching_index = index
+            if matching_index is None:
+                self.result.splits_new += 1
+            elif current == prior_splits[matching_index]:
+                self.result.splits_unchanged += 1
+                matched_prior.add(matching_index)
+            else:
+                self.result.splits_refreshed += 1
+                matched_prior.add(matching_index)
+        self.result.splits_removed += len(prior_splits) - len(matched_prior)
 
     @staticmethod
     def _preserve_breadsched_transaction_state(
@@ -610,6 +752,29 @@ def balance_template_splits(schedule, result: ImportResult | None = None) -> boo
             f"leg; balanced it against the other at {-resolved[present]}"
         )
     return True
+
+
+def _split_source_facts(split: Split) -> tuple[object, ...]:
+    """Fields for which an imported ledger source remains authoritative."""
+    return (
+        split.account,
+        split.value,
+        split.quantity,
+        split.memo,
+        split.action,
+        split.reconcile,
+    )
+
+
+def _transaction_source_facts(transaction: Transaction) -> tuple[object, ...]:
+    return (
+        transaction.post_date,
+        transaction.description,
+        transaction.currency,
+        transaction.num,
+        transaction.source_notes,
+        tuple(sorted((_split_source_facts(split) for split in transaction.splits), key=repr)),
+    )
 
 
 def _reconcile(raw: str | None) -> ReconcileState:

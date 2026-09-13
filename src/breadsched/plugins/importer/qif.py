@@ -285,6 +285,7 @@ def import_book(
         detected_date_format = date_format
     with db.transaction(message or f"Import {source.name}", batch=True) as txn:
         sink = ImportSink(db, txn, result)
+        result.scan("transaction")
         done = 0
         identity_counts: dict[tuple[object, ...], int] = {}
         for record in records:
@@ -308,14 +309,24 @@ def import_book(
             done += 1
             report("Reading QIF transactions", done)
             if section_type.casefold() == "invst":
-                result.skip("QIF investment transaction support is not implemented", first)
+                result.skip(
+                    "QIF investment transaction support is not implemented",
+                    first,
+                    identity=_stable_handle("skipped", *record),
+                    kind="transaction",
+                )
                 continue
             fields, split_rows = _transaction_fields(record)
             try:
                 post_date = _parse_date(fields.get("D", ""), detected_date_format)
                 amount = _parse_amount(fields.get("T", ""), detected_format)
             except ValueError as exc:
-                result.skip(str(exc), fields.get("P", fields.get("M", "transaction")))
+                result.skip(
+                    str(exc),
+                    fields.get("P", fields.get("M", "transaction")),
+                    identity=_stable_handle("skipped", *record),
+                    kind="transaction",
+                )
                 continue
             source_account = _ensure_source_account(sink, db, current_name, current_type)
             raw_splits: list[dict] = [
@@ -331,7 +342,12 @@ def import_book(
                     try:
                         split_amount = _parse_amount(item.get("amount", ""), detected_format)
                     except ValueError as exc:
-                        result.skip(str(exc), fields.get("P", "transaction"))
+                        result.skip(
+                            str(exc),
+                            fields.get("P", "transaction"),
+                            identity=_stable_handle("skipped", *record),
+                            kind="transaction",
+                        )
                         raw_splits = []
                         break
                     target = _category_handle(
@@ -372,6 +388,7 @@ def import_book(
                 raw_splits,
             )
         report("Finishing", done)
+        result.finish(db, txn)
     db.emit("database-changed", (db,))
     LOG.info("QIF import finished: %s", result.describe())
     return result

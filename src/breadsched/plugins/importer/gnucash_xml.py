@@ -168,8 +168,14 @@ def import_book(
                     try:
                         _read_transaction(element, sink)
                     except ValueError as exc:
+                        guid = _text(element, "trn:id")
                         description = _text(element, "trn:description") or "transaction"
-                        sink.result.skip(str(exc), description)
+                        sink.result.skip(
+                            str(exc),
+                            description,
+                            identity=guid or None,
+                            kind="transaction",
+                        )
                 elif tag == "transaction" and is_template:
                     _collect_template_splits(element, template_splits)
                 elif tag == "schedxaction":
@@ -178,6 +184,7 @@ def import_book(
             stream.close()
 
         if include_scheduled:
+            result.scan("schedule")
             LOG.debug("parsed %d scheduled transaction element(s)", len(schedules))
             for element in schedules:
                 try:
@@ -188,7 +195,11 @@ def import_book(
                     sink.result.skip(
                         f"could not be read ({type(exc).__name__}: {exc})",
                         f"scheduled transaction {name!r}",
+                        identity=_text(element, "sx:id") or None,
+                        kind="schedule",
                     )
+
+        result.finish(db, txn)
 
     LOG.info("import finished: %s", result.describe())
     db.emit("database-changed", (db,))
@@ -384,6 +395,8 @@ def _read_transaction(element: ET.Element, sink: ImportSink) -> None:
             "no splits in the source record",
             f"{_text(element, 'trn:date-posted/ts:date')[:10]} "
             f"{_text(element, 'trn:description')!r} [{guid[:8]}]",
+            identity=guid,
+            kind="transaction",
         )
         return
 

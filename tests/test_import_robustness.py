@@ -134,6 +134,25 @@ class TestOtherDefects:
         assert result.skipped == 0
         assert "No problems found." in result.detail()
 
+    def test_reimport_distinguishes_new_repeated_and_resolved_skips(self, db, tmp_path):
+        book = create_book(tmp_path / "history.gnucash", CHART, [HEALTHY])
+        add_raw_transaction(book, "Empty husk", [("bank", 0, 100, "")])
+
+        first = gnucash_sqlite.import_book(db, book.path)
+        second = gnucash_sqlite.import_book(db, book.path)
+        conn = sqlite3.connect(book.path)
+        conn.execute("DELETE FROM transactions WHERE description = ?", ("Empty husk",))
+        conn.commit()
+        conn.close()
+        third = gnucash_sqlite.import_book(db, book.path)
+
+        assert (first.skipped_new, first.skipped_repeated, first.skipped_resolved) == (1, 0, 0)
+        assert (second.skipped_new, second.skipped_repeated, second.skipped_resolved) == (0, 1, 0)
+        assert (third.skipped_new, third.skipped_repeated, third.skipped_resolved) == (0, 0, 1)
+        assert len(third.resolved_skipped_details) == 1
+        assert third.resolved_skipped_details[0][0] == "only one split, with no value"
+        assert "Empty husk" in third.resolved_skipped_details[0][1]
+
 
 class TestNothingIsLost:
     def test_one_bad_record_does_not_roll_back_the_batch(self, db, tmp_path):

@@ -206,9 +206,11 @@ def import_book(
                 result.skipped,
             )
             if include_scheduled:
+                result.scan("schedule")
                 report("Reading scheduled transactions", 0)
                 _import_scheduled(conn, sink, db, txn)
             report("Finishing", counts.get("transactions", 0))
+            result.finish(db, txn)
     finally:
         conn.close()
     LOG.info("import finished: %s", result.describe())
@@ -455,6 +457,8 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
             sink.result.skip(
                 str(exc),
                 f"transaction {row['description'] or row['guid'][:8]!r}",
+                identity=row["guid"],
+                kind="transaction",
             )
             continue
         sink.transaction(
@@ -489,6 +493,8 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
             sink.result.skip(
                 str(exc),
                 f"scheduled transaction {row['name'] or row['guid'][:8]!r}",
+                identity=row["guid"],
+                kind="schedule",
             )
             continue
         weekend = _WEEKEND_MAP.get(

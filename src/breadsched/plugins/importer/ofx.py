@@ -202,6 +202,7 @@ def import_book(
 
     with db.transaction(message or f"Import {source.name}", batch=True) as txn:
         sink = ImportSink(db, txn, result)
+        result.scan("transaction")
         commodity = sink.commodity("CURRENCY", currency_code, currency_code)
         source_account = _source_account(sink, db, account_id, account_type, institution, commodity)
         fallback_counts: dict[tuple[object, ...], int] = {}
@@ -211,7 +212,12 @@ def import_book(
                 post_date = _parse_date(_tag(block, "DTPOSTED"))
                 amount = _parse_amount(_tag(block, "TRNAMT"), detected_format)
             except ValueError as exc:
-                result.skip(str(exc), _tag(block, "NAME", "transaction"))
+                result.skip(
+                    str(exc),
+                    _tag(block, "NAME", "transaction"),
+                    identity=_stable_handle("skipped", account_id, block),
+                    kind="transaction",
+                )
                 continue
             fitid = _tag(block, "FITID")
             name = _tag(block, "NAME")
@@ -249,6 +255,7 @@ def import_book(
             )
         if progress is not None:
             progress("Finishing", len(transaction_blocks), len(transaction_blocks))
+        result.finish(db, txn)
     db.emit("database-changed", (db,))
     LOG.info("OFX import finished: %s", result.describe())
     return result

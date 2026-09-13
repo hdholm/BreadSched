@@ -226,9 +226,39 @@ class TestSqliteImport:
     def test_reimporting_updates_rather_than_duplicates(self, db, gnucash_sqlite_path):
         first = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         counts_before = db.summary()
-        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        second = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         assert db.summary() == counts_before
         assert first.transactions == 3
+        assert first.transactions_new == 3
+        assert first.splits_new == first.splits
+        assert second.transactions_unchanged == 3
+        assert second.splits_unchanged == second.splits
+        assert second.transactions_new == second.transactions_refreshed == 0
+
+    def test_reimport_reports_source_records_that_were_refreshed(self, db, gnucash_sqlite_path):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        conn = sqlite3.connect(gnucash_sqlite_path.path)
+        conn.execute(
+            "UPDATE transactions SET description=? WHERE description=?",
+            ("Updated household payment", "Rent"),
+        )
+        conn.execute(
+            """UPDATE splits SET memo=? WHERE guid=(
+                SELECT splits.guid FROM splits
+                JOIN transactions ON transactions.guid=splits.tx_guid
+                WHERE transactions.description=? LIMIT 1
+            )""",
+            ("Updated source memo", "Updated household payment"),
+        )
+        conn.commit()
+        conn.close()
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        assert result.transactions_refreshed >= 1
+        assert result.transactions_new == 0
+        assert result.splits_refreshed == 1
+        assert "refreshed" in result.detail()
 
     def test_reimport_preserves_breadsched_owned_account_configuration(
         self, db, gnucash_sqlite_path

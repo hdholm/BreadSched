@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0173 — imported transaction notes**.
-The current candidate is **0174 — safe SQLite scheduled formulas**.
+The accepted baseline is **0175 — printable current reports**.
+The current candidate is **0176 — precise import outcome history**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -594,13 +594,18 @@ semantics, not duplicate business rules in presentation code.
   GTK, and web entry points and preselects it on the next interactive import. A
   missing/moved source still allows reselection; remembered paths do not authorize
   an automatic import or writing to the source.
-- [ ] **Precise import/re-import counts and skipped-item history.** Report matched
+- [x] **0176 — Precise import/re-import counts and skipped-item history.** Report matched
   transactions overwritten/refreshed from authoritative GnuCash data separately
   from new transactions and new splits. Define unchanged matches clearly. Persist
   stable skipped-item identities and reasons per source so later reports separate
   newly skipped records from previously reported skips and records now imported
   successfully. Update this history atomically with import outcome and retain
   BreadSched-owned metadata through source-authoritative updates.
+  Successful imports report new, source-refreshed, and unchanged transactions and
+  splits (plus removed source splits). Per-source skipped identities and reasons are
+  updated in the same transaction and distinguish new, repeated, and resolved
+  failures. Existing aggregate counts remain available. Advance the alpha version
+  to `0.2.0a15`.
 
 - [ ] Add OFX investment transactions.
 - [ ] Add useful QIF investment/security records.
