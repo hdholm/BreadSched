@@ -169,7 +169,7 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
   <div id="view"></div>
 </main>
 <script>
-const VIEWS = ["Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import"];
 let current = "Dashboard";
 let state = {
   accounts: [], account: null, plan: null, review: null,
@@ -2147,8 +2147,39 @@ async function showImport() {
 
 const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
-  Plan: showPlan, Scenarios: showScenarios, Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
+  "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
+  Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
 };
+
+async function showFsaDashboard() {
+  const data = await get("/api/fsa/dashboard");
+  const yearRows = data.years.map((item) => [
+    item.account, `${item.start} – ${item.through}`, item.phase, money(item.election),
+    money(item.funded), money(item.used), money(item.remaining), money(item.forfeited),
+  ]);
+  const claimRows = data.claims.map((claim) => [
+    claim.service_date, claim.provider, claim.status, money(claim.paid),
+    money(claim.reimbursed), money(claim.remaining),
+    el("button", { class:"action", type:"button", onclick:()=>
+      openFsaClaimsEditor(claim.handle).catch((error)=>say(error.message,"error")) },
+    "Review claim"),
+  ]);
+  return el("div", {},
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:()=>
+        openFsaClaimsEditor().catch((error)=>say(error.message,"error")) },
+      "Manage FSA claims…")),
+    el("h2", {}, "FSA benefit years"),
+    yearRows.length ? table(["Account", "Funding year", "Status",
+      {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},
+      {label:"Remaining",num:true},{label:"Forfeited",num:true}], yearRows)
+      : el("p", { class:"note" }, "No open or recently closed FSA benefit years."),
+    el("h2", {}, "Open FSA claims"),
+    claimRows.length ? table(["Service date", "Provider", "Status",
+      {label:"Paid",num:true},{label:"Reimbursed",num:true},
+      {label:"Remaining",num:true}, "Action"], claimRows)
+      : el("p", { class:"note" }, "No open FSA claims."));
+}
 
 function openDashboardGroupsEditor(config) {
   const backdrop = el("div", { class:"detail-backdrop" });
@@ -2268,48 +2299,26 @@ async function showDashboard() {
           account.balance === null ? "Unavailable" : money(account.balance)),
       ])))));
 
-  const billRows = data.bills.map((b) => [
-    b.name,
-    b.next_due,
-    b.days_until < 0 ? `${-b.days_until} days overdue`
-      : (b.days_until === 0 ? "today" : `${b.days_until} days`),
-    b.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
-    money(b.amount), money(b.monthly), money(b.hold), money(b.annual),
-    b.estimate ? "Estimate" : "Committed",
-  ]);
-
-  const fsaRows = (data.fsa || []).map((f) => [
-    f.account, `${f.start} – ${f.through}`, f.phase, money(f.election),
-    money(f.funded), money(f.used), money(f.remaining), money(f.forfeited),
-  ]);
-  const fsaClaimRows = (data.fsa_claims || []).map((claim) => [
-    claim.service_date, claim.provider, claim.status, money(claim.paid),
-    money(claim.reimbursed), money(claim.remaining),
-    el("button", { class:"action", type:"button", onclick:()=>
-      openFsaClaimsEditor(claim.handle).catch((error)=>say(error.message,"error")) },
-    "Review claim"),
+  const pendingRows = data.pending.map((item) => [
+    item.name,
+    item.income ? "Income" : "Bill",
+    item.next_due,
+    item.days_until < 0 ? `${-item.days_until} days overdue`
+      : (item.days_until === 0 ? "today" : `${item.days_until} days`),
+    item.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
+    money(item.amount), money(item.monthly),
+    item.income ? "" : money(item.hold), money(item.annual),
+    item.generated ? "Account payment" : (item.estimate ? "Estimate" : "Committed"),
   ]);
 
   return el("div", {}, cards, controls,
     el("h2", {}, "Balances"),
     groupCards,
-    fsaRows.length ? el("h2", {}, "FSA benefit years") : null,
-    fsaRows.length ? table(["Account", "Funding year", "Status",
-      {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},
-      {label:"Remaining",num:true},{label:"Forfeited",num:true}], fsaRows) : null,
-    (fsaRows.length || fsaClaimRows.length) ? el("div", { class:"toolbar" },
-      el("button", { class:"action", type:"button", onclick:()=>
-        openFsaClaimsEditor().catch((error)=>say(error.message,"error")) },
-      "Manage FSA claims…")) : null,
-    fsaClaimRows.length ? el("h2", {}, "Open FSA claims") : null,
-    fsaClaimRows.length ? table(["Service date", "Provider", "Status",
-      {label:"Paid",num:true},{label:"Reimbursed",num:true},
-      {label:"Remaining",num:true}, "Action"], fsaClaimRows) : null,
-    el("h2", {}, `Pending bills (${data.bills.length})`),
-    table(["Bill", "Next due", "Due in", "Cycle",
+    el("h2", {}, `Pending cash flow (${data.pending.length})`),
+    table(["Item", "Flow", "Next due", "Due in", "Cycle",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
            { label: "Hold now", num: true }, { label: "Annual", num: true }, "Kind"],
-          billRows));
+          pendingRows));
 }
 
 function switchTo(name) { current = name; render(); }

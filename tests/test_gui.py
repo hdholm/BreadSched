@@ -2554,9 +2554,19 @@ class TestDashboardView:
     def test_the_group_table_is_rendered(self, view):
         assert view.groups.get_first_child() is not None
 
-    def test_the_bills_list_is_populated(self, view):
+    def test_fsa_information_is_not_embedded_in_the_general_dashboard(self, view):
+        assert not hasattr(view, "fsa_grid")
+
+    def test_fsa_dashboard_is_a_separate_sidebar_view(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("fsa-dashboard")
+
+        assert window.stack.get_visible_child_name() == "fsa-dashboard"
+        assert window._views["fsa-dashboard"].fsa_grid is not None
+
+    def test_the_pending_cash_flow_list_is_populated(self, view):
         model = view.bills_view.get_model()
-        assert model.get_n_items() == len(view.board.bills)
+        assert model.get_n_items() == len(view.board.pending)
 
     def test_the_bills_columns_sort_and_resize(self, view):
         columns = view.bills_view.get_columns()

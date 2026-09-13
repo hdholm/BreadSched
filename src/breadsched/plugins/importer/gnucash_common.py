@@ -25,6 +25,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.account import Account, AccountType, GnuCashAccountType
 from ...gen.lib.commodity import Commodity, CommodityPrice
 from ...gen.lib.money import Money
+from ...gen.lib.recurrence import PeriodType
 from ...gen.lib.transaction import (
     PlanningResolution,
     ReconcileState,
@@ -36,7 +37,13 @@ from ...gen.utils.logs import get_logger
 
 LOG = get_logger(__name__)
 
-__all__ = ["ImportResult", "ImportSink", "detect_format", "parse_gnc_date"]
+__all__ = [
+    "ImportResult",
+    "ImportSink",
+    "detect_format",
+    "parse_gnc_date",
+    "recurrence_interval",
+]
 
 
 @dataclass
@@ -166,6 +173,25 @@ def parse_gnc_date(raw: str | None) -> date:
         except ValueError:
             continue
     raise ValueError(f"unrecognised GnuCash date {raw!r}")
+
+
+def recurrence_interval(period: PeriodType, raw: object) -> int:
+    """Translate GnuCash's recurrence multiplier to BreadSched's invariant.
+
+    GnuCash writes a multiplier of zero for a one-time recurrence. BreadSched's
+    ``ONCE`` period already fires exactly once and therefore ignores the interval,
+    but every :class:`Recurrence` still requires an interval of at least one.
+    Normalize that source-specific representation at the import boundary. Other
+    zero or negative multipliers remain invalid instead of silently changing a
+    repeating schedule.
+    """
+    try:
+        interval = int("1" if raw in (None, "") else str(raw))
+    except (TypeError, ValueError):
+        return 1
+    if period is PeriodType.ONCE and interval == 0:
+        return 1
+    return interval
 
 
 class ImportSink:

@@ -183,8 +183,8 @@ conversion, automatic quote downloads, lots, and cost basis remain future work.
 
 The GTK4 application is the reference user experience. Its major views include:
 
-- **Dashboard** — household position, scheduled bills, liquidity, emergency-fund
-  information, FSA state, and important linked-account relationships. Dashboard
+- **Dashboard** — household position, dated pending income and bills, liquidity,
+  emergency-fund information, and important linked-account relationships. Dashboard
   groups accept explicit account-style paths such as `Investments:Plan A`; generated
   headings total their children, account subtrees are counted once, hidden accounts
   are not direct group members, FSA groups report benefit availability rather than
@@ -194,6 +194,8 @@ The GTK4 application is the reference user experience. Its major views include:
   up only equity/total; property value, amount owed, LTV, and loan end remain on the
   specific loan/property line. A link by itself still creates no group, and
   unassigned accounts do not appear in dashboard groups.
+- **FSA Dashboard** — open and recently closed benefit years, election availability,
+  and open healthcare claims, kept separate from general household liquidity.
 - **Accounts** — hierarchical chart of accounts with balances, account type, and
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit
@@ -281,12 +283,26 @@ file upload is planned as a convenience improvement. Native QIF and OFX/QFX impo
 are also available for bank/cash/credit-card style
 history. Their supported and pending formats are tracked in `ROADMAP.md`.
 
+## Dashboard liquidity and bill reserves
+
+The general Dashboard's pending-cash-flow table includes both scheduled bills and
+scheduled income. A bill's **Hold now** reserve accrues on actual income dates and
+in proportion to each income event's share of all income in that bill cycle; income
+rows never have a hold. If no income is identified before a bill is due, the full
+bill is protected. An overdue bill continues to count against liquidity while
+income received in its next cycle starts a separate reserve for the next occurrence.
+Paid-monthly cards contribute their full current balance on the configured payment
+date; cards carrying a balance contribute the configured usual payment, capped at
+the balance. An explicit payment schedule takes precedence over the account-derived
+card row.
+
 ## FSA / benefit planning
 
 FSA accounts can carry funding years with election and run-out information.
 BreadSched separates benefit availability from the custodial ledger balance and can
 associate service/claim episodes with healthcare payments, reimbursements,
-allocations, refunds, and rejected reimbursement attempts.
+allocations, refunds, and rejected reimbursement attempts. The dedicated **FSA
+Dashboard** shows benefit-year availability and open claims.
 
 This is a household-specific feature area rather than a general accounting model;
 its continuing work is tracked in the roadmap.

@@ -1228,18 +1228,21 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         }
                         for g in board.groups
                     ],
-                    "bills": [
+                    "pending": [
                         {
-                            "name": b.name,
-                            "next_due": b.next_due,
-                            "cycle_months": b.cycle_months,
-                            "amount": b.amount,
-                            "monthly": b.monthly,
-                            "annual": b.annual,
-                            "hold": b.hold(board.as_of),
-                            "estimate": b.estimate,
+                            "name": item.name,
+                            "flow": "income" if item.income else "bill",
+                            "next_due": item.next_due,
+                            "cycle_months": item.cycle_months,
+                            "amount": item.amount,
+                            "monthly": item.monthly,
+                            "annual": item.annual,
+                            "hold": item.hold(board.as_of),
+                            "reserve_for": item.reserve_for,
+                            "estimate": item.estimate,
+                            "generated": item.generated,
                         }
-                        for b in board.bills
+                        for item in board.pending
                     ],
                 },
                 args,
@@ -1308,30 +1311,41 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         ]
         print(table(headline, ["measure", "amount"], right={1}))
 
-        if board.bills:
+        if board.pending:
             print()
-            bill_rows = [
+            pending_rows = [
                 [
-                    bill.name[:32],
-                    bill.next_due.isoformat(),
-                    f"{bill.cycle_months:g}",
-                    bill.amount.format(),
-                    bill.monthly.format(),
-                    bill.hold(board.as_of).format(),
-                    bill.annual.format(),
-                    "est" if bill.estimate else "",
+                    item.name[:32],
+                    "income" if item.income else "bill",
+                    item.next_due.isoformat(),
+                    f"{item.cycle_months:g}",
+                    item.amount.format(),
+                    item.monthly.format(),
+                    "" if item.income else item.held.format(),
+                    item.annual.format(),
+                    "account" if item.generated else "est" if item.estimate else "",
                 ]
-                for bill in board.bills[: args.limit]
+                for item in board.pending[: args.limit]
             ]
             print(
                 table(
-                    bill_rows,
-                    ["bill", "next due", "cycle", "amount", "monthly", "hold", "annual", ""],
-                    right={3, 4, 5, 6},
+                    pending_rows,
+                    [
+                        "item",
+                        "flow",
+                        "next due",
+                        "cycle",
+                        "amount",
+                        "monthly",
+                        "hold",
+                        "annual",
+                        "",
+                    ],
+                    right={4, 5, 6, 7},
                 )
             )
-            if len(board.bills) > args.limit:
-                print(f"... and {len(board.bills) - args.limit} more")
+            if len(board.pending) > args.limit:
+                print(f"... and {len(board.pending) - args.limit} more")
         return 0
     finally:
         db.close()

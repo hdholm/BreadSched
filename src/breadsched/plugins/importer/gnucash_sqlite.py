@@ -24,6 +24,7 @@ from .gnucash_common import (
     money_from_pair,
     open_gnucash_sqlite,
     parse_gnc_date,
+    recurrence_interval,
 )
 
 __all__ = ["import_book", "read_accounts", "read_transactions", "PERIOD_MAP"]
@@ -496,7 +497,7 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
             name=row["name"] or "Scheduled transaction",
             recurrence=Recurrence(
                 period=period,
-                interval=recurrence["recurrence_mult"] or 1,
+                interval=recurrence_interval(period, recurrence["recurrence_mult"]),
                 start=start,
                 end=end,
                 count=row["num_occur"] if (row["num_occur"] or 0) > 0 else None,

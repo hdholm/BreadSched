@@ -107,26 +107,26 @@ class TestXmlScheduledTransactions:
         assert db.get_scheduled(source.schedule).enabled is False
         assert len(list(db.iter_scheduled())) == 1
 
+    def test_a_once_recurrence_accepts_gnucashs_zero_multiplier(self, db, tmp_path):
+        source = create_xml_book(tmp_path / "one-time.gnucash", compress=False)
+        body = source.body.replace(
+            "<recurrence:mult>1</recurrence:mult>",
+            "<recurrence:mult>0</recurrence:mult>",
+        ).replace(
+            "<recurrence:period_type>month</recurrence:period_type>",
+            "<recurrence:period_type>once</recurrence:period_type>",
+        )
+        (tmp_path / "one-time.gnucash").write_text(body)
 
-@pytest.mark.parametrize("inactive", [0, "n", "false"])
-def test_inactive_sqlite_schedule_survives_reimport(db, gnucash_sqlite_path, inactive):
-    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
-        conn.execute("UPDATE schedxactions SET enabled=?", (inactive,))
-    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-    sched = next(iter(db.iter_scheduled()))
-    assert sched.enabled is False
-    assert schedule.due_occurrences(db, as_of=date(2026, 3, 15)) == []
-    assert schedule.forecast_occurrences(db, date(2026, 3, 1), date(2026, 4, 30)) == []
+        result = gnucash_xml.import_book(db, tmp_path / "one-time.gnucash")
+        imported = db.get_scheduled(source.schedule)
 
-    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
-        conn.execute("UPDATE schedxactions SET enabled=1")
-    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-    assert db.get_scheduled(sched.handle).enabled is True
-    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
-        conn.execute("UPDATE schedxactions SET enabled=?", (inactive,))
-    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-    assert db.get_scheduled(sched.handle).enabled is False
-    assert len(list(db.iter_scheduled())) == 1
+        assert result.scheduled == 1
+        assert result.skipped == 0
+        assert imported is not None
+        assert imported.recurrence.period.value == "once"
+        assert imported.recurrence.interval == 1
+        assert imported.recurrence.occurrences(date(2027, 1, 1)) == [date(2026, 1, 1)]
 
     def test_template_splits_resolve_to_real_accounts(self, db, xml_book):
         """The slot indirection: the template split names the real account."""
@@ -166,6 +166,42 @@ def test_inactive_sqlite_schedule_survives_reimport(db, gnucash_sqlite_path, ina
         result = gnucash_xml.import_book(db, plain.path)
         assert result.scheduled == 1
         assert result.transactions == 1
+
+
+@pytest.mark.parametrize("inactive", [0, "n", "false"])
+def test_inactive_sqlite_schedule_survives_reimport(db, gnucash_sqlite_path, inactive):
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET enabled=?", (inactive,))
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    sched = next(iter(db.iter_scheduled()))
+    assert sched.enabled is False
+    assert schedule.due_occurrences(db, as_of=date(2026, 3, 15)) == []
+    assert schedule.forecast_occurrences(db, date(2026, 3, 1), date(2026, 4, 30)) == []
+
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET enabled=1")
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    assert db.get_scheduled(sched.handle).enabled is True
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE schedxactions SET enabled=?", (inactive,))
+    gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    assert db.get_scheduled(sched.handle).enabled is False
+    assert len(list(db.iter_scheduled())) == 1
+
+
+def test_sqlite_once_recurrence_accepts_gnucashs_zero_multiplier(db, gnucash_sqlite_path):
+    with sqlite3.connect(gnucash_sqlite_path.path) as conn:
+        conn.execute("UPDATE recurrences SET recurrence_mult=0, recurrence_period_type='once'")
+
+    result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+    imported = db.get_scheduled(gnucash_sqlite_path.ids.sched)
+
+    assert result.scheduled == 1
+    assert result.skipped == 0
+    assert imported is not None
+    assert imported.recurrence.period.value == "once"
+    assert imported.recurrence.interval == 1
+    assert imported.recurrence.occurrences(date(2027, 1, 1)) == [date(2026, 1, 1)]
 
 
 class TestMergingIntoAnExistingBook:

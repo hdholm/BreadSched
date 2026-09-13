@@ -43,6 +43,7 @@ TOOLBAR = [
 
 CATEGORIES = [
     ("dashboard", "Dashboard", "view-grid-symbolic"),
+    ("fsa-dashboard", "FSA Dashboard", "view-calendar-symbolic"),
     ("accounts", "Accounts", "view-list-symbolic"),
     ("register", "Register", "text-x-generic-symbolic"),
     ("scheduled", "Scheduled", "alarm-symbolic"),
@@ -350,6 +351,7 @@ class ViewManager(Gtk.ApplicationWindow):
     def _build_view(self, key: str):
         from .views.accounts import AccountTreeView
         from .views.dashboard import DashboardView
+        from .views.fsa_dashboard import FsaDashboardView
         from .views.plan import PlanView
         from .views.projection import ProjectionView
         from .views.register import RegisterView
@@ -358,6 +360,7 @@ class ViewManager(Gtk.ApplicationWindow):
 
         factories = {
             "dashboard": lambda: DashboardView(self),
+            "fsa-dashboard": lambda: FsaDashboardView(self),
             "accounts": lambda: AccountTreeView(self),
             "register": lambda: RegisterView(self),
             "scheduled": lambda: ScheduledView(self),

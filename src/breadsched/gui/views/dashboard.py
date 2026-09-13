@@ -3,9 +3,9 @@
 Three bands, in the order the questions get asked. What is owned and owed, as
 group totals with equity and loan-to-value where a property is paired with its
 mortgage. Then the verdict — liquid, spoken for, available, and how many months
-the emergency fund would last. Then the bills, sortable and scrollable, each
-normalised to a monthly and annual figure so a quarterly fee and a fortnightly one
-can be compared at a glance.
+the emergency fund would last. Then pending bills and income, sortable and
+scrollable, with recurring flows normalised to monthly and annual figures so a
+quarterly fee and a fortnightly one can be compared at a glance.
 
 The two horizons are on the toolbar rather than buried in a preferences dialog,
 because they are the numbers a household argues about: how much must stay liquid,
@@ -23,7 +23,7 @@ __all__ = ["DashboardView"]
 
 
 class DashboardView(BaseView):
-    """Balances, the liquidity verdict, and the bills."""
+    """Balances, the liquidity verdict, and dated pending cash flow."""
 
     WATCHES = (
         "database-changed",
@@ -75,9 +75,6 @@ class DashboardView(BaseView):
         configure.set_tooltip_text("Choose which accounts each group contains")
         configure.connect("clicked", self._on_configure)
         bar.append(configure)
-        claims = Gtk.Button(label="FSA claims…")
-        claims.connect("clicked", self._on_fsa_claims)
-        bar.append(claims)
         self._bar = bar
         self.append(bar)
 
@@ -91,27 +88,7 @@ class DashboardView(BaseView):
             getattr(self.groups, f"set_margin_{side}")(12)
         self.append(self.groups)
 
-        self.fsa_heading = Gtk.Label(label="FSA benefit years", xalign=0)
-        self.fsa_heading.add_css_class("total-row")
-        for side in ("start", "top"):
-            getattr(self.fsa_heading, f"set_margin_{side}")(12)
-        self.append(self.fsa_heading)
-        self.fsa_grid = Gtk.Grid(column_spacing=18, row_spacing=3)
-        for side in ("start", "end"):
-            getattr(self.fsa_grid, f"set_margin_{side}")(12)
-        self.append(self.fsa_grid)
-
-        self.fsa_claim_heading = Gtk.Label(label="Open FSA claims", xalign=0)
-        self.fsa_claim_heading.add_css_class("total-row")
-        for side in ("start", "top"):
-            getattr(self.fsa_claim_heading, f"set_margin_{side}")(12)
-        self.append(self.fsa_claim_heading)
-        self.fsa_claim_grid = Gtk.Grid(column_spacing=18, row_spacing=3)
-        for side in ("start", "end"):
-            getattr(self.fsa_claim_grid, f"set_margin_{side}")(12)
-        self.append(self.fsa_claim_grid)
-
-        heading = Gtk.Label(label="Pending bills", xalign=0)
+        heading = Gtk.Label(label="Pending cash flow", xalign=0)
         heading.add_css_class("total-row")
         for side in ("start", "top"):
             getattr(heading, f"set_margin_{side}")(12)
@@ -123,8 +100,9 @@ class DashboardView(BaseView):
         # row goes to the thing itself rather than making the user find it.
         self.bills_view.connect("activate", self._on_bill_activated)
         self.bills_view.append_column(
-            column("Bill", lambda b: b.name, expand=True, sort_key=lambda b: b.name)
+            column("Item", lambda b: b.name, expand=True, sort_key=lambda b: b.name)
         )
+        self.bills_view.append_column(column("Flow", lambda b: "Income" if b.income else "Bill"))
         self.bills_view.append_column(
             column(
                 "Next due",
@@ -159,8 +137,8 @@ class DashboardView(BaseView):
         self.bills_view.append_column(
             column(
                 "Hold now",
-                lambda b: b.hold(self._today()).format(),
-                sort_key=lambda b: b.hold(self._today()).to_decimal(),
+                lambda b: "" if b.income else b.held.format(),
+                sort_key=lambda b: b.held.to_decimal(),
                 numeric=True,
             )
         )
@@ -173,7 +151,12 @@ class DashboardView(BaseView):
             )
         )
         self.bills_view.append_column(
-            column("Kind", lambda b: "Estimate" if b.estimate else "Committed")
+            column(
+                "Kind",
+                lambda b: (
+                    "Account payment" if b.generated else "Estimate" if b.estimate else "Committed"
+                ),
+            )
         )
         bar.append(column_menu("dashboard", self.bills_view, self._settings()))
 
@@ -211,12 +194,10 @@ class DashboardView(BaseView):
         self.board = engine.build(self.db, self.config)
         self._render_cards()
         self._render_groups()
-        self._render_fsa()
-        self._render_fsa_claims()
 
         store = Gio.ListStore.new(Row)
-        for bill in self.board.bills:
-            store.append(Row(bill))
+        for item in self.board.pending:
+            store.append(Row(item))
         self.bills_view.set_model(Gtk.SingleSelection(model=sorted_model(self.bills_view, store)))
 
     def _render_cards(self) -> None:
@@ -302,111 +283,7 @@ class DashboardView(BaseView):
                 1,
             )
 
-    def _render_fsa(self) -> None:
-        from ...gen.engine import fsa
-
-        _empty(self.fsa_grid)
-        assert self.db is not None
-        statuses = fsa.dashboard_statuses(self.db, as_of=self._today())
-        self.fsa_heading.set_visible(bool(statuses))
-        self.fsa_grid.set_visible(bool(statuses))
-        if not statuses:
-            return
-        headings = (
-            "Account",
-            "Funding year",
-            "Status",
-            "Election",
-            "Funded",
-            "Used",
-            "Remaining",
-            "Forfeited",
-        )
-        for column_index, heading in enumerate(headings):
-            label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
-            label.add_css_class("summary-label")
-            self.fsa_grid.attach(label, column_index, 0, 1, 1)
-        for row_index, status in enumerate(statuses, start=1):
-            values = (
-                self.db.full_name(status.account),
-                status.label,
-                status.phase,
-                status.year.election.format(),
-                status.funded.format(),
-                status.used.format(),
-                status.remaining.format(),
-                status.forfeited.format(),
-            )
-            for column_index, value in enumerate(values):
-                label = Gtk.Label(label=value, xalign=1 if column_index >= 3 else 0)
-                if column_index >= 3:
-                    label.add_css_class("numeric")
-                self.fsa_grid.attach(label, column_index, row_index, 1, 1)
-
-    def _render_fsa_claims(self) -> None:
-        from ...gen.engine import fsa_claims
-
-        _empty(self.fsa_claim_grid)
-        assert self.db is not None
-        summaries = [
-            fsa_claims.claim_summary(self.db, claim, as_of=self._today())
-            for claim in fsa_claims.iter_claims(self.db)
-        ]
-        summaries = [
-            summary
-            for summary in summaries
-            if summary.status is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
-        ]
-        self.fsa_claim_heading.set_visible(bool(summaries))
-        self.fsa_claim_grid.set_visible(bool(summaries))
-        if not summaries:
-            return
-        headings = (
-            "Service date",
-            "Provider",
-            "Status",
-            "Net paid",
-            "Reimbursed",
-            "Rejected",
-            "Remaining",
-            "Action",
-        )
-        for column_index, heading in enumerate(headings):
-            label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
-            label.add_css_class("summary-label")
-            self.fsa_claim_grid.attach(label, column_index, 0, 1, 1)
-        for row_index, summary in enumerate(summaries, start=1):
-            values = (
-                summary.claim.service_date.isoformat(),
-                summary.claim.provider,
-                summary.status.label,
-                summary.net_paid.format(),
-                summary.reimbursed.format(),
-                summary.rejected.format(),
-                summary.remaining_reimbursable.format(),
-            )
-            for column_index, value in enumerate(values):
-                label = Gtk.Label(label=value, xalign=1 if column_index >= 3 else 0)
-                if column_index >= 3:
-                    label.add_css_class("numeric")
-                self.fsa_claim_grid.attach(label, column_index, row_index, 1, 1)
-            review = Gtk.Button(label="Review claim")
-            review.connect(
-                "clicked",
-                lambda _button, handle=summary.claim.handle: self._open_fsa_claim(handle),
-            )
-            self.fsa_claim_grid.attach(review, 7, row_index, 1, 1)
-
     # ----------------------------------------------------------------- actions
-
-    def _open_fsa_claim(self, claim_handle: str | None = None) -> None:
-        from ..dialogs.fsa_claims_dialog import FsaClaimsDialog
-
-        assert self.db is not None
-        FsaClaimsDialog(self.get_root(), self.db, claim_handle=claim_handle).present()
-
-    def _on_fsa_claims(self, _button) -> None:
-        self._open_fsa_claim()
 
     def _on_bill_activated(self, _view, position: int) -> None:
         selection = self.bills_view.get_model()
@@ -417,6 +294,8 @@ class DashboardView(BaseView):
         schedule = getattr(bill, "schedule", None)
         if schedule is not None:
             self.manager.open_schedule(schedule.handle)
+        elif bill.account is not None:
+            self.manager.open_register(bill.account)
 
     def _on_setting_changed(self, *_args) -> None:
         if self._updating or self.db is None or self.config is None:

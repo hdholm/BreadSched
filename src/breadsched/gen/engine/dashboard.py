@@ -18,10 +18,10 @@ outflow is expressed per month and per year from its own recurrence, so a
 quarterly HOA fee and a fortnightly daycare bill can be added together and sorted
 against each other.
 
-**Hold.** A bill due in three weeks is not free money today. For each bill the
-dashboard reports what should already be set aside — its accrual so far through
-the current cycle — so an annual insurance premium is visibly one twelfth funded a
-month after it was last paid, rather than appearing from nowhere in November.
+**Hold.** A bill due in three weeks is not free money today. Its reserve accrues
+on the household's actual scheduled income dates, in proportion to the income in
+that bill cycle. An overdue bill remains a current liquidity obligation while new
+income begins reserving for its next occurrence.
 
 **Liquidity and the emergency fund.** Two different questions, deliberately kept
 apart. Liquidity asks whether the bills falling due before the next pay arrives can
@@ -40,7 +40,7 @@ from typing import Any, TypedDict
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
-from ..lib.recurrence import PeriodType
+from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledTransaction
 from . import fsa, ledger, schedule, valuation
 
@@ -226,7 +226,7 @@ class GroupResult:
 
 @dataclass
 class BillRow:
-    """One recurring outflow, normalised so it can be compared with the others."""
+    """One pending dated cash flow, normalised for long-range comparisons."""
 
     name: str
     next_due: date
@@ -234,6 +234,12 @@ class BillRow:
     cycle_days: Decimal
     schedule: ScheduledTransaction | None = None
     estimate: bool = False
+    income: bool = False
+    held: Money = field(default_factory=lambda: Money(0))
+    reserve_for: date | None = None
+    account: str | None = None
+    recurrence: Recurrence | None = None
+    generated: bool = False
 
     @property
     def frequency(self) -> str:
@@ -242,8 +248,8 @@ class BillRow:
         "every 3 months" is what the user set; 3.0000 is an implementation
         detail of the monthly conversion and reads as though it were the truth.
         """
-        if self.schedule is not None:
-            return self.schedule.recurrence.describe()
+        if self.recurrence is not None:
+            return self.recurrence.describe()
         months = self.cycle_months
         return f"every {months:g} month(s)"
 
@@ -262,20 +268,10 @@ class BillRow:
     def days_until(self, today: date) -> int:
         return (self.next_due - today).days
 
-    def hold(self, today: date) -> Money:
-        """What should already be set aside for this bill.
-
-        The accrual so far through the current cycle: a bill last paid two months
-        into a twelve-month cycle should be a sixth funded. Reported so an annual
-        premium is visibly accumulating rather than arriving as a surprise.
-
-        A bill already overdue is held in full — it is not a future obligation.
-        """
-        remaining = Decimal(max(0, self.days_until(today)))
-        if remaining >= self.cycle_days:
-            return Money(0)
-        elapsed = self.cycle_days - remaining
-        return (self.amount * (elapsed / self.cycle_days)).quantize(100)
+    def hold(self, today: date) -> Money | None:
+        """Funds reserved by income already received; income rows have no hold."""
+        del today  # The builder calculates the dated reserve once for its as-of date.
+        return None if self.income else self.held
 
     def due_within(self, today: date, days: int) -> bool:
         return self.days_until(today) <= days
@@ -306,9 +302,10 @@ class Dashboard:
     as_of: date
     config: DashboardConfig
     groups: list[GroupResult] = field(default_factory=list)
-    bills: list[BillRow] = field(default_factory=list)
+    pending: list[BillRow] = field(default_factory=list)
     income_per_month: Money = field(default_factory=lambda: Money(0))
     next_income: date | None = None
+    _income_events: list[tuple[date, Money]] = field(default_factory=list, repr=False)
     liquid: Money = field(default_factory=lambda: Money(0))
     # -------------------------------------------------------------- aggregates
 
@@ -352,24 +349,54 @@ class Dashboard:
     # --------------------------------------------------------------- the bills
 
     @property
+    def bills(self) -> list[BillRow]:
+        return [row for row in self.pending if not row.income]
+
+    @property
+    def incomes(self) -> list[BillRow]:
+        return [row for row in self.pending if row.income]
+
+    @property
     def monthly_outgoings(self) -> Money:
         total = Money(0)
-        for bill in self.bills:
+        for bill in self._normalised_bills():
             total = total + bill.monthly
         return total
 
     @property
     def annual_outgoings(self) -> Money:
         total = Money(0)
-        for bill in self.bills:
+        for bill in self._normalised_bills():
             total = total + bill.annual
         return total
+
+    def _normalised_bills(self) -> list[BillRow]:
+        """One representative row per recurring obligation.
+
+        Every missed occurrence remains a pending liquidity obligation, but three
+        overdue monthly payments do not turn one monthly bill into three separate
+        recurring expenses for emergency-fund sizing.
+        """
+        recurring: dict[tuple[str, str], BillRow] = {}
+        standalone: list[BillRow] = []
+        for bill in self.bills:
+            if bill.schedule is not None:
+                key = ("schedule", bill.schedule.handle)
+            elif bill.account is not None:
+                key = ("account", bill.account)
+            else:
+                standalone.append(bill)
+                continue
+            current = recurring.get(key)
+            if current is None or bill.next_due > current.next_due:
+                recurring[key] = bill
+        return [*recurring.values(), *standalone]
 
     @property
     def total_hold(self) -> Money:
         total = Money(0)
         for bill in self.bills:
-            total = total + bill.hold(self.as_of)
+            total = total + bill.held
         return total
 
     def due_within(self, days: int) -> list[BillRow]:
@@ -379,16 +406,41 @@ class Dashboard:
 
     @property
     def required_liquid(self) -> Money:
-        """Bills falling due inside the liquidity window, less income expected."""
-        total = Money(0)
-        for bill in self.due_within(self.config.liquidity_days):
-            total = total + bill.amount
-        return total - self.income_within(self.config.liquidity_days)
+        """Near-term bills plus protected reserves, less dated future income.
+
+        A normal bill inside the liquidity window already includes its reserve,
+        so that reserve is not counted twice. A reserve attached to an overdue
+        bill is for the *next* occurrence and remains additional to the unpaid
+        obligation.
+        """
+        horizon = self.as_of + timedelta(days=self.config.liquidity_days)
+        overdue = sum((bill.amount for bill in self.bills if bill.next_due < self.as_of), Money(0))
+        upcoming = sum(
+            (bill.amount for bill in self.bills if self.as_of <= bill.next_due <= horizon),
+            Money(0),
+        )
+        funded_upcoming = upcoming - self.income_within(self.config.liquidity_days)
+        if funded_upcoming < 0:
+            funded_upcoming = Money(0)
+        reserves = sum(
+            (
+                bill.held
+                for bill in self.bills
+                if bill.next_due > horizon or bill.next_due < self.as_of
+            ),
+            Money(0),
+        )
+        # Future income can fund future bills. It cannot retroactively erase an
+        # obligation whose due date has already passed.
+        return overdue + funded_upcoming + reserves
 
     def income_within(self, days: int) -> Money:
-        """Income expected in the next ``days``, from the scheduled inflows."""
-        share = Decimal(days) / DAYS_PER_MONTH
-        return (self.income_per_month * share).quantize(100)
+        """Income on actual scheduled dates from today through ``days`` ahead."""
+        through = self.as_of + timedelta(days=days)
+        return sum(
+            (amount for when, amount in self._income_events if self.as_of <= when <= through),
+            Money(0),
+        )
 
     @property
     def emergency_fund(self) -> Money:
@@ -454,10 +506,13 @@ def build(
         board.liquid = sum((group.liquid for group in board.groups if group.depth == 0), Money(0))
     else:
         board.liquid = ledger.cash_on_hand(db, as_of=today)
-    bills, income_per_month, next_income = _bills_and_income(db, today, horizon_days, paid_off)
-    board.bills = bills
+    pending, income_per_month, next_income, income_events = _pending_cash_flow(
+        db, today, horizon_days, paid_off
+    )
+    board.pending = pending
     board.income_per_month = income_per_month
     board.next_income = next_income
+    board._income_events = income_events
     return board
 
 
@@ -873,77 +928,278 @@ def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:
     return paid_off
 
 
-def _bills_and_income(
+def _flow_amounts(db: DbSQLite, sched: ScheduledTransaction, when: date) -> tuple[Money, Money]:
+    """Return positive income and household outflow for one occurrence."""
+    income = Money(0)
+    outflow = Money(0)
+    for handle, amount in sched.resolved_splits(when=when):
+        account = db.get_account(handle)
+        if account is None:
+            continue
+        if account.account_class is AccountClass.INCOME:
+            income = income - amount  # income accounts carry credit balances
+        elif account.account_class is AccountClass.EXPENSE:
+            outflow = outflow + amount
+        elif account.account_class is AccountClass.LIABILITY and amount > 0:
+            outflow = outflow + amount
+    return income, outflow
+
+
+def _next_unskipped(sched: ScheduledTransaction, after: date) -> date | None:
+    """First occurrence after a date, respecting per-date skips."""
+    candidate = sched.recurrence.next_after(after)
+    while candidate is not None and candidate in sched.skipped:
+        candidate = sched.recurrence.next_after(candidate)
+    return candidate
+
+
+def _cycle_start(recurrence: Recurrence, due: date, cycle_length: Decimal) -> date:
+    """Previous firing for a bill cycle, or an inferred first-cycle boundary."""
+    lookback = timedelta(days=int(cycle_length) + 15)
+    previous = recurrence.occurrences(due - timedelta(days=1), since=due - lookback)
+    return previous[-1] if previous else due - timedelta(days=max(1, int(cycle_length)))
+
+
+def _income_events_for_cycle(
+    db: DbSQLite,
+    schedules: list[ScheduledTransaction],
+    start: date,
+    through: date,
+    today: date,
+) -> tuple[Money, Money]:
+    """Return total cycle income and the share already received by ``today``.
+
+    Future scheduled income belongs in the denominator. Past income participates
+    only when its schedule says it was handled or a corresponding ledger
+    transaction exists; a missed pay event cannot reserve cash that never arrived.
+    """
+    total = Money(0)
+    received = Money(0)
+    for sched in schedules:
+        for when in sched.recurrence.occurrences(through, since=start + timedelta(days=1)):
+            if when in sched.skipped:
+                continue
+            income, outflow = _flow_amounts(db, sched, when)
+            if income <= 0 or income < outflow:
+                continue
+            happened = when > today
+            if not happened and sched.last_posted is not None and when <= sched.last_posted:
+                happened = True
+            if not happened:
+                happened = schedule.already_posted(db, sched.handle, when)
+            if not happened:
+                continue
+            total = total + income
+            if when <= today:
+                received = received + income
+    return total, received
+
+
+def _reserve_bill(
+    db: DbSQLite,
+    bill: BillRow,
+    income_schedules: list[ScheduledTransaction],
+    today: date,
+) -> None:
+    """Attach the exact income-triggered reserve for one bill row."""
+    recurrence = bill.recurrence
+    if recurrence is None:
+        bill.held = bill.amount
+        bill.reserve_for = bill.next_due
+        return
+
+    target_due = bill.next_due
+    target_amount = bill.amount
+    if target_due < today:
+        if bill.schedule is None:
+            return
+        next_due = _next_unskipped(bill.schedule, today)
+        if next_due is None:
+            return
+        _income, next_amount = _flow_amounts(db, bill.schedule, next_due)
+        if next_amount <= 0:
+            return
+        target_due = next_due
+        target_amount = next_amount
+
+    start = _cycle_start(recurrence, target_due, bill.cycle_days)
+    total_income, received_income = _income_events_for_cycle(
+        db, income_schedules, start, target_due, today
+    )
+    bill.reserve_for = target_due
+    if total_income <= 0:
+        # With no identified income before the due date, existing cash is the
+        # only known funding source; protect the complete obligation.
+        bill.held = target_amount
+        return
+    bill.held = (target_amount * (received_income / total_income)).quantize(100)
+
+
+def _credit_card_rows(
+    db: DbSQLite,
+    today: date,
+    schedules: list[ScheduledTransaction],
+) -> list[BillRow]:
+    """Account-tied card payments not already represented by a real schedule."""
+    covered: set[str] = set()
+    for sched in schedules:
+        when = (
+            _next_unskipped(sched, today - timedelta(days=1)) or sched.recurrence.last_occurrence()
+        )
+        if when is None:
+            continue
+        for handle, amount in sched.resolved_splits(when=when):
+            account = db.get_account(handle)
+            if account is not None and account.atype is AccountType.CREDIT and amount > 0:
+                covered.add(handle)
+
+    rows: list[BillRow] = []
+    month = date(today.year, today.month, 1)
+    for account in db.iter_accounts():
+        if account.atype is not AccountType.CREDIT or account.hidden:
+            continue
+        if account.handle in covered or account.payment_day is None:
+            continue
+        balance = ledger.balance_recursive(db, account.handle, as_of=today)
+        if balance <= 0:
+            continue
+        if account.pays_in_full:
+            amount = balance
+        elif account.usual_payment is not None and account.usual_payment > 0:
+            amount = min(balance, account.usual_payment)
+        else:
+            continue
+        due = add_months(month, 0, day=account.payment_day)
+        if due < today:
+            due = add_months(month, 1, day=account.payment_day)
+        recurrence = Recurrence(
+            PeriodType.MONTH,
+            start=add_months(due, -1, day=account.payment_day),
+            day_of_month=account.payment_day,
+        )
+        rows.append(
+            BillRow(
+                name=f"{db.full_name(account) or account.name} payment",
+                next_due=due,
+                amount=amount,
+                cycle_days=DAYS_PER_MONTH,
+                account=account.handle,
+                recurrence=recurrence,
+                generated=True,
+            )
+        )
+    return rows
+
+
+def _pending_cash_flow(
     db: DbSQLite,
     today: date,
     horizon_days: int,
     paid_off: set[str],
-) -> tuple[list[BillRow], Money, date | None]:
-    """Split the schedules into outflows and income, normalising both.
-
-    A schedule counts as income when its net effect on income accounts is a
-    credit; everything else that leaves money is a bill. Estimates are included:
-    "about 600 a month on groceries" is as real a claim on the bank balance as a
-    standing order, and leaving it out flatters every figure here.
-    """
+) -> tuple[list[BillRow], Money, date | None, list[tuple[date, Money]]]:
+    """Build dated pending income and bills, plus income used by liquidity."""
     horizon = today + timedelta(days=horizon_days)
+    schedules = [sched for sched in db.iter_scheduled() if sched.enabled]
+    due_by_schedule: dict[str, list[date]] = {}
+    for occurrence in schedule.due_occurrences(db, as_of=today, horizon_days=0):
+        due_by_schedule.setdefault(occurrence.schedule.handle, []).append(occurrence.when)
+
+    pending: list[BillRow] = []
     bills: list[BillRow] = []
+    income_schedules: list[ScheduledTransaction] = []
+    income_events: list[tuple[date, Money]] = []
     income_per_month = Money(0)
-    next_income: date | None = None
 
-    for sched in db.iter_scheduled():
-        if not sched.enabled:
+    for sched in schedules:
+        unresolved = due_by_schedule.get(sched.handle, [])
+        next_due = _next_unskipped(sched, today)
+        dates = unresolved or ([next_due] if next_due is not None else [])
+        representative = (dates[-1] if dates else None) or sched.recurrence.last_occurrence()
+        if representative is None:
             continue
-        upcoming = sched.recurrence.occurrences(horizon, since=today)
-        when = upcoming[0] if upcoming else sched.recurrence.next_after(today)
-        if when is None:
+        income, outflow = _flow_amounts(db, sched, representative)
+        if income > 0 and income >= outflow:
+            income_schedules.append(sched)
+        if not dates:
             continue
-
-        legs = list(sched.resolved_splits(when=when))
-        if any(
-            handle in paid_off
-            and amount > 0
-            and (account := db.get_account(handle)) is not None
-            and account.account_class is AccountClass.LIABILITY
-            for handle, amount in legs
-        ):
-            continue
-
-        income = Money(0)
-        outflow = Money(0)
-        for handle, amount in legs:
-            account = db.get_account(handle)
-            if account is None:
-                continue
-            if account.account_class is AccountClass.INCOME:
-                income = income - amount  # income accounts carry credit balances
-            elif account.account_class is AccountClass.EXPENSE:
-                outflow = outflow + amount
-            elif account.account_class is AccountClass.LIABILITY and amount > 0:
-                outflow = outflow + amount  # a loan repayment leaves the household
 
         days = cycle_days(sched)
         if income > 0 and income >= outflow:
             income_per_month = income_per_month + (income * (DAYS_PER_MONTH / days)).quantize(100)
-            if next_income is None or when < next_income:
-                next_income = when
+            for when in dates:
+                event_income, event_outflow = _flow_amounts(db, sched, when)
+                if event_income <= 0 or event_income < event_outflow:
+                    continue
+                pending.append(
+                    BillRow(
+                        name=sched.name,
+                        next_due=when,
+                        amount=event_income,
+                        cycle_days=days,
+                        schedule=sched,
+                        estimate=sched.placeholder,
+                        income=True,
+                        recurrence=sched.recurrence,
+                    )
+                )
+            for occurrence_date in sched.recurrence.occurrences(horizon, since=today):
+                if occurrence_date in sched.skipped:
+                    continue
+                if occurrence_date <= today and schedule.already_posted(
+                    db, sched.handle, occurrence_date
+                ):
+                    continue
+                event_income, event_outflow = _flow_amounts(db, sched, occurrence_date)
+                if event_income > 0 and event_income >= event_outflow:
+                    income_events.append((occurrence_date, event_income))
             continue
 
-        if outflow <= 0:
-            continue
-        bills.append(
-            BillRow(
+        for when in dates:
+            _income, event_outflow = _flow_amounts(db, sched, when)
+            if event_outflow <= 0:
+                continue
+            legs = list(sched.resolved_splits(when=when))
+            if any(
+                handle in paid_off
+                and amount > 0
+                and (account := db.get_account(handle)) is not None
+                and account.account_class is AccountClass.LIABILITY
+                for handle, amount in legs
+            ):
+                continue
+            bill = BillRow(
                 name=sched.name,
                 next_due=when,
-                amount=outflow,
+                amount=event_outflow,
                 cycle_days=days,
                 schedule=sched,
                 estimate=sched.placeholder,
+                recurrence=sched.recurrence,
             )
-        )
+            bills.append(bill)
+            pending.append(bill)
 
-    bills.sort(key=lambda bill: bill.annual.to_decimal(), reverse=True)
-    return bills, income_per_month, next_income
+    card_rows = _credit_card_rows(db, today, schedules)
+    bills.extend(card_rows)
+    pending.extend(card_rows)
+    latest_overdue = {
+        bill.schedule.handle: bill
+        for bill in bills
+        if bill.next_due < today and bill.schedule is not None
+    }
+    for bill in bills:
+        if (
+            bill.next_due < today
+            and bill.schedule is not None
+            and latest_overdue[bill.schedule.handle] is not bill
+        ):
+            continue
+        _reserve_bill(db, bill, income_schedules, today)
+
+    pending.sort(key=lambda row: (row.next_due, not row.income, row.name.casefold()))
+    income_events.sort(key=lambda item: item[0])
+    next_income = next((when for when, _amount in income_events if when >= today), None)
+    return pending, income_per_month, next_income, income_events
 
 
 def pending_from_ledger(db: DbSQLite, today: date | None = None) -> list:

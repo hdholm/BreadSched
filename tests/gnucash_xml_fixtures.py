@@ -169,11 +169,13 @@ XML_WITH_SCHEDULE = """<?xml version="1.0" encoding="utf-8" ?>
     <sx:instanceCount>3</sx:instanceCount>
     <sx:start><gdate>2026-01-01</gdate></sx:start>
     <sx:templ-acct type="guid">{template_account}</sx:templ-acct>
-    <gnc:recurrence version="1.0.0">
-      <recurrence:mult>1</recurrence:mult>
-      <recurrence:period_type>month</recurrence:period_type>
-      <recurrence:start><gdate>2026-01-01</gdate></recurrence:start>
-    </gnc:recurrence>
+    <sx:schedule>
+      <gnc:recurrence version="1.0.0">
+        <recurrence:mult>1</recurrence:mult>
+        <recurrence:period_type>month</recurrence:period_type>
+        <recurrence:start><gdate>2026-01-01</gdate></recurrence:start>
+      </gnc:recurrence>
+    </sx:schedule>
   </gnc:schedxaction>
 </gnc:book>
 </gnc-v2>

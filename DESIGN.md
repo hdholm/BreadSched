@@ -217,6 +217,46 @@ selection sufficient for value, debt, equity, and LTV. The group's loan end is t
 latest final occurrence of its enabled, finitely bounded repayment schedules;
 unbounded schedules do not imply a payoff date.
 
+FSA benefit-year and claim detail belongs to the dedicated FSA Dashboard rather
+than the general household Dashboard. This separation is presentational: shared FSA
+engines remain authoritative, and an explicitly configured FSA account can still
+contribute its benefit availability to a user-defined balance group.
+
+### Pending cash flow and income-triggered reserves
+
+The general Dashboard presents the next unresolved or future occurrence of each
+income and bill schedule as dated pending cash flow. Income stays positive and has
+no Hold-now value. Monthly and annual normalization remains useful for comparison
+and emergency-fund sizing, but it is never substituted for dated income when
+calculating liquidity.
+
+A bill reserve covers exactly one billing cycle. For the occurrence at the end of
+that cycle, the engine finds all scheduled income events after the preceding bill
+occurrence and through the due date. Each received income event reserves the exact
+proportion
+
+``bill amount * event income / total eligible cycle income``.
+
+Future income participates in the denominator; past income participates only after
+it has been posted or the schedule's last-posted marker confirms receipt. A missed
+past income event therefore cannot reserve cash that did not arrive. If no eligible
+income is known for the cycle, existing cash is the only known source and the whole
+bill is held conservatively.
+
+For a bill inside the liquidity horizon, the bill amount already subsumes its
+current-cycle reserve and is counted only once, less income actually scheduled
+within the horizon. Income cannot make required liquidity negative. A bill outside
+the horizon protects only its accrued reserve. An overdue bill remains a current
+gross obligation; its Hold-now value belongs to the next occurrence and is added
+separately, so the displayed obligation cannot disappear merely because a new
+cycle began.
+
+Credit-card accounts synthesize a monthly pending payment when they have a positive
+balance, a payment day, and no enabled explicit schedule already paying that card.
+A paid-monthly card uses its full balance. A revolving card uses its usual payment,
+capped at its balance. This is an account-tied presentation row, not an invented
+ledger or scheduled-transaction object.
+
 ## Account types and imported source types
 
 An account has one user-visible, BreadSched-owned type. Its accounting class, debit

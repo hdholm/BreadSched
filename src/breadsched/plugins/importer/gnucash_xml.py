@@ -28,6 +28,7 @@ from .gnucash_common import (
     money_from_fraction,
     parse_amount_text,
     parse_gnc_date,
+    recurrence_interval,
 )
 
 __all__ = ["import_book", "NS"]
@@ -513,7 +514,7 @@ def _read_schedule(
         name=name,
         recurrence=Recurrence(
             period=period,
-            interval=int(multiplier) if multiplier.isdigit() else 1,
+            interval=recurrence_interval(period, multiplier),
             start=start,
             end=end,
             count=int(occurrences) if occurrences.isdigit() and int(occurrences) else None,

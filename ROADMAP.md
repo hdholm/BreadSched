@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0166 — complete schema migration and linked properties**.
-The current candidate is **0167 — dated security prices and current valuation**.
+The accepted baseline is **0167 — dated security prices and current valuation**.
+The current candidate is **0168 — dated pending cash flow and separate FSA Dashboard**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -202,6 +202,17 @@ semantics, not duplicate business rules in presentation code.
   path headings expose only rolled-up equity/total, leaving property value, owed,
   LTV, and loan end on the specific leaf. Repair the web Plan script syntax exposed
   by executable JavaScript checking, and advance the alpha version to `0.2.0a6`.
+- [x] **0168 — Dated pending cash flow and separate FSA Dashboard.** Move benefit-year
+  availability and open claims to dedicated GTK/web FSA Dashboard views. Show
+  pending scheduled income alongside bills with no Hold-now amount. Replace elapsed-
+  time bill accrual with exact income-event allocation over one bill cycle, retain
+  overdue bills as liquidity obligations while reserving for their next occurrence,
+  and conservatively hold a full bill when no cycle income is known. Generate
+  account-tied card payments from the configured day and current balance/usual
+  payment without duplicating explicit schedules. Use dated income rather than a
+  monthly average for liquidity. Normalize GnuCash's zero multiplier for one-time
+  scheduled transactions at both import boundaries, and advance the alpha version
+  to `0.2.0a7`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -485,6 +496,10 @@ semantics, not duplicate business rules in presentation code.
   state + dated flows + interest/performance/assumption effects = closing state.
 
 ## FSA / benefit accounts and claims
+
+- [x] **0168 — Separate FSA Dashboard.** Move benefit-year availability and open
+  healthcare claims out of the general Dashboard into dedicated GTK/web views while
+  retaining the shared FSA calculation and claim engines.
 
 - [ ] **Funding, direct payment, and indirect reimbursement flows.** Model payroll
   splits funding an FSA separately from benefit availability and medical expense.

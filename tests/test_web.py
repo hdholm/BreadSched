@@ -1087,7 +1087,12 @@ class TestDashboardApi:
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200
-        assert set(payload) == {"summary", "config", "groups", "fsa", "fsa_claims", "bills"}
+        assert set(payload) == {"summary", "config", "groups", "pending"}
+
+    def test_fsa_information_has_its_own_dashboard_endpoint(self, client):
+        status, payload = client.get("/api/fsa/dashboard")
+        assert status == 200
+        assert set(payload) == {"years", "claims"}
 
     def test_it_reports_the_headline_figures(self, client):
         _status, payload = client.get("/api/dashboard")
@@ -1101,6 +1106,30 @@ class TestDashboardApi:
             "monthly_outgoings",
         ):
             assert key in payload["summary"], f"missing {key}"
+
+    def test_pending_cash_flow_exposes_income_without_a_hold(self, client):
+        _status, scheduled = client.get("/api/scheduled")
+        salary = next(item for item in scheduled["accounts"] if item["name"].endswith(":Salary"))
+        checking = next(
+            item for item in scheduled["accounts"] if item["name"].endswith(":Checking")
+        )
+        status, _created = client.post(
+            "/api/scheduled/save",
+            {
+                "name": "Payday",
+                "category": salary["handle"],
+                "funding": checking["handle"],
+                "amount": "1000.00",
+                "frequency": "monthly",
+                "start": "2027-01-01",
+                "enabled": True,
+            },
+        )
+        assert status == 200
+        _status, payload = client.get("/api/dashboard")
+        income = [item for item in payload["pending"] if item["income"]]
+        assert income
+        assert all(item["hold"] is None for item in income)
 
     def test_groups_carry_equity_and_ltv_where_they_apply(self, client):
         _status, payload = client.get("/api/dashboard")
@@ -1158,8 +1187,9 @@ class TestDashboardApi:
         _status, body, _headers = client.raw("/")
         page = body.decode()
         assert 'let current = "Dashboard"' in page
-        assert '"Dashboard", "Accounts"' in page
+        assert '"Dashboard", "FSA Dashboard", "Accounts"' in page
         assert "async function showDashboard" in page
+        assert "async function showFsaDashboard" in page
         assert "openDashboardGroupsEditor" in page
         assert '"X-BreadSched-Token"' in page
 

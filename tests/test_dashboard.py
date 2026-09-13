@@ -168,49 +168,236 @@ class TestBillNormalisation:
     def test_income_is_not_listed_as_a_bill(self, household):
         assert "Pay" not in [bill.name for bill in household.bills]
 
+    def test_income_is_a_dated_pending_cash_flow_without_a_hold(self, household):
+        pay = next(item for item in household.pending if item.name == "Pay")
+        assert pay.income is True
+        assert pay.next_due == date(2026, 9, 11)
+        assert pay.hold(TODAY) is None
+
     def test_income_is_normalised_to_a_month(self, household):
         # 2,466.23 a fortnight is more than twice that a month.
         assert household.income_per_month > Money("4932.46")
         assert household.next_income == date(2026, 9, 11)
 
-    def test_bills_sort_by_annual_cost_by_default(self, household):
-        annuals = [bill.annual.to_decimal() for bill in household.bills]
-        assert annuals == sorted(annuals, reverse=True)
+    def test_pending_cash_flow_is_chronological(self, household):
+        dates = [item.next_due for item in household.pending]
+        assert dates == sorted(dates)
 
 
 class TestHold:
-    def test_a_bill_just_paid_holds_nothing(self, household):
-        """A yearly bill due in eleven months has barely begun accruing."""
-        bill = dashboard.BillRow(
-            name="Annual",
-            next_due=date(2027, 8, 1),
-            amount=Money("1200.00"),
-            cycle_days=dashboard.DAYS_PER_YEAR,
+    @staticmethod
+    def _add_income(db, book, name, amount, recurrence, last_posted=None):
+        item = ScheduledTransaction(
+            name=name,
+            recurrence=recurrence,
+            splits=[
+                ScheduledSplit(book.checking, Money(amount)),
+                ScheduledSplit(book.salary, -Money(amount)),
+            ],
         )
-        assert bill.hold(TODAY) < Money("200.00")
+        item.last_posted = last_posted
+        with db.transaction(name) as txn:
+            db.add_scheduled(item, txn)
+        return item
 
-    def test_a_bill_due_tomorrow_is_nearly_fully_held(self, household):
-        bill = dashboard.BillRow(
-            name="Monthly",
-            next_due=date(2026, 9, 10),
-            amount=Money("300.00"),
-            cycle_days=dashboard.DAYS_PER_MONTH,
+    @staticmethod
+    def _add_bill(db, book, amount="20", last_posted=date(2025, 7, 1)):
+        item = ScheduledTransaction(
+            name="Annual bill",
+            recurrence=Recurrence(PeriodType.YEAR, start=date(2025, 7, 1)),
+            splits=[
+                ScheduledSplit(book.utilities, Money(amount)),
+                ScheduledSplit(book.checking, -Money(amount)),
+            ],
         )
-        assert bill.hold(TODAY) > Money("280.00")
+        item.last_posted = last_posted
+        with db.transaction("Annual bill") as txn:
+            db.add_scheduled(item, txn)
+        return item
 
-    def test_an_overdue_bill_is_held_in_full(self, household):
-        bill = dashboard.BillRow(
-            name="Late",
-            next_due=date(2026, 8, 1),
-            amount=Money("300.00"),
-            cycle_days=dashboard.DAYS_PER_MONTH,
+    def test_equal_income_events_reserve_equal_bill_shares(self, db, book):
+        self._add_bill(db, book)
+        self._add_income(
+            db,
+            book,
+            "Monthly income",
+            "10",
+            Recurrence(PeriodType.MONTH, start=date(2025, 9, 1), count=10),
+            last_posted=date(2026, 1, 1),
         )
-        assert bill.hold(TODAY) == Money("300.00")
 
-    def test_the_hold_accrues_across_the_cycle(self, household):
-        early = dashboard.BillRow("A", date(2027, 6, 1), Money("1200.00"), dashboard.DAYS_PER_YEAR)
-        late = dashboard.BillRow("B", date(2026, 11, 1), Money("1200.00"), dashboard.DAYS_PER_YEAR)
-        assert late.hold(TODAY) > early.hold(TODAY)
+        board = dashboard.build(db, as_of=date(2026, 1, 1))
+        bill = next(item for item in board.bills if item.name == "Annual bill")
+
+        # Ten $10 income events fund a $20 cycle. Five have arrived, so each
+        # has reserved $2 and the current hold is $10.
+        assert bill.held == Money("10")
+        assert bill.reserve_for == date(2026, 7, 1)
+
+    def test_uneven_income_reserves_proportionally(self, db, book):
+        self._add_bill(db, book)
+        self._add_income(
+            db,
+            book,
+            "Earlier income",
+            "10",
+            Recurrence(PeriodType.ONCE, start=date(2025, 9, 1)),
+            last_posted=date(2025, 9, 1),
+        )
+        self._add_income(
+            db,
+            book,
+            "Later income",
+            "30",
+            Recurrence(PeriodType.ONCE, start=date(2026, 3, 1)),
+        )
+
+        board = dashboard.build(db, as_of=date(2026, 1, 1))
+        bill = next(item for item in board.bills if item.name == "Annual bill")
+
+        assert bill.held == Money("5")
+
+    def test_no_income_conservatively_holds_the_whole_bill(self, db, book):
+        self._add_bill(db, book)
+
+        board = dashboard.build(db, as_of=date(2026, 1, 1))
+
+        assert board.bills[0].held == Money("20")
+
+    def test_overdue_bill_remains_due_while_next_cycle_accrues(self, db, book):
+        bill = ScheduledTransaction(
+            name="Monthly bill",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 2, 1)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("20")),
+                ScheduledSplit(book.checking, Money("-20")),
+            ],
+        )
+        bill.last_posted = date(2026, 2, 1)
+        income = self._add_income(
+            db,
+            book,
+            "Semi-monthly income",
+            "10",
+            Recurrence(
+                PeriodType.SEMI_MONTH,
+                start=date(2026, 3, 10),
+                day_of_month=10,
+                second_day_of_month=20,
+            ),
+            last_posted=date(2026, 3, 10),
+        )
+        assert income.last_posted == date(2026, 3, 10)
+        with db.transaction("Overdue bill") as txn:
+            db.add_scheduled(bill, txn)
+        # The remaining $10 pay event is inside the liquidity horizon. It can
+        # fund an upcoming bill, but cannot erase the overdue $20 obligation.
+        config = dashboard.DashboardConfig(liquidity_days=10)
+
+        board = dashboard.build(db, config, as_of=date(2026, 3, 15))
+        row = next(item for item in board.bills if item.name == "Monthly bill")
+
+        assert row.next_due == date(2026, 3, 1)
+        assert row.reserve_for == date(2026, 4, 1)
+        assert row.held == Money("10")
+        assert board.required_liquid == Money("30")
+
+    def test_each_missed_occurrence_counts_but_normalisation_counts_the_schedule_once(
+        self, db, book
+    ):
+        bill = ScheduledTransaction(
+            name="Missed monthly bill",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("20")),
+                ScheduledSplit(book.checking, Money("-20")),
+            ],
+        )
+        with db.transaction("Missed monthly bill") as txn:
+            db.add_scheduled(bill, txn)
+
+        board = dashboard.build(
+            db,
+            dashboard.DashboardConfig(liquidity_days=1),
+            as_of=date(2026, 3, 15),
+        )
+
+        assert [row.next_due for row in board.bills] == [
+            date(2026, 1, 1),
+            date(2026, 2, 1),
+            date(2026, 3, 1),
+        ]
+        assert board.required_liquid == Money("80")
+        assert board.monthly_outgoings == Money("20")
+
+
+class TestCreditCardBills:
+    @staticmethod
+    def _card(db, book, name, balance, *, pays_in_full, usual_payment=None):
+        card = Account(name=name, atype=AccountType.CREDIT, parent=book.liabilities)
+        card.pays_in_full = pays_in_full
+        card.usual_payment = Money(usual_payment) if usual_payment else None
+        card.payment_day = 20
+        with db.transaction(name) as txn:
+            db.add_account(card, txn)
+            if Money(balance):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 3, 1), "Card activity", book.utilities, card.handle, balance
+                    ),
+                    txn,
+                )
+        return card
+
+    def test_monthly_cleared_card_uses_the_full_current_balance(self, db, book):
+        card = self._card(db, book, "Paid monthly", "400", pays_in_full=True)
+
+        board = dashboard.build(db, as_of=date(2026, 3, 15))
+        row = next(item for item in board.bills if item.account == card.handle)
+
+        assert row.amount == Money("400")
+        assert row.next_due == date(2026, 3, 20)
+        assert row.generated is True
+
+    def test_revolving_card_payment_is_capped_at_the_balance(self, db, book):
+        card = self._card(
+            db,
+            book,
+            "Revolving",
+            "90",
+            pays_in_full=False,
+            usual_payment="150",
+        )
+
+        board = dashboard.build(db, as_of=date(2026, 3, 15))
+        row = next(item for item in board.bills if item.account == card.handle)
+
+        assert row.amount == Money("90")
+
+    def test_zero_balance_card_does_not_create_a_bill(self, db, book):
+        card = self._card(db, book, "Unused", "0", pays_in_full=True)
+
+        board = dashboard.build(db, as_of=date(2026, 3, 15))
+
+        assert card.handle not in {item.account for item in board.bills}
+
+    def test_explicit_card_schedule_prevents_a_duplicate_generated_bill(self, db, book):
+        card = self._card(db, book, "Scheduled card", "100", pays_in_full=True)
+        payment = ScheduledTransaction(
+            name="Card payment",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 3, 20)),
+            splits=[
+                ScheduledSplit(card.handle, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        with db.transaction("Card payment") as txn:
+            db.add_scheduled(payment, txn)
+
+        board = dashboard.build(db, as_of=date(2026, 3, 15))
+        rows = [item for item in board.bills if item.name.endswith("payment")]
+
+        assert [(item.name, item.generated) for item in rows] == [("Card payment", False)]
 
 
 class TestLiquidityAndEmergencyFund:
@@ -218,11 +405,12 @@ class TestLiquidityAndEmergencyFund:
         assert household.liquid == Money("20000.00")
 
     def test_required_liquid_nets_off_expected_income(self, household):
-        """Bills due within the window, less the pay arriving in it."""
+        """Bills due within the window use dated pay without creating free cash."""
         gross = Money(0)
         for bill in household.due_within(30):
             gross = gross + bill.amount
-        assert household.required_liquid == gross - household.income_within(30)
+        expected = gross - household.income_within(30)
+        assert household.required_liquid == max(Money(0), expected)
 
     def test_available_is_liquid_less_what_is_spoken_for(self, household):
         assert household.available == (
@@ -307,7 +495,7 @@ class TestCli:
         capsys.readouterr()
         cli(["dashboard", str(path), "--json"])
         payload = json.loads(capsys.readouterr().out)
-        assert "summary" in payload and "groups" in payload and "bills" in payload
+        assert "summary" in payload and "groups" in payload and "pending" in payload
 
     def test_the_horizons_can_be_overridden(self, tmp_path, capsys):
         import json

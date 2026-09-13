@@ -109,7 +109,6 @@ class Api:
         disagree about a household's position.
         """
         from ..gen.engine import dashboard as engine
-        from ..gen.engine import fsa
 
         config = engine.DashboardConfig.load(self.db)
         if liquidity_days:
@@ -164,7 +163,31 @@ class Api:
                 }
                 for group in board.groups
             ],
-            "fsa_claims": [
+            "pending": [
+                {
+                    "name": item.name,
+                    "next_due": item.next_due.isoformat(),
+                    "days_until": item.days_until(board.as_of),
+                    "cycle_months": float(item.cycle_months),
+                    "amount": str(item.amount.to_decimal()),
+                    "monthly": str(item.monthly.to_decimal()),
+                    "annual": str(item.annual.to_decimal()),
+                    "hold": None if item.income else str(item.held.to_decimal()),
+                    "reserve_for": item.reserve_for.isoformat() if item.reserve_for else None,
+                    "income": item.income,
+                    "estimate": item.estimate,
+                    "generated": item.generated,
+                }
+                for item in board.pending
+            ],
+        }
+
+    def fsa_dashboard(self) -> dict:
+        """FSA benefit-year availability and open healthcare claims."""
+        from ..gen.engine import fsa
+
+        return {
+            "claims": [
                 {
                     "handle": summary.claim.handle,
                     "service_date": summary.claim.service_date.isoformat(),
@@ -177,12 +200,9 @@ class Api:
                 }
                 for claim in fsa_claims.iter_claims(self.db)
                 for summary in [fsa_claims.claim_summary(self.db, claim)]
-                if summary.status
-                not in {
-                    fsa_claims.FsaClaimStatus.FULLY_REIMBURSED,
-                }
+                if summary.status is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
             ],
-            "fsa": [
+            "years": [
                 {
                     "account": self.db.full_name(status.account),
                     "account_handle": status.account.handle,
@@ -202,20 +222,6 @@ class Api:
                     "phase": status.phase,
                 }
                 for status in fsa.dashboard_statuses(self.db)
-            ],
-            "bills": [
-                {
-                    "name": bill.name,
-                    "next_due": bill.next_due.isoformat(),
-                    "days_until": bill.days_until(board.as_of),
-                    "cycle_months": float(bill.cycle_months),
-                    "amount": str(bill.amount.to_decimal()),
-                    "monthly": str(bill.monthly.to_decimal()),
-                    "annual": str(bill.annual.to_decimal()),
-                    "hold": str(bill.hold(board.as_of).to_decimal()),
-                    "estimate": bill.estimate,
-                }
-                for bill in board.bills
             ],
         }
 
@@ -2526,6 +2532,7 @@ ROUTES = {
         int(q.get("liquidity_days", ["0"])[0] or 0),
         int(q.get("emergency_months", ["0"])[0] or 0),
     ),
+    "/api/fsa/dashboard": lambda a, q: a.fsa_dashboard(),
     "/api/summary": lambda a, q: a.summary(),
     "/api/accounts": lambda a, q: a.accounts(),
     "/api/commodities": lambda a, q: a.commodities(),
