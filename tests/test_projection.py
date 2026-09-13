@@ -6,6 +6,7 @@ from decimal import Decimal
 from breadsched.gen.engine import projection
 from breadsched.gen.lib import (
     Account,
+    AccountKind,
     AccountType,
     AssumptionPeriod,
     Assumptions,
@@ -707,6 +708,46 @@ class TestScenarioPersistence:
 
 
 class TestMonthlyStateLedger:
+    def test_escrow_is_restricted_asset_and_expense_is_recognized_when_funded(self, db, book):
+        escrow = Account(name="Escrow", atype=AccountType.BANK, parent=book.assets)
+        escrow.kind = AccountKind.ESCROW
+        funding = ScheduledTransaction(
+            name="Fund escrow",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 5)),
+            splits=[
+                ScheduledSplit(escrow.handle, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        payout = ScheduledTransaction(
+            name="Escrow payout",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 2, 5)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("80")),
+                ScheduledSplit(escrow.handle, Money("-80")),
+            ],
+        )
+        with db.transaction("Escrow schedules") as txn:
+            db.add_account(escrow, txn)
+            db.add_scheduled(funding, txn)
+            db.add_scheduled(payout, txn)
+
+        scenario = Scenario(
+            name="Escrow",
+            start=date(2026, 1, 1),
+            years=1,
+            basis=ProjectionBasis.SCHEDULED,
+            assumptions=flat_assumptions(),
+        )
+        rows = projection.project(db, scenario).rows
+        assert rows[0].expense == Money("100")
+        assert rows[0].cash_close == Money("-100")
+        assert rows[0].holdings == Money("100")
+        assert rows[1].expense == Money(0)
+        assert rows[1].cash_close == Money("-100")
+        assert rows[1].holdings == Money("20")
+        assert all(row.ledger.reconciles() for row in rows)
+
     def test_each_month_reconciles_from_opening_to_closing_state(
         self, db, funded_book, monthly_budget
     ):

@@ -20,6 +20,7 @@ from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scenario import ScenarioSchedule
 from ..lib.scheduled import ScheduledMonthAmount, ScheduledSplit, ScheduledTransaction
 from . import planning
+from .escrow import recognition as escrow_recognition
 
 __all__ = [
     "HistoricalEstimateProposal",
@@ -121,16 +122,21 @@ def _planned_category_profiles(
     """
     end = _add_months(start, 12) - timedelta(days=1)
     totals: dict[tuple[str, int], Money] = {}
+    accounts = {account.handle: account for account in db.iter_accounts()}
     for event in _target_events(db, start, end, scenario_handle):
+        _, covered = escrow_recognition(
+            ((split.account, split.amount) for split in event.expected_splits), accounts
+        )
         for split in event.expected_splits:
-            account = db.get_account(split.account)
+            account = accounts.get(split.account)
             if account is None or account.account_class not in (
                 AccountClass.INCOME,
                 AccountClass.EXPENSE,
             ):
                 continue
             key = (account.handle, event.planned_date.month)
-            totals[key] = totals.get(key, Money(0)) + split.amount * account.sign()
+            amount = split.amount * account.sign() - covered.get(account.handle, Money(0))
+            totals[key] = totals.get(key, Money(0)) + amount
     return totals
 
 
@@ -257,6 +263,7 @@ def propose_historical_estimates(
     history_end = current_month - timedelta(days=1)
     proposals: list[HistoricalEstimateProposal] = []
     planned_profiles = _planned_category_profiles(db, current_month, scenario_handle)
+    accounts_by_handle = {account.handle: account for account in db.iter_accounts()}
 
     for account in db.iter_accounts():
         if account.is_root or account.placeholder:
@@ -275,6 +282,11 @@ def propose_historical_estimates(
             total = Money(0)
             for txn in db.iter_transactions(account=account.handle, start=start, end=end):
                 value = txn.value_for(account.handle) * account.sign()
+                _, covered = escrow_recognition(
+                    ((split.account, split.value) for split in txn.splits),
+                    accounts_by_handle,
+                )
+                value = value - covered.get(account.handle, Money(0))
                 if value:
                     total = total + value
                     txn_count += 1

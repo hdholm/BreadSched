@@ -5,7 +5,7 @@ from datetime import date, timedelta
 from breadsched.gen.engine import fsa
 from breadsched.gen.lib import (
     Account,
-    AccountPlanningRole,
+    AccountKind,
     AccountType,
     FsaFundingYear,
     Money,
@@ -20,7 +20,7 @@ def _fsa_account(db, book):
         atype=AccountType.ASSET,
         parent=book.assets,
     )
-    account.planning_role = AccountPlanningRole.FSA
+    account.kind = AccountKind.FSA
     account.fsa_years = [
         FsaFundingYear(
             date(2026, 7, 1),
@@ -95,7 +95,7 @@ def test_closed_year_reports_forfeited_remaining_funds(db, book):
 
 def test_fsa_years_round_trip_with_account_serialization():
     account = Account(name="FSA", atype=AccountType.ASSET)
-    account.planning_role = AccountPlanningRole.FSA
+    account.kind = AccountKind.FSA
     account.fsa_years = [
         FsaFundingYear(date(2026, 1, 1), date(2026, 12, 31), Money("3200"), date(2027, 3, 31))
     ]
@@ -149,7 +149,7 @@ def _second_fsa_account(db, book):
         atype=AccountType.ASSET,
         parent=book.assets,
     )
-    account.planning_role = AccountPlanningRole.FSA
+    account.kind = AccountKind.FSA
     account.fsa_years = [
         FsaFundingYear(
             date(2026, 1, 1),

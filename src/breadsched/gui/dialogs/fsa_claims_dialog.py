@@ -8,7 +8,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import fsa_claims
 from ...gen.lib import (
     AccountClass,
-    AccountPlanningRole,
+    AccountKind,
     FsaClaim,
     FsaClaimAllocation,
     FsaClaimRejection,
@@ -62,9 +62,7 @@ class _AllocationRow(Gtk.Frame):
         super().__init__()
         self.db = db
         self.accounts = [
-            account
-            for account in db.iter_accounts()
-            if account.planning_role is AccountPlanningRole.FSA
+            account for account in db.iter_accounts() if account.kind is AccountKind.FSA
         ]
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_child(box)
@@ -243,7 +241,7 @@ class FsaClaimsDialog(Gtk.Window):
         fsa_years = [
             year
             for account in self.db.iter_accounts()
-            if account.planning_role is AccountPlanningRole.FSA
+            if account.kind is AccountKind.FSA
             for year in account.fsa_years
         ]
         candidate_start = min((year.start for year in fsa_years), default=None)
@@ -261,7 +259,7 @@ class FsaClaimsDialog(Gtk.Window):
                     payments.append(item)
                 if account.account_class is AccountClass.EXPENSE and split.value < 0:
                     refunds.append(item)
-                if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+                if account.kind is AccountKind.FSA and split.value < 0:
                     reimbursements.append(item)
         return payments, refunds, reimbursements
 

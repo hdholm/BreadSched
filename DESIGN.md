@@ -150,17 +150,27 @@ nominal behavior. Mixed gross-to-net payroll grows as one balanced income event.
 Economic-sense tests are required in addition to bookkeeping reconciliation. A
 projection that balances mathematically can still be financially wrong.
 
-## Account planning roles
+## Ledger types and account kinds
 
 Traditional Income/Expense account classes do not capture every household planning
-flow. Account planning roles and optional explicit split purposes therefore classify
-retirement saving/distribution, FSA funding, debt principal, investments, and other
-balance-sheet activity without changing the underlying double-entry transaction.
+flow. Each account therefore has two independent classifications. Its ledger type
+(`BANK`, `ASSET`, `CREDIT`, and the other GnuCash-compatible values) controls debit
+and credit signs, account class, and source interoperability. Its BreadSched account
+kind (`Ordinary`, `Retirement`, `FSA`, `Loan`, `Investment`, or `Escrow`) controls
+household planning behavior. Optional explicit split purposes can override the
+inferred behavior without changing the underlying double-entry transaction.
+
+Older books' `planning_role` field migrates to the canonical `kind` field when read.
+The old write endpoint remains temporarily available for older web clients, but the
+domain model, persistence, and current interfaces use account kind. A GnuCash source
+type is recorded separately and re-import may refresh the ledger type without
+erasing the BreadSched kind. A source change across ledger classes is retained for
+review rather than silently making a kind invalid.
 
 Inference precedence is:
 
 1. explicit split planning-purpose override;
-2. account role plus transaction direction/context;
+2. account kind plus transaction direction/context;
 3. ordinary Income/Expense behavior;
 4. otherwise neutral.
 
@@ -184,7 +194,7 @@ preserved rather than normalized simply because BreadSched exposes a smaller UI.
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, type, parent, commodity, code,
 description, notes, placeholder/hidden state, and commodity SCU) may refresh from
-the source, while BreadSched-owned planning role, FSA funding years, projection-rate
+the source, while BreadSched-owned account kind, FSA funding years, projection-rate
 overrides, projection exclusion, dashboard grouping, linked-asset/card behavior,
 usual payment, and payment day are retained.
 
@@ -198,6 +208,13 @@ BreadSched state.
 
 Longer-term separation of imported ledger state from BreadSched classifications/resolutions is
 preferred where it makes synchronization safer.
+
+Escrow is a restricted asset kind even when GnuCash stores it as `BANK`. Projection
+therefore tracks its balance as a holding rather than spendable cash. Funding an
+escrow asset from cash is recognized as household planning expense at funding time.
+A later expense-account payment out of escrow reduces the asset but subtracts the
+covered portion from planning expense, including proportional treatment of partial
+escrow payments. The ledger transaction remains unchanged and balanced throughout.
 
 ## Platform user paths
 

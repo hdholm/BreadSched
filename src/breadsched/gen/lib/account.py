@@ -1,11 +1,10 @@
 """Accounts and the account-type taxonomy.
 
-The type list is deliberately identical to GnuCash's ``accounts.account_type``
-column so that an imported book keeps its own classification instead of being
-flattened into something lossy.  Everything the cash-flow engine needs to know
-about an account -- whether it holds spendable cash, whether it compounds, whether
-it is a flow rather than a stock -- is derived from the type plus a small number of
-projection hints stored on the account itself.
+The ledger-type list is deliberately identical to GnuCash's
+``accounts.account_type`` column so that an imported book keeps its source
+classification instead of being flattened into something lossy. BreadSched's
+independent account kind supplies household-planning behavior such as retirement,
+FSA, debt, investment, and escrow treatment.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ from .money import Money
 __all__ = [
     "Account",
     "AccountClass",
-    "AccountPlanningRole",
+    "AccountKind",
     "AccountType",
     "FsaFundingYear",
 ]
@@ -37,29 +36,31 @@ class AccountClass(str, Enum):
     ROOT = "root"
 
 
-class AccountPlanningRole(str, Enum):
-    """Planning meaning inferred from movements through a balance-sheet account."""
+class AccountKind(str, Enum):
+    """BreadSched account behavior, independent of its GnuCash ledger type."""
 
     ORDINARY = "ordinary"
     RETIREMENT = "retirement"
     FSA = "fsa"
     DEBT = "debt"
     INVESTMENT = "investment"
+    ESCROW = "escrow"
 
     @property
     def label(self) -> str:
         return {
-            AccountPlanningRole.ORDINARY: "Ordinary",
-            AccountPlanningRole.RETIREMENT: "Retirement",
-            AccountPlanningRole.FSA: "FSA / benefit",
-            AccountPlanningRole.DEBT: "Loan / debt",
-            AccountPlanningRole.INVESTMENT: "Investment",
+            AccountKind.ORDINARY: "Ordinary",
+            AccountKind.RETIREMENT: "Retirement",
+            AccountKind.FSA: "FSA / benefit",
+            AccountKind.DEBT: "Loan / debt",
+            AccountKind.INVESTMENT: "Investment",
+            AccountKind.ESCROW: "Escrow",
         }[self]
 
     def supports(self, account_class: AccountClass) -> bool:
-        if self is AccountPlanningRole.ORDINARY:
+        if self is AccountKind.ORDINARY:
             return True
-        if self is AccountPlanningRole.DEBT:
+        if self is AccountKind.DEBT:
             return account_class is AccountClass.LIABILITY
         return account_class is AccountClass.ASSET
 
@@ -203,7 +204,9 @@ class Account(PrimaryObject):
         self.hidden = hidden
         self.commodity_scu = commodity_scu
         self.notes = ""
-        self.planning_role = AccountPlanningRole.ORDINARY
+        self.kind = AccountKind.ORDINARY
+        #: Last source-owned GnuCash ledger type, distinct from BreadSched's kind.
+        self.source_atype: AccountType | None = None
         self.fsa_years: list[FsaFundingYear] = []
 
         # Projection hints.  These are what turn a chart of accounts into a model.
@@ -245,6 +248,10 @@ class Account(PrimaryObject):
         """A card that is not cleared monthly, and so accrues interest."""
         return self.atype is AccountType.CREDIT and not self.pays_in_full
 
+    @property
+    def is_spendable_cash(self) -> bool:
+        return self.atype.is_cash_like and self.kind is AccountKind.ORDINARY
+
     def sign(self) -> int:
         """Multiplier that turns a raw split total into a displayed balance."""
         return 1 if self.atype.is_debit_balance else -1
@@ -263,7 +270,8 @@ class Account(PrimaryObject):
             "hidden": self.hidden,
             "commodity_scu": self.commodity_scu,
             "notes": self.notes,
-            "planning_role": self.planning_role.value,
+            "kind": self.kind.value,
+            "source_atype": self.source_atype.value if self.source_atype is not None else None,
             "fsa_years": [year.serialize() for year in self.fsa_years],
             "annual_return": str(self.annual_return),
             "annual_interest": str(self.annual_interest),
@@ -291,7 +299,9 @@ class Account(PrimaryObject):
         raw_scu = data.get("commodity_scu")
         self.commodity_scu = int(raw_scu) if raw_scu is not None else None
         self.notes = data.get("notes", "")
-        self.planning_role = AccountPlanningRole(data.get("planning_role", "ordinary"))
+        self.kind = AccountKind(data.get("kind", data.get("planning_role", "ordinary")))
+        raw_source_type = data.get("source_atype")
+        self.source_atype = AccountType.parse(raw_source_type) if raw_source_type else None
         self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))

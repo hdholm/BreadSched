@@ -14,12 +14,13 @@ from datetime import date, timedelta
 from enum import Enum
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass, AccountPlanningRole
+from ..lib.account import Account, AccountClass, AccountKind
 from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
+from .escrow import recognition as escrow_recognition
 from .planning import (
     EventStatus,
     PlannedEvent,
@@ -420,6 +421,7 @@ def explain_category_period(
     include(account.handle)
 
     def category_amount(splits: Iterable[PlannedSplit]) -> Money:
+        splits = tuple(splits)
         total = Money(0)
         for split in splits:
             if split.account not in included:
@@ -428,6 +430,13 @@ def explain_category_period(
                 total = total - split.amount
             else:
                 total = total + split.amount
+        if account.account_class is AccountClass.EXPENSE:
+            _, covered = escrow_recognition(
+                ((split.account, split.amount) for split in splits), accounts
+            )
+            total = total - _sum_money(
+                amount for handle, amount in covered.items() if handle in included
+            )
         return total
 
     report = build_activity_report(db, start, end, period=ReportingPeriod.MONTH, scenario=scenario)
@@ -618,24 +627,26 @@ def _inferred_planning_flow(
     splits: Iterable[PlannedSplit],
     accounts: dict[str, Account],
 ) -> PlanningFlowKind | None:
-    """Return explicit split purpose or infer one from account role and context."""
+    """Return explicit split purpose or infer one from account kind and context."""
     if split.planning_flow is not None:
         return split.planning_flow
     account = accounts.get(split.account)
     if account is None:
         return None
     peers = [accounts.get(item.account) for item in splits if item.account != split.account]
-    if account.planning_role is AccountPlanningRole.RETIREMENT:
-        if any(peer and peer.planning_role is AccountPlanningRole.RETIREMENT for peer in peers):
+    if account.kind is AccountKind.RETIREMENT:
+        if any(peer and peer.kind is AccountKind.RETIREMENT for peer in peers):
             return None
         if split.amount > 0:
             return PlanningFlowKind.RETIREMENT_SAVING
         if split.amount < 0:
             return PlanningFlowKind.RETIREMENT_INCOME
-    if account.planning_role is AccountPlanningRole.FSA and split.amount > 0:
+    if account.kind is AccountKind.FSA and split.amount > 0:
         return PlanningFlowKind.BENEFIT_FUNDING
-    if account.planning_role is AccountPlanningRole.DEBT and split.amount > 0:
-        if any(peer and peer.planning_role is AccountPlanningRole.DEBT for peer in peers):
+    if account.kind is AccountKind.ESCROW and split.amount > 0:
+        return PlanningFlowKind.ESCROW_FUNDING
+    if account.kind is AccountKind.DEBT and split.amount > 0:
+        if any(peer and peer.kind is AccountKind.DEBT for peer in peers):
             return None
         return PlanningFlowKind.DEBT_PRINCIPAL
     return None
@@ -719,7 +730,7 @@ def _split_totals(
         account = accounts.get(split.account)
         if account is None:
             continue
-        if account.atype.is_cash_like:
+        if account.is_spendable_cash:
             cash = cash + split.amount
         elif account.account_class is AccountClass.INCOME:
             value = split.amount if funded_from_cash else -split.amount
@@ -735,7 +746,10 @@ def _split_totals(
             AccountClass.LIABILITY,
         ):
             cash = cash - split.amount
-    return cash, income, expense
+    funding, covered = escrow_recognition(
+        ((split.account, split.amount) for split in splits), accounts
+    )
+    return cash, income, expense + funding - _sum_money(covered.values())
 
 
 def _actual_activity(
@@ -867,6 +881,9 @@ def build_category_report(
 
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
+            _, covered = escrow_recognition(
+                ((split.account, split.amount) for split in event.expected_splits), accounts
+            )
             for planned_split in event.expected_splits:
                 flow_kind = _inferred_planning_flow(planned_split, event.expected_splits, accounts)
                 if flow_kind is not None:
@@ -882,6 +899,9 @@ def build_category_report(
                     values[period_index] = values[period_index] - planned_split.amount
                 elif account.account_class is AccountClass.EXPENSE:
                     values[period_index] = values[period_index] + planned_split.amount
+            for handle, amount in covered.items():
+                values = amounts(direct_planned, handle)
+                values[period_index] = values[period_index] - amount
         for actual in bucket.actual_transactions:
             transaction = db.get_transaction(actual.transaction)
             if transaction is None:
@@ -889,6 +909,9 @@ def build_category_report(
             actual_planned_splits = tuple(
                 PlannedSplit(split.account, split.value, split.planning_flow)
                 for split in transaction.splits
+            )
+            _, covered = escrow_recognition(
+                ((split.account, split.amount) for split in actual_planned_splits), accounts
             )
             for actual_split, planned_view in zip(
                 transaction.splits, actual_planned_splits, strict=True
@@ -907,6 +930,9 @@ def build_category_report(
                     values[period_index] = values[period_index] - actual_split.value
                 elif account.account_class is AccountClass.EXPENSE:
                     values[period_index] = values[period_index] + actual_split.value
+            for handle, amount in covered.items():
+                values = amounts(direct_actual, handle)
+                values[period_index] = values[period_index] - amount
 
     active = set(direct_planned) | set(direct_actual)
     for handle in list(active):

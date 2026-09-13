@@ -654,23 +654,23 @@ async function showAccounts() {
     el("td", { class: "muted" }, account.type),
     el("td", {}, el("select", {
       onchange: async (event) => {
-        await post("/api/account/planning-role", {
-          handle: account.handle, planning_role: event.target.value,
+        await post("/api/account/kind", {
+          handle: account.handle, kind: event.target.value,
         });
-        account.planning_role = event.target.value;
+        account.kind = event.target.value;
         render();
       },
     }, ([
       ["ordinary", "Ordinary"],
       ...(account.class === "asset" ? [
         ["retirement", "Retirement"], ["fsa", "FSA / benefit"],
-        ["investment", "Investment"],
+        ["investment", "Investment"], ["escrow", "Escrow"],
       ] : []),
       ...(account.class === "liability" ? [["debt", "Loan / debt"]] : []),
     ]).map(([value, label]) => el("option", {
-      value, selected: account.planning_role === value ? "selected" : null,
+      value, selected: account.kind === value ? "selected" : null,
     }, label)))),
-    el("td", {}, account.planning_role === "fsa"
+    el("td", {}, account.kind === "fsa"
       ? el("button", { class:"action", type:"button", onclick:()=>openFsaYearsEditor(account) },
           `${(account.fsa_years || []).length} funding year${(account.fsa_years || []).length === 1 ? "" : "s"}…`)
       : el("span", { class:"muted" }, "—")),
@@ -680,7 +680,7 @@ async function showAccounts() {
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them."),
-    table(["Account", "Type", "Planning role", "FSA years",
+    table(["Account", "Ledger type", "Account kind", "FSA years",
            { label: "Balance", num: true }], rows));
 }
 

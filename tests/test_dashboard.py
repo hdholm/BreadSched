@@ -16,7 +16,7 @@ import pytest
 from breadsched.gen.engine import dashboard
 from breadsched.gen.lib import (
     Account,
-    AccountPlanningRole,
+    AccountKind,
     AccountType,
     Money,
     PeriodType,
@@ -268,15 +268,15 @@ class TestConfiguration:
         kinds = {group.kind for group in config.groups}
         assert "liquid" in kinds and "retirement" in kinds
 
-    def test_account_roles_override_default_dashboard_buckets(self, db, book):
-        with db.transaction("planning roles") as txn:
+    def test_account_kinds_override_default_dashboard_buckets(self, db, book):
+        with db.transaction("account kinds") as txn:
             checking = db.get_account(book.checking)
             savings = db.get_account(book.savings)
             brokerage = db.get_account(book.brokerage)
             assert checking is not None and savings is not None and brokerage is not None
-            checking.planning_role = AccountPlanningRole.FSA
-            savings.planning_role = AccountPlanningRole.RETIREMENT
-            brokerage.planning_role = AccountPlanningRole.INVESTMENT
+            checking.kind = AccountKind.FSA
+            savings.kind = AccountKind.RETIREMENT
+            brokerage.kind = AccountKind.INVESTMENT
             db.commit_account(checking, txn)
             db.commit_account(savings, txn)
             db.commit_account(brokerage, txn)

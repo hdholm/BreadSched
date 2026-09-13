@@ -971,8 +971,8 @@ class TestColumnBehaviour:
         columns = self._columns(window._views["accounts"])
         assert [column.get_title() for column in columns] == [
             "Account",
-            "Type",
-            "Planning role",
+            "Ledger type",
+            "Account kind",
             "Description",
             "Balance",
         ]

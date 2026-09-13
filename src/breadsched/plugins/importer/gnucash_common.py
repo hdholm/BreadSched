@@ -22,7 +22,7 @@ from typing import Any
 
 from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib.account import Account, AccountType
+from ...gen.lib.account import Account, AccountKind, AccountType
 from ...gen.lib.commodity import Commodity
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import (
@@ -264,6 +264,16 @@ class ImportSink:
 
         existing = self.db.get_account(guid)
         if existing is not None:
+            if existing.kind is not AccountKind.ORDINARY and not existing.kind.supports(
+                parsed.account_class
+            ):
+                self.result.warn(
+                    f"account {name!r} changed GnuCash ledger class; retained its "
+                    "existing type and BreadSched kind for review"
+                )
+                existing.source_atype = parsed
+                self.db.commit_account(existing, self.txn)
+                return existing
             account = Account(
                 handle=guid,
                 name=name,
@@ -277,6 +287,7 @@ class ImportSink:
                 commodity_scu=commodity_scu,
             )
             account.notes = notes
+            account.source_atype = parsed
             self._preserve_breadsched_account_state(account, existing)
             self.db.commit_account(account, self.txn)
             self._known_accounts.add(guid)
@@ -286,6 +297,8 @@ class ImportSink:
         if twin is not None:
             self._remap[guid] = twin.handle
             self._known_accounts.add(guid)
+            twin.source_atype = parsed
+            self.db.commit_account(twin, self.txn)
             LOG.debug("merged imported %r into the existing account", name)
             return twin
 
@@ -302,6 +315,7 @@ class ImportSink:
             commodity_scu=commodity_scu,
         )
         account.notes = notes
+        account.source_atype = parsed
         self.db.add_account(account, self.txn)
         self._known_accounts.add(guid)
         self.result.accounts += 1
@@ -310,7 +324,7 @@ class ImportSink:
     @staticmethod
     def _preserve_breadsched_account_state(imported: Account, existing: Account) -> None:
         """Keep BreadSched-owned account configuration across source re-import."""
-        imported.planning_role = existing.planning_role
+        imported.kind = existing.kind
         imported.fsa_years = list(existing.fsa_years)
         imported.annual_return = existing.annual_return
         imported.annual_interest = existing.annual_interest
@@ -326,7 +340,7 @@ class ImportSink:
     ) -> Account | None:
         """An account already under ``parent`` with the same name and type."""
         for candidate in self.db.child_accounts(parent):
-            if candidate.name == name and candidate.atype is atype:
+            if candidate.name == name and (candidate.source_atype or candidate.atype) is atype:
                 return candidate
         return None
 

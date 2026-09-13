@@ -39,7 +39,7 @@ from ..gen.engine import (
 )
 from ..gen.lib import (
     AccountClass,
-    AccountPlanningRole,
+    AccountKind,
     AssumptionPeriod,
     Assumptions,
     FsaClaim,
@@ -226,7 +226,10 @@ class Api:
                         "type": account.atype.value,
                         "class": account.account_class.value,
                         "placeholder": account.placeholder,
-                        "planning_role": account.planning_role.value,
+                        "kind": account.kind.value,
+                        "source_type": (
+                            account.source_atype.value if account.source_atype else None
+                        ),
                         "fsa_years": [
                             {
                                 "start": year.start.isoformat(),
@@ -249,29 +252,39 @@ class Api:
         walk(root.handle if root else None, 0)
         return rows
 
-    def account_planning_role_save(self, payload: dict) -> dict:
+    def account_kind_save(self, payload: dict) -> dict:
         handle = str(payload.get("handle", ""))
         account = self.db.get_account(handle)
         if account is None:
             raise KeyError(handle)
         try:
-            role = AccountPlanningRole(str(payload.get("planning_role", "ordinary")))
+            kind = AccountKind(str(payload.get("kind", "ordinary")))
         except ValueError:
-            raise ValueError("choose a valid account planning role") from None
-        if not role.supports(account.account_class):
-            raise ValueError("planning role is not valid for this account type")
-        account.planning_role = role
-        with self.db.transaction(f"Set planning role for {account.name}") as txn:
+            raise ValueError("choose a valid account kind") from None
+        if not kind.supports(account.account_class):
+            raise ValueError("account kind is not valid for this ledger type")
+        account.kind = kind
+        with self.db.transaction(f"Set account kind for {account.name}") as txn:
             self.db.commit_account(account, txn)
-        return {"handle": account.handle, "planning_role": account.planning_role.value}
+        return {
+            "handle": account.handle,
+            "kind": account.kind.value,
+        }
+
+    def account_planning_role_save(self, payload: dict) -> dict:
+        """Compatibility endpoint for older web clients."""
+        migrated = dict(payload)
+        migrated["kind"] = payload.get("planning_role", "ordinary")
+        result = self.account_kind_save(migrated)
+        return {**result, "planning_role": result["kind"]}
 
     def account_fsa_years_save(self, payload: dict) -> dict:
         handle = str(payload.get("handle", ""))
         account = self.db.get_account(handle)
         if account is None:
             raise KeyError(handle)
-        if account.planning_role is not AccountPlanningRole.FSA:
-            raise ValueError("FSA funding years require an FSA planning role")
+        if account.kind is not AccountKind.FSA:
+            raise ValueError("FSA funding years require the FSA account kind")
         years: list[FsaFundingYear] = []
         for raw in payload.get("years", []):
             runout = str(raw.get("runout_through", "")).strip()
@@ -339,7 +352,7 @@ class Api:
         fsa_years = [
             year
             for account in self.db.iter_accounts()
-            if account.planning_role is AccountPlanningRole.FSA
+            if account.kind is AccountKind.FSA
             for year in account.fsa_years
         ]
         candidate_start = min((year.start for year in fsa_years), default=None)
@@ -363,7 +376,7 @@ class Api:
                     payments.append(row)
                 if account.account_class is AccountClass.EXPENSE and split.value < 0:
                     refunds.append(row)
-                if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+                if account.kind is AccountKind.FSA and split.value < 0:
                     reimbursements.append(row)
         fsa_accounts = [
             {
@@ -372,7 +385,7 @@ class Api:
                 "years": [year.serialize() for year in account.fsa_years],
             }
             for account in self.db.iter_accounts()
-            if account.planning_role is AccountPlanningRole.FSA
+            if account.kind is AccountKind.FSA
         ]
         return {
             "payments": payments,
@@ -1636,7 +1649,7 @@ class Api:
                         "account": self.db.full_name(account),
                     }
                 )
-            if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+            if account.kind is AccountKind.FSA and split.value < 0:
                 roles.append(
                     {
                         "role": "reimbursement",
@@ -2383,6 +2396,7 @@ ROUTES = {
 
 POST_ROUTES = {
     "/api/account/planning-role": lambda a, body: a.account_planning_role_save(body),
+    "/api/account/kind": lambda a, body: a.account_kind_save(body),
     "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),
     "/api/fsa/claim/save": lambda a, body: a.fsa_claim_save(body),
     "/api/fsa/claim/delete": lambda a, body: a.fsa_claim_delete(body),

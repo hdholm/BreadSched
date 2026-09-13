@@ -123,16 +123,18 @@ Formula-driven schedules are fixed by default in `auto` mode so, for example, a
 formula mortgage is not inflated merely because one leg posts to interest expense.
 Mixed gross-to-net payroll schedules grow as one balanced event under income growth.
 
-### Planning roles
+### Ledger types and account kinds
 
-Account planning roles provide household meaning for balance-sheet accounts where
-ordinary Income/Expense classification is insufficient. Current roles include
-ordinary, retirement, FSA/benefit, loan/debt, and investment accounts. Explicit
-split planning purposes can override inference when needed.
+GnuCash-compatible ledger types control accounting signs and preserve imported
+classification. A separate BreadSched account kind provides household meaning where
+ordinary Income/Expense classification is insufficient. Current kinds include
+ordinary, retirement, FSA/benefit, loan/debt, investment, and escrow. Explicit split
+planning purposes can override inference when needed.
 
 These classifications let Plan and Projection distinguish activities such as
-retirement saving, retirement distribution, FSA funding, and debt principal from
-ordinary transfers.
+retirement saving, retirement distribution, FSA funding, debt principal, and escrow
+funding from ordinary transfers. Escrow funding is recognized as planning expense;
+later escrow payouts reduce the restricted asset without counting the expense twice.
 
 ## Primary GTK4 workflow
 
@@ -140,7 +142,7 @@ The GTK4 application is the reference user experience. Its major views include:
 
 - **Dashboard** — household position, scheduled bills, liquidity, emergency-fund
   information, FSA state, and important linked-account relationships.
-- **Accounts** — hierarchical chart of accounts with balances, planning role, and
+- **Accounts** — hierarchical chart of accounts with balances, account kind, and
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit
   terminology.
@@ -228,7 +230,7 @@ history. Their supported and pending formats are tracked in `ROADMAP.md`.
 
 ## FSA / benefit planning
 
-FSA-role accounts can carry funding years with election and run-out information.
+FSA-kind accounts can carry funding years with election and run-out information.
 BreadSched separates benefit availability from the custodial ledger balance and can
 associate service/claim episodes with healthcare payments, reimbursements,
 allocations, refunds, and rejected reimbursement attempts.

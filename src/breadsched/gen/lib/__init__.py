@@ -3,7 +3,7 @@
 from .account import (
     Account,
     AccountClass,
-    AccountPlanningRole,
+    AccountKind,
     AccountType,
     FsaFundingYear,
 )
@@ -48,7 +48,7 @@ from .transaction import (
 __all__ = [
     "Account",
     "AccountClass",
-    "AccountPlanningRole",
+    "AccountKind",
     "AccountType",
     "FsaClaim",
     "FsaClaimAllocation",

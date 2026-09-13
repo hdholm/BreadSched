@@ -41,6 +41,7 @@ class PlanningFlowKind(str, Enum):
     BENEFIT_FUNDING = "benefit_funding"
     DEBT_PRINCIPAL = "debt_principal"
     RETIREMENT_INCOME = "retirement_income"
+    ESCROW_FUNDING = "escrow_funding"
 
     @property
     def label(self) -> str:
@@ -49,6 +50,7 @@ class PlanningFlowKind(str, Enum):
             PlanningFlowKind.BENEFIT_FUNDING: "Benefit / FSA funding",
             PlanningFlowKind.DEBT_PRINCIPAL: "Debt principal",
             PlanningFlowKind.RETIREMENT_INCOME: "Retirement distributions",
+            PlanningFlowKind.ESCROW_FUNDING: "Escrow funding",
         }[self]
 
     def plan_amount(self, value: Money) -> Money:

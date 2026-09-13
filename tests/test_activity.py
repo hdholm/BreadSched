@@ -5,7 +5,7 @@ from datetime import date
 from breadsched.gen.engine import activity, planning
 from breadsched.gen.lib import (
     Account,
-    AccountPlanningRole,
+    AccountKind,
     AccountType,
     Money,
     PeriodType,
@@ -15,6 +15,7 @@ from breadsched.gen.lib import (
     ScenarioSchedule,
     ScheduledSplit,
     ScheduledTransaction,
+    Split,
     Transaction,
 )
 
@@ -312,10 +313,10 @@ class TestPlanningFlowClassification:
         assert PlanningFlowKind.DEBT_PRINCIPAL.ledger_amount(amount) == amount
         assert PlanningFlowKind.RETIREMENT_INCOME.ledger_amount(amount) == -amount
 
-    def test_account_roles_infer_common_balance_sheet_flows(self, db, book):
+    def test_account_kinds_infer_common_balance_sheet_flows(self, db, book):
         brokerage = db.get_account(book.brokerage)
         assert brokerage is not None
-        brokerage.planning_role = AccountPlanningRole.RETIREMENT
+        brokerage.kind = AccountKind.RETIREMENT
         with db.transaction("mark retirement") as txn:
             db.commit_account(brokerage, txn)
             db.add_transaction(
@@ -338,12 +339,12 @@ class TestPlanningFlowClassification:
         assert flows[(PlanningFlowKind.RETIREMENT_SAVING, book.brokerage)] == Money("500")
         assert flows[(PlanningFlowKind.RETIREMENT_INCOME, book.brokerage)] == Money("200")
 
-    def test_fsa_and_debt_roles_infer_funding_and_principal(self, db, book):
+    def test_fsa_and_debt_kinds_infer_funding_and_principal(self, db, book):
         brokerage = db.get_account(book.brokerage)
         assert brokerage is not None
-        brokerage.planning_role = AccountPlanningRole.FSA
+        brokerage.kind = AccountKind.FSA
         debt = Account(name="Loan", atype=AccountType.LIABILITY, parent=book.root)
-        debt.planning_role = AccountPlanningRole.DEBT
+        debt.kind = AccountKind.DEBT
         with db.transaction("mark benefit and debt") as txn:
             db.commit_account(brokerage, txn)
             db.add_account(debt, txn)
@@ -367,12 +368,12 @@ class TestPlanningFlowClassification:
         assert flows[(PlanningFlowKind.BENEFIT_FUNDING, book.brokerage)] == Money("125")
         assert flows[(PlanningFlowKind.DEBT_PRINCIPAL, debt.handle)] == Money("300")
 
-    def test_role_inference_keeps_retirement_transfers_neutral(self, db, book):
+    def test_kind_inference_keeps_retirement_transfers_neutral(self, db, book):
         brokerage = db.get_account(book.brokerage)
         savings = db.get_account(book.savings)
         assert brokerage is not None and savings is not None
-        brokerage.planning_role = AccountPlanningRole.RETIREMENT
-        savings.planning_role = AccountPlanningRole.RETIREMENT
+        brokerage.kind = AccountKind.RETIREMENT
+        savings.kind = AccountKind.RETIREMENT
         with db.transaction("mark retirement accounts") as txn:
             db.commit_account(brokerage, txn)
             db.commit_account(savings, txn)
@@ -387,6 +388,52 @@ class TestPlanningFlowClassification:
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         assert report.planning_flows == []
+
+    def test_escrow_funding_is_expense_and_payout_is_not_counted_twice(self, db, book):
+        escrow = Account(
+            name="Escrow",
+            atype=AccountType.BANK,
+            parent=book.assets,
+        )
+        escrow.kind = AccountKind.ESCROW
+        with db.transaction("Escrow cycle") as txn:
+            db.add_account(escrow, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 1, 5), "Fund escrow", escrow.handle, book.checking, "100"
+                ),
+                txn,
+            )
+            payout = Transaction(post_date=date(2026, 1, 20), description="Escrow payout")
+            payout.add_split(Split(book.utilities, Money("80")))
+            payout.add_split(Split(escrow.handle, Money("-80")))
+            db.add_transaction(payout, txn)
+
+        activity_report = activity.build_activity_report(db, date(2026, 1, 1), date(2026, 1, 31))
+        assert activity_report.periods[0].actual_expense == Money("100")
+        assert activity_report.actual_cash_change == Money("-100")
+
+        category_report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        utilities = next(row for row in category_report.categories if row.account == book.utilities)
+        assert utilities.actual == [Money(0)]
+        flows = {(row.kind, row.account): row.actual[0] for row in category_report.planning_flows}
+        assert flows[(PlanningFlowKind.ESCROW_FUNDING, escrow.handle)] == Money("100")
+
+    def test_partial_escrow_payout_only_suppresses_the_covered_expense(self, db, book):
+        escrow = Account(name="Escrow", atype=AccountType.ASSET, parent=book.assets)
+        escrow.kind = AccountKind.ESCROW
+        with db.transaction("Partial payout") as txn:
+            db.add_account(escrow, txn)
+            payout = Transaction(post_date=date(2026, 1, 20), description="Partial escrow payout")
+            payout.add_split(Split(book.utilities, Money("100")))
+            payout.add_split(Split(escrow.handle, Money("-60")))
+            payout.add_split(Split(book.checking, Money("-40")))
+            db.add_transaction(payout, txn)
+
+        report = activity.build_activity_report(db, date(2026, 1, 1), date(2026, 1, 31))
+        assert report.periods[0].actual_expense == Money("40")
 
     def test_classified_balance_sheet_splits_appear_in_plan(self, db, book):
         contribution = ScheduledTransaction(

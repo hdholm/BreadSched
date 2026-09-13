@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountPlanningRole, FsaFundingYear
+from ..lib.account import Account, AccountKind, FsaFundingYear
 from ..lib.money import Money
 
 __all__ = ["FsaYearStatus", "year_status", "dashboard_statuses"]
@@ -97,7 +97,7 @@ def dashboard_statuses(
     when = as_of or date.today()
     statuses: list[FsaYearStatus] = []
     for account in db.iter_accounts():
-        if account.planning_role is not AccountPlanningRole.FSA:
+        if account.kind is not AccountKind.FSA:
             continue
         account_statuses = [
             year_status(db, account, year, as_of=when)

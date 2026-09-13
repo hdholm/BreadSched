@@ -198,29 +198,37 @@ class TestItServes:
         assert "Checking" in by_name
         assert Money(by_name["Checking"]["balance"]) == Money("2400.00")
 
-    def test_account_planning_role_can_be_changed(self, client):
+    def test_account_kind_can_be_changed_without_changing_ledger_type(self, client):
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")
-        assert retirement["planning_role"] == "ordinary"
+        assert retirement["kind"] == "ordinary"
+        ledger_type = retirement["type"]
 
         status, payload = client.post(
-            "/api/account/planning-role",
-            {"handle": retirement["handle"], "planning_role": "retirement"},
+            "/api/account/kind",
+            {"handle": retirement["handle"], "kind": "retirement"},
         )
         assert status == 200
-        assert payload["planning_role"] == "retirement"
+        assert payload["kind"] == "retirement"
 
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")
-        assert retirement["planning_role"] == "retirement"
+        assert retirement["kind"] == "retirement"
+        assert retirement["type"] == ledger_type
 
     def test_fsa_funding_years_can_be_configured(self, client):
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")
-        client.post(
+        status, migrated = client.post(
             "/api/account/planning-role",
             {"handle": retirement["handle"], "planning_role": "fsa"},
         )
+        assert status == 200
+        assert migrated == {
+            "handle": retirement["handle"],
+            "kind": "fsa",
+            "planning_role": "fsa",
+        }
         status, payload = client.post(
             "/api/account/fsa-years",
             {
@@ -1594,8 +1602,8 @@ def test_fsa_claim_can_use_multiple_allocations(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")
     client.post(
-        "/api/account/planning-role",
-        {"handle": fsa_account["handle"], "planning_role": "fsa"},
+        "/api/account/kind",
+        {"handle": fsa_account["handle"], "kind": "fsa"},
     )
     client.post(
         "/api/account/fsa-years",
@@ -1734,8 +1742,8 @@ def test_review_can_attach_actual_to_existing_fsa_claim(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")
     client.post(
-        "/api/account/planning-role",
-        {"handle": fsa_account["handle"], "planning_role": "fsa"},
+        "/api/account/kind",
+        {"handle": fsa_account["handle"], "kind": "fsa"},
     )
     client.post(
         "/api/account/fsa-years",
@@ -1830,8 +1838,8 @@ def test_fsa_claim_candidates_share_funding_year_window(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")
     client.post(
-        "/api/account/planning-role",
-        {"handle": fsa_account["handle"], "planning_role": "fsa"},
+        "/api/account/kind",
+        {"handle": fsa_account["handle"], "kind": "fsa"},
     )
     client.post(
         "/api/account/fsa-years",

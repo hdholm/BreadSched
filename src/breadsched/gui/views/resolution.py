@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.engine import fsa_claims, planning
-from ...gen.lib import AccountClass, AccountPlanningRole
+from ...gen.lib import AccountClass, AccountKind
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import PlanningResolution
 from ..gi_setup import Gtk, Pango
@@ -310,7 +310,7 @@ class ResolutionView(BaseView):
                 roles.append(("payment", split.handle, self.db.full_name(account), []))
             if account.account_class is AccountClass.EXPENSE and split.value < 0:
                 roles.append(("refund", split.handle, self.db.full_name(account), []))
-            if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+            if account.kind is AccountKind.FSA and split.value < 0:
                 years = [
                     year.start
                     for year in account.fsa_years

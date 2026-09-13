@@ -14,7 +14,7 @@ from gnucash_fixtures import create_book, new_guid
 
 from breadsched.gen.engine import ledger
 from breadsched.gen.lib import (
-    AccountPlanningRole,
+    AccountKind,
     AccountType,
     FsaFundingYear,
     Money,
@@ -165,7 +165,7 @@ class TestSqliteImport:
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         account = db.get_account(gnucash_sqlite_path.ids.checking)
         assert account is not None
-        account.planning_role = AccountPlanningRole.FSA
+        account.kind = AccountKind.FSA
         account.fsa_years = [
             FsaFundingYear(
                 start=date(2026, 1, 1),
@@ -185,8 +185,8 @@ class TestSqliteImport:
 
         with sqlite3.connect(gnucash_sqlite_path.path) as source:
             source.execute(
-                "UPDATE accounts SET description=? WHERE guid=?",
-                ("Updated source description", gnucash_sqlite_path.ids.checking),
+                "UPDATE accounts SET description=?, account_type=? WHERE guid=?",
+                ("Updated source description", "ASSET", gnucash_sqlite_path.ids.checking),
             )
             source.commit()
 
@@ -194,7 +194,9 @@ class TestSqliteImport:
         reimported = db.get_account(gnucash_sqlite_path.ids.checking)
         assert reimported is not None
         assert reimported.description == "Updated source description"
-        assert reimported.planning_role is AccountPlanningRole.FSA
+        assert reimported.kind is AccountKind.FSA
+        assert reimported.atype is AccountType.ASSET
+        assert reimported.source_atype is AccountType.ASSET
         assert reimported.fsa_years == account.fsa_years
         assert reimported.annual_return == Decimal("0.041")
         assert reimported.annual_interest == Decimal("0.073")
@@ -203,6 +205,31 @@ class TestSqliteImport:
         assert reimported.pays_in_full is False
         assert reimported.usual_payment == Money("125.00")
         assert reimported.payment_day == 18
+
+    def test_incompatible_source_type_change_requires_review_and_keeps_kind(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        account.kind = AccountKind.FSA
+        with db.transaction("Set account kind") as txn:
+            db.commit_account(account, txn)
+
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE accounts SET account_type=? WHERE guid=?",
+                ("LIABILITY", account.handle),
+            )
+            source.commit()
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        reimported = db.get_account(account.handle)
+        assert reimported is not None
+        assert reimported.kind is AccountKind.FSA
+        assert reimported.atype is AccountType.BANK
+        assert reimported.source_atype is AccountType.LIABILITY
+        assert any("retained its existing type" in warning for warning in result.warnings)
 
     def test_reimport_preserves_breadsched_owned_annotations(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)

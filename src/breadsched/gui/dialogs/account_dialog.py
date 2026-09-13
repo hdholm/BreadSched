@@ -19,7 +19,7 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import (
     Account,
     AccountClass,
-    AccountPlanningRole,
+    AccountKind,
     AccountType,
     FsaFundingYear,
     Money,
@@ -31,7 +31,7 @@ from ..gi_setup import Gtk
 __all__ = ["AccountDialog"]
 
 _TYPES: list[AccountType] = [t for t in AccountType if t is not AccountType.ROOT]
-_ROLES = list(AccountPlanningRole)
+_KINDS = list(AccountKind)
 
 
 class AccountDialog(Gtk.Window):
@@ -112,7 +112,7 @@ class AccountDialog(Gtk.Window):
         if account is not None:
             self.type_picker.set_selected(_TYPES.index(account.atype))
         self.type_picker.connect("notify::selected", self._on_type_changed)
-        grid.attach(Gtk.Label(label="Type", xalign=0), 0, row, 1, 1)
+        grid.attach(Gtk.Label(label="Ledger type (GnuCash)", xalign=0), 0, row, 1, 1)
         grid.attach(self.type_picker, 1, row, 1, 1)
         row += 1
 
@@ -195,15 +195,15 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.group_entry, 1, row, 1, 1)
         row += 1
 
-        self.planning_role_picker = Gtk.DropDown.new_from_strings([role.label for role in _ROLES])
+        self.kind_picker = Gtk.DropDown.new_from_strings([kind.label for kind in _KINDS])
         if account is not None:
-            self.planning_role_picker.set_selected(_ROLES.index(account.planning_role))
-        self.planning_role_picker.set_tooltip_text(
-            "Default planning meaning for movements through this account"
+            self.kind_picker.set_selected(_KINDS.index(account.kind))
+        self.kind_picker.set_tooltip_text(
+            "BreadSched account behavior; GnuCash ledger type is preserved separately"
         )
-        self.planning_role_picker.connect("notify::selected", self._on_role_changed)
-        grid.attach(Gtk.Label(label="Planning role", xalign=0), 0, row, 1, 1)
-        grid.attach(self.planning_role_picker, 1, row, 1, 1)
+        self.kind_picker.connect("notify::selected", self._on_kind_changed)
+        grid.attach(Gtk.Label(label="Account kind", xalign=0), 0, row, 1, 1)
+        grid.attach(self.kind_picker, 1, row, 1, 1)
         row += 1
 
         self.fsa_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
@@ -372,11 +372,11 @@ class AccountDialog(Gtk.Window):
                 raise ValueError("FSA funding years cannot overlap")
         return years
 
-    def _on_role_changed(self, *_args) -> None:
+    def _on_kind_changed(self, *_args) -> None:
         if not self._ready:
             return
-        role = _ROLES[self.planning_role_picker.get_selected()]
-        self.fsa_box.set_visible(role is AccountPlanningRole.FSA)
+        kind = _KINDS[self.kind_picker.get_selected()]
+        self.fsa_box.set_visible(kind is AccountKind.FSA)
         self._validate()
 
     def _on_type_changed(self, *_args) -> None:
@@ -384,14 +384,14 @@ class AccountDialog(Gtk.Window):
         if not self._ready:
             return
         kind = self.selected_type
-        allowed_roles = [role for role in _ROLES if role.supports(kind.account_class)]
-        selected_role = _ROLES[self.planning_role_picker.get_selected()]
-        if selected_role not in allowed_roles:
-            self.planning_role_picker.set_selected(_ROLES.index(AccountPlanningRole.ORDINARY))
+        allowed_kinds = [item for item in _KINDS if item.supports(kind.account_class)]
+        selected_kind = _KINDS[self.kind_picker.get_selected()]
+        if selected_kind not in allowed_kinds:
+            self.kind_picker.set_selected(_KINDS.index(AccountKind.ORDINARY))
         self.loan_box.set_visible(kind.account_class is AccountClass.LIABILITY)
         self.card_box.set_visible(kind is AccountType.CREDIT)
         self._on_card_changed()
-        self._on_role_changed()
+        self._on_kind_changed()
         self._validate()
 
     def _on_card_changed(self, *_args) -> None:
@@ -416,10 +416,10 @@ class AccountDialog(Gtk.Window):
                     problems.append("commodity SCU must be a positive integer")
             except ValueError:
                 problems.append("commodity SCU must be a positive integer")
-        role = _ROLES[self.planning_role_picker.get_selected()]
-        if not role.supports(self.selected_type.account_class):
-            problems.append("planning role is not valid for this account type")
-        if role is AccountPlanningRole.FSA:
+        kind = _KINDS[self.kind_picker.get_selected()]
+        if not kind.supports(self.selected_type.account_class):
+            problems.append("account kind is not valid for this ledger type")
+        if kind is AccountKind.FSA:
             try:
                 self._fsa_year_values()
             except (ValueError, InvalidOperation, ArithmeticError) as exc:
@@ -443,8 +443,8 @@ class AccountDialog(Gtk.Window):
         scu_text = self.commodity_scu_entry.get_text().strip()
         account.commodity_scu = int(scu_text) if scu_text else None
         account.group = self.group_entry.get_text().strip()
-        account.planning_role = _ROLES[self.planning_role_picker.get_selected()]
-        if account.planning_role is AccountPlanningRole.FSA:
+        account.kind = _KINDS[self.kind_picker.get_selected()]
+        if account.kind is AccountKind.FSA:
             account.fsa_years = self._fsa_year_values()
         account.placeholder = self.placeholder_check.get_active()
         account.hidden = self.hidden_check.get_active()

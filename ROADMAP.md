@@ -98,9 +98,9 @@ semantics, not duplicate business rules in presentation code.
    editable drafts still need separate acceptance rules and UI work.
 2. **Dashboard balances and hierarchy**, followed by the scheduled-entry and import
    usability work below. Mortgage planning-flow semantics require design review.
-3. **Escrow planning semantics.** Define an explicit account role and shared
-   expense-recognition rules before wiring UI and imported schedules; details under
-   Plan and planning-flow reporting.
+3. **Account-kind follow-through.** The canonical kind and initial escrow semantics
+   landed in 0160; finish richer refund/adjustment explanations and remove the
+   temporary compatibility names after supported clients migrate.
 
 ## Dashboard balances and group hierarchy
 
@@ -193,9 +193,9 @@ semantics, not duplicate business rules in presentation code.
   not stored monthly budget cells.
 - [x] Base and saved scenarios support dated assumptions and scenario-specific
   estimate add/alter/suppress behavior.
-- [x] Account planning roles are primary, with explicit split planning purpose as an
-  override; Retirement, FSA/benefit, Loan/debt, and Investment roles feed planning
-  semantics.
+- [x] Account kinds are independent of GnuCash-compatible ledger types, with explicit
+  split planning purpose as an override; Retirement, FSA/benefit, Loan/debt,
+  Investment, and Escrow kinds feed planning semantics.
 - [x] Schedule growth policy is persisted for baseline/scenario schedules and exposed
   in GTK4 and web.
 - [x] Formula-loan projection is protected from double interest and generic inflation,
@@ -220,7 +220,7 @@ semantics, not duplicate business rules in presentation code.
 
 ## Accounts and GnuCash account fidelity
 
-- [x] Accounts view includes Planning role; Account, Type, Planning role, Description,
+- [x] Accounts view includes Account kind; Account, Ledger type, Account kind, Description,
   and Balance are hierarchy-aware sortable columns.
 - [x] Account editor preserves ordinary non-placeholder parents without allowing
   cycles.
@@ -247,7 +247,7 @@ semantics, not duplicate business rules in presentation code.
 
 ## Dashboard / UI architecture
 
-- [x] Dashboard account grouping honors planning roles.
+- [x] Dashboard account grouping honors account kinds.
 - [x] Dashboard bills are schedule/Plan driven and do not depend on a hidden legacy
   current-budget selector.
 - [x] GTK4 is the canonical/reference interface; web parity is required for financial
@@ -328,24 +328,30 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Provide richer explanations of history, cadence, trend, seasonality, and
   residual calculation, with interactive adjustment before acceptance.
 - [ ] Refine category-specific seasonality/cadence inference.
-- [ ] Interpret investment, retirement, debt-principal, and FSA-role history correctly
+- [ ] Interpret investment, retirement, debt-principal, and FSA-kind history correctly
   rather than treating all balance-sheet flows as ordinary Income/Expense activity.
 
 ## Plan and planning-flow reporting
 
-- [ ] **Escrow account planning and projection.** Introduce an explicit Escrow role
-  for asset accounts, with source-preserving configuration and GTK/web parity. A
+- [x] **0160 — Account kinds and initial Escrow planning/projection.** Replace the
+  persisted planning-role field with a BreadSched account kind independent of the
+  GnuCash ledger type; migrate existing books, preserve the kind and source type
+  across re-import, and expose the distinction in GTK/web. Introduce Escrow for
+  asset accounts. A
   scheduled contribution from cash to escrow is the planning expense at funding
   time even though the ledger debit increases an asset. Later scheduled payments
   from escrow to tax, insurance, or other expense accounts are draws against that
   already budgeted amount, not a second planning expense. Keep both ledger legs
   intact for balances and show escrow balance rising and falling on the correct
   dates in Projection; distinguish budgeted expense from cash movement and net-worth
-  changes. Define how direct payments, refunds, adjustments, negative balances,
-  split mortgage payments, actualization, imported GnuCash schedules, and scenario
-  overrides affect recognition; prevent double counting in Plan, estimates,
-  Dashboard totals, and Projection explanations. Test generic funding/draw cycles
-  and partial payouts before activating the new classification.
+  changes. Shared recognition covers scheduled and actual funding/draw cycles,
+  partial payouts, category Plan totals, historical estimates, Dashboard grouping,
+  and Projection state/explanations without changing ledger splits.
+- [ ] **Escrow follow-through.** Add dedicated explanations for refunds, manual
+  adjustments, negative escrow balances, and combined mortgage/escrow payments;
+  expand imported GnuCash fixtures and scenario override tests for those cases.
+  Remove the temporary `/api/account/planning-role` request compatibility endpoint
+  after older web clients have migrated to `/api/account/kind`.
 - [ ] **Row and column totals.** Add totals across reporting periods for each row
   and totals down each period column, including a clearly explained grand total.
   Apply the same rules to actual, planned, and variance values. Do not count both
@@ -363,7 +369,7 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
   principal, and other economically meaningful balance-sheet flows.
 - [ ] Add printable/exportable Plan and scenario-comparison reports.
-- [ ] Improve explanations of account-role/split-purpose classification decisions.
+- [ ] Improve explanations of account-kind/split-purpose classification decisions.
 - [ ] Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
@@ -460,10 +466,13 @@ semantics, not duplicate business rules in presentation code.
   inactive XML/SQLite schedules, toggling source state on re-import, and exclusion
   from due and projected activity. GTK and web editors display and save the active
   state explicitly, including for formula-backed schedules in GTK.
-- [ ] **Account type changes on re-import.** Respect authoritative GnuCash account
-  type changes while retaining stable identities and BreadSched-owned metadata.
-  Validate the effect on account roles, commodity/precision, balance signs,
-  schedules, and existing transactions; report incompatible changes explicitly.
+- [x] **0160 — Account type changes on re-import.** Respect authoritative GnuCash
+  account type changes within the same ledger class while retaining stable identities
+  and BreadSched-owned account kinds. Record source type separately; retain the prior
+  effective type and report a review warning when a source change crosses ledger
+  classes and would invalidate a nonordinary kind. Commodity/precision, schedules,
+  and existing-transaction follow-through remain part of their dedicated roadmap
+  work.
 - [ ] **Supported scheduled formulas.** Investigate valid GnuCash formulas being
   ignored even though the current safe formula system can represent them. Cover
   parsing/translation, variables, recurrence ordinals, and per-leg formulas in both
@@ -545,8 +554,8 @@ Documentation responsibilities are intentionally separated:
 Remaining documentation work:
 
 - [ ] Build full user documentation and in-application help for Accounts, registers,
-  Scheduled transactions, Plan, Review/Actuals, Projection, scenarios, planning
-  roles, imports, reconciliation, and backup/recovery.
+  Scheduled transactions, Plan, Review/Actuals, Projection, scenarios, account kinds,
+  imports, reconciliation, and backup/recovery.
 - [ ] Add a generic-household walkthrough that creates a comprehensive chart of
   accounts, recurring income/expenses, savings/debt/retirement flows, and Base plan.
 - [ ] Add a multiple-scenario walkthrough that duplicates Base and compares alternate
@@ -556,7 +565,7 @@ Remaining documentation work:
 - [ ] Explain how actual transactions resolve planned/scheduled occurrences while
   preserving expected date/amount for variance history.
 - [ ] Explain commitments vs estimates, convergent historical estimation, planning
-  roles/split purposes, GnuCash compatibility, growth policies, formula schedules,
+  account kinds/split purposes, GnuCash compatibility, growth policies, formula schedules,
   and Projection explanations.
 - [ ] Prefer versioned shared help content that GTK and web can both surface where
   practical; add smoke/link tests against stale views/terminology.

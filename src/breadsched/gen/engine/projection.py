@@ -19,12 +19,13 @@ from decimal import Decimal
 from typing import Literal, TypedDict
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass
+from ..lib.account import Account, AccountClass, AccountKind
 from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, ProjectionBasis, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
 from . import ledger, planning, schedule
+from .escrow import recognition as escrow_recognition
 
 __all__ = [
     "MonthLedger",
@@ -605,12 +606,14 @@ class _MonthFlows:
             self.expense = self.expense + amount
             if funded_from_cash:
                 self.cash_delta = self.cash_delta - amount
-        elif account.atype.is_cash_like:
+        elif account.is_spendable_cash:
             self.cash_delta = self.cash_delta + amount
         elif cls is AccountClass.ASSET:
             self.contributions[account.handle] = (
                 self.contributions.get(account.handle, Money(0)) + amount
             )
+            if account.kind is AccountKind.ESCROW and funded_from_cash:
+                self.expense = self.expense + amount
             if funded_from_cash:
                 self.cash_delta = self.cash_delta - amount
         elif cls is AccountClass.LIABILITY:
@@ -797,7 +800,7 @@ def _apply_event(
             if event.funded_from_cash:
                 cash = cash - amount
                 flows.cash_flow = flows.cash_flow - amount
-        elif account.atype.is_cash_like:
+        elif account.is_spendable_cash:
             cash = cash + amount
             flows.cash_flow = flows.cash_flow + amount
         elif cls is AccountClass.ASSET:
@@ -823,6 +826,11 @@ def _apply_event(
             if event.funded_from_cash:
                 cash = cash - amount
                 flows.cash_flow = flows.cash_flow - amount
+    effective_legs = (
+        (split.account, (split.amount * factor).quantize(100)) for split in event.splits
+    )
+    funding, covered = escrow_recognition(effective_legs, accounts)
+    flows.expense = flows.expense + funding - _sum(covered.values())
     return cash
 
 
@@ -848,7 +856,7 @@ def _project_events(
         opening = scenario.opening_overrides.get(account.handle)
         if opening is None:
             opening = ledger.balance(db, account.handle, as_of=day_before)
-        if account.atype.is_cash_like:
+        if account.is_spendable_cash:
             cash = cash + opening
         elif account.account_class is AccountClass.ASSET:
             holdings[account.handle] = opening
@@ -1046,7 +1054,7 @@ def _project_periodic(
         opening = scenario.opening_overrides.get(account.handle)
         if opening is None:
             opening = ledger.balance(db, account.handle, as_of=day_before)
-        if account.atype.is_cash_like:
+        if account.is_spendable_cash:
             cash = cash + opening
         elif account.account_class is AccountClass.ASSET:
             holdings[account.handle] = opening
@@ -1137,6 +1145,8 @@ def _project_periodic(
                     # A schedule states both sides of the movement itself, so each
                     # split is booked where it lands and nothing is inferred.
                     flows.apply(scheduled_account, amount, funded_from_cash=False)
+                funding, covered = escrow_recognition(legs, accounts)
+                flows.expense = flows.expense + funding - _sum(covered.values())
 
         # One-off events ----------------------------------------------------
         for item in one_offs_by_month.get(index, []):

@@ -37,7 +37,7 @@ from decimal import Decimal
 from typing import Any, TypedDict
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass, AccountPlanningRole
+from ..lib.account import Account, AccountClass, AccountKind
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType
 from ..lib.scheduled import ScheduledTransaction
@@ -175,15 +175,15 @@ def default_config(db: DbSQLite) -> DashboardConfig:
     for account in db.iter_accounts():
         if account.is_root or account.placeholder or account.exclude_from_projection:
             continue
-        if account.planning_role is AccountPlanningRole.RETIREMENT:
+        if account.kind is AccountKind.RETIREMENT:
             retirement.append(account.handle)
-        elif account.planning_role is AccountPlanningRole.FSA:
+        elif account.kind is AccountKind.FSA:
             fsa_accounts.append(account.handle)
-        elif account.planning_role is AccountPlanningRole.INVESTMENT:
+        elif account.kind is AccountKind.INVESTMENT:
             investments.append(account.handle)
         elif account.account_class is AccountClass.LIABILITY:
             liabilities.append(account.handle)
-        elif account.atype.is_cash_like:
+        elif account.is_spendable_cash:
             liquid.append(account.handle)
         elif account.atype.is_investment:
             retirement.append(account.handle)
@@ -614,16 +614,17 @@ def _pairs_a_loan(db: DbSQLite, group: GroupConfig) -> bool:
 
 
 def _kind_for(account: Account) -> str:
-    if account.planning_role is AccountPlanningRole.RETIREMENT:
+    if account.kind is AccountKind.RETIREMENT:
         return "retirement"
-    if account.planning_role in {
-        AccountPlanningRole.FSA,
-        AccountPlanningRole.INVESTMENT,
+    if account.kind in {
+        AccountKind.FSA,
+        AccountKind.INVESTMENT,
+        AccountKind.ESCROW,
     }:
         return "asset"
     if account.account_class is AccountClass.LIABILITY:
         return "liability"
-    if account.atype.is_cash_like:
+    if account.is_spendable_cash:
         return "liquid"
     if account.atype.is_investment:
         return "retirement"

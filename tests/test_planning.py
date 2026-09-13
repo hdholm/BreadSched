@@ -6,6 +6,9 @@ from decimal import Decimal
 
 from breadsched.gen.engine import planning, projection, schedule
 from breadsched.gen.lib import (
+    Account,
+    AccountKind,
+    AccountType,
     Assumptions,
     Money,
     PeriodType,
@@ -560,6 +563,33 @@ class TestActualResolutionWorkflow:
 
 
 class TestHistoricalEstimateProposals:
+    def test_escrow_paid_expenses_do_not_become_uncovered_suggestions(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        escrow = Account(name="Escrow", atype=AccountType.ASSET, parent=book.assets)
+        escrow.kind = AccountKind.ESCROW
+        payout = ScheduledTransaction(
+            name="Escrow payout",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 4, 5)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("100")),
+                ScheduledSplit(escrow.handle, Money("-100")),
+            ],
+        )
+        with db.transaction("Escrow history and plan") as txn:
+            db.add_account(escrow, txn)
+            db.add_scheduled(payout, txn)
+            for month in (1, 2, 3):
+                actual = Transaction(post_date=date(2026, month, 5), description="Escrow payout")
+                actual.add_split(Split(book.utilities, Money("100")))
+                actual.add_split(Split(escrow.handle, Money("-100")))
+                db.add_transaction(actual, txn)
+
+        proposals = estimates.propose_historical_estimates(
+            db, as_of=date(2026, 4, 20), months=3, min_active_months=1
+        )
+        assert all(item.category != book.utilities for item in proposals)
+
     def test_future_multisplit_commitment_covers_each_category_and_respects_scenario(
         self, db, book
     ):

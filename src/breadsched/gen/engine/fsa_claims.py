@@ -8,7 +8,7 @@ from datetime import date
 from enum import Enum
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import AccountClass, AccountPlanningRole, FsaFundingYear
+from ..lib.account import AccountClass, AccountKind, FsaFundingYear
 from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
 from ..lib.money import Money
 from ..lib.transaction import Split, Transaction
@@ -41,7 +41,7 @@ def claim_year_window(db: DbSQLite, service_date: date) -> tuple[date, date] | N
     """Return the combined FSA plan-year/run-out window containing a service date."""
     matches: list[FsaFundingYear] = []
     for account in db.iter_accounts():
-        if account.planning_role is not AccountPlanningRole.FSA:
+        if account.kind is not AccountKind.FSA:
             continue
         matches.extend(
             year for year in account.fsa_years if year.start <= service_date <= year.through
@@ -78,7 +78,7 @@ def suggest_claims_for_transaction(
             eligible.append(("payment", split, None))
         elif account.account_class is AccountClass.EXPENSE and split.value < 0:
             eligible.append(("refund", split, None))
-        if account.planning_role is AccountPlanningRole.FSA and split.value < 0:
+        if account.kind is AccountKind.FSA and split.value < 0:
             eligible.append(("reimbursement", split, account.handle))
     if not eligible:
         return []
@@ -222,7 +222,7 @@ def _resolve_link(db: DbSQLite, link: FsaClaimSplitLink):
 
 def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFundingYear:
     account = db.get_account(allocation.account)
-    if account is None or account.planning_role is not AccountPlanningRole.FSA:
+    if account is None or account.kind is not AccountKind.FSA:
         raise ValueError("claim allocation must reference an FSA account")
     year = next(
         (item for item in account.fsa_years if item.start == allocation.funding_year_start),
@@ -319,11 +319,7 @@ def attach_transaction_to_claim(
                 and account.account_class is AccountClass.EXPENSE
                 and split.value < 0
             )
-            or (
-                role == "reimbursement"
-                and account.planning_role is AccountPlanningRole.FSA
-                and split.value < 0
-            )
+            or (role == "reimbursement" and account.kind is AccountKind.FSA and split.value < 0)
         )
         if eligible and (split_handle is None or split.handle == split_handle):
             candidates.append((split, account))
