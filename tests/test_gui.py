@@ -1669,6 +1669,48 @@ class TestScheduleEntry:
         assert dialog.save_button.get_sensitive() is False
         assert "formula" in dialog.status.get_text().lower()
 
+    def test_imported_loan_formula_dialog_is_bounded_and_resolves_period(
+        self, app, window, populated_book, caplog
+    ):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+        from breadsched.gui.views.scheduled import ScheduleSplitRow, _amount_of
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        expense = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and expense is not None
+        source = ScheduledTransaction(
+            name="Imported formula loan",
+            recurrence=Recurrence(
+                PeriodType.MONTH,
+                start=date(2026, 1, 1),
+                count=180,
+            ),
+            splits=[
+                ScheduledSplit(
+                    expense.handle,
+                    formula="ppmt( .05000 / 12.00 : i : 180.00 : 200,000.00 : 0 : 0 )",
+                ),
+                ScheduledSplit(
+                    expense.handle,
+                    formula="ipmt( .05000 / 12.00 : i : 180.00 : 200,000.00 : 0 : 0 )",
+                ),
+                ScheduledSplit(
+                    bank.handle,
+                    formula="-(pmt( .05000 / 12.00 : 180.00 : 200,000.00 : 0 : 0 ))",
+                ),
+            ],
+        )
+
+        dialog = ScheduleDialog(window, app.db, source=source)
+        assert dialog.formula_variables_entry is not None
+        assert dialog.content_scroller.get_vexpand() is True
+        assert dialog.button_box.get_parent() == dialog.get_child()
+        assert Money(_amount_of(source).replace(",", "")) > 0
+        split_row = ScheduleSplitRow(source.splits[0], source, app.db)
+        assert "=ppmt(" in split_row.amount_text()
+        assert "unusable formula" not in caplog.text
+
     def test_initial_schedule_selection_enables_view_edit(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("scheduled")

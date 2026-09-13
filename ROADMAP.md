@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline before this development series is **0180 — verifiable recovery
-workflows**. The current sequential candidate is **0181**.
+The accepted baseline before this development series is **0181 — wait for printable
+Projection state**. The current sequential candidate is **0182**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -493,6 +493,13 @@ semantics, not duplicate business rules in presentation code.
 
 - [x] **0158 — Frequency terminology.** Display `Once` in GTK and web schedule
   and scenario editors without changing the saved recurrence identifier.
+- [x] **0182 — Bounded complex-schedule inspection.** Put the GTK schedule details
+  body in a two-axis scroller while keeping Close/Save controls outside it, so large
+  imported and multi-split definitions cannot push actions off screen. Construct
+  formula controls before recurrence-loading callbacks can validate them. Resolve
+  displayed formula amounts with a representative occurrence's full `period`/`i`
+  context, preserving valid GnuCash colon/grouping syntax without warning or
+  rewriting its stored text. Advance the alpha version to `0.2.0a21`.
 - [ ] **Account-linked card payments.** Credit cards with payment days should appear
   in scheduled/upcoming activity. Design an account-linked payment schedule type
   if needed, defining statement/current-balance amounts, paid-in-full versus

@@ -111,7 +111,11 @@ rather than being silently simplified. Their original formula or recurrence data
 is shown read-only and excluded from planning, projection, and posting until it can
 be translated safely. It can still be duplicated exactly into an independent
 definition for review. Supported fixed and formula schedule forms can be edited
-while preserving their stored semantics.
+while preserving their stored semantics. The desktop details editor scrolls within
+the available window so its Close/Save actions remain reachable even for large
+multi-split definitions. Formula amounts shown in Scheduled are evaluated for the
+displayed occurrence, including imported GnuCash `i` period variables; the stored
+formula text is not rewritten merely for display.
 
 Suggest from History produces reviewable drafts rather than writing directly to the
 book. Choosing **Review…** opens the normal Base or scenario schedule editor with

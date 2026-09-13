@@ -79,12 +79,20 @@ def test_cancelling_an_import_rolls_back_the_whole_batch(db, gnucash_sqlite_path
 
 def test_imported_formula_support_is_decided_only_by_the_safe_engine():
     supported = ScheduledTransaction(
-        splits=[ScheduledSplit("account", formula="ipmt(0.05 / 12:period:360:200000)")]
+        splits=[
+            ScheduledSplit(
+                "account",
+                formula="ipmt( .05000 / 12.00 : i : 180.00 : 200,000.00 : 0 : 0 )",
+            )
+        ]
     )
     unsafe = ScheduledTransaction(
         splits=[ScheduledSplit("account", formula="__import__('os').system('false')")]
     )
     assert supported.formula_problem() is None
+    assert supported.splits[0].formula == (
+        "ipmt( .05000 / 12.00 : i : 180.00 : 200,000.00 : 0 : 0 )"
+    )
     assert "unknown function" in unsafe.formula_problem()
 
 

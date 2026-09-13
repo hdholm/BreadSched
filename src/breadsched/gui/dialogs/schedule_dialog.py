@@ -145,8 +145,14 @@ class ScheduleDialog(Gtk.Window):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
 
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        self.content_scroller = Gtk.ScrolledWindow(child=content)
+        self.content_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+        self.content_scroller.set_vexpand(True)
+        box.append(self.content_scroller)
+
         grid = Gtk.Grid(column_spacing=10, row_spacing=8)
-        box.append(grid)
+        content.append(grid)
         row = 0
 
         self.name_entry = Gtk.Entry(placeholder_text="Rent")
@@ -303,20 +309,21 @@ class ScheduleDialog(Gtk.Window):
 
         self.formula_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.formula_box.set_visible(False)
-        box.append(self.formula_box)
+        content.append(self.formula_box)
 
         self.details = Gtk.Label(xalign=0, yalign=0, wrap=True, selectable=True)
         self.details.set_visible(False)
-        box.append(self.details)
+        content.append(self.details)
 
         self.preview = Gtk.Label(xalign=0, wrap=True)
         self.preview.add_css_class("dim")
-        box.append(self.preview)
+        content.append(self.preview)
 
         self.status = Gtk.Label(xalign=0)
         box.append(self.status)
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        self.button_box = buttons
         cancel = Gtk.Button(label="Close" if read_only_reason else "Cancel")
         cancel.connect("clicked", lambda *_: self.close())
         buttons.append(cancel)
@@ -339,6 +346,10 @@ class ScheduleDialog(Gtk.Window):
         else:
             if source is not None:
                 if self._formula_mode:
+                    # Loading recurrence controls emits validation callbacks. Build
+                    # the formula controls first so those callbacks never observe a
+                    # half-constructed dialog.
+                    self._build_formula_editor(source)
                     self._load_formula_source(source)
                     self._protect_formula_fields(source)
                 else:
@@ -458,7 +469,6 @@ class ScheduleDialog(Gtk.Window):
         for widget in protected:
             widget.set_sensitive(False)
         self.preview.set_visible(False)
-        self._build_formula_editor(source)
         self.details.set_text(
             self._detail_text(
                 source,

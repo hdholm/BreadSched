@@ -26,6 +26,16 @@ from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap
 __all__ = ["ScheduledView", "UpcomingView", "ScheduleSplitRow"]
 
 
+def _representative_date(schedule_object: ScheduledTransaction) -> date:
+    """Date whose occurrence context should be shown for a definition."""
+    today = date.today()
+    return (
+        schedule_object.recurrence.next_after(today - timedelta(days=1))
+        or schedule_object.recurrence.last_occurrence()
+        or schedule_object.recurrence.start
+    )
+
+
 class ScheduleSplitRow:
     """One leg of a scheduled transaction, shown beneath its definition."""
 
@@ -45,7 +55,8 @@ class ScheduleSplitRow:
         if self.split.formula:
             # A loan leg is a formula. Showing the resolved figure alongside the
             # expression explains why next month's number will not match this one.
-            resolved = self.split.resolve(self.schedule.variables)
+            when = _representative_date(self.schedule)
+            resolved = self.split.resolve(self.schedule.context(when))
             return f"{resolved.format(parens_negative=True)}  ={self.split.formula}"
         return (self.split.amount or Money(0)).format(parens_negative=True)
 
@@ -63,7 +74,7 @@ def _kind_of(item) -> str:
 def _amount_of(item) -> str:
     if _is_split(item):
         return item.amount_text()
-    return item.amount().format()
+    return item.amount(when=_representative_date(item)).format()
 
 
 class ScheduledView(BaseView):
