@@ -14,6 +14,7 @@ from breadsched.gen.lib import (
     Account,
     AccountType,
     Commodity,
+    CommodityPrice,
     Money,
     Scenario,
     ScheduledTransaction,
@@ -415,7 +416,7 @@ class TestSchemaMigration:
         db = DbSQLite()
         db.load(str(path))
 
-        assert db.get_metadata("schema_version") == 5
+        assert db.get_metadata("schema_version") == 6
         assert db.get_metadata("current_budget") is None
         assert "budgets" not in db.get_scheduled(scheduled).serialize()
         assert "basis" not in db.get_scenario(scenario).serialize()
@@ -441,7 +442,7 @@ class TestSchemaMigration:
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [3, 4, 5]
+        ] == [3, 4, 5, 6]
         db.close()
 
         backup = tmp_path / "a3.breadsched.pre-migration-v3.bak"
@@ -478,7 +479,7 @@ class TestSchemaMigration:
         db = DbSQLite()
         db.load(str(path))
         try:
-            assert db.get_metadata("schema_version") == 5
+            assert db.get_metadata("schema_version") == 6
             assert db.get_account(card).atype is AccountType.CREDIT
             assert db.get_account(benefit).atype is AccountType.FSA
         finally:
@@ -539,8 +540,65 @@ class TestSchemaMigration:
         assert not (tmp_path / "a3-readonly.breadsched.pre-migration-v3.bak").exists()
 
     def test_new_books_report_clean_integrity(self, db):
-        assert db.get_metadata("schema_version") == 5
+        assert db.get_metadata("schema_version") == 6
         assert db.integrity_problems() == []
+
+    def test_schema_5_backfills_indexed_security_quantities(self, tmp_path):
+        path = tmp_path / "a5.breadsched"
+        db = DbSQLite()
+        db.load(str(path))
+        with db.transaction("Security units") as txn:
+            root = Account(name="Root", atype=AccountType.ROOT)
+            holding = Account(name="Holding", atype=AccountType.INVESTMENT, parent=root.handle)
+            equity = Account(name="Opening", atype=AccountType.EQUITY, parent=root.handle)
+            db.add_account(root, txn)
+            db.add_account(holding, txn)
+            db.add_account(equity, txn)
+            purchase = Transaction(post_date=date(2026, 1, 1), description="Holding")
+            purchase.splits = [
+                Split(holding.handle, Money("100"), quantity=Money("7.5")),
+                Split(equity.handle, Money("-100")),
+            ]
+            db.add_transaction(purchase, txn)
+        split_handle = purchase.splits[0].handle
+        db.close()
+
+        conn = sqlite3.connect(path)
+        conn.executescript(
+            """
+            ALTER TABLE split_index RENAME TO split_index_v6;
+            CREATE TABLE split_index (
+                handle TEXT PRIMARY KEY, txn TEXT NOT NULL, account TEXT NOT NULL,
+                post_date TEXT NOT NULL, value_num INTEGER NOT NULL, value_den INTEGER NOT NULL
+            );
+            INSERT INTO split_index(handle,txn,account,post_date,value_num,value_den)
+                SELECT handle,txn,account,post_date,value_num,value_den FROM split_index_v6;
+            DROP TABLE split_index_v6;
+            CREATE INDEX idx_split_account ON split_index(account, post_date);
+            CREATE INDEX idx_split_txn ON split_index(txn);
+            DROP TABLE price;
+            UPDATE metadata SET value='5' WHERE key='schema_version';
+            DELETE FROM schema_migration WHERE version=6;
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        migrated = DbSQLite()
+        migrated.load(str(path))
+        try:
+            row = (
+                migrated._require()
+                .execute(
+                    "SELECT quantity_num, quantity_den FROM split_index WHERE handle=?",
+                    (split_handle,),
+                )
+                .fetchone()
+            )
+            assert Money(row[0], row[1]) == Money("7.5")
+            assert migrated.get_metadata("schema_version") == 6
+        finally:
+            migrated.close()
 
 
 class TestBookVerification:
@@ -921,6 +979,7 @@ class TestDerivedIndexVerification:
             ("account", "name", "wrong", "account.index_mismatch"),
             ("txn", "description", "wrong", "txn.index_mismatch"),
             ("commodity", "mnemonic", "WRONG", "commodity.index_mismatch"),
+            ("price", "source", "wrong", "price.index_mismatch"),
             ("scheduled", "name", "wrong", "scheduled.index_mismatch"),
             ("scenario", "name", "wrong", "scenario.index_mismatch"),
         ],
@@ -958,6 +1017,16 @@ class TestDerivedIndexVerification:
                 db.add_scenario(obj, txn)
             elif table == "commodity":
                 obj = commodity
+            elif table == "price":
+                security = Commodity(namespace="FUND", mnemonic="INDEX")
+                db.add_commodity(security, txn)
+                obj = CommodityPrice(
+                    commodity=security.handle,
+                    currency=commodity.handle,
+                    quote_date=date(2026, 1, 1),
+                    value=Money("10"),
+                )
+                db.add_price(obj, txn)
             else:
                 obj = root
         db.close()

@@ -45,6 +45,7 @@ NS = {
     "slot": "http://www.gnucash.org/XML/slot",
     "sx": "http://www.gnucash.org/XML/sx",
     "recurrence": "http://www.gnucash.org/XML/recurrence",
+    "price": "http://www.gnucash.org/XML/price",
 }
 
 
@@ -89,6 +90,7 @@ def _iter_top_level(stream: IO[bytes]) -> Iterator[tuple[ET.Element, bool]]:
         f"{{{NS['gnc']}}}transaction",
         f"{{{NS['gnc']}}}commodity",
         f"{{{NS['gnc']}}}schedxaction",
+        "price",
     }
     context = ET.iterparse(stream, events=("start", "end"))
     _, root = next(context)
@@ -136,6 +138,7 @@ def import_book(
         stream = _open(path)
         try:
             accounts: list[ET.Element] = []
+            prices: list[ET.Element] = []
             for element, is_template in _iter_top_level(stream):
                 tag = element.tag.rsplit("}", 1)[-1]
                 if tag == "commodity" and not is_template:
@@ -143,12 +146,16 @@ def import_book(
                 elif tag == "account" and not is_template:
                     # Copy the element: it is cleared as soon as we hand it back.
                     accounts.append(_snapshot_account(element))
+                elif tag == "price" and not is_template:
+                    prices.append(_snapshot(element))
         finally:
             stream.close()
 
         LOG.debug("parsed %d real account element(s)", len(accounts))
         report("Reading accounts", 0)
         _write_accounts(accounts, sink)
+        for element in prices:
+            _read_price(element, sink)
 
         stream = _open(path)
         try:
@@ -199,6 +206,29 @@ def _read_commodity(element: ET.Element, sink: ImportSink) -> None:
         fullname=_text(element, "cmdty:name"),
         fraction=int(fraction) if fraction.isdigit() else 100,
     )
+
+
+def _read_price(element: ET.Element, sink: ImportSink) -> None:
+    guid = _text(element, "price:id")
+    commodity = _text(element, "price:commodity/cmdty:id")
+    currency = _text(element, "price:currency/cmdty:id")
+    raw_date = _text(element, "price:time/ts:date")
+    raw_value = _text(element, "price:value")
+    if not all((guid, commodity, currency, raw_date, raw_value)):
+        sink.result.warn("an incomplete GnuCash price was ignored")
+        return
+    try:
+        sink.price(
+            guid=guid,
+            commodity=commodity,
+            currency=currency,
+            quote_date=parse_gnc_date(raw_date),
+            value=money_from_fraction(raw_value),
+            source=_text(element, "price:source", "gnucash"),
+            quote_type=_text(element, "price:type", "last"),
+        )
+    except (ValueError, ArithmeticError) as exc:
+        sink.result.warn(f"price {guid[:8]} was ignored: {exc}")
 
 
 def _snapshot_account(element: ET.Element) -> ET.Element:

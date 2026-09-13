@@ -11,7 +11,7 @@ would be technically correct and useless.
 
 from __future__ import annotations
 
-from ...gen.engine import ledger  # noqa: E402
+from ...gen.engine import ledger, valuation  # noqa: E402
 from ...gen.lib.account import Account, AccountClass  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
 from ..gi_setup import Gio, Gtk
@@ -39,6 +39,12 @@ class AccountTreeView(BaseView):
         "transaction-add",
         "transaction-update",
         "transaction-delete",
+        "commodity-add",
+        "commodity-update",
+        "commodity-delete",
+        "price-add",
+        "price-update",
+        "price-delete",
     )
 
     def __init__(self, manager) -> None:
@@ -64,6 +70,11 @@ class AccountTreeView(BaseView):
         hidden_toggle = Gtk.ToggleButton(label="Show hidden")
         hidden_toggle.connect("toggled", self._on_hidden_toggled)
         header.append(hidden_toggle)
+
+        price_button = Gtk.Button(label="Security price…")
+        price_button.set_tooltip_text("Create a security or record a dated market price")
+        price_button.connect("clicked", self._on_security_price)
+        header.append(price_button)
 
         new_button = Gtk.Button(label="New account…", icon_name="list-add-symbolic")
         new_button.connect("clicked", lambda *_: self.edit_account(None))
@@ -142,7 +153,7 @@ class AccountTreeView(BaseView):
     def _format_balance(self, account) -> str:
         if self.db is None:
             return ""
-        total = ledger.balance_recursive(self.db, account.handle)
+        total = valuation.value_recursive(self.db, account.handle)
         return total.format(parens_negative=True)
 
     # ------------------------------------------------------------------ model
@@ -175,7 +186,7 @@ class AccountTreeView(BaseView):
     def _has_value(self, account: Account) -> bool:
         if self.db is None:
             return False
-        return bool(ledger.balance_recursive(self.db, account.handle)) or bool(
+        return bool(valuation.value_recursive(self.db, account.handle)) or bool(
             self.db.child_accounts(account.handle)
         )
 
@@ -201,12 +212,12 @@ class AccountTreeView(BaseView):
 
         if self.db is None:
             return
-        totals = ledger.totals_by_class(self.db)
+        totals = valuation.totals_by_class(self.db)
         cards = [
             ("Cash on hand", ledger.cash_on_hand(self.db)),
             ("Assets", totals.get(AccountClass.ASSET, Money(0))),
             ("Liabilities", totals.get(AccountClass.LIABILITY, Money(0))),
-            ("Net worth", ledger.net_worth(self.db)),
+            ("Net worth", valuation.net_worth(self.db)),
         ]
         for label, amount in cards:
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
@@ -253,6 +264,15 @@ class AccountTreeView(BaseView):
         account = self.selected_account()
         if account is not None:
             self.edit_account(account)
+
+    def _on_security_price(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.security_price_dialog import SecurityPriceDialog
+
+        dialog = SecurityPriceDialog(self.get_root(), self.db)
+        dialog.connect("close-request", self.refresh_on_close)
+        dialog.present()
 
     def _on_activated(self, _view, position: int) -> None:
         """Double-clicking an account opens its register, as GnuCash does.

@@ -2898,6 +2898,23 @@ class TestAccountDialogConstruction:
         dialog.name_entry.set_text("Something")
         assert dialog.save_button.get_sensitive() is True
 
+    def test_security_price_dialog_creates_an_exact_dated_quote(self, app, window, populated_book):
+        from breadsched.gui.dialogs.security_price_dialog import SecurityPriceDialog
+
+        app.open_book(populated_book)
+        dialog = SecurityPriceDialog(window, app.db)
+        dialog.mnemonic_entry.set_text("INDEX")
+        dialog.fullname_entry.set_text("Generic index fund")
+        dialog.date_entry.set_text("2026-03-01")
+        dialog.price_entry.set_text("125,25")
+        dialog._on_save(None)
+
+        security = app.db.get_commodity_by_mnemonic("INDEX")
+        assert security is not None
+        price = next(app.db.iter_prices(commodity=security.handle))
+        assert price.quote_date == date(2026, 3, 1)
+        assert price.value == Money("125.25")
+
 
 class TestRepaintsAreDeferred:
     def test_database_open_state_is_used_as_a_property(self):

@@ -23,7 +23,7 @@ from typing import Any
 from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.account import Account, AccountType, GnuCashAccountType
-from ...gen.lib.commodity import Commodity
+from ...gen.lib.commodity import Commodity, CommodityPrice
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import (
     PlanningResolution,
@@ -47,6 +47,7 @@ class ImportResult:
     transactions: int = 0
     splits: int = 0
     commodities: int = 0
+    prices: int = 0
     scheduled: int = 0
     skipped: int = 0
     warnings: list[str] = field(default_factory=list)
@@ -83,6 +84,8 @@ class ImportResult:
         ]
         if self.scheduled:
             parts.append(f"{self.scheduled} scheduled")
+        if self.prices:
+            parts.append(f"{self.prices} prices")
         if self.skipped:
             parts.append(f"{self.skipped} skipped")
         return ", ".join(parts)
@@ -225,6 +228,46 @@ class ImportSink:
             return identifier
         existing = self.db.get_commodity_by_mnemonic(identifier)
         return existing.handle if existing is not None else None
+
+    def price(
+        self,
+        guid: str,
+        commodity: str,
+        currency: str,
+        quote_date: date,
+        value: Money,
+        source: str = "gnucash",
+        quote_type: str = "last",
+    ) -> CommodityPrice | None:
+        """Add or refresh a GnuCash quote after resolving its commodities."""
+        security_handle = self.resolve_commodity(commodity)
+        currency_handle = self.resolve_commodity(currency)
+        if security_handle is None or currency_handle is None:
+            self.result.warn(f"price {guid[:8]} refers to an unknown commodity")
+            return None
+        quote_currency = self.db.get_commodity(currency_handle)
+        if quote_currency is None or not quote_currency.is_currency:
+            self.result.warn(f"price {guid[:8]} does not use a currency quote")
+            return None
+        try:
+            price = CommodityPrice(
+                handle=guid,
+                commodity=security_handle,
+                currency=currency_handle,
+                quote_date=quote_date,
+                value=value,
+                source=source or "gnucash",
+                quote_type=quote_type or "last",
+            )
+        except ValueError as exc:
+            self.result.warn(f"price {guid[:8]} was ignored: {exc}")
+            return None
+        if self.db.get_price(guid) is None:
+            self.db.add_price(price, self.txn)
+        else:
+            self.db.commit_price(price, self.txn)
+        self.result.prices += 1
+        return price
 
     # ---------------------------------------------------------------- accounts
 

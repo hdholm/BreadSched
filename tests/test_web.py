@@ -903,6 +903,31 @@ class TestThreadSafety:
 
 
 class TestWriting:
+    def test_a_security_and_exact_dated_price_can_be_entered(self, client):
+        _status, commodities = client.get("/api/commodities")
+        usd = next(item for item in commodities["currencies"] if item["mnemonic"] == "USD")
+
+        status, saved = client.post(
+            "/api/commodity/price",
+            {
+                "mnemonic": "INDEX",
+                "fullname": "Generic index fund",
+                "namespace": "FUND",
+                "fraction": "10000",
+                "currency": usd["handle"],
+                "date": "2026-03-01",
+                "price": "125,25",
+                "number_format": "comma",
+            },
+        )
+
+        assert status == 200
+        assert saved["price"] == "125.25"
+        _status, commodities = client.get("/api/commodities")
+        security = next(item for item in commodities["securities"] if item["mnemonic"] == "INDEX")
+        assert security["price"] == "125.25"
+        assert security["price_date"] == "2026-03-01"
+
     def test_a_transaction_can_be_posted(self, client):
         status, payload = client.post(
             "/api/transaction",

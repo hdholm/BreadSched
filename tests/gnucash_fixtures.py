@@ -24,6 +24,8 @@ __all__ = [
     "GNUCASH_SCHEMA",
     "new_guid",
     "write_account",
+    "write_commodity",
+    "write_price",
     "write_transaction",
     "create_book",
 ]
@@ -38,6 +40,11 @@ CREATE TABLE commodities (
     mnemonic text(2048) NOT NULL, fullname text(2048), cusip text(2048),
     fraction integer NOT NULL, quote_flag integer NOT NULL,
     quote_source text(2048), quote_tz text(2048));
+CREATE TABLE prices (
+    guid text(32) PRIMARY KEY NOT NULL, commodity_guid text(32) NOT NULL,
+    currency_guid text(32) NOT NULL, date text(19) NOT NULL,
+    source text(2048), type text(2048),
+    value_num bigint NOT NULL, value_denom bigint NOT NULL);
 CREATE TABLE accounts (
     guid text(32) PRIMARY KEY NOT NULL, name text(2048) NOT NULL,
     account_type text(2048) NOT NULL, commodity_guid text(32),
@@ -110,6 +117,25 @@ def write_account(
     conn.execute(
         "INSERT INTO accounts VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (guid, name, atype, commodity, 100, 0, parent, code, description, hidden, placeholder),
+    )
+    return guid
+
+
+def write_price(
+    conn: sqlite3.Connection,
+    guid: str,
+    commodity: str,
+    currency: str,
+    when: date,
+    numerator: int,
+    denominator: int = 100,
+    source: str = "user:price-editor",
+    quote_type: str = "last",
+) -> str:
+    stamp = when.strftime("%Y%m%d") + "104000"
+    conn.execute(
+        "INSERT INTO prices VALUES (?,?,?,?,?,?,?,?)",
+        (guid, commodity, currency, stamp, source, quote_type, numerator, denominator),
     )
     return guid
 

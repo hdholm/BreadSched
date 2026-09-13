@@ -144,7 +144,7 @@ BreadSched type selected by the user.
 | **Cash** | Immediately spendable physical or on-hand funds. |
 | **Bank** | Immediately spendable institutional funds, with bank-statement, reconciliation, import, and payment-source workflows. |
 | **Asset** | General property or non-liquid value that contributes to net worth but is not assumed to be available cash. |
-| **Investment** | Market-valued holdings with returns, contributions, withdrawals, and future security/price/lot support. |
+| **Investment** | Market-valued security holdings with dated prices, returns, contributions, withdrawals, and future lot support. |
 | **Retirement** | Restricted or tax-advantaged saving with retirement-contribution and distribution semantics. Investment descendants inherit the retirement context. |
 | **FSA / benefit** | Benefit availability determined by plan-year elections and claims rather than the custodial ledger balance. |
 | **Escrow** | Restricted funds whose contributions are planning expense and whose later disbursements must not count the same expense twice. |
@@ -159,6 +159,26 @@ Root and Technical types are structural/import-only and are not ordinary user
 accounts. Explicit split planning purposes remain available when one transaction's
 meaning needs to override normal account-type inference.
 
+### Security quantities, prices, and current value
+
+Investment and Retirement accounts may name a non-currency commodity such as a
+fund or stock. Transaction splits retain both the value in the transaction currency
+and the quantity in the account commodity. A dated price then values those exact
+units in the book's reporting currency as of a requested date. The latest applicable
+quote is used in Accounts, Dashboard groups, net worth, and the opening state of a
+Projection; if no usable quote exists, BreadSched explicitly retains the ledger
+value instead of inventing a market price.
+
+Use **Security price…** in the GTK Accounts view or web Accounts page to create a
+security and record an exact dated price. An account uses that price after its
+commodity is set to the security in the account editor. Re-entering a BreadSched
+price for the same security, currency, and date updates that quote. If a new native
+book has no currency commodity yet, its first price entry creates USD explicitly.
+GnuCash SQLite and XML imports also preserve supported dated prices and their stable
+source GUIDs.
+Direct security-to-reporting-currency quotes are supported now; foreign-exchange
+conversion, automatic quote downloads, lots, and cost basis remain future work.
+
 ## Primary GTK4 workflow
 
 The GTK4 application is the reference user experience. Its major views include:
@@ -170,8 +190,10 @@ The GTK4 application is the reference user experience. Its major views include:
   are not direct group members, FSA groups report benefit availability rather than
   custodial balance, and fully repaid loans are omitted. Assigning either side of a
   linked property/loan pair includes its unassigned companion so the group reports
-  equity, LTV, and the latest bounded repayment date. A link by itself still creates
-  no group, and unassigned accounts do not appear in dashboard groups.
+  equity, LTV, and the latest bounded repayment date. Generated parent headings roll
+  up only equity/total; property value, amount owed, LTV, and loan end remain on the
+  specific loan/property line. A link by itself still creates no group, and
+  unassigned accounts do not appear in dashboard groups.
 - **Accounts** — hierarchical chart of accounts with balances, account type, and
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit
@@ -242,7 +264,7 @@ standalone household ledger. The goal is not business-feature parity with GnuCas
 it is to preserve enough household ledger semantics that users can use BreadSched's
 planning and projection capabilities without abandoning a mature existing book.
 
-Current compatibility includes accounts, transactions, commodities, scheduled
+Current compatibility includes accounts, transactions, commodities, dated prices, scheduled
 transactions, formula schedules, reconciliation state, and an expanding set of
 account metadata. QIF and OFX imports detect period-vs-comma decimal conventions
 from the source file rather than silently stripping punctuation. GTK4 and web import

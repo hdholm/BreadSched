@@ -90,6 +90,34 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
             seen.add(current.handle)
             current = accounts[current.parent]
 
+    for price in db.iter_prices():
+        if price.commodity not in commodities:
+            issues.append(
+                BookIssue(
+                    "price.missing_commodity",
+                    f"price {price.handle} refers to missing commodity {price.commodity}",
+                    price.handle,
+                )
+            )
+        if price.currency not in commodities:
+            issues.append(
+                BookIssue(
+                    "price.missing_currency",
+                    f"price {price.handle} refers to missing currency {price.currency}",
+                    price.handle,
+                )
+            )
+        else:
+            currency = db.get_commodity(price.currency)
+            if currency is not None and not currency.is_currency:
+                issues.append(
+                    BookIssue(
+                        "price.non_currency_quote",
+                        f"price {price.handle} quote commodity is not a currency",
+                        price.handle,
+                    )
+                )
+
     # Ledger transactions.
     for transaction in db.iter_transactions():
         if transaction.currency is not None and transaction.currency not in commodities:

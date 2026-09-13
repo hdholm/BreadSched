@@ -10,9 +10,16 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from gnucash_fixtures import create_book, new_guid
+from gnucash_fixtures import (
+    create_book,
+    new_guid,
+    write_account,
+    write_commodity,
+    write_price,
+    write_transaction,
+)
 
-from breadsched.gen.engine import ledger
+from breadsched.gen.engine import ledger, valuation
 from breadsched.gen.lib import (
     AccountType,
     FsaFundingYear,
@@ -129,6 +136,65 @@ class TestSqliteImport:
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         usd = db.get_commodity_by_mnemonic("USD")
         assert usd is not None and usd.fraction == 100
+
+    def test_security_prices_come_across_and_reimport_by_guid(self, db, gnucash_sqlite_path):
+        security_guid = new_guid()
+        price_guid = new_guid()
+        account_guid = new_guid()
+        transaction_guid = new_guid()
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            write_commodity(
+                source,
+                security_guid,
+                namespace="FUND",
+                mnemonic="INDEX",
+                fullname="Generic index fund",
+                fraction=10000,
+            )
+            write_account(
+                source,
+                account_guid,
+                "Index holding",
+                "STOCK",
+                gnucash_sqlite_path.ids.assets,
+                security_guid,
+            )
+            write_transaction(
+                source,
+                transaction_guid,
+                gnucash_sqlite_path.ids.currency,
+                date(2026, 1, 1),
+                "Opening holding",
+                [
+                    (account_guid, 100000, 100, ""),
+                    (gnucash_sqlite_path.ids.checking, -100000, 100, ""),
+                ],
+            )
+            source.execute(
+                "UPDATE splits SET quantity_num=10, quantity_denom=1 "
+                "WHERE tx_guid=? AND account_guid=?",
+                (transaction_guid, account_guid),
+            )
+            write_price(
+                source,
+                price_guid,
+                security_guid,
+                gnucash_sqlite_path.ids.currency,
+                date(2026, 3, 1),
+                12525,
+            )
+
+        first = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        second = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        price = db.get_price(price_guid)
+        security = db.get_commodity_by_mnemonic("INDEX")
+        assert first.prices == second.prices == 1
+        assert price is not None
+        assert security is not None
+        assert price.value == Money("125.25")
+        assert price.commodity == security.handle
+        assert valuation.account_value(db, account_guid).total == Money("1252.50")
 
     def test_missing_transaction_date_is_reported_and_skipped(self, db, gnucash_sqlite_path):
         conn = sqlite3.connect(gnucash_sqlite_path.path)
@@ -379,6 +445,45 @@ class TestXmlImport:
     def test_non_dollar_commodities_survive(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)
         assert db.get_commodity_by_mnemonic("GBP").fullname == "Pound Sterling"
+
+    def test_xml_security_prices_are_imported(self, db, tmp_path, gnucash_xml_path):
+        security_guid = new_guid()
+        price_guid = new_guid()
+        body = gnucash_xml_path.plain.replace(
+            'xmlns:recurrence="http://www.gnucash.org/XML/recurrence">',
+            'xmlns:recurrence="http://www.gnucash.org/XML/recurrence"\n'
+            '     xmlns:price="http://www.gnucash.org/XML/price">',
+        )
+        price_xml = f"""
+  <gnc:commodity version="2.0.0">
+    <cmdty:space>FUND</cmdty:space><cmdty:id>INDEX</cmdty:id>
+    <cmdty:name>Generic index fund</cmdty:name><cmdty:fraction>10000</cmdty:fraction>
+  </gnc:commodity>
+  <gnc:pricedb version="1">
+    <price>
+      <price:id type="guid">{price_guid}</price:id>
+      <price:commodity><cmdty:space>FUND</cmdty:space><cmdty:id>INDEX</cmdty:id></price:commodity>
+      <price:currency><cmdty:space>CURRENCY</cmdty:space><cmdty:id>GBP</cmdty:id></price:currency>
+      <price:time><ts:date>2026-03-01 10:00:00 +0000</ts:date></price:time>
+      <price:source>user:price-editor</price:source><price:type>last</price:type>
+      <price:value>12525/100</price:value>
+    </price>
+  </gnc:pricedb>
+"""
+        body = body.replace(
+            '  <gnc:account version="2.0.0">',
+            price_xml + '\n  <gnc:account version="2.0.0">',
+            1,
+        )
+        path = tmp_path / f"{security_guid}.gnucash"
+        path.write_text(body, encoding="utf-8")
+
+        result = gnucash_xml.import_book(db, path)
+
+        price = db.get_price(price_guid)
+        assert result.prices == 1
+        assert price is not None
+        assert price.value == Money("125.25")
 
     def test_a_plain_uncompressed_book_reads_too(self, db, tmp_path, gnucash_xml_path):
         plain = tmp_path / "plain.gnucash"

@@ -21,7 +21,7 @@ from datetime import date
 from typing import Any, Literal
 
 from ..lib.account import Account
-from ..lib.commodity import Commodity
+from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
@@ -91,6 +91,11 @@ class DbBase(Callback, ABC):
         "transaction-update": (list,),
         "transaction-delete": (list,),
         "commodity-add": (list,),
+        "commodity-update": (list,),
+        "commodity-delete": (list,),
+        "price-add": (list,),
+        "price-update": (list,),
+        "price-delete": (list,),
         "scheduled-add": (list,),
         "scheduled-update": (list,),
         "scheduled-delete": (list,),
@@ -197,6 +202,12 @@ class DbBase(Callback, ABC):
     def add_commodity(self, commodity: Commodity, txn: DbTxn) -> str: ...
 
     @abstractmethod
+    def commit_commodity(self, commodity: Commodity, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def remove_commodity(self, handle: str, txn: DbTxn) -> None: ...
+
+    @abstractmethod
     def get_commodity(self, handle: str) -> Commodity | None: ...
 
     @abstractmethod
@@ -204,6 +215,26 @@ class DbBase(Callback, ABC):
 
     @abstractmethod
     def iter_commodities(self) -> Iterator[Commodity]: ...
+
+    @abstractmethod
+    def add_price(self, price: CommodityPrice, txn: DbTxn) -> str: ...
+
+    @abstractmethod
+    def commit_price(self, price: CommodityPrice, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def remove_price(self, handle: str, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def get_price(self, handle: str) -> CommodityPrice | None: ...
+
+    @abstractmethod
+    def iter_prices(
+        self,
+        commodity: str | None = None,
+        currency: str | None = None,
+        through: date | None = None,
+    ) -> Iterator[CommodityPrice]: ...
 
     @abstractmethod
     def add_scheduled(self, sched: ScheduledTransaction, txn: DbTxn) -> str: ...

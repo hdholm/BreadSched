@@ -30,6 +30,7 @@ from ..gen.engine import (
     planning,
     projection,
     schedule,
+    valuation,
 )
 from ..gen.engine import (
     dashboard as dashboard_engine,
@@ -201,6 +202,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "transactions": result.transactions,
             "splits": result.splits,
             "commodities": result.commodities,
+            "prices": result.prices,
             "scheduled": result.scheduled,
             "skipped": result.skipped,
             "skipped_by_reason": result.reasons(),
@@ -288,13 +290,14 @@ def cmd_accounts(args: argparse.Namespace) -> int:
             for account in db.child_accounts(handle):
                 if account.hidden and not args.all:
                     continue
-                total = ledger.balance_recursive(db, account.handle, as_of=as_of)
+                total = valuation.value_recursive(db, account.handle, as_of=as_of)
                 payload.append(
                     {
                         "handle": account.handle,
                         "name": db.full_name(account),
                         "type": account.atype.value,
                         "balance": total,
+                        "book_balance": ledger.balance_recursive(db, account.handle, as_of=as_of),
                     }
                 )
                 label = ("  " * depth) + account.name
@@ -370,7 +373,7 @@ def cmd_balance(args: argparse.Namespace) -> int:
         else:
             summary = {
                 "cash": ledger.cash_on_hand(db, as_of=as_of),
-                "net_worth": ledger.net_worth(db, as_of=as_of),
+                "net_worth": valuation.net_worth(db, as_of=as_of),
             }
             emit(
                 summary,

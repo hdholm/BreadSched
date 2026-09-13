@@ -8,7 +8,7 @@ from .account import (
     GnuCashAccountType,
 )
 from .base import PrimaryObject, create_handle
-from .commodity import DEFAULT_CURRENCY, Commodity
+from .commodity import DEFAULT_CURRENCY, Commodity, CommodityPrice
 from .formula import FormulaError, evaluate
 from .fsa_claim import (
     FsaClaim,
@@ -56,6 +56,7 @@ __all__ = [
     "AssumptionPeriod",
     "Assumptions",
     "Commodity",
+    "CommodityPrice",
     "DEFAULT_CURRENCY",
     "FormulaError",
     "Money",

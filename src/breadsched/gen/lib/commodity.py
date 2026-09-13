@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from .base import PrimaryObject
+from .money import Money
 
-__all__ = ["Commodity", "DEFAULT_CURRENCY"]
+__all__ = ["Commodity", "CommodityPrice", "DEFAULT_CURRENCY"]
 
 
 class Commodity(PrimaryObject):
@@ -56,6 +58,55 @@ class Commodity(PrimaryObject):
 
     def __repr__(self) -> str:
         return f"<Commodity {self.namespace}:{self.mnemonic}>"
+
+
+class CommodityPrice(PrimaryObject):
+    """One exact, dated price for a security in a currency."""
+
+    TABLE = "price"
+
+    def __init__(
+        self,
+        handle: str | None = None,
+        commodity: str = "",
+        currency: str = "",
+        quote_date: date | None = None,
+        value: Money | str | int = 1,
+        source: str = "breadsched",
+        quote_type: str = "last",
+    ) -> None:
+        super().__init__(handle)
+        self.commodity = commodity
+        self.currency = currency
+        self.quote_date = quote_date or date.today()
+        self.value = value if isinstance(value, Money) else Money(value)
+        if self.value <= 0:
+            raise ValueError("commodity price must be greater than zero")
+        self.source = source
+        self.quote_type = quote_type
+
+    def _serialize(self) -> dict[str, Any]:
+        return {
+            "commodity": self.commodity,
+            "currency": self.currency,
+            "quote_date": self.quote_date.isoformat(),
+            "value": [self.value.numerator, self.value.denominator],
+            "source": self.source,
+            "quote_type": self.quote_type,
+        }
+
+    def _unserialize(self, data: dict[str, Any]) -> None:
+        self.commodity = str(data["commodity"])
+        self.currency = str(data["currency"])
+        self.quote_date = date.fromisoformat(str(data["quote_date"]))
+        self.value = Money(*data["value"])
+        if self.value <= 0:
+            raise ValueError("commodity price must be greater than zero")
+        self.source = str(data.get("source", ""))
+        self.quote_type = str(data.get("quote_type", "last"))
+
+    def __repr__(self) -> str:
+        return f"<CommodityPrice {self.commodity[:8]} {self.quote_date} {self.value}>"
 
 
 _SYMBOLS = {"USD": "$", "CAD": "$", "AUD": "$", "GBP": "\u00a3", "EUR": "\u20ac", "JPY": "\u00a5"}

@@ -42,7 +42,7 @@ from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType
 from ..lib.scheduled import ScheduledTransaction
-from . import fsa, ledger, schedule
+from . import fsa, ledger, schedule, valuation
 
 __all__ = [
     "DashboardConfig",
@@ -707,18 +707,22 @@ def _build_group_node(
     if property_like:
         total = assets - debts
     unique_notes = list(dict.fromkeys(note for note in notes if note))
+    heading = bool(children)
     result = GroupResult(
         name=node.name,
         path=node.path,
         kind=kind,
         total=total,
         depth=depth,
-        heading=bool(children),
+        heading=heading,
         accounts=lines,
         note="; ".join(unique_notes),
-        value=assets if property_like else None,
-        debt=debts if property_like else None,
-        loan_end=loan_end if property_like else None,
+        # A generated path row is a summary heading, not a synthetic loan. Its
+        # equity belongs in the total column, while value, debt, LTV, and payoff
+        # date remain evidence attached to the specific property/loan row.
+        value=assets if property_like and not heading else None,
+        debt=debts if property_like and not heading else None,
+        loan_end=loan_end if property_like and not heading else None,
         liquid=liquid,
         _assets=assets,
         _debts=debts,
@@ -772,9 +776,27 @@ def _direct_group_totals(
 def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupAccountResult:
     name = db.full_name(account) or account.name
     if account.atype is not AccountType.FSA:
+        total = valuation.value_recursive(db, account.handle, as_of=today)
+        own = valuation.account_value(db, account, as_of=today)
+        note = ""
+        source = "ledger"
+        if (
+            own.source == "market"
+            and own.commodity is not None
+            and own.quantity is not None
+            and own.price is not None
+        ):
+            source = "market"
+            currency = own.currency.mnemonic if own.currency is not None else "currency"
+            note = (
+                f"{own.quantity.format()} {own.commodity.mnemonic} at "
+                f"{own.price.format()} {currency} as of {own.price_date}"
+            )
         return GroupAccountResult(
             name=name,
-            total=ledger.balance_recursive(db, account.handle, as_of=today),
+            total=total,
+            source=source,
+            note=note,
         )
     if not account.fsa_years:
         return GroupAccountResult(

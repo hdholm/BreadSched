@@ -78,6 +78,31 @@ exact rational ledger quantity. Multiplying two monetary amounts is invalid; sca
 a monetary amount requires a dimensionless scalar/rate, and dividing one monetary
 amount by another yields an exact dimensionless ratio.
 
+### Security quantities and dated valuation
+
+A split has two exact rational dimensions: ``value`` is expressed in the
+transaction currency and balances the double-entry transaction, while ``quantity``
+is expressed in the account commodity. These must not be collapsed. Historical
+ledger value remains an accounting fact even when a security's market price changes.
+
+A commodity price is a first-class dated object identifying the security, quote
+currency, exact positive price, source, and quote type. As-of valuation selects the
+latest direct quote on or before the requested date and multiplies it by the exact
+account-commodity quantity. It quantizes only the resulting presentation value to
+the quote currency fraction. Investment and Retirement accounts with a non-currency
+commodity use this market value in current-value presentations; absent a compatible
+quote, they explicitly fall back to ledger value. Ordinary accounts are never
+silently revalued. Projection uses the as-of market value as its opening state, then
+applies its explicit dated flows and return assumptions; a quote is not itself a
+future return assumption.
+
+The reporting currency is explicit book metadata when configured, otherwise USD
+when present, then the first currency commodity. This initial layer intentionally
+requires a direct security-to-reporting-currency quote. Foreign-exchange graphs,
+automatic quote retrieval, lot/cost-basis accounting, and projected market prices
+are separate concerns and must not be approximated by treating monetary amounts as
+prices or quantities.
+
 ## Event-driven planning
 
 BreadSched's Plan is derived from actual, scheduled, and estimated dated events.
@@ -311,6 +336,10 @@ strict object decoding begins. It is intentionally safe for schema-4 books whose
 earlier cleanup committed before strict decoding exposed an unconverted row. Merely
 opening a schema-3 book in an earlier release did not rewrite untouched account rows,
 so migrations cannot depend on a prior in-memory compatibility decoder having run.
+Schema 6 adds first-class dated commodity prices and derived split-index quantity
+columns. The transaction blob remains authoritative; migration backfills the new
+quantity index from each split's exact stored quantity (or its value for records
+that predate separate quantity serialization).
 Future persistent-model changes still require explicit forward migrations from the
 supported baseline. This native-book policy is independent of external GnuCash,
 QIF, OFX, and QFX import compatibility.

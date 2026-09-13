@@ -1,9 +1,9 @@
 """Import a GnuCash SQLite3 book.
 
 The source is opened read-only through a ``file:...?mode=ro`` URI: this reads a
-book GnuCash itself may have open, and can never write to it.  The tables consumed
-are ``commodities``, ``accounts``, ``transactions``, ``splits``, ``slots`` and
-``schedxactions`` / ``recurrences``.
+book GnuCash itself may have open, and can never write to it. The tables consumed
+include commodities, dated prices, accounts, transactions, splits, slots, and
+scheduled-transaction definitions.
 """
 
 from __future__ import annotations
@@ -192,6 +192,8 @@ def import_book(
             report("Reading commodities", 0)
             _import_commodities(conn, sink)
             LOG.debug("imported %d commodities", result.commodities)
+            _import_prices(conn, sink)
+            LOG.debug("imported %d prices", result.prices)
             report("Reading accounts", 0)
             _import_accounts(conn, sink)
             LOG.debug("imported %d accounts", result.accounts)
@@ -223,6 +225,24 @@ def _import_commodities(conn: sqlite3.Connection, sink: ImportSink) -> None:
             fraction=row["fraction"] or 100,
             source_guid=row["guid"],
         )
+
+
+def _import_prices(conn: sqlite3.Connection, sink: ImportSink) -> None:
+    if not _table_exists(conn, "prices"):
+        return
+    for row in conn.execute("SELECT * FROM prices"):
+        try:
+            sink.price(
+                guid=row["guid"],
+                commodity=row["commodity_guid"],
+                currency=row["currency_guid"],
+                quote_date=parse_gnc_date(row["date"]),
+                value=money_from_pair(row["value_num"], row["value_denom"]),
+                source=row["source"] or "gnucash",
+                quote_type=row["type"] or "last",
+            )
+        except (KeyError, TypeError, ValueError, ArithmeticError) as exc:
+            sink.result.warn(f"price {row['guid'][:8]} was ignored: {exc}")
 
 
 def book_roots(conn: sqlite3.Connection) -> tuple[str | None, str | None]:

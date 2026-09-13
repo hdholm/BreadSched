@@ -430,6 +430,82 @@ function openFsaYearsEditor(account) {
   document.body.append(backdrop);
 }
 
+async function openSecurityPriceEditor() {
+  const data = await get("/api/commodities");
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const security = el("select", {},
+    el("option", { value:"" }, "New security…"),
+    data.securities.map((item)=>el("option", { value:item.handle },
+      `${item.mnemonic} — ${item.fullname}`)));
+  const mnemonic = el("input", { placeholder:"INDEX" });
+  const fullname = el("input", { placeholder:"Index fund" });
+  const namespace = el("input", { value:"FUND", placeholder:"FUND" });
+  const fraction = el("input", { value:"10000", inputmode:"numeric" });
+  const currency = el("select", {}, data.currencies.length
+    ? data.currencies.map((item)=>
+        el("option", { value:item.handle }, `${item.mnemonic} — ${item.fullname}`))
+    : [el("option", { value:"" }, "USD — US Dollar (create)")]);
+  const when = el("input", { type:"date", value:new Date().toISOString().slice(0,10) });
+  const price = el("input", { inputmode:"decimal", placeholder:"125.25" });
+  const update = () => {
+    const item = data.securities.find((candidate)=>candidate.handle === security.value);
+    const creating = !item;
+    [mnemonic, fullname, namespace, fraction].forEach((field)=>field.disabled = !creating);
+    if (item) {
+      mnemonic.value = item.mnemonic;
+      fullname.value = item.fullname;
+      namespace.value = item.namespace;
+      fraction.value = item.fraction;
+      if (item.price !== null) price.value = item.price;
+      if (item.price_date) when.value = item.price_date;
+      if (item.currency) currency.value = item.currency;
+    } else {
+      mnemonic.value = "";
+      fullname.value = "";
+      namespace.value = "FUND";
+      fraction.value = "10000";
+      price.value = "";
+      when.value = new Date().toISOString().slice(0,10);
+    }
+  };
+  security.addEventListener("change", update);
+  const save = async () => {
+    await post("/api/commodity/price", {
+      commodity:security.value, mnemonic:mnemonic.value, fullname:fullname.value,
+      namespace:namespace.value, fraction:fraction.value, currency:currency.value,
+      date:when.value, price:price.value,
+    });
+    backdrop.remove();
+    say("Security price saved.");
+    render();
+  };
+  const form = el("section", { class:"detail-dialog" },
+    el("h2", {}, "Security price"),
+    el("p", { class:"note" },
+      "Prices value the exact security quantities already stored in transactions. "
+      + "They do not rewrite historical ledger amounts."),
+    el("div", { class:"scenario-fields" },
+      el("label", {}, "Security", security),
+      el("label", {}, "Symbol", mnemonic),
+      el("label", {}, "Full name", fullname),
+      el("label", {}, "Namespace", namespace),
+      el("label", {}, "Smallest-unit denominator", fraction),
+      el("label", {}, "Quote currency", currency),
+      el("label", {}, "As of", when),
+      el("label", {}, "Price per unit", price)),
+    el("div", { class:"toolbar" },
+      el("span", { style:"flex:1" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
+      el("button", { class:"action primary", type:"button",
+        onclick:()=>save().catch((error)=>say(error.message,"error")) }, "Save price")));
+  backdrop.append(form);
+  document.body.append(backdrop);
+  update();
+}
+
 
 async function openFsaClaimsEditor(initialHandle=null) {
   const data = await get("/api/fsa/claims");
@@ -676,14 +752,24 @@ async function showAccounts() {
       ? el("button", { class:"action", type:"button", onclick:()=>openFsaYearsEditor(account) },
           `${(account.fsa_years || []).length} funding year${(account.fsa_years || []).length === 1 ? "" : "s"}…`)
       : el("span", { class:"muted" }, "—")),
+    el("td", { class:"num" }, account.valuation_source === "market"
+      ? `${account.quantity} ${account.commodity}` : "—"),
+    el("td", { class:"num" }, account.valuation_source === "market"
+      ? `${money(account.price)} ${account.currency}` : "—"),
+    el("td", { class:"muted" }, account.price_date || "—"),
     el("td", { class: cls(account.balance) }, money(account.balance))));
 
   return el("div", {}, cards,
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button",
+        onclick:()=>openSecurityPriceEditor().catch((error)=>say(error.message,"error")) },
+      "Security price…")),
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
-      + "everything beneath them."),
-    table(["Account", "Type", "FSA years",
-           { label: "Balance", num: true }], rows));
+      + "everything beneath them. Investment values use the latest dated price "
+      + "when one is available; otherwise they retain their ledger value."),
+    table(["Account", "Type", "FSA years", { label:"Units", num:true },
+           { label:"Price", num:true }, "As of", { label: "Value", num: true }], rows));
 }
 
 async function showRegister() {
@@ -1056,7 +1142,7 @@ async function showPlan() {
               deltas && deltas[index] != null ? el("span", {
                 class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
                 title: `Active scenario minus ${comparison.name}`,
-              }, `Δ ${money(deltas[index])}`) : null)))),
+              }, `Δ ${money(deltas[index])}`) : null))),
         el("td", {
           class: category.totals[currentPlan.measure] == null
             ? "num muted" : cls(category.totals[currentPlan.measure]),

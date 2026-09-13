@@ -26,7 +26,7 @@ from typing import Any, TypeVar
 
 from ..lib.account import Account
 from ..lib.base import PrimaryObject
-from ..lib.commodity import Commodity
+from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
@@ -55,6 +55,16 @@ CREATE TABLE IF NOT EXISTS commodity (
     blob     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_commodity_mnemonic ON commodity(mnemonic);
+CREATE TABLE IF NOT EXISTS price (
+    handle     TEXT PRIMARY KEY,
+    commodity  TEXT NOT NULL,
+    currency   TEXT NOT NULL,
+    quote_date TEXT NOT NULL,
+    source     TEXT NOT NULL,
+    blob       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_price_lookup
+    ON price(commodity, currency, quote_date);
 CREATE TABLE IF NOT EXISTS account (
     handle TEXT PRIMARY KEY,
     parent TEXT,
@@ -76,7 +86,9 @@ CREATE TABLE IF NOT EXISTS split_index (
     account   TEXT NOT NULL,
     post_date TEXT NOT NULL,
     value_num INTEGER NOT NULL,
-    value_den INTEGER NOT NULL
+    value_den INTEGER NOT NULL,
+    quantity_num INTEGER NOT NULL DEFAULT 0,
+    quantity_den INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX IF NOT EXISTS idx_split_account ON split_index(account, post_date);
 CREATE INDEX IF NOT EXISTS idx_split_txn ON split_index(txn);
@@ -106,6 +118,7 @@ CREATE TABLE IF NOT EXISTS schema_migration (
 #: table -> (object class, signal stem)
 _TABLES: dict[str, tuple[type, str]] = {
     "commodity": (Commodity, "commodity"),
+    "price": (CommodityPrice, "price"),
     "account": (Account, "account"),
     "txn": (Transaction, "transaction"),
     "scheduled": (ScheduledTransaction, "scheduled"),
@@ -505,6 +518,7 @@ class DbSQLite(DbBase):
         # silently returning different data depending on the query path.
         derived_specs: dict[str, tuple[str, ...]] = {
             "commodity": ("mnemonic",),
+            "price": ("commodity", "currency", "quote_date", "source"),
             "account": ("parent", "name", "atype"),
             "txn": ("post_date", "description"),
             "scheduled": ("name",),
@@ -513,6 +527,10 @@ class DbSQLite(DbBase):
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
+            ("price", "commodity"): "",
+            ("price", "currency"): "",
+            ("price", "quote_date"): "",
+            ("price", "source"): "",
             ("account", "parent"): None,
             ("account", "name"): "",
             ("account", "atype"): "",
@@ -569,7 +587,7 @@ class DbSQLite(DbBase):
         for claim in self.iter_fsa_claims():
             issues.extend(self._verify_fsa_claim_references(claim))
 
-        expected: dict[str, tuple[str, str, str, int, int]] = {}
+        expected: dict[str, tuple[str, str, str, int, int, int, int]] = {}
         for transaction in self.iter_transactions():
             for split in transaction.splits:
                 expected[split.handle] = (
@@ -578,6 +596,8 @@ class DbSQLite(DbBase):
                     transaction.post_date.isoformat(),
                     split.value.numerator,
                     split.value.denominator,
+                    split.quantity.numerator,
+                    split.quantity.denominator,
                 )
 
         actual = {
@@ -587,9 +607,12 @@ class DbSQLite(DbBase):
                 row["post_date"],
                 row["value_num"],
                 row["value_den"],
+                row["quantity_num"],
+                row["quantity_den"],
             )
             for row in conn.execute(
-                "SELECT handle, txn, account, post_date, value_num, value_den FROM split_index"
+                "SELECT handle, txn, account, post_date, value_num, value_den, "
+                "quantity_num, quantity_den FROM split_index"
             )
         }
         for handle in sorted(expected.keys() - actual.keys()):
@@ -696,8 +719,8 @@ class DbSQLite(DbBase):
             )
             conn.execute("DELETE FROM split_index WHERE txn=?", (handle,))
             conn.executemany(
-                "INSERT INTO split_index(handle,txn,account,post_date,value_num,value_den)"
-                " VALUES (?,?,?,?,?,?)",
+                "INSERT INTO split_index(handle,txn,account,post_date,value_num,value_den,"
+                "quantity_num,quantity_den) VALUES (?,?,?,?,?,?,?,?)",
                 [
                     (
                         split["handle"],
@@ -706,6 +729,8 @@ class DbSQLite(DbBase):
                         data["post_date"],
                         split["value"][0],
                         split["value"][1],
+                        split.get("quantity", split["value"])[0],
+                        split.get("quantity", split["value"])[1],
                     )
                     for split in data.get("splits", [])
                 ],
@@ -714,6 +739,19 @@ class DbSQLite(DbBase):
             conn.execute(
                 "INSERT OR REPLACE INTO commodity(handle,mnemonic,blob) VALUES (?,?,?)",
                 (handle, data.get("mnemonic", ""), blob),
+            )
+        elif table == "price":
+            conn.execute(
+                "INSERT OR REPLACE INTO price"
+                "(handle,commodity,currency,quote_date,source,blob) VALUES (?,?,?,?,?,?)",
+                (
+                    handle,
+                    data.get("commodity", ""),
+                    data.get("currency", ""),
+                    data.get("quote_date", ""),
+                    data.get("source", ""),
+                    blob,
+                ),
             )
         elif table == "fsa_claim":
             conn.execute(
@@ -864,6 +902,34 @@ class DbSQLite(DbBase):
                     break
                 current = parent
 
+        elif table == "price":
+            price = CommodityPrice.from_dict(data)
+            if self.get_commodity(price.commodity) is None:
+                issues.append(
+                    BookIssue(
+                        "price.missing_commodity",
+                        f"price {handle} refers to missing commodity {price.commodity}",
+                        handle,
+                    )
+                )
+            currency = self.get_commodity(price.currency)
+            if currency is None:
+                issues.append(
+                    BookIssue(
+                        "price.missing_currency",
+                        f"price {handle} refers to missing currency {price.currency}",
+                        handle,
+                    )
+                )
+            elif not currency.is_currency:
+                issues.append(
+                    BookIssue(
+                        "price.non_currency_quote",
+                        f"price {handle} quote commodity is not a currency",
+                        handle,
+                    )
+                )
+
         elif table == "txn":
             transaction = Transaction.from_dict(data)
             if (
@@ -985,6 +1051,7 @@ class DbSQLite(DbBase):
     def _verify_derived_row(self, table: str, handle: str, data: dict[str, Any]) -> list[BookIssue]:
         columns_by_table: dict[str, tuple[str, ...]] = {
             "commodity": ("mnemonic",),
+            "price": ("commodity", "currency", "quote_date", "source"),
             "account": ("parent", "name", "atype"),
             "txn": ("post_date", "description"),
             "scheduled": ("name",),
@@ -993,6 +1060,10 @@ class DbSQLite(DbBase):
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
+            ("price", "commodity"): "",
+            ("price", "currency"): "",
+            ("price", "quote_date"): "",
+            ("price", "source"): "",
             ("account", "parent"): None,
             ("account", "name"): "",
             ("account", "atype"): "",
@@ -1044,6 +1115,8 @@ class DbSQLite(DbBase):
                 transaction.post_date.isoformat(),
                 split.value.numerator,
                 split.value.denominator,
+                split.quantity.numerator,
+                split.quantity.denominator,
             )
             for split in transaction.splits
         }
@@ -1054,9 +1127,12 @@ class DbSQLite(DbBase):
                 row["post_date"],
                 row["value_num"],
                 row["value_den"],
+                row["quantity_num"],
+                row["quantity_den"],
             )
             for row in self._require().execute(
-                "SELECT handle, txn, account, post_date, value_num, value_den "
+                "SELECT handle, txn, account, post_date, value_num, value_den, "
+                "quantity_num, quantity_den "
                 "FROM split_index WHERE txn=?",
                 (transaction.handle,),
             )
@@ -1200,6 +1276,15 @@ class DbSQLite(DbBase):
                             f"scheduled transaction {scheduled.name!r} refers to missing currency "
                             f"{handle}",
                             scheduled.handle,
+                        )
+                    )
+            for price in self.iter_prices():
+                if price.commodity == handle or price.currency == handle:
+                    issues.append(
+                        BookIssue(
+                            "price.missing_commodity",
+                            f"price {price.handle} refers to deleted commodity {handle}",
+                            price.handle,
                         )
                     )
 
@@ -1457,6 +1542,12 @@ class DbSQLite(DbBase):
     def add_commodity(self, commodity: Commodity, txn: DbTxn) -> str:
         return self._write(commodity, txn, "commodity")
 
+    def commit_commodity(self, commodity: Commodity, txn: DbTxn) -> None:
+        self._write(commodity, txn, "commodity")
+
+    def remove_commodity(self, handle: str, txn: DbTxn) -> None:
+        self._delete("commodity", handle, txn)
+
     def get_commodity(self, handle: str) -> Commodity | None:
         data = self._read("commodity", handle)
         return Commodity.from_dict(data) if data else None
@@ -1472,6 +1563,45 @@ class DbSQLite(DbBase):
     def iter_commodities(self) -> Iterator[Commodity]:
         for row in self._require().execute("SELECT handle, blob FROM commodity ORDER BY mnemonic"):
             obj = self._decode_row("commodity", row["handle"], row["blob"], Commodity)
+            if obj is not None:
+                yield obj
+
+    def add_price(self, price: CommodityPrice, txn: DbTxn) -> str:
+        return self._write(price, txn, "price")
+
+    def commit_price(self, price: CommodityPrice, txn: DbTxn) -> None:
+        self._write(price, txn, "price")
+
+    def remove_price(self, handle: str, txn: DbTxn) -> None:
+        self._delete("price", handle, txn)
+
+    def get_price(self, handle: str) -> CommodityPrice | None:
+        data = self._read("price", handle)
+        return CommodityPrice.from_dict(data) if data else None
+
+    def iter_prices(
+        self,
+        commodity: str | None = None,
+        currency: str | None = None,
+        through: date | None = None,
+    ) -> Iterator[CommodityPrice]:
+        clauses: list[str] = []
+        params: list[str] = []
+        if commodity is not None:
+            clauses.append("commodity=?")
+            params.append(commodity)
+        if currency is not None:
+            clauses.append("currency=?")
+            params.append(currency)
+        if through is not None:
+            clauses.append("quote_date<=?")
+            params.append(through.isoformat())
+        sql = "SELECT handle, blob FROM price"
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY quote_date DESC, CASE source WHEN 'breadsched' THEN 0 ELSE 1 END, handle"
+        for row in self._require().execute(sql, params):
+            obj = self._decode_row("price", row["handle"], row["blob"], CommodityPrice)
             if obj is not None:
                 yield obj
 

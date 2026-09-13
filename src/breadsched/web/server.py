@@ -34,6 +34,7 @@ from ..gen.engine import (
     planning,
     projection,
     schedule,
+    valuation,
 )
 from ..gen.engine.activity import PlanMeasure, PlanSettings
 from ..gen.lib import (
@@ -269,7 +270,7 @@ class Api:
             "accounts": counts["account"],
             "transactions": counts["txn"],
             "cash": ledger.cash_on_hand(self.db),
-            "net_worth": ledger.net_worth(self.db),
+            "net_worth": valuation.net_worth(self.db),
             "scenarios": [s.name for s in self.db.iter_scenarios()],
         }
 
@@ -279,6 +280,8 @@ class Api:
 
         def walk(parent: str | None, depth: int) -> None:
             for account in self.db.child_accounts(parent):
+                valued = valuation.account_value(self.db, account)
+                recursive = valuation.value_recursive(self.db, account)
                 rows.append(
                     {
                         "handle": account.handle,
@@ -302,8 +305,19 @@ class Api:
                             for year in account.fsa_years
                         ],
                         "depth": depth,
-                        "balance": ledger.balance_recursive(self.db, account.handle),
+                        "balance": recursive,
+                        "book_balance": ledger.balance_recursive(self.db, account.handle),
                         "own_balance": ledger.balance(self.db, account.handle),
+                        "valuation_source": valued.source,
+                        "quantity": valued.quantity,
+                        "price": valued.price,
+                        "price_date": valued.price_date,
+                        "commodity": (
+                            valued.commodity.mnemonic if valued.commodity is not None else None
+                        ),
+                        "currency": (
+                            valued.currency.mnemonic if valued.currency is not None else None
+                        ),
                     }
                 )
                 walk(account.handle, depth + 1)
@@ -311,6 +325,73 @@ class Api:
         root = self.db.root_account()
         walk(root.handle if root else None, 0)
         return rows
+
+    def commodities(self) -> dict:
+        """Securities, currencies, and their latest exact dated prices."""
+        currencies = [item for item in self.db.iter_commodities() if item.is_currency]
+        securities = []
+        for item in self.db.iter_commodities():
+            if item.is_currency:
+                continue
+            latest = valuation.latest_price(self.db, item)
+            securities.append(
+                {
+                    "handle": item.handle,
+                    "namespace": item.namespace,
+                    "mnemonic": item.mnemonic,
+                    "fullname": item.fullname,
+                    "fraction": item.fraction,
+                    "price": latest.value if latest is not None else None,
+                    "price_date": latest.quote_date if latest is not None else None,
+                    "currency": latest.currency if latest is not None else None,
+                }
+            )
+        return {
+            "currencies": [
+                {"handle": item.handle, "mnemonic": item.mnemonic, "fullname": item.fullname}
+                for item in currencies
+            ],
+            "securities": securities,
+        }
+
+    def commodity_price_save(self, payload: dict) -> dict:
+        """Create a security when needed and add or replace one dated quote."""
+        security_handle = str(payload.get("commodity") or "").strip() or None
+        currency_handle = str(payload.get("currency") or "").strip()
+        try:
+            quote_date = date.fromisoformat(str(payload.get("date") or ""))
+        except ValueError as exc:
+            raise ValueError("quote date is invalid") from exc
+        try:
+            value = self._input_money(payload, payload.get("price") or "0")
+        except (ValueError, ArithmeticError) as exc:
+            raise ValueError("price must be a valid number") from exc
+        if value <= 0:
+            raise ValueError("price must be greater than zero")
+        try:
+            fraction = int(payload.get("fraction") or 10000)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("security fraction must be a whole number") from exc
+        security, price = valuation.save_security_price(
+            self.db,
+            security_handle=security_handle,
+            currency_handle=currency_handle,
+            quote_date=quote_date,
+            value=value,
+            mnemonic=str(payload.get("mnemonic") or ""),
+            fullname=str(payload.get("fullname") or ""),
+            namespace=str(payload.get("namespace") or "FUND"),
+            fraction=fraction,
+        )
+        currency = self.db.get_commodity(price.currency)
+        assert currency is not None
+        return {
+            "commodity": security.handle,
+            "mnemonic": security.mnemonic,
+            "currency": currency.mnemonic,
+            "date": quote_date,
+            "price": value,
+        }
 
     def account_type_save(self, payload: dict) -> dict:
         handle = str(payload.get("handle", ""))
@@ -2447,6 +2528,7 @@ ROUTES = {
     ),
     "/api/summary": lambda a, q: a.summary(),
     "/api/accounts": lambda a, q: a.accounts(),
+    "/api/commodities": lambda a, q: a.commodities(),
     "/api/fsa/claims": lambda a, q: a.fsa_claims(),
     "/api/register": lambda a, q: a.register(
         q.get("account", [""])[0], int(q.get("limit", ["250"])[0])
@@ -2484,6 +2566,7 @@ ROUTES = {
 POST_ROUTES = {
     "/api/dashboard/config": lambda a, body: a.dashboard_config_save(body),
     "/api/account/type": lambda a, body: a.account_type_save(body),
+    "/api/commodity/price": lambda a, body: a.commodity_price_save(body),
     "/api/plan/settings": lambda a, body: a.plan_settings_save(body),
     "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),
     "/api/fsa/claim/save": lambda a, body: a.fsa_claim_save(body),

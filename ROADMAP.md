@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0165 — clean schema-4 event-planning core**.
-The current candidate is **0166 — complete schema migration and linked properties**.
+The accepted baseline is **0166 — complete schema migration and linked properties**.
+The current candidate is **0167 — dated security prices and current valuation**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -165,7 +165,11 @@ semantics, not duplicate business rules in presentation code.
     inflation, return, and interest assumptions with a Decimal-compatible `Rate`
     type while preserving existing serialized scenario data.
   - [ ] Remove hard-coded cents where account/commodity precision differs.
-  - [ ] Define commodity/currency-safe arithmetic and valuation boundaries.
+  - [x] **0167 — Initial commodity-safe valuation boundary.** Preserve exact split
+    quantity separately from transaction-currency value, apply only direct dated
+    security-to-reporting-currency quotes, and retain ledger value explicitly when
+    no compatible quote exists. Multi-currency conversion and lot accounting remain
+    separate work below.
 - [x] **0146 — Platform-correct user paths.** Settings use XDG/APPDATA/macOS
   Application Support as appropriate; Documents discovery honors XDG user dirs and
   common Windows OneDrive redirection; recognized cloud-sync roots emit an SQLite
@@ -190,6 +194,14 @@ semantics, not duplicate business rules in presentation code.
   property value, debt, equity, and LTV remain together without restoring inferred
   default groups. Report the latest bounded enabled repayment date as the loan end
   across engine, GTK, web, and CLI, and advance the alpha version to `0.2.0a5`.
+- [x] **0167 — Dated security prices and current valuation.** Add schema-6 exact,
+  dated commodity prices and indexed split quantities; preserve GnuCash SQLite/XML
+  prices by stable GUID; expose locale-aware GTK/web security price entry; and use
+  shared as-of market valuation for Investment/Retirement accounts in Accounts,
+  Dashboard groups, net worth, and Projection opening state. Generated Dashboard
+  path headings expose only rolled-up equity/total, leaving property value, owed,
+  LTV, and loan end on the specific leaf. Repair the web Plan script syntax exposed
+  by executable JavaScript checking, and advance the alpha version to `0.2.0a6`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -447,8 +459,13 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Use per-account and dated account-specific return/rate assumptions throughout
   Projection UI/comparison/explanations.
 - [ ] Add investment lots and cost basis.
-- [ ] Add a security/commodity price layer separating quantity, price, value,
-  exchange rate, and assumed return.
+- [x] **0167 — Add the initial security/commodity price layer.** Separate exact
+  quantity, dated direct price, current value, and assumed return without rewriting
+  ledger value. GTK/web support manual entry and GnuCash SQLite/XML import.
+- [ ] Add automatic/manual foreign-exchange quotes and explainable multi-currency
+  conversion paths; never combine unlike currencies in net worth silently.
+- [ ] Add optional online quote retrieval with explicit provenance, staleness, and
+  failure behavior; manual and imported quotes must remain usable offline.
 - [ ] Keep deterministic projection as the normal model; any later Monte Carlo engine
   should remain a separate optional analysis.
 
@@ -522,7 +539,10 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Add OFX investment transactions.
 - [ ] Add useful QIF investment/security records.
 - [ ] Strengthen account matching across imports/re-imports.
-- [ ] Add commodity/security mapping and price information where source formats allow.
+- [x] **0167 — Import GnuCash dated prices.** Preserve exact SQLite/XML security
+  quotes, quote currency, date, type/source, and stable price GUIDs on re-import.
+- [ ] Add reviewed commodity/security mapping where imported identifiers cannot be
+  matched safely and extend price import to additional source formats where present.
 - [ ] Import scheduled transactions from additional formats where represented
   reliably.
 - [ ] Expand duplicate/re-import tests, including cross-file duplicate heuristics.

@@ -91,8 +91,41 @@ def v4_to_v5(conn: sqlite3.Connection) -> None:
         )
 
 
-MIGRATIONS: dict[int, Migration] = {3: v3_to_v4, 4: v4_to_v5}
-LATEST_SCHEMA_VERSION = 5
+def v5_to_v6(conn: sqlite3.Connection) -> None:
+    """Add dated commodity prices and indexed account-commodity quantities."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS price (
+            handle     TEXT PRIMARY KEY,
+            commodity  TEXT NOT NULL,
+            currency   TEXT NOT NULL,
+            quote_date TEXT NOT NULL,
+            source     TEXT NOT NULL,
+            blob       TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_price_lookup
+            ON price(commodity, currency, quote_date);
+        """
+    )
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(split_index)")}
+    if "quantity_num" not in columns:
+        conn.execute("ALTER TABLE split_index ADD COLUMN quantity_num INTEGER NOT NULL DEFAULT 0")
+    if "quantity_den" not in columns:
+        conn.execute("ALTER TABLE split_index ADD COLUMN quantity_den INTEGER NOT NULL DEFAULT 1")
+    updates: list[tuple[int, int, str]] = []
+    for (raw,) in conn.execute("SELECT blob FROM txn").fetchall():
+        data = json.loads(raw)
+        for split in data.get("splits", []):
+            quantity = split.get("quantity") or split.get("value", [0, 1])
+            updates.append((int(quantity[0]), int(quantity[1]), str(split["handle"])))
+    conn.executemany(
+        "UPDATE split_index SET quantity_num=?, quantity_den=? WHERE handle=?",
+        updates,
+    )
+
+
+MIGRATIONS: dict[int, Migration] = {3: v3_to_v4, 4: v4_to_v5, 5: v5_to_v6}
+LATEST_SCHEMA_VERSION = 6
 
 __all__ = [
     "LATEST_SCHEMA_VERSION",

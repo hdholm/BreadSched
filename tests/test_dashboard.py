@@ -437,6 +437,36 @@ class TestLoansPairWithTheirAssets:
 
         assert group.loan_end == date(2026, 12, 1)
 
+    def test_property_heading_rolls_up_only_equity_not_loan_details(self, db, book, linked):
+        house, mortgage = linked
+        repayment = ScheduledTransaction(
+            name="Repayment",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 10, 1), count=3),
+            splits=[
+                ScheduledSplit(mortgage.handle, Money("100")),
+                ScheduledSplit(book.checking, Money("-100")),
+            ],
+        )
+        with db.transaction("repayment schedule") as txn:
+            db.add_scheduled(repayment, txn)
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Property:My House", [house.handle], "asset")]
+        )
+
+        board = dashboard.build(db, config, as_of=TODAY)
+        heading = board.group("Property")
+        leaf = board.group("Property:My House")
+
+        assert heading.total == Money("104261.50")
+        assert heading.value is None
+        assert heading.debt is None
+        assert heading.loan_to_value is None
+        assert heading.loan_end is None
+        assert leaf.value == Money("490200.00")
+        assert leaf.debt == Money("385938.50")
+        assert leaf.loan_to_value == Decimal("0.7873")
+        assert leaf.loan_end == date(2026, 12, 1)
+
     def test_an_unbounded_repayment_does_not_invent_a_loan_end(self, db, book, linked):
         house, mortgage = linked
         repayment = ScheduledTransaction(
@@ -822,7 +852,7 @@ class TestHierarchicalGroups:
         assert board.group("Cash").total == Money("350")
         assert board.liquid == Money("350")
 
-    def test_mixed_heading_reports_value_debt_and_net_total(self, db, book):
+    def test_mixed_heading_reports_only_its_net_total(self, db, book):
         asset = Account(name="Asset", atype=AccountType.ASSET, parent=book.assets)
         debt = Account(name="Debt", atype=AccountType.LIABILITY, parent=book.liabilities)
         with db.transaction("mixed heading") as txn:
@@ -845,8 +875,10 @@ class TestHierarchicalGroups:
 
         position = dashboard.build(db, config, as_of=TODAY).group("Position")
 
-        assert position.value == Money("100")
-        assert position.debt == Money("40")
+        assert position.value is None
+        assert position.debt is None
+        assert position.loan_to_value is None
+        assert position.loan_end is None
         assert position.total == Money("60")
 
 

@@ -20,7 +20,7 @@ from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
 from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
-from . import ledger, planning
+from . import planning, valuation
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -766,7 +766,7 @@ def _project_events(
         accounts[account.handle] = account
         opening = scenario.opening_overrides.get(account.handle)
         if opening is None:
-            opening = ledger.balance(db, account.handle, as_of=day_before)
+            opening = valuation.account_value(db, account, as_of=day_before).total
         if account.is_spendable_cash:
             cash = cash + opening
         elif account.account_class is AccountClass.ASSET:
