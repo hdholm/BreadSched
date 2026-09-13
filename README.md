@@ -141,7 +141,8 @@ of those state transitions rather than the engine's clock.
 In GTK, Projection and file imports run in the background. Longer projections show
 progress and can be cancelled; imports always remain one atomic undo step, so a
 cancelled import writes nothing. The open book and import source should remain in
-place until the operation reports completion or cancellation.
+place until the operation reports completion or cancellation. After a successful
+import, the visible book is refreshed once from the GTK main loop.
 
 Both GTK4 and web schedule/scenario editors expose a projection growth policy:
 

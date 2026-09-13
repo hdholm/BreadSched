@@ -39,6 +39,17 @@ def test_ofx_plugin_is_detected_by_content(tmp_path):
     assert plugin.id == "ofx"
 
 
+def test_ofx_notify_false_suppresses_the_complete_importer_boundary(db, tmp_path):
+    path = tmp_path / "statement.ofx"
+    path.write_text(_SAMPLE)
+    seen = []
+    db.connect("database-changed", lambda *_: seen.append("changed"))
+
+    ofx.import_book(db, path, notify=False)
+
+    assert seen == []
+
+
 def test_ofx_imports_bank_statement_as_historical_activity(db, book, tmp_path):
     path = tmp_path / "statement.ofx"
     path.write_text(_SAMPLE)

@@ -206,7 +206,8 @@ def import_book(
         result.finish(db, txn)
 
     LOG.info("import finished: %s", result.describe())
-    db.emit("database-changed", (db,))
+    if notify:
+        db.emit("database-changed", (db,))
     return result
 
 

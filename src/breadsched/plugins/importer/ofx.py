@@ -257,6 +257,7 @@ def import_book(
         if progress is not None:
             progress("Finishing", len(transaction_blocks), len(transaction_blocks))
         result.finish(db, txn)
-    db.emit("database-changed", (db,))
+    if notify:
+        db.emit("database-changed", (db,))
     LOG.info("OFX import finished: %s", result.describe())
     return result

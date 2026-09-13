@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline before this development series is **0181 — wait for printable
-Projection state**. The current sequential candidate is **0182**.
+The accepted baseline before this development series is **0182 — bounded complex-
+schedule inspection**. The current sequential candidate is **0183**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -500,6 +500,13 @@ semantics, not duplicate business rules in presentation code.
   displayed formula amounts with a representative occurrence's full `period`/`i`
   context, preserving valid GnuCash colon/grouping syntax without warning or
   rewriting its stored text. Advance the alpha version to `0.2.0a21`.
+- [x] **0183 — Main-thread import completion.** Make every importer honor
+  `notify=False` across its complete call boundary, including its final aggregate
+  database-change event. GTK background imports now deliver exactly one coalesced
+  notification after returning to the main loop, so GnuCash re-import cannot rebuild
+  `GtkColumnView` models from a worker thread and trigger native GTK criticals or a
+  segmentation fault. Cover SQLite/XML GnuCash, QIF, OFX, and the GTK callback-thread
+  contract; advance the alpha version to `0.2.0a22`.
 - [ ] **Account-linked card payments.** Credit cards with payment days should appear
   in scheduled/upcoming activity. Design an account-linked payment schedule type
   if needed, defining statement/current-balance amounts, paid-in-full versus

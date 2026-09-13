@@ -217,7 +217,12 @@ def import_book(
     finally:
         conn.close()
     LOG.info("import finished: %s", result.describe())
-    db.emit("database-changed", (db,))
+    # Interactive GTK imports run this function on a worker thread.  ``notify``
+    # therefore covers the complete importer boundary, not only DbTxn.commit():
+    # the dialog emits one coalesced notification after control returns to the
+    # GTK main loop.
+    if notify:
+        db.emit("database-changed", (db,))
     return result
 
 

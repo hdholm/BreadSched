@@ -18,6 +18,20 @@ def test_qif_plugin_is_detected_by_content(tmp_path):
     assert plugin.id == "qif"
 
 
+def test_qif_notify_false_suppresses_the_complete_importer_boundary(db, tmp_path):
+    path = tmp_path / "checking.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D01/15/2026\nT-45.67\nPGrocery Store\nLGroceries\n^\n"
+    )
+    seen = []
+    db.connect("database-changed", lambda *_: seen.append("changed"))
+
+    qif.import_book(db, path, notify=False)
+
+    assert seen == []
+
+
 def test_qif_imports_bank_income_and_expense_history(db, book, tmp_path):
     path = tmp_path / "checking.qif"
     path.write_text(

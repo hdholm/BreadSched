@@ -458,7 +458,11 @@ results to the GTK thread through `GLib.idle_add`; they never touch widgets. Imp
 workers use the application's existing sole writable `DbSQLite` instance because a
 second writer would violate the book lock. The modal import workflow prevents other
 GTK edits while that worker owns its one batch transaction, and cancellation raises
-through importer progress checkpoints so the transaction rolls back in full.
+through importer progress checkpoints so the transaction rolls back in full. The
+importer's `notify=False` contract suppresses its complete notification boundary,
+including any aggregate post-import event. After a successful commit, the dialog
+delivers one coalesced database/undo-state notification on the GTK main loop. A
+worker must never invoke a callback that can rebuild a GTK model.
 
 Native books deliberately use SQLite `DELETE` journaling with `synchronous=FULL`,
 not WAL. BreadSched has one explicit writer, while short-lived read-only projection

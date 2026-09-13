@@ -119,6 +119,14 @@ class TestDateParsing:
 
 
 class TestSqliteImport:
+    def test_notify_false_suppresses_the_complete_importer_boundary(self, db, gnucash_sqlite_path):
+        seen = []
+        db.connect("database-changed", lambda *_: seen.append("changed"))
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path, notify=False)
+
+        assert seen == []
+
     def test_imports_the_whole_chart_of_accounts(self, db, gnucash_sqlite_path):
         result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         assert result.accounts >= 9
@@ -504,6 +512,14 @@ class TestStandaloneReaders:
 
 
 class TestXmlImport:
+    def test_notify_false_suppresses_the_complete_importer_boundary(self, db, gnucash_xml_path):
+        seen = []
+        db.connect("database-changed", lambda *_: seen.append("changed"))
+
+        gnucash_xml.import_book(db, gnucash_xml_path.path, notify=False)
+
+        assert seen == []
+
     def test_imports_a_compressed_book(self, db, gnucash_xml_path):
         result = gnucash_xml.import_book(db, gnucash_xml_path.path)
         assert result.accounts == 4

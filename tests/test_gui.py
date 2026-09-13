@@ -3423,6 +3423,20 @@ class TestImportDialogProgress:
 
         assert observed and observed[0] != threading.get_ident()
 
+    def test_reimport_notifies_views_once_on_the_gtk_thread(self, dialog, gnucash_sqlite_path):
+        """A worker callback must never rebuild GTK list models directly."""
+        gtk_thread = threading.get_ident()
+        notifications = []
+        dialog.db.connect(
+            "database-changed", lambda *_: notifications.append(threading.get_ident())
+        )
+        dialog.set_source(gnucash_sqlite_path.path)
+
+        dialog._on_import(None)
+        assert dialog.wait_for_background()
+
+        assert notifications == [gtk_thread]
+
     def test_it_finishes_at_full(self, dialog, gnucash_sqlite_path):
         dialog.set_source(gnucash_sqlite_path.path)
         dialog._on_import(None)

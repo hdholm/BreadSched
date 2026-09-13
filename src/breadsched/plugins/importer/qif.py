@@ -390,6 +390,7 @@ def import_book(
             )
         report("Finishing", done)
         result.finish(db, txn)
-    db.emit("database-changed", (db,))
+    if notify:
+        db.emit("database-changed", (db,))
     LOG.info("QIF import finished: %s", result.describe())
     return result
