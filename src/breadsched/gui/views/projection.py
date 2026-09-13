@@ -49,6 +49,8 @@ _ASSUMPTIONS = [
 class ProjectionView(BaseView):
     """Multi-year forecast with live assumptions and saved scenarios."""
 
+    PRINTABLE = True
+
     WATCHES = (
         "database-changed",
         "scenario-add",
@@ -412,6 +414,22 @@ class ProjectionView(BaseView):
         ]
         self._render_summary(cards, alarm=shortfall is not None)
         self.warning_label.set_text("  ".join(result.warnings))
+
+    def printable_html(self) -> str | None:
+        """Return the current projection calculation and visible comparison."""
+        if self._result is None:
+            return None
+        from pathlib import Path
+
+        from ...plugins.export.html_report import projection_report
+
+        application = self.manager.get_application()
+        book_path = getattr(application, "book_path", None)
+        return projection_report(
+            self._result,
+            comparison=self._comparison,
+            book_name=Path(book_path).name if book_path else "",
+        )
 
     def _render_summary(self, cards, alarm: bool) -> None:
         child = self.summary.get_first_child()

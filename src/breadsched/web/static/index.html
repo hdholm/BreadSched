@@ -73,6 +73,7 @@ button.action:hover { border-color: var(--accent); color: var(--accent); }
 button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .shortfall { background: #fdecea; }
 .hidden { display: none; }
+.print-only { display: none; }
 .note { color: var(--dim); font-size: 12px; margin: 4px 0 12px; }
 svg { display: block; }
 form.entry { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
@@ -156,6 +157,31 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .detail-heading { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; }
 .detail-summary { margin-top:12px; }
 @media (max-width: 800px) { .review-grid { grid-template-columns: 1fr; } }
+@media print {
+  @page { size: landscape; margin: 12mm; }
+  :root { --ink: #000; --dim: #4b4b4b; --line: #bfc3c8; --bg: #fff; --panel: #fff; }
+  body { background: #fff; font-size: 10pt; }
+  header { padding: 0 0 8px; margin-bottom: 10px; }
+  header h1 { font-size: 13pt; }
+  nav, #print-view, #message, .detail-backdrop { display: none !important; }
+  #book { color: #333; }
+  main { padding: 0; max-width: none; }
+  .print-only { display: block; }
+  #print-title { font-size: 20pt; margin: 0 0 10px; }
+  .toolbar button.action, button.destructive { display: none; }
+  .toolbar { break-inside: avoid; }
+  input, select { appearance: none; border: 0; padding: 0 2px; background: transparent; }
+  .panel { border: 0; border-radius: 0; overflow: visible; }
+  .card, .balance-group { break-inside: avoid; }
+  table { break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th { position: static; }
+  tbody tr:hover { background: transparent; }
+  .plan-table { max-height: none; }
+  .plan-table th:first-child, .plan-table td:first-child { position: static; }
+  .plan-cell-button { border: 0; padding: 0; background: transparent; cursor: default; }
+}
 </style>
 </head>
 <body>
@@ -163,8 +189,11 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
   <h1>BreadSched</h1>
   <nav id="nav"></nav>
   <span id="book"></span>
+  <button id="print-view" class="action" type="button" onclick="window.print()"
+          title="Print the current view or save it as PDF">Print</button>
 </header>
 <main>
+  <h1 id="print-title" class="print-only"></h1>
   <div id="message" class="hidden"></div>
   <div id="view"></div>
 </main>
@@ -2422,6 +2451,8 @@ async function render() {
     class: name === current ? "active" : null, onclick: () => switchTo(name),
   }, name)));
   const view = document.getElementById("view");
+  document.body.dataset.view = current;
+  document.getElementById("print-title").textContent = current;
   view.replaceChildren(el("p", { class: "note" }, "Loading…"));
   try {
     view.replaceChildren(await RENDERERS[current]());

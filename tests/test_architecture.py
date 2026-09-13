@@ -87,6 +87,7 @@ class TestLayering:
             "enum",
             "fractions",
             "gzip",
+            "html",
             "json",
             "logging",
             "math",

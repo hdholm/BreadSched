@@ -248,6 +248,13 @@ semantics, not duplicate business rules in presentation code.
   Preserve supported arithmetic, financial functions, and `period`/`i` occurrence
   variables dynamically with XML parity, retain the no-arbitrary-code boundary,
   and advance the alpha version to `0.2.0a13`.
+- [x] **0175 — Printable current reports.** Add one GTK Print current view action
+  for the applied Dashboard, Plan, and Projection, using private self-contained HTML
+  previews that retain report values, totals, annual assumptions, charts, and active
+  Projection comparisons and can print or save as PDF. Add browser-native printing
+  for every current web view with print styling that removes navigation and expands
+  scrollable report tables. Keep Base and scenario estimate draft types distinct in
+  the full-cache extended mypy gate. Advance the alpha version to `0.2.0a14`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -453,7 +460,8 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Add clearer unresolved/unexpected indicators in Plan.
 - [ ] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
   principal, and other economically meaningful balance-sheet flows.
-- [ ] Add printable/exportable Plan and scenario-comparison reports.
+- [x] Print/export the applied Plan and displayed Projection comparisons through
+  self-contained HTML reports, with browser PDF output and GTK/web parity.
 - [ ] Improve explanations of account-kind/split-purpose classification decisions.
 - [ ] Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
@@ -643,7 +651,9 @@ semantics, not duplicate business rules in presentation code.
     typelib, matching the launcher's environment handling instead of aborting pytest.
 - [ ] Improve first-run UX, preferences, actionable errors, icons/resources, and
   native desktop polish without moving financial logic into GUI code.
-- [ ] Add printable/exportable reports and richer scenario/flow reporting.
+- [x] Print the current GTK Dashboard, Plan, and Projection and every current web
+  view, preserving applied values while keeping print mechanics in the presentation
+  boundary. Continue richer scenario/flow reporting as the underlying views grow.
 - [ ] Keep long-running operations responsive with clear progress/cancellation.
 
 ## In-application help and documentation

@@ -178,6 +178,17 @@ class TestItServes:
         assert headers.get("Content-Type", "").startswith("text/html")
         assert b"<html" in body.lower()
 
+    def test_the_current_view_has_a_printable_browser_presentation(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode("utf-8")
+
+        assert 'id="print-view"' in page
+        assert 'onclick="window.print()"' in page
+        assert "@media print" in page
+        assert "document.body.dataset.view = current" in page
+        assert 'document.getElementById("print-title").textContent = current' in page
+        assert ".plan-table { max-height: none; }" in page
+
     def test_schedule_occurrence_controls_are_structured(self, client):
         _status, body, _headers = client.raw("/")
         text = body.decode("utf-8")

@@ -223,6 +223,14 @@ The GTK4 application is the reference user experience. Its major views include:
 - **Projection** — saved assumptions and scenarios projected forward from the
   current book.
 
+Dashboard, Plan, and Projection can be printed from the GTK toolbar or **File →
+Print Current View** (`Ctrl+P`). BreadSched opens a self-contained print preview in
+the default browser using the values already applied in the view; the browser's
+print dialog can send it to a printer or save it as PDF. Plan output retains its
+applied date range, grouping, measure, scenario, and totals. Projection output
+includes its annual assumptions, chart, year-end table, warnings, and any displayed
+comparison.
+
 Start the GTK application with:
 
 ```bash
@@ -244,6 +252,11 @@ Start it with:
 ```bash
 breadsched web household.breadsched
 ```
+
+Use **Print** in the header to print whichever web view is currently displayed or
+save it as PDF. Print styling removes navigation and action buttons, expands Plan
+tables beyond their on-screen scroll area, and includes the selected controls and
+calculated report content.
 
 The web security and deployment model is part of the current hardening roadmap;
 do not expose the development server on an untrusted network.

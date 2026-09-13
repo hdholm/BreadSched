@@ -475,6 +475,23 @@ independent implementations of financial business logic.
 Shared engines and application/use-case services should own behavior; interface
 layers should own presentation, interaction state, and platform-specific concerns.
 
+### Printable reports
+
+Printing is a presentation of an already calculated view, not another financial
+engine. A printable Dashboard, Plan, or Projection consumes the same structured
+engine result held by the visible GTK view, so printing cannot silently substitute
+different dates, grouping, measure, scenario, assumptions, or values. The GTK
+application emits a private self-contained HTML preview and delegates printer/PDF
+selection to the system browser; this avoids a separate GTK-only pagination model
+and remains usable on GTK4 versions without a native printing API. Temporary
+previews are owner-readable and removed when the application exits.
+
+The web interface prints its current rendered view directly. Print-specific CSS
+removes navigation and editing actions, restores tables hidden by screen scroll
+regions, and preserves text, tables, and SVG charts as scalable output. Both paths
+keep formatting and pagination in presentation code while all monetary values,
+totals, classifications, and comparisons remain engine-owned.
+
 ## Security posture
 
 Financial books are sensitive local data. Import content, schedule formulas, and

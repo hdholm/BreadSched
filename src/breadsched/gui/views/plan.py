@@ -49,6 +49,8 @@ _MONTHS = (
 class PlanView(BaseView):
     """Category-oriented plan versus actual view derived from transaction events."""
 
+    PRINTABLE = True
+
     WATCHES = (
         "database-changed",
         "transaction-add",
@@ -547,6 +549,24 @@ class PlanView(BaseView):
         )
         self._update_scenario_actions()
         self._render()
+
+    def printable_html(self) -> str | None:
+        """Return the applied Plan state, not un-applied control edits."""
+        if self._report is None:
+            return None
+        from pathlib import Path
+
+        from ...plugins.export.html_report import plan_report
+
+        selected = self._selected_scenario()
+        application = self.manager.get_application()
+        book_path = getattr(application, "book_path", None)
+        return plan_report(
+            self._report,
+            self._measure(),
+            scenario_name=selected.name if selected is not None else "Base scenario",
+            book_name=Path(book_path).name if book_path else "",
+        )
 
     def _clear_grid(self) -> None:
         child = self.grid.get_first_child()

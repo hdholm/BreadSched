@@ -122,16 +122,16 @@ class HistoricalEstimatesDialog(Gtk.Window):
             if scenario_handle is None:
                 from .schedule_dialog import ScheduleDialog
 
-                draft = estimates.draft_historical_estimate(self.db, proposal)
-                dialog = ScheduleDialog(self, self.db, source=draft, creating=True)
+                base_draft = estimates.draft_historical_estimate(self.db, proposal)
+                dialog = ScheduleDialog(self, self.db, source=base_draft, creating=True)
             else:
                 from .scenario_schedule_dialog import ScenarioScheduleDialog
 
                 scenario = self.db.get_scenario(scenario_handle)
                 if scenario is None:
                     raise ValueError("saved scenario no longer exists")
-                draft = estimates.draft_scenario_estimate(self.db, proposal)
-                dialog = ScenarioScheduleDialog(self, self.db, scenario, current=draft)
+                scenario_draft = estimates.draft_scenario_estimate(self.db, proposal)
+                dialog = ScenarioScheduleDialog(self, self.db, scenario, current=scenario_draft)
         except ValueError as exc:
             self.status.set_text(str(exc))
             return

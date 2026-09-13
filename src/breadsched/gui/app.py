@@ -404,6 +404,7 @@ def build_menu_model() -> Gio.Menu:
     transfer.append("_Export Transactions…", "app.export")
     file_menu.append_section(None, transfer)
     quit_section = Gio.Menu()
+    quit_section.append("_Print Current View…", "win.print-view")
     quit_section.append("_Quit", "app.quit")
     file_menu.append_section(None, quit_section)
     menubar.append_submenu("_File", file_menu)

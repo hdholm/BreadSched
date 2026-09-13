@@ -39,6 +39,8 @@ TOOLBAR = [
         "win.show-category::projection",
         "Show the projection",
     ),
+    (None, None, None, None),
+    ("Print", "document-print-symbolic", "win.print-view", "Print the current report"),
 ]
 
 CATEGORIES = [
@@ -81,6 +83,13 @@ class ViewManager(Gtk.ApplicationWindow):
         action = Gio.SimpleAction.new("show-category", GLib.VariantType.new("s"))
         action.connect("activate", lambda _a, target: self.show_category(target.get_string()))
         self.add_action(action)
+        self.print_action = Gio.SimpleAction.new("print-view", None)
+        self.print_action.connect("activate", self._on_print_view)
+        self.print_action.set_enabled(False)
+        self.add_action(self.print_action)
+        application = self.get_application()
+        if application is not None:
+            application.set_accels_for_action("win.print-view", ["<Control>p"])
 
     # ----------------------------------------------------------------- chrome
 
@@ -208,6 +217,7 @@ class ViewManager(Gtk.ApplicationWindow):
         for view in self._views.values():
             view.set_db(None)
         self.db = None
+        self.print_action.set_enabled(False)
 
     def book_closing(self) -> None:
         """Detach from the current book before its database connection is closed."""
@@ -347,6 +357,28 @@ class ViewManager(Gtk.ApplicationWindow):
         # was reached -- toolbar, menu, or a jump from another view.
         self._select_navigator(key)
         view.refresh()
+        self.print_action.set_enabled(
+            bool(self.db is not None and getattr(view, "PRINTABLE", False))
+        )
+
+    def _on_print_view(self, *_args) -> None:
+        """Print the applied state of a report-capable current view."""
+        view = self.stack.get_visible_child()
+        if view is None or not getattr(view, "PRINTABLE", False):
+            return
+        try:
+            view.flush_refresh()
+            document = view.printable_html()
+            if not document:
+                return
+            from .printing import open_print_preview
+
+            open_print_preview(document)
+        except Exception as exc:  # noqa: BLE001 - opening the desktop handler may fail
+            application = self.get_application()
+            reporter = getattr(application, "_report", None)
+            if reporter is not None:
+                reporter(f"Could not open the print preview: {exc}")
 
     def _build_view(self, key: str):
         from .views.accounts import AccountTreeView

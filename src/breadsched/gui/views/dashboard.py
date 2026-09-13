@@ -25,6 +25,8 @@ __all__ = ["DashboardView"]
 class DashboardView(BaseView):
     """Balances, the liquidity verdict, and dated pending cash flow."""
 
+    PRINTABLE = True
+
     WATCHES = (
         "database-changed",
         "transaction-add",
@@ -199,6 +201,21 @@ class DashboardView(BaseView):
         for item in self.board.pending:
             store.append(Row(item))
         self.bills_view.set_model(Gtk.SingleSelection(model=sorted_model(self.bills_view, store)))
+
+    def printable_html(self) -> str | None:
+        """Return the currently rendered Dashboard as a print-ready document."""
+        if self.board is None:
+            return None
+        from pathlib import Path
+
+        from ...plugins.export.html_report import dashboard_report
+
+        application = self.manager.get_application()
+        book_path = getattr(application, "book_path", None)
+        return dashboard_report(
+            self.board,
+            book_name=Path(book_path).name if book_path else "",
+        )
 
     def _render_cards(self) -> None:
         _empty(self.cards)

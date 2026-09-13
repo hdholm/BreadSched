@@ -862,6 +862,28 @@ class TestMenuBarAndToolbar:
             child = child.get_next_sibling()
         assert len(children) >= 6
 
+    def test_dashboard_plan_and_projection_print_their_applied_state(
+        self, app, window, populated_book, monkeypatch
+    ):
+        from breadsched.gui import printing
+
+        opened = []
+        monkeypatch.setattr(printing, "open_print_preview", opened.append)
+        app.open_book(populated_book)
+
+        for key, heading in (
+            ("dashboard", "Dashboard"),
+            ("plan", "Plan"),
+            ("projection", "Projection"),
+        ):
+            window.show_category(key)
+            assert window.print_action.get_enabled() is True
+            window.print_action.activate(None)
+            assert f"<h1>{heading}</h1>" in opened[-1]
+
+        window.show_category("accounts")
+        assert window.print_action.get_enabled() is False
+
     def test_every_menu_action_is_registered(self, app):
         """A menu item pointing at a missing action is silently dead on screen."""
         menu = app.get_menubar()
