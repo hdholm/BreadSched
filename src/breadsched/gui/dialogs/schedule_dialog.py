@@ -84,14 +84,16 @@ class ScheduleDialog(Gtk.Window):
         db: DbSQLite,
         source: ScheduledTransaction | None = None,
         read_only_reason: str | None = None,
+        creating: bool = False,
     ) -> None:
+        self.creating = source is None or creating
         super().__init__(
             title=(
                 "Scheduled transaction details"
                 if source is not None and read_only_reason
-                else "Edit scheduled transaction"
-                if source
                 else "New scheduled transaction"
+                if self.creating
+                else "Edit scheduled transaction"
             ),
             transient_for=parent,
             modal=True,
@@ -122,11 +124,21 @@ class ScheduleDialog(Gtk.Window):
                 )
             )
         self.set_default_size(560, 520)
+        referenced = {split.account for split in source.splits} if source is not None else set()
         self._accounts = sorted(
-            (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
+            (
+                account
+                for account in db.iter_accounts()
+                if not account.is_root
+                and not account.placeholder
+                and (not account.hidden or account.handle in referenced)
+            ),
             key=db.full_name,
         )
-        self._names = [db.full_name(a) for a in self._accounts]
+        self._names = [
+            f"{db.full_name(account)} (hidden)" if account.hidden else db.full_name(account)
+            for account in self._accounts
+        ]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -1000,9 +1012,9 @@ class ScheduleDialog(Gtk.Window):
 
     def _on_save(self, _button) -> None:
         schedule = self.build()
-        action = "Update" if self.source is not None else "Add"
+        action = "Add" if self.creating else "Update"
         with self.db.transaction(f"{action} scheduled {schedule.name}") as txn:
-            if self.source is None:
+            if self.creating:
                 self.db.add_scheduled(schedule, txn)
             else:
                 self.db.commit_scheduled(schedule, txn)

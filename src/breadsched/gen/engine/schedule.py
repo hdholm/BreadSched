@@ -12,11 +12,24 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from ..db.sqlite import DbSQLite
+from ..lib.base import create_handle
 from ..lib.money import Money
-from ..lib.scheduled import ScheduledTransaction
+from ..lib.recurrence import PeriodType, Recurrence
+from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import Transaction
 
-__all__ = ["Occurrence", "due_occurrences", "post_due", "already_posted", "forecast_occurrences"]
+__all__ = [
+    "Occurrence",
+    "already_posted",
+    "delete_definition",
+    "due_occurrences",
+    "duplicate_definition",
+    "forecast_occurrences",
+    "from_transaction",
+    "post_due",
+    "post_occurrences",
+    "skip_occurrences",
+]
 
 
 @dataclass(slots=True)
@@ -33,6 +46,59 @@ class Occurrence:
 
     def instantiate(self) -> Transaction:
         return self.schedule.instantiate(self.when)
+
+
+def duplicate_definition(source: ScheduledTransaction) -> ScheduledTransaction:
+    """Copy a definition with independent identity and no completed-occurrence state."""
+    duplicate = ScheduledTransaction.from_dict(source.serialize())
+    duplicate.handle = create_handle()
+    duplicate.gid = ""
+    duplicate.change = 0
+    duplicate.name = f"{source.name} copy"
+    if duplicate.description == source.name:
+        duplicate.description = duplicate.name
+    duplicate.last_posted = None
+    duplicate.skipped = []
+    return duplicate
+
+
+def from_transaction(transaction: Transaction) -> ScheduledTransaction:
+    """Build an unsaved one-time template from every financial leg of an actual."""
+    return ScheduledTransaction(
+        name=transaction.description or "Scheduled transaction",
+        description=transaction.description,
+        recurrence=Recurrence(PeriodType.ONCE, start=transaction.post_date),
+        splits=[
+            ScheduledSplit(
+                split.account,
+                split.value,
+                memo=split.memo,
+                planning_flow=split.planning_flow,
+            )
+            for split in transaction.splits
+        ],
+        currency=transaction.currency,
+    )
+
+
+def delete_definition(db: DbSQLite, handle: str) -> ScheduledTransaction:
+    """Delete a baseline schedule without leaving live scenario references behind."""
+    source = db.get_scheduled(handle)
+    if source is None:
+        raise KeyError(handle)
+    scenarios = [
+        scenario.name
+        for scenario in db.iter_scenarios()
+        if any(item.source_schedule == handle for item in scenario.schedule_overrides)
+    ]
+    if scenarios:
+        names = ", ".join(sorted(scenarios))
+        raise ValueError(
+            f"remove this schedule's override from scenario(s) {names} before deleting it"
+        )
+    with db.transaction(f"Delete scheduled {source.name}") as txn:
+        db.remove_scheduled(handle, txn)
+    return source
 
 
 def already_posted(db: DbSQLite, schedule_handle: str, when: date) -> bool:

@@ -338,10 +338,11 @@ function planningSplitEditor(accounts, initial, onChanged=()=>{}) {
     const account = el("select", {}, accounts.map((entry)=>
       el("option", { value:entry.handle, selected:entry.handle===item.account ? "selected" : null }, entry.name)));
     const amount = el("input", { inputmode:"decimal", placeholder:"Amount", value:item.amount || "" });
+    const memo = el("input", { placeholder:"Memo", value:item.memo || "" });
     const purpose = el("select", {}, purposes.map(([value,label])=>
       el("option", { value, selected:value===(item.planning_flow || "") ? "selected" : null }, label)));
     const remove = el("button", { class:"action", type:"button", onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
-    row.append(account, amount, purpose, remove);
+    row.append(account, amount, purpose, memo, remove);
     rows.append(row);
     [account, amount, purpose].forEach((control)=>control.addEventListener("change", onChanged));
   };
@@ -353,9 +354,11 @@ function planningSplitEditor(accounts, initial, onChanged=()=>{}) {
     node:box,
     values:()=>Array.from(rows.children).map((row)=>{
       const selects=row.querySelectorAll("select");
-      const amount=row.querySelector("input").value.trim();
+      const inputs=row.querySelectorAll("input");
+      const amount=inputs[0].value.trim();
       if (!amount) throw new Error("Additional splits: enter an amount or remove the empty row.");
-      return {account:selects[0].value, amount, planning_flow:selects[1].value || null};
+      return {account:selects[0].value, amount, planning_flow:selects[1].value || null,
+        memo:inputs[1].value.trim()};
     }),
   };
 }
@@ -785,19 +788,28 @@ async function showRegister() {
     value: a.handle, selected: a.handle === state.account ? "selected" : null,
   }, a.full_name)));
 
+  const makeScheduled = async (transaction) => {
+    try {
+      const schedules = await get("/api/scheduled?days=90");
+      const draft = await post("/api/scheduled/draft", {transaction});
+      openScheduledEditor(schedules, draft);
+    } catch (error) { say(error.message, "error"); }
+  };
   const rows = data.rows.map((row) => el("tr", {},
     el("td", {}, row.date),
     el("td", { class: "muted" }, row.num),
     el("td", {}, row.description),
     el("td", { class: "muted" }, row.transfer),
     el("td", { class: cls(row.amount) }, money(row.amount)),
-    el("td", { class: cls(row.balance) }, money(row.balance))));
+    el("td", { class: cls(row.balance) }, money(row.balance)),
+    el("td", {}, el("button", { class:"action", type:"button",
+      onclick:()=>makeScheduled(row.handle) }, "Make scheduled…"))));
 
   return el("div", {},
     el("div", { class: "toolbar" }, picker,
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
     table(["Date", "Num", "Description", "Transfer",
-           { label: "Amount", num: true }, { label: "Balance", num: true }], rows));
+           { label: "Amount", num: true }, { label: "Balance", num: true }, ""], rows));
 }
 
 async function showScheduled() {
@@ -808,11 +820,30 @@ async function showScheduled() {
     el("td", { class: "num" }, money(s.amount)),
     el("td", { class: "muted" }, s.placeholder ? "estimate" : (s.auto ? "automatic" : "manual")),
     el("td", { class: "muted" }, s.enabled ? "enabled" : "disabled"),
-    el("td", {}, s.simple ? el("button", {
-      class: "action", type: "button", onclick: () => openScheduledEditor(data, s),
-    }, "Edit…") : el("span", { class: "muted" }, "Complex"))));
+    el("td", {}, el("div", { class:"row" },
+      s.simple ? el("button", { class:"action", type:"button",
+        onclick:()=>openScheduledEditor(data, s) }, "Edit…")
+        : el("span", { class:"muted" }, "Complex (desktop view only)"),
+      s.simple ? el("button", { class:"action", type:"button",
+        onclick:()=>openScheduledEditor(data, {
+          ...s, handle:null, name:`${s.name} copy`, skipped:[],
+        }) }, "Duplicate…") : null,
+      el("button", { class:"action", type:"button", onclick:async()=>{
+        if (!window.confirm(`Delete scheduled transaction "${s.name}"? Already posted transactions remain.`)) return;
+        try {
+          await post("/api/scheduled/delete", {handle:s.handle});
+          say("Scheduled transaction deleted. Undo from the desktop interface if needed.");
+          render();
+        } catch (error) { say(error.message, "error"); }
+      }}, "Delete…")))));
 
-  const upcoming = data.upcoming.map((o) => el("tr", {},
+  const upcoming = data.upcoming.map((o) => el("tr", {
+    ondblclick:()=>{
+      const source = data.definitions.find((item)=>item.handle === o.schedule);
+      if (source?.simple) openScheduledEditor(data, source);
+      else switchTo("Scheduled");
+    },
+  },
     el("td", {}, o.date), el("td", {}, o.name),
     el("td", { class: "num" }, money(o.amount))));
 
@@ -894,8 +925,9 @@ async function openHistoricalEstimateDialog() {
 }
 
 function openScheduledEditor(data, source) {
-  const flowAccounts = data.accounts.filter((a) => a.class === "income" || a.class === "expense");
-  const accounts = data.accounts;
+  const referenced = new Set(source?.account_handles || []);
+  const accounts = data.accounts.filter((a) => !a.hidden || referenced.has(a.handle));
+  const flowAccounts = accounts.filter((a) => a.class === "income" || a.class === "expense");
   const backdrop = el("div", { class: "detail-backdrop" });
   const form = el("form", { class: "entry" });
   const field = (label, control) => el("label", {}, label, control);
@@ -940,6 +972,8 @@ function openScheduledEditor(data, source) {
     field("Category", category), field("Paid from / into", funding),
     field("Planning purpose override", planningFlow),
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
+    field("Category memo", el("input", { name:"category_memo", value:source?.category_memo || "" })),
+    field("Funding memo", el("input", { name:"funding_memo", value:source?.funding_memo || "" })),
     additionalSplits.node,
     futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
     field("Frequency", frequency),
@@ -988,6 +1022,7 @@ function openScheduledEditor(data, source) {
         handle: source?.handle || null, name: values.name,
         enabled: values.enabled === "true", placeholder: values.kind === "estimate", growth_policy: values.growth_policy,
         category: values.category, funding: values.funding,
+        category_memo: values.category_memo, funding_memo: values.funding_memo,
         planning_flow: values.planning_flow || null, amount: values.amount,
         additional_splits: additionalSplits.values(),
         amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
@@ -996,7 +1031,7 @@ function openScheduledEditor(data, source) {
         end: values.end || null, count: values.count || null, weekend: values.weekend,
         auto: values.posting === "automatic" && values.kind !== "estimate",
       });
-      backdrop.remove(); say(source ? "Scheduled transaction updated." : "Scheduled transaction added."); render();
+      backdrop.remove(); say(source?.handle ? "Scheduled transaction updated." : "Scheduled transaction added."); render();
     } catch (error) { say(error.message, "error"); }
   });
   backdrop.append(el("section", { class:"detail-dialog" },
@@ -2301,8 +2336,20 @@ async function showDashboard() {
           account.balance === null ? "Unavailable" : money(account.balance)),
       ])))));
 
+  const activatePending = async (item) => {
+    if (item.schedule) {
+      const schedules = await get("/api/scheduled?days=90");
+      const source = schedules.definitions.find((entry)=>entry.handle === item.schedule);
+      if (source?.simple) openScheduledEditor(schedules, source);
+      else switchTo("Scheduled");
+    } else if (item.account) {
+      state.account = item.account;
+      switchTo("Register");
+    }
+  };
   const pendingRows = data.pending.map((item) => [
-    item.name,
+    el("span", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
+      item.name),
     item.income ? "Income" : "Bill",
     item.next_due,
     item.days_until < 0 ? `${-item.days_until} days overdue`

@@ -182,6 +182,8 @@ class Api:
                     "income": item.income,
                     "estimate": item.estimate,
                     "generated": item.generated,
+                    "schedule": item.schedule.handle if item.schedule is not None else None,
+                    "account": item.account,
                 }
                 for item in board.pending
             ],
@@ -590,6 +592,7 @@ class Api:
             "type": account.atype.value,
             "rows": [
                 {
+                    "handle": row.transaction.handle,
                     "date": row.post_date,
                     "num": row.transaction.num,
                     "description": row.description,
@@ -691,7 +694,10 @@ class Api:
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
                     "planning_flow": simple["planning_flow"] if simple else None,
+                    "category_memo": simple["category_memo"] if simple else "",
+                    "funding_memo": simple["funding_memo"] if simple else "",
                     "additional_splits": (simple["additional_splits"] if simple else []),
+                    "account_handles": [split.account for split in item.splits],
                     "start": item.recurrence.start.isoformat(),
                     "end": (
                         item.recurrence.end.isoformat() if item.recurrence.end is not None else None
@@ -716,10 +722,55 @@ class Api:
                     "handle": account.handle,
                     "name": self.db.full_name(account),
                     "class": account.account_class.value,
+                    "hidden": account.hidden,
                 }
                 for account in accounts
             ],
-            "upcoming": [{"date": o.when, "name": o.name, "amount": o.amount} for o in occurrences],
+            "upcoming": [
+                {
+                    "date": occurrence.when,
+                    "name": occurrence.name,
+                    "amount": occurrence.amount,
+                    "schedule": occurrence.schedule.handle,
+                }
+                for occurrence in occurrences
+            ],
+        }
+
+    def scheduled_draft(self, payload: dict) -> dict:
+        """Represent an actual as a reviewable, unsaved fixed-schedule draft."""
+        transaction = self.db.get_transaction(str(payload.get("transaction") or ""))
+        if transaction is None:
+            raise KeyError(str(payload.get("transaction") or ""))
+        draft = schedule.from_transaction(transaction)
+        simple = self._simple_schedule_parts(draft)
+        if simple is None:
+            raise ValueError("this transaction's split structure needs the desktop schedule editor")
+        return {
+            "handle": None,
+            "name": draft.name,
+            "frequency": draft.recurrence.describe(),
+            "frequency_key": "once",
+            "amount": draft.amount(),
+            "enabled": True,
+            "placeholder": False,
+            "auto": False,
+            "growth_policy": draft.growth_policy.value,
+            "simple": True,
+            "category": simple["category"],
+            "funding": simple["funding"],
+            "planning_flow": simple["planning_flow"],
+            "category_memo": simple["category_memo"],
+            "funding_memo": simple["funding_memo"],
+            "additional_splits": simple["additional_splits"],
+            "account_handles": [split.account for split in draft.splits],
+            "start": draft.recurrence.start.isoformat(),
+            "end": None,
+            "count": None,
+            "weekend": "none",
+            "amount_changes": [],
+            "skipped": [],
+            "occurrence_adjustments": [],
         }
 
     @staticmethod
@@ -1074,19 +1125,22 @@ class Api:
             )
             if normal_amount <= 0:
                 return None
-            additional.append(
-                {
-                    "account": split.account,
-                    "amount": str(normal_amount.to_decimal()),
-                    "planning_flow": (
-                        split.planning_flow.value if split.planning_flow is not None else None
-                    ),
-                }
-            )
+            row = {
+                "account": split.account,
+                "amount": str(normal_amount.to_decimal()),
+                "planning_flow": (
+                    split.planning_flow.value if split.planning_flow is not None else None
+                ),
+            }
+            if split.memo:
+                row["memo"] = split.memo
+            additional.append(row)
         return {
             "category": flow.account,
             "funding": funding.account,
             "amount": str(abs(amount).to_decimal()),
+            "category_memo": flow.memo,
+            "funding_memo": funding.memo,
             "planning_flow": (
                 funding.planning_flow.value if funding.planning_flow is not None else None
             ),
@@ -1296,7 +1350,14 @@ class Api:
             value = (
                 purpose.ledger_amount(amount) if purpose is not None else amount * account.sign()
             )
-            splits.append(ScheduledSplit(handle, value, planning_flow=purpose))
+            splits.append(
+                ScheduledSplit(
+                    handle,
+                    value,
+                    memo=str(raw.get("memo") or "").strip(),
+                    planning_flow=purpose,
+                )
+            )
             total = total + value
             used.add(handle)
         return splits, total
@@ -2354,9 +2415,9 @@ class Api:
         existing = self.db.get_scheduled(handle) if handle else None
         if handle and existing is None:
             raise KeyError(handle)
+        existing_parts = self._simple_schedule_parts(existing) if existing is not None else None
         if existing is not None and (
-            self._simple_schedule_parts(existing) is None
-            or self._frequency_key(existing.recurrence) is None
+            existing_parts is None or self._frequency_key(existing.recurrence) is None
         ):
             raise ValueError("formula schedules cannot be edited in the fixed-split editor")
 
@@ -2456,13 +2517,45 @@ class Api:
         additional_splits, additional_total = self._parse_additional_splits(
             payload, {category.handle, funding.handle}
         )
+        category_memo = (
+            str(payload.get("category_memo") or "").strip()
+            if "category_memo" in payload
+            else str(existing_parts["category_memo"])
+            if existing_parts is not None
+            else ""
+        )
+        funding_memo = (
+            str(payload.get("funding_memo") or "").strip()
+            if "funding_memo" in payload
+            else str(existing_parts["funding_memo"])
+            if existing_parts is not None
+            else ""
+        )
+        previously_used = {split.account for split in existing.splits} if existing else set()
+        selected_handles = {
+            category.handle,
+            funding.handle,
+            *(split.account for split in additional_splits),
+        }
+        newly_hidden = [
+            account.name
+            for handle in selected_handles - previously_used
+            if (account := self.db.get_account(handle)) is not None and account.hidden
+        ]
+        if newly_hidden:
+            raise ValueError("hidden accounts cannot be used for a new scheduled transaction")
         item.recurrence = recurrence
         item.splits = [
-            ScheduledSplit(category.handle, signed),
+            ScheduledSplit(
+                category.handle,
+                signed,
+                memo=category_memo,
+            ),
             *additional_splits,
             ScheduledSplit(
                 funding.handle,
                 -(signed + additional_total),
+                memo=funding_memo,
                 planning_flow=planning_flow,
             ),
         ]
@@ -2486,6 +2579,12 @@ class Api:
             else:
                 self.db.commit_scheduled(item, txn)
         return {"handle": item.handle, "name": item.name}
+
+    def scheduled_delete(self, payload: dict) -> dict:
+        """Remove one definition while retaining its posted ledger history."""
+        handle = str(payload.get("handle") or "").strip()
+        deleted = schedule.delete_definition(self.db, handle)
+        return {"handle": deleted.handle, "name": deleted.name}
 
     def import_local(self, payload: dict) -> dict:
         path = str(payload.get("path") or "").strip()
@@ -2597,6 +2696,8 @@ POST_ROUTES = {
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),
     "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
+    "/api/scheduled/delete": lambda a, body: a.scheduled_delete(body),
+    "/api/scheduled/draft": lambda a, body: a.scheduled_draft(body),
     "/api/historical-estimate/accept": lambda a, body: a.historical_estimate_accept(body),
     "/api/review/match": lambda a, body: a.review_match(body),
     "/api/review/reject": lambda a, body: a.review_reject(body),

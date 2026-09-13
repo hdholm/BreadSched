@@ -1184,6 +1184,22 @@ class TestScheduleEntry:
         same_handle = [item for item in app.db.iter_scheduled() if item.handle == source.handle]
         assert len(same_handle) == 1
 
+    def test_duplicate_dialog_adds_an_independent_definition(self, app, window, populated_book):
+        from breadsched.gen.engine import schedule
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        source = next(iter(app.db.iter_scheduled()))
+        draft = schedule.duplicate_definition(source)
+        dialog = ScheduleDialog(window, app.db, source=draft, creating=True)
+        dialog.name_entry.set_text("Independent copy")
+        dialog._on_save(None)
+
+        assert app.db.get_scheduled(source.handle) is not None
+        copied = app.db.get_scheduled(draft.handle)
+        assert copied is not None
+        assert copied.name == "Independent copy"
+
     def test_fixed_schedule_with_duplicate_expense_account_is_editable(
         self, app, window, populated_book
     ):

@@ -196,6 +196,12 @@ class TransactionDialog(Gtk.Window):
 
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         if transaction is not None:
+            schedule_button = Gtk.Button(label="Make scheduled…")
+            schedule_button.set_tooltip_text(
+                "Create a new scheduled transaction draft from every split"
+            )
+            schedule_button.connect("clicked", self._on_make_scheduled)
+            buttons.append(schedule_button)
             delete = Gtk.Button(label="Delete")
             delete.add_css_class("destructive-action")
             delete.connect("clicked", self._on_delete)
@@ -231,6 +237,16 @@ class TransactionDialog(Gtk.Window):
             second.account.set_selected(here)
             first.account.set_selected(1 if here == 0 and len(self.accounts) > 1 else 0)
         self.revalidate()
+
+    def _on_make_scheduled(self, _button) -> None:
+        if self.transaction is None:
+            return
+        from ...gen.engine import schedule
+        from .schedule_dialog import ScheduleDialog
+
+        draft = schedule.from_transaction(self.transaction)
+        dialog = ScheduleDialog(self, self.db, source=draft, creating=True)
+        dialog.present()
 
     # ------------------------------------------------------------------ splits
 

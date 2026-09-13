@@ -137,6 +137,62 @@ class TestScheduleEngine:
             db.commit_scheduled(payday_schedule, txn)
         assert schedule.due_occurrences(db, as_of=date(2026, 6, 1)) == []
 
+    def test_duplicate_has_independent_identity_and_pending_state(self, payday_schedule):
+        payday_schedule.last_posted = date(2026, 1, 16)
+        payday_schedule.skipped = [date(2026, 1, 30)]
+
+        copied = schedule.duplicate_definition(payday_schedule)
+
+        assert copied.handle != payday_schedule.handle
+        assert copied.name == "Salary copy"
+        assert copied.last_posted is None
+        assert copied.skipped == []
+        assert [split.serialize() for split in copied.splits] == [
+            split.serialize() for split in payday_schedule.splits
+        ]
+
+    def test_actual_becomes_an_unsaved_one_time_template(self, db, book):
+        from breadsched.gen.lib import PlanningFlowKind, Split, Transaction
+
+        actual = Transaction(post_date=date(2026, 4, 9), description="Annual service")
+        actual.add_split(
+            Split(
+                book.utilities,
+                Money("90.00"),
+                memo="service leg",
+                planning_flow=PlanningFlowKind.BENEFIT_FUNDING,
+            )
+        )
+        actual.add_split(Split(book.checking, Money("-90.00"), memo="cash leg"))
+
+        draft = schedule.from_transaction(actual)
+
+        assert draft.recurrence.period.value == "once"
+        assert draft.recurrence.start == actual.post_date
+        assert [split.account for split in draft.splits] == [book.utilities, book.checking]
+        assert [split.memo for split in draft.splits] == ["service leg", "cash leg"]
+        assert draft.splits[0].planning_flow is PlanningFlowKind.BENEFIT_FUNDING
+
+    def test_deletion_is_atomic_and_undoable(self, db, payday_schedule):
+        deleted = schedule.delete_definition(db, payday_schedule.handle)
+
+        assert deleted.handle == payday_schedule.handle
+        assert db.get_scheduled(payday_schedule.handle) is None
+        assert db.undo() is True
+        assert db.get_scheduled(payday_schedule.handle) is not None
+
+    def test_deletion_refuses_live_scenario_overrides(self, db, payday_schedule):
+        from breadsched.gen.lib import Scenario, ScenarioSchedule
+
+        scenario = Scenario(name="Alternative")
+        scenario.schedule_overrides.append(ScenarioSchedule.from_scheduled(payday_schedule))
+        with db.transaction("Add scenario") as txn:
+            db.add_scenario(scenario, txn)
+
+        with pytest.raises(ValueError, match="Alternative"):
+            schedule.delete_definition(db, payday_schedule.handle)
+        assert db.get_scheduled(payday_schedule.handle) is not None
+
 
 class TestScheduledTemplates:
     def test_a_formula_split_resolves_at_instantiation(self, db, book):

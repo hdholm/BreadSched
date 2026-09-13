@@ -382,6 +382,8 @@ class TestItServes:
                 "growth_policy": "income",
                 "category": category["handle"],
                 "funding": funding["handle"],
+                "category_memo": "service category",
+                "funding_memo": "payment account",
                 "amount": "95.00",
                 "frequency": "monthly",
                 "start": "2026-02-15",
@@ -429,6 +431,8 @@ class TestItServes:
         assert item["end"] is None
         assert item["weekend"] == "previous"
         assert item["planning_flow"] == "benefit_funding"
+        assert item["category_memo"] == "service category"
+        assert item["funding_memo"] == "payment account"
         assert item["amount_changes"] == [
             {"start": "2026-05-15", "amount": "125.00"},
             {"start": "2026-07-15", "amount": "140.00"},
@@ -438,6 +442,23 @@ class TestItServes:
         _status, plan = client.get("/api/plan?from=2026-01&through=2026-12&period=month")
         benefit = next(row for row in plan["planning_flows"] if row["kind"] == "benefit_funding")
         assert Money(benefit["planned"][1]) == Money("-110.00")
+
+    def test_an_actual_can_seed_a_reviewable_unsaved_schedule(self, client):
+        _status, accounts = client.get("/api/accounts")
+        checking = next(account for account in accounts if account["name"] == "Checking")
+        _status, register = client.get(
+            "/api/register?" + urllib.parse.urlencode({"account": checking["handle"]})
+        )
+        rent = next(row for row in register["rows"] if row["description"] == "Rent")
+
+        status, draft = client.post("/api/scheduled/draft", {"transaction": rent["handle"]})
+
+        assert status == 200
+        assert draft["handle"] is None
+        assert draft["name"] == "Rent"
+        assert draft["frequency_key"] == "once"
+        assert draft["start"] == rent["date"]
+        assert draft["account_handles"] == [draft["category"], draft["funding"]]
 
     def test_schedule_rejects_an_unknown_growth_policy(self, client):
         _status, data = client.get("/api/scheduled")
@@ -480,11 +501,13 @@ class TestItServes:
                         "account": rent["handle"],
                         "amount": "1000.00",
                         "planning_flow": None,
+                        "memo": "deduction",
                     },
                     {
                         "account": retirement["handle"],
                         "amount": "500.00",
                         "planning_flow": "retirement_saving",
+                        "memo": "employee contribution",
                     },
                 ],
                 "frequency": "monthly",
@@ -502,11 +525,13 @@ class TestItServes:
             {
                 "account": rent["handle"],
                 "amount": "1000.00",
+                "memo": "deduction",
                 "planning_flow": None,
             },
             {
                 "account": retirement["handle"],
                 "amount": "500.00",
+                "memo": "employee contribution",
                 "planning_flow": "retirement_saving",
             },
         ]
@@ -516,6 +541,31 @@ class TestItServes:
             row for row in plan["planning_flows"] if row["kind"] == "retirement_saving"
         )
         assert Money(retirement_flow["planned"][0]) == Money("500.00")
+
+    def test_scheduled_definition_can_be_deleted_without_removing_posted_history(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        _status, created = client.post(
+            "/api/scheduled/save",
+            {
+                "name": "Temporary schedule",
+                "category": category["handle"],
+                "funding": funding["handle"],
+                "amount": "40.00",
+                "frequency": "monthly",
+                "start": "2026-03-01",
+            },
+        )
+        before_transactions = client.database.summary()["txn"]
+
+        status, deleted = client.post("/api/scheduled/delete", {"handle": created["handle"]})
+
+        assert status == 200
+        assert deleted["handle"] == created["handle"]
+        _status, refreshed = client.get("/api/scheduled")
+        assert created["handle"] not in {item["handle"] for item in refreshed["definitions"]}
+        assert client.database.summary()["txn"] == before_transactions
 
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")

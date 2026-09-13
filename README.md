@@ -201,7 +201,9 @@ The GTK4 application is the reference user experience. Its major views include:
 - **Register** — account transaction history using account-appropriate debit/credit
   terminology.
 - **Scheduled** — recurring commitments and estimates, including imported schedule
-  details and safe editing where round-trip fidelity is possible.
+  details and safe editing where round-trip fidelity is possible. Editable schedules
+  can be duplicated as reviewed drafts; existing ledger transactions can seed new
+  drafts; and definitions can be deleted without deleting transactions already posted.
 - **Plan** — category and planning-flow views derived from dated planned and actual
   activity, with per-book controls and non-duplicating row, period, and net-cash
   totals.

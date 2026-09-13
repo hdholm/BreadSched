@@ -149,6 +149,17 @@ skips, amount changes, and formula-driven splits are part of the schedule semant
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 
+Schedule lifecycle operations distinguish a reusable definition from its ledger
+history. A duplicate receives a new stable handle and clears `last_posted` and skip
+state, while retaining the template's split accounts, values, memos, planning
+purposes, formulas, and dated amount rules for review. A draft made from an actual
+likewise copies every financial split but starts as an unsaved one-time definition;
+changing its recurrence is an explicit user decision. Deleting a definition is one
+undoable database transaction and never deletes actuals already posted from it.
+Deletion is refused while a saved scenario override still names the definition,
+rather than leaving an ambiguous dangling replacement. A later authoritative
+re-import may restore a deleted imported definition with its stable source identity.
+
 A recurrence occurrence has both a nominal date and an adjusted cash date, plus a
 stable one-based occurrence number. Weekend/business-day adjustment may move the
 cash date across a month boundary, but it must never change that ordinal. Formula

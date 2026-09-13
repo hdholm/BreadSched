@@ -104,6 +104,17 @@ class ScheduledView(BaseView):
         self.edit_button.connect("clicked", self._on_edit_clicked)
         bar.append(self.edit_button)
 
+        self.duplicate_button = Gtk.Button(label="Duplicate…")
+        self.duplicate_button.set_sensitive(False)
+        self.duplicate_button.connect("clicked", self._on_duplicate_clicked)
+        bar.append(self.duplicate_button)
+
+        self.delete_button = Gtk.Button(label="Delete…")
+        self.delete_button.add_css_class("destructive-action")
+        self.delete_button.set_sensitive(False)
+        self.delete_button.connect("clicked", self._on_delete_clicked)
+        bar.append(self.delete_button)
+
         loan_button = Gtk.Button(label="New loan…")
         loan_button.set_tooltip_text("Set up a loan with calculated interest")
         loan_button.connect("clicked", self._on_loan_clicked)
@@ -269,7 +280,18 @@ class ScheduledView(BaseView):
             tree_row.set_expanded(index == position)
         selected = selection.get_selected_item()
         payload = unwrap(selected) if selected is not None else None
-        self.edit_button.set_sensitive(payload is not None and not _is_split(payload))
+        selected_schedule = payload is not None and not _is_split(payload)
+        self.edit_button.set_sensitive(selected_schedule)
+        self.delete_button.set_sensitive(selected_schedule)
+        self.duplicate_button.set_sensitive(
+            selected_schedule and not self._editability_reason(payload)
+        )
+
+    def _selected_schedule(self) -> ScheduledTransaction | None:
+        selection = self.definitions_view.get_model()
+        selected = selection.get_selected_item() if selection is not None else None
+        payload = unwrap(selected) if selected is not None else None
+        return payload if isinstance(payload, ScheduledTransaction) else None
 
     def _editability_reason(self, sched) -> str:
         if sched is None or _is_split(sched):
@@ -335,10 +357,8 @@ class ScheduledView(BaseView):
     def _on_edit_clicked(self, _button) -> None:
         if self.db is None:
             return
-        selection = self.definitions_view.get_model()
-        selected = selection.get_selected_item() if selection is not None else None
-        sched = unwrap(selected) if selected is not None else None
-        if sched is None or _is_split(sched):
+        sched = self._selected_schedule()
+        if sched is None:
             return
         from ..dialogs.schedule_dialog import ScheduleDialog
 
@@ -350,6 +370,28 @@ class ScheduledView(BaseView):
             read_only_reason=reason or None,
         )
         dialog.connect("close-request", self.refresh_on_close)
+        dialog.present()
+
+    def _on_duplicate_clicked(self, _button) -> None:
+        if self.db is None:
+            return
+        source = self._selected_schedule()
+        if source is None or self._editability_reason(source):
+            return
+        from ..dialogs.schedule_dialog import ScheduleDialog
+
+        draft = schedule.duplicate_definition(source)
+        dialog = ScheduleDialog(self.get_root(), self.db, source=draft, creating=True)
+        dialog.connect("close-request", self.refresh_on_close)
+        dialog.present()
+
+    def _on_delete_clicked(self, _button) -> None:
+        if self.db is None:
+            return
+        selected = self._selected_schedule()
+        if selected is None:
+            return
+        dialog = ScheduleDeleteDialog(self.get_root(), self.db, selected, self.refresh)
         dialog.present()
 
     def _on_new_clicked(self, _button) -> None:
@@ -378,6 +420,53 @@ class ScheduledView(BaseView):
         dialog = LoanDialog(self.get_root(), self.db)
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
+
+
+class ScheduleDeleteDialog(Gtk.Window):
+    """Confirm removal while explaining what remains and what may return."""
+
+    def __init__(self, parent, db, scheduled, deleted_callback) -> None:
+        super().__init__(title="Delete scheduled transaction", transient_for=parent, modal=True)
+        self.db = db
+        self.scheduled = scheduled
+        self.deleted_callback = deleted_callback
+
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(18)
+        self.set_child(box)
+        box.append(
+            Gtk.Label(
+                label=(
+                    f'Delete scheduled transaction "{scheduled.name}"? Already posted '
+                    "transactions remain in the ledger. If this definition came from an "
+                    "external book, a later re-import may restore it."
+                ),
+                xalign=0,
+                wrap=True,
+            )
+        )
+        self.status = Gtk.Label(xalign=0, wrap=True)
+        box.append(self.status)
+        buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
+        cancel = Gtk.Button(label="Cancel")
+        cancel.connect("clicked", lambda *_: self.close())
+        buttons.append(cancel)
+        delete = Gtk.Button(label="Delete scheduled transaction")
+        delete.add_css_class("destructive-action")
+        delete.connect("clicked", self._confirm)
+        buttons.append(delete)
+        box.append(buttons)
+
+    def _confirm(self, _button) -> None:
+        try:
+            schedule.delete_definition(self.db, self.scheduled.handle)
+        except (KeyError, ValueError) as exc:
+            self.status.set_text(str(exc))
+            self.status.add_css_class("negative")
+            return
+        self.close()
+        self.deleted_callback()
 
 
 class UpcomingView(BaseView):
@@ -421,6 +510,7 @@ class UpcomingView(BaseView):
 
         self.upcoming_view = Gtk.ColumnView()
         self.upcoming_view.set_show_row_separators(True)
+        self.upcoming_view.connect("activate", self._on_activated)
         self.upcoming_view.append_column(column("Due", self._due_text, sort_key=lambda o: o.when))
         self.upcoming_view.append_column(column("Schedule", lambda o: o.name, expand=True))
         self.upcoming_view.append_column(column("Kind", lambda o: _kind_of(o.schedule)))
@@ -483,6 +573,13 @@ class UpcomingView(BaseView):
     def _on_horizon_changed(self, picker, _param) -> None:
         self._horizon = [0, 7, 30, 90, 365][picker.get_selected()]
         self.refresh()
+
+    def _on_activated(self, _view, position: int) -> None:
+        selection = self.upcoming_view.get_model()
+        selected = selection.get_item(position) if selection is not None else None
+        occurrence = unwrap(selected) if selected is not None else None
+        if occurrence is not None:
+            self.manager.open_schedule(occurrence.schedule.handle)
 
     def _on_post_clicked(self, _button) -> None:
         """Open the same review dialog the book shows on opening.

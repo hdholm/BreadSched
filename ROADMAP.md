@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0168 — dated pending cash flow and separate FSA Dashboard**.
-The current candidate is **0169 — import memory and hidden-account entry safety**.
+The accepted baseline is **0169 — import memory and hidden-account entry safety**.
+The current candidate is **0170 — scheduled lifecycle and navigation**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -220,6 +220,15 @@ semantics, not duplicate business rules in presentation code.
   crafted web writes that name them, and preserve visibly labelled hidden accounts
   when an existing GTK transaction is edited. Advance the alpha version to
   `0.2.0a8`.
+- [x] **0170 — Scheduled lifecycle and navigation.** Add shared operations and GTK/
+  web workflows for undoable definition deletion, safe reviewed duplication, and
+  unsaved one-time drafts made from existing ledger transactions. Preserve every
+  draft split's account, value, memo, and planning purpose; give copies independent
+  identities and occurrence state; retain posted actuals on deletion; and refuse
+  deletion that would strand scenario overrides. Activate Dashboard and Upcoming
+  rows into their schedule/account workflow without posting. Preserve schedule
+  memos through the web editor, protect hidden accounts at new-schedule boundaries,
+  and advance the alpha version to `0.2.0a9`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -439,15 +448,20 @@ semantics, not duplicate business rules in presentation code.
   if needed, defining statement/current-balance amounts, paid-in-full versus
   carried-balance rules, date changes, and linkage to actual payment transactions.
   Prevent duplicate forecasts when an explicit/imported payment schedule exists.
-- [ ] **Upcoming transaction activation.** Double-clicking upcoming activity in
+- [x] **Upcoming transaction activation.** Double-clicking upcoming activity in
   the Upcoming view or Dashboard should open its view/edit workflow. Identify the
   selected occurrence and distinguish editing it from editing the recurring
   definition; opening the editor must not post a future transaction automatically.
-- [ ] **Duplicate and create from actual.** Provide Duplicate Scheduled Transaction
-  and Create Scheduled Transaction from an existing transaction. Populate a draft
-  for review and preserve all split accounts, amounts, memos, and planning purposes;
-  generate independent identities and prompt for applicable recurrence/dates.
-- [ ] **Delete schedules.** Provide a discoverable deletion action with appropriate
+- [x] **Create schedule from actual.** GTK and web can populate an unsaved one-time
+  schedule draft from an existing transaction for review. All split accounts,
+  amounts, memos, and planning purposes are copied; the user chooses any recurrence
+  or date changes before saving a new independent definition.
+- [ ] **Finish duplication of protected custom schedules.** Editable fixed/formula
+  schedules can be duplicated into reviewed drafts with independent identity and
+  occurrence state. Extend this safely to imported/custom structures that remain
+  read-only because the current editor cannot round-trip every recurrence or split
+  feature.
+- [x] **Delete schedules.** Provide a discoverable deletion action with appropriate
   confirmation and atomic undo/redo. Retain already posted transactions and handle
   scenario overrides, pending occurrences, resolutions, and imported-source
   re-import behavior explicitly rather than leaving broken references.
