@@ -7,7 +7,7 @@ plans discussed during development belong here rather than only in chat history.
 reprioritizes roadmap work must update this file in the same patch.
 
 The accepted baseline is **0161 — hierarchical, account-aware dashboard groups**.
-The current candidate series is **0162–0163**.
+The current candidate series is **0162–0164**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -363,6 +363,10 @@ semantics, not duplicate business rules in presentation code.
   column for every category and planning-flow row, non-duplicating section totals
   for every reporting period, and a Net cash change grand-total row. Limit variance
   totals to applicable as-of periods and advance the alpha version to `0.2.0a2`.
+- [x] **0164 — Safe Plan detachment.** Treat a null database as the normal
+  book-close/view-detach lifecycle before attempting to restore persisted Plan
+  controls. Cover direct detachment in the GTK regression suite and advance the
+  alpha version to `0.2.0a3`.
 - [ ] **Escrow follow-through.** Add dedicated explanations for refunds, manual
   adjustments, negative escrow balances, and combined mortgage/escrow payments;
   expand imported GnuCash fixtures and scenario override tests for those cases.

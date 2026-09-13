@@ -197,6 +197,9 @@ class PlanView(BaseView):
 
     def set_db(self, db) -> None:
         """Attach a book and restore its last applied Plan presentation."""
+        if db is None:
+            super().set_db(None)
+            return
         today = date.today()
         settings = PlanSettings.load(
             db,

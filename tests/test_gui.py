@@ -1962,6 +1962,15 @@ class TestPlanToolbarIcon:
 
 
 class TestDerivedPlanView:
+    def test_detaching_does_not_try_to_read_book_metadata(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+
+        view.set_db(None)
+
+        assert view.db is None
+
     def test_it_derives_periods_from_scheduled_events_and_actuals(
         self, app, window, populated_book
     ):
