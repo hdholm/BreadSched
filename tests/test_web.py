@@ -75,6 +75,7 @@ def client(book_path):
     class Client:
         base_url = base
         token = httpd.token
+        database = db
 
         def raw(self, path: str):
             with urllib.request.urlopen(base + path, timeout=10) as response:
@@ -965,6 +966,29 @@ class TestWriting:
         balance = next(a["balance"] for a in accounts if a["name"] == "Checking")
         assert Money(balance) == Money("2354.33")
 
+    def test_hidden_accounts_are_reported_but_refused_for_new_entries(self, client):
+        hidden = client.database.get_account_by_name("Expenses:Rent")
+        assert hidden is not None
+        hidden.hidden = True
+        with client.database.transaction("Hide an old category") as txn:
+            client.database.commit_account(hidden, txn)
+
+        _status, accounts = client.get("/api/accounts")
+        rent = next(account for account in accounts if account["full_name"] == "Expenses:Rent")
+        assert rent["hidden"] is True
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/transaction",
+                {
+                    "date": "2026-02-03",
+                    "description": "Must not revive an archived category",
+                    "from": "Assets:Checking",
+                    "to": "Expenses:Rent",
+                    "amount": "10.00",
+                },
+            )
+        assert caught.value.code == 400
+
     def test_an_unbalanced_request_is_refused_cleanly(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post("/api/transaction", {"description": "nonsense"})
@@ -991,6 +1015,8 @@ class TestImportApi:
         assert status == 200
         assert "QIF" in payload["format"]
         assert "transactions" in payload["detail"]
+        _status, defaults = client.get("/api/import")
+        assert defaults["path"] == str(path.resolve())
 
     def test_import_rejects_unknown_format_choice(self, client, tmp_path):
         path = tmp_path / "sample.qif"

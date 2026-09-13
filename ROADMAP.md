@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The accepted baseline is **0167 — dated security prices and current valuation**.
-The current candidate is **0168 — dated pending cash flow and separate FSA Dashboard**.
+The accepted baseline is **0168 — dated pending cash flow and separate FSA Dashboard**.
+The current candidate is **0169 — import memory and hidden-account entry safety**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -213,6 +213,13 @@ semantics, not duplicate business rules in presentation code.
   monthly average for liquidity. Normalize GnuCash's zero multiplier for one-time
   scheduled transactions at both import boundaries, and advance the alpha version
   to `0.2.0a7`.
+- [x] **0169 — Import memory and hidden-account entry safety.** Remember the last
+  successful import source separately for each destination book across CLI, GTK,
+  and web entry points; preselect it without automatically importing or writing to
+  the source. Omit hidden accounts from new GTK/web transaction choices, reject
+  crafted web writes that name them, and preserve visibly labelled hidden accounts
+  when an existing GTK transaction is edited. Advance the alpha version to
+  `0.2.0a8`.
 - [ ] Move long-running Projection/import work off the GTK main thread, with a
   read-only worker connection, `GLib.idle_add` result delivery, cancellation, and a
   deliberate WAL/recovery policy.
@@ -302,7 +309,7 @@ semantics, not duplicate business rules in presentation code.
 
 ## Register workflow
 
-- [ ] **Hidden account choices.** Exclude hidden accounts from account lists for
+- [x] **Hidden account choices.** Exclude hidden accounts from account lists for
   new transaction/split entry in GTK and web. When editing a transaction already
   referencing a hidden account, preserve and identify that existing selection;
   filtering must never silently replace a stored split account.
@@ -539,10 +546,11 @@ semantics, not duplicate business rules in presentation code.
   individual splits are lost on import or omitted by the transaction editor/display.
   Preserve and expose them separately from split memos, including on authoritative
   source updates, while respecting ownership of locally authored notes.
-- [ ] **Remember the source book.** Import GnuCash into Current Book should remember
-  the last selected GnuCash source for that destination book and preselect it on
-  the next import. A missing/moved source should allow reselection; remembered paths
-  do not authorize an automatic import or writing to the GnuCash source.
+- [x] **Remember the import source.** Each destination book remembers its last
+  successfully imported GnuCash, QIF, OFX, or other supported source across CLI,
+  GTK, and web entry points and preselects it on the next interactive import. A
+  missing/moved source still allows reselection; remembered paths do not authorize
+  an automatic import or writing to the source.
 - [ ] **Precise import/re-import counts and skipped-item history.** Report matched
   transactions overwritten/refreshed from authoritative GnuCash data separately
   from new transactions and new splits. Define unchanged matches clearly. Persist

@@ -2077,7 +2077,7 @@ async function showEntry() {
   if (!state.accounts.length) state.accounts = await get("/api/accounts");
   const claimData = await get("/api/fsa/claims");
   const openClaims = (claimData.claims || []).filter((claim) => claim.status !== "fully_reimbursed");
-  const usable = state.accounts.filter((a) => !a.placeholder && a.depth > 0);
+  const usable = state.accounts.filter((a) => !a.placeholder && !a.hidden && a.depth > 0);
   const options = (name) => el("select", { name },
     usable.map((a) => el("option", { value: a.full_name }, a.full_name)));
 
@@ -2116,7 +2116,9 @@ async function showEntry() {
 
 
 async function showImport() {
-  const path = el("input", { name:"path", required:"required", placeholder:"/path/to/file.qif" });
+  const defaults = await get("/api/import");
+  const path = el("input", { name:"path", required:"required",
+    value:defaults.path || "", placeholder:"/path/to/file.qif" });
   const numberFormat = el("select", { name:"number_format" },
     el("option", { value:"auto" }, "Auto-detect number format"),
     el("option", { value:"dot" }, "Period decimal (1,234.56)"),

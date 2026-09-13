@@ -16,9 +16,14 @@ from __future__ import annotations
 from pathlib import Path  # noqa: E402
 
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
-from ...gen.plug import IMPORTER, PluginManager  # noqa: E402
+from ...gen.plug import (  # noqa: E402
+    IMPORTER,
+    PluginManager,
+    remember_import_source,
+    remembered_import_source,
+)
 from ...gen.utils import logs  # noqa: E402
-from ..gi_setup import GLib, Gtk, Pango
+from ..gi_setup import Gio, GLib, Gtk, Pango
 
 __all__ = ["ImportDialog"]
 
@@ -119,10 +124,21 @@ class ImportDialog(Gtk.Window):
         buttons.append(self.import_button)
         box.append(buttons)
 
+        remembered = remembered_import_source(self.db)
+        if remembered is not None and Path(remembered).is_file():
+            self.set_source(remembered)
+
     # ---------------------------------------------------------------- choosing
 
     def _on_choose(self, _button) -> None:
         dialog = Gtk.FileDialog(title="Choose a financial-data file")
+        remembered = remembered_import_source(self.db)
+        if remembered is not None:
+            previous = Path(remembered)
+            if previous.is_file():
+                dialog.set_initial_file(Gio.File.new_for_path(str(previous)))
+            elif previous.parent.is_dir():
+                dialog.set_initial_folder(Gio.File.new_for_path(str(previous.parent)))
         dialog.open(self, None, self._on_chosen)
 
     def _on_chosen(self, dialog, result) -> None:
@@ -254,6 +270,7 @@ class ImportDialog(Gtk.Window):
         finally:
             logs.configure(verbosity=0)
 
+        remember_import_source(self.db, self.path)
         result.log_path = str(log_path) if log_path else None
         self.progress.set_fraction(1.0)
         self.progress.set_text("Finished")

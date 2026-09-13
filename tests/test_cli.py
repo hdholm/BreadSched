@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 
 from breadsched.cli.main import main
+from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.plug import remembered_import_source
 
 
 @pytest.fixture
@@ -150,6 +152,12 @@ class TestImport:
         code, out = run(capsys, "import", book_path, gnucash_sqlite_path.path)
         assert code == 0
         assert "3 transactions" in out
+        db = DbSQLite()
+        db.load(book_path)
+        try:
+            assert remembered_import_source(db) == str(Path(gnucash_sqlite_path.path).resolve())
+        finally:
+            db.close()
 
     def test_imports_a_compressed_xml_book(self, capsys, book_path, gnucash_xml_path):
         run(capsys, "init", book_path)

@@ -65,7 +65,12 @@ from ..gen.lib import (
     scheduled_occurrence_preview,
 )
 from ..gen.lib.base import create_handle
-from ..gen.plug import IMPORTER, PluginManager
+from ..gen.plug import (
+    IMPORTER,
+    PluginManager,
+    remember_import_source,
+    remembered_import_source,
+)
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..gen.utils.logs import get_logger
 
@@ -296,6 +301,7 @@ class Api:
                         "type": account.atype.value,
                         "class": account.account_class.value,
                         "placeholder": account.placeholder,
+                        "hidden": account.hidden,
                         "source_type": (
                             account.source_atype.value if account.source_atype else None
                         ),
@@ -2180,6 +2186,8 @@ class Api:
         credit = self.db.get_account_by_name(payload["from"])
         if debit is None or credit is None:
             raise KeyError("unknown account")
+        if debit.hidden or credit.hidden:
+            raise ValueError("hidden accounts cannot be used for new transactions")
         when = date.fromisoformat(payload.get("date") or date.today().isoformat())
         amount = self._input_money(payload, payload["amount"])
         txn = Transaction(post_date=when, description=payload.get("description", "").strip())
@@ -2500,7 +2508,12 @@ class Api:
                 raise ValueError("choose a valid QIF date order")
             kwargs["date_format"] = date_format
         result = plugin.run(self.db, path, **kwargs)
+        remember_import_source(self.db, path)
         return {"format": plugin.name, "detail": result.detail(limit=50)}
+
+    def import_defaults(self) -> dict:
+        """Return per-book presentation state without initiating an import."""
+        return {"path": remembered_import_source(self.db) or ""}
 
     def post_scheduled(self) -> dict:
         posted = schedule.post_due(self.db, only_auto=False)
@@ -2568,6 +2581,7 @@ ROUTES = {
         q.get("scenario", [None])[0],
         int(q["years"][0]) if q.get("years") else None,
     ),
+    "/api/import": lambda a, q: a.import_defaults(),
 }
 
 POST_ROUTES = {

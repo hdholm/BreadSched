@@ -395,6 +395,14 @@ write is therefore forbidden while a ``DbTxn`` is active unless that write is
 explicitly attached to the active transaction; transactional metadata participates
 in rollback, undo, and redo.
 
+Per-book presentation conveniences that do not change financial meaning may remain
+ordinary metadata. The last successful import source is one such value: GTK, web,
+and CLI update the same key only after a successful import. GTK/web may preselect it,
+but remembering a path grants neither permission to repeat the import nor permission
+to write to the source. Hidden accounts follow a similarly conservative presentation
+rule: new-entry choices omit them, while an editor must retain and visibly identify a
+hidden account already referenced by an existing split.
+
 Financial workflow records should not be stored as opaque metadata collections when
 they have their own identity and lifecycle. FSA claims are first-class primary
 objects: one claim save transaction can update linked reimbursement split

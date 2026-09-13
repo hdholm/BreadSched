@@ -107,11 +107,21 @@ class TransactionDialog(Gtk.Window):
         self.editing = editing
         self.set_default_size(640, 460)
 
+        referenced = {split.account for split in transaction.splits} if transaction else set()
         self.accounts = sorted(
-            (a for a in db.iter_accounts() if not a.is_root and not a.placeholder),
+            (
+                account
+                for account in db.iter_accounts()
+                if not account.is_root
+                and not account.placeholder
+                and (not account.hidden or account.handle in referenced)
+            ),
             key=db.full_name,
         )
-        self.account_names = [db.full_name(a) for a in self.accounts]
+        self.account_names = [
+            f"{db.full_name(account)} (hidden)" if account.hidden else db.full_name(account)
+            for account in self.accounts
+        ]
         self.splits: list[SplitEditor] = []
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)

@@ -47,7 +47,7 @@ from ..gen.lib import (
     ScheduledTransaction,
     Transaction,
 )
-from ..gen.plug import EXPORTER, IMPORTER, PluginManager
+from ..gen.plug import EXPORTER, IMPORTER, PluginManager, remember_import_source
 from ..gen.utils import logs
 
 LOG = logs.get_logger(__name__)
@@ -179,6 +179,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     db = open_book(args.book)
     try:
         result = plugin.run(db, args.source, include_scheduled=not args.no_scheduled)
+        remember_import_source(db, args.source)
         result.log_path = str(args.log_file) if args.log_file else None
     finally:
         db.close()

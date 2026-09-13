@@ -557,12 +557,46 @@ class TestDialogs:
         first_account = dialog.splits[0].account_handle
         assert posted.value_for(first_account) == Money("42.00")
 
-    def test_the_import_dialog_builds(self, app, window, populated_book):
+    def test_the_import_dialog_preselects_the_last_successful_source(
+        self, app, window, populated_book, gnucash_sqlite_path
+    ):
         from breadsched.gui.dialogs.import_dialog import ImportDialog
 
         app.open_book(populated_book)
         dialog = ImportDialog(window, app.db)
-        assert dialog.import_button.get_sensitive() is False
+        assert dialog.path == str(Path(gnucash_sqlite_path.path).resolve())
+        assert dialog.import_button.get_sensitive() is True
+
+    def test_hidden_accounts_are_only_offered_when_an_edited_split_uses_them(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Account, AccountType, Split
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        root = app.db.root_account()
+        visible = app.db.get_account_by_name("Assets:Checking Account")
+        assert root is not None and visible is not None
+        hidden = Account(name="Archived category", atype=AccountType.EXPENSE, hidden=True)
+        hidden.parent = root.handle
+        existing = Transaction(post_date=date(2026, 3, 1), description="Archived entry")
+        existing.add_split(Split(hidden.handle, Money("10.00")))
+        existing.add_split(Split(visible.handle, Money("-10.00")))
+        with app.db.transaction("Add hidden-account example") as txn:
+            app.db.add_account(hidden, txn)
+            app.db.add_transaction(existing, txn)
+
+        fresh = TransactionDialog(window, app.db)
+        assert hidden.handle not in {account.handle for account in fresh.accounts}
+
+        editing = TransactionDialog(window, app.db, transaction=existing)
+        hidden_index = next(
+            index
+            for index, account in enumerate(editing.accounts)
+            if account.handle == hidden.handle
+        )
+        assert editing.account_names[hidden_index].endswith(" (hidden)")
+        assert editing.splits[0].account_handle == hidden.handle
 
 
 class TestImportDialogState:
