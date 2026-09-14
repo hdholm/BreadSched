@@ -13,19 +13,38 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountClass
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.transaction import Split, Transaction
 
 __all__ = [
     "balance",
     "balance_recursive",
+    "register_headings",
     "register",
     "RegisterRow",
     "totals_by_class",
     "net_worth",
     "cash_on_hand",
 ]
+
+
+_REGISTER_HEADINGS = {
+    AccountType.BANK: ("Deposit", "Withdrawal"),
+    AccountType.CASH: ("Receive", "Spend"),
+    AccountType.CREDIT: ("Payment", "Charge"),
+    AccountType.LIABILITY: ("Payment", "Increase"),
+    AccountType.INCOME: ("Charge", "Income"),
+    AccountType.EXPENSE: ("Expense", "Rebate"),
+    AccountType.INVESTMENT: ("Buy", "Sell"),
+    AccountType.RETIREMENT: ("Contribution", "Distribution"),
+    AccountType.EQUITY: ("Decrease", "Increase"),
+}
+
+
+def register_headings(atype: AccountType) -> tuple[str, str]:
+    """Return household-language labels for positive and negative register splits."""
+    return _REGISTER_HEADINGS.get(atype, ("Increase", "Decrease"))
 
 
 def balance(

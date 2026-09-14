@@ -7,7 +7,8 @@ plans discussed during development belong here rather than only in chat history.
 reprioritizes roadmap work must update this file in the same patch.
 
 The current accepted baseline is **0190 — current-schema alpha cleanup**. The current
-sequential candidate is **0191 — explainable Plan classifications**.
+sequential candidates are **0191 — explainable Plan classifications** and **0192 —
+independent registers and quick entry**, to be applied in that order.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -379,13 +380,17 @@ semantics, not duplicate business rules in presentation code.
   additional legs. Retain atomic balanced postings and avoid separate financial
   semantics for a two-account shortcut.
 
-- [ ] Allow multiple register windows/views at the same time; filters, selection,
-  edit state, and navigation must remain local to each window/view.
+- [x] **0192 — Independent registers.** Allow multiple register windows/views at the
+  same time; filters, selection, edit state, and navigation remain local to each
+  window/view.
 - [ ] Improve register appearance and information density while keeping account-type
   debit/credit terminology clear.
-- [ ] Support entering ordinary basic/two-sided transactions directly in the register,
-  similar to GnuCash, with full split editing available when needed.
-- [ ] Preserve atomic double-entry validation for all inline editing.
+- [x] **0192 — Inline basic entry.** Support entering ordinary basic/two-sided
+  transactions directly in the register, similar to GnuCash, with full split editing
+  available when needed.
+- [x] **0192 — One atomic transaction path.** Preserve atomic double-entry validation
+  for all inline editing. Share account-specific direction labels across GTK/web,
+  exclude hidden transfer accounts, and advance the alpha version to `0.2.0a31`.
 
 ## Reconciliation
 

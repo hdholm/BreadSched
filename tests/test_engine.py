@@ -7,6 +7,7 @@ import pytest
 from breadsched.gen.engine import ledger, schedule
 from breadsched.gen.lib import (
     AccountClass,
+    AccountType,
     Money,
     PeriodType,
     Recurrence,
@@ -56,6 +57,18 @@ class TestBalances:
 
 
 class TestRegister:
+    @pytest.mark.parametrize(
+        ("account_type", "headings"),
+        [
+            (AccountType.BANK, ("Deposit", "Withdrawal")),
+            (AccountType.CREDIT, ("Payment", "Charge")),
+            (AccountType.RETIREMENT, ("Contribution", "Distribution")),
+            (AccountType.TECHNICAL, ("Increase", "Decrease")),
+        ],
+    )
+    def test_account_types_have_shared_household_register_headings(self, account_type, headings):
+        assert ledger.register_headings(account_type) == headings
+
     def test_running_balance_accumulates_in_date_order(self, db, funded_book):
         rows = ledger.register(db, funded_book.checking)
         assert [row.description for row in rows] == [

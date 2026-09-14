@@ -336,6 +336,8 @@ class TestItServes:
             "/api/register?" + urllib.parse.urlencode({"account": handle})
         )
         assert payload["account"] == "Assets:Checking"
+        assert payload["debit_label"] == "Deposit"
+        assert payload["credit_label"] == "Withdrawal"
         assert len(payload["rows"]) == 2
 
     def test_reconciliation_uses_the_shared_statement_workflow(self, client):
@@ -1413,6 +1415,29 @@ class TestWriting:
             )
         assert caught.value.code == 400
 
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            {"amount": "0"},
+            {"amount": "-10"},
+            {"description": "   "},
+        ],
+    )
+    def test_basic_entry_requires_a_positive_amount_and_description(self, client, changes):
+        payload = {
+            "date": "2026-02-03",
+            "description": "Ordinary entry",
+            "from": "Assets:Checking",
+            "to": "Expenses:Rent",
+            "amount": "10.00",
+        }
+        payload.update(changes)
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/transaction", payload)
+
+        assert caught.value.code == 400
+
     def test_an_unbalanced_request_is_refused_cleanly(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.post("/api/transaction", {"description": "nonsense"})
@@ -1655,7 +1680,8 @@ class TestDashboardApi:
     def test_the_page_opens_on_the_dashboard(self, client):
         _status, body, _headers = client.raw("/")
         page = body.decode()
-        assert 'let current = "Dashboard"' in page
+        assert ': "Dashboard"' in page
+        assert 'launchParams.get("view")' in page
         assert '"Dashboard", "FSA Dashboard", "Accounts"' in page
         assert "async function showDashboard" in page
         assert "async function showFsaDashboard" in page

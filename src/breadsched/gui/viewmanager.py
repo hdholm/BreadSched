@@ -64,6 +64,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self.set_default_size(1180, 760)
         self.db: DbSQLite | None = None
         self._views: dict[str, Gtk.Widget] = {}
+        self._register_windows: list[tuple[Gtk.Window, Gtk.Widget]] = []
         #: Guards against show_category and the sidebar calling each other.
         self._selecting = False
         # Automatic due review is a user-facing startup policy, not required for
@@ -216,6 +217,10 @@ class ViewManager(Gtk.ApplicationWindow):
             self._due_prompt_source = None
         for view in self._views.values():
             view.set_db(None)
+        for window, view in list(self._register_windows):
+            view.set_db(None)
+            window.destroy()
+        self._register_windows.clear()
         self.db = None
         self.print_action.set_enabled(False)
 
@@ -425,6 +430,40 @@ class ViewManager(Gtk.ApplicationWindow):
         register = self._views.get("register")
         if register is not None:
             register.show_account(account_handle)
+
+    def open_register_window(self, account_handle: str) -> Gtk.Window | None:
+        """Open an independently navigable register sharing the current book."""
+        if self.db is None:
+            return None
+        from .views.register import RegisterView
+
+        window = Gtk.Window(transient_for=self)
+        window.set_destroy_with_parent(True)
+        window.set_default_size(1050, 620)
+        register = RegisterView(self)
+        window.set_child(register)
+        pair = (window, register)
+        self._register_windows.append(pair)
+
+        def update_title(*_args) -> None:
+            handle = register.account_handle
+            account = self.db.get_account(handle) if self.db is not None and handle else None
+            name = self.db.full_name(account) if self.db is not None and account is not None else ""
+            window.set_title(f"{name or 'Register'} — {APP_NAME}")
+
+        def detach(*_args) -> bool:
+            register.set_db(None)
+            if pair in self._register_windows:
+                self._register_windows.remove(pair)
+            return False
+
+        register.account_picker.connect("notify::selected", update_title)
+        window.connect("close-request", detach)
+        register.set_db(self.db)
+        register.show_account(account_handle)
+        update_title()
+        window.present()
+        return window
 
 
 def _tool_button(label: str, icon: str, action: str, tooltip: str) -> Gtk.Button:

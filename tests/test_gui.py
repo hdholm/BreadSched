@@ -391,6 +391,63 @@ class TestRegister:
         view.show_account(app.db.get_account_by_name("Expenses:Rent").handle)
         assert view.reconcile_button.get_sensitive() is False
 
+    def test_quick_entry_posts_one_balanced_two_split_transaction(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        assert checking is not None and rent is not None
+        window.open_register(checking.handle)
+        view = window._views["register"]
+        transfer_index = next(
+            index
+            for index, account in enumerate(view._quick_pickable)
+            if account.handle == rent.handle
+        )
+        view.quick_transfer.set_selected(transfer_index)
+        view.quick_date.set_text("2026-04-01")
+        view.quick_description.set_text("Quick rent")
+        view.quick_amount.set_text("25.50")
+
+        view._post_quick(False)
+
+        posted = next(
+            transaction
+            for transaction in app.db.iter_transactions()
+            if transaction.description == "Quick rent"
+        )
+        assert posted.imbalance() == Money(0)
+        assert posted.split_for(checking.handle).value == Money("-25.50")
+        assert posted.split_for(rent.handle).value == Money("25.50")
+        assert view.quick_description.get_text() == ""
+        assert view.quick_amount.get_text() == ""
+
+    def test_separate_register_windows_keep_independent_accounts(self, app, window, populated_book):
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        card = app.db.get_account_by_name("Credit Card")
+        assert checking is not None and card is not None
+        window.open_register(checking.handle)
+        main_register = window._views["register"]
+
+        child = window.open_register_window(checking.handle)
+        assert child is not None
+        assert len(window._register_windows) == 1
+        child_register = window._register_windows[0][1]
+        child_register.show_account(card.handle)
+        main_register.filter_entry.set_text("rent")
+        child_register.filter_entry.set_text("payment")
+
+        assert main_register.account_handle == checking.handle
+        assert child_register.account_handle == card.handle
+        assert main_register.filter_entry.get_text() == "rent"
+        assert child_register.filter_entry.get_text() == "payment"
+        assert "Credit Card" in child.get_title()
+
+        child.close()
+        assert window._register_windows == []
+
 
 class TestRegisterSelection:
     """Repopulating the account picker must not silently change the account."""

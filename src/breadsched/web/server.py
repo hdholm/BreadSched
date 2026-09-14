@@ -770,9 +770,12 @@ class Api:
         if account is None:
             raise KeyError(handle)
         rows = ledger.register(self.db, handle)[-limit:]
+        debit_label, credit_label = ledger.register_headings(account.atype)
         return {
             "account": self.db.full_name(account),
             "type": account.atype.value,
+            "debit_label": debit_label,
+            "credit_label": credit_label,
             "rows": [
                 {
                     "handle": row.transaction.handle,
@@ -2702,7 +2705,12 @@ class Api:
             raise ValueError("hidden accounts cannot be used for new transactions")
         when = date.fromisoformat(payload.get("date") or date.today().isoformat())
         amount = self._input_money(payload, payload["amount"])
-        txn = Transaction(post_date=when, description=payload.get("description", "").strip())
+        if amount <= 0:
+            raise ValueError("amount must be greater than zero")
+        description = str(payload.get("description") or "").strip()
+        if not description:
+            raise ValueError("give the transaction a description")
+        txn = Transaction(post_date=when, description=description)
         txn.notes = str(payload.get("notes") or "").strip()
         memo = payload.get("memo", "")
         investment_raw = str(payload.get("investment_activity") or "").strip()

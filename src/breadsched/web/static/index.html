@@ -199,9 +199,10 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 </main>
 <script>
 const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Verify"];
-let current = "Dashboard";
+const launchParams = new URLSearchParams(window.location.search);
+let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
-  accounts: [], account: null, plan: null, review: null,
+  accounts: [], account: launchParams.get("account"), plan: null, review: null,
   scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
   projectionData: null, projectionHandle: null, projectionCompareHandle: null,
   projectionComparison: null,
@@ -1116,6 +1117,9 @@ async function showRegister() {
   if (!state.account) return el("p", { class: "note" }, "No accounts yet.");
 
   const data = await get(`/api/register?account=${encodeURIComponent(state.account)}`);
+  const selectedAccount = usable.find((item) => item.handle === state.account);
+  const transferAccounts = usable.filter((item) =>
+    !item.hidden && item.handle !== state.account);
   const picker = el("select", {
     onchange: (event) => { state.account = event.target.value; render(); },
   }, usable.map((a) => el("option", {
@@ -1142,13 +1146,55 @@ async function showRegister() {
     el("td", {}, el("button", { class:"action", type:"button",
       onclick:()=>makeScheduled(row.handle) }, "Make scheduled…"))));
 
+  const quickEntry = selectedAccount?.hidden ? el("p", {class:"note"},
+    "Hidden accounts remain readable but cannot be used for a new transaction.")
+    : el("form", {class:"toolbar", onsubmit:async(event)=>{
+      event.preventDefault();
+      const values = Object.fromEntries(new FormData(event.target).entries());
+      const debit = event.submitter?.value === "debit";
+      const transfer = transferAccounts.find((item)=>item.full_name === values.transfer);
+      if (!selectedAccount || !transfer) {
+        say("Choose two visible accounts.", "error");
+        return;
+      }
+      try {
+        await post("/api/transaction", {
+          date:values.date, description:values.description, amount:values.amount,
+          from:debit ? transfer.full_name : selectedAccount.full_name,
+          to:debit ? selectedAccount.full_name : transfer.full_name,
+        });
+        say("Transaction posted.");
+        render();
+      } catch (error) { say(error.message, "error"); }
+    }},
+      el("strong", {}, "Quick entry"),
+      el("input", {type:"date", name:"date", required:"required",
+        value:new Date().toISOString().slice(0,10)}),
+      el("input", {name:"description", placeholder:"Description", required:"required"}),
+      el("select", {name:"transfer"}, transferAccounts.map((item)=>
+        el("option", {value:item.full_name}, item.full_name))),
+      el("input", {name:"amount", placeholder:"0.00", inputmode:"decimal",
+        required:"required"}),
+      el("button", {class:"action primary", type:"submit", name:"direction", value:"debit"},
+        data.debit_label),
+      el("button", {class:"action", type:"submit", name:"direction", value:"credit"},
+        data.credit_label));
+
   return el("div", {},
     el("div", { class: "toolbar" }, picker,
+      el("button", {class:"action", type:"button", onclick:()=>{
+        const url = new URL(window.location.href);
+        url.searchParams.set("view", "Register");
+        url.searchParams.set("account", state.account);
+        url.hash = new URLSearchParams({token:apiToken}).toString();
+        window.open(url.toString(), "_blank", "noopener");
+      }}, "Open in new window"),
       el("button", {class:"action", type:"button", onclick:()=>{
         const account = usable.find((item)=>item.handle === state.account);
         if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
       }}, "Reconcile…"),
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
+    quickEntry,
     table(["Date", "Num", "Description", "Transfer",
            { label: "Amount", num: true }, { label: "Balance", num: true }, ""], rows));
 }

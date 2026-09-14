@@ -442,6 +442,23 @@ Inference precedence is:
 
 Transfers that carry no household planning meaning should remain neutral.
 
+## Register presentation and basic entry
+
+Register windows are independent presentation consumers of one open `DbSQLite`
+connection. Each owns its account navigation, text filter, selection, and expansion
+state while database signals refresh all consumers after a committed change. The
+main window owns secondary register-window lifetimes and detaches them before the
+book connection closes, preventing callbacks from reaching a replaced database.
+Browser windows provide the equivalent independent presentation state and receive
+the per-server token only in the URL fragment.
+
+Inline quick entry is deliberately a narrow adapter to `Transaction.simple`: a
+positive exact amount, date, description, displayed account, and visible transfer
+account become exactly two balancing splits and pass through the ordinary atomic
+database transaction. It is not a parallel transaction model. Complex metadata and
+multi-split entry remain in the full editor. Register headings are a shared engine
+mapping so GTK and web describe the same positive and negative ledger directions.
+
 ## Statement reconciliation
 
 A reconciliation is a persisted, account-scoped statement session, not transient UI

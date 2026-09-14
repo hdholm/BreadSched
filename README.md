@@ -379,6 +379,25 @@ interface provides the same read-only verification report in its Verify view.
 Restoring over a file held by a live writer is refused; GTK restores to a different
 path and opens that verified result.
 
+## Registers and quick entry
+
+Each register shows one account with household-language debit/credit headings such
+as Deposit/Withdrawal or Payment/Charge. The filter searches descriptions, numbers,
+notes, split memos, and account names without changing the full-ledger running
+balance. **Open in new window** creates an independently navigable register; its
+account, filter, selection, and expanded row do not replace the main register's
+state. The web equivalent opens a token-preserving browser window with the selected
+register.
+
+Quick entry records an ordinary two-sided transaction directly above the register.
+Choose the other visible account, enter a positive amount, then use the button whose
+label describes the effect on the displayed account. BreadSched constructs one
+balanced two-split `Transaction` and commits it atomically through the same database
+path as the full editor. Use the full transaction editor for additional splits,
+notes, reconciliation metadata, FSA links, or investment classifications. Hidden
+accounts remain readable where already referenced but are never offered for a new
+quick-entry transfer.
+
 ## Statement reconciliation
 
 Bank, Cash, Asset, Investment, Retirement, FSA, Escrow, Credit card, Loan,
