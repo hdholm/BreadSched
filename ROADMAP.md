@@ -6,9 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0188 — durable imported-account provenance**. The
-current sequential candidate is **0189 — source-deletion sync and bounded Projection
-notes**.
+The current accepted baseline is **0189 — source-deletion sync and bounded Projection
+notes**. The current sequential candidate is **0190 — current-schema alpha cleanup**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -192,16 +191,12 @@ semantics, not duplicate business rules in presentation code.
   canonical path identity prevents a symlink alias from bypassing the writer lock.
 - [x] **0165 — Clean schema-4 event-planning core.** Remove the retired monthly
   Budget domain, its alternate projection engine, compatibility commands/routes,
-  and pre-0.2.0a3 native migrations. Keep one transactional schema-3-to-4 cleanup
-  with a safety backup; reject older native development formats explicitly while
-  preserving all external GnuCash/QIF/OFX/QFX import paths. Remove obsolete product
-  naming and advance the alpha version to `0.2.0a4`.
-- [x] **0166 — Complete schema migration and linked properties.** Add an idempotent
-  schema-4-to-5 repair that rewrites every account blob and derived account-type
-  index, including the former account-kind semantics and GnuCash type aliases,
-  before strict decoding runs. This covers both direct schema-3 upgrades and books
-  stranded after 0165 committed schema 4 before encountering an old account row.
-  On the Dashboard, an explicitly assigned asset or loan pulls in visible,
+  and obsolete product naming while preserving all external GnuCash/QIF/OFX/QFX
+  import paths. The temporary alpha-schema cleanup retained here was superseded and
+  removed by 0190. Advance the alpha version to `0.2.0a4`.
+- [x] **0166 — Single account types and linked properties.** Normalize the then-current
+  account representation to one visible account type. On the Dashboard, an
+  explicitly assigned asset or loan pulls in visible,
   otherwise-unassigned companions from its stored link so
   property value, debt, equity, and LTV remain together without restoring inferred
   default groups. Report the latest bounded enabled repayment date as the loan end
@@ -447,11 +442,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Plan and planning-flow reporting
 
-- [x] **0160 — Account kinds and initial Escrow planning/projection.** Replace the
-  persisted planning-role field with a BreadSched account kind independent of the
-  GnuCash ledger type; migrate existing books, preserve the kind and source type
-  across re-import, and expose the distinction in GTK/web. Introduce Escrow for
-  asset accounts. A
+- [x] **0160 — Account kinds and initial Escrow planning/projection.** This historical
+  intermediate introduced a BreadSched account kind independent of the GnuCash
+  ledger type; 0162 later replaced the two-field representation with one visible
+  account type. Introduce Escrow for asset accounts. A
   scheduled contribution from cash to escrow is the planning expense at funding
   time even though the ledger debit increases an asset. Later scheduled payments
   from escrow to tax, insurance, or other expense accounts are draws against that
@@ -695,10 +689,9 @@ semantics, not duplicate business rules in presentation code.
   skipped records, against the stable source-book identity. After that first
   baseline, remove transactions that disappear from the source and report exact
   removal counts. Retain and warn about source-deleted transactions still referenced
-  by BreadSched reconciliation/FSA audit data. Document and prominently display that
-  deletions predating the first inventory cannot be distinguished safely in an
-  existing destination book. Keep inventory updates and deletions in the import's
-  atomic undo operation and retain tracking when the same source file moves.
+  by BreadSched reconciliation/FSA audit data. Keep inventory updates and deletions
+  in the import's atomic undo operation and retain tracking when the same source file
+  moves. Describe that retained-reference behavior unobtrusively in import workflows.
 
 - [ ] Add OFX investment transactions.
 - [ ] Add useful QIF investment/security records.
@@ -726,9 +719,12 @@ semantics, not duplicate business rules in presentation code.
 
 ## Storage, integrity, and recovery
 
-- [x] Current supported schema transitions are explicit, transactional, covered by
-  migration tests, and create automatic safety backups. Apply the same rule to each
-  future persistent-model change.
+- [x] **0190 — Current-schema-only alpha storage.** Remove obsolete schema 3→7
+  migrations, the migration registry/ledger, pre-migration backup hook, and
+  migration-only fixtures. Accept exactly current schema 7 and reject every other
+  native schema explicitly in read-only and writable modes. Preserve external import,
+  ordinary backup/restore, integrity checking, and crash recovery. Advance the alpha
+  version to `0.2.0a29`.
 - [x] **0180 — Verifiable recovery workflows.** Add GTK backup, restore-as-new, and
   background Verify Book workflows plus a web Verify view; share physical/logical
   verification results with CLI. Lock restore destinations against live writers,
@@ -737,8 +733,8 @@ semantics, not duplicate business rules in presentation code.
   `0.2.0a19`.
 - [x] Strengthen backup/restore and crash-recovery UX with verified restore and
   discoverable GTK/CLI workflows.
-- [x] Test interrupted writes, failed migrations, and recovery behavior under the
-  chosen journaling/WAL policy.
+- [x] Test interrupted writes and recovery behavior under the chosen journaling/WAL
+  policy.
 - [x] Keep database concurrency ownership/locking explicit and testable for desktop
   and web access.
 - [ ] Expand executable invariants: balanced transactions, no orphaned splits,

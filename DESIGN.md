@@ -52,7 +52,7 @@ untouched objects invalid. A changed ledger transaction verifies only its own
 ``split_index`` rows rather than rebuilding the complete index.
 
 ``verify_book()`` remains the exhaustive diagnostic for explicit verification,
-backup/restore validation, migration checks, tests, and corruption investigation.
+backup/restore validation, tests, and corruption investigation.
 This separation is deliberate: correctness checks on ordinary edits should scale
 with the change, not with the lifetime size of the household ledger.
 
@@ -502,15 +502,13 @@ new, repeated, and now-resolved source problems without parsing warning prose.
 
 Transaction deletion synchronization uses a separate complete-scan inventory keyed
 by the stable GnuCash chart-root identity, with the canonical source path only as a
-fallback. The first successful import establishes the ownership baseline; it cannot
-infer which destination transactions came from source records deleted before that
-baseline. On subsequent complete scans, a previously observed transaction GUID that
-is absent from the source is removed in the same atomic import operation. A skipped
-but still present source record counts as observed and is never mistaken for a
-deletion. Reconciliation sessions and FSA claims are durable BreadSched audit data,
-so a missing source transaction referenced by either is retained and reported as a
-conflict instead of creating a dangling reference. Moving or renaming the same
-GnuCash book does not reset its stable inventory when its root GUID is available.
+fallback. A previously observed transaction GUID that is absent from the source is
+removed in the same atomic import operation. A skipped but still present source
+record counts as observed and is never mistaken for a deletion. Reconciliation
+sessions and FSA claims are durable BreadSched audit data, so a missing source
+transaction referenced by either is retained and reported as a conflict instead of
+creating a dangling reference. Moving or renaming the same GnuCash book does not
+reset its stable inventory when its root GUID is available.
 
 Longer-term separation of imported ledger state from BreadSched classifications/resolutions is
 preferred where it makes synchronization safer.
@@ -562,27 +560,20 @@ root.
 
 ## Storage and transactions
 
-SQLite is the native persistence engine. Schema 3, written by BreadSched 0.2.0a3,
-is the native compatibility baseline. Earlier development schemas have no supported
-upgrade path and are rejected explicitly. Schema 3 receives one transactional,
-pre-backed-up cleanup to schema 4, which removes the retired monthly Budget domain,
-then a schema-5 account normalization. The latter rewrites every account blob from
-the former ledger-type/account-kind representation to the single account type before
-strict object decoding begins. It is intentionally safe for schema-4 books whose
-earlier cleanup committed before strict decoding exposed an unconverted row. Merely
-opening a schema-3 book in an earlier release did not rewrite untouched account rows,
-so migrations cannot depend on a prior in-memory compatibility decoder having run.
-Schema 6 adds first-class dated commodity prices and derived split-index quantity
-columns. The transaction blob remains authoritative; migration backfills the new
-quantity index from each split's exact stored quantity (or its value for records
-that predate separate quantity serialization).
-Future persistent-model changes still require explicit forward migrations from the
-supported baseline. This native-book policy is independent of external GnuCash,
-QIF, OFX, and QFX import compatibility.
+SQLite is the native persistence engine. During alpha development there are no
+supported historical BreadSched file schemas: the application opens exactly schema
+7 and rejects any other declared schema before decoding primary objects. Obsolete
+forward-migration functions, their migration ledger, and compatibility decoders are
+not carried in the production code. This keeps the current data model auditable and
+avoids maintaining transformations for development files that no longer exist.
+When BreadSched begins promising compatibility for released native formats, a schema
+change will require a newly designed, explicit, transactional, backed-up migration
+from the oldest release that is actually supported. This native-book policy is
+independent of external GnuCash, QIF, OFX, and QFX import compatibility.
 
-The storage priorities are atomic financial writes, deterministic migrations,
-backups before dangerous transformations, recoverability, undo/redo integrity, and
-realistic performance on long household histories.
+The storage priorities are atomic financial writes, explicit format rejection,
+verified backups and recovery, undo/redo integrity, and realistic performance on
+long household histories.
 
 GTK long-running work has an explicit ownership boundary. Projection workers open
 their own SQLite connection in read-only mode and return immutable calculation

@@ -3,8 +3,8 @@
 Layout follows the pattern Gramps settled on after years of schema churn: one row
 per object holding a serialised blob, plus a handful of *derived* indexed columns
 that exist purely so the common queries can be answered without deserialising the
-whole table.  The blob is authoritative; every indexed column can be rebuilt from
-it, which means adding a new query later is a migration of derived data only.
+whole table. The blob is authoritative; every indexed column can be rebuilt from
+it, so evolving query indexes does not create a second source of financial truth.
 
 ``split_index`` is the one table with no object of its own.  It is a flattened view
 of the splits inside each transaction blob, and it is what makes "the register for
@@ -35,14 +35,13 @@ from ..lib.transaction import Transaction, UnbalancedError
 from ..utils.logs import get_logger
 from ..utils.user_paths import sync_service_for_path
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
-from .migrations import LATEST_SCHEMA_VERSION, MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
 from .verification import BookIssue, BookVerification, verify_domain
 
 LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite"]
 
-SCHEMA_VERSION = LATEST_SCHEMA_VERSION
+SCHEMA_VERSION = 7
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """
@@ -119,10 +118,6 @@ CREATE TABLE IF NOT EXISTS reconciliation (
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_account_date
     ON reconciliation(account, statement_date);
-CREATE TABLE IF NOT EXISTS schema_migration (
-    version    INTEGER PRIMARY KEY,
-    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 """
 
 #: table -> (object class, signal stem)
@@ -326,10 +321,6 @@ class DbSQLite(DbBase):
         conn = self._require_writable()
         conn.executescript(_SCHEMA)
         self._set_metadata_uncommitted("schema_version", SCHEMA_VERSION)
-        conn.execute(
-            "INSERT OR IGNORE INTO schema_migration(version) VALUES (?)",
-            (SCHEMA_VERSION,),
-        )
         conn.commit()
 
     def _open_existing_book(self) -> None:
@@ -345,49 +336,12 @@ class DbSQLite(DbBase):
         except (TypeError, ValueError) as exc:
             raise DbError(f"invalid book schema version: {version!r}") from exc
 
-        if version > SCHEMA_VERSION:
+        if version != SCHEMA_VERSION:
+            direction = "newer" if version > SCHEMA_VERSION else "older"
             raise DbError(
-                f"book was written by a newer version (schema {version}); upgrade BreadSched"
+                f"book uses unsupported {direction} schema {version}; this BreadSched "
+                f"alpha opens schema {SCHEMA_VERSION} only"
             )
-        if version < MIN_SUPPORTED_SCHEMA_VERSION:
-            raise DbError(
-                f"book schema {version} predates the supported BreadSched 0.2.0a3 "
-                f"baseline (schema {MIN_SUPPORTED_SCHEMA_VERSION})"
-            )
-        if version < SCHEMA_VERSION:
-            if self.readonly:
-                raise DbError(
-                    f"book uses schema {version}; open it writable once to migrate to schema "
-                    f"{SCHEMA_VERSION}"
-                )
-            self._migrate(version)
-
-    def _migrate(self, version: int) -> None:
-        conn = self._require_writable()
-        self._backup_before_migration(version)
-        current = version
-        try:
-            conn.execute("BEGIN IMMEDIATE")
-            while current < SCHEMA_VERSION:
-                migration = MIGRATIONS.get(current)
-                if migration is None:
-                    raise DbError(
-                        f"no migration is available from schema {current} to {current + 1}"
-                    )
-                migration(conn)
-                current += 1
-                self._set_metadata_uncommitted("schema_version", current)
-                conn.execute(
-                    "INSERT OR REPLACE INTO schema_migration(version) VALUES (?)",
-                    (current,),
-                )
-            problems = self.integrity_problems()
-            if problems:
-                raise DbError("migrated book failed integrity check: " + "; ".join(problems))
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
 
     @staticmethod
     def _remove_sqlite_sidecars(path: Path) -> None:
@@ -514,12 +468,6 @@ class DbSQLite(DbBase):
         finally:
             guard._release_book_lock()
         return str(target)
-
-    def _backup_before_migration(self, version: int) -> str | None:
-        """Create a consistent, sidecar-free SQLite backup before changing a book."""
-        if self.path in {None, ":memory:"}:
-            return None
-        return self.backup_to(f"{self.path}.pre-migration-v{version}.bak", overwrite=True)
 
     def integrity_problems(self) -> list[str]:
         """Return SQLite integrity failures; an empty list means the file is sound."""

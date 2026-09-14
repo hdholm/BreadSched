@@ -65,19 +65,18 @@ class ImportDialog(Gtk.Window):
             )
         )
 
-        self.gnucash_deletion_notice = Gtk.Label(
+        self.gnucash_reimport_note = Gtk.Label(
             label=(
-                "GnuCash re-import deletion notice: BreadSched can remove source "
-                "transactions only after one successful baseline import of that GnuCash "
-                "book. Transactions deleted before the baseline cannot be identified "
-                "safely; review the destination or import into a new BreadSched book."
+                "Re-importing GnuCash updates source-owned data and removes transactions "
+                "deleted from the source. Transactions still used by a BreadSched "
+                "reconciliation or FSA claim are retained and reported for review."
             ),
             xalign=0,
             wrap=True,
         )
-        self.gnucash_deletion_notice.add_css_class("negative")
-        self.gnucash_deletion_notice.set_visible(False)
-        box.append(self.gnucash_deletion_notice)
+        self.gnucash_reimport_note.add_css_class("dim")
+        self.gnucash_reimport_note.set_visible(False)
+        box.append(self.gnucash_reimport_note)
 
         chooser_row = Gtk.Box(spacing=8)
         self.path_label = Gtk.Label(label="No file chosen", xalign=0, hexpand=True)
@@ -197,7 +196,7 @@ class ImportDialog(Gtk.Window):
             self.detected_label.remove_css_class("negative")
             self.import_button.set_sensitive(True)
         self._plugin = plugin
-        self.gnucash_deletion_notice.set_visible(
+        self.gnucash_reimport_note.set_visible(
             plugin is not None and plugin.id in {"gnucash-sqlite", "gnucash-xml"}
         )
         if plugin is None:

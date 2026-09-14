@@ -90,7 +90,6 @@ class ImportResult:
     source_format: str = ""
     source_identity: str = ""
     log_path: str | None = None
-    deletion_tracking_initialized: bool = False
     resolved_skipped_details: list[tuple[str, str]] = field(default_factory=list)
     _skipped_records: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
     _seen_records: dict[str, set[str]] = field(default_factory=dict, repr=False)
@@ -195,9 +194,7 @@ class ImportResult:
         current = self._seen_records.get("transaction", set())
         retained_source_deletions: set[str] = set()
 
-        if not isinstance(raw_previous, dict):
-            self.deletion_tracking_initialized = True
-        else:
+        if isinstance(raw_previous, dict):
             raw_transactions = raw_previous.get("transactions", [])
             previous = (
                 {str(handle) for handle in raw_transactions}
@@ -266,15 +263,6 @@ class ImportResult:
                 "Skipped since previous import: "
                 f"{self.skipped_new} new, {self.skipped_repeated} repeated, "
                 f"{self.skipped_resolved} resolved"
-            )
-        if self.deletion_tracking_initialized:
-            lines.extend(
-                [
-                    "",
-                    "GnuCash deletion synchronization baseline established. Transactions "
-                    "deleted before this import cannot be identified safely; review an "
-                    "existing destination book or import into a new book if needed.",
-                ]
             )
         reasons = self.reasons()
         if reasons:

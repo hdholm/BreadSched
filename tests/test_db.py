@@ -364,256 +364,75 @@ class TestQueries:
         assert db.split_rows(book.rent) == []
 
 
-class TestSchemaMigration:
+class TestSchemaCompatibility:
     @staticmethod
-    def _make_schema_3_book(path):
+    def _book_with_schema(path: Path, version: object) -> None:
         db = DbSQLite()
         db.load(str(path))
-        with db.transaction("Supported baseline objects") as txn:
-            scheduled = ScheduledTransaction(name="Estimate")
-            scenario = Scenario(name="Plan")
-            card = Account(name="Card", atype=AccountType.CREDIT)
-            benefit = Account(name="Benefit", atype=AccountType.FSA)
-            db.add_scheduled(scheduled, txn)
-            db.add_scenario(scenario, txn)
-            db.add_account(card, txn)
-            db.add_account(benefit, txn)
         db.close()
-
-        conn = sqlite3.connect(path)
-        for account, legacy_type, legacy_kind in (
-            (card, "CREDIT", "debt"),
-            (benefit, "ASSET", "fsa"),
-        ):
-            raw = json.loads(
-                conn.execute(
-                    "SELECT blob FROM account WHERE handle=?", (account.handle,)
-                ).fetchone()[0]
+        with sqlite3.connect(path) as raw:
+            raw.execute(
+                "UPDATE metadata SET value=? WHERE key='schema_version'",
+                (json.dumps(version),),
             )
-            raw["atype"] = legacy_type
-            raw["kind"] = legacy_kind
-            conn.execute(
-                "UPDATE account SET atype=?, blob=? WHERE handle=?",
-                (legacy_type, json.dumps(raw, separators=(",", ":")), account.handle),
-            )
-        for table, handle, fields in (
-            ("scheduled", scheduled.handle, {"budgets": ["old"], "budgets_decided": True}),
-            (
-                "scenario",
-                scenario.handle,
-                {"basis": "combined", "budget": "old", "extend_budget": False},
-            ),
-        ):
-            raw = json.loads(
-                conn.execute(f"SELECT blob FROM {table} WHERE handle=?", (handle,)).fetchone()[0]
-            )
-            raw.update(fields)
-            conn.execute(
-                f"UPDATE {table} SET blob=? WHERE handle=?",
-                (json.dumps(raw, separators=(",", ":")), handle),
-            )
-        conn.execute(
-            "CREATE TABLE budget(handle TEXT PRIMARY KEY, name TEXT NOT NULL, blob TEXT NOT NULL)"
-        )
-        conn.execute("INSERT INTO budget VALUES ('old', 'Old', '{}')")
-        conn.execute("INSERT OR REPLACE INTO metadata VALUES ('current_budget', 'old')")
-        conn.execute("INSERT OR REPLACE INTO metadata VALUES ('schema_version', '3')")
-        conn.execute("DELETE FROM schema_migration")
-        conn.execute("INSERT INTO schema_migration(version) VALUES (3)")
-        conn.commit()
-        conn.close()
-        return scheduled.handle, scenario.handle, card.handle, benefit.handle
 
-    def test_supported_baseline_is_backed_up_and_cleaned(self, tmp_path):
-        path = tmp_path / "a3.breadsched"
-        scheduled, scenario, card, benefit = self._make_schema_3_book(path)
-
-        db = DbSQLite()
-        db.load(str(path))
-
-        assert db.get_metadata("schema_version") == 7
-        assert db.get_metadata("current_budget") is None
-        assert "budgets" not in db.get_scheduled(scheduled).serialize()
-        assert "basis" not in db.get_scenario(scenario).serialize()
-        assert db.get_account(card).atype is AccountType.CREDIT
-        assert db.get_account(benefit).atype is AccountType.FSA
-        for handle, expected in ((card, "CREDIT CARD"), (benefit, "FSA")):
-            stored_type, raw_blob = (
-                db._require()
-                .execute("SELECT atype, blob FROM account WHERE handle=?", (handle,))
-                .fetchone()
-            )
-            assert stored_type == expected
-            assert json.loads(raw_blob)["atype"] == expected
-            assert "kind" not in json.loads(raw_blob)
-        assert (
-            db._require()
-            .execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='budget'")
-            .fetchone()
-            is None
-        )
-        assert [
-            row[0]
-            for row in db._require().execute(
-                "SELECT version FROM schema_migration ORDER BY version"
-            )
-        ] == [3, 4, 5, 6, 7]
-        db.close()
-
-        backup = tmp_path / "a3.breadsched.pre-migration-v3.bak"
-        assert backup.exists()
-        old = sqlite3.connect(backup)
-        try:
-            assert (
-                old.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]
-                == "3"
-            )
-            assert (
-                old.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='budget'"
-                ).fetchone()
-                is not None
-            )
-        finally:
-            old.close()
-
-    def test_schema_4_book_stranded_by_the_old_decoder_is_repaired(self, tmp_path):
-        from breadsched.gen.db.migrations import v3_to_v4
-
-        path = tmp_path / "stranded-schema-4.breadsched"
-        _scheduled, _scenario, card, benefit = self._make_schema_3_book(path)
-        conn = sqlite3.connect(path)
-        try:
-            v3_to_v4(conn)
-            conn.execute("UPDATE metadata SET value='4' WHERE key='schema_version'")
-            conn.execute("INSERT INTO schema_migration(version) VALUES (4)")
-            conn.commit()
-        finally:
-            conn.close()
-
-        db = DbSQLite()
-        db.load(str(path))
-        try:
-            assert db.get_metadata("schema_version") == 7
-            assert db.get_account(card).atype is AccountType.CREDIT
-            assert db.get_account(benefit).atype is AccountType.FSA
-        finally:
-            db.close()
-
-        assert (tmp_path / "stranded-schema-4.breadsched.pre-migration-v4.bak").exists()
-
-    def test_formats_before_a3_are_rejected(self, tmp_path):
-        path = tmp_path / "unsupported.breadsched"
-        db = DbSQLite()
-        db.load(str(path))
-        db.set_metadata("schema_version", 2)
-        db.close()
-
-        unsupported = DbSQLite()
-        with pytest.raises(DbError, match="predates the supported BreadSched 0.2.0a3 baseline"):
-            unsupported.load(str(path))
-
-    def test_failed_cleanup_rolls_back_the_book(self, tmp_path, monkeypatch):
-        from breadsched.gen.db import sqlite as sqlite_backend
-
-        path = tmp_path / "failure.breadsched"
-        self._make_schema_3_book(path)
-
-        def fail_halfway(conn):
-            conn.execute("DROP TABLE budget")
-            raise RuntimeError("simulated migration failure")
-
-        monkeypatch.setitem(sqlite_backend.MIGRATIONS, 3, fail_halfway)
-        db = DbSQLite()
-        with pytest.raises(RuntimeError, match="simulated migration failure"):
-            db.load(str(path))
-        assert not db.is_open
-
-        raw = sqlite3.connect(path)
-        try:
-            assert (
-                raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()[0]
-                == "3"
-            )
-            assert (
-                raw.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='budget'"
-                ).fetchone()
-                is not None
-            )
-        finally:
-            raw.close()
-        assert (tmp_path / "failure.breadsched.pre-migration-v3.bak").exists()
-
-    def test_read_only_baseline_requires_one_writable_open(self, tmp_path):
-        path = tmp_path / "a3-readonly.breadsched"
-        self._make_schema_3_book(path)
-
-        db = DbSQLite()
-        with pytest.raises(DbError, match="open it writable once to migrate"):
-            db.load(str(path), mode="r")
-        assert not (tmp_path / "a3-readonly.breadsched.pre-migration-v3.bak").exists()
-
-    def test_new_books_report_clean_integrity(self, db):
+    def test_new_books_use_the_only_supported_schema_without_a_migration_ledger(self, db):
         assert db.get_metadata("schema_version") == 7
         assert db.integrity_problems() == []
+        row = (
+            db._require()
+            .execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migration'")
+            .fetchone()
+        )
+        assert row is None
 
-    def test_schema_5_backfills_indexed_security_quantities(self, tmp_path):
-        path = tmp_path / "a5.breadsched"
+    def test_current_books_with_the_old_unused_ledger_still_open(self, tmp_path):
+        path = tmp_path / "current-with-extra-table.breadsched"
         db = DbSQLite()
         db.load(str(path))
-        with db.transaction("Security units") as txn:
-            root = Account(name="Root", atype=AccountType.ROOT)
-            holding = Account(name="Holding", atype=AccountType.INVESTMENT, parent=root.handle)
-            equity = Account(name="Opening", atype=AccountType.EQUITY, parent=root.handle)
-            db.add_account(root, txn)
-            db.add_account(holding, txn)
-            db.add_account(equity, txn)
-            purchase = Transaction(post_date=date(2026, 1, 1), description="Holding")
-            purchase.splits = [
-                Split(holding.handle, Money("100"), quantity=Money("7.5")),
-                Split(equity.handle, Money("-100")),
-            ]
-            db.add_transaction(purchase, txn)
-        split_handle = purchase.splits[0].handle
         db.close()
-
-        conn = sqlite3.connect(path)
-        conn.executescript(
-            """
-            ALTER TABLE split_index RENAME TO split_index_v6;
-            CREATE TABLE split_index (
-                handle TEXT PRIMARY KEY, txn TEXT NOT NULL, account TEXT NOT NULL,
-                post_date TEXT NOT NULL, value_num INTEGER NOT NULL, value_den INTEGER NOT NULL
-            );
-            INSERT INTO split_index(handle,txn,account,post_date,value_num,value_den)
-                SELECT handle,txn,account,post_date,value_num,value_den FROM split_index_v6;
-            DROP TABLE split_index_v6;
-            CREATE INDEX idx_split_account ON split_index(account, post_date);
-            CREATE INDEX idx_split_txn ON split_index(txn);
-            DROP TABLE price;
-            UPDATE metadata SET value='5' WHERE key='schema_version';
-            DELETE FROM schema_migration WHERE version=6;
-            """
-        )
-        conn.commit()
-        conn.close()
-
-        migrated = DbSQLite()
-        migrated.load(str(path))
-        try:
-            row = (
-                migrated._require()
-                .execute(
-                    "SELECT quantity_num, quantity_den FROM split_index WHERE handle=?",
-                    (split_handle,),
-                )
-                .fetchone()
+        with sqlite3.connect(path) as raw:
+            raw.execute(
+                "CREATE TABLE schema_migration(version INTEGER PRIMARY KEY, applied_at TEXT)"
             )
-            assert Money(row[0], row[1]) == Money("7.5")
-            assert migrated.get_metadata("schema_version") == 7
-        finally:
-            migrated.close()
+            raw.execute("INSERT INTO schema_migration VALUES (7, 'historical')")
+
+        reopened = DbSQLite()
+        reopened.load(str(path))
+        assert reopened.get_metadata("schema_version") == 7
+        reopened.close()
+
+    @pytest.mark.parametrize("version", [3, 4, 5, 6])
+    @pytest.mark.parametrize("mode", ["r", "w"])
+    def test_older_alpha_schemas_are_rejected(self, tmp_path, version, mode):
+        path = tmp_path / f"schema-{version}.breadsched"
+        self._book_with_schema(path, version)
+
+        db = DbSQLite()
+        with pytest.raises(DbError, match=f"unsupported older schema {version}"):
+            db.load(str(path), mode=mode)
+        assert not db.is_open
+
+    def test_a_newer_schema_is_rejected(self, tmp_path):
+        path = tmp_path / "future.breadsched"
+        self._book_with_schema(path, 8)
+
+        db = DbSQLite()
+        with pytest.raises(DbError, match="unsupported newer schema 8"):
+            db.load(str(path))
+
+    @pytest.mark.parametrize("version", ["seven", None])
+    def test_invalid_or_missing_schema_versions_are_rejected(self, tmp_path, version):
+        path = tmp_path / "invalid.breadsched"
+        self._book_with_schema(path, version)
+        if version is None:
+            with sqlite3.connect(path) as raw:
+                raw.execute("DELETE FROM metadata WHERE key='schema_version'")
+
+        db = DbSQLite()
+        message = "no schema version" if version is None else "invalid book schema version"
+        with pytest.raises(DbError, match=message):
+            db.load(str(path))
 
 
 class TestBookVerification:

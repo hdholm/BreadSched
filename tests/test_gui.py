@@ -774,16 +774,18 @@ class TestImportDialogState:
         assert dialog.number_format.get_selected() == 2
         assert dialog.date_format.get_selected() == 2
 
-    def test_gnucash_source_shows_the_deletion_baseline_notice(
+    def test_gnucash_source_shows_the_quiet_reimport_note(
         self, dialog, tmp_path, gnucash_sqlite_path
     ):
         dialog.set_source(gnucash_sqlite_path.path)
-        assert dialog.gnucash_deletion_notice.get_visible() is True
+        assert dialog.gnucash_reimport_note.get_visible() is True
+        assert dialog.gnucash_reimport_note.has_css_class("dim")
+        assert not dialog.gnucash_reimport_note.has_css_class("negative")
 
         qif = tmp_path / "statement.qif"
         qif.write_text("!Type:Bank\nD09/01/2026\nT-1.00\nPExample\n^\n")
         dialog.set_source(str(qif))
-        assert dialog.gnucash_deletion_notice.get_visible() is False
+        assert dialog.gnucash_reimport_note.get_visible() is False
 
     def test_ofx_exposes_number_but_not_qif_date_choice(self, dialog, tmp_path):
         path = tmp_path / "statement.ofx"

@@ -392,14 +392,10 @@ BreadSched can import GnuCash SQLite and compressed-XML books and preserves sour
 GUIDs where possible so subsequent imports can identify the same records. Import
 uses the same validated internal sink regardless of source format.
 
-> **GnuCash re-import deletion boundary:** BreadSched records a transaction inventory
-> on the first successful import of each GnuCash book. On later complete imports,
-> source transactions that have disappeared are removed from BreadSched. An existing
-> BreadSched book cannot safely identify transactions that were already deleted from
-> GnuCash before that first inventory was recorded; review those transactions manually
-> or import into a new BreadSched book. A source-deleted transaction used by a retained
-> reconciliation or FSA claim is kept and prominently reported rather than leaving a
-> broken local reference.
+Re-importing the same GnuCash book updates source-owned data and removes transactions
+that have disappeared from the source. A source-deleted transaction still used by a
+BreadSched reconciliation or FSA claim is retained and reported for review rather
+than leaving a broken local reference.
 
 Compatibility is intentionally important during BreadSched's transition toward a
 standalone household ledger. The goal is not business-feature parity with GnuCash;
@@ -469,12 +465,11 @@ its continuing work is tracked in the roadmap.
 
 ## Book files and safety
 
-BreadSched native books use the `.breadsched` suffix and SQLite storage. Version
-0.2.0a3 is the oldest supported native-book format. Opening one writable upgrades
-it to the current format after making a pre-migration backup; older development
-formats are rejected rather than guessed. This native-format boundary does not
-affect GnuCash, QIF, OFX, or QFX import. Verify and backup operations are available
-from the CLI. A writable book is protected by a small sidecar lock file;
+BreadSched native books use the `.breadsched` suffix and SQLite storage. During the
+alpha period, only the current native schema is supported; older and newer schema
+numbers are rejected explicitly rather than guessed or transformed. This boundary
+does not affect GnuCash, QIF, OFX, or QFX import. Verify and backup operations are
+available from the CLI. A writable book is protected by a small sidecar lock file;
 a second process may still open the book read-only, but cannot become a competing
 writer. Clean shutdown removes the lock, and a stale same-host lock is reclaimed when
 its recorded process no longer exists.

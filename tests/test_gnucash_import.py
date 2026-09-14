@@ -450,7 +450,7 @@ class TestSqliteImport:
         self, db, gnucash_sqlite_path
     ):
         first = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-        assert first.deletion_tracking_initialized is True
+        assert first.transactions_removed == 0
         transaction = next(
             item for item in db.iter_transactions() if item.description == "Supermarket"
         )
@@ -820,7 +820,7 @@ class TestXmlImport:
         source_path.write_text(gnucash_xml_path.plain, encoding="utf-8")
         first = gnucash_xml.import_book(db, source_path, include_scheduled=False)
         imported_handles = {item.handle for item in db.iter_transactions()}
-        assert first.deletion_tracking_initialized is True
+        assert first.transactions_removed == 0
         assert len(imported_handles) == 2
 
         tree = ET.parse(source_path)

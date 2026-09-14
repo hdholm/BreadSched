@@ -223,7 +223,6 @@ def cmd_import(args: argparse.Namespace) -> int:
             "source": result.source,
             "source_format": result.source_format,
             "source_identity": result.source_identity,
-            "deletion_tracking_initialized": result.deletion_tracking_initialized,
             "log_file": result.log_path,
             "suggestions": [
                 {
