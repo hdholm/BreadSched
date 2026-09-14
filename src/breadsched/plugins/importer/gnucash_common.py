@@ -47,6 +47,7 @@ from ...gen.utils.logs import get_logger
 LOG = get_logger(__name__)
 
 _SKIPPED_HISTORY_KEY = "import.skipped_history"
+_SOURCE_INVENTORY_KEY = "import.source_inventory"
 
 __all__ = [
     "ImportResult",
@@ -72,6 +73,8 @@ class ImportResult:
     transactions_new: int = 0
     transactions_refreshed: int = 0
     transactions_unchanged: int = 0
+    transactions_removed: int = 0
+    transactions_retained: int = 0
     splits_new: int = 0
     splits_refreshed: int = 0
     splits_unchanged: int = 0
@@ -85,15 +88,23 @@ class ImportResult:
     skipped_details: list[tuple[str, str]] = field(default_factory=list)
     source: str = ""
     source_format: str = ""
+    source_identity: str = ""
     log_path: str | None = None
+    deletion_tracking_initialized: bool = False
     resolved_skipped_details: list[tuple[str, str]] = field(default_factory=list)
     _skipped_records: dict[str, dict[str, str]] = field(default_factory=dict, repr=False)
+    _seen_records: dict[str, set[str]] = field(default_factory=dict, repr=False)
     _scanned_kinds: set[str] = field(default_factory=set, repr=False)
     _had_skip_history: bool = field(default=False, repr=False)
 
     def scan(self, kind: str) -> None:
         """Declare that this import examined all source records of ``kind``."""
         self._scanned_kinds.add(kind)
+
+    def observe(self, kind: str, identity: str) -> None:
+        """Record a stable identity encountered during a complete source scan."""
+        self.scan(kind)
+        self._seen_records.setdefault(kind, set()).add(identity)
 
     def skip(
         self,
@@ -106,6 +117,8 @@ class ImportResult:
         self.skipped += 1
         self.skipped_details.append((reason, subject))
         self.scan(kind)
+        if identity:
+            self.observe(kind, identity)
         stable_identity = identity or hashlib.sha256(subject.encode()).hexdigest()
         key = f"{kind}:{stable_identity}"
         self._skipped_records[key] = {"reason": reason, "subject": subject, "kind": kind}
@@ -159,6 +172,58 @@ class ImportResult:
 
         history[source_key] = retained | self._skipped_records
         db.set_metadata(_SKIPPED_HISTORY_KEY, history, txn)
+        self._sync_source_transactions(db, txn, source_path)
+
+    def _sync_source_transactions(self, db: DbSQLite, txn: DbTxn, source_path: str) -> None:
+        """Mirror transactions deleted after a successful GnuCash baseline.
+
+        Older BreadSched versions did not retain transaction provenance. A first
+        import therefore establishes ownership but cannot distinguish a formerly
+        imported transaction from a native transaction whose GUID happens not to be
+        in the current source. Later complete scans can safely remove disappeared
+        source GUIDs, except where a BreadSched audit/claim object still refers to
+        the transaction.
+        """
+        if self.source_format not in {"sqlite", "xml"} or "transaction" not in self._scanned_kinds:
+            return
+
+        raw_inventory = db.get_metadata(_SOURCE_INVENTORY_KEY, {})
+        inventory = raw_inventory if isinstance(raw_inventory, dict) else {}
+        stable_source = self.source_identity or source_path
+        source_key = f"gnucash:{stable_source}"
+        raw_previous = inventory.get(source_key)
+        current = self._seen_records.get("transaction", set())
+        retained_source_deletions: set[str] = set()
+
+        if not isinstance(raw_previous, dict):
+            self.deletion_tracking_initialized = True
+        else:
+            raw_transactions = raw_previous.get("transactions", [])
+            previous = (
+                {str(handle) for handle in raw_transactions}
+                if isinstance(raw_transactions, list)
+                else set()
+            )
+            for handle in sorted(previous - current):
+                transaction = db.get_transaction(handle)
+                if transaction is None:
+                    continue
+                references = _protected_transaction_references(db, transaction)
+                if references:
+                    retained_source_deletions.add(handle)
+                    self.transactions_retained += 1
+                    self.warn(
+                        f"source-deleted transaction {transaction.describe()} was retained "
+                        f"because it is still used by {', '.join(references)}"
+                    )
+                    continue
+                db.remove_transaction(handle, txn)
+                self.transactions_removed += 1
+
+        # Keep a protected missing GUID in the inventory so a later import can
+        # complete the deletion after its local audit reference is removed.
+        inventory[source_key] = {"transactions": sorted(current | retained_source_deletions)}
+        db.set_metadata(_SOURCE_INVENTORY_KEY, inventory, txn)
 
     def describe(self) -> str:
         parts = [
@@ -177,12 +242,18 @@ class ImportResult:
     def detail(self, limit: int = 20) -> str:
         """A multi-line report: the summary, why things were skipped, then warnings."""
         lines = [self.describe()]
-        if self.transactions:
+        if self.transactions or self.transactions_removed or self.transactions_retained:
             lines.append(
                 "Transactions: "
                 f"{self.transactions_new} new, {self.transactions_refreshed} refreshed, "
                 f"{self.transactions_unchanged} unchanged"
             )
+            if self.transactions_removed or self.transactions_retained:
+                lines.append(
+                    "Source deletions: "
+                    f"{self.transactions_removed} removed, "
+                    f"{self.transactions_retained} retained because of local references"
+                )
             split_line = (
                 f"Splits: {self.splits_new} new, {self.splits_refreshed} refreshed, "
                 f"{self.splits_unchanged} unchanged"
@@ -195,6 +266,15 @@ class ImportResult:
                 "Skipped since previous import: "
                 f"{self.skipped_new} new, {self.skipped_repeated} repeated, "
                 f"{self.skipped_resolved} resolved"
+            )
+        if self.deletion_tracking_initialized:
+            lines.extend(
+                [
+                    "",
+                    "GnuCash deletion synchronization baseline established. Transactions "
+                    "deleted before this import cannot be identified safely; review an "
+                    "existing destination book or import into a new book if needed.",
+                ]
             )
         reasons = self.reasons()
         if reasons:
@@ -288,6 +368,31 @@ def recurrence_interval(period: PeriodType, raw: object) -> int:
     if period is PeriodType.ONCE and interval == 0:
         return 1
     return interval
+
+
+def _protected_transaction_references(db: DbSQLite, transaction: Transaction) -> list[str]:
+    """Name BreadSched-owned objects that make source deletion unsafe."""
+    split_handles = {split.handle for split in transaction.splits}
+    reconciliation_count = sum(
+        bool(split_handles.intersection(item.selected_splits)) for item in db.iter_reconciliations()
+    )
+    claim_count = 0
+    for claim in db.iter_fsa_claims():
+        links = [*claim.payments, *claim.refunds]
+        links.extend(link for allocation in claim.allocations for link in allocation.reimbursements)
+        if any(
+            link.transaction == transaction.handle or link.split in split_handles for link in links
+        ):
+            claim_count += 1
+
+    references: list[str] = []
+    if reconciliation_count:
+        references.append(
+            f"{reconciliation_count} reconciliation{'s' if reconciliation_count != 1 else ''}"
+        )
+    if claim_count:
+        references.append(f"{claim_count} FSA claim{'s' if claim_count != 1 else ''}")
+    return references
 
 
 class ImportSink:
@@ -425,6 +530,9 @@ class ImportSink:
         parsed = GnuCashAccountType.recognize(source_type)
         account_type = parsed.to_account_type() if parsed is not None else AccountType.TECHNICAL
         mapped_parent = self._remap.get(parent, parent) if parent else None
+
+        if parsed is GnuCashAccountType.ROOT and parent is None and not self.result.source_identity:
+            self.result.source_identity = guid
 
         if parsed is None:
             self.result.warn(
@@ -599,7 +707,7 @@ class ImportSink:
         Nothing raises: an exception would abort the enclosing batch and roll back
         every transaction imported so far.
         """
-        self.result.scan("transaction")
+        self.result.observe("transaction", guid)
         existing = self.db.get_transaction(guid)
         txn_obj = Transaction(
             handle=guid,

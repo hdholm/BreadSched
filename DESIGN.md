@@ -500,6 +500,18 @@ updated inside the import transaction, so a failed/rolled-back import cannot cla
 that an issue was introduced or resolved. A later run can consequently distinguish
 new, repeated, and now-resolved source problems without parsing warning prose.
 
+Transaction deletion synchronization uses a separate complete-scan inventory keyed
+by the stable GnuCash chart-root identity, with the canonical source path only as a
+fallback. The first successful import establishes the ownership baseline; it cannot
+infer which destination transactions came from source records deleted before that
+baseline. On subsequent complete scans, a previously observed transaction GUID that
+is absent from the source is removed in the same atomic import operation. A skipped
+but still present source record counts as observed and is never mistaken for a
+deletion. Reconciliation sessions and FSA claims are durable BreadSched audit data,
+so a missing source transaction referenced by either is retained and reported as a
+conflict instead of creating a dangling reference. Moving or renaming the same
+GnuCash book does not reset its stable inventory when its root GUID is available.
+
 Longer-term separation of imported ledger state from BreadSched classifications/resolutions is
 preferred where it makes synchronization safer.
 

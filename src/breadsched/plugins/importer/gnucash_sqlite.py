@@ -249,6 +249,7 @@ def import_book(
             report("Reading accounts", 0)
             _import_accounts(conn, sink)
             LOG.debug("imported %d accounts", result.accounts)
+            result.scan("transaction")
             _import_transactions(conn, sink, report)
             LOG.debug(
                 "imported %d transactions, skipped %d",

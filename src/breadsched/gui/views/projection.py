@@ -108,9 +108,17 @@ class ProjectionView(BaseView):
         self.warning_label = Gtk.Label(xalign=0)
         self.warning_label.add_css_class("dim")
         self.warning_label.set_wrap(True)
+        self.warning_label.set_selectable(True)
+        self.warning_label.set_valign(Gtk.Align.START)
         for side in ("start", "end", "bottom"):
             getattr(self.warning_label, f"set_margin_{side}")(12)
-        left.append(self.warning_label)
+        self.warning_scroller = Gtk.ScrolledWindow(child=self.warning_label)
+        self.warning_scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.warning_scroller.set_max_content_height(180)
+        self.warning_scroller.set_propagate_natural_height(True)
+        self.warning_scroller.set_vexpand(False)
+        self.warning_scroller.set_visible(False)
+        left.append(self.warning_scroller)
 
         split.set_start_child(left)
         split.set_end_child(self._build_controls(right))
@@ -313,7 +321,7 @@ class ProjectionView(BaseView):
         snapshot = Scenario.from_dict(scenario.serialize())
         self._progress_started = monotonic()
         self.warning_label.remove_css_class("negative")
-        self.warning_label.set_text("Calculating projection…")
+        self._show_projection_notes(["Calculating projection…"])
 
         def work(cancel, report) -> projection.Projection:
             worker_db = source_db
@@ -376,13 +384,13 @@ class ProjectionView(BaseView):
         self._close_progress()
         if isinstance(exc, OperationCancelled):
             self._projection_dirty = True
-            self.warning_label.set_text("Projection cancelled.")
+            self._show_projection_notes(["Projection cancelled."])
             return
         LOG.error("projection failed", exc_info=(type(exc), exc, exc.__traceback__))
         self._result = None
         self.explain_button.set_sensitive(False)
         self.chart.set_data([], [])
-        self.warning_label.set_text(f"The projection could not be calculated: {exc}")
+        self._show_projection_notes([f"The projection could not be calculated: {exc}"])
         self.warning_label.add_css_class("negative")
 
     def _cancel_projection(self, invalidate: bool = False, wait: bool = False) -> None:
@@ -461,7 +469,14 @@ class ProjectionView(BaseView):
             ("Cash runs out", shortfall.label if shortfall else "Never"),
         ]
         self._render_summary(cards, alarm=shortfall is not None)
-        self.warning_label.set_text("  ".join(result.warnings))
+        self._show_projection_notes(result.warnings, bullets=True)
+
+    def _show_projection_notes(self, notes: list[str], *, bullets: bool = False) -> None:
+        """Render readable notes without letting them dictate the window height."""
+        visible = [note.strip() for note in notes if note.strip()]
+        text = "\n\n".join(f"• {note}" if bullets else note for note in visible)
+        self.warning_label.set_text(text)
+        self.warning_scroller.set_visible(bool(text))
 
     def printable_html(self) -> str | None:
         """Return the current projection calculation and visible comparison."""

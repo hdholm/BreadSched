@@ -6,8 +6,10 @@ against anything this codebase produces.
 """
 
 import sqlite3
+import xml.etree.ElementTree as ET
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 from gnucash_fixtures import (
@@ -23,12 +25,15 @@ from breadsched.gen.engine import activity, ledger, valuation
 from breadsched.gen.lib import (
     Account,
     AccountType,
+    FsaClaim,
+    FsaClaimSplitLink,
     FsaFundingYear,
     GnuCashAccountType,
     InvestmentActivityKind,
     Money,
     PlanningFlowKind,
     PlanningResolution,
+    Reconciliation,
     ScheduledSplit,
     ScheduledTransaction,
 )
@@ -441,6 +446,103 @@ class TestSqliteImport:
         assert second.splits_unchanged == second.splits
         assert second.transactions_new == second.transactions_refreshed == 0
 
+    def test_reimport_removes_transactions_deleted_after_the_source_baseline(
+        self, db, gnucash_sqlite_path
+    ):
+        first = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        assert first.deletion_tracking_initialized is True
+        transaction = next(
+            item for item in db.iter_transactions() if item.description == "Supermarket"
+        )
+
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute("DELETE FROM splits WHERE tx_guid=?", (transaction.handle,))
+            source.execute("DELETE FROM transactions WHERE guid=?", (transaction.handle,))
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        assert db.get_transaction(transaction.handle) is None
+        assert result.transactions_removed == 1
+        assert result.transactions_retained == 0
+        assert "Source deletions: 1 removed" in result.detail()
+
+        assert db.undo() is True
+        assert db.get_transaction(transaction.handle) is not None
+        replayed = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        assert replayed.transactions_removed == 1
+
+    def test_reimport_retains_a_source_deletion_used_by_a_reconciliation(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        transaction = next(
+            item for item in db.iter_transactions() if item.description == "Supermarket"
+        )
+        reconciliation = Reconciliation(
+            account=transaction.splits[0].account,
+            statement_date=transaction.post_date,
+            selected_splits=[transaction.splits[0].handle],
+        )
+        with db.transaction("Protect imported transaction") as txn:
+            db.add_reconciliation(reconciliation, txn)
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute("DELETE FROM splits WHERE tx_guid=?", (transaction.handle,))
+            source.execute("DELETE FROM transactions WHERE guid=?", (transaction.handle,))
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        assert db.get_transaction(transaction.handle) is not None
+        assert result.transactions_removed == 0
+        assert result.transactions_retained == 1
+        assert any("used by 1 reconciliation" in warning for warning in result.warnings)
+
+        reconciliation.selected_splits = []
+        with db.transaction("Release imported transaction") as txn:
+            db.commit_reconciliation(reconciliation, txn)
+        retried = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        assert retried.transactions_removed == 1
+        assert db.get_transaction(transaction.handle) is None
+
+    def test_reimport_retains_a_source_deletion_used_by_an_fsa_claim(self, db, gnucash_sqlite_path):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        transaction = next(
+            item for item in db.iter_transactions() if item.description == "Supermarket"
+        )
+        claim = FsaClaim(
+            service_date=transaction.post_date,
+            provider="Generic provider",
+            payments=[FsaClaimSplitLink(transaction.handle, transaction.splits[0].handle)],
+        )
+        with db.transaction("Link imported transaction") as txn:
+            db.add_fsa_claim(claim, txn)
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute("DELETE FROM splits WHERE tx_guid=?", (transaction.handle,))
+            source.execute("DELETE FROM transactions WHERE guid=?", (transaction.handle,))
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        assert result.transactions_retained == 1
+        assert db.get_transaction(transaction.handle) is not None
+        assert any("used by 1 FSA claim" in warning for warning in result.warnings)
+
+    def test_source_identity_keeps_deletion_tracking_when_the_file_moves(
+        self, db, tmp_path, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        transaction = next(
+            item for item in db.iter_transactions() if item.description == "Supermarket"
+        )
+        moved = tmp_path / "renamed-source.gnucash"
+        Path(gnucash_sqlite_path.path).rename(moved)
+        with sqlite3.connect(moved) as source:
+            source.execute("DELETE FROM splits WHERE tx_guid=?", (transaction.handle,))
+            source.execute("DELETE FROM transactions WHERE guid=?", (transaction.handle,))
+
+        result = gnucash_sqlite.import_book(db, moved)
+
+        assert result.transactions_removed == 1
+        assert db.get_transaction(transaction.handle) is None
+
     def test_reimport_reports_source_records_that_were_refreshed(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
         conn = sqlite3.connect(gnucash_sqlite_path.path)
@@ -711,6 +813,29 @@ class TestStandaloneReaders:
 
 
 class TestXmlImport:
+    def test_reimport_removes_all_transactions_deleted_after_the_source_baseline(
+        self, db, tmp_path, gnucash_xml_path
+    ):
+        source_path = tmp_path / "deletion-sync.gnucash"
+        source_path.write_text(gnucash_xml_path.plain, encoding="utf-8")
+        first = gnucash_xml.import_book(db, source_path, include_scheduled=False)
+        imported_handles = {item.handle for item in db.iter_transactions()}
+        assert first.deletion_tracking_initialized is True
+        assert len(imported_handles) == 2
+
+        tree = ET.parse(source_path)
+        transaction_tag = f"{{{gnucash_xml.NS['gnc']}}}transaction"
+        for parent in tree.iter():
+            for child in list(parent):
+                if child.tag == transaction_tag:
+                    parent.remove(child)
+        tree.write(source_path, encoding="unicode", xml_declaration=True)
+
+        result = gnucash_xml.import_book(db, source_path, include_scheduled=False)
+
+        assert result.transactions_removed == 2
+        assert all(db.get_transaction(handle) is None for handle in imported_handles)
+
     def test_notify_false_suppresses_the_complete_importer_boundary(self, db, gnucash_xml_path):
         seen = []
         db.connect("database-changed", lambda *_: seen.append("changed"))

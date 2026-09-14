@@ -2616,6 +2616,8 @@ async function showImport() {
     el("button", { class:"action primary", type:"submit" }, "Import"));
   return el("div", {},
     el("p", { class:"note" }, "Import a file visible to the BreadSched process. Auto-detection is recommended; choose an explicit format when the source is ambiguous."),
+    el("p", { class:"note neg" },
+      "GnuCash re-import deletion notice: source transactions can be removed only after BreadSched has recorded one successful baseline import of that GnuCash book. Transactions deleted before that baseline cannot be identified safely; review the destination or import into a new BreadSched book."),
     el("div", { class:"panel", style:"padding:16px" }, form, result));
 }
 

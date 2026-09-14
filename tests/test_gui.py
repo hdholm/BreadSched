@@ -548,6 +548,22 @@ class TestProjectionView:
         assert view.explain_button.get_sensitive() is True
         assert "events" in view.explain_button.get_tooltip_text()
 
+    def test_many_projection_notes_are_separated_and_height_bounded(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("projection")
+        view = _projection(window)
+        assert view._result is not None
+        view._result.warnings = [f"Projection note {index}" for index in range(30)]
+
+        view._render(view._result)
+
+        assert view.warning_scroller.get_visible() is True
+        assert view.warning_scroller.get_max_content_height() == 180
+        assert view.warning_scroller.get_propagate_natural_height() is True
+        assert "• Projection note 0\n\n• Projection note 1" in view.warning_label.get_text()
+
 
 class TestDialogs:
     def test_book_verification_runs_read_only_in_the_background(self, app, window, populated_book):
@@ -757,6 +773,17 @@ class TestImportDialogState:
         dialog.date_format.set_selected(2)
         assert dialog.number_format.get_selected() == 2
         assert dialog.date_format.get_selected() == 2
+
+    def test_gnucash_source_shows_the_deletion_baseline_notice(
+        self, dialog, tmp_path, gnucash_sqlite_path
+    ):
+        dialog.set_source(gnucash_sqlite_path.path)
+        assert dialog.gnucash_deletion_notice.get_visible() is True
+
+        qif = tmp_path / "statement.qif"
+        qif.write_text("!Type:Bank\nD09/01/2026\nT-1.00\nPExample\n^\n")
+        dialog.set_source(str(qif))
+        assert dialog.gnucash_deletion_notice.get_visible() is False
 
     def test_ofx_exposes_number_but_not_qif_date_choice(self, dialog, tmp_path):
         path = tmp_path / "statement.ofx"

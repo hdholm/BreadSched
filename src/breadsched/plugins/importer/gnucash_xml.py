@@ -168,6 +168,7 @@ def import_book(
         try:
             template_splits: dict[str, list[dict]] = {}
             schedules: list[ET.Element] = []
+            result.scan("transaction")
             for element, is_template in _iter_top_level(stream):
                 tag = element.tag.rsplit("}", 1)[-1]
                 if tag == "transaction" and not is_template:

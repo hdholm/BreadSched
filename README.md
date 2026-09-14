@@ -392,6 +392,15 @@ BreadSched can import GnuCash SQLite and compressed-XML books and preserves sour
 GUIDs where possible so subsequent imports can identify the same records. Import
 uses the same validated internal sink regardless of source format.
 
+> **GnuCash re-import deletion boundary:** BreadSched records a transaction inventory
+> on the first successful import of each GnuCash book. On later complete imports,
+> source transactions that have disappeared are removed from BreadSched. An existing
+> BreadSched book cannot safely identify transactions that were already deleted from
+> GnuCash before that first inventory was recorded; review those transactions manually
+> or import into a new BreadSched book. A source-deleted transaction used by a retained
+> reconciliation or FSA claim is kept and prominently reported rather than leaving a
+> broken local reference.
+
 Compatibility is intentionally important during BreadSched's transition toward a
 standalone household ledger. The goal is not business-feature parity with GnuCash;
 it is to preserve enough household ledger semantics that users can use BreadSched's

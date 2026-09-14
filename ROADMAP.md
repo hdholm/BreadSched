@@ -6,8 +6,9 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0187 — escrow follow-through**. The current
-sequential candidate is **0188 — durable imported-account provenance**.
+The current accepted baseline is **0188 — durable imported-account provenance**. The
+current sequential candidate is **0189 — source-deletion sync and bounded Projection
+notes**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -689,6 +690,15 @@ semantics, not duplicate business rules in presentation code.
   updated in the same transaction and distinguish new, repeated, and resolved
   failures. Existing aggregate counts remain available. Advance the alpha version
   to `0.2.0a15`.
+- [x] **0189 — Synchronize source-deleted GnuCash transactions prospectively.** Record
+  every transaction GUID seen by a complete successful SQLite/XML import, including
+  skipped records, against the stable source-book identity. After that first
+  baseline, remove transactions that disappear from the source and report exact
+  removal counts. Retain and warn about source-deleted transactions still referenced
+  by BreadSched reconciliation/FSA audit data. Document and prominently display that
+  deletions predating the first inventory cannot be distinguished safely in an
+  existing destination book. Keep inventory updates and deletions in the import's
+  atomic undo operation and retain tracking when the same source file moves.
 
 - [ ] Add OFX investment transactions.
 - [ ] Add useful QIF investment/security records.
@@ -750,6 +760,15 @@ semantics, not duplicate business rules in presentation code.
     typelib, matching the launcher's environment handling instead of aborting pytest.
 - [ ] Improve first-run UX, preferences, actionable errors, icons/resources, and
   native desktop polish without moving financial logic into GUI code.
+- [ ] Audit GTK views and dialogs for bounded natural sizes. Large content must scroll
+  inside the current monitor work area, primary actions/window controls must remain
+  reachable, and switching away from a large view must allow the main window to
+  shrink again. Cover long notes, complex split editors, tables, and small-screen GTK
+  behavior with runtime regressions.
+- [x] **0189 — Bound Projection notes.** Display each note as a separated item in a
+  vertically scrolling region with a capped natural height, so a warning-heavy
+  projection cannot enlarge the main window beyond the screen or make later views
+  inherit that height.
 - [x] Print the current GTK Dashboard, Plan, and Projection and every current web
   view, preserving applied values while keeping print mechanics in the presentation
   boundary. Continue richer scenario/flow reporting as the underlying views grow.

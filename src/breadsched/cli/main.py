@@ -204,6 +204,8 @@ def cmd_import(args: argparse.Namespace) -> int:
             "transactions_new": result.transactions_new,
             "transactions_refreshed": result.transactions_refreshed,
             "transactions_unchanged": result.transactions_unchanged,
+            "transactions_removed": result.transactions_removed,
+            "transactions_retained": result.transactions_retained,
             "splits": result.splits,
             "splits_new": result.splits_new,
             "splits_refreshed": result.splits_refreshed,
@@ -220,6 +222,8 @@ def cmd_import(args: argparse.Namespace) -> int:
             "warnings": result.warnings,
             "source": result.source,
             "source_format": result.source_format,
+            "source_identity": result.source_identity,
+            "deletion_tracking_initialized": result.deletion_tracking_initialized,
             "log_file": result.log_path,
             "suggestions": [
                 {
