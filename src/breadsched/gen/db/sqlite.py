@@ -29,7 +29,7 @@ from ..lib.base import PrimaryObject
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
 from ..lib.reconciliation import Reconciliation
-from ..lib.scenario import Scenario
+from ..lib.scenario import Assumptions, Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction, UnbalancedError
 from ..utils.logs import get_logger
@@ -1765,9 +1765,16 @@ class DbSQLite(DbBase):
     def remove_scenario(self, handle: str, txn: DbTxn) -> None:
         self._delete("scenario", handle, txn)
 
+    def _with_base_assumptions(self, scenario: Scenario) -> Scenario:
+        if scenario.inherits_base_assumptions:
+            stored = self.get_metadata("planning.base_assumptions", None)
+            base = Assumptions.from_dict(stored) if isinstance(stored, dict) else Assumptions()
+            scenario.attach_base_assumptions(base)
+        return scenario
+
     def get_scenario(self, handle: str) -> Scenario | None:
         data = self._read("scenario", handle)
-        return Scenario.from_dict(data) if data else None
+        return self._with_base_assumptions(Scenario.from_dict(data)) if data else None
 
     def get_scenario_by_name(self, name: str) -> Scenario | None:
         row = (
@@ -1775,13 +1782,17 @@ class DbSQLite(DbBase):
             .execute("SELECT blob FROM scenario WHERE name=? LIMIT 1", (name,))
             .fetchone()
         )
-        return Scenario.from_dict(json.loads(row["blob"])) if row else None
+        return (
+            self._with_base_assumptions(Scenario.from_dict(json.loads(row["blob"])))
+            if row
+            else None
+        )
 
     def iter_scenarios(self) -> Iterator[Scenario]:
         for row in self._require().execute("SELECT handle, blob FROM scenario ORDER BY name"):
             obj = self._decode_row("scenario", row["handle"], row["blob"], Scenario)
             if obj is not None:
-                yield obj
+                yield self._with_base_assumptions(obj)
 
     # --------------------------------------------------------------- FSA claims
 

@@ -981,10 +981,10 @@ class TestItServes:
         )
         assert status == 200
         assert payload["primary"]["scenario"]["handle"] == handle
-        assert payload["comparison"]["scenario"] == {
-            "handle": None,
-            "name": "Base scenario",
-        }
+        assert payload["comparison"]["scenario"]["handle"] is None
+        assert payload["comparison"]["scenario"]["name"] == "Base scenario"
+        assert "assumptions" in payload["comparison"]["scenario"]
+        assert "assumption_sources" in payload["comparison"]["scenario"]
         assert len(payload["comparison"]["rows"]) == 24
 
     def test_projection_compare_rejects_the_same_scenario(self, client):
@@ -1866,7 +1866,7 @@ class TestScenarioManagementApi:
             account["handle"]: "0.0825"
         }
 
-    def test_base_can_be_duplicated_into_an_independent_saved_scenario(self, client):
+    def test_base_duplicate_inherits_untouched_values_and_preserves_overrides(self, client):
         client.post(
             "/api/scenario/save",
             {"handle": None, "assumptions": self.assumptions(income_growth="0.041")},
@@ -1875,18 +1875,41 @@ class TestScenarioManagementApi:
         assert clone["base"] is False
         assert clone["name"] == "Base scenario copy"
         assert clone["assumptions"]["income_growth"] == "0.041"
+        assert clone["assumption_overrides"] == []
+        assert clone["assumption_sources"]["income_growth"] == "Base"
 
         clone["name"] = "Retire 2035"
         clone["description"] = "Reduced work scenario"
         clone["assumptions"]["income_growth"] = "0.01"
+        clone["assumption_overrides"] = ["income_growth"]
         _status, saved = client.post("/api/scenario/save", clone)
         assert saved["name"] == "Retire 2035"
+
+        client.post(
+            "/api/scenario/save",
+            {
+                "handle": None,
+                "assumptions": self.assumptions(income_growth="0.08", expense_inflation="0.045"),
+            },
+        )
 
         _status, listing = client.get("/api/scenarios")
         base = listing["scenarios"][0]
         retire = next(item for item in listing["scenarios"] if item["name"] == "Retire 2035")
-        assert base["assumptions"]["income_growth"] == "0.041"
+        assert base["assumptions"]["income_growth"] == "0.08"
         assert retire["assumptions"]["income_growth"] == "0.01"
+        assert retire["assumptions"]["expense_inflation"] == "0.045"
+        assert retire["assumption_sources"]["income_growth"] == "Retire 2035"
+        assert retire["assumption_sources"]["expense_inflation"] == "Base"
+
+        query = urllib.parse.urlencode({"scenario": retire["handle"]})
+        _status, plan = client.get(f"/api/plan?{query}")
+        assert plan["controls"]["assumption_sources"]["income_growth"] == "Retire 2035"
+        assert plan["controls"]["assumption_sources"]["expense_inflation"] == "Base"
+
+        _status, projected = client.get(f"/api/projection?{query}")
+        assert projected["scenario"]["assumption_sources"]["income_growth"] == "Retire 2035"
+        assert projected["scenario"]["assumption_sources"]["expense_inflation"] == "Base"
 
     def test_dated_account_specific_projection_rates_can_be_saved(self, client):
         _status, listing = client.get("/api/scenarios")

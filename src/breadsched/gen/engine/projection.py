@@ -332,6 +332,7 @@ class ProjectionAccountDetail:
     accrual: Money
     closing: Money
     annual_rate: Decimal
+    annual_rate_source: str
     activities: dict[str, Money] = field(default_factory=dict)
 
 
@@ -364,6 +365,7 @@ class ProjectionMonthDetail:
     liabilities_close: Money
     net_worth: Money
     assumptions: Assumptions
+    assumption_sources: dict[str, str]
     events: tuple[planning.PlannedEvent, ...]
     holdings: tuple[ProjectionAccountDetail, ...]
     liabilities: tuple[ProjectionAccountDetail, ...]
@@ -457,6 +459,21 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
     row = result.rows[index]
     ledger = row.ledger
     assumptions = result.scenario.assumptions_for(row.month)
+    assumption_sources = result.scenario.assumption_sources(row.month)
+    account_sources = result.scenario.account_assumption_sources(row.month)
+
+    def rate_source(account: Account) -> str:
+        if account.handle in assumptions.per_account:
+            return account_sources.get(account.handle, result.scenario.name or "Scenario")
+        if account.account_class is AccountClass.LIABILITY:
+            return (
+                "Account" if account.annual_interest else assumption_sources["liability_interest"]
+            )
+        if account.annual_return:
+            return "Account"
+        if account.atype.is_investment:
+            return assumption_sources["investment_return"]
+        return "Not applicable"
 
     def account_name(handle: str) -> str:
         account = db.get_account(handle)
@@ -482,6 +499,7 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
             accrual=ledger.investment_growth.get(handle, Money(0)),
             closing=ledger.closing_holdings.get(handle, Money(0)),
             annual_rate=rate,
+            annual_rate_source=rate_source(account) if account is not None else "Unavailable",
             activities={
                 "contributions": ledger.holding_contributions.get(handle, Money(0)),
                 "withdrawals": ledger.holding_withdrawals.get(handle, Money(0)),
@@ -516,6 +534,7 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
             accrual=ledger.liability_interest.get(handle, Money(0)),
             closing=ledger.closing_liabilities.get(handle, Money(0)),
             annual_rate=rate,
+            annual_rate_source=rate_source(account) if account is not None else "Unavailable",
         )
         if any((detail.opening, detail.movement, detail.accrual, detail.closing)):
             liabilities.append(detail)
@@ -548,6 +567,7 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
         liabilities_close=ledger.liabilities_close,
         net_worth=row.net_worth,
         assumptions=assumptions,
+        assumption_sources=assumption_sources,
         events=tuple(ledger.events),
         holdings=tuple(holdings),
         liabilities=tuple(liabilities),

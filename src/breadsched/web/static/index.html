@@ -1607,6 +1607,10 @@ async function showPlan() {
     el("div", { class: "card" },
       el("div", { class: "label" }, "Actuals to review"),
       el("div", { class: "value" }, summary.unresolved_actuals)));
+  const inheritedAssumptions = Object.values(data.controls.assumption_sources || {})
+    .filter((source) => source === "Base").length;
+  const comparedInheritedAssumptions = Object.values(comparison?.assumption_sources || {})
+    .filter((source) => source === "Base").length;
 
   const headers = ["Category",
     ...data.periods.map((item) => ({ label: item.label, num: true })),
@@ -1741,6 +1745,11 @@ async function showPlan() {
       + "classified components. Section totals count outermost category rollups once. "
       + "Net cash change is the "
       + "grand total; variance totals include only periods through today."),
+    inheritedAssumptions ? el("p", { class: "note" },
+      `${inheritedAssumptions} annual assumption(s) inherited from Base.`) : null,
+    comparedInheritedAssumptions ? el("p", { class: "note" },
+      `${comparison.name} inherits ${comparedInheritedAssumptions} annual assumption(s) from Base.`)
+      : null,
     eventPanel, planTable);
 }
 
@@ -1942,6 +1951,30 @@ function assumptionInputs(assumptions, prefix = "") {
         el("span", { class: "muted" }, "%")))));
 }
 
+function scenarioAssumptionInputs(scenario) {
+  const overrides = new Set(scenario.assumption_overrides || []);
+  return el("div", { class: "assumption-grid" }, ASSUMPTION_FIELDS.map(([label, field]) =>
+    el("label", {}, label,
+      el("span", { class: "rate-input" },
+        el("input", {
+          type: "number", min: "-100", max: "100", step: "0.01",
+          name: field, value: rateToPercent(scenario.assumptions[field]),
+        }),
+        el("span", { class: "muted" }, "%")),
+      scenario.base ? null : el("span", { class: "note" },
+        el("input", {
+          type: "checkbox", name: `override_${field}`,
+          checked: overrides.has(field) ? "checked" : null,
+        }),
+        overrides.has(field) ? ` Scenario override` : ` Inherited from Base`))));
+}
+
+function readAssumptionOverrides(form) {
+  const values = new FormData(form);
+  return ASSUMPTION_FIELDS.filter(([, field]) => values.has(`override_${field}`))
+    .map(([, field]) => field);
+}
+
 function readAssumptions(form, prefix = "") {
   const values = new FormData(form);
   return Object.fromEntries(ASSUMPTION_FIELDS.map(([, field]) =>
@@ -2006,6 +2039,7 @@ async function showScenarios() {
         name: values.get("name"),
         description: values.get("description"),
         assumptions,
+        assumption_overrides: base ? undefined : readAssumptionOverrides(event.target),
       });
       state.scenarioManager = saved.handle || "";
       say(base ? "Base scenario assumptions saved in this book." : "Scenario saved.");
@@ -2020,7 +2054,7 @@ async function showScenarios() {
         name: "description", value: selected.description || "", disabled: base ? "disabled" : null,
       }))),
     el("h3", {}, "Base annual assumptions"),
-    assumptionInputs(selected.assumptions),
+    scenarioAssumptionInputs(selected),
     el("details", {class:"panel"},
       el("summary", {}, "Account-specific projection rates"),
       el("p", {class:"note"},
@@ -2501,6 +2535,8 @@ async function showProjection() {
   let comparisonView = null;
   if (comparison) {
     const delta = comparison.summary_delta;
+    const inherited = Object.values(comparison.scenario.assumption_sources || {})
+      .filter((source) => source === "Base").length;
     const compareYearly = comparison.rows.filter((_, i) => (i + 1) % 12 === 0)
       .map((row, i) => el("tr", {},
         el("td", {}, row.label),
@@ -2526,6 +2562,9 @@ async function showProjection() {
         `Differences are ${scenarioData.name} minus ${comparison.scenario.name}. `
         + `Cash shortfall: ${s.first_shortfall || "never"} vs `
         + `${comparison.summary.first_shortfall || "never"}.`),
+      inherited ? el("p", { class: "note" },
+        `${comparison.scenario.name} inherits ${inherited} annual assumption(s) from Base.`)
+        : null,
       table(["Month", { label: `${scenarioData.name} cash`, num: true },
              { label: `${comparison.scenario.name} cash`, num: true },
              { label: "Cash difference", num: true },
@@ -2566,7 +2605,8 @@ async function openProjectionDetail(index) {
       showActivity ? el("td", {}, activityText(item)) : null,
       el("td", { class: cls(item.accrual) }, money(item.accrual)),
       el("td", { class: cls(item.closing) }, money(item.closing)),
-      el("td", { class: "num muted" }, `${(Number(item.annual_rate) * 100).toFixed(2)}%`)));
+      el("td", { class: "num muted" },
+        `${(Number(item.annual_rate) * 100).toFixed(2)}% (${item.annual_rate_source})`)));
     const eventRows = data.events.map((item) => el("tr", {},
       el("td", {}, item.when),
       el("td", {}, item.description),
@@ -2581,11 +2621,11 @@ async function openProjectionDetail(index) {
       class: "detail-backdrop",
       onclick: (event) => { if (event.target === backdrop) backdrop.remove(); },
     });
-    const rateCards = [["Income growth", data.assumptions.income_growth],
-      ["Expense inflation", data.assumptions.expense_inflation],
-      ["Investment return", data.assumptions.investment_return],
-      ["Cash interest", data.assumptions.cash_interest],
-      ["Liability interest", data.assumptions.liability_interest]];
+    const rateCards = [["Income growth", "income_growth"],
+      ["Expense inflation", "expense_inflation"],
+      ["Investment return", "investment_return"],
+      ["Cash interest", "cash_interest"],
+      ["Liability interest", "liability_interest"]];
     backdrop.append(el("section", { class: "detail-dialog" },
       el("div", { class: "detail-heading" },
         el("div", {}, el("h2", {}, `${data.label} projection explanation`),
@@ -2601,9 +2641,11 @@ async function openProjectionDetail(index) {
           el("div", { class: "label" }, label),
           el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` }, money(value))))),
       el("h3", {}, "Active annual assumptions"),
-      el("div", { class: "cards" }, rateCards.map(([label, value]) => el("div", { class: "card" },
+      el("div", { class: "cards" }, rateCards.map(([label, field]) => el("div", { class: "card" },
         el("div", { class: "label" }, label),
-        el("div", { class: "value" }, `${(Number(value) * 100).toFixed(2)}%`)))),
+        el("div", { class: "value" },
+          `${(Number(data.assumptions[field]) * 100).toFixed(2)}%`),
+        el("div", { class: "note" }, `From ${data.assumption_sources[field]}`)))),
       el("h3", {}, "Exact planned events"),
       ...(data.escrow_explanations || []).map((line) =>
         el("p", { class: "note" }, line)),

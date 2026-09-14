@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0196 — define mortgage and delivery policies**.
+The current accepted baseline is **0197 — mortgage cash flow and liability projection**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -93,10 +93,9 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Base-as-reality scenario contract.** Make the Base plan the canonical expected
-   future derived from the current ledger, baseline schedules/estimates, and Base
-   assumptions. Represent saved scenarios as alternatives layered over Base so
-   untouched Base changes continue to flow through them.
+1. **NEXT — Scenario parent layering.** Allow a saved scenario to inherit from Base
+   or another saved scenario with deterministic resolution, cycle prevention, and
+   defined reparenting/deletion behavior.
 2. **Historical estimator balance-sheet semantics.** Interpret investment,
    retirement, debt-principal, and FSA history without treating every transfer as
    ordinary Income/Expense activity.
@@ -637,7 +636,7 @@ semantics, not duplicate business rules in presentation code.
 
 ## Projection and scenarios
 
-- [ ] **Base is reality; saved scenarios are alternatives.** Treat Base as the one
+- [x] **0198 — Base is reality; saved scenarios are alternatives.** Treat Base as the one
   canonical expected plan: current actual ledger state, baseline scheduled and
   estimated activity, and book-level Base assumptions. Saved scenarios must contain
   only deliberate differences from that plan. Unchanged ledger facts and baseline
@@ -646,7 +645,9 @@ semantics, not duplicate business rules in presentation code.
   so later Base changes propagate wherever the scenario has not diverged. Make the
   effective source of every value explainable in Plan, Projection, comparison, and
   scenario-management UI.
-- [ ] **Layer scenarios on scenarios.** After Base inheritance is explicit, allow a
+  Preserve preceding-alpha scenario values as deliberate overrides and advance the
+  alpha version to `0.2.0a36`.
+- [ ] **NEXT — Layer scenarios on scenarios.** After Base inheritance is explicit, allow a
   saved scenario to name Base or another saved scenario as its parent. Resolve a
   deterministic parent chain followed by local overrides; reject cycles; define
   reparenting and parent-deletion behavior; and preserve stable override identity so

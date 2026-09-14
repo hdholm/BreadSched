@@ -301,21 +301,24 @@ class PlanView(BaseView):
             )
         else:
             count = len(selected.schedule_overrides)
+            inherited = sum(source == "Base" for source in selected.assumption_sources().values())
+            overridden = len(selected.assumption_overrides)
             self.scenario_hint.set_text(
-                f"{count} scenario-specific recurring change(s); Base scenario remains unchanged."
+                f"{count} recurring change(s); {inherited} annual assumption(s) inherited "
+                f"from Base and {overridden} overridden here."
             )
 
     def _on_new_scenario(self, _button) -> None:
         if self.db is None:
             return
-        from ...gen.lib import Assumptions, Scenario
+        from ...gen.lib import Scenario
         from ..dialogs.scenario_dialog import SaveScenarioDialog
 
         base = baseline_scenario(self.manager, self.db)
-        scenario = Scenario(
+        scenario = Scenario.derived_from_base(
+            base.assumptions,
             start=self._start_date,
             years=max(1, self._end_date.year - self._start_date.year + 1),
-            assumptions=Assumptions.from_dict(base.assumptions.serialize()),
         )
         SaveScenarioDialog(self.get_root(), self.db, scenario).present()
 

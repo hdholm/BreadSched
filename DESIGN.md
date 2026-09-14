@@ -363,15 +363,21 @@ or an independent copy of Base. Reopening any scenario therefore recomputes it
 against the current book, so new actuals and unmodified baseline schedules remain
 honest inputs.
 
-Scenario differences must be explicit and explainable. Schedule replacements and
-suppressions already act as sparse overrides of Base, while scenario-only events add
-to it. Saved assumptions are presently complete values copied when a scenario is
-created; converting those values to inherited Base defaults with local overrides is
-required before Base-assumption changes can flow through untouched scenarios. The
-same overlay model can later support parent scenarios, provided inheritance is
-deterministic, cycles are impossible, and a child's deliberate overrides remain
-distinct from values inherited from its parent. Scenarios store no cached projection
-results.
+Scenario differences are explicit and explainable. Schedule replacements and
+suppressions are sparse overrides of Base, while scenario-only events add to it.
+Annual and account-specific assumptions use the same rule: a newly derived scenario
+inherits each Base value until the user enables and changes that particular override.
+Changing Base then flows through every inherited field without disturbing local
+overrides. Plan, Projection, comparisons, and both scenario managers expose whether
+an effective value came from Base, the saved scenario, or one of its dated overrides.
+
+The immediately preceding alpha representation stored a complete assumption
+snapshot. On read, each of those existing values becomes a deliberate local override,
+so upgrading cannot silently change an established forecast. New scenario records
+persist an explicit inheritance flag and stable sets of field/account overrides;
+cached projection results are never stored. The same overlay model can later support
+parent scenarios, provided inheritance is deterministic, cycles are impossible, and
+a child's deliberate overrides remain distinct from inherited values.
 
 Reporting periods aggregate projection state but do not drive it.
 

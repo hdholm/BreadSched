@@ -31,12 +31,21 @@ from .scheduled import (
 )
 
 __all__ = [
+    "ASSUMPTION_FIELDS",
     "OneOff",
     "ScenarioSchedule",
     "Assumptions",
     "AssumptionPeriod",
     "Scenario",
 ]
+
+ASSUMPTION_FIELDS = (
+    "income_growth",
+    "expense_inflation",
+    "investment_return",
+    "cash_interest",
+    "liability_interest",
+)
 
 
 class OneOff:
@@ -445,6 +454,10 @@ class Scenario(PrimaryObject):
         assumptions: Assumptions | None = None,
         assumption_periods: list[AssumptionPeriod] | None = None,
         schedule_overrides: list[ScenarioSchedule] | None = None,
+        inherits_base_assumptions: bool = False,
+        assumption_overrides: set[str] | None = None,
+        account_assumption_overrides: set[str] | None = None,
+        account_assumption_suppressions: set[str] | None = None,
     ) -> None:
         super().__init__(handle)
         self.name = name
@@ -452,11 +465,134 @@ class Scenario(PrimaryObject):
         self.start = start or date.today().replace(day=1)
         self.years = years
         self.assumptions = assumptions or Assumptions()
+        self.inherits_base_assumptions = inherits_base_assumptions
+        self.assumption_overrides = set(
+            assumption_overrides
+            if assumption_overrides is not None
+            else (() if inherits_base_assumptions else ASSUMPTION_FIELDS)
+        )
+        unknown = self.assumption_overrides - set(ASSUMPTION_FIELDS)
+        if unknown:
+            raise ValueError(f"unknown assumption override(s): {', '.join(sorted(unknown))}")
+        self.account_assumption_overrides = set(
+            account_assumption_overrides
+            if account_assumption_overrides is not None
+            else (() if inherits_base_assumptions else self.assumptions.per_account)
+        )
+        self.account_assumption_suppressions = set(account_assumption_suppressions or ())
+        self._base_assumptions: Assumptions | None = None
         self.assumption_periods = list(assumption_periods or [])
         self.schedule_overrides = list(schedule_overrides or [])
         #: Pretend an account starts at this balance instead of its ledger balance.
         self.opening_overrides: dict[str, Money] = {}
         self.one_offs: list[OneOff] = []
+
+    @classmethod
+    def derived_from_base(cls, base: Assumptions, **kwargs: Any) -> Scenario:
+        """Create a scenario whose untouched assumptions continue to follow Base."""
+        scenario = cls(
+            assumptions=Assumptions.from_dict(base.serialize()),
+            inherits_base_assumptions=True,
+            assumption_overrides=set(),
+            account_assumption_overrides=set(),
+            **kwargs,
+        )
+        scenario.attach_base_assumptions(base)
+        return scenario
+
+    def attach_base_assumptions(self, base: Assumptions) -> None:
+        """Attach the current book-level Base values used to resolve inheritance."""
+        self._base_assumptions = Assumptions.from_dict(base.serialize())
+
+    def clone(self) -> Scenario:
+        """Return a detached copy while retaining its current Base resolution context."""
+        clone = Scenario.from_dict(self.serialize())
+        if self._base_assumptions is not None:
+            clone.attach_base_assumptions(self._base_assumptions)
+        return clone
+
+    def effective_assumptions(self) -> Assumptions:
+        """Resolve Base inheritance and local overrides before dated periods."""
+        if not self.inherits_base_assumptions:
+            return Assumptions.from_dict(self.assumptions.serialize())
+        if self._base_assumptions is None:
+            raise ValueError("Base assumptions must be attached before resolving this scenario")
+        base = self._base_assumptions
+        current = Assumptions.from_dict(base.serialize())
+        for field in self.assumption_overrides:
+            setattr(current, field, getattr(self.assumptions, field))
+        for handle in self.account_assumption_overrides:
+            if handle in self.assumptions.per_account:
+                current.per_account[handle] = self.assumptions.per_account[handle]
+        for handle in self.account_assumption_suppressions:
+            current.per_account.pop(handle, None)
+        return current
+
+    def assumption_sources(self, when: date | None = None) -> dict[str, str]:
+        """Explain whether each effective assumption comes from Base or this scenario."""
+        scenario_source = self.name or "Scenario"
+        sources = {
+            field: (
+                scenario_source
+                if not self.inherits_base_assumptions or field in self.assumption_overrides
+                else "Base"
+            )
+            for field in ASSUMPTION_FIELDS
+        }
+        if when is not None:
+            for period in sorted(self.assumption_periods, key=lambda item: item.start):
+                if not period.applies(when):
+                    continue
+                for field in ASSUMPTION_FIELDS:
+                    if getattr(period, field) is not None:
+                        sources[field] = scenario_source
+        return sources
+
+    def account_assumption_sources(self, when: date | None = None) -> dict[str, str]:
+        """Explain the source of every effective account-specific rate."""
+        scenario_source = self.name or "Scenario"
+        effective = self.effective_assumptions()
+        sources = {
+            handle: (
+                scenario_source
+                if not self.inherits_base_assumptions or handle in self.account_assumption_overrides
+                else "Base"
+            )
+            for handle in effective.per_account
+        }
+        if when is not None:
+            for period in sorted(self.assumption_periods, key=lambda item: item.start):
+                if period.applies(when):
+                    for handle in period.per_account:
+                        sources[handle] = scenario_source
+        return sources
+
+    def set_assumption_override(self, field: str, value: Rate | Decimal | str) -> None:
+        if field not in ASSUMPTION_FIELDS:
+            raise ValueError(f"unknown assumption: {field}")
+        setattr(self.assumptions, field, value)
+        self.assumption_overrides.add(field)
+
+    def inherit_assumption(self, field: str) -> None:
+        if field not in ASSUMPTION_FIELDS:
+            raise ValueError(f"unknown assumption: {field}")
+        self.assumption_overrides.discard(field)
+
+    def set_account_assumption_override(
+        self, account_handle: str, value: Rate | Decimal | str
+    ) -> None:
+        self.assumptions.per_account[account_handle] = Rate(value)
+        self.account_assumption_overrides.add(account_handle)
+        self.account_assumption_suppressions.discard(account_handle)
+
+    def inherit_account_assumption(self, account_handle: str) -> None:
+        self.account_assumption_overrides.discard(account_handle)
+        self.account_assumption_suppressions.discard(account_handle)
+
+    def suppress_account_assumption(self, account_handle: str) -> None:
+        """Override an inherited account rate by falling back to its normal default."""
+        self.account_assumption_overrides.discard(account_handle)
+        self.account_assumption_suppressions.add(account_handle)
 
     def assumptions_for(self, when: date) -> Assumptions:
         """Return the assumptions in force on ``when``.
@@ -465,7 +601,7 @@ class Scenario(PrimaryObject):
         overlaid from oldest to newest. This makes overlaps deterministic while
         keeping scenarios without periods exactly backward compatible.
         """
-        current = Assumptions.from_dict(self.assumptions.serialize())
+        current = self.effective_assumptions()
         for period in sorted(self.assumption_periods, key=lambda item: item.start):
             if period.applies(when):
                 current = period.apply_to(current)
@@ -483,12 +619,28 @@ class Scenario(PrimaryObject):
         return item
 
     def _serialize(self) -> dict[str, Any]:
+        serialized_assumptions = self.assumptions.serialize()
+        if self.inherits_base_assumptions:
+            serialized_assumptions = {
+                field: str(getattr(self.assumptions, field)) for field in self.assumption_overrides
+            }
+            serialized_assumptions["per_account"] = {
+                handle: str(self.assumptions.per_account[handle])
+                for handle in self.account_assumption_overrides
+                if handle in self.assumptions.per_account
+            }
         return {
             "name": self.name,
             "description": self.description,
             "start": self.start.isoformat(),
             "years": self.years,
-            "assumptions": self.assumptions.serialize(),
+            "assumptions": serialized_assumptions,
+            "assumption_inheritance": {
+                "base": self.inherits_base_assumptions,
+                "overrides": sorted(self.assumption_overrides),
+                "account_overrides": sorted(self.account_assumption_overrides),
+                "account_suppressions": sorted(self.account_assumption_suppressions),
+            },
             "assumption_periods": [p.serialize() for p in self.assumption_periods],
             "schedule_overrides": [item.serialize() for item in self.schedule_overrides],
             "opening_overrides": {
@@ -503,6 +655,29 @@ class Scenario(PrimaryObject):
         self.start = date.fromisoformat(data["start"])
         self.years = data.get("years", 5)
         self.assumptions = Assumptions.from_dict(data.get("assumptions", {}))
+        inheritance = data.get("assumption_inheritance")
+        if isinstance(inheritance, dict):
+            self.inherits_base_assumptions = bool(inheritance.get("base", False))
+            defaults = () if self.inherits_base_assumptions else ASSUMPTION_FIELDS
+            self.assumption_overrides = set(inheritance.get("overrides", defaults))
+            account_defaults = (
+                () if self.inherits_base_assumptions else self.assumptions.per_account
+            )
+            self.account_assumption_overrides = set(
+                inheritance.get("account_overrides", account_defaults)
+            )
+            self.account_assumption_suppressions = set(inheritance.get("account_suppressions", ()))
+        else:
+            # The immediately preceding alpha stored complete snapshots. Preserve
+            # every old value as a deliberate override while adopting the new model.
+            self.inherits_base_assumptions = True
+            self.assumption_overrides = set(ASSUMPTION_FIELDS)
+            self.account_assumption_overrides = set(self.assumptions.per_account)
+            self.account_assumption_suppressions = set()
+        unknown = self.assumption_overrides - set(ASSUMPTION_FIELDS)
+        if unknown:
+            raise ValueError(f"unknown assumption override(s): {', '.join(sorted(unknown))}")
+        self._base_assumptions = None
         self.assumption_periods = [
             AssumptionPeriod.from_dict(item) for item in data.get("assumption_periods", [])
         ]

@@ -369,6 +369,80 @@ class TestScenarioScheduledEvents:
 
 
 class TestScenarioPersistence:
+    def test_derived_scenario_inherits_only_untouched_base_assumptions(self):
+        base = Assumptions(
+            income_growth="0.04",
+            expense_inflation="0.03",
+            investment_return="0.07",
+            per_account={"brokerage": "0.08"},
+        )
+        scenario = Scenario.derived_from_base(base, name="Alternative")
+        scenario.set_assumption_override("income_growth", "0.01")
+
+        changed_base = Assumptions(
+            income_growth="0.05",
+            expense_inflation="0.035",
+            investment_return="0.06",
+            per_account={"brokerage": "0.09"},
+        )
+        scenario.attach_base_assumptions(changed_base)
+        effective = scenario.effective_assumptions()
+
+        assert effective.income_growth == Decimal("0.01")
+        assert effective.expense_inflation == Decimal("0.035")
+        assert effective.investment_return == Decimal("0.06")
+        assert effective.per_account["brokerage"] == Decimal("0.09")
+        assert scenario.account_assumption_sources()["brokerage"] == "Base"
+        assert scenario.assumption_sources()["income_growth"] == "Alternative"
+        assert scenario.assumption_sources()["expense_inflation"] == "Base"
+
+        scenario.set_account_assumption_override("brokerage", "0.055")
+        assert scenario.effective_assumptions().per_account["brokerage"] == Decimal("0.055")
+        assert scenario.account_assumption_sources()["brokerage"] == "Alternative"
+        stored = scenario.serialize()["assumptions"]
+        assert stored == {
+            "income_growth": "0.01",
+            "per_account": {"brokerage": "0.055"},
+        }
+
+    def test_previous_alpha_scenario_values_migrate_as_deliberate_overrides(self):
+        original = Scenario(
+            name="Existing",
+            assumptions=Assumptions(income_growth="0.041", investment_return="0.071"),
+        ).serialize()
+        del original["assumption_inheritance"]
+
+        migrated = Scenario.from_dict(original)
+        migrated.attach_base_assumptions(Assumptions(income_growth="0.09"))
+
+        assert migrated.inherits_base_assumptions is True
+        assert migrated.assumption_overrides == {
+            "income_growth",
+            "expense_inflation",
+            "investment_return",
+            "cash_interest",
+            "liability_interest",
+        }
+        assert migrated.effective_assumptions().income_growth == Decimal("0.041")
+
+    def test_reloaded_derived_scenario_tracks_current_book_base(self, db, funded_book):
+        first_base = Assumptions(income_growth="0.04", expense_inflation="0.03")
+        db.set_metadata("planning.base_assumptions", first_base.serialize())
+        scenario = Scenario.derived_from_base(first_base, name="Live alternative")
+        scenario.set_assumption_override("income_growth", "0.01")
+        with db.transaction("Save inheriting scenario") as txn:
+            db.add_scenario(scenario, txn)
+
+        db.set_metadata(
+            "planning.base_assumptions",
+            Assumptions(income_growth="0.08", expense_inflation="0.045").serialize(),
+        )
+        reloaded = db.get_scenario(scenario.handle)
+        assert reloaded is not None
+
+        assert reloaded.effective_assumptions().income_growth == Decimal("0.01")
+        assert reloaded.effective_assumptions().expense_inflation == Decimal("0.045")
+
     def test_a_saved_scenario_reproduces_its_forecast(self, db, funded_book):
         scenario = Scenario(
             name="Saved",

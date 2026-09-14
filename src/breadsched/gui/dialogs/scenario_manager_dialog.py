@@ -38,6 +38,7 @@ class ScenarioManagerDialog(Gtk.Window):
         self._scenarios: list[Scenario] = []
         self._loading = False
         self._account_rates: dict[str, Rate] = {}
+        self._original_account_rates: dict[str, Rate] = {}
         self.set_default_size(620, 520)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -86,6 +87,7 @@ class ScenarioManagerDialog(Gtk.Window):
         self.editor.append(Gtk.Label(label="Base annual assumptions", xalign=0))
         rates = Gtk.Grid(column_spacing=12, row_spacing=8)
         self.rate_controls: dict[str, Gtk.SpinButton] = {}
+        self.inherit_controls: dict[str, Gtk.CheckButton] = {}
         for row, (label, attribute) in enumerate(_ASSUMPTIONS):
             rates.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
             control = Gtk.SpinButton.new_with_range(-100.0, 100.0, 0.1)
@@ -93,7 +95,11 @@ class ScenarioManagerDialog(Gtk.Window):
             control.set_tooltip_text("Annual percentage; 6.00 means 6% per year")
             rates.attach(control, 1, row, 1, 1)
             rates.attach(Gtk.Label(label="%", xalign=0), 2, row, 1, 1)
+            override = Gtk.CheckButton(label="Override Base")
+            override.connect("toggled", self._on_override_toggled, attribute)
+            rates.attach(override, 3, row, 1, 1)
             self.rate_controls[attribute] = control
+            self.inherit_controls[attribute] = override
         self.editor.append(rates)
 
         account_row = Gtk.Box(spacing=8)
@@ -188,10 +194,18 @@ class ScenarioManagerDialog(Gtk.Window):
 
         self.name_entry.set_text("Base scenario" if base else scenario.name)
         self.description_entry.set_text("" if base else scenario.description)
+        effective = scenario.effective_assumptions()
         for _label, attribute in _ASSUMPTIONS:
-            value = getattr(scenario.assumptions, attribute) * Decimal("100")
+            value = getattr(effective, attribute) * Decimal("100")
             self.rate_controls[attribute].set_value(float(value))
-        self._account_rates = dict(scenario.assumptions.per_account)
+            override = self.inherit_controls[attribute]
+            override.set_visible(not base)
+            override.set_active(attribute in scenario.assumption_overrides)
+            self.rate_controls[attribute].set_sensitive(
+                base or attribute in scenario.assumption_overrides
+            )
+        self._account_rates = dict(effective.per_account)
+        self._original_account_rates = dict(self._account_rates)
         self._update_account_summary()
         periods = len(scenario.assumption_periods)
         changes = len(scenario.schedule_overrides)
@@ -208,6 +222,11 @@ class ScenarioManagerDialog(Gtk.Window):
         self.status.set_text("")
         self.status.remove_css_class("negative")
 
+    def _on_override_toggled(self, control, attribute: str) -> None:
+        if self._loading or self._base_selected():
+            return
+        self.rate_controls[attribute].set_sensitive(control.get_active())
+
     def _on_save(self, _button) -> None:
         scenario = self._selected()
         if scenario is None:
@@ -218,6 +237,8 @@ class ScenarioManagerDialog(Gtk.Window):
                 setattr(self._baseline.assumptions, attribute, value)
             self._baseline.assumptions.per_account = dict(self._account_rates)
             persist_baseline_assumptions(self.manager, self.db)
+            for saved in self._scenarios:
+                saved.attach_base_assumptions(self._baseline.assumptions)
             notify_planning_scenario_changed(self.manager)
             self.status.set_text("Base scenario assumptions saved in this book.")
             self.status.remove_css_class("negative")
@@ -235,8 +256,18 @@ class ScenarioManagerDialog(Gtk.Window):
         scenario.description = self.description_entry.get_text().strip()
         for _label, attribute in _ASSUMPTIONS:
             value = Decimal(str(self.rate_controls[attribute].get_value())) / Decimal("100")
-            setattr(scenario.assumptions, attribute, value)
-        scenario.assumptions.per_account = dict(self._account_rates)
+            if self.inherit_controls[attribute].get_active():
+                scenario.set_assumption_override(attribute, value)
+            else:
+                scenario.inherit_assumption(attribute)
+        changed_accounts = set(self._account_rates) | set(self._original_account_rates)
+        for handle in changed_accounts:
+            if self._account_rates.get(handle) == self._original_account_rates.get(handle):
+                continue
+            if handle in self._account_rates:
+                scenario.set_account_assumption_override(handle, self._account_rates[handle])
+            else:
+                scenario.inherit_account_assumption(handle)
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
         self._reload(scenario.handle)
@@ -255,11 +286,19 @@ class ScenarioManagerDialog(Gtk.Window):
 
     def _update_account_summary(self) -> None:
         count = len(self._account_rates)
-        self.account_summary.set_text(
-            f"{count} account-specific projection rate override(s)."
-            if count
-            else "No account-specific projection rate overrides."
-        )
+        scenario = self._selected()
+        if scenario is not None and not self._base_selected():
+            local = len(scenario.account_assumption_overrides)
+            inherited = len(set(self._account_rates) - scenario.account_assumption_overrides)
+            self.account_summary.set_text(
+                f"{local} account rate(s) overridden here; {inherited} inherited from Base."
+            )
+        else:
+            self.account_summary.set_text(
+                f"{count} Base account-specific projection rate(s)."
+                if count
+                else "No Base account-specific projection rates."
+            )
 
     def _on_edit_account_rates(self, _button) -> None:
         AccountAssumptionsDialog(
@@ -278,7 +317,16 @@ class ScenarioManagerDialog(Gtk.Window):
         scenario = self._selected()
         if scenario is None:
             return
-        clone = Scenario.from_dict(scenario.serialize())
+        clone = (
+            Scenario.derived_from_base(
+                self._baseline.assumptions,
+                name=self._unique_copy_name(scenario.name),
+                start=scenario.start,
+                years=scenario.years,
+            )
+            if self._base_selected()
+            else scenario.clone()
+        )
         clone.handle = create_handle()
         clone.gid = ""
         clone.change = 0
