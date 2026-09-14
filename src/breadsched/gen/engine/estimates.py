@@ -51,6 +51,8 @@ class HistoricalEstimateProposal:
     seasonal: bool = False
     trend: str | None = None
     seasonal_amounts: tuple[ScheduledMonthAmount, ...] = ()
+    outlier_months: int = 0
+    variability: str = "unknown"
 
     @property
     def source_name(self) -> str:
@@ -80,6 +82,44 @@ def _add_months(when: date, months: int) -> date:
 def _typical_amount(values: list[Money]) -> Money:
     decimals = sorted(value.to_decimal() for value in values)
     return Money(median(decimals)).quantize(100)
+
+
+def _robust_sample(values: list[Money]) -> tuple[list[Money], int, Decimal]:
+    """Exclude isolated monthly spikes and return robust relative variability.
+
+    A median already prevents one large value from moving the estimate very far,
+    but naming excluded anomalies makes confidence meaningful and prevents an
+    even-sized sample from averaging a normal value with a one-off event. Six
+    observations are required before excluding anything; shorter histories remain
+    visible exactly as recorded.
+    """
+    if not values:
+        return [], 0, Decimal(0)
+    decimals = [value.to_decimal() for value in values]
+    center = median(decimals)
+    deviations = [abs(value - center) for value in decimals]
+    mad = median(deviations)
+    magnitude = abs(center)
+    relative_variability = mad / magnitude if magnitude else Decimal(0)
+    if len(values) < 6:
+        return values, 0, relative_variability
+
+    # Three median absolute deviations is intentionally conservative. When most
+    # months are identical MAD is zero, use a generous relative threshold so a
+    # single annual purchase does not become the ordinary monthly estimate.
+    threshold = mad * Decimal(3) if mad else max(magnitude * Decimal("0.75"), Decimal("1"))
+    retained = [
+        value for value, deviation in zip(values, deviations, strict=True) if deviation <= threshold
+    ]
+    # Never let anomaly handling erase the evidence required to make a proposal.
+    if len(retained) < 3:
+        return values, 0, relative_variability
+    retained_decimals = [value.to_decimal() for value in retained]
+    retained_center = median(retained_decimals)
+    retained_mad = median(abs(value - retained_center) for value in retained_decimals)
+    retained_magnitude = abs(retained_center)
+    variability = retained_mad / retained_magnitude if retained_magnitude else Decimal(0)
+    return retained, len(values) - len(retained), variability
 
 
 def _funding_account(db: DbSQLite, category: str, start: date, end: date) -> str | None:
@@ -214,6 +254,35 @@ def _next_yearly_start(last: date, interval: int, floor: date) -> date:
     return candidate
 
 
+def _next_monthly_start(last: date, interval: int, floor: date) -> date:
+    """Advance a calendar-month cadence without losing its observed day."""
+    candidate = last
+    while candidate < floor:
+        index = candidate.year * 12 + candidate.month - 1 + interval
+        year, zero_month = divmod(index, 12)
+        month = zero_month + 1
+        candidate = date(year, month, min(last.day, monthrange(year, month)[1]))
+    return candidate
+
+
+def _calendar_month_interval(dates: list[date]) -> int | None:
+    """Recognize stable every-N-month activity despite varying day-of-month."""
+    if len(dates) < 3:
+        return None
+    gaps = [
+        (later.year - earlier.year) * 12 + later.month - earlier.month
+        for earlier, later in zip(dates[:-1], dates[1:], strict=True)
+    ]
+    positive = [gap for gap in gaps if gap > 0]
+    if len(positive) < 2:
+        return None
+    interval = int(median(positive))
+    if not 2 <= interval <= 11:
+        return None
+    supporting = sum(abs(gap - interval) <= 1 for gap in positive)
+    return interval if supporting * 4 >= len(positive) * 3 else None
+
+
 def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None, str, Decimal]:
     if len(dates) < 2:
         return Recurrence(PeriodType.ONCE, start=start), "once (single observation)", Decimal("1")
@@ -243,7 +312,44 @@ def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None
                 cadence,
                 Decimal("1"),
             )
+    month_interval = _calendar_month_interval(dates)
+    if month_interval is not None:
+        return (
+            Recurrence(
+                PeriodType.MONTH,
+                interval=month_interval,
+                start=_next_monthly_start(dates[-1], month_interval, start),
+            ),
+            f"every {month_interval} months",
+            Decimal("1"),
+        )
     return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
+
+
+def _confidence(
+    *, sample_months: int, active_months: int, retained_months: int, variability: Decimal
+) -> float:
+    """Score evidence coverage, sample depth, anomalies, and amount stability."""
+    coverage = Decimal(active_months) / Decimal(sample_months)
+    depth = min(Decimal(1), Decimal(retained_months) / Decimal(12))
+    retained_ratio = Decimal(retained_months) / Decimal(active_months)
+    consistency = max(Decimal(0), Decimal(1) - min(variability, Decimal(1)))
+    score = (
+        Decimal("0.20")
+        + coverage * Decimal("0.30")
+        + depth * Decimal("0.20")
+        + retained_ratio * Decimal("0.10")
+        + consistency * Decimal("0.20")
+    )
+    return float(min(Decimal("0.95"), score))
+
+
+def _variability_label(value: Decimal) -> str:
+    if value <= Decimal("0.10"):
+        return "stable"
+    if value <= Decimal("0.25"):
+        return "moderately variable"
+    return "highly variable"
 
 
 def _trend_summary(values: list[Money]) -> tuple[list[Money], str | None]:
@@ -372,9 +478,17 @@ def propose_historical_estimates(
         if funding_account is None:
             continue
 
-        trend_sample, trend = _trend_summary(monthly)
-        monthly_residual = _typical_amount(trend_sample)
         seasonal = _has_seasonality(monthly_by_month)
+        if seasonal:
+            # Repeated winter/summer peaks are signal, not global outliers. The
+            # month-specific profile below preserves them explicitly.
+            robust_monthly = monthly
+            outlier_months = 0
+            relative_variability = Decimal(0)
+        else:
+            robust_monthly, outlier_months, relative_variability = _robust_sample(monthly)
+        trend_sample, trend = _trend_summary(robust_monthly)
+        monthly_residual = _typical_amount(trend_sample)
         recurrence, cadence, occurrences_per_month = _infer_recurrence(
             _unscheduled_dates(db, account.handle, history_start, history_end),
             current_month,
@@ -395,8 +509,15 @@ def propose_historical_estimates(
             if seasonal and recurrence.period is PeriodType.MONTH
             else ()
         )
-        active_ratio = len(monthly) / months
-        confidence = min(0.95, 0.45 + active_ratio * 0.5)
+        variability = (
+            "seasonal by calendar month" if seasonal else _variability_label(relative_variability)
+        )
+        confidence = _confidence(
+            sample_months=months,
+            active_months=len(monthly),
+            retained_months=len(robust_monthly),
+            variability=relative_variability,
+        )
         scheduled_total = applied_scheduled_total
         gross_median = _typical_amount(gross_monthly)
         proposals.append(
@@ -416,7 +537,12 @@ def propose_historical_estimates(
                     f"{len(gross_monthly)} active month(s); {scheduled_total.format()} "
                     f"of selected future plan applied across {months} completed month(s); "
                     f"median uncovered {monthly_residual.format()} across "
-                    f"{len(monthly)} month(s)"
+                    f"{len(monthly)} month(s); {variability} amounts"
+                    + (
+                        f"; excluded {outlier_months} isolated outlier month(s)"
+                        if outlier_months
+                        else ""
+                    )
                     + (f"; {trend}, using recent median" if trend else "")
                     + ("; recurring seasonal variation detected" if seasonal else "")
                 ),
@@ -424,6 +550,8 @@ def propose_historical_estimates(
                 seasonal=seasonal,
                 trend=trend,
                 seasonal_amounts=seasonal_amounts,
+                outlier_months=outlier_months,
+                variability=variability,
             )
         )
 

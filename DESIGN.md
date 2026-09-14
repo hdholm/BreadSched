@@ -192,6 +192,14 @@ its inferred interval and advances the last observed date to the next due date.
 One observed event alone is insufficient evidence for recurrence and is therefore
 offered only as a reviewed one-time draft.
 
+Estimator confidence is evidence, not a probability claim. It combines completed-
+month coverage, sample depth, the proportion retained after conservative anomaly
+handling, and median absolute deviation relative to the typical amount. Outlier
+removal requires at least six active months and must retain at least three; every
+exclusion is reported to the user. Calendar-month cadence inference recognizes
+stable multi-month intervals independently of day-of-month drift, while weekly and
+multi-year rules retain their dedicated date-gap semantics.
+
 When an actual resolves a planned occurrence, BreadSched preserves the original
 occurrence identity, planned date, and expected value so later schedule changes do
 not rewrite historical variance.

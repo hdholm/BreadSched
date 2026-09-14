@@ -95,8 +95,9 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Register workflow.** Continue toward multiple independent register views and
-   inline two-sided entry without creating a second transaction model.
+1. **NEXT — Historical estimator.** Improve explainable confidence, conservative
+   outlier handling, and irregular recurring cadence detection before extending
+   estimator semantics to balance-sheet activity.
 
 ## Dashboard balances and group hierarchy
 
@@ -435,8 +436,14 @@ semantics, not duplicate business rules in presentation code.
   before its description so resizing does not detach the action from its item.
   The web table already displays its action in the proposal's own row.
 
-- [ ] Detect irregular-but-recurring activity more reliably.
-- [ ] Improve confidence scoring and outlier handling.
+- [x] **0193 — Robust cadence, outliers, and confidence.** Recognize stable
+  multi-month recurrence despite day-of-month drift; conservatively exclude and
+  disclose isolated amount anomalies only with sufficient history; and score
+  confidence from coverage, depth, retained evidence, and robust variability.
+  Advance the alpha version to `0.2.0a32`.
+- [x] Detect irregular-but-recurring activity more reliably for deterministic
+  weekly, fortnightly, multi-month, annual, biennial, and triennial patterns.
+- [x] Improve confidence scoring and outlier handling.
 - [ ] Provide richer explanations of history, cadence, trend, seasonality, and
   residual calculation, with interactive adjustment before acceptance.
 - [ ] Refine category-specific seasonality/cadence inference.

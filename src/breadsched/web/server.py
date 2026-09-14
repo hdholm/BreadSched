@@ -921,6 +921,8 @@ class Api:
                     "active_months": item.active_months,
                     "transaction_count": item.transaction_count,
                     "confidence": item.confidence,
+                    "outlier_months": item.outlier_months,
+                    "variability": item.variability,
                     "reason": item.reason,
                 }
                 for item in proposals

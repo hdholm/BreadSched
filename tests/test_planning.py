@@ -804,6 +804,36 @@ class TestHistoricalEstimateProposals:
         assert proposal.recurrence.start == date(2026, 9, 10)
         assert "every 2 years" in proposal.reason
 
+    def test_infers_quarterly_cadence_despite_posting_day_drift(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Quarterly history") as txn:
+            for when in (
+                date(2025, 1, 28),
+                date(2025, 4, 30),
+                date(2025, 7, 27),
+                date(2025, 10, 31),
+            ):
+                db.add_transaction(
+                    Transaction.simple(
+                        when, "Quarterly service", book.utilities, book.checking, "300"
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 1, 20), months=12
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.amount == Money("300")
+        assert proposal.recurrence.period is PeriodType.MONTH
+        assert proposal.recurrence.interval == 3
+        assert proposal.recurrence.start == date(2026, 1, 31)
+        assert "every 3 months" in proposal.reason
+
     def test_single_historical_event_is_only_proposed_once(self, db, book):
         from breadsched.gen.engine import estimates
 
@@ -883,6 +913,63 @@ class TestHistoricalEstimateProposals:
         assert groceries.funding == book.checking
         assert groceries.recurrence.start == date(2026, 5, 1)
         assert groceries.active_months == 4
+
+    def test_excludes_and_explains_an_isolated_amount_outlier(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Mostly stable history") as txn:
+            for month, amount in enumerate(
+                ("100", "102", "98", "1000", "101", "99", "100", "103"),
+                start=1,
+            ):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2025, month, 10),
+                        "Utilities",
+                        book.utilities,
+                        book.checking,
+                        amount,
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2025, 9, 20), months=8
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.amount == Money("100")
+        assert proposal.outlier_months == 1
+        assert proposal.variability == "stable"
+        assert "excluded 1 isolated outlier month" in proposal.reason
+
+    def test_short_history_is_not_trimmed_as_an_outlier(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Short variable history") as txn:
+            for month, amount in enumerate(("100", "100", "100", "1000"), start=1):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 10),
+                        "Utilities",
+                        book.utilities,
+                        book.checking,
+                        amount,
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 5, 20), months=4
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.outlier_months == 0
+        assert "excluded" not in proposal.reason
 
     def test_preserves_reverse_flow_direction(self, db, book):
         from breadsched.gen.engine import estimates
@@ -1101,6 +1188,8 @@ class TestHistoricalEstimateProposals:
             if item.category == book.utilities
         )
         assert proposal.seasonal is True
+        assert proposal.outlier_months == 0
+        assert proposal.variability == "seasonal by calendar month"
         assert "seasonal variation detected" in proposal.reason
         assert len(proposal.seasonal_amounts) == 12
 

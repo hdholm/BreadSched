@@ -134,6 +134,12 @@ When a continuing replacement begins partway through that window, BreadSched can
 offer a bounded bridge estimate for only the uncovered months. Isolated future
 events do not truncate recurring needs, biennial/triennial history keeps its longer
 cadence and next due date, and a lone completed event is not projected as recurring.
+Stable two-to-eleven-month cadences such as quarterly activity retain their calendar
+interval even when the posting day varies. With at least six active months, isolated
+amount spikes are excluded conservatively and disclosed in the proposal; shorter
+histories are never silently trimmed. Confidence reflects history coverage, sample
+depth, retained observations, and robust amount variability rather than coverage
+alone.
 
 Credit-card payment terms belong to the card account: whether it is paid in full,
 its usual carried-balance payment, payment day, and optional Bank or Cash **Paid
