@@ -21,6 +21,7 @@ from gnucash_fixtures import (
 
 from breadsched.gen.engine import activity, ledger, valuation
 from breadsched.gen.lib import (
+    Account,
     AccountType,
     FsaFundingYear,
     GnuCashAccountType,
@@ -147,6 +148,114 @@ class TestSqliteImport:
         assert account.description == "Everyday account"
         assert account.notes == "Generic account note"
         assert account.commodity_scu == 100
+
+    def test_retains_typed_account_fields_without_interpreting_them(self, db, gnucash_sqlite_path):
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE accounts SET non_std_scu=1 WHERE guid=?",
+                (gnucash_sqlite_path.ids.checking,),
+            )
+            source.execute(
+                "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+                (gnucash_sqlite_path.ids.checking, "color", 4, "#315a74"),
+            )
+            source.execute(
+                "INSERT INTO slots (obj_guid,name,slot_type,int64_val) VALUES (?,?,?,?)",
+                (gnucash_sqlite_path.ids.checking, "tax-related", 1, 1),
+            )
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        fields = {(field.name, field.value_type): field.value for field in account.source_fields}
+        assert fields[("account:non-standard-scu", "boolean")] == "true"
+        assert fields[("slot:color", "string; source type 4")] == "#315a74"
+        assert fields[("slot:tax-related", "int64; source type 1")] == "1"
+
+    def test_historical_and_unknown_source_types_are_not_lost(self, db, gnucash_sqlite_path):
+        unknown_guid = new_guid()
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE accounts SET account_type=? WHERE guid=?",
+                ("MONEYMRKT", gnucash_sqlite_path.ids.checking),
+            )
+            write_account(
+                source,
+                unknown_guid,
+                "Imported special account",
+                "HOUSEHOLD-SPECIAL",
+                gnucash_sqlite_path.ids.root,
+                gnucash_sqlite_path.ids.currency,
+            )
+
+        result = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        legacy = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert legacy is not None
+        assert legacy.atype is AccountType.BANK
+        assert legacy.source_atype is GnuCashAccountType.MONEYMRKT
+        assert legacy.source_type == "MONEYMRKT"
+        unknown = db.get_account(unknown_guid)
+        assert unknown is not None
+        assert unknown.atype is AccountType.TECHNICAL
+        assert unknown.source_atype is None
+        assert unknown.source_type == "HOUSEHOLD-SPECIAL"
+        assert any("preserved as Technical for review" in warning for warning in result.warnings)
+
+    def test_adopted_account_keeps_source_identity_across_rename_and_move(
+        self, db, gnucash_sqlite_path
+    ):
+        root = Account(name="Root", atype=AccountType.ROOT)
+        assets = Account(
+            name="Assets",
+            atype=AccountType.ASSET,
+            parent=root.handle,
+            placeholder=True,
+        )
+        with db.transaction("Create native chart") as txn:
+            db.add_account(root, txn)
+            db.add_account(assets, txn)
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        adopted = db.get_account(assets.handle)
+        assert adopted is not None
+        assert adopted.source_guid == gnucash_sqlite_path.ids.assets
+        before = len(list(db.iter_accounts()))
+
+        new_parent = new_guid()
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            write_account(
+                source,
+                new_parent,
+                "Long-term holdings",
+                "ASSET",
+                gnucash_sqlite_path.ids.root,
+                gnucash_sqlite_path.ids.currency,
+                placeholder=1,
+            )
+            source.execute(
+                "UPDATE accounts SET name=?, description=?, parent_guid=? WHERE guid=?",
+                (
+                    "Household holdings",
+                    "Renamed and moved in source",
+                    new_parent,
+                    gnucash_sqlite_path.ids.assets,
+                ),
+            )
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        refreshed = db.get_account(assets.handle)
+        assert refreshed is not None
+        assert refreshed.name == "Household holdings"
+        assert refreshed.description == "Renamed and moved in source"
+        assert refreshed.parent == new_parent
+        assert refreshed.source_guid == gnucash_sqlite_path.ids.assets
+        assert len(list(db.iter_accounts())) == before + 1
+        checking = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert checking is not None
+        assert checking.parent == assets.handle
 
     def test_placeholders_survive(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
@@ -643,6 +752,39 @@ class TestXmlImport:
         assert account.code == "1200"
         assert account.notes == "Generic XML account note"
         assert account.commodity_scu == 1000
+
+    def test_nested_xml_account_fields_remain_typed_and_inspectable(
+        self, db, tmp_path, gnucash_xml_path
+    ):
+        extra = """
+      <slot>
+        <slot:key>reconcile-info</slot:key>
+        <slot:value type="frame">
+          <slot>
+            <slot:key>last-date</slot:key>
+            <slot:value type="gdate"><gdate>2026-01-31</gdate></slot:value>
+          </slot>
+        </slot:value>
+      </slot>"""
+        source = tmp_path / "account-fields.gnucash"
+        source.write_text(
+            gnucash_xml_path.plain.replace(
+                "    </act:slots>\n  </gnc:account>",
+                f"{extra}\n    </act:slots>\n  </gnc:account>",
+                1,
+            ),
+            encoding="utf-8",
+        )
+
+        gnucash_xml.import_book(db, source)
+
+        account = db.get_account(gnucash_xml_path.ids.bank)
+        assert account is not None
+        assert account.source_guid == gnucash_xml_path.ids.bank
+        assert account.source_type == "BANK"
+        fields = {(field.name, field.value_type): field.value for field in account.source_fields}
+        assert fields[("slot:notes", "string")] == "Generic XML account note"
+        assert fields[("slot:reconcile-info/last-date", "gdate")] == "2026-01-31"
 
     def test_reconcile_state_survives(self, db, gnucash_xml_path):
         gnucash_xml.import_book(db, gnucash_xml_path.path)

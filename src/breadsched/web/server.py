@@ -313,6 +313,10 @@ class Api:
                         "class": account.account_class.value,
                         "placeholder": account.placeholder,
                         "hidden": account.hidden,
+                        "code": account.code,
+                        "description": account.description,
+                        "notes": account.notes,
+                        "commodity_scu": account.commodity_scu,
                         "emergency_fund_eligible": account.emergency_fund_eligible,
                         "emergency_fund_included": account.emergency_fund_included,
                         "pays_in_full": account.pays_in_full,
@@ -324,8 +328,11 @@ class Api:
                         "payment_day": account.payment_day,
                         "card_payment_account": account.card_payment_account,
                         "source_type": (
-                            account.source_atype.value if account.source_atype else None
+                            account.source_type
+                            or (account.source_atype.value if account.source_atype else None)
                         ),
+                        "source_guid": account.source_guid,
+                        "source_fields": [field.serialize() for field in account.source_fields],
                         "fsa_years": [
                             {
                                 "start": year.start.isoformat(),

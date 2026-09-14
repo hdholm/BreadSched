@@ -164,6 +164,18 @@ class TestImport:
         result = run_json(capsys, "import", book_path, gnucash_xml_path.path)
         assert result["transactions"] == 2
 
+    def test_accounts_json_includes_imported_provenance(
+        self, capsys, book_path, gnucash_sqlite_path
+    ):
+        run(capsys, "init", book_path)
+        run(capsys, "import", book_path, gnucash_sqlite_path.path)
+
+        accounts = run_json(capsys, "accounts", book_path, "--all")
+        checking = next(row for row in accounts if row["name"].endswith("Checking Account"))
+        assert checking["source_guid"] == gnucash_sqlite_path.ids.checking
+        assert checking["source_type"] == "BANK"
+        assert checking["source_fields"][0]["name"] == "account:non-standard-scu"
+
     def test_an_unreadable_file_is_a_clean_error(self, book_path, tmp_path, capsys):
         run(capsys, "init", book_path)
         junk = tmp_path / "notes.txt"

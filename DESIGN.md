@@ -399,14 +399,29 @@ modelled correctly as a generic asset: FSA availability follows elections and
 claims, while Escrow recognizes expense when funded and suppresses duplicate
 expense recognition when disbursed.
 
-An imported account also records the exact latest GnuCash source type. This
-read-only provenance supports re-import, diagnostics, and future round-trip work but
-does not drive planning after initial mapping. Native accounts have no source type.
+An imported account records the exact latest GnuCash source type and source GUID.
+The source GUID is separate from the BreadSched object handle because importing into
+an initialized book adopts the existing root and compatible top-level placeholders.
+That mapping is durable: subsequent imports resolve the retained source GUID before
+falling back to a same-parent name/type match, so a source rename or move refreshes
+the adopted account rather than creating a duplicate. Full verification reports two
+accounts claiming the same source GUID.
+
+Read-only source provenance also retains typed account fields that BreadSched does
+not interpret, including SQLite account flags/slots and nested XML slot paths. This
+prevents a smaller editor from destructively normalizing information merely because
+it has no household workflow yet. GTK and web expose the provenance separately from
+editable BreadSched configuration; CLI JSON carries the same fields. Native accounts
+have no source identity or source fields.
 Initial source mapping is conservative: BANK to Bank, CASH to Cash, ASSET/CURRENCY/
 RECEIVABLE to Asset, CREDIT to Credit card, LIABILITY/PAYABLE to Liability,
 STOCK/MUTUAL to Investment, the flow/equity/root types directly, and TRADING to
-Technical. GnuCash alone does not identify an FSA, Escrow, Retirement account, or
-Loan; those types require explicit selection or stronger reviewed evidence.
+Technical. Historical CHECKING, SAVINGS, and MONEYMRKT types map to Bank,
+CREDITLINE maps to Credit card, and CD maps to general Asset. A new unknown source
+type is retained exactly but begins as Technical so it cannot acquire invented
+planning semantics before review. GnuCash alone does not identify an FSA, Escrow,
+Retirement account, or Loan; those types require explicit selection or stronger
+reviewed evidence.
 
 Inference precedence is:
 

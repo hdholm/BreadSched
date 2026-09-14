@@ -16,6 +16,7 @@ from typing import IO, TypedDict, cast
 from xml.etree import ElementTree as ET
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.lib.account import GnuCashAccountField
 from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust
@@ -276,13 +277,44 @@ def _snapshot_account(element: ET.Element) -> ET.Element:
 
 
 def _copy_slots(slots: ET.Element) -> ET.Element:
-    copy = ET.Element(slots.tag)
-    for slot in slots:
-        new = ET.SubElement(copy, slot.tag)
-        for child in slot:
-            sub = ET.SubElement(new, child.tag)
-            sub.text = child.text
-    return copy
+    """Copy complete typed slot trees before the streaming parser clears them."""
+
+    def clone(element: ET.Element) -> ET.Element:
+        duplicate = ET.Element(element.tag, element.attrib)
+        duplicate.text = element.text
+        duplicate.tail = element.tail
+        for child in element:
+            duplicate.append(clone(child))
+        return duplicate
+
+    return clone(slots)
+
+
+def _account_source_fields(element: ET.Element) -> list[GnuCashAccountField]:
+    """Flatten typed account slots into inspectable, path-preserving fields."""
+    fields: list[GnuCashAccountField] = []
+
+    def walk(slot: ET.Element, prefix: str = "") -> None:
+        key = _text(slot, "slot:key") or "(unnamed)"
+        path = f"{prefix}/{key}" if prefix else key
+        value = slot.find("slot:value", NS)
+        if value is None:
+            fields.append(GnuCashAccountField(f"slot:{path}", "missing", ""))
+            return
+        value_type = value.attrib.get("type", "text")
+        nested = [child for child in value if child.tag.rsplit("}", 1)[-1] == "slot"]
+        if nested:
+            for child in nested:
+                walk(child, path)
+            return
+        text = "".join(value.itertext()).strip()
+        fields.append(GnuCashAccountField(f"slot:{path}", value_type, text))
+
+    slots = element.find("act:slots", NS)
+    if slots is not None:
+        for slot in slots:
+            walk(slot)
+    return fields
 
 
 def _slot_value(element: ET.Element, key: str) -> str | None:
@@ -312,6 +344,7 @@ class _AccountRow(TypedDict):
     placeholder: bool
     hidden: bool
     commodity_scu: int | None
+    source_fields: list[GnuCashAccountField]
 
 
 def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
@@ -335,6 +368,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
                 "placeholder": (_slot_value(element, "placeholder") or "").lower() == "true",
                 "hidden": (_slot_value(element, "hidden") or "").lower() == "true",
                 "commodity_scu": int(scu_text) if scu_text.isdigit() else None,
+                "source_fields": _account_source_fields(element),
             }
         )
 
@@ -371,6 +405,7 @@ def _write_accounts(elements: list[ET.Element], sink: ImportSink) -> None:
             placeholder=row["placeholder"],
             hidden=row["hidden"],
             commodity_scu=row["commodity_scu"],
+            source_fields=row["source_fields"],
         )
 
 

@@ -413,6 +413,15 @@ book and preselected the next time that book's GTK or web import workflow opens.
 remembered path is only presentation state: it never triggers an import automatically,
 and imported source files remain read-only.
 
+Imported account provenance is read-only and separate from BreadSched's visible
+account type. BreadSched retains the exact GnuCash source GUID even when an imported
+root or top-level account is adopted into the existing chart, so later source
+renames do not create duplicate accounts. Historical GnuCash account types are
+mapped conservatively, while an unknown type remains visible and initially uses the
+non-planning Technical type for review. The GTK account editor's **GnuCash source →
+Details** action and the web Accounts **Details** action show the source type, GUID,
+and typed fields that BreadSched preserves without interpreting.
+
 GnuCash transaction-level notes are retained separately from split memos and from
 BreadSched-authored notes. Imported notes are visible but read-only and refresh from
 the source on re-import; local notes remain editable and are not overwritten.

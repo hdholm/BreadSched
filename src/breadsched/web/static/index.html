@@ -890,6 +890,40 @@ async function openFsaClaimsEditor(initialHandle=null) {
 }
 
 
+function openAccountDetails(account) {
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const value = (item) => item === null || item === undefined || item === "" ? "—" : String(item);
+  const metadata = [
+    ["Full name", account.full_name], ["Code", account.code],
+    ["Description", account.description], ["Notes", account.notes],
+    ["Commodity", account.commodity], ["Commodity SCU", account.commodity_scu],
+    ["Placeholder", account.placeholder ? "Yes" : "No"],
+    ["Hidden", account.hidden ? "Yes" : "No"],
+  ].map(([name, item]) => el("tr", {}, el("td", {}, name), el("td", {}, value(item))));
+  const source = account.source_guid || account.source_type
+    ? el("div", {},
+        el("h3", {}, "Read-only GnuCash provenance"),
+        table(["Field", "Type", "Value"], [
+          el("tr", {}, el("td", {}, "Source GUID"), el("td", {}, "guid"),
+            el("td", {}, value(account.source_guid))),
+          el("tr", {}, el("td", {}, "Source account type"), el("td", {}, "type"),
+            el("td", {}, value(account.source_type))),
+          ...(account.source_fields || []).map((field) => el("tr", {},
+            el("td", {}, field.name), el("td", {}, field.value_type),
+            el("td", {}, value(field.value)))),
+        ]))
+    : el("p", {class:"note"}, "This is a native BreadSched account.");
+  const content = el("section", {class:"detail-dialog wide"},
+    el("h2", {}, account.name),
+    table(["Account field", "Value"], metadata), source,
+    el("div", {class:"toolbar"}, el("span", {style:"flex:1"}),
+      el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()}, "Close")));
+  backdrop.append(content); document.body.append(backdrop);
+}
+
 async function showAccounts() {
   const [summary, accounts] = await Promise.all([
     get("/api/summary"), get("/api/accounts"),
@@ -954,6 +988,8 @@ async function showAccounts() {
     el("td", { class:"num" }, account.valuation_source === "market"
       ? `${money(account.price)} ${account.currency}` : "—"),
     el("td", { class:"muted" }, account.price_date || "—"),
+    el("td", {}, el("button", {class:"action", type:"button",
+      onclick:()=>openAccountDetails(account)}, "Details…")),
     el("td", { class: cls(account.balance) }, money(account.balance))));
 
   return el("div", {}, cards,
@@ -967,7 +1003,8 @@ async function showAccounts() {
       + "when one is available; otherwise they retain their ledger value."),
     table(["Account", "Type", "Emergency", "FSA years", "Card payment",
            { label:"Units", num:true },
-           { label:"Price", num:true }, "As of", { label: "Value", num: true }], rows));
+           { label:"Price", num:true }, "As of", "Metadata",
+           { label: "Value", num: true }], rows));
 }
 
 async function openReconciliation(account) {

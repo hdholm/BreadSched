@@ -13,6 +13,7 @@ from datetime import date
 from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.lib.account import GnuCashAccountField
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import PeriodType, Recurrence, WeekendAdjust
 from ...gen.lib.scheduled import ScheduledSplit, ScheduledTransaction
@@ -60,6 +61,51 @@ def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
     return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _account_source_fields(
+    conn: sqlite3.Connection, row: dict, columns: set[str]
+) -> list[GnuCashAccountField]:
+    """Retain typed source fields that BreadSched does not interpret."""
+    fields: list[GnuCashAccountField] = []
+    if "non_std_scu" in columns:
+        fields.append(
+            GnuCashAccountField(
+                "account:non-standard-scu",
+                "boolean",
+                "true" if bool(row.get("non_std_scu")) else "false",
+            )
+        )
+    if not _table_exists(conn, "slots"):
+        return fields
+
+    ignored = {"id", "obj_guid", "name", "slot_type"}
+    for raw_slot in conn.execute(
+        "SELECT * FROM slots WHERE obj_guid = ? ORDER BY id", (row["guid"],)
+    ):
+        slot = dict(raw_slot)
+        value_type = "empty"
+        value = ""
+        numerator = slot.get("numeric_val_num")
+        denominator = slot.get("numeric_val_denom")
+        if numerator is not None or denominator is not None:
+            value_type = "numeric"
+            value = f"{numerator or 0}/{denominator or 1}"
+        else:
+            for column, candidate in slot.items():
+                if column in ignored or candidate is None:
+                    continue
+                value_type = column.removesuffix("_val").replace("_", "-")
+                value = repr(candidate) if isinstance(candidate, float) else str(candidate)
+                break
+        fields.append(
+            GnuCashAccountField(
+                f"slot:{slot.get('name') or '(unnamed)'}",
+                f"{value_type}; source type {slot.get('slot_type')}",
+                value,
+            )
+        )
+    return fields
 
 
 # ------------------------------------------------------------------- readers
@@ -392,6 +438,7 @@ def _import_accounts(conn: sqlite3.Connection, sink: ImportSink) -> None:
                 if "commodity_scu" in columns and row.get("commodity_scu") is not None
                 else None
             ),
+            source_fields=_account_source_fields(conn, row, columns),
         )
 
 

@@ -133,6 +133,22 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.type_picker, 1, row, 1, 1)
         row += 1
 
+        self.source_summary = Gtk.Label(xalign=0, selectable=True)
+        source_box = Gtk.Box(spacing=8)
+        source_box.append(self.source_summary)
+        self.source_button = Gtk.Button(label="Details…")
+        self.source_button.connect("clicked", self._show_source_details)
+        source_box.append(self.source_button)
+        imported = account is not None and bool(account.source_guid or account.source_type)
+        if imported and account is not None:
+            self.source_summary.set_text(account.source_type or "Unknown type")
+        source_box.set_visible(imported)
+        source_heading = Gtk.Label(label="GnuCash source", xalign=0)
+        source_heading.set_visible(imported)
+        grid.attach(source_heading, 0, row, 1, 1)
+        grid.attach(source_box, 1, row, 1, 1)
+        row += 1
+
         commodity_labels = ["(book/default)"] + [
             f"{commodity.mnemonic} ({commodity.namespace})" for commodity in self.commodities
         ]
@@ -347,6 +363,50 @@ class AccountDialog(Gtk.Window):
         self._validate()
 
     # -------------------------------------------------------------- reactions
+
+    def _show_source_details(self, _button) -> None:
+        """Show imported provenance without making source-owned fields editable."""
+        if self.account is None:
+            return
+        window = Gtk.Window(
+            title="Imported account details",
+            transient_for=self,
+            modal=True,
+        )
+        window.set_default_size(620, 420)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        for side in ("top", "bottom", "start", "end"):
+            getattr(box, f"set_margin_{side}")(14)
+        heading = Gtk.Label(
+            label="Read-only GnuCash provenance",
+            xalign=0,
+        )
+        heading.add_css_class("title-3")
+        box.append(heading)
+        lines = [
+            f"Source GUID: {self.account.source_guid or '(not retained)'}",
+            f"Source type: {self.account.source_type or '(unknown)'}",
+        ]
+        if self.account.source_fields:
+            lines.append("")
+            lines.extend(
+                f"{field.name} [{field.value_type}]: {field.value}"
+                for field in self.account.source_fields
+            )
+        else:
+            lines.extend(("", "No additional source fields were retained."))
+        details = Gtk.TextView(editable=False, cursor_visible=False, monospace=True)
+        details.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        details.get_buffer().set_text("\n".join(lines))
+        scroller = Gtk.ScrolledWindow(child=details)
+        scroller.set_vexpand(True)
+        scroller.set_hexpand(True)
+        box.append(scroller)
+        close = Gtk.Button(label="Close", halign=Gtk.Align.END)
+        close.connect("clicked", lambda *_: window.close())
+        box.append(close)
+        window.set_child(box)
+        window.present()
 
     @property
     def selected_type(self) -> AccountType:

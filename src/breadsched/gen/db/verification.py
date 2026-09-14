@@ -55,6 +55,23 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
     commodities = {commodity.handle for commodity in db.iter_commodities()}
     scenarios = {scenario.handle: scenario for scenario in db.iter_scenarios()}
 
+    source_guids: dict[str, str] = {}
+    for account in accounts.values():
+        if not account.source_guid:
+            continue
+        previous = source_guids.get(account.source_guid)
+        if previous is not None and previous != account.handle:
+            issues.append(
+                BookIssue(
+                    "account.duplicate_source_guid",
+                    f"accounts {previous} and {account.handle} both claim imported source "
+                    f"GUID {account.source_guid}",
+                    account.handle,
+                )
+            )
+        else:
+            source_guids[account.source_guid] = account.handle
+
     # Account graph and references. A normal chart has one explicit ROOT account;
     # once that root exists, any other parentless account is orphaned rather than
     # another root. Rootless lightweight books remain valid for small tools/tests.

@@ -3028,7 +3028,12 @@ class TestAccountEditor:
         assert app.db.get_account(account.handle).group == "Cash"
 
     def test_imported_account_parent_hidden_and_commodity_round_trip(self, accounts_view, app):
-        from breadsched.gen.lib import Account, AccountType, Commodity
+        from breadsched.gen.lib import (
+            Account,
+            AccountType,
+            Commodity,
+            GnuCashAccountField,
+        )
 
         root = app.db.root_account()
         with app.db.transaction("add imported-style account structure") as txn:
@@ -3050,6 +3055,9 @@ class TestAccountEditor:
                 commodity_scu=1000,
             )
             child.notes = "Generic imported account note"
+            child.source_guid = "imported-account-guid"
+            child.source_type = "STOCK"
+            child.source_fields = [GnuCashAccountField("slot:color", "string", "#315a74")]
             app.db.add_account(child, txn)
 
         dialog = self._dialog(accounts_view, child)
@@ -3058,6 +3066,8 @@ class TestAccountEditor:
         assert dialog.hidden_check.get_active() is True
         assert dialog.commodity_scu_entry.get_text() == "1000"
         assert dialog.commodity_handles[dialog.commodity_picker.get_selected()] == commodity.handle
+        assert dialog.source_summary.get_text() == "STOCK"
+        assert dialog.source_button.get_visible() is True
         notes_buffer = dialog.notes_view.get_buffer()
         notes_start, notes_end = notes_buffer.get_bounds()
         assert (
@@ -3070,6 +3080,9 @@ class TestAccountEditor:
         assert rebuilt.commodity == commodity.handle
         assert rebuilt.commodity_scu == 1000
         assert rebuilt.notes == "Generic imported account note"
+        assert rebuilt.source_guid == "imported-account-guid"
+        assert rebuilt.source_type == "STOCK"
+        assert rebuilt.source_fields == child.source_fields
 
     def test_loan_fields_only_show_for_a_loan(self, accounts_view, app):
         from breadsched.gen.lib import AccountType

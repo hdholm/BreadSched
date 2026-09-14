@@ -22,6 +22,7 @@ __all__ = [
     "AccountClass",
     "AccountType",
     "FsaFundingYear",
+    "GnuCashAccountField",
     "GnuCashAccountType",
 ]
 
@@ -153,13 +154,23 @@ class GnuCashAccountType(str, Enum):
     RECEIVABLE = "RECEIVABLE"
     PAYABLE = "PAYABLE"
     TRADING = "TRADING"
+    CHECKING = "CHECKING"
+    SAVINGS = "SAVINGS"
+    MONEYMRKT = "MONEYMRKT"
+    CREDITLINE = "CREDITLINE"
+    CD = "CD"
 
     @classmethod
-    def parse(cls, value: str) -> GnuCashAccountType:
+    def recognize(cls, value: str) -> GnuCashAccountType | None:
+        """Return a known source type without normalizing an unknown one."""
         try:
             return cls(str(value).strip().upper())
         except ValueError:
-            return cls.ASSET
+            return None
+
+    @classmethod
+    def parse(cls, value: str) -> GnuCashAccountType:
+        return cls.recognize(value) or cls.ASSET
 
     @property
     def account_class(self) -> AccountClass:
@@ -203,6 +214,11 @@ _GNUCASH_CLASS_OF: dict[GnuCashAccountType, AccountClass] = {
     GnuCashAccountType.INCOME: AccountClass.INCOME,
     GnuCashAccountType.EXPENSE: AccountClass.EXPENSE,
     GnuCashAccountType.EQUITY: AccountClass.EQUITY,
+    GnuCashAccountType.CHECKING: AccountClass.ASSET,
+    GnuCashAccountType.SAVINGS: AccountClass.ASSET,
+    GnuCashAccountType.MONEYMRKT: AccountClass.ASSET,
+    GnuCashAccountType.CREDITLINE: AccountClass.LIABILITY,
+    GnuCashAccountType.CD: AccountClass.ASSET,
 }
 
 _BREADSCHED_TYPE_FOR_SOURCE: dict[GnuCashAccountType, AccountType] = {
@@ -221,9 +237,34 @@ _BREADSCHED_TYPE_FOR_SOURCE: dict[GnuCashAccountType, AccountType] = {
     GnuCashAccountType.INCOME: AccountType.INCOME,
     GnuCashAccountType.EXPENSE: AccountType.EXPENSE,
     GnuCashAccountType.EQUITY: AccountType.EQUITY,
+    GnuCashAccountType.CHECKING: AccountType.BANK,
+    GnuCashAccountType.SAVINGS: AccountType.BANK,
+    GnuCashAccountType.MONEYMRKT: AccountType.BANK,
+    GnuCashAccountType.CREDITLINE: AccountType.CREDIT,
+    GnuCashAccountType.CD: AccountType.ASSET,
 }
 
 SEPARATOR = ":"
+
+
+@dataclass(frozen=True)
+class GnuCashAccountField:
+    """One read-only source field not promoted into BreadSched semantics."""
+
+    name: str
+    value_type: str
+    value: str
+
+    def serialize(self) -> dict[str, str]:
+        return {"name": self.name, "value_type": self.value_type, "value": self.value}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GnuCashAccountField:
+        return cls(
+            name=str(data.get("name", "")),
+            value_type=str(data.get("value_type", "")),
+            value=str(data.get("value", "")),
+        )
 
 
 class Account(PrimaryObject):
@@ -257,6 +298,13 @@ class Account(PrimaryObject):
         self.notes = ""
         #: Last source-owned GnuCash type, distinct from BreadSched's account type.
         self.source_atype: GnuCashAccountType | None = None
+        #: Exact imported identity. Adopted roots/top-level placeholders retain a
+        #: BreadSched handle, so the source GUID cannot always be the object handle.
+        self.source_guid: str | None = None
+        #: Exact type text, including an unrecognized or historical source type.
+        self.source_type: str = ""
+        #: Typed, read-only GnuCash fields which BreadSched does not interpret.
+        self.source_fields: list[GnuCashAccountField] = []
         self.fsa_years: list[FsaFundingYear] = []
 
         # Projection hints.  These are what turn a chart of accounts into a model.
@@ -342,6 +390,9 @@ class Account(PrimaryObject):
             "commodity_scu": self.commodity_scu,
             "notes": self.notes,
             "source_atype": self.source_atype.value if self.source_atype is not None else None,
+            "source_guid": self.source_guid,
+            "source_type": self.source_type,
+            "source_fields": [field.serialize() for field in self.source_fields],
             "fsa_years": [year.serialize() for year in self.fsa_years],
             "annual_return": str(self.annual_return),
             "annual_interest": str(self.annual_interest),
@@ -373,6 +424,16 @@ class Account(PrimaryObject):
         self.notes = data.get("notes", "")
         raw_source_type = data.get("source_atype")
         self.source_atype = GnuCashAccountType.parse(raw_source_type) if raw_source_type else None
+        raw_source_guid = data.get("source_guid")
+        self.source_guid = str(raw_source_guid) if raw_source_guid else None
+        self.source_type = str(data.get("source_type", ""))
+        if not self.source_type and self.source_atype is not None:
+            self.source_type = self.source_atype.value
+        self.source_fields = [
+            GnuCashAccountField.from_dict(field)
+            for field in data.get("source_fields", [])
+            if isinstance(field, dict)
+        ]
         self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))

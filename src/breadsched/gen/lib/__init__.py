@@ -5,6 +5,7 @@ from .account import (
     AccountClass,
     AccountType,
     FsaFundingYear,
+    GnuCashAccountField,
     GnuCashAccountType,
 )
 from .base import PrimaryObject, create_handle
@@ -54,6 +55,7 @@ __all__ = [
     "FsaClaimRejection",
     "FsaClaimSplitLink",
     "FsaFundingYear",
+    "GnuCashAccountField",
     "GnuCashAccountType",
     "InvestmentActivityKind",
     "AssumptionPeriod",

@@ -666,6 +666,17 @@ class TestBookVerification:
         db._require().commit()
         assert any(issue.code == "split_index.orphan" for issue in db.verify_book())
 
+    def test_duplicate_imported_account_identity_is_reported(self, db, book):
+        checking = db.get_account(book.checking)
+        savings = db.get_account(book.savings)
+        checking.source_guid = "source-account-guid"
+        savings.source_guid = "source-account-guid"
+        with db.transaction("Corrupt imported identity") as txn:
+            db.commit_account(checking, txn)
+            db.commit_account(savings, txn)
+
+        assert any(issue.code == "account.duplicate_source_guid" for issue in db.verify_book())
+
 
 class TestWriteTimeInvariants:
     def test_missing_split_account_rolls_back_the_whole_transaction(self, db, book):

@@ -16,6 +16,7 @@ from __future__ import annotations
 import gzip
 import hashlib
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -23,7 +24,12 @@ from typing import Any
 
 from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib.account import Account, AccountType, GnuCashAccountType
+from ...gen.lib.account import (
+    Account,
+    AccountType,
+    GnuCashAccountField,
+    GnuCashAccountType,
+)
 from ...gen.lib.commodity import Commodity, CommodityPrice
 from ...gen.lib.formula import FormulaError, evaluate
 from ...gen.lib.money import Money
@@ -294,6 +300,10 @@ class ImportSink:
         self._known_accounts: set[str] = {a.handle for a in db.iter_accounts()}
         self._commodities: dict[str, str] = {}  # "NAMESPACE:MNEMONIC" -> handle
         self._commodity_guids: dict[str, str] = {}  # source GUID -> destination handle
+        self._source_accounts: dict[str, str] = {}
+        for account in db.iter_accounts():
+            if account.source_guid and account.source_guid not in self._source_accounts:
+                self._source_accounts[account.source_guid] = account.handle
         #: Source GUID -> destination handle, for accounts that were merged into an
         #: account the book already had rather than created afresh.
         self._remap: dict[str, str] = {}
@@ -400,6 +410,7 @@ class ImportSink:
         placeholder: bool = False,
         hidden: bool = False,
         commodity_scu: int | None = None,
+        source_fields: Sequence[GnuCashAccountField] = (),
     ) -> Account:
         """Add an account, or adopt one the book already has in that position.
 
@@ -410,27 +421,49 @@ class ImportSink:
         existing root, and an account matching an existing sibling by name and type
         is adopted rather than duplicated.
         """
-        parsed = GnuCashAccountType.parse(atype)
-        account_type = parsed.to_account_type()
+        source_type = str(atype).strip()
+        parsed = GnuCashAccountType.recognize(source_type)
+        account_type = parsed.to_account_type() if parsed is not None else AccountType.TECHNICAL
         mapped_parent = self._remap.get(parent, parent) if parent else None
+
+        if parsed is None:
+            self.result.warn(
+                f"account {name!r} has unsupported GnuCash type {source_type!r}; "
+                "preserved as Technical for review"
+            )
 
         if parsed is GnuCashAccountType.ROOT and mapped_parent is None:
             existing_root = self.db.root_account()
             if existing_root is not None:
                 self._remap[guid] = existing_root.handle
                 self._known_accounts.add(guid)
+                existing_root.source_guid = guid
+                existing_root.source_atype = parsed
+                existing_root.source_type = source_type
+                existing_root.source_fields = list(source_fields)
+                self.db.commit_account(existing_root, self.txn)
+                self._source_accounts[guid] = existing_root.handle
                 LOG.debug("mapped source root %s onto the book's root", guid[:8])
                 return existing_root
 
-        existing = self.db.get_account(guid)
+        existing_handle = self._source_accounts.get(guid, guid)
+        existing = self.db.get_account(existing_handle)
         if existing is not None:
-            if existing.account_class is not parsed.account_class:
+            previous_source_type = existing.source_type or (
+                existing.source_atype.value if existing.source_atype is not None else ""
+            )
+            if previous_source_type and previous_source_type != source_type:
+                self.result.warn(
+                    f"account {name!r} changed GnuCash type from "
+                    f"{previous_source_type!r} to {source_type!r}"
+                )
+            if parsed is not None and existing.account_class is not parsed.account_class:
                 self.result.warn(
                     f"account {name!r} changed GnuCash accounting class; retained its "
                     "BreadSched type for review"
                 )
             account = Account(
-                handle=guid,
+                handle=existing.handle,
                 name=name,
                 atype=existing.atype,
                 parent=mapped_parent,
@@ -443,19 +476,43 @@ class ImportSink:
             )
             account.notes = notes
             account.source_atype = parsed
+            account.source_guid = guid
+            account.source_type = source_type
+            account.source_fields = list(source_fields)
             self._preserve_breadsched_account_state(account, existing)
             self.db.commit_account(account, self.txn)
+            if existing.handle != guid:
+                self._remap[guid] = existing.handle
+            self._source_accounts[guid] = existing.handle
             self._known_accounts.add(guid)
             return account
 
-        twin = self._existing_sibling(mapped_parent, name, parsed)
+        twin = self._existing_sibling(mapped_parent, name, source_type, parsed)
         if twin is not None:
             self._remap[guid] = twin.handle
             self._known_accounts.add(guid)
-            twin.source_atype = parsed
-            self.db.commit_account(twin, self.txn)
+            account = Account(
+                handle=twin.handle,
+                name=name,
+                atype=twin.atype,
+                parent=mapped_parent,
+                commodity=commodity,
+                code=code,
+                description=description,
+                placeholder=placeholder,
+                hidden=hidden,
+                commodity_scu=commodity_scu,
+            )
+            account.notes = notes
+            account.source_atype = parsed
+            account.source_guid = guid
+            account.source_type = source_type
+            account.source_fields = list(source_fields)
+            self._preserve_breadsched_account_state(account, twin)
+            self.db.commit_account(account, self.txn)
+            self._source_accounts[guid] = twin.handle
             LOG.debug("merged imported %r into the existing account", name)
-            return twin
+            return account
 
         account = Account(
             handle=guid,
@@ -471,7 +528,11 @@ class ImportSink:
         )
         account.notes = notes
         account.source_atype = parsed
+        account.source_guid = guid
+        account.source_type = source_type
+        account.source_fields = list(source_fields)
         self.db.add_account(account, self.txn)
+        self._source_accounts[guid] = account.handle
         self._known_accounts.add(guid)
         self.result.accounts += 1
         return account
@@ -493,13 +554,20 @@ class ImportSink:
         imported.emergency_fund_override = existing.emergency_fund_override
 
     def _existing_sibling(
-        self, parent: str | None, name: str, atype: GnuCashAccountType
+        self,
+        parent: str | None,
+        name: str,
+        source_type: str,
+        atype: GnuCashAccountType | None,
     ) -> Account | None:
         """An account already under ``parent`` with the same name and type."""
         for candidate in self.db.child_accounts(parent):
-            same_source = candidate.source_atype is atype
+            same_source = bool(source_type) and candidate.source_type == source_type
             native_match = (
-                candidate.source_atype is None and candidate.atype is atype.to_account_type()
+                atype is not None
+                and candidate.source_atype is None
+                and not candidate.source_type
+                and candidate.atype is atype.to_account_type()
             )
             if candidate.name == name and (same_source or native_match):
                 return candidate

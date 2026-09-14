@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0186 — explicit investment activity**. The
-current sequential candidate is **0187 — escrow follow-through**.
+The current accepted baseline is **0187 — escrow follow-through**. The current
+sequential candidate is **0188 — durable imported-account provenance**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,10 +94,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Imported account fidelity.** Expand representative GnuCash fixtures and safely
-   expose remaining account metadata without destructive normalization.
-2. **Plan classification explanations.** Make unresolved/unexpected and inferred
+1. **NEXT — Plan classification explanations.** Make unresolved/unexpected and inferred
    account-type/split-purpose decisions easier to inspect and correct.
+2. **Register workflow.** Continue toward multiple independent register views and
+   inline two-sided entry without creating a second transaction model.
 
 ## Dashboard balances and group hierarchy
 
@@ -356,6 +356,16 @@ semantics, not duplicate business rules in presentation code.
 
 ## Account editor and Accounts view
 
+- [x] **0188 — Durable imported-account provenance.** Retain the exact GnuCash
+  source GUID independently from the BreadSched object handle so roots and
+  pre-existing top-level accounts adopted during import continue to match after a
+  source rename or move. Preserve exact unknown source type text and typed account
+  fields for read-only inspection instead of normalizing them into BreadSched
+  semantics. Map historical checking/savings/money-market/credit-line/CD types
+  explicitly; put an unknown new type in Technical pending review. Expose ordinary
+  and source-owned metadata through GTK, web, and CLI JSON; verify source-GUID
+  uniqueness; cover SQLite, nested XML slots, and re-import. Advance the alpha
+  version to `0.2.0a27`.
 - [ ] Expand the account editor to safely handle **all account forms imported from
   GnuCash** without destructive normalization or loss of imported semantics.
 - [ ] Add representative GnuCash account fixtures and round-trip/regression tests as
@@ -682,7 +692,10 @@ semantics, not duplicate business rules in presentation code.
 
 - [ ] Add OFX investment transactions.
 - [ ] Add useful QIF investment/security records.
-- [ ] Strengthen account matching across imports/re-imports.
+- [x] **0188 — Strengthen adopted-account matching across GnuCash re-imports.**
+  Persist the source GUID when an imported root or sibling is mapped onto a
+  pre-existing BreadSched account, then resolve that identity before name/type
+  matching on every later import.
 - [x] **0167 — Import GnuCash dated prices.** Preserve exact SQLite/XML security
   quotes, quote currency, date, type/source, and stable price GUIDs on re-import.
 - [ ] Add reviewed commodity/security mapping where imported identifiers cannot be

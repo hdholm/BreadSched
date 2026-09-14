@@ -192,6 +192,12 @@ class TestItServes:
         assert 'document.getElementById("print-title").textContent = current' in page
         assert ".plan-table { max-height: none; }" in page
 
+    def test_accounts_offer_read_only_imported_metadata_details(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode("utf-8")
+        assert "openAccountDetails" in page
+        assert "Read-only GnuCash provenance" in page
+
     def test_schedule_occurrence_controls_are_structured(self, client):
         _status, body, _headers = client.raw("/")
         text = body.decode("utf-8")
@@ -217,6 +223,21 @@ class TestItServes:
         by_name = {row["name"]: row for row in payload}
         assert "Checking" in by_name
         assert Money(by_name["Checking"]["balance"]) == Money("2400.00")
+
+    def test_accounts_api_exposes_exact_imported_provenance(self, client):
+        _status, payload = client.get("/api/accounts")
+        checking = next(row for row in payload if row["name"] == "Checking")
+
+        assert checking["source_guid"]
+        assert checking["source_type"] == "BANK"
+        assert checking["commodity_scu"] == 100
+        assert checking["source_fields"] == [
+            {
+                "name": "account:non-standard-scu",
+                "value_type": "boolean",
+                "value": "false",
+            }
+        ]
 
     def test_plan_settings_and_totals_are_shared_through_the_book(self, client):
         _status, initial = client.get("/api/plan")
