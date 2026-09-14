@@ -798,6 +798,11 @@ semantics, not duplicate business rules in presentation code.
   policy.
 - [x] Keep database concurrency ownership/locking explicit and testable for desktop
   and web access.
+- [x] **0196A — Probe Windows writer locks without signals.** Keep POSIX
+  `os.kill(pid, 0)` liveness checks, but use a non-signaling Windows process-handle
+  query so opening an already-locked book cannot send `CTRL_C_EVENT` to its owner.
+  Retain live-owner rejection and stale-lock reclamation coverage across the CI
+  platform matrix. Advance the alpha version to `0.2.0a34`.
 - [x] **0194 — Complete the current executable invariant set.** Verify global split
   identity, commodity/currency roles and exact SCU representability, fixed schedule
   balance, unique realization of each planned occurrence, and unambiguous schedule

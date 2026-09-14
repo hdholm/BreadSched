@@ -159,6 +159,26 @@ class DbSQLite(DbBase):
     def _pid_is_alive(pid: int) -> bool:
         if pid <= 0:
             return False
+        if os.name == "nt":
+            # ``os.kill(pid, 0)`` is a harmless existence probe on POSIX. On
+            # Windows, however, signal value 0 is CTRL_C_EVENT and can interrupt
+            # the process whose liveness we are trying to inspect. Query a process
+            # handle instead and treat access-denied or unexpected errors
+            # conservatively as evidence that the process may still be alive.
+            import ctypes
+
+            win_dll = getattr(ctypes, "WinDLL", None)
+            if win_dll is None:  # pragma: no cover - defensive Windows fallback
+                return True
+            kernel32 = win_dll("kernel32", use_last_error=True)
+            process_query_limited_information = 0x1000
+            handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
+            if handle:
+                kernel32.CloseHandle(handle)
+                return True
+            error_invalid_parameter = 87
+            get_last_error = getattr(ctypes, "get_last_error", lambda: 0)
+            return get_last_error() != error_invalid_parameter
         try:
             os.kill(pid, 0)
         except ProcessLookupError:
