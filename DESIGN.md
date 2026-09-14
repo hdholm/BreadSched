@@ -298,6 +298,61 @@ collect and validate the same lender-facing terms, preview the shared amortizati
 table, and call `create_loan`. The stored schedule uses `ipmt`/`ppmt` formulas and an
 optional opening liability rather than freezing the preview into fixed splits.
 
+### Mortgage cash-flow semantics
+
+A mortgage payment is one balanced transaction described along several financial
+dimensions. BreadSched must show the complete amount leaving the payment account
+because that is the household's dated liquidity requirement, while also classifying
+the transaction's components so expense, debt, escrow, and net-worth reporting remain
+economically correct. The complete payment and its components are two descriptions
+of the same dollars: a parent payment row is informational and must never be added to
+its children in a section or grand total.
+
+The approved representative monthly payment is:
+
+| Component | Amount | Ledger and economic effect |
+| --- | ---: | --- |
+| Principal | `$800` | Checking decreases and the mortgage liability decreases |
+| Interest | `$1,150` | Checking decreases and interest expense increases |
+| Escrow funding | `$450` | Checking decreases and the restricted Escrow asset increases |
+| **Complete payment** | **`$2,400`** | **Checking decreases once by `$2,400`** |
+
+Plan must present the `$2,400` prominently as cash required. Its classified detail is
+`$1,150` ordinary interest expense, `$450` escrow planning expense, and `$800`
+debt-principal flow. Net cash change is negative `$2,400`; it is not the payment plus
+those three components. Projection applies the balanced ledger effects on the payment
+date: Checking falls by `$2,400`, the mortgage liability falls by `$800`, Escrow rises
+by `$450`, and immediate ledger net worth falls only by the `$1,150` interest. The
+linked house's market value does not change because a payment occurred; equity rises
+through the separate reduction in debt.
+
+Escrow intentionally has different Plan and ledger timing. Monthly escrow funding is
+the household commitment Plan recognizes, while Projection retains it as movement
+from spendable cash to a restricted asset. When accumulated Escrow later pays tax or
+insurance, Projection reduces the asset and recognizes the ledger expense and
+net-worth effect, but Plan does not count a second expense because the funding was
+already planned. Shortages, refunds, vendor credits, and cash returns retain the
+direction-sensitive escrow rules rather than being forced through the ordinary
+monthly-payment case.
+
+Dashboard and other liquidity views use the complete `$2,400` pending obligation,
+not merely its interest component. Plan, Projection, Dashboard, comparisons, GTK,
+web, and printable reports must consume shared mortgage-payment report data so every
+surface uses the same non-additive grouping. One actual mortgage transaction resolves
+the entire scheduled occurrence even when the realized principal/interest/escrow
+allocation differs from the estimate; variance retains the expected and actual
+component detail without creating several competing occurrences.
+
+Extra-principal payments, lender fees, escrow adjustments, refinancing, sale, and
+origination remain explicitly distinguishable. In particular, purchasing a
+`$400,000` house with an `$80,000` down payment and a `$320,000` mortgage creates a
+`$400,000` asset, reduces Checking by `$80,000`, and creates a `$320,000` liability.
+Excluding closing costs, immediate net worth is unchanged: the purchase price is not
+a `$400,000` household expense, the down payment is an asset conversion, and the loan
+is financing. Closing costs and later interest are expenses; principal remains debt
+reduction. Every report must therefore count each dollar exactly once within each
+financial measure while keeping the full dated cash requirement visible.
+
 ## Projection
 
 Projection advances state through dated financial events and the intervals between
@@ -528,6 +583,15 @@ Source GUIDs should remain stable identifiers where appropriate. Imported accoun
 transaction, schedule, formula, commodity, and reconciliation semantics should be
 preserved rather than normalized simply because BreadSched exposes a smaller UI.
 
+Interoperability must eventually include an honest exit path, not import alone.
+Exports and portable archives must retain exact supported ledger and BreadSched-owned
+planning data, stable provenance where useful, a versioned human-readable manifest,
+and integrity information. Any representational loss must be disclosed and covered
+by fixture-based round-trip expectations; unsupported imported structures should be
+preserved opaquely where safe rather than silently discarded. BreadSched must not
+claim complete GnuCash round-trip compatibility beyond the structures demonstrated
+by those fixtures.
+
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
 commodity, code, description, notes, placeholder/hidden state, and commodity SCU)
@@ -616,16 +680,24 @@ root.
 
 ## Storage and transactions
 
-SQLite is the native persistence engine. During alpha development there are no
-supported historical BreadSched file schemas: the application opens exactly schema
-7 and rejects any other declared schema before decoding primary objects. Obsolete
-forward-migration functions, their migration ledger, and compatibility decoders are
-not carried in the production code. This keeps the current data model auditable and
-avoids maintaining transformations for development files that no longer exist.
-When BreadSched begins promising compatibility for released native formats, a schema
-change will require a newly designed, explicit, transactional, backed-up migration
-from the oldest release that is actually supported. This native-book policy is
-independent of external GnuCash, QIF, OFX, and QFX import compatibility.
+SQLite is the native persistence engine. The current application opens exactly
+schema 7 and rejects any other declared schema before decoding primary objects; no
+newer native schema has yet required a supported migration. Before the next alpha
+schema change, BreadSched must restore an explicit migration registry and ledger,
+transactional migration runner, pre-migration backup hook, and versioned before/after
+fixtures. Migration infrastructure is a durable architectural capability even when
+an individual obsolete transformation is allowed to expire.
+
+During the limited alpha, the compatibility promise is a rolling one-version window:
+each released alpha need only migrate the immediately preceding alpha's native
+format, because current alpha users are assumed to update every release. A migration
+must run before ordinary decoding, fail atomically, preserve a verified backup, and
+leave enough version evidence to diagnose or retry safely. The mechanism must not be
+removed when an old migration leaves the supported window. Beta and stable releases
+will require a wider window; weakening the sequential-update assumption is an
+explicit compatibility-policy change supported by retained infrastructure, not an
+emergency reconstruction. This native-book policy is independent of external
+GnuCash, QIF, OFX, and QFX import compatibility.
 
 The storage priorities are atomic financial writes, explicit format rejection,
 verified backups and recovery, undo/redo integrity, and realistic performance on
