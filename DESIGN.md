@@ -301,8 +301,22 @@ optional opening liability rather than freezing the preview into fixed splits.
 ## Projection
 
 Projection advances state through dated financial events and the intervals between
-them. Saved scenarios store assumptions and alternate planned events, not cached
-projection results. Reopening a scenario recomputes it against the current book.
+them. Base is the canonical expected plan, or "reality": it is derived from the
+current ledger, book-level baseline schedules and estimates, and Base assumptions.
+A saved scenario is an alternative layered over that state, never a second ledger
+or an independent copy of Base. Reopening any scenario therefore recomputes it
+against the current book, so new actuals and unmodified baseline schedules remain
+honest inputs.
+
+Scenario differences must be explicit and explainable. Schedule replacements and
+suppressions already act as sparse overrides of Base, while scenario-only events add
+to it. Saved assumptions are presently complete values copied when a scenario is
+created; converting those values to inherited Base defaults with local overrides is
+required before Base-assumption changes can flow through untouched scenarios. The
+same overlay model can later support parent scenarios, provided inheritance is
+deterministic, cycles are impossible, and a child's deliberate overrides remain
+distinct from values inherited from its parent. Scenarios store no cached projection
+results.
 
 Reporting periods aggregate projection state but do not drive it.
 

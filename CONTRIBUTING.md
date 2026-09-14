@@ -61,6 +61,8 @@ Before handing off a patch:
 1. Start from the latest accepted repository state, not from stale excerpts or a
    synthetic reconstruction when the real tree is available.
 2. Make one coherent change at a time and update `ROADMAP.md` when required.
+   Advance the application alpha version when a commit changes code or runtime
+   behavior. Documentation-only commits do not require a version change.
 3. Add or update focused tests for new functionality or bug fixes where
    practicable.
 4. Run `git diff --check` while developing and `git show --check` on the final

@@ -167,9 +167,14 @@ economically correct amortization. This workflow is available in GTK and web.
 
 ### Scenarios and Projection
 
-Saved scenarios contain assumptions and alternate planned events, not cached
-forecast results. Projection recomputes against the current ledger so new actuals
-are automatically incorporated.
+Base is the household's current expected plan: the current ledger, baseline
+scheduled and estimated activity, and Base assumptions. Saved scenarios are
+alternatives over Base, not separate ledgers. They contain assumptions and alternate
+planned events, not cached forecast results. Projection recomputes against the
+current ledger so new actuals and baseline schedules that a scenario has not
+replaced are automatically incorporated. Saved assumption values are currently
+stored independently as complete values; dynamic inheritance of later Base-
+assumption changes is planned.
 
 Projection is event-driven. Cash, investment, and liability state advances between
 actual, scheduled, estimated, and one-off dated events. Reporting months are views

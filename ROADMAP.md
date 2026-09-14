@@ -6,9 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0190 — current-schema alpha cleanup**. The current
-sequential candidates are **0191 — explainable Plan classifications** and **0192 —
-independent registers and quick entry**, to be applied in that order.
+The current accepted baseline is **0194 — complete the current executable invariant
+set**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -95,9 +94,16 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Historical estimator.** Improve explainable confidence, conservative
-   outlier handling, and irregular recurring cadence detection before extending
-   estimator semantics to balance-sheet activity.
+1. **NEXT — Base-as-reality scenario contract.** Make the Base plan the canonical
+   expected future derived from the current ledger, baseline schedules/estimates,
+   and Base assumptions. Represent saved scenarios as alternatives layered over
+   Base so untouched Base changes continue to flow through them.
+2. **Historical estimator balance-sheet semantics.** Interpret investment,
+   retirement, debt-principal, and FSA history without treating every transfer as
+   ordinary Income/Expense activity.
+3. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
+   for imported account and schedule forms, bounded by what can be round-tripped
+   without guessing.
 
 ## Dashboard balances and group hierarchy
 
@@ -624,6 +630,20 @@ semantics, not duplicate business rules in presentation code.
 
 ## Projection and scenarios
 
+- [ ] **Base is reality; saved scenarios are alternatives.** Treat Base as the one
+  canonical expected plan: current actual ledger state, baseline scheduled and
+  estimated activity, and book-level Base assumptions. Saved scenarios must contain
+  only deliberate differences from that plan. Unchanged ledger facts and baseline
+  schedules already flow into every calculation; replace the current full snapshot
+  of saved-scenario assumptions with explicit inherited values plus local overrides
+  so later Base changes propagate wherever the scenario has not diverged. Make the
+  effective source of every value explainable in Plan, Projection, comparison, and
+  scenario-management UI.
+- [ ] **Layer scenarios on scenarios.** After Base inheritance is explicit, allow a
+  saved scenario to name Base or another saved scenario as its parent. Resolve a
+  deterministic parent chain followed by local overrides; reject cycles; define
+  reparenting and parent-deletion behavior; and preserve stable override identity so
+  parent changes flow through without overwriting a child's deliberate differences.
 - [ ] Add a custom per-schedule growth rate only if it can be explained cleanly within
   the scenario-assumption model.
 - [ ] Improve projection caching/reuse without storing stale calculated scenario
@@ -635,8 +655,9 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Evolve assumptions toward extensible dated rules (salary changes, retirement,
   pensions/Social Security, temporary expenses, mortgage payoff, changing return or
   inflation regimes) instead of hard-coded special cases.
-- [ ] Preserve the invariant that every projected change can be explained as opening
-  state + dated flows + interest/performance/assumption effects = closing state.
+- [ ] Expose the verified projection-conservation identity in user-facing detail:
+  opening state + dated flows + interest/performance/assumption effects = closing
+  state. Keep the engine invariant executable while making every term inspectable.
 
 ## FSA / benefit accounts and claims
 
@@ -777,6 +798,12 @@ semantics, not duplicate business rules in presentation code.
   - [x] **0149 — Missing GTK4 typelib handling.** GUI test collection skips cleanly
     when PyGObject exists but `gi.require_version("Gtk", "4.0")` cannot load the GTK4
     typelib, matching the launcher's environment handling instead of aborting pytest.
+- [ ] **Run GTK tests safely in parallel.** Introduce bounded pytest-xdist concurrency
+  only after each worker has isolated application IDs, settings, books/import files,
+  display/session-bus resources where required, and GTK main-context lifecycle.
+  Prove the suite is order-independent and free of process-global widget state;
+  start with a conservative worker count and retain the serial GTK target as the
+  deterministic diagnostic path.
 - [ ] Improve first-run UX, preferences, actionable errors, icons/resources, and
   native desktop polish without moving financial logic into GUI code.
 - [ ] Audit GTK views and dialogs for bounded natural sizes. Large content must scroll
@@ -791,6 +818,12 @@ semantics, not duplicate business rules in presentation code.
 - [x] Print the current GTK Dashboard, Plan, and Projection and every current web
   view, preserving applied values while keeping print mechanics in the presentation
   boundary. Continue richer scenario/flow reporting as the underlying views grow.
+- [ ] **Add native GTK printing.** Render the current structured Dashboard, Plan, and
+  Projection state through a GTK-native/system print path without an HTML/browser
+  intermediary. Share report layout inputs with existing output, paginate tables and
+  notes with repeatable headings, support preview/printer/PDF destinations where the
+  platform provides them, and keep the current HTML route as a compatibility fallback
+  until the native path is available and tested on supported GTK runtimes.
 - [x] Keep Projection and import operations responsive with clear progress and
   cooperative cancellation; extend the same primitive to later expensive workflows.
 
