@@ -1164,6 +1164,9 @@ class TestPlanApi:
         assert detail["planned"][0]["source"] == "scheduled"
         assert detail["planned"][0]["status"] == "expected"
         assert detail["actuals"][0]["resolution"] == "unresolved"
+        assert "type EXPENSE" in " ".join(detail["planned"][0]["explanation"])
+        assert "remains pending" in " ".join(detail["planned"][0]["explanation"])
+        assert "Use Resolve actuals" in " ".join(detail["actuals"][0]["explanation"])
 
     def test_plan_detail_exposes_shared_escrow_treatment(self, client):
         assets = client.database.get_account_by_name("Assets")

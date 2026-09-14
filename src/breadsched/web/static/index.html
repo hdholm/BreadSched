@@ -1535,7 +1535,13 @@ async function showPlan() {
     el("button", {
       class: "action", type: "button",
       onclick: () => { state.scenarioManager = currentPlan.scenario || ""; switchTo("Scenarios"); },
-    }, "Manage scenarios…"));
+    }, "Manage scenarios…"),
+    el("button", {
+      class: "action", type: "button",
+      disabled: data.summary.unresolved_actuals ? null : "disabled",
+      title: "Inspect unmatched actual transactions",
+      onclick: () => switchTo("Review"),
+    }, "Resolve actuals…"));
 
   const summary = data.summary;
   const comparison = data.comparison;
@@ -1550,7 +1556,7 @@ async function showPlan() {
         comparison ? el("span", { class: `plan-delta ${Number(delta) < 0 ? "neg" : ""}` },
           `Δ vs ${comparison.name}: ${money(delta)}`) : null)),
     el("div", { class: "card" },
-      el("div", { class: "label" }, "Expected unresolved"),
+      el("div", { class: "label" }, "Expected occurrences pending"),
       el("div", { class: "value" }, summary.unresolved_expected)),
     el("div", { class: "card" },
       el("div", { class: "label" }, "Actuals to review"),

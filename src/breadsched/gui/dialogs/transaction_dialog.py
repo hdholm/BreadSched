@@ -22,6 +22,7 @@ from ...gen.engine import escrow, fsa_claims, investment
 from ...gen.lib import (
     InvestmentActivityKind,
     Money,
+    PlanningFlowKind,
     ReconcileState,
     Split,
     Transaction,
@@ -37,6 +38,11 @@ _INVESTMENT_ACTIVITIES = [
     *[(kind.label, kind) for kind in InvestmentActivityKind],
 ]
 
+_PLANNING_FLOWS = [
+    ("Ordinary / infer from account", None),
+    *[(kind.label, kind) for kind in PlanningFlowKind],
+]
+
 
 class SplitEditor:
     """One row of the split table."""
@@ -49,7 +55,6 @@ class SplitEditor:
         self.action = split.action if split else ""
         self.reconcile = split.reconcile if split else ReconcileState.NOT_RECONCILED
         self.reconcile_date = split.reconcile_date if split else None
-        self.planning_flow = split.planning_flow if split else None
         self.fsa_year_start = split.fsa_year_start if split else None
 
         self.box = Gtk.Box(spacing=8)
@@ -67,6 +72,16 @@ class SplitEditor:
         self.amount.add_css_class("numeric")
         self.amount.connect("changed", dialog.revalidate)
         self.box.append(self.amount)
+
+        self.planning_purpose = Gtk.DropDown.new_from_strings(
+            [label for label, _kind in _PLANNING_FLOWS]
+        )
+        self.planning_purpose.set_size_request(180, -1)
+        self.planning_purpose.set_tooltip_text(
+            "Override the planning purpose; Ordinary lets the account type and context decide"
+        )
+        self.planning_purpose.connect("notify::selected", dialog.revalidate)
+        self.box.append(self.planning_purpose)
 
         self.investment_activity = Gtk.DropDown.new_from_strings(
             [label for label, _kind in _INVESTMENT_ACTIVITIES]
@@ -89,6 +104,16 @@ class SplitEditor:
                     break
             self.memo.set_text(split.memo)
             self.amount.set_text(str(split.value.to_decimal()))
+            self.planning_purpose.set_selected(
+                next(
+                    (
+                        index
+                        for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
+                        if kind is split.planning_flow
+                    ),
+                    0,
+                )
+            )
             self.investment_activity.set_selected(
                 next(
                     (
@@ -124,6 +149,10 @@ class SplitEditor:
     @property
     def activity(self) -> InvestmentActivityKind | None:
         return _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
+
+    @property
+    def purpose(self) -> PlanningFlowKind | None:
+        return _PLANNING_FLOWS[self.planning_purpose.get_selected()][1]
 
 
 class TransactionDialog(Gtk.Window):
@@ -434,7 +463,7 @@ class TransactionDialog(Gtk.Window):
                 action=editor.action,
                 reconcile=editor.reconcile,
                 handle=editor.handle,
-                planning_flow=editor.planning_flow,
+                planning_flow=editor.purpose,
                 investment_activity=editor.activity,
                 fsa_year_start=editor.fsa_year_start,
             )

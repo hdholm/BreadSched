@@ -663,7 +663,7 @@ class TestDialogs:
         assert editing.account_names[hidden_index].endswith(" (hidden)")
         assert editing.splits[0].account_handle == hidden.handle
 
-    def test_transaction_editor_preserves_split_metadata_it_does_not_edit(
+    def test_transaction_editor_preserves_split_metadata_and_edits_planning_purpose(
         self, app, window, populated_book
     ):
         from breadsched.gen.lib import (
@@ -704,7 +704,10 @@ class TestDialogs:
         existing.add_split(classified)
         existing.add_split(Split(bank.handle, Money("-12.34")))
 
-        rebuilt = TransactionDialog(window, app.db, transaction=existing).build()
+        dialog = TransactionDialog(window, app.db, transaction=existing)
+        assert dialog.splits[0].purpose is PlanningFlowKind.RETIREMENT_SAVING
+        dialog.splits[0].planning_purpose.set_selected(2)
+        rebuilt = dialog.build()
         preserved = rebuilt.split_for(holding.handle)
 
         assert preserved is not None
@@ -712,7 +715,7 @@ class TestDialogs:
         assert preserved.action == "Buy"
         assert preserved.reconcile is ReconcileState.CLEARED
         assert preserved.reconcile_date == date(2026, 2, 1)
-        assert preserved.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert preserved.planning_flow is PlanningFlowKind.BENEFIT_FUNDING
         assert preserved.investment_activity is InvestmentActivityKind.CONTRIBUTION
         assert preserved.fsa_year_start == date(2026, 1, 1)
 
@@ -2295,6 +2298,34 @@ class TestDerivedPlanView:
         assert view._report.activity.period.value == "month"
         assert view._report.activity.periods
         assert view._report.categories
+
+    def test_plan_routes_unresolved_actuals_to_review(self, app, window, populated_book):
+        from breadsched.gen.lib import Money, Transaction
+
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        assert checking is not None and rent is not None
+        with app.db.transaction("Unresolved Plan fixture") as txn:
+            app.db.add_transaction(
+                Transaction.simple(
+                    date.today(),
+                    "Unmatched rent",
+                    rent.handle,
+                    checking.handle,
+                    Money("10"),
+                ),
+                txn,
+            )
+
+        window.show_category("plan")
+        view = window._views["plan"]
+        assert view.review_actuals_button.get_sensitive() is True
+        assert "actuals to review" in view.summary.get_text()
+
+        view.review_actuals_button.emit("clicked")
+
+        assert window.stack.get_visible_child_name() == "resolution"
 
     def test_grouping_changes_display_buckets_not_source_data(self, app, window, populated_book):
         app.open_book(populated_book)

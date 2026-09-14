@@ -590,10 +590,19 @@ def explain_category_period(
                     variance=actual_value - expected if actual_value is not None else None,
                     actual_transaction=event.actual_transaction,
                     actual_date=event.actual_date,
-                    explanation=escrow_recognition(
-                        ((split.account, split.amount) for split in event.expected_splits),
-                        accounts,
-                    ).explanations(accounts),
+                    explanation=_unique_explanations(
+                        _planned_resolution_explanation(event),
+                        _category_explanations(
+                            event.expected_splits,
+                            included,
+                            account.account_class,
+                            accounts,
+                        ),
+                        escrow_recognition(
+                            ((split.account, split.amount) for split in event.expected_splits),
+                            accounts,
+                        ).explanations(accounts),
+                    ),
                 )
             )
 
@@ -624,10 +633,27 @@ def explain_category_period(
                     expected=matched_expected,
                     variance=value - matched_expected if matched_expected is not None else None,
                     date_variance_days=actual.date_variance_days,
-                    explanation=escrow_recognition(
-                        ((split.account, split.value) for split in transaction.splits),
-                        accounts,
-                    ).explanations(accounts),
+                    explanation=_unique_explanations(
+                        _actual_resolution_explanation(actual),
+                        _category_explanations(
+                            (
+                                PlannedSplit(
+                                    split.account,
+                                    split.value,
+                                    split.planning_flow,
+                                    split.investment_activity,
+                                )
+                                for split in transaction.splits
+                            ),
+                            included,
+                            account.account_class,
+                            accounts,
+                        ),
+                        escrow_recognition(
+                            ((split.account, split.value) for split in transaction.splits),
+                            accounts,
+                        ).explanations(accounts),
+                    ),
                 )
             )
 
@@ -677,6 +703,32 @@ def explain_planning_flow_period(
                 total = total + kind.plan_amount(split.amount)
         return total
 
+    def flow_explanations(splits: Iterable[PlannedSplit]) -> tuple[str, ...]:
+        split_tuple = tuple(splits)
+        found: list[str] = []
+        if kind is PlanningFlowKind.ESCROW_FUNDING:
+            explicit = [
+                split
+                for split in split_tuple
+                if split.account == account_handle
+                and split.planning_flow is PlanningFlowKind.ESCROW_FUNDING
+            ]
+            if explicit:
+                found.append("Explicit split planning purpose: Escrow funding.")
+            elif _escrow_planning_flows(split_tuple, accounts).get(account_handle, Money(0)):
+                found.append(
+                    f"Inferred Escrow funding from cash or income entering Escrow account "
+                    f"{account.name}; the funding is recognized when reserved."
+                )
+            return tuple(found)
+        for split in split_tuple:
+            if split.account != account_handle:
+                continue
+            decision, explanation = _planning_flow_decision(split, split_tuple, accounts)
+            if decision is kind:
+                found.append(explanation)
+        return _unique_explanations(found)
+
     report = build_activity_report(db, start, end, period=ReportingPeriod.MONTH, scenario=scenario)
     planned_rows: list[CategoryPlannedDetail] = []
     actual_rows: list[CategoryActualDetail] = []
@@ -704,10 +756,14 @@ def explain_planning_flow_period(
                     variance=actual_value - expected if actual_value is not None else None,
                     actual_transaction=event.actual_transaction,
                     actual_date=event.actual_date,
-                    explanation=escrow_recognition(
-                        ((split.account, split.amount) for split in event.expected_splits),
-                        accounts,
-                    ).explanations(accounts),
+                    explanation=_unique_explanations(
+                        _planned_resolution_explanation(event),
+                        flow_explanations(event.expected_splits),
+                        escrow_recognition(
+                            ((split.account, split.amount) for split in event.expected_splits),
+                            accounts,
+                        ).explanations(accounts),
+                    ),
                 )
             )
 
@@ -740,10 +796,14 @@ def explain_planning_flow_period(
                     expected=matched_expected,
                     variance=value - matched_expected if matched_expected is not None else None,
                     date_variance_days=actual.date_variance_days,
-                    explanation=escrow_recognition(
-                        ((split.account, split.value) for split in transaction.splits),
-                        accounts,
-                    ).explanations(accounts),
+                    explanation=_unique_explanations(
+                        _actual_resolution_explanation(actual),
+                        flow_explanations(splits),
+                        escrow_recognition(
+                            ((split.account, split.value) for split in transaction.splits),
+                            accounts,
+                        ).explanations(accounts),
+                    ),
                 )
             )
 
@@ -768,26 +828,125 @@ def _inferred_planning_flow(
     accounts: dict[str, Account],
 ) -> PlanningFlowKind | None:
     """Return explicit split purpose or infer one from account type and context."""
+    return _planning_flow_decision(split, splits, accounts)[0]
+
+
+def _planning_flow_decision(
+    split: PlannedSplit,
+    splits: Iterable[PlannedSplit],
+    accounts: dict[str, Account],
+) -> tuple[PlanningFlowKind | None, str]:
+    """Return a planning-flow kind and a user-facing reason for the decision."""
     if split.planning_flow is not None:
-        return split.planning_flow
+        return (
+            split.planning_flow,
+            f"Explicit split planning purpose: {split.planning_flow.label}.",
+        )
     account = accounts.get(split.account)
     if account is None:
-        return None
+        return None, "No planning flow was inferred because the split account is unavailable."
     peers = [accounts.get(item.account) for item in splits if item.account != split.account]
     if account.atype is AccountType.RETIREMENT:
         if any(peer and peer.atype is AccountType.RETIREMENT for peer in peers):
-            return None
+            return (
+                None,
+                "Retirement-to-retirement movement is an ordinary transfer unless a split "
+                "purpose explicitly classifies it.",
+            )
         if split.amount > 0:
-            return PlanningFlowKind.RETIREMENT_SAVING
+            return (
+                PlanningFlowKind.RETIREMENT_SAVING,
+                f"Inferred Retirement saving from a positive split to Retirement account "
+                f"{account.name}.",
+            )
         if split.amount < 0:
-            return PlanningFlowKind.RETIREMENT_INCOME
+            return (
+                PlanningFlowKind.RETIREMENT_INCOME,
+                f"Inferred Retirement distributions from a negative split from Retirement "
+                f"account {account.name}.",
+            )
     if account.atype is AccountType.FSA and split.amount > 0:
-        return PlanningFlowKind.BENEFIT_FUNDING
+        return (
+            PlanningFlowKind.BENEFIT_FUNDING,
+            f"Inferred Benefit / FSA funding from a positive split to FSA account {account.name}.",
+        )
     if account.atype is AccountType.LOAN and split.amount > 0:
         if any(peer and peer.atype is AccountType.LOAN for peer in peers):
-            return None
-        return PlanningFlowKind.DEBT_PRINCIPAL
-    return None
+            return (
+                None,
+                "Loan-to-loan movement is an ordinary transfer unless a split purpose "
+                "explicitly classifies it.",
+            )
+        return (
+            PlanningFlowKind.DEBT_PRINCIPAL,
+            f"Inferred Debt principal from a positive split reducing Loan account {account.name}.",
+        )
+    return (
+        None,
+        f"No planning flow is inferred for a {account.atype.value} account with this "
+        "split direction; it remains ordinary ledger activity.",
+    )
+
+
+def _unique_explanations(*groups: Iterable[str]) -> tuple[str, ...]:
+    """Combine explanations in stable order without repeating identical decisions."""
+    found: list[str] = []
+    for group in groups:
+        for explanation in group:
+            if explanation and explanation not in found:
+                found.append(explanation)
+    return tuple(found)
+
+
+def _category_explanations(
+    splits: Iterable[PlannedSplit],
+    included: set[str],
+    account_class: AccountClass,
+    accounts: dict[str, Account],
+) -> tuple[str, ...]:
+    """Explain the account-type decisions contributing direct category activity."""
+    found: list[str] = []
+    for split in splits:
+        account = accounts.get(split.account)
+        if account is None or split.account not in included:
+            continue
+        amount = -split.amount if account_class is AccountClass.INCOME else split.amount
+        found.append(
+            f"{account.name} is type {account.atype.value}, which is an "
+            f"{account_class.value} account; this split contributes "
+            f"{amount.format(parens_negative=True)}."
+        )
+    return _unique_explanations(found)
+
+
+def _planned_resolution_explanation(event: PlannedEvent) -> tuple[str, ...]:
+    if event.status is EventStatus.EXPECTED:
+        return (
+            "Resolution: no actual transaction is linked, so this expected occurrence "
+            "remains pending.",
+        )
+    posted = event.actual_date.isoformat() if event.actual_date is not None else "an unknown date"
+    return (f"Resolution: linked to an actual transaction posted {posted}.",)
+
+
+def _actual_resolution_explanation(actual: ActualActivity) -> tuple[str, ...]:
+    if actual.planning_resolution is PlanningResolution.UNRESOLVED:
+        return (
+            "Resolution: this actual has not been matched to a planned occurrence. Use "
+            "Resolve actuals to match it or mark it unexpected.",
+        )
+    if actual.planning_resolution is PlanningResolution.UNEXPECTED:
+        return (
+            "Resolution: explicitly marked unexpected. It remains actual activity but "
+            "does not resolve a planned occurrence.",
+        )
+    if actual.planning_resolution is PlanningResolution.HISTORICAL:
+        return (
+            "Resolution: historical actual. It is reported as actual activity and does "
+            "not enter the unresolved review queue.",
+        )
+    planned = actual.planned_for.isoformat() if actual.planned_for is not None else "unknown"
+    return (f"Resolution: matched to the planned occurrence dated {planned}.",)
 
 
 def _escrow_planning_flows(

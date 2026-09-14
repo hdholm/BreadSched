@@ -132,6 +132,14 @@ class PlanView(BaseView):
         self.apply_button.add_css_class("suggested-action")
         self.apply_button.connect("clicked", self._on_apply)
         bar.append(self.apply_button)
+        self.review_actuals_button = Gtk.Button(label="Resolve actuals…")
+        self.review_actuals_button.set_tooltip_text(
+            "Inspect unmatched actual transactions and match or mark them unexpected"
+        )
+        self.review_actuals_button.connect(
+            "clicked", lambda *_: self.manager.show_category("resolution")
+        )
+        bar.append(self.review_actuals_button)
         schedules = Gtk.Button(label="Edit baseline schedules…")
         schedules.connect("clicked", lambda *_: self.manager.show_category("scheduled"))
         bar.append(schedules)
@@ -544,9 +552,10 @@ class PlanView(BaseView):
             f"Planned cash {activity.planned_cash_change.format(parens_negative=True)}   ·   "
             f"Actual cash {activity.actual_cash_change.format(parens_negative=True)}   ·   "
             f"Variance {self._report.cash_variance.format(parens_negative=True)}   ·   "
-            f"{activity.unresolved_count} expected unresolved   ·   "
+            f"{activity.unresolved_count} expected occurrences pending   ·   "
             f"{activity.unresolved_actual_count} actuals to review"
         )
+        self.review_actuals_button.set_sensitive(activity.unresolved_actual_count > 0)
         self._update_scenario_actions()
         self._render()
 

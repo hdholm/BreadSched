@@ -9,6 +9,7 @@ from breadsched.gen.lib import (
     Money,
     PeriodType,
     PlanningFlowKind,
+    PlanningResolution,
     Recurrence,
     Scenario,
     ScenarioSchedule,
@@ -359,6 +360,58 @@ class TestCategoryPlanning:
         assert detail.actual == Money(0)
         assert detail.variance is None
 
+    def test_category_detail_explains_account_type_and_pending_resolution(self, db, book):
+        bill = _monthly_bill(book, start=date(2026, 3, 7), amount="100.00")
+        with db.transaction("explain future plan") as txn:
+            db.add_scheduled(bill, txn)
+
+        detail = activity.explain_category_period(
+            db,
+            book.utilities,
+            date(2026, 3, 1),
+            date(2026, 3, 31),
+            as_of=date(2026, 3, 1),
+        )
+
+        explanation = " ".join(detail.planned_events[0].explanation)
+        assert "type EXPENSE" in explanation
+        assert "this split contributes 100.00" in explanation
+        assert "remains pending" in explanation
+
+    def test_actual_detail_explains_unresolved_and_unexpected_decisions(self, db, book):
+        unresolved = Transaction.simple(
+            date(2026, 3, 8),
+            "Unresolved utility",
+            book.utilities,
+            book.checking,
+            "40.00",
+        )
+        unexpected = Transaction.simple(
+            date(2026, 3, 9),
+            "Unexpected utility",
+            book.utilities,
+            book.checking,
+            "50.00",
+        )
+        planning.mark_unexpected(unexpected)
+        with db.transaction("explain actual decisions") as txn:
+            db.add_transaction(unresolved, txn)
+            db.add_transaction(unexpected, txn)
+
+        detail = activity.explain_category_period(
+            db,
+            book.utilities,
+            date(2026, 3, 1),
+            date(2026, 3, 31),
+            as_of=date(2026, 3, 31),
+        )
+
+        explanations = {
+            item.resolution: " ".join(item.explanation) for item in detail.actual_transactions
+        }
+        assert "Use Resolve actuals" in explanations[PlanningResolution.UNRESOLVED]
+        assert "explicitly marked unexpected" in explanations[PlanningResolution.UNEXPECTED]
+
 
 class TestPlanningFlowClassification:
     def test_planning_purpose_maps_positive_economic_amounts_to_ledger_signs(self):
@@ -614,6 +667,39 @@ class TestPlanningFlowClassification:
         assert len(detail.planned_events) == 1
         assert detail.planned_events[0].description == "401k contribution"
         assert detail.planned_events[0].expected == Money("500.00")
+        assert "Explicit split planning purpose: Retirement saving" in " ".join(
+            detail.planned_events[0].explanation
+        )
+
+    def test_inferred_flow_detail_names_the_account_type_decision(self, db, book):
+        retirement = Account(
+            name="Workplace plan",
+            atype=AccountType.RETIREMENT,
+            parent=book.assets,
+        )
+        contribution = ScheduledTransaction(
+            name="Automatic contribution",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(retirement.handle, Money("300.00")),
+                ScheduledSplit(book.checking, Money("-300.00")),
+            ],
+        )
+        with db.transaction("inferred retirement flow") as txn:
+            db.add_account(retirement, txn)
+            db.add_scheduled(contribution, txn)
+
+        detail = activity.explain_planning_flow_period(
+            db,
+            PlanningFlowKind.RETIREMENT_SAVING,
+            retirement.handle,
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+        )
+
+        explanation = " ".join(detail.planned_events[0].explanation)
+        assert "Inferred Retirement saving" in explanation
+        assert "Retirement account Workplace plan" in explanation
 
     def test_planning_flows_remain_distinct_by_destination_account(self, db, book):
         contribution = ScheduledTransaction(

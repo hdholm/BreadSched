@@ -98,6 +98,13 @@ the report's as-of date.
 When an actual transaction resolves a scheduled/planned occurrence, BreadSched
 retains the original planned occurrence identity and expected amount. Later edits
 to the schedule therefore do not rewrite historical plan-versus-actual results.
+Click any Plan value to inspect the exact occurrences and actual splits behind it.
+The detail states whether each category came from an Income/Expense account type,
+whether a balance-sheet planning purpose was explicit or inferred from account type
+and direction, and why an actual is unresolved, matched, historical, or explicitly
+unexpected. **Resolve actuals…** opens the matching queue. Planning-purpose mistakes
+on posted transaction splits can be corrected in the normal transaction editor;
+scheduled classifications are corrected in their schedule editor.
 
 ### Scheduled transactions
 

@@ -162,6 +162,16 @@ net cash change computed from the event stream, not a sum of unlike category and
 balance-sheet values. Planned totals cover the selected horizon; variance totals
 include only reporting periods that have begun by the report's as-of date.
 
+Classification decisions are report data, not presentation guesses. Plan detail
+names the account type and accounting class that caused an Income/Expense split to
+appear, and distinguishes an explicit split planning purpose from the narrow
+account-type/direction inference used for Retirement, FSA, and Loan movements.
+Resolution explanations similarly distinguish pending expected occurrences,
+unresolved actuals, explicit unexpected decisions, historical actuals, and matched
+occurrences. GTK and web render those shared reasons. Corrections write the explicit
+split purpose through the ordinary transaction or schedule editor; they do not add
+a separate classification record or mutate the account's ledger type.
+
 Scheduled commitments and estimates use the same underlying event model. Historical
 analysis produces an unsaved schedule draft; Base and saved-scenario UIs must route
 that draft through their ordinary schedule editor before persistence. The draft

@@ -6,8 +6,8 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0189 — source-deletion sync and bounded Projection
-notes**. The current sequential candidate is **0190 — current-schema alpha cleanup**.
+The current accepted baseline is **0190 — current-schema alpha cleanup**. The current
+sequential candidate is **0191 — explainable Plan classifications**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,9 +94,7 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Plan classification explanations.** Make unresolved/unexpected and inferred
-   account-type/split-purpose decisions easier to inspect and correct.
-2. **Register workflow.** Continue toward multiple independent register views and
+1. **NEXT — Register workflow.** Continue toward multiple independent register views and
    inline two-sided entry without creating a second transaction model.
 
 ## Dashboard balances and group hierarchy
@@ -483,6 +481,13 @@ semantics, not duplicate business rules in presentation code.
   principal only reduces the liability. Cover scenario overrides and a representative
   GnuCash account retyped locally as Escrow and preserved on re-import. Advance the
   alpha version to `0.2.0a26`.
+- [x] **0191 — Explainable Plan classifications.** Put shared, plain-language
+  provenance in Plan cell details: name the account type behind category activity,
+  distinguish explicit planning purposes from narrow account-type/direction
+  inference, and explain pending, unresolved, matched, historical, and explicitly
+  unexpected resolution states. Link Plan directly to Resolve actuals and expose
+  split planning-purpose correction in the GTK transaction editor for web parity.
+  Advance the alpha version to `0.2.0a30`.
 - [x] **Row and column totals.** Totals across periods and down each period column
   cover planned, actual, and variance values consistently. Category section totals
   count outermost rollups once; planning flows remain separate; Net cash change is
@@ -495,12 +500,12 @@ semantics, not duplicate business rules in presentation code.
   The requested presentation is tentative and needs an agreed worked example
   before changing financial classifications or Plan aggregation.
 
-- [ ] Add clearer unresolved/unexpected indicators in Plan.
+- [x] Add clearer unresolved/unexpected indicators in Plan.
 - [ ] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
   principal, and other economically meaningful balance-sheet flows.
 - [x] Print/export the applied Plan and displayed Projection comparisons through
   self-contained HTML reports, with browser PDF output and GTK/web parity.
-- [ ] Improve explanations of account-type/split-purpose classification decisions.
+- [x] Improve explanations of account-type/split-purpose classification decisions.
 - [ ] Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
