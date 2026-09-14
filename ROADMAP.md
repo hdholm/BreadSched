@@ -6,8 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0194 — complete the current executable invariant
-set**.
+The current accepted baseline is **0195 — clarify scenario and delivery roadmap**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -94,14 +93,17 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Base-as-reality scenario contract.** Make the Base plan the canonical
-   expected future derived from the current ledger, baseline schedules/estimates,
-   and Base assumptions. Represent saved scenarios as alternatives layered over
-   Base so untouched Base changes continue to flow through them.
-2. **Historical estimator balance-sheet semantics.** Interpret investment,
+1. **NEXT — Mortgage cash-flow presentation.** Implement the approved whole-payment
+   acceptance case below: expose one complete cash requirement while classifying its
+   interest, escrow, principal, and other components without additive double-counting.
+2. **Base-as-reality scenario contract.** Make the Base plan the canonical expected
+   future derived from the current ledger, baseline schedules/estimates, and Base
+   assumptions. Represent saved scenarios as alternatives layered over Base so
+   untouched Base changes continue to flow through them.
+3. **Historical estimator balance-sheet semantics.** Interpret investment,
    retirement, debt-principal, and FSA history without treating every transfer as
    ordinary Income/Expense activity.
-3. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
+4. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
    for imported account and schedule forms, bounded by what can be round-tripped
    without guessing.
 
@@ -368,13 +370,13 @@ semantics, not duplicate business rules in presentation code.
   and source-owned metadata through GTK, web, and CLI JSON; verify source-GUID
   uniqueness; cover SQLite, nested XML slots, and re-import. Advance the alpha
   version to `0.2.0a27`.
-- [ ] Expand the account editor to safely handle **all account forms imported from
-  GnuCash** without destructive normalization or loss of imported semantics.
-- [ ] Add representative GnuCash account fixtures and round-trip/regression tests as
-  the supported surface grows.
-- [ ] Continue exposing remaining imported account metadata/semantics losslessly.
-- [ ] Improve account relationship editing/explanations for investment, debt, FSA,
-  commodity/security, and imported-account semantics.
+- [ ] **Fixture-driven imported-account fidelity.** Build one representative matrix
+  of GnuCash account forms and relationships covering investment, debt, FSA,
+  commodities/securities, and unusual valid metadata. Expand safe editing and
+  explanations only for forms whose source semantics can demonstrably round-trip;
+  expose every other supported form inspectably and read-only without destructive
+  normalization. Add a fixture and round-trip/regression proof whenever the editable
+  surface grows.
 
 ## Register workflow
 
@@ -447,9 +449,6 @@ semantics, not duplicate business rules in presentation code.
   disclose isolated amount anomalies only with sufficient history; and score
   confidence from coverage, depth, retained evidence, and robust variability.
   Advance the alpha version to `0.2.0a32`.
-- [x] Detect irregular-but-recurring activity more reliably for deterministic
-  weekly, fortnightly, multi-month, annual, biennial, and triennial patterns.
-- [x] Improve confidence scoring and outlier handling.
 - [ ] Provide richer explanations of history, cadence, trend, seasonality, and
   residual calculation, with interactive adjustment before acceptance.
 - [ ] Refine category-specific seasonality/cadence inference.
@@ -510,13 +509,19 @@ semantics, not duplicate business rules in presentation code.
   cover planned, actual, and variance values consistently. Category section totals
   count outermost rollups once; planning flows remain separate; Net cash change is
   the grand total rather than a sum of unlike financial dimensions.
-- [ ] **Mortgage cash flow and liability projection — design review required.**
-  Evaluate showing the whole mortgage payment credited from the cash/asset account
-  in Plan while principal reduces the loan liability in Projection and interest
-  remains an expense. Reconcile cash, expense, principal, and net-worth totals;
-  avoid duplicate interest/principal and treating the whole payment as an expense.
-  The requested presentation is tentative and needs an agreed worked example
-  before changing financial classifications or Plan aggregation.
+- [ ] **NEXT — Mortgage cash flow and liability projection.** Treat one scheduled
+  mortgage transaction as one cash requirement with non-additive classified
+  components. For the approved representative payment, show `$2,400` once as cash
+  required, with `$1,150` interest expense, `$450` escrow funding, and `$800` debt
+  principal; reduce Checking by `$2,400`, reduce the mortgage liability by `$800`,
+  increase Escrow by `$450`, and reduce immediate net worth by `$1,150`. The parent
+  payment is informational and must never be added to its children in section or
+  grand totals. Preserve property value independently; count later escrow tax or
+  insurance disbursements in ledger/net-worth state without counting a second Plan
+  expense; and let one actual payment resolve the scheduled whole even when its
+  component allocation differs. Cover GTK, web, printable reports, Plan,
+  Projection, Dashboard liquidity, comparisons, extra principal, fees, escrow
+  shortage/refund, origination, refinancing, and sale with shared report data.
 
 - [x] Add clearer unresolved/unexpected indicators in Plan.
 - [ ] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
@@ -621,8 +626,12 @@ semantics, not duplicate business rules in presentation code.
 - [x] **0167 — Add the initial security/commodity price layer.** Separate exact
   quantity, dated direct price, current value, and assumed return without rewriting
   ledger value. GTK/web support manual entry and GnuCash SQLite/XML import.
-- [ ] Add automatic/manual foreign-exchange quotes and explainable multi-currency
-  conversion paths; never combine unlike currencies in net worth silently.
+- [ ] **Cross-cutting multi-currency valuation and import.** Add automatic/manual
+  exchange-rate and security-price handling across imported commodities, ledger
+  valuation, Projection, Plan/reporting, and comparisons. Preserve exact source
+  amounts and quote metadata; make reporting currency, quote source/date,
+  staleness, missing-price behavior, conversion path, and rounding explainable;
+  never combine unlike currencies in net worth silently.
 - [ ] Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.
 - [ ] Keep deterministic projection as the normal model; any later Monte Carlo engine
@@ -750,10 +759,15 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Continue representative GnuCash compatibility fixtures for accounts,
   transactions, reconciliation, commodities, schedules, formula loans, and unusual
   but valid structures.
-- [ ] Add multi-currency valuation and exchange-rate/price handling.
 - [x] **0143 — Expose ambiguous import-format choices.** GTK4 and web import workflows expose QIF date-order and QIF/OFX number-format overrides while keeping auto-detection as the default.
 - [x] **0144 — Reject missing GnuCash dates.** Required transaction and scheduled-transaction dates are reported and skipped instead of silently substituting today.
 - [ ] Investigate/cover older GnuCash SQLite timezone/date conventions.
+- [ ] **Outbound interoperability and portable archives.** Define documented,
+  loss-minimizing exports for supported household ledger/planning data and a
+  versioned portable archival format with a human-readable manifest, integrity
+  verification, provenance, re-import tests, and explicit disclosure of anything
+  that cannot be represented. Preserve opaque imported structures where practical;
+  do not claim GnuCash round-trip equivalence beyond demonstrated fixtures.
 
 ## Storage, integrity, and recovery
 
@@ -763,6 +777,15 @@ semantics, not duplicate business rules in presentation code.
   native schema explicitly in read-only and writable modes. Preserve external import,
   ordinary backup/restore, integrity checking, and crash recovery. Advance the alpha
   version to `0.2.0a29`.
+- [ ] **Rolling alpha storage compatibility.** Before the next native schema change,
+  restore and retain the explicit migration registry, transactional migration
+  runner, pre-migration backup hook, and versioned fixtures. During the current
+  limited alpha, each release need only migrate a book from the immediately
+  preceding alpha format because alpha users are expected to update every release.
+  Do not remove the infrastructure after an individual migration expires: beta and
+  stable releases will require a wider compatibility window, and weakening the
+  sequential-update assumption must be a policy change rather than an emergency
+  reconstruction.
 - [x] **0180 — Verifiable recovery workflows.** Add GTK backup, restore-as-new, and
   background Verify Book workflows plus a web Verify view; share physical/logical
   verification results with CLI. Lock restore destinations against live writers,
@@ -806,6 +829,11 @@ semantics, not duplicate business rules in presentation code.
   deterministic diagnostic path.
 - [ ] Improve first-run UX, preferences, actionable errors, icons/resources, and
   native desktop polish without moving financial logic into GUI code.
+- [ ] **Low priority — Accessibility baseline.** Audit complete keyboard operation,
+  logical focus order and visible focus, screen-reader names/relationships for
+  controls and tables, text/UI scaling, and contrast. Add automated coverage where
+  reliable and keep a short manual GTK checklist; accessibility remains required
+  for release quality but is intentionally below the current financial workflows.
 - [ ] Audit GTK views and dialogs for bounded natural sizes. Large content must scroll
   inside the current monitor work area, primary actions/window controls must remain
   reachable, and switching away from a large view must allow the main window to
@@ -865,3 +893,6 @@ Remaining documentation work:
   tests where they add useful coverage.
 - [ ] Keep documentation, versioning, and release notes synchronized with actual
   behavior.
+- [ ] Move the large completed-patch chronology to a changelog or milestone archive
+  once doing so will materially improve roadmap review; keep this roadmap focused on
+  remaining outcomes without losing the historical acceptance record.
