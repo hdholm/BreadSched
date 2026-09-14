@@ -95,6 +95,12 @@ parent and its children are never added twice. The final Net cash change row is 
 financially meaningful grand total; variance totals include only periods through
 the report's as-of date.
 
+Mortgage servicing also appears in a separate **Cash requirements
+(informational)** section. It shows the whole payment needed from spendable cash,
+while the interest expense, escrow funding, debt principal, and any fees retain
+their own classifications below. The whole-payment row and its components describe
+the same dollars and are never added together.
+
 When an actual transaction resolves a scheduled/planned occurrence, BreadSched
 retains the original planned occurrence identity and expected amount. Later edits
 to the schedule therefore do not rewrite historical plan-versus-actual results.
@@ -246,7 +252,8 @@ as new spending. A vendor credit returned to escrow restores restricted funds an
 planning-neutral; money returned from escrow to spendable cash reverses prior
 expense. Transfers between escrow accounts and Equity/manual balance corrections
 change balances without creating household expense. A combined mortgage payment
-shows escrow funding and interest as expense while principal only reduces the loan.
+shows its whole cash requirement once; escrow funding and interest remain expense
+classifications while principal only reduces the loan.
 Projection keeps a negative escrow balance visible and warns when an event creates
 or worsens the shortfall.
 

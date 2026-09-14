@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0195 — clarify scenario and delivery roadmap**.
+The current accepted baseline is **0196 — define mortgage and delivery policies**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -93,17 +93,14 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Mortgage cash-flow presentation.** Implement the approved whole-payment
-   acceptance case below: expose one complete cash requirement while classifying its
-   interest, escrow, principal, and other components without additive double-counting.
-2. **Base-as-reality scenario contract.** Make the Base plan the canonical expected
+1. **NEXT — Base-as-reality scenario contract.** Make the Base plan the canonical expected
    future derived from the current ledger, baseline schedules/estimates, and Base
    assumptions. Represent saved scenarios as alternatives layered over Base so
    untouched Base changes continue to flow through them.
-3. **Historical estimator balance-sheet semantics.** Interpret investment,
+2. **Historical estimator balance-sheet semantics.** Interpret investment,
    retirement, debt-principal, and FSA history without treating every transfer as
    ordinary Income/Expense activity.
-4. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
+3. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
    for imported account and schedule forms, bounded by what can be round-tripped
    without guessing.
 
@@ -509,7 +506,7 @@ semantics, not duplicate business rules in presentation code.
   cover planned, actual, and variance values consistently. Category section totals
   count outermost rollups once; planning flows remain separate; Net cash change is
   the grand total rather than a sum of unlike financial dimensions.
-- [ ] **NEXT — Mortgage cash flow and liability projection.** Treat one scheduled
+- [x] **0197 — Mortgage cash flow and liability projection.** Treat one scheduled
   mortgage transaction as one cash requirement with non-additive classified
   components. For the approved representative payment, show `$2,400` once as cash
   required, with `$1,150` interest expense, `$450` escrow funding, and `$800` debt
@@ -522,6 +519,7 @@ semantics, not duplicate business rules in presentation code.
   component allocation differs. Cover GTK, web, printable reports, Plan,
   Projection, Dashboard liquidity, comparisons, extra principal, fees, escrow
   shortage/refund, origination, refinancing, and sale with shared report data.
+  Advance the alpha version to `0.2.0a35`.
 
 - [x] Add clearer unresolved/unexpected indicators in Plan.
 - [ ] Expand reports for retirement saving/distributions, benefit/FSA funding, debt

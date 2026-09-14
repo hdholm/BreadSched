@@ -17,6 +17,7 @@ from ...gen.engine.activity import (
     ReportingPeriod,
     build_category_report,
     explain_category_period,
+    explain_mortgage_payment_period,
     explain_planning_flow_period,
 )
 from ...gen.lib import Money, Scenario
@@ -634,6 +635,37 @@ class PlanView(BaseView):
                     row_index,
                 )
 
+        if self._report.mortgage_payments:
+            section = Gtk.Label(label="Cash requirements (informational)", xalign=0)
+            section.add_css_class("heading")
+            self.grid.attach(section, 0, row_index, 1, 1)
+            row_index += 1
+            for payment in self._report.mortgage_payments:
+                name = Gtk.Label(label=payment.name, xalign=0)
+                name.set_tooltip_text(
+                    "Whole mortgage payment; classified components appear below and are "
+                    "not added to this row."
+                )
+                self.grid.attach(name, 0, row_index, 1, 1)
+                for col, value in enumerate(payment.values(measure), 1):
+                    period = periods[col - 1]
+                    label = Gtk.Label(
+                        label=(value.format(parens_negative=True) if value is not None else "—"),
+                        xalign=1,
+                    )
+                    button = Gtk.Button()
+                    button.set_child(label)
+                    button.set_tooltip_text(f"Explain {payment.name} — {period.label}")
+                    button.connect("clicked", self._on_mortgage_cell_clicked, payment, period)
+                    self.grid.attach(button, col, row_index, 1, 1)
+                self._attach_total(payment.total(measure), len(periods) + 1, row_index)
+                row_index += 1
+            row_index = self._attach_summary_row(
+                "Mortgage cash required",
+                self._report.mortgage_payment_totals(measure),
+                row_index,
+            )
+
         if self._report.planning_flows:
             section = Gtk.Label(label="Planning flows", xalign=0)
             section.add_css_class("heading")
@@ -702,6 +734,23 @@ class PlanView(BaseView):
         scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
         detail = explain_planning_flow_period(
             self.db, flow.kind, flow.account, period.start, period.end, scenario=scenario
+        )
+        from ..dialogs.plan_detail_dialog import PlanDetailDialog
+
+        PlanDetailDialog(
+            self.get_root(),
+            self.db,
+            detail,
+            period_label=period.label,
+            scenario_name=("Base scenario" if self._scenario_handle is None else scenario.name),
+        ).present()
+
+    def _on_mortgage_cell_clicked(self, _button, payment, period) -> None:
+        if self.db is None:
+            return
+        scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
+        detail = explain_mortgage_payment_period(
+            self.db, payment.account, period.start, period.end, scenario=scenario
         )
         from ..dialogs.plan_detail_dialog import PlanDetailDialog
 

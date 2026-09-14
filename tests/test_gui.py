@@ -51,6 +51,8 @@ pytestmark = [
 from breadsched import APP_ID  # noqa: E402
 from breadsched.gen.db.sqlite import DbSQLite  # noqa: E402
 from breadsched.gen.lib import (  # noqa: E402
+    Account,
+    AccountType,
     Money,
     PeriodType,
     Recurrence,
@@ -2432,6 +2434,54 @@ class TestDerivedPlanView:
         assert "Income total" in labels
         assert "Expenses total" in labels
         assert "Net cash change" in labels
+
+    def test_plan_grid_shows_whole_mortgage_payment_as_informational(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        accounts = {app.db.full_name(account): account for account in app.db.iter_accounts()}
+        mortgage = Account(
+            name="Mortgage",
+            atype=AccountType.LOAN,
+            parent=accounts["Liabilities"].handle,
+        )
+        escrow = Account(
+            name="Escrow",
+            atype=AccountType.ESCROW,
+            parent=accounts["Assets"].handle,
+        )
+        when = date.today().replace(day=15)
+        with app.db.transaction("GTK mortgage") as txn:
+            app.db.add_account(mortgage, txn)
+            app.db.add_account(escrow, txn)
+            app.db.add_scheduled(
+                ScheduledTransaction(
+                    name="Mortgage payment",
+                    recurrence=Recurrence(PeriodType.ONCE, start=when),
+                    splits=[
+                        ScheduledSplit(mortgage.handle, Money("800")),
+                        ScheduledSplit(accounts["Expenses:Rent"].handle, Money("1150")),
+                        ScheduledSplit(escrow.handle, Money("450")),
+                        ScheduledSplit(
+                            accounts["Assets:Checking Account"].handle,
+                            Money("-2400"),
+                        ),
+                    ],
+                ),
+                txn,
+            )
+        window.show_category("plan")
+        view = window._views["plan"]
+        labels = []
+        child = view.grid.get_first_child()
+        while child is not None:
+            if isinstance(child, Gtk.Label):
+                labels.append(child.get_text())
+            child = child.get_next_sibling()
+
+        assert "Cash requirements (informational)" in labels
+        assert "Mortgage payment — Liabilities:Mortgage" in labels
+        assert "Mortgage cash required" in labels
 
     def test_the_primary_plan_view_is_read_only(self, app, window, populated_book):
         app.open_book(populated_book)

@@ -504,6 +504,77 @@ class TestMonthlyStateLedger:
         assert rows[1].holdings == Money("20")
         assert all(row.ledger.reconciles() for row in rows)
 
+    def test_mortgage_payment_reconciles_cash_escrow_debt_and_net_worth(self, db, book):
+        house = Account(name="House", atype=AccountType.ASSET, parent=book.assets)
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+        mortgage = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        mortgage.linked_asset = house.handle
+        payment = ScheduledTransaction(
+            name="Mortgage payment",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(mortgage.handle, Money("800")),
+                ScheduledSplit(book.utilities, Money("1150")),
+                ScheduledSplit(escrow.handle, Money("450")),
+                ScheduledSplit(book.checking, Money("-2400")),
+            ],
+        )
+        with db.transaction("Mortgage example") as txn:
+            db.add_account(house, txn)
+            db.add_account(escrow, txn)
+            db.add_account(mortgage, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 31),
+                    "Opening cash",
+                    book.checking,
+                    book.opening,
+                    "10000",
+                ),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 31), "House purchase", house.handle, book.opening, "400000"
+                ),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 31),
+                    "Opening mortgage",
+                    book.opening,
+                    mortgage.handle,
+                    "320000",
+                ),
+                txn,
+            )
+            db.add_scheduled(payment, txn)
+
+        result = projection.project(
+            db,
+            Scenario(
+                name="Mortgage",
+                start=date(2026, 1, 1),
+                years=1,
+                assumptions=flat_assumptions(),
+            ),
+        )
+        january = result.rows[0]
+
+        assert january.cash_open == Money("10000")
+        assert january.cash_close == Money("7600")
+        assert january.ledger.closing_holdings[escrow.handle] == Money("450")
+        assert january.ledger.closing_holdings[house.handle] == Money("400000")
+        assert january.ledger.closing_liabilities[mortgage.handle] == Money("319200")
+        assert january.debt_payments == Money("800")
+        assert january.expense == Money("1600")
+        opening_net_worth = (
+            january.cash_open + january.ledger.holdings_open - january.ledger.liabilities_open
+        )
+        assert january.net_worth == opening_net_worth - Money("1150")
+        assert january.ledger.reconciles()
+
     def test_scenario_escrow_override_explains_a_negative_balance(self, db, book):
         escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
         draw = ScheduledTransaction(

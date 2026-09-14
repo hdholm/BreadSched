@@ -267,6 +267,7 @@ class TestItServes:
         assert set(plan["column_totals"]) == {
             "income",
             "expense",
+            "mortgage_payments",
             "planning_flows",
             "net_cash",
         }
@@ -1061,6 +1062,7 @@ class TestPlanApi:
             "summary",
             "comparison",
             "categories",
+            "mortgage_payments",
             "planning_flows",
             "column_totals",
         }
@@ -1079,6 +1081,59 @@ class TestPlanApi:
             "Q3 2026",
             "Q4 2026",
         ]
+
+    def test_mortgage_cash_requirement_is_shared_with_detail_and_comparison(self, client):
+        db = client.database
+        accounts = {account.name: account for account in db.iter_accounts()}
+        root = db.root_account()
+        assert root is not None
+        liabilities = Account(name="Liabilities", atype=AccountType.LIABILITY, parent=root.handle)
+        mortgage = Account(name="Mortgage", atype=AccountType.LOAN, parent=liabilities.handle)
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=accounts["Assets"].handle)
+        payment = ScheduledTransaction(
+            name="Mortgage payment",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(mortgage.handle, Money("800")),
+                ScheduledSplit(accounts["Rent"].handle, Money("1150")),
+                ScheduledSplit(escrow.handle, Money("450")),
+                ScheduledSplit(accounts["Checking"].handle, Money("-2400")),
+            ],
+        )
+        with db.transaction("Web mortgage") as txn:
+            db.add_account(liabilities, txn)
+            db.add_account(mortgage, txn)
+            db.add_account(escrow, txn)
+            db.add_scheduled(payment, txn)
+
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        query = urllib.parse.urlencode(
+            {"from": "2026-01", "through": "2026-01", "compare": scenario["handle"]}
+        )
+        _status, payload = client.get(f"/api/plan?{query}")
+
+        row = payload["mortgage_payments"][0]
+        assert row["name"] == "Mortgage payment — Liabilities:Mortgage"
+        assert Money(row["planned"][0]) == Money("2400")
+        assert Money(payload["column_totals"]["mortgage_payments"]["planned"]["total"]) == Money(
+            "2400"
+        )
+        compared = payload["comparison"]["mortgage_payments"][0]
+        assert Money(compared["planned_delta"][0]) == Money(0)
+
+        detail_query = urllib.parse.urlencode(
+            {
+                "account": mortgage.handle,
+                "start": "2026-01-01",
+                "end": "2026-01-31",
+                "requirement_kind": "mortgage",
+            }
+        )
+        _status, detail = client.get(f"/api/plan/detail?{detail_query}")
+        assert detail["category"]["class"] == "cash_requirement"
+        assert Money(detail["summary"]["planned"]) == Money("2400")
+        explanation = " ".join(detail["planned"][0]["explanation"])
+        assert "non-additive" in explanation
 
     def test_plan_reports_base_and_saved_scenario_choices(self, client):
         _status, payload = client.get("/api/plan")

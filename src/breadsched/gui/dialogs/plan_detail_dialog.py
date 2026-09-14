@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.activity import CategoryPeriodDetail, PlanningFlowPeriodDetail
+from ...gen.engine.activity import (
+    CategoryPeriodDetail,
+    MortgagePaymentPeriodDetail,
+    PlanningFlowPeriodDetail,
+)
 from ..gi_setup import Gtk
 
 __all__ = ["PlanDetailDialog"]
@@ -25,7 +29,7 @@ class PlanDetailDialog(Gtk.Window):
         self,
         parent: Gtk.Window | None,
         db: DbSQLite,
-        detail: CategoryPeriodDetail | PlanningFlowPeriodDetail,
+        detail: CategoryPeriodDetail | PlanningFlowPeriodDetail | MortgagePaymentPeriodDetail,
         *,
         period_label: str,
         scenario_name: str,
@@ -100,7 +104,10 @@ class PlanDetailDialog(Gtk.Window):
         scroll.set_vexpand(True)
         return scroll
 
-    def _planned_page(self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail) -> Gtk.Widget:
+    def _planned_page(
+        self,
+        detail: CategoryPeriodDetail | PlanningFlowPeriodDetail | MortgagePaymentPeriodDetail,
+    ) -> Gtk.Widget:
         rows = [
             (
                 item.planned_date.isoformat(),
@@ -131,7 +138,10 @@ class PlanDetailDialog(Gtk.Window):
             numeric_start=5,
         )
 
-    def _actual_page(self, detail: CategoryPeriodDetail | PlanningFlowPeriodDetail) -> Gtk.Widget:
+    def _actual_page(
+        self,
+        detail: CategoryPeriodDetail | PlanningFlowPeriodDetail | MortgagePaymentPeriodDetail,
+    ) -> Gtk.Widget:
         rows = [
             (
                 item.post_date.isoformat(),

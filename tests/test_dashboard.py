@@ -183,6 +183,33 @@ class TestBillNormalisation:
         dates = [item.next_due for item in household.pending]
         assert dates == sorted(dates)
 
+    def test_mortgage_bill_uses_the_whole_cash_payment(self, db, book):
+        mortgage = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+        with db.transaction("Mortgage bill") as txn:
+            db.add_account(mortgage, txn)
+            db.add_account(escrow, txn)
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Mortgage payment",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 9, 15)),
+                    splits=[
+                        ScheduledSplit(mortgage.handle, Money("800")),
+                        ScheduledSplit(book.utilities, Money("1150")),
+                        ScheduledSplit(escrow.handle, Money("450")),
+                        ScheduledSplit(book.checking, Money("-2400")),
+                    ],
+                ),
+                txn,
+            )
+
+        board = dashboard.build(db, as_of=TODAY)
+        bill = next(item for item in board.bills if item.name == "Mortgage payment")
+
+        assert bill.amount == Money("2400")
+        assert bill.held == Money("2400")
+        assert bill.emergency_amount == Money("2400")
+
 
 class TestHold:
     @staticmethod
