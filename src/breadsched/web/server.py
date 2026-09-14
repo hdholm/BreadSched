@@ -1167,12 +1167,16 @@ class Api:
 
     @staticmethod
     def _scenario_payload(scenario: Scenario, *, base: bool = False) -> dict:
+        assumptions = scenario.effective_assumptions()
         return {
             "handle": None if base else scenario.handle,
             "base": base,
             "name": "Base scenario" if base else scenario.name,
             "description": "" if base else scenario.description,
-            "assumptions": scenario.assumptions.serialize(),
+            "assumptions": assumptions.serialize(),
+            "assumption_sources": scenario.assumption_sources(),
+            "account_assumption_sources": scenario.account_assumption_sources(),
+            "assumption_overrides": sorted(scenario.assumption_overrides),
             "periods": [
                 {"index": index, **period.serialize()}
                 for index, period in enumerate(scenario.assumption_periods)
@@ -1293,9 +1297,41 @@ class Api:
             raise ValueError(f'a scenario named "{name}" already exists')
         scenario.name = name
         scenario.description = str(payload.get("description", "")).strip()
-        scenario.assumptions = self._assumptions_from_payload(
-            payload.get("assumptions"), scenario.assumptions
-        )
+        previous = scenario.effective_assumptions()
+        updated = self._assumptions_from_payload(payload.get("assumptions"), previous)
+        if scenario.inherits_base_assumptions:
+            requested = payload.get("assumption_overrides")
+            if requested is not None:
+                if not isinstance(requested, list):
+                    raise ValueError("assumption_overrides must be a list")
+                fields = {
+                    "income_growth",
+                    "expense_inflation",
+                    "investment_return",
+                    "cash_interest",
+                    "liability_interest",
+                }
+                overrides = {str(item) for item in requested}
+                if not overrides <= fields:
+                    raise ValueError("unknown assumption override")
+                scenario.assumption_overrides = overrides
+            else:
+                for field in scenario.assumption_sources():
+                    if getattr(updated, field) != getattr(previous, field):
+                        scenario.assumption_overrides.add(field)
+            changed_accounts = set(updated.per_account) | set(previous.per_account)
+            for account_handle in changed_accounts:
+                if updated.per_account.get(account_handle) == previous.per_account.get(
+                    account_handle
+                ):
+                    continue
+                if account_handle in updated.per_account:
+                    scenario.set_account_assumption_override(
+                        account_handle, updated.per_account[account_handle]
+                    )
+                else:
+                    scenario.inherit_account_assumption(account_handle)
+        scenario.assumptions = updated
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
         return self._scenario_payload(scenario)
@@ -1317,7 +1353,16 @@ class Api:
                 raise KeyError(str(handle))
         else:
             source = self._management_base_scenario()
-        clone = Scenario.from_dict(source.serialize())
+        clone = (
+            source.clone()
+            if handle
+            else Scenario.derived_from_base(
+                source.assumptions,
+                name=source.name,
+                start=source.start,
+                years=source.years,
+            )
+        )
         clone.handle = create_handle()
         clone.gid = ""
         clone.change = 0
@@ -2083,6 +2128,7 @@ class Api:
             comparison = {
                 "handle": compare_identity,
                 "name": compare_name,
+                "assumption_sources": compare_scenario.assumption_sources(start),
                 "summary": {
                     "planned_cash": compare_report.activity.planned_cash_change,
                     "actual_cash": compare_report.activity.actual_cash_change,
@@ -2219,6 +2265,7 @@ class Api:
                     {"handle": None, "name": "Base scenario"},
                     *[{"handle": item.handle, "name": item.name} for item in scenarios],
                 ],
+                "assumption_sources": scenario.assumption_sources(start),
             },
             "periods": [
                 {
@@ -2576,7 +2623,7 @@ class Api:
             stored = self.db.get_scenario(scenario_handle)
             if stored is None:
                 raise KeyError(scenario_handle)
-            scenario = Scenario.from_dict(stored.serialize())
+            scenario = stored.clone()
         else:
             scenario = self._management_base_scenario()
         if years is not None:
@@ -2591,21 +2638,32 @@ class Api:
         if years < 1 or years > 100:
             raise ValueError("projection years must be between 1 and 100")
         scenario.years = years
-        scenario.assumptions = self._assumptions_from_payload(
-            payload.get("assumptions", scenario.assumptions.serialize()),
-            scenario.assumptions,
+        previous = scenario.effective_assumptions()
+        updated = self._assumptions_from_payload(
+            payload.get("assumptions", previous.serialize()), previous
         )
+        if scenario.inherits_base_assumptions:
+            for field in scenario.assumption_sources():
+                if getattr(updated, field) != getattr(previous, field):
+                    scenario.set_assumption_override(field, getattr(updated, field))
+            scenario.assumptions.per_account = dict(updated.per_account)
+        else:
+            scenario.assumptions = updated
         return scenario
 
     def _projection_payload(self, scenario: Scenario, *, base: bool = False, result=None) -> dict:
         if result is None:
             result = projection.project(self.db, scenario)
+        assumptions = scenario.effective_assumptions()
         return {
             "scenario": {
                 "handle": None if base else scenario.handle,
                 "name": scenario.name,
                 "years": scenario.years,
-                "assumptions": scenario.assumptions.serialize(),
+                "assumptions": assumptions.serialize(),
+                "assumption_sources": scenario.assumption_sources(scenario.start),
+                "account_assumption_sources": scenario.account_assumption_sources(scenario.start),
+                "assumption_overrides": sorted(scenario.assumption_overrides),
             },
             "controls": {
                 "scenarios": [
@@ -2648,6 +2706,7 @@ class Api:
                 "accrual": item.accrual,
                 "closing": item.closing,
                 "annual_rate": item.annual_rate,
+                "annual_rate_source": item.annual_rate_source,
                 "activities": dict(item.activities),
             }
 
@@ -2685,6 +2744,7 @@ class Api:
             },
             "net_worth": detail.net_worth,
             "assumptions": detail.assumptions.serialize(),
+            "assumption_sources": detail.assumption_sources,
             "events": [event.as_dict() for event in detail.events],
             "escrow_explanations": list(detail.escrow_explanations),
         }
@@ -2732,6 +2792,8 @@ class Api:
                 "scenario": {
                     "handle": None if compare_handle is None else comparison.handle,
                     "name": comparison.name,
+                    "assumptions": comparison.effective_assumptions().serialize(),
+                    "assumption_sources": comparison.assumption_sources(comparison.start),
                 },
                 "summary": comparison_summary,
                 "summary_delta": {

@@ -310,7 +310,8 @@ def projection_report(
             ("Cash runs out", shortfall.label if shortfall else "Never", shortfall is not None),
         ]
     )
-    assumptions = result.scenario.assumptions
+    assumptions = result.scenario.assumptions_for(result.scenario.start)
+    assumption_sources = result.scenario.assumption_sources(result.scenario.start)
     assumption_rows = []
     for key, label in (
         ("income_growth", "Income growth"),
@@ -320,10 +321,12 @@ def projection_report(
         ("liability_interest", "Liability interest"),
     ):
         assumption_rows.append(
-            f'<tr><td>{label}</td><td class="num">{getattr(assumptions, key):.2%}</td></tr>'
+            f'<tr><td>{label}</td><td class="num">{getattr(assumptions, key):.2%}</td>'
+            f"<td>{escape(assumption_sources[key])}</td></tr>"
         )
     assumptions_table = (
-        '<table><thead><tr><th>Assumption</th><th class="num">Annual rate</th></tr></thead>'
+        '<table><thead><tr><th>Assumption</th><th class="num">Annual rate</th>'
+        "<th>Source</th></tr></thead>"
         f"<tbody>{''.join(assumption_rows)}</tbody></table>"
     )
     chart = _projection_chart(result, comparison)

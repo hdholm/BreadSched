@@ -17,6 +17,7 @@ import importlib
 import itertools
 import threading
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -2513,6 +2514,35 @@ class TestDerivedPlanView:
         assert view.add_estimate_button.get_sensitive() is False
         assert view.alter_schedule_button.get_sensitive() is False
         assert view.suppress_schedule_button.get_sensitive() is False
+
+    def test_scenario_manager_exposes_base_inheritance_and_local_override(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Scenario
+        from breadsched.gui.dialogs.scenario_manager_dialog import ScenarioManagerDialog
+        from breadsched.gui.planning_context import baseline_scenario
+
+        app.open_book(populated_book)
+        base = baseline_scenario(window, app.db)
+        scenario = Scenario.derived_from_base(base.assumptions, name="Inherited future")
+        with app.db.transaction("Add inheriting scenario") as txn:
+            app.db.add_scenario(scenario, txn)
+
+        dialog = ScenarioManagerDialog(window, app.db, window)
+        dialog.picker.set_selected(1)
+        override = dialog.inherit_controls["income_growth"]
+        rate = dialog.rate_controls["income_growth"]
+
+        assert override.get_active() is False
+        assert rate.get_sensitive() is False
+        override.set_active(True)
+        rate.set_value(1.25)
+        dialog._on_save(None)
+
+        reloaded = app.db.get_scenario(scenario.handle)
+        assert reloaded is not None
+        assert reloaded.assumption_sources()["income_growth"] == "Inherited future"
+        assert reloaded.effective_assumptions().income_growth == Decimal("0.0125")
 
     def test_baseline_actions_stay_disabled_when_saved_scenarios_exist(
         self, app, window, populated_book

@@ -186,6 +186,13 @@ Projection is event-driven. Cash, investment, and liability state advances betwe
 actual, scheduled, estimated, and one-off dated events. Reporting months are views
 of those state transitions rather than the engine's clock.
 
+Base is the expected plan. A newly derived saved scenario inherits each Base annual
+and account-specific assumption until that value is explicitly overridden, so later
+Base edits continue to reach untouched alternatives. Scenario management labels the
+source of effective values; dated assumption periods remain scenario-owned overrides.
+Scenarios saved by the preceding alpha retain all of their former values as deliberate
+overrides when first read.
+
 In GTK, Projection and file imports run in the background. Longer projections show
 progress and can be cancelled; imports always remain one atomic undo step, so a
 cancelled import writes nothing. The open book and import source should remain in

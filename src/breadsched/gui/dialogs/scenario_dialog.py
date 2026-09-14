@@ -39,7 +39,7 @@ class SaveScenarioDialog(Gtk.Window):
         box.append(Gtk.Label(label="Description", xalign=0))
         box.append(self.description_entry)
 
-        assumptions = scenario.assumptions
+        assumptions = scenario.effective_assumptions()
         summary = Gtk.Label(xalign=0, wrap=True)
         summary.add_css_class("dim")
         summary.set_text(
@@ -72,12 +72,16 @@ class SaveScenarioDialog(Gtk.Window):
             return
 
         existing = self.db.get_scenario_by_name(name)
-        target = existing or Scenario(name=name)
+        target = existing or self.scenario.clone()
         target.name = name
         target.description = self.description_entry.get_text().strip()
         target.years = self.scenario.years
         target.start = self.scenario.start
         target.assumptions = self.scenario.assumptions
+        target.inherits_base_assumptions = self.scenario.inherits_base_assumptions
+        target.assumption_overrides = set(self.scenario.assumption_overrides)
+        target.account_assumption_overrides = set(self.scenario.account_assumption_overrides)
+        target.account_assumption_suppressions = set(self.scenario.account_assumption_suppressions)
         target.opening_overrides = dict(self.scenario.opening_overrides)
         target.one_offs = list(self.scenario.one_offs)
         target.assumption_periods = list(self.scenario.assumption_periods)

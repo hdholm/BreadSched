@@ -122,11 +122,16 @@ class ProjectionDetailDialog(Gtk.Window):
             Gtk.Label(
                 label=(
                     "Active annual assumptions: "
-                    f"income {assumptions.income_growth:.2%}, "
-                    f"expenses {assumptions.expense_inflation:.2%}, "
-                    f"investments {assumptions.investment_return:.2%}, "
-                    f"cash {assumptions.cash_interest:.2%}, "
-                    f"liabilities {assumptions.liability_interest:.2%}"
+                    f"income {assumptions.income_growth:.2%} "
+                    f"({detail.assumption_sources['income_growth']}), "
+                    f"expenses {assumptions.expense_inflation:.2%} "
+                    f"({detail.assumption_sources['expense_inflation']}), "
+                    f"investments {assumptions.investment_return:.2%} "
+                    f"({detail.assumption_sources['investment_return']}), "
+                    f"cash {assumptions.cash_interest:.2%} "
+                    f"({detail.assumption_sources['cash_interest']}), "
+                    f"liabilities {assumptions.liability_interest:.2%} "
+                    f"({detail.assumption_sources['liability_interest']})"
                 ),
                 xalign=0,
             )
@@ -199,7 +204,7 @@ class ProjectionDetailDialog(Gtk.Window):
                 activity_text(item),
                 self._money(item.accrual),
                 self._money(item.closing),
-                f"{item.annual_rate:.2%}",
+                f"{item.annual_rate:.2%} ({item.annual_rate_source})",
             )
             for item in detail.holdings
         ]
@@ -221,7 +226,7 @@ class ProjectionDetailDialog(Gtk.Window):
                 self._money(item.movement),
                 self._money(item.accrual),
                 self._money(item.closing),
-                f"{item.annual_rate:.2%}",
+                f"{item.annual_rate:.2%} ({item.annual_rate_source})",
             )
             for item in detail.liabilities
         ]

@@ -792,11 +792,12 @@ def cmd_project(args: argparse.Namespace) -> int:
 
         summary = result.summary()
         if not args.json:
+            assumptions = scenario.effective_assumptions()
             print(f"Scenario: {scenario.name}  ({scenario.years} years from {scenario.start})")
             print(
-                f"  income growth {scenario.assumptions.income_growth:.1%}   "
-                f"expense inflation {scenario.assumptions.expense_inflation:.1%}   "
-                f"investment return {scenario.assumptions.investment_return:.1%}"
+                f"  income growth {assumptions.income_growth:.1%}   "
+                f"expense inflation {assumptions.expense_inflation:.1%}   "
+                f"investment return {assumptions.investment_return:.1%}"
             )
             print()
         emit({"summary": summary, "rows": [r.as_dict() for r in result.rows]}, args, text)
@@ -848,14 +849,16 @@ def cmd_scenario(args: argparse.Namespace) -> int:
         db = open_book(args.book, "r")
         try:
             scenarios = list(db.iter_scenarios())
+            effective = {s.handle: s.effective_assumptions() for s in scenarios}
             emit(
                 [
                     {
                         "name": s.name,
                         "years": s.years,
-                        "income_growth": s.assumptions.income_growth,
-                        "expense_inflation": s.assumptions.expense_inflation,
-                        "investment_return": s.assumptions.investment_return,
+                        "income_growth": effective[s.handle].income_growth,
+                        "expense_inflation": effective[s.handle].expense_inflation,
+                        "investment_return": effective[s.handle].investment_return,
+                        "assumption_sources": s.assumption_sources(),
                     }
                     for s in scenarios
                 ],
@@ -865,9 +868,9 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                         [
                             s.name,
                             str(s.years),
-                            f"{s.assumptions.income_growth:.1%}",
-                            f"{s.assumptions.expense_inflation:.1%}",
-                            f"{s.assumptions.investment_return:.1%}",
+                            f"{effective[s.handle].income_growth:.1%}",
+                            f"{effective[s.handle].expense_inflation:.1%}",
+                            f"{effective[s.handle].investment_return:.1%}",
                         ]
                         for s in scenarios
                     ],
@@ -886,11 +889,21 @@ def cmd_scenario(args: argparse.Namespace) -> int:
             scenario = existing or Scenario(name=args.name)
             scenario.years = args.years or scenario.years
             scenario.start = parse_date(args.start) or scenario.start
-            scenario.assumptions = Assumptions(
+            updated = Assumptions(
                 income_growth=args.income_growth,
                 expense_inflation=args.inflation,
                 investment_return=args.investment_return,
                 cash_interest=args.cash_interest,
+            )
+            scenario.assumptions = updated
+            scenario.assumption_overrides.update(
+                {
+                    "income_growth",
+                    "expense_inflation",
+                    "investment_return",
+                    "cash_interest",
+                    "liability_interest",
+                }
             )
             with db.transaction(f"Save scenario {args.name}") as txn:
                 if existing:

@@ -259,9 +259,7 @@ class ProjectionView(BaseView):
             self._scenario_handle = None
             select_scenario(self.manager, None, source=self)
         self._baseline = baseline_scenario(self.manager, self.db)
-        self.scenario = (
-            Scenario.from_dict(chosen.serialize()) if chosen is not None else self._baseline
-        )
+        self.scenario = chosen.clone() if chosen is not None else self._baseline
         self.scenario_picker.set_model(model)
         self.scenario_picker.set_selected(selected)
         self._load_scenario_controls()
@@ -271,8 +269,11 @@ class ProjectionView(BaseView):
 
     def _load_scenario_controls(self) -> None:
         self.years_spin.set_value(self.scenario.years)
+        assumptions = self.scenario.effective_assumptions()
         for key, scale in self._scales.items():
-            scale.set_value(float(getattr(self.scenario.assumptions, key)))
+            scale.set_value(float(getattr(assumptions, key)))
+            source = self.scenario.assumption_sources(self.scenario.start)[key]
+            scale.set_tooltip_text(f"Effective value from {source}.")
 
     def planning_scenario_changed(self, handle: str | None) -> None:
         """Follow the scenario selected in Plan without eagerly projecting hidden data."""
@@ -287,7 +288,7 @@ class ProjectionView(BaseView):
         rates = {
             key: Decimal(str(round(scale.get_value(), 4))) for key, scale in self._scales.items()
         }
-        self.scenario.assumptions = Assumptions(
+        updated = Assumptions(
             income_growth=rates["income_growth"],
             expense_inflation=rates["expense_inflation"],
             investment_return=rates["investment_return"],
@@ -295,6 +296,14 @@ class ProjectionView(BaseView):
             liability_interest=rates["liability_interest"],
             per_account=self.scenario.assumptions.per_account,
         )
+        if self.scenario.inherits_base_assumptions:
+            previous = self.scenario.effective_assumptions()
+            for key in rates:
+                value = getattr(updated, key)
+                if value != getattr(previous, key):
+                    self.scenario.set_assumption_override(key, value)
+        else:
+            self.scenario.assumptions = updated
         if self.scenario.start is None:
             self.scenario.start = date.today().replace(day=1)
         return self.scenario
@@ -318,7 +327,7 @@ class ProjectionView(BaseView):
         generation = self._job_generation
         path = self.db.path
         source_db = self.db
-        snapshot = Scenario.from_dict(scenario.serialize())
+        snapshot = scenario.clone()
         self._progress_started = monotonic()
         self.warning_label.remove_css_class("negative")
         self._show_projection_notes(["Calculating projection…"])
@@ -522,6 +531,8 @@ class ProjectionView(BaseView):
             self._collect()
             if self.db is not None:
                 persist_baseline_assumptions(self.manager, self.db)
+                for saved in self._scenarios:
+                    saved.attach_base_assumptions(self.scenario.assumptions)
             notify_planning_scenario_changed(self.manager, source=self)
         self.recompute()
 
@@ -530,11 +541,14 @@ class ProjectionView(BaseView):
             return
         index = picker.get_selected()
         chosen = self._scenarios[index - 1] if index > 0 else None
+        if chosen is not None:
+            chosen = self.db.get_scenario(chosen.handle)
+            if chosen is None:
+                self.schedule_refresh()
+                return
         self._scenario_handle = chosen.handle if chosen is not None else None
         select_scenario(self.manager, self._scenario_handle, source=self)
-        self.scenario = (
-            Scenario.from_dict(chosen.serialize()) if chosen is not None else self._baseline
-        )
+        self.scenario = chosen.clone() if chosen is not None else self._baseline
         self._updating = True
         try:
             self._load_scenario_controls()
@@ -596,7 +610,11 @@ class ProjectionView(BaseView):
 
         from ..dialogs.scenario_dialog import SaveScenarioDialog
 
-        draft = Scenario.from_dict(scenario.serialize())
+        draft = Scenario.derived_from_base(
+            scenario.effective_assumptions(),
+            start=scenario.start,
+            years=scenario.years,
+        )
         draft.name = ""
         SaveScenarioDialog(self.get_root(), self.db, draft).present()
 
