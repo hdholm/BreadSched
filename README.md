@@ -151,6 +151,13 @@ enabled explicit/imported schedule with a pending or future payment for the same
 card takes precedence. The account-linked row is informational and is never posted
 automatically.
 
+**Verify Book** checks SQLite integrity plus the financial relationships that a
+database-only check cannot see. It reports unbalanced or orphaned transactions,
+commodity/SCU precision conflicts, duplicate realization of a scheduled occurrence,
+and reconciliation drift without silently rounding or repairing the ledger.
+Projection separately refuses to return a reporting period whose opening state,
+dated changes, accruals, and closing state do not reconcile.
+
 Use **New loan…** in Scheduled to enter an amount borrowed, annual rate, term,
 first payment, loan account, interest expense, and payment account. BreadSched shows
 the calculated level payment and the first year of principal/interest allocation

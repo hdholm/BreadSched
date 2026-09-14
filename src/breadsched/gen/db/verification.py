@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..lib.money import Money
 from ..lib.reconciliation import ReconciliationStatus
 from ..lib.transaction import ReconcileState, UnbalancedError
 
@@ -17,6 +18,11 @@ if TYPE_CHECKING:
     from .base import DbBase
 
 __all__ = ["BookIssue", "BookVerification", "verify_domain"]
+
+
+def _representable(value: Money, fraction: int) -> bool:
+    """Whether ``value`` is an exact multiple of one commodity minor unit."""
+    return (value.numerator * fraction) % value.denominator == 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,8 +58,34 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
     """Return non-destructive logical consistency findings for ``db``."""
     issues: list[BookIssue] = []
     accounts = {account.handle: account for account in db.iter_accounts()}
-    commodities = {commodity.handle for commodity in db.iter_commodities()}
+    commodity_objects = {commodity.handle: commodity for commodity in db.iter_commodities()}
+    commodities = set(commodity_objects)
     scenarios = {scenario.handle: scenario for scenario in db.iter_scenarios()}
+
+    commodity_keys: dict[tuple[str, str], str] = {}
+    for commodity in commodity_objects.values():
+        if commodity.fraction < 1:
+            issues.append(
+                BookIssue(
+                    "commodity.invalid_fraction",
+                    f"commodity {commodity.namespace}:{commodity.mnemonic} has non-positive "
+                    f"fraction {commodity.fraction}",
+                    commodity.handle,
+                )
+            )
+        key = (commodity.namespace.upper(), commodity.mnemonic.upper())
+        previous = commodity_keys.get(key)
+        if previous is not None and previous != commodity.handle:
+            issues.append(
+                BookIssue(
+                    "commodity.duplicate_identifier",
+                    f"commodities {previous} and {commodity.handle} both use "
+                    f"{commodity.namespace}:{commodity.mnemonic}",
+                    commodity.handle,
+                )
+            )
+        else:
+            commodity_keys[key] = commodity.handle
 
     source_guids: dict[str, str] = {}
     for account in accounts.values():
@@ -101,6 +133,15 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     account.handle,
                 )
             )
+        if account.commodity_scu is not None and account.commodity_scu < 1:
+            issues.append(
+                BookIssue(
+                    "account.invalid_commodity_scu",
+                    f"account {account.name!r} has non-positive commodity SCU "
+                    f"{account.commodity_scu}",
+                    account.handle,
+                )
+            )
         if account.linked_asset is not None and account.linked_asset not in accounts:
             issues.append(
                 BookIssue(
@@ -139,11 +180,8 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
             seen.add(current.handle)
             current = accounts[current.parent]
 
-    splits = {
-        split.handle: split
-        for transaction in db.iter_transactions()
-        for split in transaction.splits
-    }
+    transactions = list(db.iter_transactions())
+    splits = {split.handle: split for transaction in transactions for split in transaction.splits}
     for reconciliation in db.iter_reconciliations():
         if reconciliation.account not in accounts:
             issues.append(
@@ -224,7 +262,9 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                 )
 
     # Ledger transactions.
-    for transaction in db.iter_transactions():
+    occurrence_owners: dict[str, str] = {}
+    global_split_owners: dict[str, str] = {}
+    for transaction in transactions:
         if transaction.currency is not None and transaction.currency not in commodities:
             issues.append(
                 BookIssue(
@@ -234,12 +274,51 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     transaction.handle,
                 )
             )
+        currency = commodity_objects.get(transaction.currency or "")
+        if currency is not None and not currency.is_currency:
+            issues.append(
+                BookIssue(
+                    "transaction.non_currency_commodity",
+                    f"transaction {transaction.describe()} uses non-currency commodity "
+                    f"{currency.namespace}:{currency.mnemonic} as its balancing currency",
+                    transaction.handle,
+                )
+            )
+        occurrence_key = transaction.planned_occurrence
+        if occurrence_key is None and transaction.scheduled_from is not None:
+            planned_for = transaction.planned_for or transaction.post_date
+            occurrence_key = f"scheduled:{transaction.scheduled_from}:{planned_for.isoformat()}"
+        if occurrence_key is not None:
+            previous = occurrence_owners.get(occurrence_key)
+            if previous is not None and previous != transaction.handle:
+                issues.append(
+                    BookIssue(
+                        "scheduled.duplicate_occurrence",
+                        f"transactions {previous} and {transaction.handle} both realize "
+                        f"planned occurrence {occurrence_key}",
+                        transaction.handle,
+                    )
+                )
+            else:
+                occurrence_owners[occurrence_key] = transaction.handle
         try:
             transaction.validate()
         except UnbalancedError as exc:
             issues.append(BookIssue("transaction.unbalanced", str(exc), transaction.handle))
         split_handles: set[str] = set()
         for transaction_split in transaction.splits:
+            previous_owner = global_split_owners.get(transaction_split.handle)
+            if previous_owner is not None and previous_owner != transaction.handle:
+                issues.append(
+                    BookIssue(
+                        "transaction.duplicate_split_handle",
+                        f"transactions {previous_owner} and {transaction.handle} both contain "
+                        f"split handle {transaction_split.handle}",
+                        transaction.handle,
+                    )
+                )
+            else:
+                global_split_owners[transaction_split.handle] = transaction.handle
             if transaction_split.handle in split_handles:
                 issues.append(
                     BookIssue(
@@ -259,6 +338,40 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         transaction.handle,
                     )
                 )
+                continue
+            account = accounts[transaction_split.account]
+            account_commodity = commodity_objects.get(account.commodity or "")
+            quantity_fraction = account.commodity_scu or (
+                account_commodity.fraction if account_commodity is not None else None
+            )
+            if (
+                quantity_fraction is not None
+                and quantity_fraction > 0
+                and not _representable(transaction_split.quantity, quantity_fraction)
+            ):
+                issues.append(
+                    BookIssue(
+                        "transaction.quantity_precision",
+                        f"split {transaction_split.handle} quantity "
+                        f"{transaction_split.quantity} is not representable at account "
+                        f"{account.name!r} SCU {quantity_fraction}",
+                        transaction.handle,
+                    )
+                )
+            if (
+                currency is not None
+                and currency.fraction > 0
+                and not _representable(transaction_split.value, currency.fraction)
+            ):
+                issues.append(
+                    BookIssue(
+                        "transaction.value_precision",
+                        f"split {transaction_split.handle} value {transaction_split.value} "
+                        f"is not representable at {currency.mnemonic} fraction "
+                        f"{currency.fraction}",
+                        transaction.handle,
+                    )
+                )
 
     # Planning objects contain account references too.
     for sched in db.iter_scheduled():
@@ -271,6 +384,50 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     sched.handle,
                 )
             )
+        currency = commodity_objects.get(sched.currency or "")
+        if currency is not None and not currency.is_currency:
+            issues.append(
+                BookIssue(
+                    "scheduled.non_currency_commodity",
+                    f"scheduled transaction {sched.name!r} uses non-currency commodity "
+                    f"{currency.namespace}:{currency.mnemonic} as its balancing currency",
+                    sched.handle,
+                )
+            )
+        if len(sched.skipped) != len(set(sched.skipped)):
+            issues.append(
+                BookIssue(
+                    "scheduled.duplicate_skip",
+                    f"scheduled transaction {sched.name!r} records a skipped occurrence "
+                    "more than once",
+                    sched.handle,
+                )
+            )
+        if len(sched.occurrence_adjustments) != len(
+            {item.when for item in sched.occurrence_adjustments}
+        ):
+            issues.append(
+                BookIssue(
+                    "scheduled.duplicate_adjustment",
+                    f"scheduled transaction {sched.name!r} has more than one amount "
+                    "adjustment for the same occurrence",
+                    sched.handle,
+                )
+            )
+        if all(not split.formula for split in sched.splits):
+            residual = sum(
+                (split.amount or Money(0) for split in sched.splits),
+                Money(0),
+            )
+            if residual:
+                issues.append(
+                    BookIssue(
+                        "scheduled.unbalanced",
+                        f"scheduled transaction {sched.name!r} has fixed splits that do not "
+                        f"balance; residual {residual}",
+                        sched.handle,
+                    )
+                )
         for scheduled_split in sched.splits:
             if scheduled_split.account not in accounts:
                 issues.append(
@@ -278,6 +435,21 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         "scheduled.missing_account",
                         f"scheduled transaction {sched.name!r} refers to missing account "
                         f"{scheduled_split.account}",
+                        sched.handle,
+                    )
+                )
+            if (
+                scheduled_split.amount is not None
+                and currency is not None
+                and currency.fraction > 0
+                and not _representable(scheduled_split.amount, currency.fraction)
+            ):
+                issues.append(
+                    BookIssue(
+                        "scheduled.value_precision",
+                        f"scheduled transaction {sched.name!r} has an amount "
+                        f"{scheduled_split.amount} not representable at {currency.mnemonic} "
+                        f"fraction {currency.fraction}",
                         sched.handle,
                     )
                 )

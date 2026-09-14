@@ -56,6 +56,13 @@ backup/restore validation, tests, and corruption investigation.
 This separation is deliberate: correctness checks on ordinary edits should scale
 with the change, not with the lifetime size of the household ledger.
 
+Exhaustive verification checks exact transaction balance and references, global
+split identity, commodity and account-SCU precision, currency roles, scheduled
+fixed-split balance, unique occurrence realization, reconciliation snapshots, and
+derived indexes. Projection independently refuses to return a reporting month whose
+opening stocks, dated movements, accruals, and closing stocks do not reconcile.
+These checks diagnose facts; they do not round or repair imported ledger data.
+
 ## Exact financial representation
 
 ### Double entry

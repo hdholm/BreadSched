@@ -496,6 +496,82 @@ class TestBookVerification:
 
         assert any(issue.code == "account.duplicate_source_guid" for issue in db.verify_book())
 
+    def test_commodity_roles_and_exact_precision_are_reported(self, db, book):
+        from breadsched.gen.lib import Commodity
+
+        currency = Commodity(namespace="CURRENCY", mnemonic="TST", fraction=100)
+        security = Commodity(namespace="FUND", mnemonic="UNIT", fraction=1000)
+        invalid = Commodity(namespace="FUND", mnemonic="BROKEN", fraction=0)
+        investment = Account(
+            name="Holding",
+            atype=AccountType.INVESTMENT,
+            parent=book.assets,
+            commodity=security.handle,
+            commodity_scu=1000,
+        )
+        with db.transaction("Precision fixture") as txn:
+            db.add_commodity(currency, txn)
+            db.add_commodity(security, txn)
+            db.add_commodity(invalid, txn)
+            db.add_account(investment, txn)
+            posting = Transaction(
+                post_date=date(2026, 1, 1),
+                description="Fractional holding",
+                currency=currency.handle,
+            )
+            posting.add_split(Split(investment.handle, Money(1, 3), quantity=Money(1, 3)))
+            posting.add_split(Split(book.checking, Money(-1, 3)))
+            db.add_transaction(posting, txn)
+
+        codes = {issue.code for issue in db.verify_book()}
+        assert "commodity.invalid_fraction" in codes
+        assert "transaction.value_precision" in codes
+        assert "transaction.quantity_precision" in codes
+
+        posting.currency = security.handle
+        with db.transaction("Invalid balancing commodity") as txn:
+            db.commit_transaction(posting, txn)
+        assert any(issue.code == "transaction.non_currency_commodity" for issue in db.verify_book())
+
+    def test_duplicate_schedule_realization_and_ambiguous_definition_are_reported(self, db, book):
+        from breadsched.gen.lib import (
+            Recurrence,
+            ScheduledOccurrenceAdjustment,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+
+        when = date(2026, 2, 5)
+        scheduled = ScheduledTransaction(
+            name="Ambiguous bill",
+            recurrence=Recurrence(start=when),
+            splits=[
+                ScheduledSplit(book.utilities, "10"),
+                ScheduledSplit(book.checking, "-9"),
+            ],
+            occurrence_adjustments=[
+                ScheduledOccurrenceAdjustment(when, "10"),
+                ScheduledOccurrenceAdjustment(when, "11"),
+            ],
+        )
+        scheduled.skipped = [when, when]
+        first = scheduled.instantiate(when, strict=False)
+        second = scheduled.instantiate(when, strict=False)
+        first.splits[-1].value = Money("-10")
+        first.splits[-1].quantity = Money("-10")
+        second.splits[-1].value = Money("-10")
+        second.splits[-1].quantity = Money("-10")
+        with db.transaction("Ambiguous schedule fixture") as txn:
+            db.add_scheduled(scheduled, txn)
+            db.add_transaction(first, txn)
+            db.add_transaction(second, txn)
+
+        codes = {issue.code for issue in db.verify_book()}
+        assert "scheduled.unbalanced" in codes
+        assert "scheduled.duplicate_adjustment" in codes
+        assert "scheduled.duplicate_skip" in codes
+        assert "scheduled.duplicate_occurrence" in codes
+
 
 class TestWriteTimeInvariants:
     def test_missing_split_account_rolls_back_the_whole_transaction(self, db, book):

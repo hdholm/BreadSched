@@ -754,7 +754,13 @@ semantics, not duplicate business rules in presentation code.
   policy.
 - [x] Keep database concurrency ownership/locking explicit and testable for desktop
   and web access.
-- [ ] Expand executable invariants: balanced transactions, no orphaned splits,
+- [x] **0194 — Complete the current executable invariant set.** Verify global split
+  identity, commodity/currency roles and exact SCU representability, fixed schedule
+  balance, unique realization of each planned occurrence, and unambiguous schedule
+  exceptions. Retain existing transaction/reference, reconciliation-snapshot, and
+  runtime projection-conservation checks; diagnose without rewriting imported data.
+  Advance the alpha version to `0.2.0a33`.
+- [x] Expand executable invariants: balanced transactions, no orphaned splits,
   commodity consistency, schedule idempotency, reconciliation preservation, and
   projection conservation.
   - [x] **0148 — Explicit chart-root semantics.** Only `ROOT` accounts are treated
