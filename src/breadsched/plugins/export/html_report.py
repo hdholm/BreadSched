@@ -224,6 +224,28 @@ def plan_report(
             )
         )
 
+    if report.mortgage_payments:
+        rows.append(
+            '<tr class="section"><td colspan="'
+            f'{len(activity.periods) + 2}">Cash requirements (informational)</td></tr>'
+        )
+        for payment in report.mortgage_payments:
+            title = (
+                "Whole mortgage payment; classified components appear below and are not "
+                "added to this row."
+            )
+            label = f'<span title="{escape(title, quote=True)}">{escape(payment.name)}</span>'
+            rows.append(values_row(label, payment.values(measure), payment.total(measure)))
+        totals = report.mortgage_payment_totals(measure)
+        rows.append(
+            values_row(
+                "Mortgage cash required",
+                totals,
+                report.mortgage_payment_grand_total(measure),
+                "total",
+            )
+        )
+
     if report.planning_flows:
         rows.append(
             '<tr class="section"><td colspan="'

@@ -93,6 +93,39 @@ def test_plan_report_uses_selected_measure_horizon_totals_and_scenario(db, book)
     assert "Planned" in document
 
 
+def test_plan_report_shows_whole_mortgage_payment_as_non_additive(db, book):
+    escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+    mortgage = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+    with db.transaction("Printable mortgage") as txn:
+        db.add_account(escrow, txn)
+        db.add_account(mortgage, txn)
+        db.add_scheduled(
+            ScheduledTransaction(
+                name="Mortgage payment",
+                recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+                splits=[
+                    ScheduledSplit(mortgage.handle, Money("800")),
+                    ScheduledSplit(book.utilities, Money("1150")),
+                    ScheduledSplit(escrow.handle, Money("450")),
+                    ScheduledSplit(book.checking, Money("-2400")),
+                ],
+            ),
+            txn,
+        )
+    report = activity.build_category_report(
+        db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+    )
+
+    document = plan_report(report, activity.PlanMeasure.PLANNED, scenario_name="Base scenario")
+
+    assert "Cash requirements (informational)" in document
+    assert "Mortgage payment — Liabilities:Mortgage" in document
+    assert "Mortgage cash required" in document
+    assert "2,400.00" in document
+    assert "Planning-flow total" in document
+    assert "1,250.00" in document  # $800 principal plus $450 escrow funding.
+
+
 def test_projection_report_includes_chart_assumptions_year_end_values_and_comparison(db, book):
     escrow = Account(name="Property escrow", atype=AccountType.ESCROW, parent=book.assets)
     with db.transaction("Printable escrow") as txn:

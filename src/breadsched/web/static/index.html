@@ -1653,6 +1653,42 @@ async function showPlan() {
     rows.push(totalRow(`${heading} total`, data.column_totals[kind][currentPlan.measure]));
   }
 
+  if (data.mortgage_payments?.length) {
+    rows.push(el("tr", { class: "section-row" },
+      el("td", { colspan: String(headers.length) }, "Cash requirements (informational)")));
+    for (const payment of data.mortgage_payments) {
+      const compared = comparison?.mortgage_payments?.find(
+        (row) => row.account === payment.account);
+      const deltas = compared ? compared[`${currentPlan.measure}_delta`] : null;
+      const cells = payment[currentPlan.measure].map((value, index) =>
+        el("td", { class: `${value == null ? "num muted" : cls(value)} plan-cell` },
+          el("button", {
+            class: "plan-cell-button", type: "button",
+            title: `Explain ${payment.name} — ${data.periods[index].label}`,
+            "aria-label": `Explain ${payment.name} — ${data.periods[index].label}: ${value == null ? "not applicable" : money(value)}`,
+            onclick: () => openPlanDetail(
+              payment, data.periods[index], currentPlan.scenario,
+              data.periods[index].label, null, "mortgage"),
+          }, value == null ? "—" : money(value),
+            deltas && deltas[index] != null ? el("span", {
+              class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
+              title: `Active scenario minus ${comparison.name}`,
+            }, `Δ ${money(deltas[index])}`) : null)));
+      rows.push(el("tr", {},
+        el("td", {
+          title: "Whole mortgage payment; classified components below are non-additive.",
+        }, payment.name),
+        ...cells,
+        el("td", {
+          class: payment.totals[currentPlan.measure] == null
+            ? "num muted" : cls(payment.totals[currentPlan.measure]),
+        }, payment.totals[currentPlan.measure] == null
+          ? "—" : money(payment.totals[currentPlan.measure]))));
+    }
+    rows.push(totalRow("Mortgage cash required",
+      data.column_totals.mortgage_payments[currentPlan.measure]));
+  }
+
   if (data.planning_flows?.length) {
     rows.push(el("tr", { class: "section-row" },
       el("td", { colspan: String(headers.length) }, "Planning flows")));
@@ -1701,17 +1737,21 @@ async function showPlan() {
     el("p", { class: "note" },
       "Income and expense values are derived from exact-dated scheduled/estimated "
       + "and actual transaction splits; reporting periods do not store planning values. "
-      + "Section totals count outermost category rollups once. Net cash change is the "
+      + "Mortgage cash requirements are informational and are not added to their "
+      + "classified components. Section totals count outermost category rollups once. "
+      + "Net cash change is the "
       + "grand total; variance totals include only periods through today."),
     eventPanel, planTable);
 }
 
-async function openPlanDetail(category, period, scenarioHandle, periodLabel, flowKind=null) {
+async function openPlanDetail(
+  category, period, scenarioHandle, periodLabel, flowKind=null, requirementKind=null) {
   const params = new URLSearchParams({
     account: category.account, start: period.start, end: period.end,
   });
   if (scenarioHandle) params.set("scenario", scenarioHandle);
   if (flowKind) params.set("flow_kind", flowKind);
+  if (requirementKind) params.set("requirement_kind", requirementKind);
   try {
     const data = await get(`/api/plan/detail?${params}`);
     const sourceName = (value) => ({

@@ -2076,8 +2076,10 @@ class Api:
             )
             compare_rows = {row.account: row for row in compare_report.categories}
             compare_flows = {(row.kind, row.account): row for row in compare_report.planning_flows}
+            compare_mortgages = {row.account: row for row in compare_report.mortgage_payments}
             comparison_categories: list[dict[str, object]] = []
             comparison_flows: list[dict[str, object]] = []
+            comparison_mortgages: list[dict[str, object]] = []
             comparison = {
                 "handle": compare_identity,
                 "name": compare_name,
@@ -2094,6 +2096,7 @@ class Api:
                     "variance_delta": (report.cash_variance - compare_report.cash_variance),
                 },
                 "categories": comparison_categories,
+                "mortgage_payments": comparison_mortgages,
                 "planning_flows": comparison_flows,
             }
             for row in report.categories:
@@ -2125,6 +2128,40 @@ class Api:
                                 else None
                             )
                             for value, alternate in zip(row.variance, other_variance, strict=True)
+                        ],
+                    }
+                )
+            for payment in report.mortgage_payments:
+                other_payment = compare_mortgages.get(payment.account)
+                zeroes = [Money(0) for _ in payment.planned]
+                other_planned = other_payment.planned if other_payment is not None else zeroes
+                other_actual = other_payment.actual if other_payment is not None else zeroes
+                payment_variance: list[Money | None] = (
+                    other_payment.variance if other_payment is not None else list(zeroes)
+                )
+                comparison_mortgages.append(
+                    {
+                        "account": payment.account,
+                        "planned": other_planned,
+                        "actual": other_actual,
+                        "variance": payment_variance,
+                        "planned_delta": [
+                            value - alternate
+                            for value, alternate in zip(payment.planned, other_planned, strict=True)
+                        ],
+                        "actual_delta": [
+                            value - alternate
+                            for value, alternate in zip(payment.actual, other_actual, strict=True)
+                        ],
+                        "variance_delta": [
+                            (
+                                value - alternate
+                                if value is not None and alternate is not None
+                                else None
+                            )
+                            for value, alternate in zip(
+                                payment.variance, payment_variance, strict=True
+                            )
                         ],
                     }
                 )
@@ -2213,6 +2250,19 @@ class Api:
                 }
                 for row in report.categories
             ],
+            "mortgage_payments": [
+                {
+                    "account": row.account,
+                    "account_name": row.account_name,
+                    "full_name": row.full_name,
+                    "name": row.name,
+                    "planned": row.planned,
+                    "actual": row.actual,
+                    "variance": row.variance,
+                    "totals": {item.value: row.total(item) for item in PlanMeasure},
+                }
+                for row in report.mortgage_payments
+            ],
             "planning_flows": [
                 {
                     "kind": row.kind.value,
@@ -2246,6 +2296,13 @@ class Api:
                     item.value: {
                         "periods": report.planning_flow_totals(item),
                         "total": report.planning_flow_grand_total(item),
+                    }
+                    for item in PlanMeasure
+                },
+                "mortgage_payments": {
+                    item.value: {
+                        "periods": report.mortgage_payment_totals(item),
+                        "total": report.mortgage_payment_grand_total(item),
                     }
                     for item in PlanMeasure
                 },
@@ -2289,8 +2346,9 @@ class Api:
         end_value: str,
         scenario_handle: str | None = None,
         flow_kind: str | None = None,
+        requirement_kind: str | None = None,
     ) -> dict:
-        """Explain one Plan category/planning-flow cell from exact-dated activity."""
+        """Explain one Plan category, planning-flow, or cash-requirement cell."""
         start = date.fromisoformat(start_value)
         end = date.fromisoformat(end_value)
         scenarios = list(self.db.iter_scenarios())
@@ -2303,11 +2361,31 @@ class Api:
             scenario = self._base_scenario(start, end)
             scenario_name = "Base scenario"
 
-        if flow_kind:
+        detail: (
+            activity.CategoryPeriodDetail
+            | activity.PlanningFlowPeriodDetail
+            | activity.MortgagePaymentPeriodDetail
+        )
+        if requirement_kind:
+            if requirement_kind != "mortgage":
+                raise ValueError("unknown Plan cash-requirement kind")
+            mortgage_detail = activity.explain_mortgage_payment_period(
+                self.db, account_handle, start, end, scenario=scenario
+            )
+            detail = mortgage_detail
+            category = {
+                "account": mortgage_detail.account,
+                "name": mortgage_detail.name,
+                "full_name": mortgage_detail.full_name,
+                "class": "cash_requirement",
+                "kind": "mortgage",
+            }
+        elif flow_kind:
             kind = PlanningFlowKind(flow_kind)
             flow_detail = activity.explain_planning_flow_period(
                 self.db, kind, account_handle, start, end, scenario=scenario
             )
+            detail = flow_detail
             category = {
                 "account": flow_detail.account,
                 "name": flow_detail.name,
@@ -2319,13 +2397,13 @@ class Api:
             category_detail = activity.explain_category_period(
                 self.db, account_handle, start, end, scenario=scenario
             )
+            detail = category_detail
             category = {
                 "account": category_detail.account,
                 "name": category_detail.name,
                 "full_name": category_detail.full_name,
                 "class": category_detail.account_class.value,
             }
-        detail = flow_detail if flow_kind else category_detail
         return {
             "category": category,
             "period": {"start": detail.start, "end": detail.end},
@@ -3208,6 +3286,7 @@ ROUTES = {
         q.get("end", [""])[0],
         q.get("scenario", [None])[0],
         q.get("flow_kind", [None])[0],
+        q.get("requirement_kind", [None])[0],
     ),
     "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
     "/api/scenarios": lambda a, q: a.scenarios(),

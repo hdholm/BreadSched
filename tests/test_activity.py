@@ -576,9 +576,9 @@ class TestPlanningFlowClassification:
             recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
             splits=[
                 ScheduledSplit(loan.handle, Money("800")),
-                ScheduledSplit(book.utilities, Money("200")),
-                ScheduledSplit(escrow.handle, Money("300")),
-                ScheduledSplit(book.checking, Money("-1300")),
+                ScheduledSplit(book.utilities, Money("1150")),
+                ScheduledSplit(escrow.handle, Money("450")),
+                ScheduledSplit(book.checking, Money("-2400")),
             ],
         )
         with db.transaction("Mortgage with escrow") as txn:
@@ -596,8 +596,14 @@ class TestPlanningFlowClassification:
             row for row in report.planning_flows if row.kind is PlanningFlowKind.DEBT_PRINCIPAL
         )
 
-        assert report.activity.periods[0].planned_expense == Money("500")
-        assert escrow_flow.planned == [Money("300")]
+        mortgage = report.mortgage_payments[0]
+        assert mortgage.account == loan.handle
+        assert mortgage.planned == [Money("2400")]
+        assert mortgage.total(activity.PlanMeasure.PLANNED) == Money("2400")
+        assert report.mortgage_payment_totals(activity.PlanMeasure.PLANNED) == [Money("2400")]
+        assert report.activity.periods[0].planned_cash_change == Money("-2400")
+        assert report.activity.periods[0].planned_expense == Money("1600")
+        assert escrow_flow.planned == [Money("450")]
         assert principal_flow.planned == [Money("800")]
         detail = activity.explain_planning_flow_period(
             db,
@@ -609,6 +615,190 @@ class TestPlanningFlowClassification:
         assert "principal only reduces the liability" in " ".join(
             detail.planned_events[0].explanation
         )
+        payment_detail = activity.explain_mortgage_payment_period(
+            db,
+            loan.handle,
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            as_of=date(2026, 1, 31),
+        )
+        assert payment_detail.planned == Money("2400")
+        explanation = " ".join(payment_detail.planned_events[0].explanation)
+        assert "Debt principal $800.00" in explanation
+        assert "ordinary expense $1,150.00" in explanation
+        assert "Escrow funding $450.00" in explanation
+        assert "not added to it again" in explanation
+
+    def test_one_actual_resolves_the_whole_payment_when_components_change(self, db, book):
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+        loan = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        payment = ScheduledTransaction(
+            name="Mortgage payment",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(loan.handle, Money("800")),
+                ScheduledSplit(book.utilities, Money("1150")),
+                ScheduledSplit(escrow.handle, Money("450")),
+                ScheduledSplit(book.checking, Money("-2400")),
+            ],
+        )
+        with db.transaction("Mortgage definition") as txn:
+            db.add_account(escrow, txn)
+            db.add_account(loan, txn)
+            db.add_scheduled(payment, txn)
+        expected = planning.scheduled_events(db, date(2026, 1, 1), date(2026, 1, 31))[0]
+        posted = Transaction(
+            post_date=date(2026, 1, 16),
+            description="Mortgage actual",
+            splits=[
+                Split(loan.handle, Money("825")),
+                Split(book.utilities, Money("1125")),
+                Split(escrow.handle, Money("450")),
+                Split(book.checking, Money("-2400")),
+            ],
+        )
+        planning.actualize_transaction(posted, expected)
+        with db.transaction("Post mortgage") as txn:
+            db.add_transaction(posted, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        mortgage = report.mortgage_payments[0]
+        assert mortgage.planned == [Money("2400")]
+        assert mortgage.actual == [Money("2400")]
+        assert mortgage.variance == [Money(0)]
+        detail = activity.explain_mortgage_payment_period(
+            db,
+            loan.handle,
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            as_of=date(2026, 1, 31),
+        )
+        assert len(detail.planned_events) == 1
+        assert detail.planned_events[0].actual == Money("2400")
+        assert len(detail.actual_transactions) == 1
+        assert detail.actual_transactions[0].resolution is PlanningResolution.MATCHED
+        assert detail.actual_transactions[0].expected == Money("2400")
+
+    def test_extra_principal_and_fee_are_one_cash_requirement(self, db, book):
+        loan = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        payment = ScheduledTransaction(
+            name="Extra mortgage payment",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(loan.handle, Money("1000")),
+                ScheduledSplit(book.utilities, Money("50")),
+                ScheduledSplit(book.checking, Money("-1050")),
+            ],
+        )
+        with db.transaction("Extra principal and fee") as txn:
+            db.add_account(loan, txn)
+            db.add_scheduled(payment, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        assert report.mortgage_payments[0].planned == [Money("1050")]
+        principal = next(
+            row for row in report.planning_flows if row.kind is PlanningFlowKind.DEBT_PRINCIPAL
+        )
+        assert principal.planned == [Money("1000")]
+        utilities = next(row for row in report.categories if row.account == book.utilities)
+        assert utilities.planned == [Money("50")]
+
+    def test_mortgage_origination_is_not_a_payment(self, db, book):
+        house = Account(name="House", atype=AccountType.ASSET, parent=book.assets)
+        loan = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        purchase = Transaction(
+            post_date=date(2026, 1, 15),
+            description="Buy house",
+            splits=[
+                Split(house.handle, Money("400000")),
+                Split(book.checking, Money("-80000")),
+                Split(loan.handle, Money("-320000")),
+            ],
+        )
+        purchase.planning_resolution = PlanningResolution.HISTORICAL
+        with db.transaction("Mortgage origination") as txn:
+            db.add_account(house, txn)
+            db.add_account(loan, txn)
+            db.add_transaction(purchase, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+        assert report.mortgage_payments == []
+        assert report.activity.periods[0].actual_cash_change == Money("-80000")
+        assert report.activity.periods[0].actual_expense == Money(0)
+
+    def test_mortgage_special_transactions_remain_distinct(self, db, book):
+        house = Account(name="House", atype=AccountType.ASSET, parent=book.assets)
+        old_loan = Account(name="Old mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        new_loan = Account(name="New mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+        escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+        events = [
+            ScheduledTransaction(
+                name="Refinance with cash closing costs",
+                recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 5)),
+                splits=[
+                    ScheduledSplit(old_loan.handle, Money("320000")),
+                    ScheduledSplit(new_loan.handle, Money("-324000")),
+                    ScheduledSplit(book.utilities, Money("5000")),
+                    ScheduledSplit(book.checking, Money("-1000")),
+                ],
+            ),
+            ScheduledTransaction(
+                name="Sell house and repay mortgage",
+                recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 10)),
+                splits=[
+                    ScheduledSplit(book.checking, Money("100000")),
+                    ScheduledSplit(old_loan.handle, Money("300000")),
+                    ScheduledSplit(house.handle, Money("-400000")),
+                ],
+            ),
+            ScheduledTransaction(
+                name="Escrow refund",
+                recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 12)),
+                splits=[
+                    ScheduledSplit(book.checking, Money("200")),
+                    ScheduledSplit(escrow.handle, Money("-200")),
+                ],
+            ),
+            ScheduledTransaction(
+                name="Mortgage payment with escrow shortage",
+                recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 15)),
+                splits=[
+                    ScheduledSplit(old_loan.handle, Money("800")),
+                    ScheduledSplit(book.utilities, Money("1150")),
+                    ScheduledSplit(escrow.handle, Money("550")),
+                    ScheduledSplit(book.checking, Money("-2500")),
+                ],
+            ),
+        ]
+        with db.transaction("Mortgage special transactions") as txn:
+            for account in (house, old_loan, new_loan, escrow):
+                db.add_account(account, txn)
+            for event in events:
+                db.add_scheduled(event, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
+        )
+
+        assert len(report.mortgage_payments) == 1
+        assert report.mortgage_payments[0].account == old_loan.handle
+        assert report.mortgage_payments[0].planned == [Money("2500")]
+        detail = activity.explain_mortgage_payment_period(
+            db,
+            old_loan.handle,
+            date(2026, 1, 1),
+            date(2026, 1, 31),
+            as_of=date(2026, 1, 31),
+        )
+        assert len(detail.planned_events) == 1
+        explanation = " ".join(detail.planned_events[0].explanation)
+        assert "Escrow funding $550.00" in explanation
 
     def test_classified_balance_sheet_splits_appear_in_plan(self, db, book):
         contribution = ScheduledTransaction(

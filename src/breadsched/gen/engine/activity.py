@@ -39,6 +39,8 @@ __all__ = [
     "CategoryPlannedDetail",
     "PlanningFlowPeriodDetail",
     "CategoryReport",
+    "MortgagePaymentActivity",
+    "MortgagePaymentPeriodDetail",
     "PlanningFlowActivity",
     "PeriodActivity",
     "PlanMeasure",
@@ -47,6 +49,7 @@ __all__ = [
     "build_activity_report",
     "build_category_report",
     "explain_category_period",
+    "explain_mortgage_payment_period",
     "explain_planning_flow_period",
 ]
 
@@ -437,11 +440,57 @@ class PlanningFlowActivity:
 
 
 @dataclass(slots=True)
+class MortgagePaymentActivity:
+    """A whole mortgage cash requirement, separate from its classified components."""
+
+    account: str
+    account_name: str
+    full_name: str
+    name: str
+    planned: list[Money]
+    actual: list[Money]
+    variance: list[Money | None]
+
+    def values(self, measure: PlanMeasure) -> Sequence[Money | None]:
+        if measure is PlanMeasure.PLANNED:
+            return self.planned
+        if measure is PlanMeasure.ACTUAL:
+            return self.actual
+        return self.variance
+
+    def total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.values(measure))
+
+
+@dataclass(frozen=True, slots=True)
+class MortgagePaymentPeriodDetail:
+    """Explanation of one non-additive whole-payment Plan cell."""
+
+    account: str
+    name: str
+    full_name: str
+    start: date
+    end: date
+    planned: Money
+    actual: Money
+    planned_events: tuple[CategoryPlannedDetail, ...]
+    actual_transactions: tuple[CategoryActualDetail, ...]
+    as_of: date
+
+    @property
+    def variance(self) -> Money | None:
+        if self.start > self.as_of:
+            return None
+        return self.actual - self.planned
+
+
+@dataclass(slots=True)
 class CategoryReport:
     """Income/expense hierarchy plus classified balance-sheet planning flows."""
 
     activity: ActivityReport
     categories: list[CategoryActivity]
+    mortgage_payments: list[MortgagePaymentActivity]
     planning_flows: list[PlanningFlowActivity]
     as_of: date
 
@@ -489,6 +538,16 @@ class CategoryReport:
 
     def planning_flow_grand_total(self, measure: PlanMeasure) -> Money | None:
         return _sum_optional(self.planning_flow_totals(measure))
+
+    def mortgage_payment_totals(self, measure: PlanMeasure) -> list[Money | None]:
+        """Informational whole-payment totals; never add these to component rows."""
+        return _sum_columns(
+            [row.values(measure) for row in self.mortgage_payments],
+            len(self.activity.periods),
+        )
+
+    def mortgage_payment_grand_total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.mortgage_payment_totals(measure))
 
     def cash_totals(self, measure: PlanMeasure) -> list[Money | None]:
         if measure is PlanMeasure.PLANNED:
@@ -822,6 +881,123 @@ def explain_planning_flow_period(
     )
 
 
+def explain_mortgage_payment_period(
+    db: DbSQLite,
+    account_handle: str,
+    start: date,
+    end: date,
+    *,
+    scenario: Scenario | None = None,
+    as_of: date | None = None,
+) -> MortgagePaymentPeriodDetail:
+    """Explain one whole-payment row without adding it to component totals."""
+    if end < start:
+        raise ValueError("Plan detail end date precedes its start date.")
+    account = db.get_account(account_handle)
+    if account is None:
+        raise KeyError(account_handle)
+    if account.atype is not AccountType.LOAN:
+        raise ValueError("Mortgage payment detail requires a Loan account.")
+    accounts = {item.handle: item for item in db.iter_accounts()}
+
+    def payment_amount(splits: Iterable[PlannedSplit]) -> Money:
+        payment = _mortgage_payment(tuple(splits), accounts)
+        if payment is None or payment[0] != account_handle:
+            return Money(0)
+        return payment[1]
+
+    report = build_activity_report(db, start, end, period=ReportingPeriod.MONTH, scenario=scenario)
+    planned_rows: list[CategoryPlannedDetail] = []
+    actual_rows: list[CategoryActualDetail] = []
+    planned_total = Money(0)
+    actual_total = Money(0)
+
+    for bucket in report.periods:
+        for event in bucket.planned_events:
+            expected = payment_amount(event.expected_splits)
+            if expected == Money(0):
+                continue
+            actual_value = (
+                payment_amount(event.actual_splits)
+                if event.actual_transaction is not None
+                else None
+            )
+            planned_total = planned_total + expected
+            planned_rows.append(
+                CategoryPlannedDetail(
+                    occurrence=event.key,
+                    planned_date=event.planned_date,
+                    description=event.description,
+                    source=event.source.value,
+                    status=event.status.value,
+                    expected=expected,
+                    actual=actual_value,
+                    variance=actual_value - expected if actual_value is not None else None,
+                    actual_transaction=event.actual_transaction,
+                    actual_date=event.actual_date,
+                    explanation=_unique_explanations(
+                        _planned_resolution_explanation(event),
+                        _mortgage_payment_explanations(event.expected_splits, accounts),
+                    ),
+                )
+            )
+
+        for actual in bucket.actual_transactions:
+            transaction = db.get_transaction(actual.transaction)
+            if transaction is None:
+                continue
+            splits = tuple(
+                PlannedSplit(
+                    split.account,
+                    split.value,
+                    split.planning_flow,
+                    split.investment_activity,
+                )
+                for split in transaction.splits
+            )
+            value = payment_amount(splits)
+            if value == Money(0):
+                continue
+            actual_total = actual_total + value
+            matched_expected: Money | None = None
+            if actual.planned_occurrence:
+                matched = event_by_key(db, actual.planned_occurrence)
+                if matched is not None:
+                    matched_expected = payment_amount(matched.expected_splits)
+            actual_rows.append(
+                CategoryActualDetail(
+                    transaction=actual.transaction,
+                    post_date=actual.post_date,
+                    description=actual.description,
+                    amount=value,
+                    resolution=actual.planning_resolution,
+                    planned_occurrence=actual.planned_occurrence,
+                    planned_for=actual.planned_for,
+                    expected=matched_expected,
+                    variance=(value - matched_expected if matched_expected is not None else None),
+                    date_variance_days=actual.date_variance_days,
+                    explanation=_unique_explanations(
+                        _actual_resolution_explanation(actual),
+                        _mortgage_payment_explanations(splits, accounts),
+                    ),
+                )
+            )
+
+    full_name = db.full_name(account)
+    return MortgagePaymentPeriodDetail(
+        account=account.handle,
+        name=f"Mortgage payment — {full_name}",
+        full_name=full_name,
+        start=start,
+        end=end,
+        planned=planned_total,
+        actual=actual_total,
+        planned_events=tuple(planned_rows),
+        actual_transactions=tuple(actual_rows),
+        as_of=as_of or date.today(),
+    )
+
+
 def _inferred_planning_flow(
     split: PlannedSplit,
     splits: Iterable[PlannedSplit],
@@ -963,6 +1139,81 @@ def _escrow_planning_flows(
     for handle, amount in explicit.items():
         result[handle] = amount
     return result
+
+
+def _mortgage_payment(
+    splits: tuple[PlannedSplit, ...], accounts: dict[str, Account]
+) -> tuple[str, Money] | None:
+    """Return the one Loan account and whole spendable-cash outflow for a payment.
+
+    Origination and refinancing do not qualify: a payment must reduce exactly one
+    Loan account and must have an actual outflow from spendable cash.
+    """
+    loans = {
+        split.account
+        for split in splits
+        if split.amount > 0
+        and (account := accounts.get(split.account)) is not None
+        and account.atype is AccountType.LOAN
+    }
+    if len(loans) != 1:
+        return None
+    if any(
+        split.amount < 0
+        and (account := accounts.get(split.account)) is not None
+        and account.atype is AccountType.LOAN
+        for split in splits
+    ):
+        # A new or increased loan identifies origination/refinancing rather than
+        # ordinary servicing, even when cash also pays closing costs.
+        return None
+    cash_required = _sum_money(
+        -split.amount
+        for split in splits
+        if split.amount < 0
+        and (account := accounts.get(split.account)) is not None
+        and account.is_spendable_cash
+    )
+    if cash_required <= 0:
+        return None
+    return next(iter(loans)), cash_required
+
+
+def _mortgage_payment_explanations(
+    splits: tuple[PlannedSplit, ...], accounts: dict[str, Account]
+) -> tuple[str, ...]:
+    payment = _mortgage_payment(splits, accounts)
+    if payment is None:
+        return ()
+    loan_handle, cash_required = payment
+    principal = _sum_money(
+        split.amount for split in splits if split.account == loan_handle and split.amount > 0
+    )
+    escrow = _sum_money(
+        amount for amount in _escrow_planning_flows(splits, accounts).values() if amount > 0
+    )
+    recognition = escrow_recognition(((split.account, split.amount) for split in splits), accounts)
+    expense = _sum_money(
+        split.amount
+        for split in splits
+        if (account := accounts.get(split.account)) is not None
+        and account.account_class is AccountClass.EXPENSE
+    )
+    expense = expense - _sum_money(recognition.covered_expenses.values())
+    expense = expense + _sum_money(recognition.restored_expenses.values())
+    components = [f"Debt principal {principal.format('$', parens_negative=True)}"]
+    if expense:
+        components.append(f"ordinary expense {expense.format('$', parens_negative=True)}")
+    if escrow:
+        components.append(f"Escrow funding {escrow.format('$', parens_negative=True)}")
+    loan = accounts[loan_handle]
+    return (
+        f"Whole mortgage payment: {cash_required.format('$', parens_negative=True)} leaves "
+        f"spendable cash while reducing Loan account {loan.name}.",
+        "Classified components (non-additive): " + ", ".join(components) + ".",
+        "The whole payment is a liquidity requirement; its components supply the "
+        "expense and planning-flow classifications and are not added to it again.",
+    )
 
 
 def _sum_money(values: Iterable[Money]) -> Money:
@@ -1182,6 +1433,8 @@ def build_category_report(
     direct_actual: dict[str, list[Money]] = {}
     flow_planned: dict[tuple[PlanningFlowKind, str], list[Money]] = {}
     flow_actual: dict[tuple[PlanningFlowKind, str], list[Money]] = {}
+    mortgage_planned: dict[str, list[Money]] = {}
+    mortgage_actual: dict[str, list[Money]] = {}
 
     def amounts(store: dict[str, list[Money]], handle: str) -> list[Money]:
         return store.setdefault(handle, [Money(0) for _ in periods])
@@ -1195,6 +1448,11 @@ def build_category_report(
 
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
+            mortgage = _mortgage_payment(event.expected_splits, accounts)
+            if mortgage is not None:
+                handle, cash_required = mortgage
+                values = amounts(mortgage_planned, handle)
+                values[period_index] = values[period_index] + cash_required
             escrow = escrow_recognition(
                 ((split.account, split.amount) for split in event.expected_splits), accounts
             )
@@ -1229,9 +1487,19 @@ def build_category_report(
             if transaction is None:
                 continue
             actual_planned_splits = tuple(
-                PlannedSplit(split.account, split.value, split.planning_flow)
+                PlannedSplit(
+                    split.account,
+                    split.value,
+                    split.planning_flow,
+                    split.investment_activity,
+                )
                 for split in transaction.splits
             )
+            mortgage = _mortgage_payment(actual_planned_splits, accounts)
+            if mortgage is not None:
+                handle, cash_required = mortgage
+                values = amounts(mortgage_actual, handle)
+                values[period_index] = values[period_index] + cash_required
             escrow = escrow_recognition(
                 ((split.account, split.amount) for split in actual_planned_splits), accounts
             )
@@ -1350,9 +1618,35 @@ def build_category_report(
             )
         )
     flow_rows.sort(key=lambda row: (row.kind.value, row.full_name.casefold()))
+    mortgage_rows: list[MortgagePaymentActivity] = []
+    for handle in set(mortgage_planned) | set(mortgage_actual):
+        account = accounts.get(handle)
+        if account is None:
+            continue
+        planned_values = mortgage_planned.get(handle, [Money(0) for _ in periods])
+        actual_values = mortgage_actual.get(handle, [Money(0) for _ in periods])
+        full_name = db.full_name(account)
+        mortgage_rows.append(
+            MortgagePaymentActivity(
+                account=handle,
+                account_name=account.name,
+                full_name=full_name,
+                name=f"Mortgage payment — {full_name}",
+                planned=list(planned_values),
+                actual=list(actual_values),
+                variance=[
+                    actual - planned if bucket.start <= effective_as_of else None
+                    for planned, actual, bucket in zip(
+                        planned_values, actual_values, periods, strict=True
+                    )
+                ],
+            )
+        )
+    mortgage_rows.sort(key=lambda row: row.full_name.casefold())
     return CategoryReport(
         activity=activity,
         categories=rows,
+        mortgage_payments=mortgage_rows,
         planning_flows=flow_rows,
         as_of=effective_as_of,
     )
