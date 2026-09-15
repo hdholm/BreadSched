@@ -83,6 +83,7 @@ def test_plan_report_uses_selected_measure_horizon_totals_and_scenario(db, book)
         report,
         activity.PlanMeasure.PLANNED,
         scenario_name="Careful <case>",
+        book_name="/private/family/household.breadsched",
     )
 
     assert "Jan 2026" in document and "Mar 2026" in document
@@ -93,6 +94,11 @@ def test_plan_report_uses_selected_measure_horizon_totals_and_scenario(db, book)
     assert "300.00" in document
     assert "Careful &lt;case&gt;" in document
     assert "Planned" in document
+    assert 'class="plan-summary"' in document
+    assert 'class="plan-detail"' in document
+    assert "Include category detail when printing" in document
+    assert "/private/family" not in document
+    assert "household.breadsched" not in document
 
 
 def test_plan_report_shows_whole_mortgage_payment_as_non_additive(db, book):

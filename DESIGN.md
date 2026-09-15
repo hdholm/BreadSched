@@ -830,6 +830,15 @@ print boundary waits for an in-flight background calculation before it reads the
 visible view's result; a bounded timeout reports failure instead of reusing a stale
 or previously opened report.
 
+Plan printing has two explicit layers. The default print surface contains the
+scenario/horizon context, liquidity cards, and signed cash bridge needed to locate
+a shortfall. Positive budget categories, mortgage requirements, and informational
+balance-sheet classifications form an optional appendix selected in the preview.
+The appendix begins on a new page, repeats static table headings, and uses compact
+numeric spacing; sticky screen headers must never enter print layout. Printed Plan
+headers omit the book path. Browser-added URL/date/page margins remain controlled by
+the browser print dialog until the native GTK rendering path replaces that fallback.
+
 The web interface prints its current rendered view directly. Print-specific CSS
 removes navigation and editing actions, restores tables hidden by screen scroll
 regions, and preserves text, tables, and SVG charts as scalable output. Both paths

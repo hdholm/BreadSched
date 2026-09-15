@@ -366,6 +366,12 @@ includes its annual assumptions, chart, year-end table, warnings, and any displa
 comparison. If a Projection calculation is still running, printing waits briefly
 for that calculation so it cannot silently reopen the preceding report instead.
 
+Plan printouts lead with the cash outlook and omit the private book path. Category,
+mortgage, and balance-sheet detail remains visible in the preview but is an optional
+print appendix, disabled by default. Select **Include category detail when printing**
+in the preview when that supporting detail is needed; its table starts on a new page
+and repeats column headings.
+
 Start the GTK application with:
 
 ```bash
@@ -392,6 +398,8 @@ Use **Print** in the header to print whichever web view is currently displayed o
 save it as PDF. Print styling removes navigation and action buttons, expands Plan
 tables beyond their on-screen scroll area, and includes the selected controls and
 calculated report content.
+For Plan, the same optional category-detail control keeps the default printout
+focused on spendable cash and moves supporting detail to a paginated appendix.
 
 The web security and deployment model is part of the current hardening roadmap;
 do not expose the development server on an untrusted network.

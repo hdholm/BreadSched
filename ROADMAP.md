@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0199 — signed spendable-cash Plan bridge**.
+The current accepted baseline is **0200 — decision-ready Plan printing**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -528,11 +528,13 @@ semantics, not duplicate business rules in presentation code.
   misleading mixed planning-flow total; and expose opening, ending, and exact-dated
   minimum projected spendable cash. Treat future-only actual and variance summaries
   as not applicable. Advance the alpha version to `0.2.0a37`.
-- [ ] **NEXT — 0200 — Decision-ready Plan printing.** Give the cash/liquidity summary
+- [x] **0200 — Decision-ready Plan printing.** Give the cash/liquidity summary
   clear visual priority, start category detail as a distinct appendix, repeat table
   headings without overlapping rows, improve numeric density and section spacing,
   and omit private book paths from printed headers. Keep category detail available
-  while making the default printout useful for locating cash shortfalls quickly.
+  behind an explicit print-preview option while making the default printout useful
+  for locating cash shortfalls quickly. Repair scenario-event table cells that had
+  collapsed into comma-separated text and advance the alpha version to `0.2.0a38`.
 
 - [x] Add clearer unresolved/unexpected indicators in Plan.
 - [x] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
@@ -661,7 +663,7 @@ semantics, not duplicate business rules in presentation code.
   scenario-management UI.
   Preserve preceding-alpha scenario values as deliberate overrides and advance the
   alpha version to `0.2.0a36`.
-- [ ] Layer scenarios on scenarios. After Base inheritance is explicit, allow a
+- [ ] **NEXT — Layer scenarios on scenarios.** After Base inheritance is explicit, allow a
   saved scenario to name Base or another saved scenario as its parent. Resolve a
   deterministic parent chain followed by local overrides; reject cycles; define
   reparenting and parent-deletion behavior; and preserve stable override identity so
