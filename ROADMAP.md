@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0204 — separate imported and local account notes**.
+The current accepted baseline is **0205 — protect imported source-owned chart fields**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -373,6 +373,12 @@ semantics, not duplicate business rules in presentation code.
   CLI JSON. Migrate the preceding shared field only when typed source metadata
   proves its origin, preserving ambiguous values as local rather than guessing.
   Advance the alpha version to `0.2.0a42`.
+- [x] **0205 — Protect imported source-owned chart fields.** Keep an imported
+  account's name, parent, code, description, commodity/SCU, placeholder, and hidden
+  state read-only in GTK and reject corresponding CLI edits. Continue allowing
+  BreadSched-owned type, notes, grouping, projection, FSA, loan, and card decisions.
+  Make the source/local boundary explicit so a local edit cannot appear durable and
+  then disappear on re-import. Advance the alpha version to `0.2.0a43`.
 
 ## Register workflow
 

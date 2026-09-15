@@ -1171,6 +1171,13 @@ def cmd_account(args: argparse.Namespace) -> int:
             return 0
 
         # edit
+        if (account.source_guid or account.source_type) and any(
+            value is not None for value in (args.rename, args.description, args.code, args.parent)
+        ):
+            raise CommandError(
+                "name, parent, code, and description are controlled by the GnuCash source; "
+                "change them there and re-import"
+            )
         if args.rename:
             account.name = args.rename
         if args.type:

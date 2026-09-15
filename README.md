@@ -525,6 +525,12 @@ the source note without overwriting BreadSched planning context. Older alpha dat
 is separated automatically only when its retained typed source field proves where
 the shared note originated.
 
+For an imported account, GnuCash-owned chart fields—name, parent, code,
+description, commodity/SCU, placeholder, and hidden state—are inspectable but not
+editable in BreadSched. Change those fields in GnuCash and re-import. BreadSched's
+account type, local notes, dashboard group, projection settings, and household
+relationships remain editable because they are local planning decisions.
+
 GnuCash transaction-level notes are retained separately from split memos and from
 BreadSched-authored notes. Imported notes are visible but read-only and refresh from
 the source on re-import; local notes remain editable and are not overwritten.

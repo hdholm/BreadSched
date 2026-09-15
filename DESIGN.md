@@ -653,6 +653,12 @@ editable planning context and survive independently. Compatibility loading moves
 legacy shared note to source provenance only when the retained typed `slot:notes`
 value proves that origin, avoiding a guess that could discard a local note.
 
+That ownership boundary is enforced at edit time as well as import time. GTK and
+CLI refuse changes to an imported account's source-controlled name, parent, code,
+description, commodity/SCU, placeholder, and hidden state. Local planning fields
+remain editable. This prevents a successful local edit from appearing durable only
+to be silently replaced by the next source refresh.
+
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile
 state) and source transaction notes may refresh from the source. Source notes have
