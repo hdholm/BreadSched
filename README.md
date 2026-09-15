@@ -32,12 +32,14 @@ other concerns deliberately separate:
 - [`ROADMAP.md`](ROADMAP.md) is the **single source of future work**. Pending,
   proposed, reprioritized, and deferred work belongs there rather than in the
   README or design documentation.
+- [`CHANGELOG.md`](CHANGELOG.md) preserves completed milestones and their durable
+  acceptance contracts.
 - [`DESIGN.md`](DESIGN.md) explains architectural principles, important design
   choices, and the reasoning behind them. It describes the design as it is; it is
   not a backlog.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and patch workflow,
-  including generic regression fixtures, verification requirements, and roadmap
-  maintenance expectations.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
+  workflow, including generic regression fixtures, verification requirements, and
+  roadmap maintenance expectations.
 
 Full task-oriented user documentation and in-application help are planned in the
 roadmap. Until then, this README provides the basic operational overview.
@@ -356,8 +358,9 @@ The GTK4 application is the reference user experience. Its major views include:
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit
   terminology.
-- **Scheduled** — recurring commitments and estimates, including imported schedule
-  details and safe editing where round-trip fidelity is possible. Editable schedules
+- **Scheduled** — separate lists for recurring commitments/account payments and
+  planning estimates, including imported schedule details and safe editing where
+  round-trip fidelity is possible. Editable schedules
   can be duplicated as reviewed drafts; existing ledger transactions can seed new
   drafts; and definitions can be deleted without deleting transactions already posted.
   Account-linked credit-card payments are shown here without creating duplicate
@@ -519,6 +522,18 @@ non-planning Technical type for review. The GTK account editor's **GnuCash sourc
 Details** action and the web Accounts **Details** action show the source type, GUID,
 and typed fields that BreadSched preserves without interpreting.
 
+Imported account notes are shown with that read-only source provenance. They are
+separate from the editable local Notes field, so a GnuCash re-import may refresh
+the source note without overwriting BreadSched planning context. Older alpha data
+is separated automatically only when its retained typed source field proves where
+the shared note originated.
+
+For an imported account, GnuCash-owned chart fields—name, parent, code,
+description, commodity/SCU, placeholder, and hidden state—are inspectable but not
+editable in BreadSched. Change those fields in GnuCash and re-import. BreadSched's
+account type, local notes, dashboard group, projection settings, and household
+relationships remain editable because they are local planning decisions.
+
 GnuCash transaction-level notes are retained separately from split memos and from
 BreadSched-authored notes. Imported notes are visible but read-only and refresh from
 the source on re-import; local notes remain editable and are not overwritten.
@@ -533,8 +548,11 @@ history. Their supported and pending formats are tracked in `ROADMAP.md`.
 
 ## Dashboard liquidity and bill reserves
 
-The general Dashboard's pending-cash-flow table includes both scheduled bills and
-scheduled income. A bill's **Hold now** reserve accrues on actual income dates and
+The general Dashboard's pending-cash-flow table includes committed scheduled bills
+and income; planning estimates remain in Plan and Projection rather than appearing
+as obligations in Dashboard or Upcoming. Dashboard cash-flow figures distinguish
+committed activity from the outlook including budgeted estimates. A bill's **Hold
+now** reserve accrues on actual income dates and
 in proportion to each income event's share of all income in that bill cycle; income
 rows never have a hold. If no income is identified before a bill is due, the full
 bill is protected. An overdue bill continues to count against liquidity while

@@ -303,6 +303,7 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                         "code": account.code,
                         "description": account.description,
                         "notes": account.notes,
+                        "source_notes": account.source_notes,
                         "placeholder": account.placeholder,
                         "hidden": account.hidden,
                         "commodity": account.commodity,
@@ -1170,6 +1171,13 @@ def cmd_account(args: argparse.Namespace) -> int:
             return 0
 
         # edit
+        if (account.source_guid or account.source_type) and any(
+            value is not None for value in (args.rename, args.description, args.code, args.parent)
+        ):
+            raise CommandError(
+                "name, parent, code, and description are controlled by the GnuCash source; "
+                "change them there and re-import"
+            )
         if args.rename:
             account.name = args.rename
         if args.type:
@@ -1385,12 +1393,24 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 summary["emergency_fund"].format(),
             ],
             ["Months covered", f"{summary['months_covered']}"],
-            ["Outgoings, monthly", summary["monthly_outgoings"].format()],
+            ["Committed outgoings, monthly", summary["monthly_outgoings"].format()],
             [
-                "Emergency outgoings, monthly",
+                "Outgoings including estimates, monthly",
+                summary["monthly_outgoings_with_estimates"].format(),
+            ],
+            [
+                "Committed emergency outgoings, monthly",
                 summary["emergency_monthly_outgoings"].format(),
             ],
-            ["Income, monthly", summary["income_per_month"].format()],
+            [
+                "Emergency outgoings including estimates, monthly",
+                summary["emergency_monthly_outgoings_with_estimates"].format(),
+            ],
+            ["Committed income, monthly", summary["income_per_month"].format()],
+            [
+                "Income including estimates, monthly",
+                summary["income_per_month_with_estimates"].format(),
+            ],
         ]
         print(table(headline, ["measure", "amount"], right={1}))
 

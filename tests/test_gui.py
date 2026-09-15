@@ -1966,6 +1966,28 @@ class TestScheduledIsSplitInTwo:
         window.show_category("scheduled")
         assert not hasattr(window._views["scheduled"], "upcoming_view")
 
+    def test_commitments_and_estimates_have_separate_definition_lists(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+
+        commitments = view.definitions_view.get_model().get_model()
+        estimates = view.estimates_view.get_model().get_model()
+        commitment_schedules = [
+            item
+            for index in range(commitments.get_n_items())
+            if isinstance((item := unwrap(commitments.get_item(index))), ScheduledTransaction)
+        ]
+        estimate_schedules = [
+            item
+            for index in range(estimates.get_n_items())
+            if isinstance((item := unwrap(estimates.get_item(index))), ScheduledTransaction)
+        ]
+        assert all(not schedule.placeholder for schedule in commitment_schedules)
+        assert all(schedule.placeholder for schedule in estimate_schedules)
+
     def test_the_upcoming_view_has_no_definitions(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("upcoming")
@@ -3293,7 +3315,8 @@ class TestAccountEditor:
                 hidden=True,
                 commodity_scu=1000,
             )
-            child.notes = "Generic imported account note"
+            child.notes = "Local planning note"
+            child.source_notes = "Generic imported account note"
             child.source_guid = "imported-account-guid"
             child.source_type = "STOCK"
             child.source_fields = [GnuCashAccountField("slot:color", "string", "#315a74")]
@@ -3307,18 +3330,28 @@ class TestAccountEditor:
         assert dialog.commodity_handles[dialog.commodity_picker.get_selected()] == commodity.handle
         assert dialog.source_summary.get_text() == "STOCK"
         assert dialog.source_button.get_visible() is True
+        assert dialog.name_entry.get_sensitive() is False
+        assert dialog.commodity_picker.get_sensitive() is False
+        assert dialog.commodity_scu_entry.get_sensitive() is False
+        assert dialog.parent_picker.get_sensitive() is False
+        assert dialog.code_entry.get_sensitive() is False
+        assert dialog.description_entry.get_sensitive() is False
+        assert dialog.placeholder_check.get_sensitive() is False
+        assert dialog.hidden_check.get_sensitive() is False
+        assert dialog.type_picker.get_sensitive() is True
+        assert dialog.notes_view.get_sensitive() is True
+        assert dialog.group_entry.get_sensitive() is True
         notes_buffer = dialog.notes_view.get_buffer()
         notes_start, notes_end = notes_buffer.get_bounds()
-        assert (
-            notes_buffer.get_text(notes_start, notes_end, True) == "Generic imported account note"
-        )
+        assert notes_buffer.get_text(notes_start, notes_end, True) == "Local planning note"
 
         rebuilt = dialog.build()
         assert rebuilt.parent == parent.handle
         assert rebuilt.hidden is True
         assert rebuilt.commodity == commodity.handle
         assert rebuilt.commodity_scu == 1000
-        assert rebuilt.notes == "Generic imported account note"
+        assert rebuilt.notes == "Local planning note"
+        assert rebuilt.source_notes == "Generic imported account note"
         assert rebuilt.source_guid == "imported-account-guid"
         assert rebuilt.source_type == "STOCK"
         assert rebuilt.source_fields == child.source_fields

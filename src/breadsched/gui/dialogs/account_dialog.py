@@ -204,7 +204,9 @@ class AccountDialog(Gtk.Window):
         self.notes_view = Gtk.TextView()
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.notes_view.set_size_request(-1, 72)
-        self.notes_view.set_tooltip_text("Imported or local notes attached to this account")
+        self.notes_view.set_tooltip_text(
+            "BreadSched-owned notes; imported notes remain read-only under GnuCash source details"
+        )
         if account is not None and account.notes:
             self.notes_view.get_buffer().set_text(account.notes)
         notes_scroll = Gtk.ScrolledWindow()
@@ -269,6 +271,26 @@ class AccountDialog(Gtk.Window):
             self.hidden_check.set_active(account.hidden)
         grid.attach(self.hidden_check, 1, row, 1, 1)
         row += 1
+
+        if imported:
+            source_owned = (
+                self.name_entry,
+                self.commodity_picker,
+                self.commodity_scu_entry,
+                self.parent_picker,
+                self.code_entry,
+                self.description_entry,
+                self.placeholder_check,
+                self.hidden_check,
+            )
+            for control in source_owned:
+                control.set_sensitive(False)
+                control.set_tooltip_text(
+                    "Controlled by the GnuCash source; change it there, then re-import"
+                )
+            self.source_summary.set_tooltip_text(
+                "Chart fields are source-controlled; BreadSched planning fields remain editable"
+            )
 
         self.emergency_check = Gtk.CheckButton(label="Carry in emergency fund")
         self.emergency_check.set_tooltip_text(
@@ -386,6 +408,7 @@ class AccountDialog(Gtk.Window):
         lines = [
             f"Source GUID: {self.account.source_guid or '(not retained)'}",
             f"Source type: {self.account.source_type or '(unknown)'}",
+            f"Source notes: {self.account.source_notes or '(none)'}",
         ]
         if self.account.source_fields:
             lines.append("")

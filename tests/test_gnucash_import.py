@@ -126,6 +126,92 @@ class TestDateParsing:
 
 
 class TestSqliteImport:
+    def test_representative_account_matrix_preserves_source_and_local_semantics(
+        self, db, gnucash_account_matrix_path
+    ):
+        source = gnucash_account_matrix_path
+        result = gnucash_sqlite.import_book(db, source.path)
+        accounts = {
+            name: db.get_account(getattr(source.ids, name))
+            for name in (
+                "brokerage",
+                "fund",
+                "house",
+                "fsa",
+                "money_market",
+                "receivable",
+                "mortgage",
+                "payable",
+                "unusual",
+            )
+        }
+        assert all(accounts.values())
+        assert accounts["brokerage"].atype is AccountType.INVESTMENT
+        assert accounts["fund"].atype is AccountType.INVESTMENT
+        assert accounts["money_market"].atype is AccountType.BANK
+        assert accounts["receivable"].atype is AccountType.ASSET
+        assert accounts["mortgage"].atype is AccountType.LIABILITY
+        assert accounts["payable"].atype is AccountType.LIABILITY
+        assert accounts["unusual"].atype is AccountType.TECHNICAL
+        assert db.full_name(accounts["fund"]) == "Assets:Brokerage:Balanced Fund"
+        assert accounts["fund"].commodity_scu == 10000
+        assert db.get_commodity(accounts["fund"].commodity).mnemonic == "BALANCED"
+        fields = {
+            (field.name, field.value_type): field.value
+            for field in accounts["unusual"].source_fields
+        }
+        assert fields[("slot:color", "string; source type 4")] == "#315a74"
+        assert fields[("slot:tax-related", "int64; source type 1")] == "1"
+        assert any("preserved as Technical" in warning for warning in result.warnings)
+
+        brokerage = accounts["brokerage"]
+        mortgage = accounts["mortgage"]
+        fsa = accounts["fsa"]
+        brokerage.annual_return = Decimal("0.061")
+        mortgage.atype = AccountType.LOAN
+        mortgage.linked_asset = accounts["house"].handle
+        mortgage.annual_interest = Decimal("0.0525")
+        fsa.atype = AccountType.FSA
+        fsa.notes = "Local enrollment context"
+        fsa.fsa_years = [
+            FsaFundingYear(
+                start=date(2026, 1, 1),
+                through=date(2026, 12, 31),
+                election=Money("2400"),
+            )
+        ]
+        with db.transaction("Local household semantics") as txn:
+            for account in (brokerage, mortgage, fsa):
+                db.commit_account(account, txn)
+
+        with sqlite3.connect(source.path) as gnc:
+            gnc.execute(
+                "UPDATE accounts SET name=?, hidden=1, commodity_scu=1000 WHERE guid=?",
+                ("Balanced Allocation Fund", source.ids.fund),
+            )
+            gnc.execute(
+                "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+                (source.ids.fsa, "notes", 4, "Source enrollment note"),
+            )
+        gnucash_sqlite.import_book(db, source.path)
+
+        refreshed_fund = db.get_account(source.ids.fund)
+        refreshed_brokerage = db.get_account(source.ids.brokerage)
+        refreshed_mortgage = db.get_account(source.ids.mortgage)
+        refreshed_fsa = db.get_account(source.ids.fsa)
+        assert refreshed_fund.name == "Balanced Allocation Fund"
+        assert refreshed_fund.hidden is True
+        assert refreshed_fund.commodity_scu == 1000
+        assert refreshed_fund.parent == source.ids.brokerage
+        assert refreshed_brokerage.annual_return == Decimal("0.061")
+        assert refreshed_mortgage.atype is AccountType.LOAN
+        assert refreshed_mortgage.linked_asset == source.ids.house
+        assert refreshed_mortgage.annual_interest == Decimal("0.0525")
+        assert refreshed_fsa.atype is AccountType.FSA
+        assert refreshed_fsa.notes == "Local enrollment context"
+        assert refreshed_fsa.source_notes == "Source enrollment note"
+        assert refreshed_fsa.fsa_years[0].election == Money("2400")
+
     def test_notify_false_suppresses_the_complete_importer_boundary(self, db, gnucash_sqlite_path):
         seen = []
         db.connect("database-changed", lambda *_: seen.append("changed"))
@@ -151,7 +237,8 @@ class TestSqliteImport:
         assert account.atype is AccountType.BANK
         assert account.code == "1010"
         assert account.description == "Everyday account"
-        assert account.notes == "Generic account note"
+        assert account.notes == ""
+        assert account.source_notes == "Generic account note"
         assert account.commodity_scu == 100
 
     def test_retains_typed_account_fields_without_interpreting_them(self, db, gnucash_sqlite_path):
@@ -177,6 +264,51 @@ class TestSqliteImport:
         assert fields[("account:non-standard-scu", "boolean")] == "true"
         assert fields[("slot:color", "string; source type 4")] == "#315a74"
         assert fields[("slot:tax-related", "int64; source type 1")] == "1"
+
+    def test_reimport_refreshes_source_notes_without_overwriting_local_notes(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        account.notes = "Local planning note"
+        with db.transaction("Local account note") as txn:
+            db.commit_account(account, txn)
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE slots SET string_val=? WHERE obj_guid=? AND name='notes'",
+                ("Refreshed source note", gnucash_sqlite_path.ids.checking),
+            )
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        refreshed = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert refreshed is not None
+        assert refreshed.notes == "Local planning note"
+        assert refreshed.source_notes == "Refreshed source note"
+
+    def test_legacy_imported_note_is_moved_only_when_source_metadata_proves_it(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        raw = account.serialize()
+        raw.pop("source_notes")
+        raw["notes"] = "Generic account note"
+
+        restored = Account.from_dict(raw)
+
+        assert restored.notes == ""
+        assert restored.source_notes == "Generic account note"
+
+        raw["notes"] = "Ambiguous legacy note"
+        raw["source_fields"] = [
+            field for field in raw["source_fields"] if field["name"] != "slot:notes"
+        ]
+        ambiguous = Account.from_dict(raw)
+        assert ambiguous.notes == "Ambiguous legacy note"
+        assert ambiguous.source_notes == ""
 
     def test_historical_and_unknown_source_types_are_not_lost(self, db, gnucash_sqlite_path):
         unknown_guid = new_guid()
@@ -875,7 +1007,8 @@ class TestXmlImport:
         assert db.full_name(gnucash_xml_path.ids.bank) == "Current Account"
         account = db.get_account(gnucash_xml_path.ids.bank)
         assert account.code == "1200"
-        assert account.notes == "Generic XML account note"
+        assert account.notes == ""
+        assert account.source_notes == "Generic XML account note"
         assert account.commodity_scu == 1000
 
     def test_nested_xml_account_fields_remain_typed_and_inspectable(

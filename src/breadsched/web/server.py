@@ -316,6 +316,7 @@ class Api:
                         "code": account.code,
                         "description": account.description,
                         "notes": account.notes,
+                        "source_notes": account.source_notes,
                         "commodity_scu": account.commodity_scu,
                         "emergency_fund_eligible": account.emergency_fund_eligible,
                         "emergency_fund_included": account.emergency_fund_included,

@@ -174,7 +174,49 @@ class TestImport:
         checking = next(row for row in accounts if row["name"].endswith("Checking Account"))
         assert checking["source_guid"] == gnucash_sqlite_path.ids.checking
         assert checking["source_type"] == "BANK"
+        assert checking["notes"] == ""
+        assert checking["source_notes"] == "Generic account note"
         assert checking["source_fields"][0]["name"] == "account:non-standard-scu"
+
+    def test_imported_source_owned_chart_fields_cannot_be_edited(
+        self, capsys, book_path, gnucash_sqlite_path
+    ):
+        run(capsys, "init", book_path)
+        run(capsys, "import", book_path, gnucash_sqlite_path.path)
+
+        code, _out = run(
+            capsys,
+            "account",
+            book_path,
+            "edit",
+            "--name",
+            "Assets:Checking Account",
+            "--rename",
+            "Local rename",
+        )
+
+        assert code == 2
+        code, _out = run(
+            capsys,
+            "account",
+            book_path,
+            "edit",
+            "--name",
+            "Assets:Checking Account",
+            "--group",
+            "Cash:Daily",
+        )
+        assert code == 0
+        db = DbSQLite()
+        db.load(book_path, mode="r")
+        try:
+            assert db.get_account_by_name("Assets:Checking Account") is not None
+            assert db.get_account_by_name("Assets:Local rename") is None
+            checking = db.get_account_by_name("Assets:Checking Account")
+            assert checking is not None
+            assert checking.group == "Cash:Daily"
+        finally:
+            db.close()
 
     def test_an_unreadable_file_is_a_clean_error(self, book_path, tmp_path, capsys):
         run(capsys, "init", book_path)

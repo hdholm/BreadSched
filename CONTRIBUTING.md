@@ -16,12 +16,14 @@ an AI assistant.
   normalizing or discarding it.
 - Maintain GTK/web parity when a feature is intended to exist on both surfaces.
 - Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog. A
-  patch that completes, changes, discovers, splits, or reprioritizes roadmap work
-  must update the roadmap in the same patch.
+  pull request that completes, changes, discovers, splits, or reprioritizes roadmap
+  work must update the roadmap in the same pull request. Move completed outcomes
+  and their acceptance contracts to [`CHANGELOG.md`](CHANGELOG.md).
 - Keep documentation roles distinct: `README.md` is the user-facing overview and
   entry point; `DESIGN.md` records current architecture and rationale; `ROADMAP.md`
-  is the only future-work list. Update the appropriate document when a patch changes
-  behavior, design, or pending work rather than letting those descriptions drift.
+  is the only future-work list; and `CHANGELOG.md` preserves completed milestones.
+  Update the appropriate documents when a pull request changes behavior, design,
+  completed history, or pending work rather than letting those descriptions drift.
 
 ## Tests are part of the change
 
@@ -52,15 +54,18 @@ marker and must time only the operation under test, not fixture/book constructio
 Performance thresholds should be loose enough for ordinary CI variability while
 still detecting the regression class they were introduced to prevent.
 
-## Patch workflow
+## Pull-request workflow
 
-BreadSched development uses sequential `git am` mailbox patches.
+BreadSched development uses focused GitHub pull requests. When work is naturally
+sequential, use a stacked series whose bases preserve the intended review order.
+Retarget a dependent pull request to `main` after its parent merges.
 
-Before handing off a patch:
+Before opening or updating a pull request:
 
 1. Start from the latest accepted repository state, not from stale excerpts or a
    synthetic reconstruction when the real tree is available.
-2. Make one coherent change at a time and update `ROADMAP.md` when required.
+2. Make one coherent change at a time and update `ROADMAP.md` and `CHANGELOG.md`
+   when required.
    Advance the application alpha version when a commit changes code or runtime
    behavior. Documentation-only commits do not require a version change.
 3. Add or update focused tests for new functionality or bug fixes where
@@ -75,12 +80,42 @@ Before handing off a patch:
    `make typecheck-extended` gate covers CLI, web, and GUI modules, including
    diagnostics from their imports. GTK runtime tests remain necessary: dynamic
    PyGObject APIs without type stubs cannot be fully checked by mypy.
-8. Generate the deliverable with `git format-patch`.
-9. Verify the final mailbox patch with a real `git am` against the exact preceding
-   accepted state.
+8. Preserve a single coherent commit where practical and verify its parent and tree
+   before publication.
+9. Push a named feature branch and open a pull request against `main` or the exact
+   preceding branch in a documented stack. Record scope, tests, version, related
+   issues, and dependency/merge order in the description.
+10. Monitor the complete GitHub Actions run. Correct failures on the same branch and
+    refresh every dependent stacked branch so its parent is exact.
 
-Do not hand over an ordinary raw diff in place of a mailbox patch unless that is
-explicitly requested.
+Use `Fixes #N` or `Closes #N` only on the pull request that completes the entire
+issue. Earlier members of a stack should use `Related to #N` so merging a partial
+slice cannot close the issue prematurely.
+
+## Instructions for coding agents
+
+These instructions apply to every automated or interactive coding agent working in
+this repository. Read this file completely before changing files.
+
+1. Inspect the current Git state, open pull requests, open GitHub issues, and the
+   unfinished roadmap before choosing work. Reconcile newly reported defects with
+   existing milestones instead of silently duplicating or displacing them.
+2. Confirm a field report against current code and tests. Distinguish a reproduced
+   defect from a requested behavior change, and add a focused failing acceptance
+   test before changing financial semantics where practicable.
+3. Keep accounting, persistence, and projection rules in shared domain/service
+   layers. Apply presentation changes consistently to GTK, web, CLI, API, and
+   printable output wherever that behavior is exposed.
+4. Preserve unrelated user changes and existing commit boundaries. Do not rewrite,
+   discard, or conceal work merely to simplify a branch.
+5. Run the focused test slice while developing, then all gates described above.
+   GitHub Actions on its supported platforms, including the GTK job, is the final
+   authority when a required runtime is unavailable locally.
+6. Maintain `README.md`, `DESIGN.md`, `ROADMAP.md`, and `CHANGELOG.md` according to
+   their roles. Documentation and acceptance tests are part of the implementation,
+   not deferred cleanup.
+7. Submit work through the pull-request workflow above, link the relevant issue,
+   and state any unverified platform/runtime explicitly.
 
 ## Static and style hygiene
 

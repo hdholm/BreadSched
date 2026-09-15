@@ -158,6 +158,14 @@ class TestScheduleEngine:
             db.commit_scheduled(payday_schedule, txn)
         assert schedule.due_occurrences(db, as_of=date(2026, 6, 1)) == []
 
+    def test_upcoming_excludes_planning_estimates(self, db, payday_schedule):
+        payday_schedule.placeholder = True
+        with db.transaction("Make estimate") as txn:
+            db.commit_scheduled(payday_schedule, txn)
+
+        assert schedule.forecast_occurrences(db, date(2026, 1, 1), date(2026, 1, 31))
+        assert schedule.upcoming_occurrences(db, as_of=date(2026, 1, 20)) == []
+
     def test_a_card_payment_is_an_account_linked_definition(self, db, funded_book):
         card = db.get_account(funded_book.card)
         card.payment_day = 22
