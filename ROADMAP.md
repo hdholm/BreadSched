@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0202 — historical-estimator transaction semantics**.
+The current accepted baseline is **0203 — classified historical planning flows**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -93,11 +93,7 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Historical planning-flow proposals.** Infer reviewable recurring
-   retirement saving/distribution, investment contribution/withdrawal,
-   debt-principal, and benefit/FSA funding without folding those balance-sheet
-   movements into ordinary Income/Expense estimates.
-2. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
+1. **NEXT — Account and schedule fidelity.** Continue lossless editing and fixture coverage
    for imported account and schedule forms, bounded by what can be round-tripped
    without guessing.
 
@@ -454,11 +450,13 @@ semantics, not duplicate business rules in presentation code.
   counterparts, retain the observed recurring counterpart and prefer spendable
   cash to break equal-evidence ties. Apply the same exclusions to future coverage
   and cadence evidence. Advance the alpha version to `0.2.0a40`.
-- [ ] **NEXT — Propose classified historical planning flows.** Add distinct,
+- [x] **0203 — Propose classified historical planning flows.** Add distinct,
   reviewable proposals for recurring retirement saving/distribution, investment
   contribution/withdrawal, debt principal, and benefit/FSA funding. Preserve the
   shared planning-flow or investment-activity classification in accepted Base and
   scenario estimates and subtract matching future classified coverage exactly once.
+  Keep duplicated cash-counterpart annotations from producing a second retirement
+  distribution proposal. Advance the alpha version to `0.2.0a41`.
 
 ## Plan and planning-flow reporting
 

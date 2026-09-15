@@ -903,8 +903,10 @@ class Api:
             "months": months,
             "proposals": [
                 {
+                    "key": item.key,
                     "category": item.category,
                     "category_name": item.category_name,
+                    "purpose_name": item.purpose_name,
                     "funding": item.funding,
                     "funding_name": item.funding_name,
                     "amount": item.display_amount,
@@ -924,6 +926,14 @@ class Api:
                     "outlier_months": item.outlier_months,
                     "variability": item.variability,
                     "reason": item.reason,
+                    "planning_flow": (
+                        item.planning_flow.value if item.planning_flow is not None else None
+                    ),
+                    "investment_activity": (
+                        item.investment_activity.value
+                        if item.investment_activity is not None
+                        else None
+                    ),
                 }
                 for item in proposals
             ],
@@ -940,6 +950,7 @@ class Api:
         """Accept one historical proposal as a normal planning estimate."""
         months = int(payload.get("months") or 12)
         minimum = int(payload.get("min_active_months") or 3)
+        proposal_key = str(payload.get("key") or "")
         category = str(payload.get("category") or "")
         scenario = str(payload.get("scenario") or "").strip() or None
         proposals = estimates.propose_historical_estimates(
@@ -948,7 +959,14 @@ class Api:
             min_active_months=minimum,
             scenario_handle=scenario,
         )
-        proposal = next((item for item in proposals if item.category == category), None)
+        proposal = next(
+            (
+                item
+                for item in proposals
+                if item.key == proposal_key or (not proposal_key and item.category == category)
+            ),
+            None,
+        )
         if proposal is None:
             raise ValueError("historical estimate proposal is no longer available")
         handle = estimates.accept_historical_estimate(self.db, proposal, scenario_handle=scenario)
