@@ -216,6 +216,102 @@ class TestScheduleEngine:
         assert following.next_due == date(2026, 3, 22)
         assert following.amount_due == Money(0)
 
+    def test_unpaid_card_snapshots_overdue_balance_and_holds_only_new_activity_next(
+        self, db, funded_book
+    ):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        card.card_payment_account = funded_book.checking
+        with db.transaction("Statement and later purchase") as txn:
+            db.commit_account(card, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 24),
+                    "Later purchase",
+                    funded_book.groceries,
+                    funded_book.card,
+                    "20.00",
+                ),
+                txn,
+            )
+
+        definitions = schedule.account_payment_definitions(db, as_of=date(2026, 2, 25))
+
+        assert [(item.next_due, item.amount_due) for item in definitions] == [
+            (date(2026, 2, 22), Money("86.40")),
+            (date(2026, 3, 22), Money("20.00")),
+        ]
+
+    def test_any_partial_cash_payment_resolves_overdue_and_next_holds_current_balance(
+        self, db, funded_book
+    ):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        card.card_payment_account = funded_book.checking
+        with db.transaction("Partial payment") as txn:
+            db.commit_account(card, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 24),
+                    "Partial payment",
+                    funded_book.card,
+                    funded_book.checking,
+                    "10.00",
+                ),
+                txn,
+            )
+
+        definitions = schedule.account_payment_definitions(db, as_of=date(2026, 2, 25))
+
+        assert [(item.next_due, item.amount_due) for item in definitions] == [
+            (date(2026, 3, 22), Money("76.40"))
+        ]
+
+    def test_a_card_refund_does_not_resolve_the_overdue_statement(self, db, funded_book):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        card.card_payment_account = funded_book.checking
+        with db.transaction("Refund") as txn:
+            db.commit_account(card, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 24),
+                    "Merchant refund",
+                    funded_book.card,
+                    funded_book.groceries,
+                    "10.00",
+                ),
+                txn,
+            )
+
+        definitions = schedule.account_payment_definitions(db, as_of=date(2026, 2, 25))
+
+        assert [(item.next_due, item.amount_due) for item in definitions] == [
+            (date(2026, 2, 22), Money("86.40"))
+        ]
+
+    def test_a_reversed_payment_does_not_resolve_the_overdue_statement(self, db, funded_book):
+        card = db.get_account(funded_book.card)
+        card.payment_day = 22
+        card.card_payment_account = funded_book.checking
+        with db.transaction("Reversed payment") as txn:
+            db.commit_account(card, txn)
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 2, 24),
+                    "Reversed payment",
+                    funded_book.checking,
+                    funded_book.card,
+                    "10.00",
+                ),
+                txn,
+            )
+
+        definitions = schedule.account_payment_definitions(db, as_of=date(2026, 2, 25))
+
+        assert definitions[0].next_due == date(2026, 2, 22)
+        assert definitions[0].amount_due == Money("86.40")
+
     def test_a_payment_on_the_due_date_advances_the_card_cycle(self, db, funded_book):
         card = db.get_account(funded_book.card)
         card.payment_day = 22

@@ -194,8 +194,10 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
         pending_rows.append(
             f"<tr><td>{escape(item.name)}</td><td>{'Income' if item.income else 'Bill'}</td>"
             f"<td>{item.next_due.isoformat()}</td><td>{due_in}</td>"
-            f"<td>{escape(item.frequency)}</td>{_amount(item.amount)}{_amount(item.monthly)}"
-            f"{_amount(None if item.income else item.held)}{_amount(item.annual)}"
+            f"<td>{escape(item.frequency)}</td>{_amount(item.amount)}"
+            f"{_amount(None if item.generated else item.monthly)}"
+            f"{_amount(None if item.income else item.held)}"
+            f"{_amount(None if item.generated else item.annual)}"
             f"<td>{kind}</td></tr>"
         )
     pending = (

@@ -3061,8 +3061,8 @@ async function showDashboard() {
     item.days_until < 0 ? `${-item.days_until} days overdue`
       : (item.days_until === 0 ? "today" : `${item.days_until} days`),
     item.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
-    money(item.amount), money(item.monthly),
-    item.income ? "" : money(item.hold), money(item.annual),
+    money(item.amount), item.generated ? "" : money(item.monthly),
+    item.income ? "" : money(item.hold), item.generated ? "" : money(item.annual),
     item.generated ? "Account payment" : (item.estimate ? "Estimate" : "Committed"),
   ]);
 
