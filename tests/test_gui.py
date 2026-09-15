@@ -3293,7 +3293,8 @@ class TestAccountEditor:
                 hidden=True,
                 commodity_scu=1000,
             )
-            child.notes = "Generic imported account note"
+            child.notes = "Local planning note"
+            child.source_notes = "Generic imported account note"
             child.source_guid = "imported-account-guid"
             child.source_type = "STOCK"
             child.source_fields = [GnuCashAccountField("slot:color", "string", "#315a74")]
@@ -3309,16 +3310,15 @@ class TestAccountEditor:
         assert dialog.source_button.get_visible() is True
         notes_buffer = dialog.notes_view.get_buffer()
         notes_start, notes_end = notes_buffer.get_bounds()
-        assert (
-            notes_buffer.get_text(notes_start, notes_end, True) == "Generic imported account note"
-        )
+        assert notes_buffer.get_text(notes_start, notes_end, True) == "Local planning note"
 
         rebuilt = dialog.build()
         assert rebuilt.parent == parent.handle
         assert rebuilt.hidden is True
         assert rebuilt.commodity == commodity.handle
         assert rebuilt.commodity_scu == 1000
-        assert rebuilt.notes == "Generic imported account note"
+        assert rebuilt.notes == "Local planning note"
+        assert rebuilt.source_notes == "Generic imported account note"
         assert rebuilt.source_guid == "imported-account-guid"
         assert rebuilt.source_type == "STOCK"
         assert rebuilt.source_fields == child.source_fields

@@ -519,6 +519,12 @@ non-planning Technical type for review. The GTK account editor's **GnuCash sourc
 Details** action and the web Accounts **Details** action show the source type, GUID,
 and typed fields that BreadSched preserves without interpreting.
 
+Imported account notes are shown with that read-only source provenance. They are
+separate from the editable local Notes field, so a GnuCash re-import may refresh
+the source note without overwriting BreadSched planning context. Older alpha data
+is separated automatically only when its retained typed source field proves where
+the shared note originated.
+
 GnuCash transaction-level notes are retained separately from split memos and from
 BreadSched-authored notes. Imported notes are visible but read-only and refresh from
 the source on re-import; local notes remain editable and are not overwritten.

@@ -151,7 +151,8 @@ class TestSqliteImport:
         assert account.atype is AccountType.BANK
         assert account.code == "1010"
         assert account.description == "Everyday account"
-        assert account.notes == "Generic account note"
+        assert account.notes == ""
+        assert account.source_notes == "Generic account note"
         assert account.commodity_scu == 100
 
     def test_retains_typed_account_fields_without_interpreting_them(self, db, gnucash_sqlite_path):
@@ -177,6 +178,51 @@ class TestSqliteImport:
         assert fields[("account:non-standard-scu", "boolean")] == "true"
         assert fields[("slot:color", "string; source type 4")] == "#315a74"
         assert fields[("slot:tax-related", "int64; source type 1")] == "1"
+
+    def test_reimport_refreshes_source_notes_without_overwriting_local_notes(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        account.notes = "Local planning note"
+        with db.transaction("Local account note") as txn:
+            db.commit_account(account, txn)
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            source.execute(
+                "UPDATE slots SET string_val=? WHERE obj_guid=? AND name='notes'",
+                ("Refreshed source note", gnucash_sqlite_path.ids.checking),
+            )
+
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+
+        refreshed = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert refreshed is not None
+        assert refreshed.notes == "Local planning note"
+        assert refreshed.source_notes == "Refreshed source note"
+
+    def test_legacy_imported_note_is_moved_only_when_source_metadata_proves_it(
+        self, db, gnucash_sqlite_path
+    ):
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        account = db.get_account(gnucash_sqlite_path.ids.checking)
+        assert account is not None
+        raw = account.serialize()
+        raw.pop("source_notes")
+        raw["notes"] = "Generic account note"
+
+        restored = Account.from_dict(raw)
+
+        assert restored.notes == ""
+        assert restored.source_notes == "Generic account note"
+
+        raw["notes"] = "Ambiguous legacy note"
+        raw["source_fields"] = [
+            field for field in raw["source_fields"] if field["name"] != "slot:notes"
+        ]
+        ambiguous = Account.from_dict(raw)
+        assert ambiguous.notes == "Ambiguous legacy note"
+        assert ambiguous.source_notes == ""
 
     def test_historical_and_unknown_source_types_are_not_lost(self, db, gnucash_sqlite_path):
         unknown_guid = new_guid()
@@ -875,7 +921,8 @@ class TestXmlImport:
         assert db.full_name(gnucash_xml_path.ids.bank) == "Current Account"
         account = db.get_account(gnucash_xml_path.ids.bank)
         assert account.code == "1200"
-        assert account.notes == "Generic XML account note"
+        assert account.notes == ""
+        assert account.source_notes == "Generic XML account note"
         assert account.commodity_scu == 1000
 
     def test_nested_xml_account_fields_remain_typed_and_inspectable(

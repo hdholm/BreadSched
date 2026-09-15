@@ -174,6 +174,8 @@ class TestImport:
         checking = next(row for row in accounts if row["name"].endswith("Checking Account"))
         assert checking["source_guid"] == gnucash_sqlite_path.ids.checking
         assert checking["source_type"] == "BANK"
+        assert checking["notes"] == ""
+        assert checking["source_notes"] == "Generic account note"
         assert checking["source_fields"][0]["name"] == "account:non-standard-scu"
 
     def test_an_unreadable_file_is_a_clean_error(self, book_path, tmp_path, capsys):

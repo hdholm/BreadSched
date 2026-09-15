@@ -911,7 +911,7 @@ function openAccountDetails(account) {
   const value = (item) => item === null || item === undefined || item === "" ? "—" : String(item);
   const metadata = [
     ["Full name", account.full_name], ["Code", account.code],
-    ["Description", account.description], ["Notes", account.notes],
+    ["Description", account.description], ["Local notes", account.notes],
     ["Commodity", account.commodity], ["Commodity SCU", account.commodity_scu],
     ["Placeholder", account.placeholder ? "Yes" : "No"],
     ["Hidden", account.hidden ? "Yes" : "No"],
@@ -924,6 +924,8 @@ function openAccountDetails(account) {
             el("td", {}, value(account.source_guid))),
           el("tr", {}, el("td", {}, "Source account type"), el("td", {}, "type"),
             el("td", {}, value(account.source_type))),
+          el("tr", {}, el("td", {}, "Source notes"), el("td", {}, "string"),
+            el("td", {}, value(account.source_notes))),
           ...(account.source_fields || []).map((field) => el("tr", {},
             el("td", {}, field.name), el("td", {}, field.value_type),
             el("td", {}, value(field.value)))),
