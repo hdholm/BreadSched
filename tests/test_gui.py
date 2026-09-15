@@ -3308,6 +3308,17 @@ class TestAccountEditor:
         assert dialog.commodity_handles[dialog.commodity_picker.get_selected()] == commodity.handle
         assert dialog.source_summary.get_text() == "STOCK"
         assert dialog.source_button.get_visible() is True
+        assert dialog.name_entry.get_sensitive() is False
+        assert dialog.commodity_picker.get_sensitive() is False
+        assert dialog.commodity_scu_entry.get_sensitive() is False
+        assert dialog.parent_picker.get_sensitive() is False
+        assert dialog.code_entry.get_sensitive() is False
+        assert dialog.description_entry.get_sensitive() is False
+        assert dialog.placeholder_check.get_sensitive() is False
+        assert dialog.hidden_check.get_sensitive() is False
+        assert dialog.type_picker.get_sensitive() is True
+        assert dialog.notes_view.get_sensitive() is True
+        assert dialog.group_entry.get_sensitive() is True
         notes_buffer = dialog.notes_view.get_buffer()
         notes_start, notes_end = notes_buffer.get_bounds()
         assert notes_buffer.get_text(notes_start, notes_end, True) == "Local planning note"

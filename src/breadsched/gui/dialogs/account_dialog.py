@@ -272,6 +272,26 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.hidden_check, 1, row, 1, 1)
         row += 1
 
+        if imported:
+            source_owned = (
+                self.name_entry,
+                self.commodity_picker,
+                self.commodity_scu_entry,
+                self.parent_picker,
+                self.code_entry,
+                self.description_entry,
+                self.placeholder_check,
+                self.hidden_check,
+            )
+            for control in source_owned:
+                control.set_sensitive(False)
+                control.set_tooltip_text(
+                    "Controlled by the GnuCash source; change it there, then re-import"
+                )
+            self.source_summary.set_tooltip_text(
+                "Chart fields are source-controlled; BreadSched planning fields remain editable"
+            )
+
         self.emergency_check = Gtk.CheckButton(label="Carry in emergency fund")
         self.emergency_check.set_tooltip_text(
             "Include recurring activity against this account when sizing the "
