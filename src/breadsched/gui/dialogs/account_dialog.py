@@ -204,7 +204,9 @@ class AccountDialog(Gtk.Window):
         self.notes_view = Gtk.TextView()
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.notes_view.set_size_request(-1, 72)
-        self.notes_view.set_tooltip_text("Imported or local notes attached to this account")
+        self.notes_view.set_tooltip_text(
+            "BreadSched-owned notes; imported notes remain read-only under GnuCash source details"
+        )
         if account is not None and account.notes:
             self.notes_view.get_buffer().set_text(account.notes)
         notes_scroll = Gtk.ScrolledWindow()
@@ -386,6 +388,7 @@ class AccountDialog(Gtk.Window):
         lines = [
             f"Source GUID: {self.account.source_guid or '(not retained)'}",
             f"Source type: {self.account.source_type or '(unknown)'}",
+            f"Source notes: {self.account.source_notes or '(none)'}",
         ]
         if self.account.source_fields:
             lines.append("")

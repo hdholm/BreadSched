@@ -537,6 +537,7 @@ class ImportSink:
                 existing_root.source_atype = parsed
                 existing_root.source_type = source_type
                 existing_root.source_fields = list(source_fields)
+                existing_root.source_notes = notes
                 self.db.commit_account(existing_root, self.txn)
                 self._source_accounts[guid] = existing_root.handle
                 LOG.debug("mapped source root %s onto the book's root", guid[:8])
@@ -570,7 +571,7 @@ class ImportSink:
                 hidden=hidden,
                 commodity_scu=commodity_scu,
             )
-            account.notes = notes
+            account.source_notes = notes
             account.source_atype = parsed
             account.source_guid = guid
             account.source_type = source_type
@@ -599,7 +600,7 @@ class ImportSink:
                 hidden=hidden,
                 commodity_scu=commodity_scu,
             )
-            account.notes = notes
+            account.source_notes = notes
             account.source_atype = parsed
             account.source_guid = guid
             account.source_type = source_type
@@ -622,7 +623,7 @@ class ImportSink:
             hidden=hidden,
             commodity_scu=commodity_scu,
         )
-        account.notes = notes
+        account.source_notes = notes
         account.source_atype = parsed
         account.source_guid = guid
         account.source_type = source_type
@@ -637,6 +638,7 @@ class ImportSink:
     def _preserve_breadsched_account_state(imported: Account, existing: Account) -> None:
         """Keep BreadSched-owned account configuration across source re-import."""
         imported.atype = existing.atype
+        imported.notes = existing.notes
         imported.fsa_years = list(existing.fsa_years)
         imported.annual_return = existing.annual_return
         imported.annual_interest = existing.annual_interest

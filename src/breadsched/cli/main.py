@@ -303,6 +303,7 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                         "code": account.code,
                         "description": account.description,
                         "notes": account.notes,
+                        "source_notes": account.source_notes,
                         "placeholder": account.placeholder,
                         "hidden": account.hidden,
                         "commodity": account.commodity,

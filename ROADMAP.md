@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0203 — classified historical planning flows**.
+The current accepted baseline is **0204 — separate imported and local account notes**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -367,6 +367,12 @@ semantics, not duplicate business rules in presentation code.
   expose every other supported form inspectably and read-only without destructive
   normalization. Add a fixture and round-trip/regression proof whenever the editable
   surface grows.
+- [x] **0204 — Separate imported and local account notes.** Retain GnuCash account
+  notes as read-only source provenance while keeping BreadSched-authored account
+  notes independently editable across re-import. Expose both through GTK, web, and
+  CLI JSON. Migrate the preceding shared field only when typed source metadata
+  proves its origin, preserving ambiguous values as local rather than guessing.
+  Advance the alpha version to `0.2.0a42`.
 
 ## Register workflow
 
