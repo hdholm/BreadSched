@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0208 — Separate commitments from estimates.** Keep planning estimates in
+  Plan and Projection without presenting them as due or overdue obligations in
+  Dashboard or Upcoming. Split Scheduled into commitments/account payments and
+  estimates, and expose committed versus estimate-inclusive income and outgoings
+  through the shared Dashboard model, GTK, web, API, CLI, and print output. Advance
+  the alpha version to `0.2.0a44`.
+
 - [x] **0207 — Repository contribution guidance and history split.** Make
   `CONTRIBUTING.md` the complete contributor and agent workflow, add a repository-
   wide `AGENTS.md` pointer, move completed roadmap history here, and keep

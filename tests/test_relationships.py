@@ -405,14 +405,14 @@ def planned(book_path, capsys):
     return book_path
 
 
-class TestBillFrequency:
+class TestEstimateFrequency:
     def test_the_cycle_reads_as_the_schedules_own_frequency(self, planned, capsys):
         from breadsched.gen.engine import dashboard
 
         db = open_book(planned)
         try:
             board = dashboard.build(db, as_of=date(2026, 6, 1))
-            bill = next(b for b in board.bills if b.name == "Groceries")
+            bill = next(b for b in board.estimates if b.name == "Groceries")
             assert bill.frequency == "every month"
         finally:
             db.close()
@@ -445,7 +445,7 @@ class TestBillFrequency:
         db = open_book(book_path)
         try:
             board = dashboard.build(db, as_of=date(2026, 6, 1))
-            bill = next(b for b in board.bills if b.name == "HOA")
+            bill = next(b for b in board.estimates if b.name == "HOA")
             assert bill.frequency == "every 3 months"
             assert bill.monthly == Money("206.33")
         finally:
@@ -457,7 +457,7 @@ class TestBillFrequency:
         db = open_book(planned)
         try:
             board = dashboard.build(db, as_of=date(2026, 6, 1))
-            bill = next(b for b in board.bills if b.name == "Groceries")
+            bill = next(b for b in board.estimates if b.name == "Groceries")
             assert bill.schedule is not None
             assert db.get_scheduled(bill.schedule.handle) is not None
         finally:

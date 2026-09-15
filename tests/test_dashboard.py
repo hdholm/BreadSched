@@ -160,10 +160,14 @@ class TestBillNormalisation:
         assert daycare.annual == Money("2295.81")
         assert daycare.monthly > daycare.amount * 2
 
-    def test_estimates_are_included_and_marked(self, household):
-        groceries = self._bill(household, "Groceries")
+    def test_estimates_are_excluded_from_pending_bills_but_retained_in_outlook(self, household):
+        assert "Groceries" not in [bill.name for bill in household.bills]
+        groceries = next(item for item in household.estimates if item.name == "Groceries")
         assert groceries.estimate is True
         assert groceries.monthly == Money("600.00")
+        assert household.monthly_outgoings_with_estimates == (
+            household.monthly_outgoings + Money("600.00")
+        )
 
     def test_income_is_not_listed_as_a_bill(self, household):
         assert "Pay" not in [bill.name for bill in household.bills]

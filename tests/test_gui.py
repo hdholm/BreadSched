@@ -1966,6 +1966,28 @@ class TestScheduledIsSplitInTwo:
         window.show_category("scheduled")
         assert not hasattr(window._views["scheduled"], "upcoming_view")
 
+    def test_commitments_and_estimates_have_separate_definition_lists(
+        self, app, window, populated_book
+    ):
+        app.open_book(populated_book)
+        window.show_category("scheduled")
+        view = window._views["scheduled"]
+
+        commitments = view.definitions_view.get_model().get_model()
+        estimates = view.estimates_view.get_model().get_model()
+        commitment_schedules = [
+            item
+            for index in range(commitments.get_n_items())
+            if isinstance((item := unwrap(commitments.get_item(index))), ScheduledTransaction)
+        ]
+        estimate_schedules = [
+            item
+            for index in range(estimates.get_n_items())
+            if isinstance((item := unwrap(estimates.get_item(index))), ScheduledTransaction)
+        ]
+        assert all(not schedule.placeholder for schedule in commitment_schedules)
+        assert all(schedule.placeholder for schedule in estimate_schedules)
+
     def test_the_upcoming_view_has_no_definitions(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("upcoming")

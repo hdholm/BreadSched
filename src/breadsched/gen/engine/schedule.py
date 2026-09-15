@@ -238,10 +238,16 @@ def upcoming_occurrences(
     as_of: date | None = None,
     horizon_days: int = 30,
 ) -> list[Occurrence | AccountPaymentOccurrence]:
-    """Saved due activity plus non-posting account-linked card payments."""
+    """Committed due activity plus non-posting account-linked card payments.
+
+    Planning estimates deliberately stay in Plan and Projection. They are not
+    obligations that can become due, overdue, or eligible for posting.
+    """
     today = as_of or date.today()
     found: list[Occurrence | AccountPaymentOccurrence] = list(
-        due_occurrences(db, as_of=today, horizon_days=horizon_days)
+        occurrence
+        for occurrence in due_occurrences(db, as_of=today, horizon_days=horizon_days)
+        if not occurrence.schedule.placeholder
     )
     horizon = today + timedelta(days=horizon_days)
     for definition in account_payment_definitions(db, as_of=today):

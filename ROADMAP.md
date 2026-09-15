@@ -8,8 +8,8 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0207 — repository contribution guidance and
-history split**. Unchecked field reports are requests or suspected regressions, not
+The current accepted baseline is **0208 — separate commitments from estimates**.
+Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
 ## Product direction
@@ -27,13 +27,7 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-1. **NEXT — 0208: Separate commitments from estimates.** Exclude estimates from
-   Dashboard pending obligations and Upcoming, split Scheduled definitions into
-   commitments/account payments versus estimates, and expose committed-only and
-   estimate-inclusive cash-flow figures across shared engine, GTK, web, API, CLI,
-   and printable reports. Reference issue #11 and advance the alpha version.
-
-2. **0209 — Statement-based credit-card obligations.** Snapshot the account balance
+1. **NEXT — 0209: Statement-based credit-card obligations.** Snapshot the account balance
    on its due date as the overdue obligation. Exclude exactly that snapshot from the
    next-cycle hold. Any later positive card payment from a cash-like account—even a
    partial payment, but not a reversal/refund—resolves the overdue occurrence; the
@@ -41,12 +35,12 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
    and payment double counting and cover GTK/web/API/Upcoming/Dashboard behavior.
    Reference issue #11 and advance the alpha version.
 
-3. **0210 — Separate Dashboard income and bills.** Present committed income and
+2. **0210 — Separate Dashboard income and bills.** Present committed income and
    pending bills in distinct lists, use terminology consistently across GTK, web,
    API, print, tests, and README, and document credit-card purchase-versus-payment
    timing. Close issue #11 and advance the alpha version.
 
-4. **Imported schedule fidelity matrix.** Add one representative generated fixture
+3. **Imported schedule fidelity matrix.** Add one representative generated fixture
    spanning native/imported schedules, unusual recurrences, formulas, overrides,
    and bounded schedules before widening their editable surface.
 

@@ -1216,7 +1216,7 @@ async function showRegister() {
 async function showScheduled() {
   if (!state.accounts.length) state.accounts = await get("/api/accounts");
   const data = await get("/api/scheduled?days=90");
-  const definitions = data.definitions.map((s) => el("tr", {},
+  const definitionRow = (s) => el("tr", {},
     el("td", {}, el("div", {}, s.name),
       s.account_linked
         ? el("div", {class:"muted"}, "Account-linked current obligation")
@@ -1256,7 +1256,9 @@ async function showScheduled() {
           say("Scheduled transaction deleted. Undo from the desktop interface if needed.");
           render();
         } catch (error) { say(error.message, "error"); }
-      }}, "Delete…")))));
+      }}, "Delete…"))));
+  const commitments = data.definitions.filter((s) => !s.placeholder).map(definitionRow);
+  const estimates = data.definitions.filter((s) => s.placeholder).map(definitionRow);
 
   const upcoming = data.upcoming.map((o) => el("tr", {
     ondblclick:()=>{
@@ -1296,9 +1298,12 @@ async function showScheduled() {
       + "Complex/formula schedules remain read-only here."),
     el("h3", {}, "Upcoming"),
     table(["Due", "Schedule", { label: "Amount", num: true }], upcoming),
-    el("h3", {}, "Definitions"),
+    el("h3", {}, "Commitments and account payments"),
     table(["Name", "Frequency", { label: "Amount", num: true }, "Posting", "State", ""],
-      definitions));
+      commitments),
+    el("h3", {}, "Estimates"),
+    table(["Name", "Frequency", { label: "Amount", num: true }, "Posting", "State", ""],
+      estimates));
 }
 
 async function openHistoricalEstimateDialog() {
@@ -2999,7 +3004,8 @@ async function showDashboard() {
     tile(`Needed in ${data.config.liquidity_days} days`, money(s.required_liquid)),
     tile("Available", money(s.available), Number(s.available) < 0),
     tile(`Emergency fund (${data.config.emergency_months} mo)`, money(s.emergency_fund)),
-    tile("Emergency outgoings / mo", money(s.emergency_monthly_outgoings)),
+    tile("Committed emergency outgoings / mo", money(s.emergency_monthly_outgoings)),
+    tile("Including estimates / mo", money(s.emergency_monthly_outgoings_with_estimates)),
     tile("Months covered", s.months_covered,
          Number(s.months_covered) < Number(data.config.emergency_months)),
     short ? tile("Short of the fund", money(s.emergency_shortfall), true) : null);

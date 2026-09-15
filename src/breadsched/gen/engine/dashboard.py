@@ -295,9 +295,13 @@ class DashboardSummary(TypedDict):
     emergency_shortfall: Money
     months_covered: Decimal
     monthly_outgoings: Money
+    monthly_outgoings_with_estimates: Money
     emergency_monthly_outgoings: Money
+    emergency_monthly_outgoings_with_estimates: Money
     annual_outgoings: Money
+    annual_outgoings_with_estimates: Money
     income_per_month: Money
+    income_per_month_with_estimates: Money
     next_income: date | None
     bills: int
 
@@ -310,7 +314,9 @@ class Dashboard:
     config: DashboardConfig
     groups: list[GroupResult] = field(default_factory=list)
     pending: list[BillRow] = field(default_factory=list)
+    estimates: list[BillRow] = field(default_factory=list)
     income_per_month: Money = field(default_factory=lambda: Money(0))
+    income_per_month_with_estimates: Money = field(default_factory=lambda: Money(0))
     next_income: date | None = None
     _income_events: list[tuple[date, Money]] = field(default_factory=list, repr=False)
     liquid: Money = field(default_factory=lambda: Money(0))
@@ -371,6 +377,10 @@ class Dashboard:
         return total
 
     @property
+    def monthly_outgoings_with_estimates(self) -> Money:
+        return sum((bill.monthly for bill in self._normalised_bills(True)), Money(0))
+
+    @property
     def annual_outgoings(self) -> Money:
         total = Money(0)
         for bill in self._normalised_bills():
@@ -378,11 +388,19 @@ class Dashboard:
         return total
 
     @property
+    def annual_outgoings_with_estimates(self) -> Money:
+        return sum((bill.annual for bill in self._normalised_bills(True)), Money(0))
+
+    @property
     def emergency_monthly_outgoings(self) -> Money:
         """Recurring costs explicitly retained when household income stops."""
         return sum((bill.emergency_monthly for bill in self._normalised_bills()), Money(0))
 
-    def _normalised_bills(self) -> list[BillRow]:
+    @property
+    def emergency_monthly_outgoings_with_estimates(self) -> Money:
+        return sum((bill.emergency_monthly for bill in self._normalised_bills(True)), Money(0))
+
+    def _normalised_bills(self, include_estimates: bool = False) -> list[BillRow]:
         """One representative row per recurring obligation.
 
         Every missed occurrence remains a pending liquidity obligation, but three
@@ -391,7 +409,10 @@ class Dashboard:
         """
         recurring: dict[tuple[str, str], BillRow] = {}
         standalone: list[BillRow] = []
-        for bill in self.bills:
+        candidates = self.bills
+        if include_estimates:
+            candidates = [*candidates, *(row for row in self.estimates if not row.income)]
+        for bill in candidates:
             if bill.schedule is not None:
                 key = ("schedule", bill.schedule.handle)
             elif bill.account is not None:
@@ -490,9 +511,15 @@ class Dashboard:
             "emergency_shortfall": self.emergency_shortfall,
             "months_covered": self.months_covered,
             "monthly_outgoings": self.monthly_outgoings,
+            "monthly_outgoings_with_estimates": self.monthly_outgoings_with_estimates,
             "emergency_monthly_outgoings": self.emergency_monthly_outgoings,
+            "emergency_monthly_outgoings_with_estimates": (
+                self.emergency_monthly_outgoings_with_estimates
+            ),
             "annual_outgoings": self.annual_outgoings,
+            "annual_outgoings_with_estimates": self.annual_outgoings_with_estimates,
             "income_per_month": self.income_per_month,
+            "income_per_month_with_estimates": self.income_per_month_with_estimates,
             "next_income": self.next_income,
             "bills": len(self.bills),
         }
@@ -519,11 +546,13 @@ def build(
         board.liquid = sum((group.liquid for group in board.groups if group.depth == 0), Money(0))
     else:
         board.liquid = ledger.cash_on_hand(db, as_of=today)
-    pending, income_per_month, next_income, income_events = _pending_cash_flow(
-        db, today, horizon_days, paid_off
+    pending, estimates, income_per_month, income_with_estimates, next_income, income_events = (
+        _pending_cash_flow(db, today, horizon_days, paid_off)
     )
     board.pending = pending
+    board.estimates = estimates
     board.income_per_month = income_per_month
+    board.income_per_month_with_estimates = income_with_estimates
     board.next_income = next_income
     board._income_events = income_events
     return board
@@ -1123,7 +1152,7 @@ def _pending_cash_flow(
     today: date,
     horizon_days: int,
     paid_off: set[str],
-) -> tuple[list[BillRow], Money, date | None, list[tuple[date, Money]]]:
+) -> tuple[list[BillRow], list[BillRow], Money, Money, date | None, list[tuple[date, Money]]]:
     """Build dated pending income and bills, plus income used by liquidity."""
     horizon = today + timedelta(days=horizon_days)
     schedules = [sched for sched in db.iter_scheduled() if sched.enabled and sched.usable]
@@ -1132,10 +1161,12 @@ def _pending_cash_flow(
         due_by_schedule.setdefault(occurrence.schedule.handle, []).append(occurrence.when)
 
     pending: list[BillRow] = []
+    estimates: list[BillRow] = []
     bills: list[BillRow] = []
     income_schedules: list[ScheduledTransaction] = []
     income_events: list[tuple[date, Money]] = []
     income_per_month = Money(0)
+    income_per_month_with_estimates = Money(0)
 
     for sched in schedules:
         unresolved = due_by_schedule.get(sched.handle, [])
@@ -1145,31 +1176,35 @@ def _pending_cash_flow(
         if representative is None:
             continue
         income, outflow = _flow_amounts(db, sched, representative)
-        if income > 0 and income >= outflow:
+        if income > 0 and income >= outflow and not sched.placeholder:
             income_schedules.append(sched)
         if not dates:
             continue
 
         days = cycle_days(sched)
         if income > 0 and income >= outflow:
-            income_per_month = income_per_month + (income * (DAYS_PER_MONTH / days)).quantize(100)
+            normalised_income = (income * (DAYS_PER_MONTH / days)).quantize(100)
+            income_per_month_with_estimates = income_per_month_with_estimates + normalised_income
+            if not sched.placeholder:
+                income_per_month = income_per_month + normalised_income
             for when in dates:
                 event_income, event_outflow = _flow_amounts(db, sched, when)
                 if event_income <= 0 or event_income < event_outflow:
                     continue
-                pending.append(
-                    BillRow(
-                        name=sched.name,
-                        next_due=when,
-                        amount=event_income,
-                        cycle_days=days,
-                        schedule=sched,
-                        estimate=sched.placeholder,
-                        income=True,
-                        recurrence=sched.recurrence,
-                    )
+                row = BillRow(
+                    name=sched.name,
+                    next_due=when,
+                    amount=event_income,
+                    cycle_days=days,
+                    schedule=sched,
+                    estimate=sched.placeholder,
+                    income=True,
+                    recurrence=sched.recurrence,
                 )
+                (estimates if sched.placeholder else pending).append(row)
             for occurrence_date in sched.recurrence.occurrences(horizon, since=today):
+                if sched.placeholder:
+                    continue
                 if occurrence_date in sched.skipped:
                     continue
                 if occurrence_date <= today and schedule.already_posted(
@@ -1205,7 +1240,7 @@ def _pending_cash_flow(
                 emergency_amount=_emergency_outflow(db, sched, when),
             )
             bills.append(bill)
-            pending.append(bill)
+            (estimates if sched.placeholder else pending).append(bill)
 
     card_rows = _credit_card_rows(db, today, schedules)
     bills.extend(card_rows)
@@ -1227,7 +1262,14 @@ def _pending_cash_flow(
     pending.sort(key=lambda row: (row.next_due, not row.income, row.name.casefold()))
     income_events.sort(key=lambda item: item[0])
     next_income = next((when for when, _amount in income_events if when >= today), None)
-    return pending, income_per_month, next_income, income_events
+    return (
+        pending,
+        estimates,
+        income_per_month,
+        income_per_month_with_estimates,
+        next_income,
+        income_events,
+    )
 
 
 def pending_from_ledger(db: DbSQLite, today: date | None = None) -> list:

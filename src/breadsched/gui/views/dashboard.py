@@ -234,7 +234,16 @@ class DashboardView(BaseView):
                 summary["emergency_fund"],
                 False,
             ),
-            ("Emergency outgoings / mo", summary["emergency_monthly_outgoings"], False),
+            (
+                "Committed emergency outgoings / mo",
+                summary["emergency_monthly_outgoings"],
+                False,
+            ),
+            (
+                "Including estimates / mo",
+                summary["emergency_monthly_outgoings_with_estimates"],
+                False,
+            ),
         ]
         for label, amount, alarm in cards:
             self.cards.append(_card(label, amount.format(parens_negative=True), alarm))

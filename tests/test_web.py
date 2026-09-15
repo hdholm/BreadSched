@@ -541,6 +541,7 @@ class TestItServes:
             {"month": 1, "amount": "40.00"},
             {"month": 7, "amount": "10.00"},
         ]
+        assert all(row["schedule"] != created["handle"] for row in data["upcoming"])
 
     def test_occurrence_options_follow_recurrence_and_weekend_adjustment(self, client):
         status, payload = client.post(
@@ -1659,6 +1660,8 @@ class TestDashboardApi:
             "emergency_fund",
             "months_covered",
             "monthly_outgoings",
+            "monthly_outgoings_with_estimates",
+            "income_per_month_with_estimates",
         ):
             assert key in payload["summary"], f"missing {key}"
 

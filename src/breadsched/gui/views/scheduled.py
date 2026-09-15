@@ -88,6 +88,7 @@ class ScheduledView(BaseView):
     def __init__(self, manager) -> None:
         super().__init__(manager)
         self._suggest_dialog: Gtk.Window | None = None
+        self._active_selection = None
         self._build()
 
     def set_db(self, db: DbSQLite | None) -> None:
@@ -142,22 +143,48 @@ class ScheduledView(BaseView):
         loan_button.connect("clicked", self._on_loan_clicked)
         bar.append(loan_button)
 
-        self.definitions_view = Gtk.ColumnView()
-        self.definitions_view.set_show_row_separators(True)
-        self.definitions_view.append_column(self._name_column())
-        self.definitions_view.append_column(column("Kind", _kind_of, sort_key=_kind_of))
-        self.definitions_view.append_column(
+        self.definitions_view = self._definitions_view()
+        self.estimates_view = self._definitions_view()
+        bar.append(column_menu("scheduled-commitments", self.definitions_view, self._settings()))
+        bar.append(column_menu("scheduled-estimates", self.estimates_view, self._settings()))
+        self.append(bar)
+        commitments_heading = Gtk.Label(label="Commitments and account payments", xalign=0)
+        commitments_heading.add_css_class("total-row")
+        commitments_heading.set_margin_start(12)
+        self.append(commitments_heading)
+        commitments_scroller = Gtk.ScrolledWindow(child=self.definitions_view)
+        commitments_scroller.set_vexpand(True)
+        self.append(commitments_scroller)
+
+        estimates_heading = Gtk.Label(label="Estimates", xalign=0)
+        estimates_heading.add_css_class("total-row")
+        estimates_heading.set_margin_start(12)
+        self.append(estimates_heading)
+        estimates_scroller = Gtk.ScrolledWindow(child=self.estimates_view)
+        estimates_scroller.set_vexpand(True)
+        self.append(estimates_scroller)
+
+        self.status = Gtk.Label(xalign=0)
+        self.status.add_css_class("dim")
+        for side in ("start", "end"):
+            getattr(self.status, f"set_margin_{side}")(12)
+        self.append(self.status)
+
+    def _definitions_view(self):
+        view = Gtk.ColumnView()
+        view.set_show_row_separators(True)
+        view.append_column(self._name_column())
+        view.append_column(column("Kind", _kind_of, sort_key=_kind_of))
+        view.append_column(
             column(
                 "Frequency",
                 lambda s: "" if _is_split(s) else s.recurrence.describe(),
                 expand=True,
             )
         )
-        self.definitions_view.append_column(
-            column("Next", lambda s: "" if _is_split(s) else self._next_text(s))
-        )
-        self.definitions_view.append_column(column("Amount", _amount_of, numeric=True))
-        self.definitions_view.append_column(
+        view.append_column(column("Next", lambda s: "" if _is_split(s) else self._next_text(s)))
+        view.append_column(column("Amount", _amount_of, numeric=True))
+        view.append_column(
             column(
                 "Planning purpose",
                 lambda s: (
@@ -167,7 +194,7 @@ class ScheduledView(BaseView):
                 ),
             )
         )
-        self.definitions_view.append_column(
+        view.append_column(
             column(
                 "Automatic",
                 lambda s: (
@@ -181,24 +208,13 @@ class ScheduledView(BaseView):
                 ),
             )
         )
-        self.definitions_view.append_column(
+        view.append_column(
             column(
                 "Enabled",
                 lambda s: "" if _is_split(s) else ("yes" if s.enabled else "no"),
             )
         )
-        bar.append(column_menu("scheduled", self.definitions_view, self._settings()))
-        self.append(bar)
-
-        self.status = Gtk.Label(xalign=0)
-        self.status.add_css_class("dim")
-        for side in ("start", "end"):
-            getattr(self.status, f"set_margin_{side}")(12)
-        self.append(self.status)
-
-        scroller = Gtk.ScrolledWindow(child=self.definitions_view)
-        scroller.set_vexpand(True)
-        self.append(scroller)
+        return view
 
     def _settings(self):
         return getattr(self.manager.get_application(), "view_settings", None)
@@ -241,19 +257,19 @@ class ScheduledView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
-        definitions = Gio.ListStore.new(Row)
         schedules = list(self.db.iter_scheduled())
         account_payments = schedule.account_payment_definitions(self.db, schedules=schedules)
-        for sched in [*schedules, *account_payments]:
-            definitions.append(Row(sched))
-
-        tree = Gtk.TreeListModel.new(definitions, False, False, self._split_children)
-        selection = Gtk.SingleSelection(model=sorted_model(self.definitions_view, tree))
-        selection.connect("notify::selected", self._on_selected)
-        self.definitions_view.set_model(selection)
+        commitments = [item for item in schedules if not item.placeholder]
+        self._set_definitions_model(self.definitions_view, [*commitments, *account_payments], True)
+        self._set_definitions_model(
+            self.estimates_view,
+            [item for item in schedules if item.placeholder],
+            False,
+        )
         # Gtk.SingleSelection auto-selects the first row before our notify handler
         # is connected.  Synchronize action sensitivity and expansion explicitly so
         # the visibly selected row is also the application's selected row.
+        selection = self.definitions_view.get_model()
         self._on_selected(selection, None)
 
         estimates = sum(1 for s in schedules if s.placeholder)
@@ -262,19 +278,30 @@ class ScheduledView(BaseView):
             f"{estimates} estimate(s); {len(account_payments)} account-linked payment(s)"
         )
 
+    def _set_definitions_model(self, view, items, autoselect: bool) -> None:
+        definitions = Gio.ListStore.new(Row)
+        for item in items:
+            definitions.append(Row(item))
+        tree = Gtk.TreeListModel.new(definitions, False, False, self._split_children)
+        selection = Gtk.SingleSelection(model=sorted_model(view, tree))
+        selection.set_autoselect(autoselect)
+        selection.connect("notify::selected", self._on_selected)
+        view.set_model(selection)
+
     def select_schedule(self, handle: str) -> None:
         """Select and expand one schedule, arriving from another view."""
-        selection = self.definitions_view.get_model()
-        if selection is None:
-            return
-        for index in range(selection.get_n_items()):
-            row = selection.get_item(index)
-            payload = unwrap(row)
-            if getattr(payload, "handle", None) == handle:
-                selection.set_selected(index)
-                if hasattr(row, "set_expanded"):
-                    row.set_expanded(True)
-                return
+        for view in (self.definitions_view, self.estimates_view):
+            selection = view.get_model()
+            if selection is None:
+                continue
+            for index in range(selection.get_n_items()):
+                row = selection.get_item(index)
+                payload = unwrap(row)
+                if getattr(payload, "handle", None) == handle:
+                    selection.set_selected(index)
+                    if hasattr(row, "set_expanded"):
+                        row.set_expanded(True)
+                    return
 
     def _split_children(self, item):
         payload = item.payload if isinstance(item, Row) else item
@@ -308,6 +335,9 @@ class ScheduledView(BaseView):
     # ----------------------------------------------------------------- actions
 
     def _on_selected(self, selection, _param) -> None:
+        if selection is None:
+            return
+        self._active_selection = selection
         position = selection.get_selected()
         model = selection.get_model()
         for index in range(model.get_n_items()):
@@ -324,7 +354,7 @@ class ScheduledView(BaseView):
         self.duplicate_button.set_sensitive(saved_schedule)
 
     def _selected_item(self) -> ScheduledTransaction | AccountPaymentDefinition | None:
-        selection = self.definitions_view.get_model()
+        selection = self._active_selection
         selected = selection.get_selected_item() if selection is not None else None
         payload = unwrap(selected) if selected is not None else None
         if isinstance(payload, (ScheduledTransaction, AccountPaymentDefinition)):

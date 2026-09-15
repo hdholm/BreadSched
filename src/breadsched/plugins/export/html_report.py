@@ -140,8 +140,13 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
                 False,
             ),
             (
-                "Emergency outgoings / mo",
+                "Committed emergency outgoings / mo",
                 _money(summary["emergency_monthly_outgoings"]),
+                False,
+            ),
+            (
+                "Including estimates / mo",
+                _money(summary["emergency_monthly_outgoings_with_estimates"]),
                 False,
             ),
             (

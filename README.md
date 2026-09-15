@@ -358,8 +358,9 @@ The GTK4 application is the reference user experience. Its major views include:
   account metadata.
 - **Register** — account transaction history using account-appropriate debit/credit
   terminology.
-- **Scheduled** — recurring commitments and estimates, including imported schedule
-  details and safe editing where round-trip fidelity is possible. Editable schedules
+- **Scheduled** — separate lists for recurring commitments/account payments and
+  planning estimates, including imported schedule details and safe editing where
+  round-trip fidelity is possible. Editable schedules
   can be duplicated as reviewed drafts; existing ledger transactions can seed new
   drafts; and definitions can be deleted without deleting transactions already posted.
   Account-linked credit-card payments are shown here without creating duplicate
@@ -547,8 +548,11 @@ history. Their supported and pending formats are tracked in `ROADMAP.md`.
 
 ## Dashboard liquidity and bill reserves
 
-The general Dashboard's pending-cash-flow table includes both scheduled bills and
-scheduled income. A bill's **Hold now** reserve accrues on actual income dates and
+The general Dashboard's pending-cash-flow table includes committed scheduled bills
+and income; planning estimates remain in Plan and Projection rather than appearing
+as obligations in Dashboard or Upcoming. Dashboard cash-flow figures distinguish
+committed activity from the outlook including budgeted estimates. A bill's **Hold
+now** reserve accrues on actual income dates and
 in proportion to each income event's share of all income in that bill cycle; income
 rows never have a hold. If no income is identified before a bill is due, the full
 bill is protected. An overdue bill continues to count against liquidity while
