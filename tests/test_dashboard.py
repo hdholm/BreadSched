@@ -659,7 +659,7 @@ class TestCli:
         capsys.readouterr()
         cli(["dashboard", str(path), "--json"])
         payload = json.loads(capsys.readouterr().out)
-        assert "summary" in payload and "groups" in payload and "pending" in payload
+        assert set(payload) == {"summary", "groups", "bills", "income"}
 
     def test_the_horizons_can_be_overridden(self, tmp_path, capsys):
         import json

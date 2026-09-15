@@ -439,7 +439,7 @@ class TestItServes:
         assert Money(occurrence["amount"]) == Money("125.00")
 
         _status, dashboard_data = client.get("/api/dashboard")
-        pending = next(item for item in dashboard_data["pending"] if item["account"] == card.handle)
+        pending = next(item for item in dashboard_data["bills"] if item["account"] == card.handle)
         assert pending["monthly"] is None
         assert pending["annual"] is None
         assert Money(pending["hold"]) == Money("125.00")
@@ -1649,7 +1649,7 @@ class TestDashboardApi:
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200
-        assert set(payload) == {"summary", "config", "groups", "pending"}
+        assert set(payload) == {"summary", "config", "groups", "bills", "income"}
 
     def test_fsa_information_has_its_own_dashboard_endpoint(self, client):
         status, payload = client.get("/api/fsa/dashboard")
@@ -1671,7 +1671,7 @@ class TestDashboardApi:
         ):
             assert key in payload["summary"], f"missing {key}"
 
-    def test_pending_cash_flow_exposes_income_without_a_hold(self, client):
+    def test_dashboard_exposes_income_in_a_separate_list(self, client):
         _status, scheduled = client.get("/api/scheduled")
         salary = next(item for item in scheduled["accounts"] if item["name"].endswith(":Salary"))
         checking = next(
@@ -1691,9 +1691,10 @@ class TestDashboardApi:
         )
         assert status == 200
         _status, payload = client.get("/api/dashboard")
-        income = [item for item in payload["pending"] if item["income"]]
-        assert income
-        assert all(item["hold"] is None for item in income)
+        assert payload["income"]
+        assert all(item["name"] == "Payday" for item in payload["income"])
+        assert all("hold" not in item for item in payload["income"])
+        assert all(item["name"] != "Payday" for item in payload["bills"])
 
     def test_groups_carry_equity_and_ltv_where_they_apply(self, client):
         _status, payload = client.get("/api/dashboard")

@@ -1315,10 +1315,9 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         }
                         for g in board.groups
                     ],
-                    "pending": [
+                    "bills": [
                         {
                             "name": item.name,
-                            "flow": "income" if item.income else "bill",
                             "next_due": item.next_due,
                             "cycle_months": item.cycle_months,
                             "amount": item.amount,
@@ -1329,7 +1328,18 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                             "estimate": item.estimate,
                             "generated": item.generated,
                         }
-                        for item in board.pending
+                        for item in board.bills
+                    ],
+                    "income": [
+                        {
+                            "name": item.name,
+                            "next_due": item.next_due,
+                            "cycle_months": item.cycle_months,
+                            "amount": item.amount,
+                            "monthly": item.monthly,
+                            "annual": item.annual,
+                        }
+                        for item in board.incomes
                     ],
                 },
                 args,
@@ -1414,28 +1424,27 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         ]
         print(table(headline, ["measure", "amount"], right={1}))
 
-        if board.pending:
+        if board.bills:
             print()
-            pending_rows = [
+            print("Pending bills")
+            bill_rows = [
                 [
                     item.name[:32],
-                    "income" if item.income else "bill",
                     item.next_due.isoformat(),
                     f"{item.cycle_months:g}",
                     item.amount.format(),
                     "" if item.generated else item.monthly.format(),
-                    "" if item.income else item.held.format(),
+                    item.held.format(),
                     "" if item.generated else item.annual.format(),
-                    "account" if item.generated else "est" if item.estimate else "",
+                    "account" if item.generated else "",
                 ]
-                for item in board.pending[: args.limit]
+                for item in board.bills[: args.limit]
             ]
             print(
                 table(
-                    pending_rows,
+                    bill_rows,
                     [
                         "item",
-                        "flow",
                         "next due",
                         "cycle",
                         "amount",
@@ -1444,11 +1453,34 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         "annual",
                         "",
                     ],
-                    right={4, 5, 6, 7},
+                    right={3, 4, 5, 6},
                 )
             )
-            if len(board.pending) > args.limit:
-                print(f"... and {len(board.pending) - args.limit} more")
+            if len(board.bills) > args.limit:
+                print(f"... and {len(board.bills) - args.limit} more")
+        if board.incomes:
+            print()
+            print("Expected income")
+            income_rows = [
+                [
+                    item.name[:32],
+                    item.next_due.isoformat(),
+                    f"{item.cycle_months:g}",
+                    item.amount.format(),
+                    item.monthly.format(),
+                    item.annual.format(),
+                ]
+                for item in board.incomes[: args.limit]
+            ]
+            print(
+                table(
+                    income_rows,
+                    ["item", "next due", "cycle", "amount", "monthly", "annual"],
+                    right={3, 4, 5},
+                )
+            )
+            if len(board.incomes) > args.limit:
+                print(f"... and {len(board.incomes) - args.limit} more")
         return 0
     finally:
         db.close()
@@ -1782,7 +1814,7 @@ def build_parser() -> argparse.ArgumentParser:
     dash.add_argument(
         "--emergency-months", type=int, help="months of outgoings the emergency fund should cover"
     )
-    dash.add_argument("--limit", type=int, default=40, help="bills to list")
+    dash.add_argument("--limit", type=int, default=40, help="bills and income rows to list")
     dash.set_defaults(func=cmd_dashboard)
 
     estimate = add("estimate", "Recurring Plan estimates that never post")

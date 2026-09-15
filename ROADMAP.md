@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0209 — statement-based credit-card obligations**.
+The current accepted baseline is **0210 — separate Dashboard income and bills**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,12 +27,7 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-1. **NEXT — 0210: Separate Dashboard income and bills.** Present committed income and
-   pending bills in distinct lists, use terminology consistently across GTK, web,
-   API, print, tests, and README, and document credit-card purchase-versus-payment
-   timing. Close issue #11 and advance the alpha version.
-
-2. **Imported schedule fidelity matrix.** Add one representative generated fixture
+1. **NEXT — Imported schedule fidelity matrix.** Add one representative generated fixture
    spanning native/imported schedules, unusual recurrences, formulas, overrides,
    and bounded schedules before widening their editable surface.
 

@@ -479,13 +479,19 @@ becoming a second expense. Actual history changes the run rate only after the us
 accepts it as a schedule or estimate. Future commitments and accepted estimates
 therefore remain the dated source of emergency outgoings.
 
-### Pending cash flow and income-triggered reserves
+### Separate bills, income, and income-triggered reserves
 
-The general Dashboard presents the next unresolved or future occurrence of each
-income and bill schedule as dated pending cash flow. Income stays positive and has
-no Hold-now value. Monthly and annual normalization remains useful for comparison
-and emergency-fund sizing, but it is never substituted for dated income when
-calculating liquidity.
+The general Dashboard presents committed bills and expected income in separate
+dated lists. Income stays positive and has no Hold-now value. Monthly and annual
+normalization remains useful for comparison and emergency-fund sizing, but it is
+never substituted for dated income when calculating liquidity.
+
+A scheduled credit-card purchase remains an expense in Plan and Projection but is
+not itself a spendable-cash bill. The generated account-payment row represents the
+card's current ledger balance and deliberately excludes unposted future purchases.
+Once those purchases post, the later payment obligation incorporates them. This
+keeps expense recognition and cash timing visible without counting both the
+purchase and payment as immediate liquidity requirements.
 
 A bill reserve covers exactly one billing cycle. For the occurrence at the end of
 that cycle, the engine finds all scheduled income events after the preceding bill

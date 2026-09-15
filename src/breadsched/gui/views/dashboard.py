@@ -3,7 +3,8 @@
 Three bands, in the order the questions get asked. What is owned and owed, as
 group totals with equity and loan-to-value where a property is paired with its
 mortgage. Then the verdict — liquid, spoken for, available, and how many months
-the emergency fund would last. Then pending bills and income, sortable and
+the emergency fund would last. Then separate pending-bill and expected-income
+lists, sortable and
 scrollable, with recurring flows normalised to monthly and annual figures so a
 quarterly fee and a fortnightly one can be compared at a glance.
 
@@ -23,7 +24,7 @@ __all__ = ["DashboardView"]
 
 
 class DashboardView(BaseView):
-    """Balances, the liquidity verdict, and dated pending cash flow."""
+    """Balances, the liquidity verdict, pending bills, and expected income."""
 
     PRINTABLE = True
 
@@ -90,7 +91,7 @@ class DashboardView(BaseView):
             getattr(self.groups, f"set_margin_{side}")(12)
         self.append(self.groups)
 
-        heading = Gtk.Label(label="Pending cash flow", xalign=0)
+        heading = Gtk.Label(label="Pending bills", xalign=0)
         heading.add_css_class("total-row")
         for side in ("start", "top"):
             getattr(heading, f"set_margin_{side}")(12)
@@ -104,7 +105,6 @@ class DashboardView(BaseView):
         self.bills_view.append_column(
             column("Item", lambda b: b.name, expand=True, sort_key=lambda b: b.name)
         )
-        self.bills_view.append_column(column("Flow", lambda b: "Income" if b.income else "Bill"))
         self.bills_view.append_column(
             column(
                 "Next due",
@@ -139,7 +139,7 @@ class DashboardView(BaseView):
         self.bills_view.append_column(
             column(
                 "Hold now",
-                lambda b: "" if b.income else b.held.format(),
+                lambda b: b.held.format(),
                 sort_key=lambda b: b.held.to_decimal(),
                 numeric=True,
             )
@@ -155,9 +155,7 @@ class DashboardView(BaseView):
         self.bills_view.append_column(
             column(
                 "Kind",
-                lambda b: (
-                    "Account payment" if b.generated else "Estimate" if b.estimate else "Committed"
-                ),
+                lambda b: "Account payment" if b.generated else "Committed",
             )
         )
         bar.append(column_menu("dashboard", self.bills_view, self._settings()))
@@ -165,6 +163,55 @@ class DashboardView(BaseView):
         scroller = Gtk.ScrolledWindow(child=self.bills_view)
         scroller.set_vexpand(True)
         self.append(scroller)
+
+        income_heading = Gtk.Label(label="Expected income", xalign=0)
+        income_heading.add_css_class("total-row")
+        income_heading.set_margin_start(12)
+        self.append(income_heading)
+
+        self.income_view = Gtk.ColumnView()
+        self.income_view.set_show_row_separators(True)
+        self.income_view.connect("activate", self._on_bill_activated)
+        self.income_view.append_column(
+            column("Item", lambda item: item.name, expand=True, sort_key=lambda item: item.name)
+        )
+        self.income_view.append_column(
+            column(
+                "Next due",
+                lambda item: item.next_due.isoformat(),
+                sort_key=lambda item: item.next_due,
+            )
+        )
+        self.income_view.append_column(
+            column(
+                "Due in",
+                self._due_in,
+                sort_key=lambda item: item.days_until(self._today()),
+            )
+        )
+        self.income_view.append_column(
+            column(
+                "Frequency", lambda item: item.frequency, sort_key=lambda item: item.cycle_months
+            )
+        )
+        self.income_view.append_column(
+            column(
+                "Amount",
+                lambda item: item.amount.format(),
+                sort_key=lambda item: item.amount.to_decimal(),
+                numeric=True,
+            )
+        )
+        self.income_view.append_column(
+            column("Monthly", lambda item: item.monthly.format(), numeric=True)
+        )
+        self.income_view.append_column(
+            column("Annual", lambda item: item.annual.format(), numeric=True)
+        )
+        bar.append(column_menu("dashboard-income", self.income_view, self._settings()))
+        income_scroller = Gtk.ScrolledWindow(child=self.income_view)
+        income_scroller.set_vexpand(True)
+        self.append(income_scroller)
 
     def _settings(self):
         return getattr(self.manager.get_application(), "view_settings", None)
@@ -198,9 +245,15 @@ class DashboardView(BaseView):
         self._render_groups()
 
         store = Gio.ListStore.new(Row)
-        for item in self.board.pending:
+        for item in self.board.bills:
             store.append(Row(item))
         self.bills_view.set_model(Gtk.SingleSelection(model=sorted_model(self.bills_view, store)))
+        income_store = Gio.ListStore.new(Row)
+        for item in self.board.incomes:
+            income_store.append(Row(item))
+        self.income_view.set_model(
+            Gtk.SingleSelection(model=sorted_model(self.income_view, income_store))
+        )
 
     def printable_html(self) -> str | None:
         """Return the currently rendered Dashboard as a print-ready document."""
@@ -312,8 +365,8 @@ class DashboardView(BaseView):
 
     # ----------------------------------------------------------------- actions
 
-    def _on_bill_activated(self, _view, position: int) -> None:
-        selection = self.bills_view.get_model()
+    def _on_bill_activated(self, view, position: int) -> None:
+        selection = view.get_model()
         item = selection.get_item(position)
         if item is None:
             return

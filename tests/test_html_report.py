@@ -21,7 +21,7 @@ from breadsched.plugins.export.html_report import (
 )
 
 
-def test_dashboard_report_contains_current_verdict_groups_and_pending_flow(db, book):
+def test_dashboard_report_separates_bills_and_income(db, book):
     with db.transaction("Printable household") as txn:
         db.add_transaction(
             Transaction.simple(
@@ -44,6 +44,17 @@ def test_dashboard_report_contains_current_verdict_groups_and_pending_flow(db, b
             ),
             txn,
         )
+        db.add_scheduled(
+            ScheduledTransaction(
+                name="Payday",
+                recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 2, 20)),
+                splits=[
+                    ScheduledSplit(book.salary, Money("-1000.00")),
+                    ScheduledSplit(book.checking, Money("1000.00")),
+                ],
+            ),
+            txn,
+        )
     config = dashboard.DashboardConfig(
         groups=[dashboard.GroupConfig("Ready cash", [book.checking], "liquid")]
     )
@@ -53,7 +64,10 @@ def test_dashboard_report_contains_current_verdict_groups_and_pending_flow(db, b
 
     assert "Ready cash" in document
     assert "Utilities &lt;estimate&gt;" in document
-    assert "Pending cash flow" in document
+    assert "Pending bills" in document
+    assert "Expected income" in document
+    assert document.index("Utilities &lt;estimate&gt;") < document.index("Expected income")
+    assert document.index("Expected income") < document.index("Payday")
     assert "2,500.00" in document
     assert "window.print()" in document
     assert "http://" not in document and "https://" not in document

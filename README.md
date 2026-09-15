@@ -341,7 +341,8 @@ be matched unambiguously by account.
 
 The GTK4 application is the reference user experience. Its major views include:
 
-- **Dashboard** — household position, dated pending income and bills, liquidity,
+- **Dashboard** — household position, separate expected-income and pending-bill
+  lists, liquidity,
   emergency-fund information, and important linked-account relationships. Dashboard
   groups accept explicit account-style paths such as `Investments:Plan A`; generated
   headings total their children, account subtrees are counted once, hidden accounts
@@ -548,8 +549,8 @@ history. Their supported and pending formats are tracked in `ROADMAP.md`.
 
 ## Dashboard liquidity and bill reserves
 
-The general Dashboard's pending-cash-flow table includes committed scheduled bills
-and income; planning estimates remain in Plan and Projection rather than appearing
+The general Dashboard presents committed scheduled bills and expected income in
+separate lists; planning estimates remain in Plan and Projection rather than appearing
 as obligations in Dashboard or Upcoming. Dashboard cash-flow figures distinguish
 committed activity from the outlook including budgeted estimates. A bill's **Hold
 now** reserve accrues on actual income dates and
@@ -566,6 +567,12 @@ like account—including a partial payment—resolves the overdue occurrence; a 
 or payment reversal does not. Account-payment rows omit monthly and annual
 normalizations because the balance is already the dated obligation. An explicit
 payment schedule takes precedence over the account-derived card rows.
+
+A scheduled purchase charged to a credit card is still a planning expense, but it
+is not an immediate spendable-cash bill. The generated card-payment row is the
+current known cash obligation and does not pre-add future scheduled purchases to
+the card balance. Those purchases affect liquidity after they post to the card,
+preventing the purchase and its later payment from being counted as two cash needs.
 
 ## FSA / benefit planning
 
