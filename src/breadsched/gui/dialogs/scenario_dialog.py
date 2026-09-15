@@ -79,6 +79,7 @@ class SaveScenarioDialog(Gtk.Window):
         target.start = self.scenario.start
         target.assumptions = self.scenario.assumptions
         target.inherits_base_assumptions = self.scenario.inherits_base_assumptions
+        target.parent_handle = self.scenario.parent_handle
         target.assumption_overrides = set(self.scenario.assumption_overrides)
         target.account_assumption_overrides = set(self.scenario.account_assumption_overrides)
         target.account_assumption_suppressions = set(self.scenario.account_assumption_suppressions)

@@ -1627,10 +1627,13 @@ async function showPlan() {
     el("div", { class: "card" },
       el("div", { class: "label" }, "Actuals to review"),
       el("div", { class: "value" }, summary.unresolved_actuals)));
+  const selectedScenarioName = data.controls.scenarios
+    .find((item) => (item.handle || null) === (data.controls.scenario || null))?.name
+    || "Base scenario";
   const inheritedAssumptions = Object.values(data.controls.assumption_sources || {})
-    .filter((source) => source === "Base").length;
+    .filter((source) => source !== selectedScenarioName).length;
   const comparedInheritedAssumptions = Object.values(comparison?.assumption_sources || {})
-    .filter((source) => source === "Base").length;
+    .filter((source) => source !== comparison?.name).length;
 
   const headers = ["Category",
     ...data.periods.map((item) => ({ label: item.label, num: true })),
@@ -1811,9 +1814,9 @@ async function showPlan() {
       + "their signed operating result. Balance-sheet classifications are informational "
       + "and have no mixed grand total. Variance totals include only applicable periods."),
     inheritedAssumptions ? el("p", { class: "note plan-method-note" },
-      `${inheritedAssumptions} annual assumption(s) inherited from Base.`) : null,
+      `${inheritedAssumptions} annual assumption(s) inherited through the parent chain.`) : null,
     comparedInheritedAssumptions ? el("p", { class: "note plan-method-note" },
-      `${comparison.name} inherits ${comparedInheritedAssumptions} annual assumption(s) from Base.`)
+      `${comparison.name} inherits ${comparedInheritedAssumptions} annual assumption(s) through its parent chain.`)
       : null,
     detailOption,
     el("h2", { class: "plan-summary-heading" }, "Cash outlook"),
@@ -2038,7 +2041,9 @@ function scenarioAssumptionInputs(scenario) {
           type: "checkbox", name: `override_${field}`,
           checked: overrides.has(field) ? "checked" : null,
         }),
-        overrides.has(field) ? ` Scenario override` : ` Inherited from Base`))));
+        overrides.has(field)
+          ? ` Scenario override`
+          : ` Inherited from ${scenario.assumption_sources?.[field] || "parent"}`))));
 }
 
 function readAssumptionOverrides(form) {
@@ -2099,6 +2104,19 @@ async function showScenarios() {
   }, scenario.name)));
 
   const base = selected.base;
+  const scenariosByHandle = new Map(data.scenarios
+    .filter((scenario) => scenario.handle)
+    .map((scenario) => [scenario.handle, scenario]));
+  const wouldCreateParentCycle = (candidate) => {
+    const seen = new Set();
+    let ancestor = candidate;
+    while (ancestor?.parent_handle && !seen.has(ancestor.handle)) {
+      if (ancestor.parent_handle === selected.handle) return true;
+      seen.add(ancestor.handle);
+      ancestor = scenariosByHandle.get(ancestor.parent_handle);
+    }
+    return false;
+  };
   const form = el("form", { class: "scenario-editor", onsubmit: async (event) => {
     event.preventDefault();
     const values = new FormData(event.target);
@@ -2110,6 +2128,7 @@ async function showScenarios() {
         handle: selected.handle,
         name: values.get("name"),
         description: values.get("description"),
+        parent_handle: base ? null : values.get("parent_handle"),
         assumptions,
         assumption_overrides: base ? undefined : readAssumptionOverrides(event.target),
       });
@@ -2124,8 +2143,21 @@ async function showScenarios() {
       })),
       el("label", {}, "Description", el("input", {
         name: "description", value: selected.description || "", disabled: base ? "disabled" : null,
-      }))),
-    el("h3", {}, "Base annual assumptions"),
+      })),
+      base ? null : el("label", {}, "Inherit assumptions from", el("select", {
+        name: "parent_handle",
+      }, [
+        el("option", {
+          value: "", selected: selected.parent_handle ? null : "selected",
+        }, "Base scenario"),
+        ...data.scenarios.filter((scenario) => !scenario.base
+            && scenario.handle !== selected.handle && !wouldCreateParentCycle(scenario))
+          .map((scenario) => el("option", {
+            value: scenario.handle,
+            selected: scenario.handle === selected.parent_handle ? "selected" : null,
+          }, scenario.name)),
+      ]))),
+    el("h3", {}, base ? "Base annual assumptions" : "Annual assumptions"),
     scenarioAssumptionInputs(selected),
     el("details", {class:"panel"},
       el("summary", {}, "Account-specific projection rates"),
@@ -2257,7 +2289,7 @@ async function showScenarios() {
       el("label", {}, "Scenario ", picker)),
     el("h2", {}, "Manage scenarios"),
     el("p", { class: "note" },
-      "Base scenario assumptions apply to the default plan. Saved scenarios can override those assumptions and future estimated activity without changing Base."),
+      "Base scenario assumptions apply to the default plan. Saved scenarios can inherit assumptions from Base or another saved scenario, then keep deliberate local overrides. Dated assumptions and scenario events remain local."),
     el("div", { class: "panel scenario-panel" }, form),
     base
       ? el("p", { class: "note" },
@@ -2608,7 +2640,7 @@ async function showProjection() {
   if (comparison) {
     const delta = comparison.summary_delta;
     const inherited = Object.values(comparison.scenario.assumption_sources || {})
-      .filter((source) => source === "Base").length;
+      .filter((source) => source !== comparison.scenario.name).length;
     const compareYearly = comparison.rows.filter((_, i) => (i + 1) % 12 === 0)
       .map((row, i) => el("tr", {},
         el("td", {}, row.label),
@@ -2635,7 +2667,7 @@ async function showProjection() {
         + `Cash shortfall: ${s.first_shortfall || "never"} vs `
         + `${comparison.summary.first_shortfall || "never"}.`),
       inherited ? el("p", { class: "note" },
-        `${comparison.scenario.name} inherits ${inherited} annual assumption(s) from Base.`)
+        `${comparison.scenario.name} inherits ${inherited} annual assumption(s) through its parent chain.`)
         : null,
       table(["Month", { label: `${scenarioData.name} cash`, num: true },
              { label: `${comparison.scenario.name} cash`, num: true },

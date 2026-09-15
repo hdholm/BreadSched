@@ -50,8 +50,9 @@ class ScenarioManagerDialog(Gtk.Window):
             Gtk.Label(
                 label=(
                     "Base scenario assumptions apply to the default plan. Saved scenarios can "
-                    "override those assumptions and future estimated activity without changing "
-                    "the Base scenario."
+                    "inherit assumptions from Base or another saved scenario, then keep "
+                    "deliberate local overrides. Dated assumptions and scenario events remain "
+                    "local."
                 ),
                 xalign=0,
                 wrap=True,
@@ -84,6 +85,15 @@ class ScenarioManagerDialog(Gtk.Window):
         self.description_entry = Gtk.Entry()
         self.editor.append(self.description_entry)
 
+        parent_row = Gtk.Box(spacing=8)
+        self.parent_label = Gtk.Label(label="Inherit assumptions from", xalign=0)
+        parent_row.append(self.parent_label)
+        self.parent_picker = Gtk.DropDown()
+        self.parent_picker.set_hexpand(True)
+        parent_row.append(self.parent_picker)
+        self.editor.append(parent_row)
+        self._parent_handles: list[str | None] = [None]
+
         self.editor.append(Gtk.Label(label="Base annual assumptions", xalign=0))
         rates = Gtk.Grid(column_spacing=12, row_spacing=8)
         self.rate_controls: dict[str, Gtk.SpinButton] = {}
@@ -95,7 +105,7 @@ class ScenarioManagerDialog(Gtk.Window):
             control.set_tooltip_text("Annual percentage; 6.00 means 6% per year")
             rates.attach(control, 1, row, 1, 1)
             rates.attach(Gtk.Label(label="%", xalign=0), 2, row, 1, 1)
-            override = Gtk.CheckButton(label="Override Base")
+            override = Gtk.CheckButton(label="Override parent")
             override.connect("toggled", self._on_override_toggled, attribute)
             rates.attach(override, 3, row, 1, 1)
             self.rate_controls[attribute] = control
@@ -184,6 +194,8 @@ class ScenarioManagerDialog(Gtk.Window):
         self.timeline_button.set_sensitive(enabled and not base)
         self.name_entry.set_sensitive(enabled and not base)
         self.description_entry.set_sensitive(enabled and not base)
+        self.parent_label.set_visible(enabled and not base)
+        self.parent_picker.set_visible(enabled and not base)
         if scenario is None:
             self.name_entry.set_text("")
             self.description_entry.set_text("")
@@ -194,6 +206,7 @@ class ScenarioManagerDialog(Gtk.Window):
 
         self.name_entry.set_text("Base scenario" if base else scenario.name)
         self.description_entry.set_text("" if base else scenario.description)
+        self._load_parent_picker(scenario, bool(base))
         effective = scenario.effective_assumptions()
         for _label, attribute in _ASSUMPTIONS:
             value = getattr(effective, attribute) * Decimal("100")
@@ -222,6 +235,35 @@ class ScenarioManagerDialog(Gtk.Window):
         self.status.set_text("")
         self.status.remove_css_class("negative")
 
+    def _load_parent_picker(self, scenario: Scenario, base: bool) -> None:
+        model = Gtk.StringList()
+        model.append("Base scenario")
+        self._parent_handles = [None]
+        selected = 0
+        if not base:
+            by_handle = {item.handle: item for item in self._scenarios}
+            for candidate in self._scenarios:
+                if candidate.handle == scenario.handle:
+                    continue
+                ancestor = candidate
+                seen: set[str] = set()
+                while ancestor.parent_handle is not None and ancestor.handle not in seen:
+                    if ancestor.parent_handle == scenario.handle:
+                        break
+                    seen.add(ancestor.handle)
+                    next_ancestor = by_handle.get(ancestor.parent_handle)
+                    if next_ancestor is None:
+                        break
+                    ancestor = next_ancestor
+                if ancestor.parent_handle == scenario.handle:
+                    continue
+                self._parent_handles.append(candidate.handle)
+                model.append(candidate.name)
+                if candidate.handle == scenario.parent_handle:
+                    selected = len(self._parent_handles) - 1
+        self.parent_picker.set_model(model)
+        self.parent_picker.set_selected(selected)
+
     def _on_override_toggled(self, control, attribute: str) -> None:
         if self._loading or self._base_selected():
             return
@@ -237,8 +279,7 @@ class ScenarioManagerDialog(Gtk.Window):
                 setattr(self._baseline.assumptions, attribute, value)
             self._baseline.assumptions.per_account = dict(self._account_rates)
             persist_baseline_assumptions(self.manager, self.db)
-            for saved in self._scenarios:
-                saved.attach_base_assumptions(self._baseline.assumptions)
+            self._scenarios = list(self.db.iter_scenarios())
             notify_planning_scenario_changed(self.manager)
             self.status.set_text("Base scenario assumptions saved in this book.")
             self.status.remove_css_class("negative")
@@ -254,6 +295,11 @@ class ScenarioManagerDialog(Gtk.Window):
 
         scenario.name = name
         scenario.description = self.description_entry.get_text().strip()
+        parent_index = self.parent_picker.get_selected()
+        scenario.parent_handle = (
+            self._parent_handles[parent_index] if parent_index < len(self._parent_handles) else None
+        )
+        scenario.inherits_base_assumptions = True
         for _label, attribute in _ASSUMPTIONS:
             value = Decimal(str(self.rate_controls[attribute].get_value())) / Decimal("100")
             if self.inherit_controls[attribute].get_active():
@@ -291,7 +337,8 @@ class ScenarioManagerDialog(Gtk.Window):
             local = len(scenario.account_assumption_overrides)
             inherited = len(set(self._account_rates) - scenario.account_assumption_overrides)
             self.account_summary.set_text(
-                f"{local} account rate(s) overridden here; {inherited} inherited from Base."
+                f"{local} account rate(s) overridden here; {inherited} inherited from the "
+                "parent chain."
             )
         else:
             self.account_summary.set_text(
@@ -716,6 +763,9 @@ class ScenarioDeleteDialog(Gtk.Window):
         self.db = db
         self.scenario = scenario
         self.deleted_callback = deleted_callback
+        self.children = [
+            item.name for item in db.iter_scenarios() if item.parent_handle == scenario.handle
+        ]
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
@@ -724,9 +774,16 @@ class ScenarioDeleteDialog(Gtk.Window):
         box.append(
             Gtk.Label(
                 label=(
-                    f'Delete scenario "{scenario.name}"? This removes its assumptions and '
-                    f"{len(scenario.schedule_overrides)} scenario-specific recurring change(s). "
-                    "Baseline transactions and schedules are not modified."
+                    (
+                        f'Cannot delete "{scenario.name}" while these scenarios inherit from '
+                        f"it: {', '.join(self.children)}. Reparent them first."
+                    )
+                    if self.children
+                    else (
+                        f'Delete scenario "{scenario.name}"? This removes its assumptions and '
+                        f"{len(scenario.schedule_overrides)} scenario-specific recurring "
+                        "change(s). Baseline transactions and schedules are not modified."
+                    )
                 ),
                 xalign=0,
                 wrap=True,
@@ -736,10 +793,11 @@ class ScenarioDeleteDialog(Gtk.Window):
         cancel = Gtk.Button(label="Cancel")
         cancel.connect("clicked", lambda *_: self.close())
         buttons.append(cancel)
-        delete = Gtk.Button(label="Delete scenario")
-        delete.add_css_class("destructive-action")
-        delete.connect("clicked", self._confirm)
-        buttons.append(delete)
+        self.delete_button = Gtk.Button(label="Delete scenario")
+        self.delete_button.add_css_class("destructive-action")
+        self.delete_button.set_sensitive(not self.children)
+        self.delete_button.connect("clicked", self._confirm)
+        buttons.append(self.delete_button)
         box.append(buttons)
 
     def _confirm(self, _button) -> None:

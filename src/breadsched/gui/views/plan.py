@@ -308,11 +308,13 @@ class PlanView(BaseView):
             )
         else:
             count = len(selected.schedule_overrides)
-            inherited = sum(source == "Base" for source in selected.assumption_sources().values())
+            inherited = sum(
+                source != selected.name for source in selected.assumption_sources().values()
+            )
             overridden = len(selected.assumption_overrides)
             self.scenario_hint.set_text(
                 f"{count} recurring change(s); {inherited} annual assumption(s) inherited "
-                f"from Base and {overridden} overridden here."
+                f"through the parent chain and {overridden} overridden here."
             )
 
     def _on_new_scenario(self, _button) -> None:

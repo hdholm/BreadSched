@@ -455,6 +455,7 @@ class Scenario(PrimaryObject):
         assumption_periods: list[AssumptionPeriod] | None = None,
         schedule_overrides: list[ScenarioSchedule] | None = None,
         inherits_base_assumptions: bool = False,
+        parent_handle: str | None = None,
         assumption_overrides: set[str] | None = None,
         account_assumption_overrides: set[str] | None = None,
         account_assumption_suppressions: set[str] | None = None,
@@ -466,6 +467,7 @@ class Scenario(PrimaryObject):
         self.years = years
         self.assumptions = assumptions or Assumptions()
         self.inherits_base_assumptions = inherits_base_assumptions
+        self.parent_handle = parent_handle
         self.assumption_overrides = set(
             assumption_overrides
             if assumption_overrides is not None
@@ -481,6 +483,9 @@ class Scenario(PrimaryObject):
         )
         self.account_assumption_suppressions = set(account_assumption_suppressions or ())
         self._base_assumptions: Assumptions | None = None
+        self._parent_assumption_sources: dict[str, str] = {}
+        self._parent_account_assumption_sources: dict[str, str] = {}
+        self._parent_name = "Base"
         self.assumption_periods = list(assumption_periods or [])
         self.schedule_overrides = list(schedule_overrides or [])
         #: Pretend an account starts at this balance instead of its ledger balance.
@@ -502,13 +507,32 @@ class Scenario(PrimaryObject):
 
     def attach_base_assumptions(self, base: Assumptions) -> None:
         """Attach the current book-level Base values used to resolve inheritance."""
-        self._base_assumptions = Assumptions.from_dict(base.serialize())
+        self.attach_parent_assumptions(base, parent_name="Base")
+
+    def attach_parent_assumptions(
+        self,
+        parent: Assumptions,
+        *,
+        parent_name: str,
+        assumption_sources: dict[str, str] | None = None,
+        account_assumption_sources: dict[str, str] | None = None,
+    ) -> None:
+        """Attach one resolved parent while retaining its original provenance."""
+        self._base_assumptions = Assumptions.from_dict(parent.serialize())
+        self._parent_name = parent_name
+        self._parent_assumption_sources = dict(assumption_sources or {})
+        self._parent_account_assumption_sources = dict(account_assumption_sources or {})
 
     def clone(self) -> Scenario:
         """Return a detached copy while retaining its current Base resolution context."""
         clone = Scenario.from_dict(self.serialize())
         if self._base_assumptions is not None:
-            clone.attach_base_assumptions(self._base_assumptions)
+            clone.attach_parent_assumptions(
+                self._base_assumptions,
+                parent_name=self._parent_name,
+                assumption_sources=self._parent_assumption_sources,
+                account_assumption_sources=self._parent_account_assumption_sources,
+            )
         return clone
 
     def effective_assumptions(self) -> Assumptions:
@@ -529,13 +553,13 @@ class Scenario(PrimaryObject):
         return current
 
     def assumption_sources(self, when: date | None = None) -> dict[str, str]:
-        """Explain whether each effective assumption comes from Base or this scenario."""
+        """Explain which scenario in the parent chain supplied each effective value."""
         scenario_source = self.name or "Scenario"
         sources = {
             field: (
                 scenario_source
                 if not self.inherits_base_assumptions or field in self.assumption_overrides
-                else "Base"
+                else self._parent_assumption_sources.get(field, self._parent_name)
             )
             for field in ASSUMPTION_FIELDS
         }
@@ -556,7 +580,7 @@ class Scenario(PrimaryObject):
             handle: (
                 scenario_source
                 if not self.inherits_base_assumptions or handle in self.account_assumption_overrides
-                else "Base"
+                else self._parent_account_assumption_sources.get(handle, self._parent_name)
             )
             for handle in effective.per_account
         }
@@ -637,6 +661,7 @@ class Scenario(PrimaryObject):
             "assumptions": serialized_assumptions,
             "assumption_inheritance": {
                 "base": self.inherits_base_assumptions,
+                "parent": self.parent_handle,
                 "overrides": sorted(self.assumption_overrides),
                 "account_overrides": sorted(self.account_assumption_overrides),
                 "account_suppressions": sorted(self.account_assumption_suppressions),
@@ -658,6 +683,8 @@ class Scenario(PrimaryObject):
         inheritance = data.get("assumption_inheritance")
         if isinstance(inheritance, dict):
             self.inherits_base_assumptions = bool(inheritance.get("base", False))
+            parent = inheritance.get("parent")
+            self.parent_handle = str(parent) if parent else None
             defaults = () if self.inherits_base_assumptions else ASSUMPTION_FIELDS
             self.assumption_overrides = set(inheritance.get("overrides", defaults))
             account_defaults = (
@@ -671,6 +698,7 @@ class Scenario(PrimaryObject):
             # The immediately preceding alpha stored complete snapshots. Preserve
             # every old value as a deliberate override while adopting the new model.
             self.inherits_base_assumptions = True
+            self.parent_handle = None
             self.assumption_overrides = set(ASSUMPTION_FIELDS)
             self.account_assumption_overrides = set(self.assumptions.per_account)
             self.account_assumption_suppressions = set()
@@ -678,6 +706,9 @@ class Scenario(PrimaryObject):
         if unknown:
             raise ValueError(f"unknown assumption override(s): {', '.join(sorted(unknown))}")
         self._base_assumptions = None
+        self._parent_assumption_sources = {}
+        self._parent_account_assumption_sources = {}
+        self._parent_name = "Base"
         self.assumption_periods = [
             AssumptionPeriod.from_dict(item) for item in data.get("assumption_periods", [])
         ]

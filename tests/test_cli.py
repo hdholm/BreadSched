@@ -465,6 +465,26 @@ class TestScenarios:
         rows = run_json(capsys, "scenario", planned, "list")
         assert len(rows) == 1 and rows[0]["years"] == 8
 
+    def test_reparenting_a_scenario_is_visible_in_the_listing(self, capsys, planned):
+        run(capsys, "scenario", planned, "save", "--name", "Earlier retirement")
+        run(capsys, "scenario", planned, "save", "--name", "Lower returns")
+
+        result = run_json(
+            capsys,
+            "scenario",
+            planned,
+            "reparent",
+            "--name",
+            "Lower returns",
+            "--parent",
+            "Earlier retirement",
+        )
+        rows = run_json(capsys, "scenario", planned, "list")
+
+        assert result["parent"] == "Earlier retirement"
+        child = next(item for item in rows if item["name"] == "Lower returns")
+        assert child["parent"] == "Earlier retirement"
+
     def test_projecting_from_a_saved_scenario(self, capsys, planned):
         run(
             capsys,

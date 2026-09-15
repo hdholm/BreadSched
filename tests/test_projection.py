@@ -3,6 +3,8 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
+
 from breadsched.gen.engine import projection
 from breadsched.gen.lib import (
     Account,
@@ -442,6 +444,89 @@ class TestScenarioPersistence:
 
         assert reloaded.effective_assumptions().income_growth == Decimal("0.01")
         assert reloaded.effective_assumptions().expense_inflation == Decimal("0.045")
+
+    def test_saved_scenarios_resolve_parent_chains_with_original_provenance(self, db, funded_book):
+        base = Assumptions(income_growth="0.04", expense_inflation="0.03")
+        db.set_metadata("planning.base_assumptions", base.serialize())
+        parent = Scenario.derived_from_base(base, name="Earlier retirement")
+        parent.set_assumption_override("income_growth", "0.01")
+        parent.set_account_assumption_override(funded_book.savings, "0.055")
+        with db.transaction("Save parent") as txn:
+            db.add_scenario(parent, txn)
+        child = Scenario.derived_from_base(
+            parent.effective_assumptions(),
+            name="Earlier retirement with lower returns",
+            parent_handle=parent.handle,
+        )
+        child.set_assumption_override("investment_return", "0.035")
+        with db.transaction("Save child") as txn:
+            db.add_scenario(child, txn)
+
+        reloaded = db.get_scenario(child.handle)
+
+        assert reloaded is not None
+        assert reloaded.effective_assumptions().income_growth == Decimal("0.01")
+        assert reloaded.effective_assumptions().expense_inflation == Decimal("0.03")
+        assert reloaded.effective_assumptions().investment_return == Decimal("0.035")
+        assert reloaded.effective_assumptions().per_account[funded_book.savings] == Decimal("0.055")
+        assert reloaded.assumption_sources()["income_growth"] == "Earlier retirement"
+        assert reloaded.assumption_sources()["expense_inflation"] == "Base"
+        assert (
+            reloaded.assumption_sources()["investment_return"]
+            == "Earlier retirement with lower returns"
+        )
+        assert reloaded.account_assumption_sources()[funded_book.savings] == "Earlier retirement"
+
+    def test_reparenting_preserves_local_override_identity(self, db, funded_book):
+        base = Assumptions(income_growth="0.04", expense_inflation="0.03")
+        db.set_metadata("planning.base_assumptions", base.serialize())
+        first = Scenario.derived_from_base(base, name="First parent")
+        first.set_assumption_override("income_growth", "0.02")
+        second = Scenario.derived_from_base(base, name="Second parent")
+        second.set_assumption_override("income_growth", "0.07")
+        with db.transaction("Save parents") as txn:
+            db.add_scenario(first, txn)
+            db.add_scenario(second, txn)
+        child = Scenario.derived_from_base(
+            first.effective_assumptions(), name="Child", parent_handle=first.handle
+        )
+        child.set_assumption_override("expense_inflation", "0.01")
+        with db.transaction("Save child") as txn:
+            db.add_scenario(child, txn)
+
+        child.parent_handle = second.handle
+        with db.transaction("Reparent child") as txn:
+            db.commit_scenario(child, txn)
+        reloaded = db.get_scenario(child.handle)
+
+        assert reloaded is not None
+        assert reloaded.assumption_overrides == {"expense_inflation"}
+        assert reloaded.effective_assumptions().income_growth == Decimal("0.07")
+        assert reloaded.effective_assumptions().expense_inflation == Decimal("0.01")
+
+    def test_parent_cycles_and_parent_deletion_are_rejected(self, db, funded_book):
+        base = Assumptions()
+        orphan = Scenario.derived_from_base(base, name="Orphan", parent_handle="missing")
+        with pytest.raises(ValueError, match="does not exist"):
+            with db.transaction("Save orphan") as txn:
+                db.add_scenario(orphan, txn)
+        first = Scenario.derived_from_base(base, name="Parent")
+        with db.transaction("Save parent") as txn:
+            db.add_scenario(first, txn)
+        child = Scenario.derived_from_base(base, name="Child", parent_handle=first.handle)
+        with db.transaction("Save child") as txn:
+            db.add_scenario(child, txn)
+
+        first.parent_handle = child.handle
+        with pytest.raises(ValueError, match="cycle"):
+            with db.transaction("Create cycle") as txn:
+                db.commit_scenario(first, txn)
+        with pytest.raises(ValueError, match="Child"):
+            with db.transaction("Delete live parent") as txn:
+                db.remove_scenario(first.handle, txn)
+
+        assert db.get_scenario(first.handle) is not None
+        assert db.get_scenario(child.handle) is not None
 
     def test_a_saved_scenario_reproduces_its_forecast(self, db, funded_book):
         scenario = Scenario(

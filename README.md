@@ -191,9 +191,7 @@ scheduled and estimated activity, and Base assumptions. Saved scenarios are
 alternatives over Base, not separate ledgers. They contain assumptions and alternate
 planned events, not cached forecast results. Projection recomputes against the
 current ledger so new actuals and baseline schedules that a scenario has not
-replaced are automatically incorporated. Saved assumption values are currently
-stored independently as complete values; dynamic inheritance of later Base-
-assumption changes is planned.
+replaced are automatically incorporated.
 
 Projection is event-driven. Cash, investment, and liability state advances between
 actual, scheduled, estimated, and one-off dated events. Reporting months are views
@@ -202,7 +200,10 @@ of those state transitions rather than the engine's clock.
 Base is the expected plan. A newly derived saved scenario inherits each Base annual
 and account-specific assumption until that value is explicitly overridden, so later
 Base edits continue to reach untouched alternatives. Scenario management labels the
-source of effective values; dated assumption periods remain scenario-owned overrides.
+source of effective values. A saved scenario can instead inherit assumptions from
+another saved scenario, forming a deterministic, cycle-free chain; reparenting keeps
+the child's deliberate overrides, and a parent with children cannot be deleted.
+Dated assumption periods and scenario events remain local to their owning scenario.
 Scenarios saved by the preceding alpha retain all of their former values as deliberate
 overrides when first read.
 

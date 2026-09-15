@@ -391,9 +391,14 @@ The immediately preceding alpha representation stored a complete assumption
 snapshot. On read, each of those existing values becomes a deliberate local override,
 so upgrading cannot silently change an established forecast. New scenario records
 persist an explicit inheritance flag and stable sets of field/account overrides;
-cached projection results are never stored. The same overlay model can later support
-parent scenarios, provided inheritance is deterministic, cycles are impossible, and
-a child's deliberate overrides remain distinct from inherited values.
+cached projection results are never stored. A saved scenario may name Base or another
+saved scenario as its assumption parent. Resolution walks that chain from Base through
+each parent and then applies the child's stable field/account overrides; provenance
+continues to name the scenario that supplied each effective value. Writes reject
+missing parents and cycles, and deletion refuses a scenario that still has children,
+so reparenting is always explicit. Dated periods and scenario events remain local to
+their owning scenario until a separate, unambiguous identity-and-merge model is
+defined for those lists.
 
 Reporting periods aggregate projection state but do not drive it.
 
