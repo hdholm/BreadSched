@@ -47,24 +47,37 @@ th { color: #535a65; font-size: 8.5pt; }
 .screen-tools { background: #eef4fc; border-bottom: 1px solid #b8c9e2; padding: 10px;
                 margin-bottom: 14px; }
 .screen-tools button { font: inherit; padding: 5px 12px; }
+.screen-tools label { margin-left: 14px; }
+.plan-summary { margin-top: 14px; }
+.plan-detail { margin-top: 18px; }
 svg { width: 100%; height: auto; }
 @media print {
   .screen-tools { display: none; }
   thead { display: table-header-group; }
+  thead th { position: static; }
   tr, .card { break-inside: avoid; }
+  .plan-summary th, .plan-summary td { padding: 5px 7px; }
+  .plan-detail { display: none; }
+  body.include-plan-detail .plan-detail { display: block; break-before: page; }
 }
 """
 
 
-def _document(title: str, subtitle: str, body: str) -> str:
+def _document(title: str, subtitle: str, body: str, *, optional_plan_detail: bool = False) -> str:
     safe_title = escape(title)
+    detail_control = ""
+    if optional_plan_detail:
+        detail_control = (
+            '<label><input type="checkbox" onchange="document.body.classList.toggle('
+            "'include-plan-detail',this.checked)\"> Include category detail when printing</label>"
+        )
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width"><title>{safe_title}</title>'
         f"<style>{_STYLE}</style></head><body>"
         '<div class="screen-tools"><button type="button" onclick="window.print()">Print</button> '
         "This preview contains the applied report values. Use the print dialog to choose a "
-        "printer or save a PDF.</div>"
+        f"printer or save a PDF.{detail_control}</div>"
         f'<h1>{safe_title}</h1><p class="meta">{escape(subtitle)}</p>{body}'
         '<script>window.addEventListener("load",()=>setTimeout(()=>window.print(),100));</script>'
         "</body></html>"
@@ -230,7 +243,8 @@ def plan_report(
         ]
     )
     headers = "".join(f'<th class="num">{escape(period.label)}</th>' for period in activity.periods)
-    rows: list[str] = []
+    summary_rows: list[str] = []
+    detail_rows: list[str] = []
 
     def values_row(
         label: str,
@@ -244,12 +258,12 @@ def plan_report(
         cells = "".join(cell(value) for value in values)
         return f'<tr class="{css}"><td>{label}</td>{cells}{cell(total)}</tr>'
 
-    rows.append(
+    summary_rows.append(
         '<tr class="section"><td colspan="'
         f'{len(activity.periods) + 2}">Spendable cash bridge</td></tr>'
     )
     for bridge in report.cash_bridge:
-        rows.append(
+        summary_rows.append(
             values_row(
                 escape(bridge.name),
                 bridge.values(measure),
@@ -257,7 +271,7 @@ def plan_report(
                 signed=True,
             )
         )
-    rows.append(
+    summary_rows.append(
         values_row(
             "Net change in spendable cash",
             report.cash_bridge_totals(measure),
@@ -271,16 +285,16 @@ def plan_report(
         ("Income", report.income, AccountClass.INCOME),
         ("Expenses", report.expenses, AccountClass.EXPENSE),
     ):
-        rows.append(
+        detail_rows.append(
             f'<tr class="section"><td colspan="{len(activity.periods) + 2}">{section}</td></tr>'
         )
         for category in categories:
             indent = "&nbsp;" * (category.depth * 4)
             label = f'<span title="{escape(category.full_name, quote=True)}">{indent}'
             label += f"{escape(category.name)}</span>"
-            rows.append(values_row(label, category.values(measure), category.total(measure)))
+            detail_rows.append(values_row(label, category.values(measure), category.total(measure)))
         totals = report.category_totals(account_class, measure)
-        rows.append(
+        detail_rows.append(
             values_row(
                 f"{section} total",
                 totals,
@@ -289,7 +303,7 @@ def plan_report(
             )
         )
 
-    rows.append(
+    detail_rows.append(
         values_row(
             "Income less expenses",
             report.operating_net_totals(measure),
@@ -300,7 +314,7 @@ def plan_report(
     )
 
     if report.mortgage_payments:
-        rows.append(
+        detail_rows.append(
             '<tr class="section"><td colspan="'
             f'{len(activity.periods) + 2}">Cash requirements (informational)</td></tr>'
         )
@@ -310,9 +324,9 @@ def plan_report(
                 "added to this row."
             )
             label = f'<span title="{escape(title, quote=True)}">{escape(payment.name)}</span>'
-            rows.append(values_row(label, payment.values(measure), payment.total(measure)))
+            detail_rows.append(values_row(label, payment.values(measure), payment.total(measure)))
         totals = report.mortgage_payment_totals(measure)
-        rows.append(
+        detail_rows.append(
             values_row(
                 "Mortgage cash required",
                 totals,
@@ -322,24 +336,36 @@ def plan_report(
         )
 
     if report.planning_flows:
-        rows.append(
+        detail_rows.append(
             '<tr class="section"><td colspan="'
             f'{len(activity.periods) + 2}">Balance-sheet classifications (informational)'
             "</td></tr>"
         )
         for flow in report.planning_flows:
             label = f'<span title="{escape(flow.full_name, quote=True)}">{escape(flow.name)}</span>'
-            rows.append(values_row(label, flow.values(measure), flow.total(measure)))
-    table = (
-        "<table><thead><tr><th>Category</th>"
-        f'{headers}<th class="num">Total</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
+            detail_rows.append(values_row(label, flow.values(measure), flow.total(measure)))
+    summary_header = (
+        f'<thead><tr><th>Cash source / use</th>{headers}<th class="num">Total</th></tr></thead>'
     )
-    prefix = f"{book_name} · " if book_name else ""
+    detail_header = f'<thead><tr><th>Category</th>{headers}<th class="num">Total</th></tr></thead>'
+    summary_table = (
+        f'<section class="plan-summary"><h2>Cash outlook</h2><table>{summary_header}'
+        f"<tbody>{''.join(summary_rows)}</tbody></table></section>"
+    )
+    detail_table = (
+        f'<section class="plan-detail"><h2>Budget and classifications</h2><table>{detail_header}'
+        f"<tbody>{''.join(detail_rows)}</tbody></table></section>"
+    )
     subtitle = (
-        f"{prefix}{activity.start.isoformat()} through {activity.end.isoformat()} · "
+        f"{activity.start.isoformat()} through {activity.end.isoformat()} · "
         f"{activity.period.value.title()} · {measure.value.title()} · {scenario_name}"
     )
-    return _document("Plan", subtitle, f"{cards}<h2>Plan values</h2>{table}")
+    return _document(
+        "Plan",
+        subtitle,
+        f"{cards}{summary_table}{detail_table}",
+        optional_plan_detail=True,
+    )
 
 
 def projection_report(

@@ -191,6 +191,10 @@ class TestItServes:
         assert "document.body.dataset.view = current" in page
         assert 'document.getElementById("print-title").textContent = current' in page
         assert ".plan-table { max-height: none; }" in page
+        assert "Include category detail when printing" in page
+        assert "body.include-plan-detail .plan-detail" in page
+        assert "header { display: none !important; }" in page
+        assert ".plan-table thead th { position: static; }" in page
 
     def test_accounts_offer_read_only_imported_metadata_details(self, client):
         _status, body, _headers = client.raw("/")

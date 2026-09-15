@@ -125,6 +125,8 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .plan-table th:first-child, .plan-table td:first-child { position: sticky; left: 0; background: var(--panel); z-index: 2; }
 .plan-table thead th:first-child { z-index: 4; }
 .plan-table .section-row td:first-child { background: var(--bg); }
+.plan-summary-heading, .plan-detail-heading { margin: 14px 0 7px; font-size: 16px; }
+.plan-print-option { color: var(--dim); font-size: 12px; }
 .plan-delta { display: block; margin-top: 2px; font-size: .78rem; color: var(--muted); white-space: nowrap; }
 .plan-delta.neg { color: var(--bad); }
 .balance-groups { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:16px; }
@@ -161,14 +163,13 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
   @page { size: landscape; margin: 12mm; }
   :root { --ink: #000; --dim: #4b4b4b; --line: #bfc3c8; --bg: #fff; --panel: #fff; }
   body { background: #fff; font-size: 10pt; }
-  header { padding: 0 0 8px; margin-bottom: 10px; }
-  header h1 { font-size: 13pt; }
+  header { display: none !important; }
   nav, #print-view, #message, .detail-backdrop { display: none !important; }
-  #book { color: #333; }
   main { padding: 0; max-width: none; }
   .print-only { display: block; }
   #print-title { font-size: 20pt; margin: 0 0 10px; }
-  .toolbar button.action, button.destructive { display: none; }
+  .toolbar button.action, button.destructive, .plan-print-option,
+  .plan-method-note { display: none; }
   .toolbar { break-inside: avoid; }
   input, select { appearance: none; border: 0; padding: 0 2px; background: transparent; }
   .panel { border: 0; border-radius: 0; overflow: visible; }
@@ -179,7 +180,12 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
   th { position: static; }
   tbody tr:hover { background: transparent; }
   .plan-table { max-height: none; }
+  .plan-table thead th { position: static; }
   .plan-table th:first-child, .plan-table td:first-child { position: static; }
+  .plan-summary-heading { margin-top: 10px; }
+  .plan-summary .plan-table th, .plan-summary .plan-table td { padding: 5px 8px; }
+  .plan-detail { display: none; }
+  body.include-plan-detail .plan-detail { display: block; break-before: page; }
   .plan-cell-button { border: 0; padding: 0; background: transparent; cursor: default; }
 }
 </style>
@@ -203,6 +209,7 @@ const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
   accounts: [], account: launchParams.get("account"), plan: null, review: null,
+  planPrintDetail: false,
   scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
   projectionData: null, projectionHandle: null, projectionCompareHandle: null,
   projectionComparison: null,
@@ -1628,7 +1635,8 @@ async function showPlan() {
   const headers = ["Category",
     ...data.periods.map((item) => ({ label: item.label, num: true })),
     { label: "Total", num: true }];
-  const rows = [];
+  const summaryRows = [];
+  const detailRows = [];
   const totalRow = (label, totals, extraClass="", signed=false) => el("tr", {
     class: `total-row ${extraClass}`,
   },
@@ -1639,12 +1647,12 @@ async function showPlan() {
     el("td", { class: totals.total == null ? "num muted" : cls(totals.total) },
       totals.total == null ? "—" : signed ? signedMoney(totals.total) : money(totals.total)));
 
-  rows.push(el("tr", { class: "section-row" },
+  summaryRows.push(el("tr", { class: "section-row" },
     el("td", { colspan: String(headers.length) }, "Spendable cash bridge")));
   for (const bridge of data.cash_bridge) {
     const compared = comparison?.cash_bridge?.find((row) => row.kind === bridge.kind);
     const deltas = compared ? compared[`${currentPlan.measure}_delta`] : null;
-    rows.push(el("tr", {},
+    summaryRows.push(el("tr", {},
       el("td", {}, bridge.name),
       ...bridge[currentPlan.measure].map((value, index) => el("td", {
         class: value == null ? "num muted" : cls(value),
@@ -1658,15 +1666,15 @@ async function showPlan() {
       }, bridge.totals[currentPlan.measure] == null
         ? "—" : signedMoney(bridge.totals[currentPlan.measure]))));
   }
-  rows.push(totalRow("Net change in spendable cash",
+  summaryRows.push(totalRow("Net change in spendable cash",
     data.column_totals.cash_bridge[currentPlan.measure], "grand-total", true));
   for (const [kind, heading] of [["income", "Income"], ["expense", "Expenses"]]) {
-    rows.push(el("tr", { class: "section-row" },
+    detailRows.push(el("tr", { class: "section-row" },
       el("td", { colspan: String(headers.length) }, heading)));
     for (const category of data.categories.filter((row) => row.class === kind)) {
       const compared = comparison?.categories.find((row) => row.account === category.account);
       const deltas = compared ? compared[`${currentPlan.measure}_delta`] : null;
-      rows.push(el("tr", {},
+      detailRows.push(el("tr", {},
         el("td", {
           style: `padding-left:${12 + category.depth * 18}px`,
           title: category.full_name,
@@ -1691,13 +1699,13 @@ async function showPlan() {
         }, category.totals[currentPlan.measure] == null
           ? "—" : money(category.totals[currentPlan.measure]))));
     }
-    rows.push(totalRow(`${heading} total`, data.column_totals[kind][currentPlan.measure]));
+    detailRows.push(totalRow(`${heading} total`, data.column_totals[kind][currentPlan.measure]));
   }
-  rows.push(totalRow("Income less expenses",
+  detailRows.push(totalRow("Income less expenses",
     data.column_totals.operating_net[currentPlan.measure], "grand-total", true));
 
   if (data.mortgage_payments?.length) {
-    rows.push(el("tr", { class: "section-row" },
+    detailRows.push(el("tr", { class: "section-row" },
       el("td", { colspan: String(headers.length) }, "Cash requirements (informational)")));
     for (const payment of data.mortgage_payments) {
       const compared = comparison?.mortgage_payments?.find(
@@ -1717,7 +1725,7 @@ async function showPlan() {
               class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
               title: `Active scenario minus ${comparison.name}`,
             }, `Δ ${money(deltas[index])}`) : null)));
-      rows.push(el("tr", {},
+      detailRows.push(el("tr", {},
         el("td", {
           title: "Whole mortgage payment; classified components below are non-additive.",
         }, payment.name),
@@ -1728,12 +1736,12 @@ async function showPlan() {
         }, payment.totals[currentPlan.measure] == null
           ? "—" : money(payment.totals[currentPlan.measure]))));
     }
-    rows.push(totalRow("Mortgage cash required",
+    detailRows.push(totalRow("Mortgage cash required",
       data.column_totals.mortgage_payments[currentPlan.measure]));
   }
 
   if (data.planning_flows?.length) {
-    rows.push(el("tr", { class: "section-row" },
+    detailRows.push(el("tr", { class: "section-row" },
       el("td", { colspan: String(headers.length) },
         "Balance-sheet classifications (informational)")));
     for (const flow of data.planning_flows) {
@@ -1754,7 +1762,7 @@ async function showPlan() {
               class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
               title: `Active scenario minus ${comparison.name}`,
             }, `Δ ${money(deltas[index])}`) : null)));
-      rows.push(el("tr", {},
+      detailRows.push(el("tr", {},
         el("td", { title: flow.full_name }, flow.name),
         ...cells,
         el("td", {
@@ -1765,16 +1773,35 @@ async function showPlan() {
     }
   }
 
-  const planTable = table(headers, rows);
-  planTable.classList.add("plan-table");
+  const summaryHeaders = [{ ...headers[0], label: "Cash source / use" }, ...headers.slice(1)];
+  const summaryTable = table(summaryHeaders, summaryRows);
+  summaryTable.classList.add("plan-table", "plan-summary");
+  const detailTable = table(headers, detailRows);
+  detailTable.classList.add("plan-table");
   let eventPanel = null;
-  if (currentPlan.scenario) eventPanel = await scenarioEventPanel(currentPlan.scenario, currentPlan.from);
+  if (currentPlan.scenario) {
+    eventPanel = await scenarioEventPanel(currentPlan.scenario, currentPlan.from);
+  }
+  const detailSection = el("section", { class: "plan-detail" },
+    el("h2", { class: "plan-detail-heading" }, "Budget and classifications"),
+    eventPanel,
+    detailTable);
+  const detailOption = el("label", { class: "plan-print-option" },
+    el("input", {
+      type: "checkbox",
+      onchange: (event) => {
+        state.planPrintDetail = event.target.checked;
+        document.body.classList.toggle("include-plan-detail", event.target.checked);
+      },
+    }), " Include category detail when printing");
+  detailOption.querySelector("input").checked = state.planPrintDetail;
+  document.body.classList.toggle("include-plan-detail", state.planPrintDetail);
 
   return el("div", {}, controls, cards,
-    el("p", { class: "note" },
+    el("p", { class: "note plan-method-note" },
       `Showing ${data.controls.from} through ${data.controls.through}. `
       + "Changes to the controls take effect only when Apply is pressed."),
-    el("p", { class: "note" },
+    el("p", { class: "note plan-method-note" },
       "Income and expense values are derived from exact-dated scheduled/estimated "
       + "and actual transaction splits; reporting periods do not store planning values. "
       + "Mortgage cash requirements are informational and are not added to their "
@@ -1783,12 +1810,14 @@ async function showPlan() {
       + "expense details remain positive budget magnitudes; Income less expenses exposes "
       + "their signed operating result. Balance-sheet classifications are informational "
       + "and have no mixed grand total. Variance totals include only applicable periods."),
-    inheritedAssumptions ? el("p", { class: "note" },
+    inheritedAssumptions ? el("p", { class: "note plan-method-note" },
       `${inheritedAssumptions} annual assumption(s) inherited from Base.`) : null,
-    comparedInheritedAssumptions ? el("p", { class: "note" },
+    comparedInheritedAssumptions ? el("p", { class: "note plan-method-note" },
       `${comparison.name} inherits ${comparedInheritedAssumptions} annual assumption(s) from Base.`)
       : null,
-    eventPanel, planTable);
+    detailOption,
+    el("h2", { class: "plan-summary-heading" }, "Cash outlook"),
+    summaryTable, detailSection);
 }
 
 async function openPlanDetail(
@@ -1958,7 +1987,12 @@ async function scenarioEventPanel(handle, fromMonth) {
     refreshOccurrenceOptions();
     editor = form;
   }
-  const changes = data.changes.length ? table(["Change","Baseline","State"], data.changes.map(c=>[c.name,c.source_name||"Scenario-only estimate",c.enabled?"Active":"Suppressed"])) : el("p",{class:"note"},"No scenario-specific recurring changes yet.");
+  const changes = data.changes.length ? table(["Change", "Baseline", "State"],
+    data.changes.map((change) => el("tr", {},
+      el("td", {}, change.name),
+      el("td", {}, change.source_name || "Scenario-only estimate"),
+      el("td", {}, change.enabled ? "Active" : "Suppressed"))))
+    : el("p", { class:"note" }, "No scenario-specific recurring changes yet.");
   return el("div", {class:"panel scenario-events"}, el("h3",{},`Scenario events — ${data.scenario.name}`), actions, editor, changes);
 }
 
