@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0212 — Shared schedule editability contract.** Centralize the fixed,
+  formula, and read-only decision with one actionable reason in the schedule
+  engine. Use that result in GTK selection/edit flows, web/API definition payloads,
+  and the web mutation guard so presentation layers cannot independently guess
+  whether an imported definition is safe to rewrite. Advance the alpha version to
+  `0.2.0a48`.
+
 - [x] **0211 — Imported schedule fidelity matrix.** Add representative generated
   native, GnuCash SQLite, and GnuCash XML schedule contracts covering unusual and
   bounded recurrences, weekend movement, formulas, flags, local overrides, and

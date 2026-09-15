@@ -19,7 +19,7 @@ from datetime import date, timedelta
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import schedule
 from ...gen.engine.schedule import AccountPaymentDefinition
-from ...gen.lib import PeriodType, ScheduledTransaction
+from ...gen.lib import ScheduledTransaction
 from ...gen.lib.money import Money
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap
@@ -368,70 +368,9 @@ class ScheduledView(BaseView):
     def _editability_reason(self, sched) -> str:
         if sched is None or _is_split(sched):
             return "No scheduled transaction is selected."
-        if sched.unsupported_reason:
-            return sched.unsupported_reason
-        if formula_problem := sched.formula_problem():
-            return (
-                f"This imported formula cannot currently be evaluated ({formula_problem}). "
-                "Its original text remains preserved."
-            )
-        has_formula = any(split.formula for split in sched.splits)
-        supported_periods = {
-            PeriodType.DAY,
-            PeriodType.WEEK,
-            PeriodType.SEMI_MONTH,
-            PeriodType.MONTH,
-            PeriodType.YEAR,
-            PeriodType.ONCE,
-        }
-        if sched.recurrence.period not in supported_periods:
-            return (
-                "This schedule uses a recurrence that the fixed schedule editor "
-                "cannot yet reproduce without changing its meaning."
-            )
-        if has_formula:
-            # Formula expressions and variables stay protected, but the schedule's
-            # metadata/recurrence can be edited without reconstructing those splits.
-            return ""
-        if len(getattr(sched, "splits", [])) < 2:
-            return (
-                "This imported schedule does not have enough split information for "
-                "the fixed schedule editor to reproduce it safely."
-            )
-        classes = []
-        funding_candidates = 0
-        planning_flow_splits = 0
-        for split in sched.splits:
-            account = self.db.get_account(split.account) if self.db is not None else None
-            account_class = account.account_class.value if account is not None else ""
-            classes.append(account_class)
-            if split.planning_flow is not None:
-                planning_flow_splits += 1
-            if account_class not in {"income", "expense"} and split.planning_flow is None:
-                funding_candidates += 1
-        has_income_expense = any(value in {"income", "expense"} for value in classes)
-        ordinary_balance_transfer = False
-        if not has_income_expense and planning_flow_splits == 0:
-            ordinary_balance_transfer = all(value in {"asset", "liability"} for value in classes)
-            if ordinary_balance_transfer:
-                resolved = [split.resolve(sched.variables) for split in sched.splits]
-                positives = [value for value in resolved if value > 0]
-                negatives = [value for value in resolved if value < 0]
-                ordinary_balance_transfer = (
-                    len(positives) == 1 and bool(negatives) and sum(resolved, Money(0)) == Money(0)
-                )
-        if not has_income_expense and planning_flow_splits < 1 and not ordinary_balance_transfer:
-            return (
-                "This schedule has neither an Income/Expense leg, an explicit "
-                "planning-purpose leg, nor an unambiguous fixed balance-sheet "
-                "transfer that the schedule editor can use as its primary amount."
-            )
-        if funding_candidates < 1:
-            return (
-                "This schedule has no ordinary funding split that the fixed schedule "
-                "editor can preserve."
-            )
-        return ""
+        if self.db is None:
+            return "No book is open."
+        return schedule.schedule_editability(self.db, sched).reason
 
     def _on_edit_clicked(self, _button) -> None:
         if self.db is None:
