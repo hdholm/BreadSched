@@ -148,6 +148,13 @@ book. Choosing **Review…** opens the normal Base or scenario schedule editor w
 the inferred accounts, amount, cadence, dates, and seasonal values populated. The
 proposal is added only after **Save**; cancelling leaves the book unchanged, and a
 later analysis measures coverage from the values that were actually saved.
+Suggestions keep ordinary Income/Expense categories separate from retirement
+saving and distributions, investment contributions and withdrawals, debt
+principal, and benefit/FSA funding. The Purpose column names that distinction, and
+accepted drafts preserve it so Plan and Projection do not reinterpret a
+balance-sheet movement as ordinary income or expense. Existing future coverage is
+matched by account and purpose, so accepting one purpose does not conceal another
+purpose on the same account.
 Known future coverage is matched against an exact rolling twelve-month window.
 When a continuing replacement begins partway through that window, BreadSched can
 offer a bounded bridge estimate for only the uncovered months. Isolated future

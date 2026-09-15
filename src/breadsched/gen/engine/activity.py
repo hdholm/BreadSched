@@ -55,6 +55,7 @@ __all__ = [
     "explain_category_period",
     "explain_mortgage_payment_period",
     "explain_planning_flow_period",
+    "inferred_planning_flow",
 ]
 
 
@@ -1114,6 +1115,15 @@ def _inferred_planning_flow(
 ) -> PlanningFlowKind | None:
     """Return explicit split purpose or infer one from account type and context."""
     return _planning_flow_decision(split, splits, accounts)[0]
+
+
+def inferred_planning_flow(
+    split: PlannedSplit,
+    splits: Iterable[PlannedSplit],
+    accounts: dict[str, Account],
+) -> PlanningFlowKind | None:
+    """Return the shared explicit-or-inferred purpose for an expected split."""
+    return _inferred_planning_flow(split, splits, accounts)
 
 
 def _planning_flow_decision(

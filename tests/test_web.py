@@ -2391,6 +2391,9 @@ def test_historical_estimate_proposals_and_acceptance(client):
     status, data = client.get("/api/historical-estimates?months=12&min_active_months=1")
     assert status == 200
     rent = next(item for item in data["proposals"] if item["category_name"].endswith("Rent"))
+    assert rent["purpose_name"].endswith("Rent")
+    assert rent["planning_flow"] is None
+    assert rent["investment_activity"] is None
     assert rent["funding_name"].endswith("Checking")
     assert Money(rent["amount"]) == Money("1800.00")
     assert rent["frequency_key"] == "once"
@@ -2400,6 +2403,7 @@ def test_historical_estimate_proposals_and_acceptance(client):
     status, result = client.post(
         "/api/historical-estimate/accept",
         {
+            "key": rent["key"],
             "category": rent["category"],
             "months": 12,
             "min_active_months": 1,

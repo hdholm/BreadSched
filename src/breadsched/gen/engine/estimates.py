@@ -16,13 +16,13 @@ from decimal import Decimal
 from statistics import median
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import AccountClass
+from ..lib.account import Account, AccountClass
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scenario import ScenarioSchedule
 from ..lib.scheduled import ScheduledMonthAmount, ScheduledSplit, ScheduledTransaction
-from ..lib.transaction import InvestmentActivityKind, Split
-from . import planning
+from ..lib.transaction import InvestmentActivityKind, PlanningFlowKind, Split
+from . import activity, planning
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -55,15 +55,45 @@ class HistoricalEstimateProposal:
     seasonal_amounts: tuple[ScheduledMonthAmount, ...] = ()
     outlier_months: int = 0
     variability: str = "unknown"
+    planning_flow: PlanningFlowKind | None = None
+    investment_activity: InvestmentActivityKind | None = None
+    ledger_amount: Money | None = None
+
+    @property
+    def key(self) -> str:
+        """Stable review identity, including classifications that may share an account."""
+        flow = self.planning_flow.value if self.planning_flow else ""
+        investment = self.investment_activity.value if self.investment_activity else ""
+        return f"{self.category}:{self.funding}:{flow}:{investment}"
+
+    @property
+    def purpose_name(self) -> str:
+        """User-facing purpose without disguising a balance movement as a category."""
+        if self.planning_flow is not None:
+            return self.planning_flow.label
+        if self.investment_activity is not None:
+            return self.investment_activity.label
+        return self.category_name
+
+    @property
+    def estimate_name(self) -> str:
+        """Schedule name that distinguishes classified purposes on one account."""
+        if self.planning_flow is None and self.investment_activity is None:
+            return f"Estimated {self.category_name}"
+        return f"Estimated {self.purpose_name} — {self.category_name}"
 
     @property
     def source_name(self) -> str:
         """Display name of the account money historically flowed from."""
+        if self.ledger_amount is not None:
+            return self.funding_name if self.ledger_amount >= 0 else self.category_name
         return self.funding_name if self.amount >= 0 else self.category_name
 
     @property
     def destination_name(self) -> str:
         """Display name of the account money historically flowed to."""
+        if self.ledger_amount is not None:
+            return self.category_name if self.ledger_amount >= 0 else self.funding_name
         return self.category_name if self.amount >= 0 else self.funding_name
 
     @property
@@ -152,10 +182,112 @@ _INVESTMENT_PERFORMANCE_ACTIVITY = {
     InvestmentActivityKind.ROLLOVER,
 }
 
+_PLANNABLE_INVESTMENT_ACTIVITY = {
+    InvestmentActivityKind.CONTRIBUTION,
+    InvestmentActivityKind.WITHDRAWAL,
+    InvestmentActivityKind.RETIREMENT_DISTRIBUTION,
+}
+
+_FlowSignature = tuple[
+    str,
+    PlanningFlowKind | None,
+    InvestmentActivityKind | None,
+]
+
 
 def _is_investment_performance(splits: Iterable[Split | planning.PlannedSplit]) -> bool:
     """Whether flow-account legs are investment bookkeeping, not household cash need."""
     return any(split.investment_activity in _INVESTMENT_PERFORMANCE_ACTIVITY for split in splits)
+
+
+def _planned_views(
+    splits: Iterable[Split | planning.PlannedSplit],
+) -> tuple[planning.PlannedSplit, ...]:
+    """Normalize ledger and expected splits for shared classification."""
+    return tuple(
+        split
+        if isinstance(split, planning.PlannedSplit)
+        else planning.PlannedSplit(
+            split.account,
+            split.value,
+            split.planning_flow,
+            split.investment_activity,
+        )
+        for split in splits
+    )
+
+
+def _classified_flow_splits(
+    splits: Iterable[Split | planning.PlannedSplit],
+    accounts: dict[str, Account],
+) -> list[tuple[planning.PlannedSplit, PlanningFlowKind | None, InvestmentActivityKind | None]]:
+    """Return each planning-relevant balance leg once with shared classifications."""
+    views = _planned_views(splits)
+    classified: list[
+        tuple[planning.PlannedSplit, PlanningFlowKind | None, InvestmentActivityKind | None]
+    ] = []
+    for split in views:
+        account = accounts.get(split.account)
+        if account is None or account.atype.is_flow or account.is_root:
+            continue
+        flow = activity.inferred_planning_flow(split, views, accounts)
+        investment = split.investment_activity
+        if flow is PlanningFlowKind.ESCROW_FUNDING:
+            continue
+        if flow is None and investment not in _PLANNABLE_INVESTMENT_ACTIVITY:
+            continue
+        # Some importers annotate both sides of a distribution. The holding leg
+        # is the economic event; its cash counterpart must not become a duplicate.
+        if account.is_spendable_cash and any(
+            peer.account != split.account
+            and (peer_account := accounts.get(peer.account)) is not None
+            and not peer_account.is_spendable_cash
+            and (
+                activity.inferred_planning_flow(peer, views, accounts) is flow
+                or (investment is not None and peer.investment_activity is investment)
+            )
+            for peer in views
+        ):
+            continue
+        classified.append((split, flow, investment))
+    return classified
+
+
+def _economic_flow_amount(
+    split: planning.PlannedSplit,
+    flow: PlanningFlowKind | None,
+    investment: InvestmentActivityKind | None,
+) -> Money:
+    if flow is not None:
+        return flow.plan_amount(split.amount)
+    if investment is not None:
+        return split.amount * investment.direction
+    return Money(0)
+
+
+def _flow_counterpart(
+    split: planning.PlannedSplit,
+    splits: Iterable[Split | planning.PlannedSplit],
+    accounts: dict[str, Account],
+) -> Account | None:
+    """Choose the account that makes the proposed event useful for cash planning."""
+    candidates = [
+        account
+        for item in _planned_views(splits)
+        if item.account != split.account
+        and (account := accounts.get(item.account)) is not None
+        and not account.is_root
+    ]
+    if not candidates:
+        return None
+    return max(
+        candidates,
+        key=lambda account: (
+            account.is_spendable_cash,
+            not account.atype.is_flow,
+            account.handle,
+        ),
+    )
 
 
 def _target_events(
@@ -429,6 +561,167 @@ def _seasonal_amounts(
     return tuple(result)
 
 
+def _planned_flow_profiles(
+    db: DbSQLite,
+    start: date,
+    scenario_handle: str | None,
+    accounts: dict[str, Account],
+) -> dict[tuple[_FlowSignature, date], Money]:
+    """Return matching future coverage for each classified economic purpose."""
+    end = _add_months(start, 12) - timedelta(days=1)
+    totals: dict[tuple[_FlowSignature, date], Money] = {}
+    for event in _target_events(db, start, end, scenario_handle):
+        for split, flow, investment in _classified_flow_splits(event.expected_splits, accounts):
+            amount = _economic_flow_amount(split, flow, investment)
+            if amount <= 0:
+                continue
+            signature = (split.account, flow, investment)
+            key = (signature, _month_start(event.planned_date))
+            totals[key] = totals.get(key, Money(0)) + amount
+    return totals
+
+
+def _propose_classified_flows(
+    db: DbSQLite,
+    *,
+    history_start: date,
+    history_end: date,
+    future_start: date,
+    months: int,
+    min_active_months: int,
+    scenario_handle: str | None,
+    accounts: dict[str, Account],
+) -> list[HistoricalEstimateProposal]:
+    """Infer recurring balance-sheet purposes without relabeling them as categories."""
+    monthly: dict[tuple[_FlowSignature, date], Money] = {}
+    dates: dict[_FlowSignature, list[date]] = {}
+    counterpart_counts: dict[_FlowSignature, Counter[str]] = {}
+    transaction_counts: Counter[_FlowSignature] = Counter()
+
+    for txn in db.iter_transactions(start=history_start, end=history_end):
+        transaction_amounts: dict[_FlowSignature, Money] = {}
+        representatives: dict[_FlowSignature, planning.PlannedSplit] = {}
+        for split, flow, investment in _classified_flow_splits(txn.splits, accounts):
+            amount = _economic_flow_amount(split, flow, investment)
+            if amount <= 0:
+                continue
+            signature = (split.account, flow, investment)
+            transaction_amounts[signature] = transaction_amounts.get(signature, Money(0)) + amount
+            representatives.setdefault(signature, split)
+        for signature, amount in transaction_amounts.items():
+            key = (signature, _month_start(txn.post_date))
+            monthly[key] = monthly.get(key, Money(0)) + amount
+            transaction_counts[signature] += 1
+            if not txn.planned_occurrence:
+                dates.setdefault(signature, []).append(txn.post_date)
+            counterpart = _flow_counterpart(representatives[signature], txn.splits, accounts)
+            if counterpart is not None:
+                counterpart_counts.setdefault(signature, Counter())[counterpart.handle] += 1
+
+    planned = _planned_flow_profiles(db, future_start, scenario_handle, accounts)
+    proposals: list[HistoricalEstimateProposal] = []
+    signatures = {signature for signature, _month in monthly}
+    for signature in sorted(
+        signatures, key=lambda item: (db.full_name(accounts[item[0]]), str(item))
+    ):
+        target, flow, investment = signature
+        target_account = accounts[target]
+        residual_monthly: list[Money] = []
+        scheduled_total = Money(0)
+        for offset in range(months):
+            historical_month = _add_months(history_start, offset)
+            actual = monthly.get((signature, historical_month), Money(0))
+            future_month = _corresponding_future_month(historical_month, future_start)
+            residual, applied = _residual_after_scheduled(
+                actual, planned.get((signature, future_month), Money(0))
+            )
+            scheduled_total = scheduled_total + applied
+            if residual:
+                residual_monthly.append(residual)
+        if len(residual_monthly) < min_active_months:
+            continue
+        counts = counterpart_counts.get(signature)
+        if not counts:
+            continue
+        funding_handle = max(
+            counts,
+            key=lambda handle: (
+                counts[handle],
+                accounts[handle].is_spendable_cash,
+                handle,
+            ),
+        )
+        recurrence, cadence, occurrences_per_month = _infer_recurrence(
+            sorted(dates.get(signature, [])), future_start
+        )
+        if recurrence is None:
+            continue
+        robust, outlier_months, variability_value = _robust_sample(residual_monthly)
+        trend_sample, trend = _trend_summary(robust)
+        monthly_residual = _typical_amount(trend_sample)
+        amount = (monthly_residual / occurrences_per_month).quantize(100)
+        if amount <= 0:
+            continue
+        funding_account = accounts[funding_handle]
+        ledger_amount = (
+            flow.ledger_amount(amount)
+            if flow is not None
+            else amount * (investment.direction if investment is not None else 0)
+        )
+        variability = _variability_label(variability_value)
+        if flow is not None:
+            purpose = flow.label
+        elif investment is not None:
+            purpose = investment.label
+        else:  # pragma: no cover - signatures are created only for classified splits
+            continue
+        gross_values = [
+            monthly_value
+            for (candidate, _month), monthly_value in monthly.items()
+            if candidate == signature
+        ]
+        proposals.append(
+            HistoricalEstimateProposal(
+                category=target,
+                category_name=db.full_name(target_account),
+                funding=funding_handle,
+                funding_name=db.full_name(funding_account),
+                amount=amount,
+                recurrence=recurrence,
+                sample_months=months,
+                active_months=len(residual_monthly),
+                transaction_count=transaction_counts[signature],
+                confidence=_confidence(
+                    sample_months=months,
+                    active_months=len(residual_monthly),
+                    retained_months=len(robust),
+                    variability=variability_value,
+                ),
+                reason=(
+                    f"{cadence}; classified as {purpose}; historical median "
+                    f"{_typical_amount(gross_values).format()}; "
+                    f"{scheduled_total.format()} of matching future classified plan applied; "
+                    f"median uncovered {monthly_residual.format()} across "
+                    f"{len(residual_monthly)} month(s); {variability} amounts"
+                    + (
+                        f"; excluded {outlier_months} isolated outlier month(s)"
+                        if outlier_months
+                        else ""
+                    )
+                    + (f"; {trend}, using recent median" if trend else "")
+                ),
+                scheduled_amount=scheduled_total,
+                trend=trend,
+                outlier_months=outlier_months,
+                variability=variability,
+                planning_flow=flow,
+                investment_activity=investment,
+                ledger_amount=ledger_amount,
+            )
+        )
+    return proposals
+
+
 def propose_historical_estimates(
     db: DbSQLite,
     *,
@@ -584,7 +877,19 @@ def propose_historical_estimates(
             )
         )
 
-    return sorted(proposals, key=lambda item: item.category_name)
+    proposals.extend(
+        _propose_classified_flows(
+            db,
+            history_start=history_start,
+            history_end=history_end,
+            future_start=current_month,
+            months=months,
+            min_active_months=min_active_months,
+            scenario_handle=scenario_handle,
+            accounts=accounts_by_handle,
+        )
+    )
+    return sorted(proposals, key=lambda item: (item.purpose_name, item.category_name))
 
 
 def _proposal_splits(db: DbSQLite, proposal: HistoricalEstimateProposal) -> list[ScheduledSplit]:
@@ -592,9 +897,18 @@ def _proposal_splits(db: DbSQLite, proposal: HistoricalEstimateProposal) -> list
     funding = db.get_account(proposal.funding)
     if category is None or funding is None:
         raise ValueError("proposal accounts no longer exist")
-    signed = proposal.amount * category.sign()
+    signed = (
+        proposal.ledger_amount
+        if proposal.ledger_amount is not None
+        else proposal.amount * category.sign()
+    )
     return [
-        ScheduledSplit(category.handle, signed),
+        ScheduledSplit(
+            category.handle,
+            signed,
+            planning_flow=proposal.planning_flow,
+            investment_activity=proposal.investment_activity,
+        ),
         ScheduledSplit(funding.handle, -signed),
     ]
 
@@ -603,7 +917,7 @@ def draft_historical_estimate(
     db: DbSQLite, proposal: HistoricalEstimateProposal
 ) -> ScheduledTransaction:
     """Build an editable, unsaved Base estimate from one analyzer proposal."""
-    name = f"Estimated {proposal.category_name}"
+    name = proposal.estimate_name
     draft = ScheduledTransaction(
         name=name,
         recurrence=Recurrence.from_dict(proposal.recurrence.serialize()),
@@ -620,7 +934,7 @@ def draft_historical_estimate(
 def draft_scenario_estimate(db: DbSQLite, proposal: HistoricalEstimateProposal) -> ScenarioSchedule:
     """Build an editable, unsaved scenario estimate from one analyzer proposal."""
     return ScenarioSchedule(
-        name=f"Estimated {proposal.category_name}",
+        name=proposal.estimate_name,
         recurrence=Recurrence.from_dict(proposal.recurrence.serialize()),
         splits=_proposal_splits(db, proposal),
         placeholder=True,

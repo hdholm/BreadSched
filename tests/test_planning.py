@@ -556,6 +556,148 @@ class TestActualResolutionWorkflow:
 
 
 class TestHistoricalEstimateProposals:
+    def test_proposes_and_preserves_distinct_classified_balance_flows(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import InvestmentActivityKind, PlanningFlowKind
+
+        with db.transaction("Planning accounts") as txn:
+            retirement = Account(
+                name="Retirement", atype=AccountType.RETIREMENT, parent=book.assets
+            )
+            loan = Account(name="Mortgage", atype=AccountType.LOAN, parent=book.liabilities)
+            fsa = Account(name="Health FSA", atype=AccountType.FSA, parent=book.assets)
+            for account in (retirement, loan, fsa):
+                db.add_account(account, txn)
+            for month in (1, 2, 3):
+                when = date(2026, month, 5)
+                for description, target, amount, investment in (
+                    ("Retirement saving", retirement.handle, Money("500"), None),
+                    ("Retirement draw", retirement.handle, Money("-700"), None),
+                    ("Mortgage principal", loan.handle, Money("300"), None),
+                    ("FSA funding", fsa.handle, Money("100"), None),
+                    (
+                        "Taxable investment",
+                        book.brokerage,
+                        Money("250"),
+                        InvestmentActivityKind.CONTRIBUTION,
+                    ),
+                    (
+                        "Taxable withdrawal",
+                        book.brokerage,
+                        Money("-175"),
+                        InvestmentActivityKind.WITHDRAWAL,
+                    ),
+                ):
+                    db.add_transaction(
+                        Transaction(
+                            post_date=when,
+                            description=description,
+                            splits=[
+                                Split(target, amount, investment_activity=investment),
+                                Split(book.checking, -amount),
+                            ],
+                        ),
+                        txn,
+                    )
+
+        proposals = estimates.propose_historical_estimates(db, as_of=date(2026, 4, 20), months=3)
+        classified = {(item.planning_flow, item.investment_activity): item for item in proposals}
+        assert classified[(PlanningFlowKind.RETIREMENT_SAVING, None)].amount == Money("500")
+        assert classified[(PlanningFlowKind.RETIREMENT_INCOME, None)].amount == Money("700")
+        assert classified[(PlanningFlowKind.DEBT_PRINCIPAL, None)].amount == Money("300")
+        assert classified[(PlanningFlowKind.BENEFIT_FUNDING, None)].amount == Money("100")
+        contribution = classified[(None, InvestmentActivityKind.CONTRIBUTION)]
+        assert contribution.amount == Money("250")
+        assert contribution.funding == book.checking
+        withdrawal = classified[(None, InvestmentActivityKind.WITHDRAWAL)]
+        assert withdrawal.amount == Money("175")
+        assert withdrawal.source_name.endswith("Brokerage")
+        assert withdrawal.destination_name.endswith("Checking")
+
+        with db.transaction("Alternative") as txn:
+            scenario = Scenario(name="Alternative")
+            db.add_scenario(scenario, txn)
+        estimates.accept_historical_estimate(db, contribution, scenario_handle=scenario.handle)
+        saved_scenario = db.get_scenario(scenario.handle)
+        assert saved_scenario is not None
+        investment_split = next(
+            split
+            for split in saved_scenario.schedule_overrides[0].splits
+            if split.account == book.brokerage
+        )
+        assert investment_split.investment_activity is InvestmentActivityKind.CONTRIBUTION
+        assert any(
+            item.investment_activity is InvestmentActivityKind.CONTRIBUTION
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+        )
+        assert all(
+            item.investment_activity is not InvestmentActivityKind.CONTRIBUTION
+            for item in estimates.propose_historical_estimates(
+                db,
+                as_of=date(2026, 4, 20),
+                months=3,
+                scenario_handle=scenario.handle,
+            )
+        )
+
+        saving = classified[(PlanningFlowKind.RETIREMENT_SAVING, None)]
+        handle = estimates.accept_historical_estimate(db, saving)
+        saved = db.get_scheduled(handle)
+        assert saved is not None
+        target = next(split for split in saved.splits if split.account == retirement.handle)
+        assert target.amount == Money("500")
+        assert target.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert all(
+            item.planning_flow is not PlanningFlowKind.RETIREMENT_SAVING
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+        )
+
+    def test_retirement_distribution_counterpart_is_not_proposed_twice(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import PlanningFlowKind
+
+        with db.transaction("Retirement distributions") as txn:
+            retirement = Account(
+                name="Retirement", atype=AccountType.RETIREMENT, parent=book.assets
+            )
+            db.add_account(retirement, txn)
+            for month in (1, 2, 3):
+                db.add_transaction(
+                    Transaction(
+                        post_date=date(2026, month, 15),
+                        description="Distribution",
+                        splits=[
+                            Split(
+                                retirement.handle,
+                                "-15000",
+                                planning_flow=PlanningFlowKind.RETIREMENT_INCOME,
+                            ),
+                            Split(
+                                book.checking,
+                                "15000",
+                                planning_flow=PlanningFlowKind.RETIREMENT_INCOME,
+                            ),
+                        ],
+                    ),
+                    txn,
+                )
+
+        distributions = [
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.planning_flow is PlanningFlowKind.RETIREMENT_INCOME
+        ]
+        assert len(distributions) == 1
+        assert distributions[0].category == retirement.handle
+        assert distributions[0].source_name.endswith("Retirement")
+        assert distributions[0].destination_name.endswith("Checking")
+
     def test_investment_performance_does_not_become_ordinary_income_or_expense(self, db, book):
         from breadsched.gen.engine import estimates
         from breadsched.gen.lib import InvestmentActivityKind, Split, Transaction

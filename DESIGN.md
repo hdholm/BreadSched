@@ -419,6 +419,15 @@ retirement, or restricted-asset leg cannot displace an equally observed cash
 counterpart. The same transaction-boundary exclusions apply to historical cadence
 evidence and matching future coverage.
 
+Planning-relevant balance-sheet legs are estimated separately from flow-account
+categories. The estimator uses the same explicit-or-inferred classification as
+Plan for retirement saving/distributions, debt principal, and benefit/FSA funding;
+taxable investment contributions and withdrawals retain their investment-activity
+classification. A proposal identity includes account, counterpart, and purpose so
+opposite activity on one holding remains independently reviewable. Future coverage
+matches the account and classifications before it is subtracted, and duplicate
+cash-counterpart annotations on a retirement distribution count only once.
+
 ## Dashboard aggregation
 
 Dashboard group names are account-style colon-delimited paths. The engine builds

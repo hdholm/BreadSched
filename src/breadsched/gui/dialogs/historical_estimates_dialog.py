@@ -98,7 +98,7 @@ class HistoricalEstimatesDialog(Gtk.Window):
             label = Gtk.Label(
                 label=(
                     f"{proposal.display_amount.format()} "
-                    f"{proposal.recurrence.describe()}: "
+                    f"{proposal.recurrence.describe()} — {proposal.purpose_name}: "
                     f"{proposal.source_name} → {proposal.destination_name}\n"
                     f"{proposal.reason}; "
                     f"confidence {proposal.confidence:.0%}"
@@ -144,4 +144,4 @@ class HistoricalEstimatesDialog(Gtk.Window):
 
         dialog.connect("close-request", finished)
         dialog.present()
-        self.status.set_text(f"Review the estimate for {proposal.category_name}, then Save.")
+        self.status.set_text(f"Review {proposal.purpose_name}, then Save.")
