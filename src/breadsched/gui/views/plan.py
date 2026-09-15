@@ -47,6 +47,13 @@ _MONTHS = (
 )
 
 
+def _signed_money(value: Money | None) -> str:
+    if value is None:
+        return "Not applicable"
+    rendered = value.format(parens_negative=True)
+    return f"+{rendered}" if value > 0 else rendered
+
+
 class PlanView(BaseView):
     """Category-oriented plan versus actual view derived from transaction events."""
 
@@ -552,10 +559,19 @@ class PlanView(BaseView):
             scenario=selected_scenario,
         )
         activity = self._report.activity
+        position = self._report.cash_position
+        minimum_date = (
+            f"{position.minimum_date:%b} {position.minimum_date.day}, {position.minimum_date.year}"
+        )
+        as_of_date = f"{self._report.as_of:%b} {self._report.as_of.day}, {self._report.as_of.year}"
         self.summary.set_text(
-            f"Planned cash {activity.planned_cash_change.format(parens_negative=True)}   ·   "
-            f"Actual cash {activity.actual_cash_change.format(parens_negative=True)}   ·   "
-            f"Variance {self._report.cash_variance.format(parens_negative=True)}   ·   "
+            f"Opening spendable cash {position.opening.format(parens_negative=True)}   ·   "
+            f"Ending spendable cash {position.closing.format(parens_negative=True)}   ·   "
+            f"Lowest {position.minimum.format(parens_negative=True)} on {minimum_date}   ·   "
+            f"Projected change {_signed_money(activity.planned_cash_change)}   ·   "
+            f"Actual through {as_of_date} "
+            f"{_signed_money(self._report.actual_cash_through_as_of)}   ·   "
+            f"Variance {_signed_money(self._report.cash_variance_through_as_of)}   ·   "
             f"{activity.unresolved_count} expected occurrences pending   ·   "
             f"{activity.unresolved_actual_count} actuals to review"
         )
@@ -606,6 +622,24 @@ class PlanView(BaseView):
 
         row_index = 1
         measure = self._measure()
+        section = Gtk.Label(label="Spendable cash bridge", xalign=0)
+        section.add_css_class("heading")
+        self.grid.attach(section, 0, row_index, 1, 1)
+        row_index += 1
+        for bridge in self._report.cash_bridge:
+            name = Gtk.Label(label=bridge.name, xalign=0)
+            self.grid.attach(name, 0, row_index, 1, 1)
+            for col, value in enumerate(bridge.values(measure), 1):
+                self._attach_total(value, col, row_index, signed=True)
+            self._attach_total(bridge.total(measure), len(periods) + 1, row_index, signed=True)
+            row_index += 1
+        row_index = self._attach_summary_row(
+            "Net change in spendable cash",
+            self._report.cash_bridge_totals(measure),
+            row_index,
+            signed=True,
+        )
+
         sections = (("Income", self._report.income), ("Expenses", self._report.expenses))
         for section_name, rows in sections:
             section = Gtk.Label(label=section_name, xalign=0)
@@ -637,6 +671,13 @@ class PlanView(BaseView):
                     self._report.category_totals(account_class, measure),
                     row_index,
                 )
+
+        row_index = self._attach_summary_row(
+            "Income less expenses",
+            self._report.operating_net_totals(measure),
+            row_index,
+            signed=True,
+        )
 
         if self._report.mortgage_payments:
             section = Gtk.Label(label="Cash requirements (informational)", xalign=0)
@@ -670,7 +711,7 @@ class PlanView(BaseView):
             )
 
         if self._report.planning_flows:
-            section = Gtk.Label(label="Planning flows", xalign=0)
+            section = Gtk.Label(label="Balance-sheet classifications (informational)", xalign=0)
             section.add_css_class("heading")
             self.grid.attach(section, 0, row_index, 1, 1)
             row_index += 1
@@ -692,43 +733,50 @@ class PlanView(BaseView):
                     self.grid.attach(button, col, row_index, 1, 1)
                 self._attach_total(flow.total(measure), len(periods) + 1, row_index)
                 row_index += 1
-            row_index = self._attach_summary_row(
-                "Planning-flow total",
-                self._report.planning_flow_totals(measure),
-                row_index,
-            )
 
-        self._attach_summary_row(
-            "Net cash change",
-            self._report.cash_totals(measure),
-            row_index,
-            grand=True,
-        )
-
-    def _attach_total(self, value, column: int, row: int, *, heading: bool = False) -> None:
+    def _attach_total(
+        self,
+        value,
+        column: int,
+        row: int,
+        *,
+        heading: bool = False,
+        signed: bool = False,
+    ) -> None:
         label = Gtk.Label(
-            label=value.format(parens_negative=True) if value is not None else "—",
+            label=(
+                _signed_money(value)
+                if signed
+                else value.format(parens_negative=True)
+                if value is not None
+                else "—"
+            ),
             xalign=1,
         )
         if heading:
             label.add_css_class("heading")
         self.grid.attach(label, column, row, 1, 1)
 
-    def _attach_summary_row(self, name: str, values, row: int, *, grand: bool = False) -> int:
-        assert self._report is not None
+    def _attach_summary_row(
+        self,
+        name: str,
+        values,
+        row: int,
+        *,
+        signed: bool = False,
+    ) -> int:
         label = Gtk.Label(label=name, xalign=0)
         label.add_css_class("heading")
         self.grid.attach(label, 0, row, 1, 1)
         for column, value in enumerate(values, 1):
-            self._attach_total(value, column, row, heading=True)
-        total = self._report.grand_total(self._measure()) if grand else None
-        if not grand:
-            present = [value for value in values if value is not None]
-            if present:
-                total = Money(0)
-                for value in present:
-                    total = total + value
-        self._attach_total(total, len(values) + 1, row, heading=True)
+            self._attach_total(value, column, row, heading=True, signed=signed)
+        present = [value for value in values if value is not None]
+        total = None
+        if present:
+            total = Money(0)
+            for value in present:
+                total = total + value
+        self._attach_total(total, len(values) + 1, row, heading=True, signed=signed)
         return row + 1
 
     def _on_flow_cell_clicked(self, _button, flow, period) -> None:

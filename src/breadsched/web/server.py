@@ -2120,9 +2120,11 @@ class Api:
                 self.db, start, end, period=grouping, scenario=compare_scenario
             )
             compare_rows = {row.account: row for row in compare_report.categories}
+            compare_bridges = {row.kind: row for row in compare_report.cash_bridge}
             compare_flows = {(row.kind, row.account): row for row in compare_report.planning_flows}
             compare_mortgages = {row.account: row for row in compare_report.mortgage_payments}
             comparison_categories: list[dict[str, object]] = []
+            comparison_bridges: list[dict[str, object]] = []
             comparison_flows: list[dict[str, object]] = []
             comparison_mortgages: list[dict[str, object]] = []
             comparison = {
@@ -2131,20 +2133,72 @@ class Api:
                 "assumption_sources": compare_scenario.assumption_sources(start),
                 "summary": {
                     "planned_cash": compare_report.activity.planned_cash_change,
-                    "actual_cash": compare_report.activity.actual_cash_change,
-                    "variance": compare_report.cash_variance,
+                    "actual_cash": compare_report.actual_cash_through_as_of,
+                    "variance": compare_report.cash_variance_through_as_of,
+                    "opening_cash": compare_report.cash_position.opening,
+                    "ending_cash": compare_report.cash_position.closing,
+                    "minimum_cash": compare_report.cash_position.minimum,
+                    "minimum_cash_date": compare_report.cash_position.minimum_date,
                     "planned_cash_delta": (
                         totals.planned_cash_change - compare_report.activity.planned_cash_change
                     ),
                     "actual_cash_delta": (
-                        totals.actual_cash_change - compare_report.activity.actual_cash_change
+                        report.actual_cash_through_as_of - compare_report.actual_cash_through_as_of
+                        if report.actual_cash_through_as_of is not None
+                        and compare_report.actual_cash_through_as_of is not None
+                        else None
                     ),
-                    "variance_delta": (report.cash_variance - compare_report.cash_variance),
+                    "variance_delta": (
+                        report.cash_variance_through_as_of
+                        - compare_report.cash_variance_through_as_of
+                        if report.cash_variance_through_as_of is not None
+                        and compare_report.cash_variance_through_as_of is not None
+                        else None
+                    ),
                 },
                 "categories": comparison_categories,
+                "cash_bridge": comparison_bridges,
                 "mortgage_payments": comparison_mortgages,
                 "planning_flows": comparison_flows,
             }
+            for bridge_row in report.cash_bridge:
+                other_bridge = compare_bridges.get(bridge_row.kind)
+                zeroes = [Money(0) for _ in bridge_row.planned]
+                bridge_planned = other_bridge.planned if other_bridge is not None else zeroes
+                bridge_actual = other_bridge.actual if other_bridge is not None else zeroes
+                bridge_variance: list[Money | None] = (
+                    other_bridge.variance if other_bridge is not None else list(zeroes)
+                )
+                comparison_bridges.append(
+                    {
+                        "kind": bridge_row.kind.value,
+                        "planned": bridge_planned,
+                        "actual": bridge_actual,
+                        "variance": bridge_variance,
+                        "planned_delta": [
+                            value - alternate
+                            for value, alternate in zip(
+                                bridge_row.planned, bridge_planned, strict=True
+                            )
+                        ],
+                        "actual_delta": [
+                            value - alternate
+                            for value, alternate in zip(
+                                bridge_row.actual, bridge_actual, strict=True
+                            )
+                        ],
+                        "variance_delta": [
+                            (
+                                value - alternate
+                                if value is not None and alternate is not None
+                                else None
+                            )
+                            for value, alternate in zip(
+                                bridge_row.variance, bridge_variance, strict=True
+                            )
+                        ],
+                    }
+                )
             for row in report.categories:
                 other = compare_rows.get(row.account)
                 zeroes = [Money(0) for _ in row.planned]
@@ -2277,12 +2331,27 @@ class Api:
             ],
             "summary": {
                 "planned_cash": totals.planned_cash_change,
-                "actual_cash": totals.actual_cash_change,
-                "variance": report.cash_variance,
+                "actual_cash": report.actual_cash_through_as_of,
+                "variance": report.cash_variance_through_as_of,
+                "opening_cash": report.cash_position.opening,
+                "ending_cash": report.cash_position.closing,
+                "minimum_cash": report.cash_position.minimum,
+                "minimum_cash_date": report.cash_position.minimum_date,
                 "unresolved_expected": totals.unresolved_count,
                 "unresolved_actuals": totals.unresolved_actual_count,
             },
             "comparison": comparison,
+            "cash_bridge": [
+                {
+                    "kind": row.kind.value,
+                    "name": row.name,
+                    "planned": row.planned,
+                    "actual": row.actual,
+                    "variance": row.variance,
+                    "totals": {item.value: row.total(item) for item in PlanMeasure},
+                }
+                for row in report.cash_bridge
+            ],
             "categories": [
                 {
                     "account": row.account,
@@ -2336,6 +2405,20 @@ class Api:
                     item.value: {
                         "periods": report.category_totals(AccountClass.EXPENSE, item),
                         "total": report.category_grand_total(AccountClass.EXPENSE, item),
+                    }
+                    for item in PlanMeasure
+                },
+                "operating_net": {
+                    item.value: {
+                        "periods": report.operating_net_totals(item),
+                        "total": report.operating_net_grand_total(item),
+                    }
+                    for item in PlanMeasure
+                },
+                "cash_bridge": {
+                    item.value: {
+                        "periods": report.cash_bridge_totals(item),
+                        "total": report.cash_bridge_grand_total(item),
                     }
                     for item in PlanMeasure
                 },

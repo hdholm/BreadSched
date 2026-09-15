@@ -2434,7 +2434,9 @@ class TestDerivedPlanView:
         assert "Total" in labels
         assert "Income total" in labels
         assert "Expenses total" in labels
-        assert "Net cash change" in labels
+        assert "Spendable cash bridge" in labels
+        assert "Net change in spendable cash" in labels
+        assert "Income less expenses" in labels
 
     def test_plan_grid_shows_whole_mortgage_payment_as_informational(
         self, app, window, populated_book

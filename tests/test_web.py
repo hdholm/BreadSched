@@ -267,8 +267,10 @@ class TestItServes:
         assert set(plan["column_totals"]) == {
             "income",
             "expense",
+            "operating_net",
             "mortgage_payments",
             "planning_flows",
+            "cash_bridge",
             "net_cash",
         }
         for row in plan["categories"]:
@@ -1064,6 +1066,7 @@ class TestPlanApi:
             "categories",
             "mortgage_payments",
             "planning_flows",
+            "cash_bridge",
             "column_totals",
         }
         by_name = {row["full_name"]: row for row in payload["categories"]}
@@ -1071,6 +1074,22 @@ class TestPlanApi:
         assert "Expenses:Rent" in by_name
         assert Money(by_name["Income:Salary"]["actual"][0]) == Money("4200.00")
         assert Money(by_name["Expenses:Rent"]["actual"][0]) == Money("1800.00")
+        assert set(payload["summary"]) == {
+            "planned_cash",
+            "actual_cash",
+            "variance",
+            "opening_cash",
+            "ending_cash",
+            "minimum_cash",
+            "minimum_cash_date",
+            "unresolved_expected",
+            "unresolved_actuals",
+        }
+        assert payload["cash_bridge"]
+        assert (
+            payload["column_totals"]["cash_bridge"]["planned"]
+            == payload["column_totals"]["net_cash"]["planned"]
+        )
 
     def test_grouping_changes_display_buckets(self, client):
         _status, payload = client.get("/api/plan?from=2026-01&through=2026-12&period=quarter")

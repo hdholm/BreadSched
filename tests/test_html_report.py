@@ -87,7 +87,9 @@ def test_plan_report_uses_selected_measure_horizon_totals_and_scenario(db, book)
 
     assert "Jan 2026" in document and "Mar 2026" in document
     assert "Expenses total" in document
-    assert "Net cash change" in document
+    assert "Spendable cash bridge" in document
+    assert "Net change in spendable cash" in document
+    assert "Income less expenses" in document
     assert "300.00" in document
     assert "Careful &lt;case&gt;" in document
     assert "Planned" in document
@@ -122,8 +124,12 @@ def test_plan_report_shows_whole_mortgage_payment_as_non_additive(db, book):
     assert "Mortgage payment — Liabilities:Mortgage" in document
     assert "Mortgage cash required" in document
     assert "2,400.00" in document
-    assert "Planning-flow total" in document
-    assert "1,250.00" in document  # $800 principal plus $450 escrow funding.
+    assert "Balance-sheet classifications (informational)" in document
+    assert "Planning-flow total" not in document
+    assert "Debt principal — Liabilities:Mortgage" in document
+    assert "800.00" in document
+    assert "Escrow funding — Assets:Escrow" in document
+    assert "450.00" in document
 
 
 def test_projection_report_includes_chart_assumptions_year_end_values_and_comparison(db, book):

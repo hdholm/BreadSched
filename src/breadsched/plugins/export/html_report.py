@@ -75,11 +75,25 @@ def _money(value: Money | None) -> str:
     return "—" if value is None else value.format(parens_negative=True)
 
 
+def _signed_money(value: Money | None) -> str:
+    if value is None:
+        return "—"
+    rendered = value.format(parens_negative=True)
+    return f"+{rendered}" if value > 0 else rendered
+
+
 def _amount(value: Money | None) -> str:
     css = "num"
     if value is not None and value < 0:
         css += " neg"
     return f'<td class="{css}">{escape(_money(value))}</td>'
+
+
+def _signed_amount(value: Money | None) -> str:
+    css = "num"
+    if value is not None:
+        css += " neg" if value < 0 else " pos" if value > 0 else ""
+    return f'<td class="{css}">{escape(_signed_money(value))}</td>'
 
 
 def _cards(items: list[tuple[str, object, bool]]) -> str:
@@ -186,11 +200,31 @@ def plan_report(
 ) -> str:
     """Render the applied Plan horizon, grouping, measure, and scenario."""
     activity = report.activity
+    position = report.cash_position
     cards = _cards(
         [
-            ("Planned cash", _money(activity.planned_cash_change), False),
-            ("Actual cash", _money(activity.actual_cash_change), False),
-            ("Variance", _money(report.cash_variance), report.cash_variance < 0),
+            ("Opening spendable cash", _money(position.opening), position.opening < 0),
+            ("Ending spendable cash", _money(position.closing), position.closing < 0),
+            (
+                f"Lowest spendable cash ({position.minimum_date.isoformat()})",
+                _money(position.minimum),
+                position.minimum < 0,
+            ),
+            (
+                "Projected change in spendable cash",
+                _signed_money(activity.planned_cash_change),
+                activity.planned_cash_change < 0,
+            ),
+            (
+                f"Actual change through {report.as_of.isoformat()}",
+                _signed_money(report.actual_cash_through_as_of),
+                (report.actual_cash_through_as_of or Money(0)) < 0,
+            ),
+            (
+                "Variance through as-of date",
+                _signed_money(report.cash_variance_through_as_of),
+                (report.cash_variance_through_as_of or Money(0)) < 0,
+            ),
             ("Expected unresolved", activity.unresolved_count, False),
             ("Actuals to review", activity.unresolved_actual_count, False),
         ]
@@ -198,9 +232,40 @@ def plan_report(
     headers = "".join(f'<th class="num">{escape(period.label)}</th>' for period in activity.periods)
     rows: list[str] = []
 
-    def values_row(label: str, values, total: Money | None, css: str = "") -> str:
-        cells = "".join(_amount(value) for value in values)
-        return f'<tr class="{css}"><td>{label}</td>{cells}{_amount(total)}</tr>'
+    def values_row(
+        label: str,
+        values,
+        total: Money | None,
+        css: str = "",
+        *,
+        signed: bool = False,
+    ) -> str:
+        cell = _signed_amount if signed else _amount
+        cells = "".join(cell(value) for value in values)
+        return f'<tr class="{css}"><td>{label}</td>{cells}{cell(total)}</tr>'
+
+    rows.append(
+        '<tr class="section"><td colspan="'
+        f'{len(activity.periods) + 2}">Spendable cash bridge</td></tr>'
+    )
+    for bridge in report.cash_bridge:
+        rows.append(
+            values_row(
+                escape(bridge.name),
+                bridge.values(measure),
+                bridge.total(measure),
+                signed=True,
+            )
+        )
+    rows.append(
+        values_row(
+            "Net change in spendable cash",
+            report.cash_bridge_totals(measure),
+            report.cash_bridge_grand_total(measure),
+            "grand",
+            signed=True,
+        )
+    )
 
     for section, categories, account_class in (
         ("Income", report.income, AccountClass.INCOME),
@@ -223,6 +288,16 @@ def plan_report(
                 "total",
             )
         )
+
+    rows.append(
+        values_row(
+            "Income less expenses",
+            report.operating_net_totals(measure),
+            report.operating_net_grand_total(measure),
+            "grand",
+            signed=True,
+        )
+    )
 
     if report.mortgage_payments:
         rows.append(
@@ -249,28 +324,12 @@ def plan_report(
     if report.planning_flows:
         rows.append(
             '<tr class="section"><td colspan="'
-            f'{len(activity.periods) + 2}">Planning flows</td></tr>'
+            f'{len(activity.periods) + 2}">Balance-sheet classifications (informational)'
+            "</td></tr>"
         )
         for flow in report.planning_flows:
             label = f'<span title="{escape(flow.full_name, quote=True)}">{escape(flow.name)}</span>'
             rows.append(values_row(label, flow.values(measure), flow.total(measure)))
-        totals = report.planning_flow_totals(measure)
-        rows.append(
-            values_row(
-                "Planning-flow total",
-                totals,
-                report.planning_flow_grand_total(measure),
-                "total",
-            )
-        )
-    rows.append(
-        values_row(
-            "Net cash change",
-            report.cash_totals(measure),
-            report.grand_total(measure),
-            "grand",
-        )
-    )
     table = (
         "<table><thead><tr><th>Category</th>"
         f'{headers}<th class="num">Total</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'

@@ -89,11 +89,24 @@ reporting period does not move the underlying financial event.
 
 The last applied From, Through, Group by, Show, scenario, and comparison controls
 are stored with the book and shared by GTK and web. Every category and planning-flow
-row has a total across the selected horizon. Each period also has Income, Expenses,
-and Planning-flow section totals calculated from outermost category rollups so a
-parent and its children are never added twice. The final Net cash change row is the
-financially meaningful grand total; variance totals include only periods through
-the report's as-of date.
+row has a total across the selected horizon. Each period also has Income and Expenses
+totals calculated from outermost category rollups so a parent and its children are
+never added twice.
+
+The Plan leads with a signed **spendable cash bridge**. Income received and retirement
+distributions add cash; ordinary expenses, retirement saving, benefit funding, debt
+principal, and escrow funding use cash. A residual timing/financing row explains
+credit purchases and other events whose expense timing differs from cash settlement.
+Those non-overlapping rows reconcile exactly to the projected change in spendable
+cash. Opening, ending, and lowest projected spendable-cash balances make the date of
+the tightest liquidity point visible. Income and expense detail remains in familiar
+positive budget magnitudes, followed by a signed Income less expenses result.
+
+Balance-sheet classifications remain available as informational detail, without a
+mixed grand total. Equal-and-opposite account legs of one retirement distribution
+are shown as one logical inflow rather than two apparent events. Variance totals and
+actual cash cover only the applicable part of the report horizon through its as-of
+date; future-only actual and variance summaries are shown as not applicable.
 
 Mortgage servicing also appears in a separate **Cash requirements
 (informational)** section. It shows the whole payment needed from spendable cash,
