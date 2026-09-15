@@ -944,14 +944,29 @@ def preserve_breadsched_schedule_state(
     imported: ScheduledTransaction,
     existing: ScheduledTransaction | None,
 ) -> None:
-    """Retain local split classifications when a source schedule is refreshed.
+    """Retain BreadSched-owned schedule state across a source refresh.
 
     Scheduled splits have no stable GnuCash GUID of their own. A classification is
     therefore retained only when its account occurs exactly once in both versions;
     ambiguous/restructured templates deliberately receive no stale annotation.
+    Recurrence, source flags, template amounts/formulas, and split memos remain
+    source-owned.  Planning timelines, exceptions, formula inputs, and local
+    completion state have no GnuCash representation and remain BreadSched-owned.
     """
     if existing is None:
         return
+    imported.description = existing.description
+    imported.currency = existing.currency
+    imported.growth_policy = existing.growth_policy
+    imported.amount_changes = list(existing.amount_changes)
+    imported.seasonal_amounts = list(existing.seasonal_amounts)
+    imported.occurrence_adjustments = list(existing.occurrence_adjustments)
+    imported.variables = dict(existing.variables)
+    imported.skipped = list(existing.skipped)
+    if existing.last_posted is not None and (
+        imported.last_posted is None or existing.last_posted > imported.last_posted
+    ):
+        imported.last_posted = existing.last_posted
     prior_by_account: dict[str, list[ScheduledSplit]] = {}
     imported_by_account: dict[str, list[ScheduledSplit]] = {}
     for split in existing.splits:

@@ -234,6 +234,23 @@ skips, amount changes, and formula-driven splits are part of the schedule semant
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 
+The representative schedule-fidelity matrix defines the current ownership and
+execution boundary across native books and generated GnuCash SQLite/XML books:
+
+| Schedule fact | Native definition | Supported GnuCash definition | Unsupported GnuCash definition |
+|---|---|---|---|
+| Recurrence, bounds, weekend rule | Persist and execute | Refresh from source and execute | Preserve original source structure; read-only and never execute |
+| Enabled/automatic/advance flags | Persist and execute | Refresh from source | Preserve with the protected definition |
+| Split accounts, memos, amounts/formulas | Persist exactly | Refresh from source; execute only through the bounded formula engine | Preserve inspectably; never execute |
+| Growth policy and dated amount rules | Persist exactly | BreadSched-owned and retained on source refresh | Retained, but cannot make a protected definition executable |
+| Skips, one-time adjustments, local formula inputs | Persist exactly | BreadSched-owned and retained on source refresh | Retained as local context only |
+| Split planning/investment classifications | Persist exactly | Retain only when the account identifies one split unambiguously before and after refresh | Never guess across ambiguous/restructured splits |
+
+GnuCash may express one schedule as a union of multiple recurrence rows. BreadSched
+does not yet have an equivalent recurrence union, so both importers retain all rows,
+report one actionable reason, and prevent planning or posting. Selecting the first
+row would be a lossy semantic change, even when that row is independently supported.
+
 Unsupported source structure is data, not permission to guess. BreadSched retains
 the original formula text and source recurrence representation, exposes an
 actionable read-only reason, and excludes the definition from planning, projection,
@@ -679,6 +696,12 @@ historical money-market, receivable, and payable types; an unknown valid source
 type; hidden state; typed slots; hierarchy changes; and a second source refresh.
 Any expansion of imported-account editing should extend this matrix with the source
 form and the expected local/source ownership result.
+
+Imported-schedule editing follows the same rule. Any newly editable schedule shape
+must first be added to the generated native/SQLite/XML fidelity matrix, including a
+save/reload/source-refresh assertion. Presentation layers consume a shared
+editability decision; they do not independently infer that a source definition is
+safe from the number of splits or a familiar-looking recurrence label.
 
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile
