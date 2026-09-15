@@ -32,12 +32,14 @@ other concerns deliberately separate:
 - [`ROADMAP.md`](ROADMAP.md) is the **single source of future work**. Pending,
   proposed, reprioritized, and deferred work belongs there rather than in the
   README or design documentation.
+- [`CHANGELOG.md`](CHANGELOG.md) preserves completed milestones and their durable
+  acceptance contracts.
 - [`DESIGN.md`](DESIGN.md) explains architectural principles, important design
   choices, and the reasoning behind them. It describes the design as it is; it is
   not a backlog.
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and patch workflow,
-  including generic regression fixtures, verification requirements, and roadmap
-  maintenance expectations.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
+  workflow, including generic regression fixtures, verification requirements, and
+  roadmap maintenance expectations.
 
 Full task-oriented user documentation and in-application help are planned in the
 roadmap. Until then, this README provides the basic operational overview.
