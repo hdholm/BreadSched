@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0211 — Imported schedule fidelity matrix.** Add representative generated
+  native, GnuCash SQLite, and GnuCash XML schedule contracts covering unusual and
+  bounded recurrences, weekend movement, formulas, flags, local overrides, and
+  source refresh. Preserve multiple GnuCash recurrence rules as an opaque read-only
+  definition instead of silently selecting one; retain BreadSched-owned schedule
+  timelines, exceptions, formula inputs, completion state, and unambiguous split
+  classifications across source refresh. Advance the alpha version to `0.2.0a47`.
+
 - [x] **0210 — Separate Dashboard income and bills.** Present committed pending
   bills and expected income in distinct lists across GTK, web, API, CLI, and print,
   and document why future credit-card purchases remain planning expenses without

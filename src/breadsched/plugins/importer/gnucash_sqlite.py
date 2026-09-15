@@ -537,11 +537,12 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
         return
 
     for row in conn.execute("SELECT * FROM schedxactions"):
-        recurrence = conn.execute(
-            "SELECT * FROM recurrences WHERE obj_guid=? LIMIT 1", (row["guid"],)
-        ).fetchone()
-        if recurrence is None:
+        recurrences = conn.execute(
+            "SELECT * FROM recurrences WHERE obj_guid=? ORDER BY id", (row["guid"],)
+        ).fetchall()
+        if not recurrences:
             continue
+        recurrence = recurrences[0]
         raw_period = (recurrence["recurrence_period_type"] or "month").lower()
         period = PERIOD_MAP.get(raw_period, PeriodType.MONTH)
         try:
@@ -584,7 +585,16 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
             auto_create=_source_flag(row["auto_create"]),
             advance_days=row["adv_creation"] or 0,
         )
-        if raw_period not in PERIOD_MAP:
+        if len(recurrences) > 1:
+            sched.source_recurrence = [dict(item) for item in recurrences]
+            sched.unsupported_reason = (
+                "GnuCash schedules containing multiple recurrence rules are not supported"
+            )
+            sink.result.warn(
+                f"scheduled transaction {sched.name!r} preserves multiple recurrence "
+                "rules; it is inspectable but excluded from planning and posting"
+            )
+        elif raw_period not in PERIOD_MAP:
             sched.source_recurrence = dict(recurrence)
             sched.unsupported_reason = f"GnuCash recurrence period {raw_period!r} is not supported"
             sink.result.warn(

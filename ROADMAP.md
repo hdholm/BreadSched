@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0210 — separate Dashboard income and bills**.
+The current accepted baseline is **0211 — imported schedule fidelity matrix**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,9 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-1. **NEXT — Imported schedule fidelity matrix.** Add one representative generated fixture
-   spanning native/imported schedules, unusual recurrences, formulas, overrides,
-   and bounded schedules before widening their editable surface.
+1. **NEXT — Shared schedule editability contract.** Move the safe/editable decision
+   and its actionable reason into one shared domain/service result consumed by GTK,
+   web, and API paths.
 
 ## Architecture and correctness
 
@@ -62,9 +62,6 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 - [ ] Continue widening safe editing only where complete split/recurrence/import
   semantics can be round-tripped without guessing.
-
-- [ ] Add fixture coverage for native/imported schedules, unusual recurrences,
-  formulas, overrides, and bounded schedules.
 
 - [ ] Support per-leg amount timelines in fixed multi-split schedules.
 

@@ -548,7 +548,8 @@ def _read_schedule(
     if not guid:
         return
 
-    recurrence_node = element.find("sx:schedule/gnc:recurrence", NS)
+    recurrence_nodes = element.findall("sx:schedule/gnc:recurrence", NS)
+    recurrence_node = recurrence_nodes[0] if recurrence_nodes else None
     raw_period = _text(recurrence_node, "recurrence:period_type", "month").lower()
     period = _PERIODS.get(raw_period, PeriodType.MONTH)
     multiplier = _text(recurrence_node, "recurrence:mult", "1")
@@ -587,7 +588,18 @@ def _read_schedule(
         advance_days=int(_text(element, "sx:advanceCreateDays", "0") or 0),
     )
     schedule.last_posted = _gdate(element.find("sx:last", NS))
-    if raw_period not in _PERIODS:
+    if len(recurrence_nodes) > 1:
+        schedule.source_recurrence = [
+            ET.tostring(item, encoding="unicode") for item in recurrence_nodes
+        ]
+        schedule.unsupported_reason = (
+            "GnuCash schedules containing multiple recurrence rules are not supported"
+        )
+        sink.result.warn(
+            f"scheduled transaction {name!r} preserves multiple recurrence rules; "
+            "it is inspectable but excluded from planning and posting"
+        )
+    elif raw_period not in _PERIODS:
         schedule.source_recurrence = (
             ET.tostring(recurrence_node, encoding="unicode") if recurrence_node is not None else ""
         )

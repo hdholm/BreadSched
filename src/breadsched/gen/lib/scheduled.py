@@ -297,7 +297,7 @@ class ScheduledTransaction(PrimaryObject):
         self.skipped: list[date] = sorted(set(skipped or []))
         #: Exact importer-owned recurrence representation when the source cannot be
         #: mapped safely to BreadSched's recurrence model.
-        self.source_recurrence: dict[str, Any] | str | None = None
+        self.source_recurrence: dict[str, Any] | list[dict[str, Any] | str] | str | None = None
         self.unsupported_reason: str = ""
 
     # ------------------------------------------------------------- realisation
@@ -353,7 +353,11 @@ class ScheduledTransaction(PrimaryObject):
         """
         merged: dict[str, Any] = dict(self.variables)
         if when is not None and any(split.formula for split in self.splits):
-            index = self.recurrence.index_of(when)
+            # Import validation and editor previews begin with the recurrence's
+            # nominal anchor.  A weekend rule can move that first cash date, so
+            # the anchor itself is not necessarily returned by ``occurrences``.
+            # It still unambiguously identifies period one.
+            index = 1 if when == self.recurrence.start else self.recurrence.index_of(when)
             merged["period"] = index
             # GnuCash's loan assistant writes the period as `i`. Both names are
             # offered so an imported mortgage evaluates without being rewritten.
