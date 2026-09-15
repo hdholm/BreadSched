@@ -296,6 +296,8 @@ class Account(PrimaryObject):
         self.hidden = hidden
         self.commodity_scu = commodity_scu
         self.notes = ""
+        #: Read-only account notes refreshed from the external source on re-import.
+        self.source_notes = ""
         #: Last source-owned GnuCash type, distinct from BreadSched's account type.
         self.source_atype: GnuCashAccountType | None = None
         #: Exact imported identity. Adopted roots/top-level placeholders retain a
@@ -389,6 +391,7 @@ class Account(PrimaryObject):
             "hidden": self.hidden,
             "commodity_scu": self.commodity_scu,
             "notes": self.notes,
+            "source_notes": self.source_notes,
             "source_atype": self.source_atype.value if self.source_atype is not None else None,
             "source_guid": self.source_guid,
             "source_type": self.source_type,
@@ -421,7 +424,6 @@ class Account(PrimaryObject):
         self.hidden = data.get("hidden", False)
         raw_scu = data.get("commodity_scu")
         self.commodity_scu = int(raw_scu) if raw_scu is not None else None
-        self.notes = data.get("notes", "")
         raw_source_type = data.get("source_atype")
         self.source_atype = GnuCashAccountType.parse(raw_source_type) if raw_source_type else None
         raw_source_guid = data.get("source_guid")
@@ -434,6 +436,23 @@ class Account(PrimaryObject):
             for field in data.get("source_fields", [])
             if isinstance(field, dict)
         ]
+        legacy_notes = str(data.get("notes", ""))
+        if "source_notes" in data:
+            self.notes = legacy_notes
+            self.source_notes = str(data.get("source_notes", ""))
+        else:
+            # Before 0204 imported and local notes shared one editable field. Move
+            # a value only when retained source metadata proves it came from GnuCash.
+            imported_note = next(
+                (
+                    field.value
+                    for field in self.source_fields
+                    if field.name == "slot:notes" and field.value_type.startswith("string")
+                ),
+                None,
+            )
+            self.source_notes = legacy_notes if imported_note == legacy_notes else ""
+            self.notes = "" if imported_note == legacy_notes else legacy_notes
         self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))

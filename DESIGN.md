@@ -639,13 +639,19 @@ by those fixtures.
 
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
-commodity, code, description, notes, placeholder/hidden state, and commodity SCU)
+commodity, code, description, source notes, placeholder/hidden state, and commodity SCU)
 may refresh from the source, while the BreadSched account type, FSA funding years,
-projection-rate overrides, projection exclusion, dashboard grouping,
+local account notes, projection-rate overrides, projection exclusion, dashboard grouping,
 linked-asset/card behavior, usual payment, and payment day are retained. A source
 type change is reported. If its accounting class conflicts with the retained
 BreadSched type, the conflict requires review rather than silently changing local
 semantics or display signs.
+
+Account notes follow the same ownership split as transaction notes. GnuCash notes
+are inspectable source provenance and refresh on re-import; BreadSched notes are
+editable planning context and survive independently. Compatibility loading moves a
+legacy shared note to source provenance only when the retained typed `slot:notes`
+value proves that origin, avoiding a guess that could discard a local note.
 
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile

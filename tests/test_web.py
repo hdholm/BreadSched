@@ -234,6 +234,8 @@ class TestItServes:
 
         assert checking["source_guid"]
         assert checking["source_type"] == "BANK"
+        assert checking["notes"] == ""
+        assert checking["source_notes"] == ""
         assert checking["commodity_scu"] == 100
         assert checking["source_fields"] == [
             {
