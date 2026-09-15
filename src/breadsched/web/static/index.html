@@ -3053,27 +3053,39 @@ async function showDashboard() {
       switchTo("Register");
     }
   };
-  const pendingRows = data.pending.map((item) => [
+  const billRows = data.bills.map((item) => [
     el("span", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
       item.name),
-    item.income ? "Income" : "Bill",
     item.next_due,
     item.days_until < 0 ? `${-item.days_until} days overdue`
       : (item.days_until === 0 ? "today" : `${item.days_until} days`),
     item.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
     money(item.amount), item.generated ? "" : money(item.monthly),
-    item.income ? "" : money(item.hold), item.generated ? "" : money(item.annual),
-    item.generated ? "Account payment" : (item.estimate ? "Estimate" : "Committed"),
+    money(item.hold), item.generated ? "" : money(item.annual),
+    item.generated ? "Account payment" : "Committed",
+  ]);
+  const incomeRows = data.income.map((item) => [
+    el("span", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
+      item.name),
+    item.next_due,
+    item.days_until < 0 ? `${-item.days_until} days overdue`
+      : (item.days_until === 0 ? "today" : `${item.days_until} days`),
+    item.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
+    money(item.amount), money(item.monthly), money(item.annual),
   ]);
 
   return el("div", {}, cards, controls,
     el("h2", {}, "Balances"),
     groupCards,
-    el("h2", {}, `Pending cash flow (${data.pending.length})`),
-    table(["Item", "Flow", "Next due", "Due in", "Cycle",
+    el("h2", {}, `Pending bills (${data.bills.length})`),
+    table(["Item", "Next due", "Due in", "Cycle",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
            { label: "Hold now", num: true }, { label: "Annual", num: true }, "Kind"],
-          pendingRows));
+          billRows),
+    el("h2", {}, `Expected income (${data.income.length})`),
+    table(["Item", "Next due", "Due in", "Cycle",
+           { label: "Amount", num: true }, { label: "Monthly", num: true },
+           { label: "Annual", num: true }], incomeRows));
 }
 
 function switchTo(name) { current = name; render(); }

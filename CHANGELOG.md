@@ -5,6 +5,11 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0210 — Separate Dashboard income and bills.** Present committed pending
+  bills and expected income in distinct lists across GTK, web, API, CLI, and print,
+  and document why future credit-card purchases remain planning expenses without
+  becoming immediate cash obligations. Advance the alpha version to `0.2.0a46`.
+
 - [x] **0209 — Statement-based credit-card obligations.** Freeze an unpaid overdue
   occurrence at the card balance on its due date and hold only subsequent activity
   for the next occurrence. Let any positive payment from a cash-like account,

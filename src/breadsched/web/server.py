@@ -113,7 +113,7 @@ class Api:
     # ---------------------------------------------------------------- reading
 
     def dashboard(self, liquidity_days: int | None, emergency_months: int | None) -> dict:
-        """The overview: groups, the liquidity verdict, and the pending bills.
+        """The overview: groups, liquidity, pending bills, and expected income.
 
         Computed by the same engine the desktop dashboard uses, so the two cannot
         disagree about a household's position.
@@ -173,7 +173,7 @@ class Api:
                 }
                 for group in board.groups
             ],
-            "pending": [
+            "bills": [
                 {
                     "name": item.name,
                     "next_due": item.next_due.isoformat(),
@@ -184,13 +184,25 @@ class Api:
                     "annual": None if item.generated else str(item.annual.to_decimal()),
                     "hold": None if item.income else str(item.held.to_decimal()),
                     "reserve_for": item.reserve_for.isoformat() if item.reserve_for else None,
-                    "income": item.income,
                     "estimate": item.estimate,
                     "generated": item.generated,
                     "schedule": item.schedule.handle if item.schedule is not None else None,
                     "account": item.account,
                 }
-                for item in board.pending
+                for item in board.bills
+            ],
+            "income": [
+                {
+                    "name": item.name,
+                    "next_due": item.next_due.isoformat(),
+                    "days_until": item.days_until(board.as_of),
+                    "cycle_months": float(item.cycle_months),
+                    "amount": str(item.amount.to_decimal()),
+                    "monthly": str(item.monthly.to_decimal()),
+                    "annual": str(item.annual.to_decimal()),
+                    "schedule": item.schedule.handle if item.schedule is not None else None,
+                }
+                for item in board.incomes
             ],
         }
 

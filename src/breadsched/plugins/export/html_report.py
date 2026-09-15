@@ -186,13 +186,13 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
         else '<p class="note">No Dashboard groups are configured.</p>'
     )
 
-    pending_rows = []
-    for item in board.pending:
+    bill_rows = []
+    for item in board.bills:
         days = item.days_until(board.as_of)
         due_in = f"{-days} days overdue" if days < 0 else "today" if days == 0 else f"{days} days"
-        kind = "Account payment" if item.generated else "Estimate" if item.estimate else "Committed"
-        pending_rows.append(
-            f"<tr><td>{escape(item.name)}</td><td>{'Income' if item.income else 'Bill'}</td>"
+        kind = "Account payment" if item.generated else "Committed"
+        bill_rows.append(
+            f"<tr><td>{escape(item.name)}</td>"
             f"<td>{item.next_due.isoformat()}</td><td>{due_in}</td>"
             f"<td>{escape(item.frequency)}</td>{_amount(item.amount)}"
             f"{_amount(None if item.generated else item.monthly)}"
@@ -200,14 +200,32 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
             f"{_amount(None if item.generated else item.annual)}"
             f"<td>{kind}</td></tr>"
         )
-    pending = (
-        "<table><thead><tr><th>Item</th><th>Flow</th><th>Next due</th><th>Due in</th>"
+    bills = (
+        "<table><thead><tr><th>Item</th><th>Next due</th><th>Due in</th>"
         '<th>Frequency</th><th class="num">Amount</th><th class="num">Monthly</th>'
         '<th class="num">Hold now</th><th class="num">Annual</th><th>Kind</th></tr>'
-        f"<tbody>{''.join(pending_rows)}</tbody></table>"
+        f"<tbody>{''.join(bill_rows)}</tbody></table>"
+    )
+    income_rows = []
+    for item in board.incomes:
+        days = item.days_until(board.as_of)
+        due_in = f"{-days} days overdue" if days < 0 else "today" if days == 0 else f"{days} days"
+        income_rows.append(
+            f"<tr><td>{escape(item.name)}</td><td>{item.next_due.isoformat()}</td>"
+            f"<td>{due_in}</td><td>{escape(item.frequency)}</td>{_amount(item.amount)}"
+            f"{_amount(item.monthly)}{_amount(item.annual)}</tr>"
+        )
+    income = (
+        "<table><thead><tr><th>Item</th><th>Next due</th><th>Due in</th>"
+        '<th>Frequency</th><th class="num">Amount</th><th class="num">Monthly</th>'
+        '<th class="num">Annual</th></tr>'
+        f"<tbody>{''.join(income_rows)}</tbody></table>"
     )
     subtitle = f"{book_name + ' · ' if book_name else ''}As at {board.as_of.isoformat()}"
-    body = f"{cards}<h2>Balances</h2>{groups}<h2>Pending cash flow</h2>{pending}"
+    body = (
+        f"{cards}<h2>Balances</h2>{groups}<h2>Pending bills</h2>{bills}"
+        f"<h2>Expected income</h2>{income}"
+    )
     return _document("Dashboard", subtitle, body)
 
 

@@ -3163,9 +3163,11 @@ class TestDashboardView:
         assert window.stack.get_visible_child_name() == "fsa-dashboard"
         assert window._views["fsa-dashboard"].fsa_grid is not None
 
-    def test_the_pending_cash_flow_list_is_populated(self, view):
-        model = view.bills_view.get_model()
-        assert model.get_n_items() == len(view.board.pending)
+    def test_bills_and_income_have_separate_lists(self, view):
+        bills = view.bills_view.get_model()
+        income = view.income_view.get_model()
+        assert bills.get_n_items() == len(view.board.bills)
+        assert income.get_n_items() == len(view.board.incomes)
 
     def test_the_bills_columns_sort_and_resize(self, view):
         columns = view.bills_view.get_columns()
