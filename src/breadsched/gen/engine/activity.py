@@ -20,6 +20,7 @@ from ..lib.recurrence import add_months
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
+from . import ledger
 from .escrow import recognition as escrow_recognition
 from .planning import (
     EventStatus,
@@ -39,6 +40,9 @@ __all__ = [
     "CategoryPlannedDetail",
     "PlanningFlowPeriodDetail",
     "CategoryReport",
+    "CashBridgeActivity",
+    "CashBridgeKind",
+    "CashPosition",
     "MortgagePaymentActivity",
     "MortgagePaymentPeriodDetail",
     "PlanningFlowActivity",
@@ -68,6 +72,32 @@ class PlanMeasure(str, Enum):
     PLANNED = "planned"
     ACTUAL = "actual"
     VARIANCE = "variance"
+
+
+class CashBridgeKind(str, Enum):
+    """One signed, non-overlapping contribution to spendable-cash movement."""
+
+    INCOME = "income"
+    EXPENSE = "expense"
+    RETIREMENT_DISTRIBUTION = "retirement_distribution"
+    RETIREMENT_SAVING = "retirement_saving"
+    BENEFIT_FUNDING = "benefit_funding"
+    DEBT_PRINCIPAL = "debt_principal"
+    ESCROW_FUNDING = "escrow_funding"
+    OTHER = "other"
+
+    @property
+    def label(self) -> str:
+        return {
+            CashBridgeKind.INCOME: "Income received",
+            CashBridgeKind.EXPENSE: "Ordinary expenses paid",
+            CashBridgeKind.RETIREMENT_DISTRIBUTION: "Retirement distributions",
+            CashBridgeKind.RETIREMENT_SAVING: "Retirement saving",
+            CashBridgeKind.BENEFIT_FUNDING: "Benefit / FSA funding",
+            CashBridgeKind.DEBT_PRINCIPAL: "Debt principal",
+            CashBridgeKind.ESCROW_FUNDING: "Escrow funding",
+            CashBridgeKind.OTHER: "Other cash timing / financing",
+        }[self]
 
 
 @dataclass(frozen=True, slots=True)
@@ -416,6 +446,37 @@ class PlanningFlowPeriodDetail:
 
 
 @dataclass(slots=True)
+class CashBridgeActivity:
+    """One signed source or use of spendable cash across display periods."""
+
+    kind: CashBridgeKind
+    name: str
+    planned: list[Money]
+    actual: list[Money]
+    variance: list[Money | None]
+
+    def values(self, measure: PlanMeasure) -> Sequence[Money | None]:
+        if measure is PlanMeasure.PLANNED:
+            return self.planned
+        if measure is PlanMeasure.ACTUAL:
+            return self.actual
+        return self.variance
+
+    def total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.values(measure))
+
+
+@dataclass(frozen=True, slots=True)
+class CashPosition:
+    """Projected spendable-cash positions over the selected Plan horizon."""
+
+    opening: Money
+    closing: Money
+    minimum: Money
+    minimum_date: date
+
+
+@dataclass(slots=True)
 class PlanningFlowActivity:
     """One economically meaningful balance-sheet flow across display periods."""
 
@@ -490,6 +551,8 @@ class CategoryReport:
 
     activity: ActivityReport
     categories: list[CategoryActivity]
+    cash_bridge: list[CashBridgeActivity]
+    cash_position: CashPosition
     mortgage_payments: list[MortgagePaymentActivity]
     planning_flows: list[PlanningFlowActivity]
     as_of: date
@@ -500,6 +563,24 @@ class CategoryReport:
         return _sum_money(
             period.cash_variance for period in self.activity.periods if period.start <= self.as_of
         )
+
+    @property
+    def actual_cash_through_as_of(self) -> Money | None:
+        """Actual cash inside the horizon through ``as_of``; future-only is N/A."""
+        if self.activity.start > self.as_of:
+            return None
+        return _sum_money(
+            item.cash_change
+            for period in self.activity.periods
+            for item in period.actual_transactions
+            if item.post_date <= self.as_of
+        )
+
+    @property
+    def cash_variance_through_as_of(self) -> Money | None:
+        if self.activity.start > self.as_of:
+            return None
+        return self.cash_variance
 
     @property
     def income(self) -> tuple[CategoryActivity, ...]:
@@ -529,6 +610,34 @@ class CategoryReport:
         self, account_class: AccountClass, measure: PlanMeasure
     ) -> Money | None:
         return _sum_optional(self.category_totals(account_class, measure))
+
+    def operating_net_totals(self, measure: PlanMeasure) -> list[Money | None]:
+        """Signed income less expense, kept separate from balance-sheet movements."""
+        result: list[Money | None] = []
+        for income, expense in zip(
+            self.category_totals(AccountClass.INCOME, measure),
+            self.category_totals(AccountClass.EXPENSE, measure),
+            strict=True,
+        ):
+            if income is None and expense is None:
+                result.append(None)
+            else:
+                result.append((income or Money(0)) - (expense or Money(0)))
+        return result
+
+    def operating_net_grand_total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.operating_net_totals(measure))
+
+    def cash_bridge_totals(self, measure: PlanMeasure) -> list[Money | None]:
+        if not self.cash_bridge:
+            return [Money(0) for _ in self.activity.periods]
+        return _sum_columns(
+            [row.values(measure) for row in self.cash_bridge],
+            len(self.activity.periods),
+        )
+
+    def cash_bridge_grand_total(self, measure: PlanMeasure) -> Money | None:
+        return _sum_optional(self.cash_bridge_totals(measure))
 
     def planning_flow_totals(self, measure: PlanMeasure) -> list[Money | None]:
         return _sum_columns(
@@ -1355,6 +1464,139 @@ def _actual_activity(
     )
 
 
+def _economic_planning_flow_amounts(
+    splits: tuple[PlannedSplit, ...], accounts: dict[str, Account]
+) -> dict[PlanningFlowKind, Money]:
+    """Return each logical planning purpose once, excluding its cash counterpart."""
+    totals: dict[PlanningFlowKind, Money] = {}
+    for split in splits:
+        account = accounts.get(split.account)
+        if account is None:
+            continue
+        kind = _inferred_planning_flow(split, splits, accounts)
+        if kind is None or kind is PlanningFlowKind.ESCROW_FUNDING:
+            continue
+        if _redundant_cash_flow_split(split, splits, accounts, kind):
+            continue
+        amount = kind.plan_amount(split.amount)
+        totals[kind] = totals.get(kind, Money(0)) + amount
+    return totals
+
+
+def _redundant_cash_flow_split(
+    split: PlannedSplit,
+    splits: tuple[PlannedSplit, ...],
+    accounts: dict[str, Account],
+    kind: PlanningFlowKind,
+) -> bool:
+    """Whether a cash leg merely repeats a retirement distribution's source leg."""
+    account = accounts.get(split.account)
+    if (
+        account is None
+        or not account.is_spendable_cash
+        or kind is not PlanningFlowKind.RETIREMENT_INCOME
+    ):
+        return False
+    return any(
+        peer is not split
+        and (peer_account := accounts.get(peer.account)) is not None
+        and not peer_account.is_spendable_cash
+        and _inferred_planning_flow(peer, splits, accounts) is kind
+        for peer in splits
+    )
+
+
+def _cash_bridge_contributions(
+    splits: tuple[PlannedSplit, ...],
+    accounts: dict[str, Account],
+    *,
+    funded_from_cash: bool = False,
+) -> dict[CashBridgeKind, Money]:
+    """Allocate every spendable-cash dollar once to an explainable signed row."""
+    cash, income, expense = _split_totals(
+        splits,
+        accounts,
+        funded_from_cash=funded_from_cash,
+    )
+    escrow = _sum_money(_escrow_planning_flows(splits, accounts).values())
+    flows = _economic_planning_flow_amounts(splits, accounts)
+    contributions = {
+        CashBridgeKind.INCOME: income,
+        CashBridgeKind.EXPENSE: -(expense - escrow),
+        CashBridgeKind.RETIREMENT_DISTRIBUTION: flows.get(
+            PlanningFlowKind.RETIREMENT_INCOME, Money(0)
+        ),
+        CashBridgeKind.RETIREMENT_SAVING: -flows.get(PlanningFlowKind.RETIREMENT_SAVING, Money(0)),
+        CashBridgeKind.BENEFIT_FUNDING: -flows.get(PlanningFlowKind.BENEFIT_FUNDING, Money(0)),
+        CashBridgeKind.DEBT_PRINCIPAL: -flows.get(PlanningFlowKind.DEBT_PRINCIPAL, Money(0)),
+        CashBridgeKind.ESCROW_FUNDING: -escrow,
+    }
+    classified = _sum_money(contributions.values())
+    contributions[CashBridgeKind.OTHER] = cash - classified
+    return contributions
+
+
+def _spendable_cash_balance(db: DbSQLite, accounts: dict[str, Account], when: date) -> Money:
+    return _sum_money(
+        ledger.balance(db, account, as_of=when)
+        for account in accounts.values()
+        if account.is_spendable_cash and not account.placeholder
+    )
+
+
+def _planned_cash_position(
+    db: DbSQLite,
+    start: date,
+    end: date,
+    accounts: dict[str, Account],
+    scenario: Scenario | None,
+    as_of: date,
+) -> CashPosition:
+    """Project exact-event spendable cash from the latest known ledger position."""
+    if start > as_of:
+        opening = _spendable_cash_balance(db, accounts, as_of)
+        if as_of < start - timedelta(days=1):
+            prior_events = (
+                scenario_events(db, scenario, as_of + timedelta(days=1), start - timedelta(days=1))
+                if scenario is not None
+                else scheduled_events(
+                    db,
+                    as_of + timedelta(days=1),
+                    start - timedelta(days=1),
+                    include_actualized=True,
+                )
+            )
+            for event in prior_events:
+                cash, _income, _expense = _split_totals(
+                    event.expected_splits,
+                    accounts,
+                    funded_from_cash=event.funded_from_cash,
+                )
+                opening = opening + cash
+    else:
+        opening = _spendable_cash_balance(db, accounts, start - timedelta(days=1))
+
+    current = opening
+    minimum = opening
+    minimum_date = start
+    events = (
+        scenario_events(db, scenario, start, end)
+        if scenario is not None
+        else scheduled_events(db, start, end, include_actualized=True)
+    )
+    for event in sorted(events, key=lambda item: (item.planned_date, item.key)):
+        cash, _income, _expense = _split_totals(
+            event.expected_splits,
+            accounts,
+            funded_from_cash=event.funded_from_cash,
+        )
+        current = current + cash
+        if current < minimum:
+            minimum = current
+            minimum_date = event.planned_date
+    return CashPosition(opening, current, minimum, minimum_date)
+
+
 def build_activity_report(
     db: DbSQLite,
     start: date,
@@ -1431,6 +1673,8 @@ def build_category_report(
     periods = activity.periods
     direct_planned: dict[str, list[Money]] = {}
     direct_actual: dict[str, list[Money]] = {}
+    bridge_planned: dict[CashBridgeKind, list[Money]] = {}
+    bridge_actual: dict[CashBridgeKind, list[Money]] = {}
     flow_planned: dict[tuple[PlanningFlowKind, str], list[Money]] = {}
     flow_actual: dict[tuple[PlanningFlowKind, str], list[Money]] = {}
     mortgage_planned: dict[str, list[Money]] = {}
@@ -1446,8 +1690,20 @@ def build_category_report(
     ) -> list[Money]:
         return store.setdefault((kind, account), [Money(0) for _ in periods])
 
+    def bridge_amounts(
+        store: dict[CashBridgeKind, list[Money]], kind: CashBridgeKind
+    ) -> list[Money]:
+        return store.setdefault(kind, [Money(0) for _ in periods])
+
     for period_index, bucket in enumerate(periods):
         for event in bucket.planned_events:
+            for kind, value in _cash_bridge_contributions(
+                event.expected_splits,
+                accounts,
+                funded_from_cash=event.funded_from_cash,
+            ).items():
+                values = bridge_amounts(bridge_planned, kind)
+                values[period_index] = values[period_index] + value
             mortgage = _mortgage_payment(event.expected_splits, accounts)
             if mortgage is not None:
                 handle, cash_required = mortgage
@@ -1464,6 +1720,13 @@ def build_category_report(
                 if flow_kind is PlanningFlowKind.ESCROW_FUNDING:
                     continue
                 if flow_kind is not None:
+                    if _redundant_cash_flow_split(
+                        planned_split,
+                        event.expected_splits,
+                        accounts,
+                        flow_kind,
+                    ):
+                        continue
                     values = flow_amounts(flow_planned, flow_kind, planned_split.account)
                     values[period_index] = values[period_index] + flow_kind.plan_amount(
                         planned_split.amount
@@ -1495,6 +1758,12 @@ def build_category_report(
                 )
                 for split in transaction.splits
             )
+            for kind, value in _cash_bridge_contributions(
+                actual_planned_splits,
+                accounts,
+            ).items():
+                values = bridge_amounts(bridge_actual, kind)
+                values[period_index] = values[period_index] + value
             mortgage = _mortgage_payment(actual_planned_splits, accounts)
             if mortgage is not None:
                 handle, cash_required = mortgage
@@ -1513,6 +1782,18 @@ def build_category_report(
                 if flow_kind is PlanningFlowKind.ESCROW_FUNDING:
                     continue
                 if flow_kind is not None:
+                    if _redundant_cash_flow_split(
+                        PlannedSplit(
+                            actual_split.account,
+                            actual_split.value,
+                            actual_split.planning_flow,
+                            actual_split.investment_activity,
+                        ),
+                        actual_planned_splits,
+                        accounts,
+                        flow_kind,
+                    ):
+                        continue
                     values = flow_amounts(flow_actual, flow_kind, actual_split.account)
                     values[period_index] = values[period_index] + flow_kind.plan_amount(
                         actual_split.value
@@ -1591,22 +1872,43 @@ def build_category_report(
             )
         )
     rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
+    bridge_rows: list[CashBridgeActivity] = []
+    for bridge_kind in CashBridgeKind:
+        planned_values = bridge_planned.get(bridge_kind, [Money(0) for _ in periods])
+        actual_values = bridge_actual.get(bridge_kind, [Money(0) for _ in periods])
+        if not any(planned_values) and not any(actual_values):
+            continue
+        bridge_rows.append(
+            CashBridgeActivity(
+                kind=bridge_kind,
+                name=bridge_kind.label,
+                planned=list(planned_values),
+                actual=list(actual_values),
+                variance=[
+                    actual - planned if bucket.start <= effective_as_of else None
+                    for planned, actual, bucket in zip(
+                        planned_values, actual_values, periods, strict=True
+                    )
+                ],
+            )
+        )
+
     flow_rows: list[PlanningFlowActivity] = []
     active_flows = set(flow_planned) | set(flow_actual)
-    for kind, handle in active_flows:
+    for flow_kind, handle in active_flows:
         account = accounts.get(handle)
         if account is None:
             continue
-        planned_values = flow_planned.get((kind, handle), [Money(0) for _ in periods])
-        actual_values = flow_actual.get((kind, handle), [Money(0) for _ in periods])
+        planned_values = flow_planned.get((flow_kind, handle), [Money(0) for _ in periods])
+        actual_values = flow_actual.get((flow_kind, handle), [Money(0) for _ in periods])
         full_name = db.full_name(account)
         flow_rows.append(
             PlanningFlowActivity(
-                kind=kind,
+                kind=flow_kind,
                 account=handle,
                 account_name=account.name,
                 full_name=full_name,
-                name=f"{kind.label} — {full_name}",
+                name=f"{flow_kind.label} — {full_name}",
                 planned=list(planned_values),
                 actual=list(actual_values),
                 variance=[
@@ -1643,10 +1945,23 @@ def build_category_report(
             )
         )
     mortgage_rows.sort(key=lambda row: row.full_name.casefold())
-    return CategoryReport(
+    report = CategoryReport(
         activity=activity,
         categories=rows,
+        cash_bridge=bridge_rows,
+        cash_position=_planned_cash_position(
+            db,
+            start,
+            end,
+            accounts,
+            scenario,
+            effective_as_of,
+        ),
         mortgage_payments=mortgage_rows,
         planning_flows=flow_rows,
         as_of=effective_as_of,
     )
+    for measure in (PlanMeasure.PLANNED, PlanMeasure.ACTUAL):
+        if report.cash_bridge_totals(measure) != report.cash_totals(measure):
+            raise AssertionError(f"cash bridge does not reconcile for {measure.value}")
+    return report

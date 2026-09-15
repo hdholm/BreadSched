@@ -230,6 +230,11 @@ const money = (value) => {
   });
   return n < 0 ? `(${text})` : text;
 };
+const signedMoney = (value) => {
+  if (value === null || value === undefined) return "—";
+  const rendered = money(value);
+  return Number(value) > 0 ? `+${rendered}` : rendered;
+};
 const cls = (value) => (Number(value) < 0 ? "num neg" : "num");
 
 const params = new URLSearchParams(window.location.hash.slice(1));
@@ -1593,14 +1598,22 @@ async function showPlan() {
   const comparison = data.comparison;
   const summaryDelta = comparison ? comparison.summary : null;
   const cards = el("div", { class: "cards" },
-    [["Planned cash", summary.planned_cash, summaryDelta?.planned_cash_delta],
-     ["Actual cash", summary.actual_cash, summaryDelta?.actual_cash_delta],
-     ["Variance", summary.variance, summaryDelta?.variance_delta]].map(([label, value, delta]) =>
+    [["Opening spendable cash", summary.opening_cash, null, false],
+     ["Ending spendable cash", summary.ending_cash, null, false],
+     [`Lowest spendable cash (${summary.minimum_cash_date})`, summary.minimum_cash, null, false],
+     ["Projected change in spendable cash", summary.planned_cash,
+       summaryDelta?.planned_cash_delta, true],
+     ["Actual change through as-of date", summary.actual_cash,
+       summaryDelta?.actual_cash_delta, true],
+     ["Variance through as-of date", summary.variance,
+       summaryDelta?.variance_delta, true]].map(([label, value, delta, signed]) =>
       el("div", { class: "card" },
         el("div", { class: "label" }, label),
-        el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` }, money(value)),
-        comparison ? el("span", { class: `plan-delta ${Number(delta) < 0 ? "neg" : ""}` },
-          `Δ vs ${comparison.name}: ${money(delta)}`) : null)),
+        el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` },
+          value == null ? "Not applicable" : signed ? signedMoney(value) : money(value)),
+        comparison && delta != null ? el("span", {
+          class: `plan-delta ${Number(delta) < 0 ? "neg" : ""}`,
+        }, `Δ vs ${comparison.name}: ${money(delta)}`) : null)),
     el("div", { class: "card" },
       el("div", { class: "label" }, "Expected occurrences pending"),
       el("div", { class: "value" }, summary.unresolved_expected)),
@@ -1616,13 +1629,37 @@ async function showPlan() {
     ...data.periods.map((item) => ({ label: item.label, num: true })),
     { label: "Total", num: true }];
   const rows = [];
-  const totalRow = (label, totals, extraClass="") => el("tr", { class: `total-row ${extraClass}` },
+  const totalRow = (label, totals, extraClass="", signed=false) => el("tr", {
+    class: `total-row ${extraClass}`,
+  },
     el("td", {}, label),
     ...totals.periods.map((value) => el("td", {
       class: value == null ? "num muted" : cls(value),
-    }, value == null ? "—" : money(value))),
+    }, value == null ? "—" : signed ? signedMoney(value) : money(value))),
     el("td", { class: totals.total == null ? "num muted" : cls(totals.total) },
-      totals.total == null ? "—" : money(totals.total)));
+      totals.total == null ? "—" : signed ? signedMoney(totals.total) : money(totals.total)));
+
+  rows.push(el("tr", { class: "section-row" },
+    el("td", { colspan: String(headers.length) }, "Spendable cash bridge")));
+  for (const bridge of data.cash_bridge) {
+    const compared = comparison?.cash_bridge?.find((row) => row.kind === bridge.kind);
+    const deltas = compared ? compared[`${currentPlan.measure}_delta`] : null;
+    rows.push(el("tr", {},
+      el("td", {}, bridge.name),
+      ...bridge[currentPlan.measure].map((value, index) => el("td", {
+        class: value == null ? "num muted" : cls(value),
+      }, value == null ? "—" : signedMoney(value),
+      deltas && deltas[index] != null ? el("span", {
+        class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
+      }, `Δ ${signedMoney(deltas[index])}`) : null)),
+      el("td", {
+        class: bridge.totals[currentPlan.measure] == null
+          ? "num muted" : cls(bridge.totals[currentPlan.measure]),
+      }, bridge.totals[currentPlan.measure] == null
+        ? "—" : signedMoney(bridge.totals[currentPlan.measure]))));
+  }
+  rows.push(totalRow("Net change in spendable cash",
+    data.column_totals.cash_bridge[currentPlan.measure], "grand-total", true));
   for (const [kind, heading] of [["income", "Income"], ["expense", "Expenses"]]) {
     rows.push(el("tr", { class: "section-row" },
       el("td", { colspan: String(headers.length) }, heading)));
@@ -1656,6 +1693,8 @@ async function showPlan() {
     }
     rows.push(totalRow(`${heading} total`, data.column_totals[kind][currentPlan.measure]));
   }
+  rows.push(totalRow("Income less expenses",
+    data.column_totals.operating_net[currentPlan.measure], "grand-total", true));
 
   if (data.mortgage_payments?.length) {
     rows.push(el("tr", { class: "section-row" },
@@ -1695,7 +1734,8 @@ async function showPlan() {
 
   if (data.planning_flows?.length) {
     rows.push(el("tr", { class: "section-row" },
-      el("td", { colspan: String(headers.length) }, "Planning flows")));
+      el("td", { colspan: String(headers.length) },
+        "Balance-sheet classifications (informational)")));
     for (const flow of data.planning_flows) {
       const compared = comparison?.planning_flows?.find(
         (row) => row.kind === flow.kind && row.account === flow.account);
@@ -1723,11 +1763,7 @@ async function showPlan() {
         }, flow.totals[currentPlan.measure] == null
           ? "—" : money(flow.totals[currentPlan.measure]))));
     }
-    rows.push(totalRow("Planning-flow total",
-      data.column_totals.planning_flows[currentPlan.measure]));
   }
-  rows.push(totalRow("Net cash change",
-    data.column_totals.net_cash[currentPlan.measure], "grand-total"));
 
   const planTable = table(headers, rows);
   planTable.classList.add("plan-table");
@@ -1743,8 +1779,10 @@ async function showPlan() {
       + "and actual transaction splits; reporting periods do not store planning values. "
       + "Mortgage cash requirements are informational and are not added to their "
       + "classified components. Section totals count outermost category rollups once. "
-      + "Net cash change is the "
-      + "grand total; variance totals include only periods through today."),
+      + "The signed spendable-cash bridge counts each cash dollar once. Income and "
+      + "expense details remain positive budget magnitudes; Income less expenses exposes "
+      + "their signed operating result. Balance-sheet classifications are informational "
+      + "and have no mixed grand total. Variance totals include only applicable periods."),
     inheritedAssumptions ? el("p", { class: "note" },
       `${inheritedAssumptions} annual assumption(s) inherited from Base.`) : null,
     comparedInheritedAssumptions ? el("p", { class: "note" },

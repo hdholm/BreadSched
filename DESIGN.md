@@ -162,12 +162,28 @@ merely editing controls does not rewrite the Plan or its financial events.
 Plan totals preserve hierarchy and dimensions. A displayed category row totals its
 own rollup across the selected reporting periods. Section column totals use only
 outermost active category rollups, so a parent and descendant cannot both contribute
-the same ledger value. Planning flows total separately because contributions,
-benefit funding, debt principal, and similar flows explain household commitments but
-are not interchangeable with Income/Expense categories. The bottom grand total is
-net cash change computed from the event stream, not a sum of unlike category and
-balance-sheet values. Planned totals cover the selected horizon; variance totals
-include only reporting periods that have begun by the report's as-of date.
+the same ledger value. Income and expense detail uses positive budget magnitudes;
+the separate signed Income less expenses row exposes the operating result.
+
+The primary reconciliation is a signed, non-overlapping spendable-cash bridge:
+income received minus ordinary expense, plus retirement distributions, minus
+retirement saving, benefit funding, debt principal, and escrow funding, plus an
+explicit residual for timing/financing differences. The bridge must equal cash
+movement derived directly from every event's spendable-cash splits for planned and
+actual measures. The residual is intentionally visible rather than silently forcing
+credit-card purchases or similar expense/cash timing differences into another row.
+Opening and ending balances anchor the bridge to ledger cash, and exact-dated event
+application identifies the minimum projected spendable-cash balance and its date.
+
+Planning-purpose rows are balance-sheet classifications, not one additive financial
+dimension, so they have no mixed grand total. A transaction may carry the same
+retirement-distribution purpose on both the investment source and cash destination;
+the cash leg is only the counterpart and must not appear as a second logical flow.
+The non-cash source remains the inspectable planning-purpose row, while the bridge
+shows the distribution once as a positive cash contribution. Planned totals cover
+the selected horizon; variance and actual summary totals include only the applicable
+horizon through the report's as-of date. A wholly future horizon reports those two
+summary values as not applicable, not zero.
 
 Classification decisions are report data, not presentation guesses. Plan detail
 names the account type and accounting class that caused an Income/Expense split to

@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0197 — mortgage cash flow and liability projection**.
+The current accepted baseline is **0199 — signed spendable-cash Plan bridge**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -519,9 +519,23 @@ semantics, not duplicate business rules in presentation code.
   Projection, Dashboard liquidity, comparisons, extra principal, fees, escrow
   shortage/refund, origination, refinancing, and sale with shared report data.
   Advance the alpha version to `0.2.0a35`.
+- [x] **0199 — Signed spendable-cash Plan bridge.** Lead GTK, web, and printable Plan
+  reports with one signed reconciliation from income, ordinary expense, retirement
+  distributions/saving, benefit funding, debt principal, escrow funding, and an
+  explicit timing/financing residual to the existing spendable-cash result. Collapse
+  equal-and-opposite retirement-distribution account legs into one logical flow;
+  separate signed Income less expenses from positive budget magnitudes; remove the
+  misleading mixed planning-flow total; and expose opening, ending, and exact-dated
+  minimum projected spendable cash. Treat future-only actual and variance summaries
+  as not applicable. Advance the alpha version to `0.2.0a37`.
+- [ ] **NEXT — 0200 — Decision-ready Plan printing.** Give the cash/liquidity summary
+  clear visual priority, start category detail as a distinct appendix, repeat table
+  headings without overlapping rows, improve numeric density and section spacing,
+  and omit private book paths from printed headers. Keep category detail available
+  while making the default printout useful for locating cash shortfalls quickly.
 
 - [x] Add clearer unresolved/unexpected indicators in Plan.
-- [ ] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
+- [x] Expand reports for retirement saving/distributions, benefit/FSA funding, debt
   principal, and other economically meaningful balance-sheet flows.
 - [x] Print/export the applied Plan and displayed Projection comparisons through
   self-contained HTML reports, with browser PDF output and GTK/web parity.
@@ -647,7 +661,7 @@ semantics, not duplicate business rules in presentation code.
   scenario-management UI.
   Preserve preceding-alpha scenario values as deliberate overrides and advance the
   alpha version to `0.2.0a36`.
-- [ ] **NEXT — Layer scenarios on scenarios.** After Base inheritance is explicit, allow a
+- [ ] Layer scenarios on scenarios. After Base inheritance is explicit, allow a
   saved scenario to name Base or another saved scenario as its parent. Resolve a
   deterministic parent chain followed by local overrides; reject cycles; define
   reparenting and parent-deletion behavior; and preserve stable override identity so

@@ -976,6 +976,110 @@ class TestPlanningFlowClassification:
         assert flow.kind is PlanningFlowKind.RETIREMENT_INCOME
         assert flow.actual == [Money("750.00")]
 
+    def test_retirement_distribution_collapses_cash_counterpart_and_funds_bridge(self, db, book):
+        withdrawal = ScheduledTransaction(
+            name="Retirement distribution",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 20)),
+            splits=[
+                ScheduledSplit(
+                    book.checking,
+                    Money("750.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_INCOME,
+                ),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("-750.00"),
+                    planning_flow=PlanningFlowKind.RETIREMENT_INCOME,
+                ),
+            ],
+        )
+        with db.transaction("planned retirement income") as txn:
+            db.add_scheduled(withdrawal, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2025, 12, 31)
+        )
+
+        distributions = [
+            row for row in report.planning_flows if row.kind is PlanningFlowKind.RETIREMENT_INCOME
+        ]
+        assert len(distributions) == 1
+        assert distributions[0].account == book.brokerage
+        assert distributions[0].planned == [Money("750.00")]
+        bridge = {row.kind: row.planned[0] for row in report.cash_bridge}
+        assert bridge[activity.CashBridgeKind.RETIREMENT_DISTRIBUTION] == Money("750.00")
+        assert report.cash_bridge_totals(activity.PlanMeasure.PLANNED) == [Money("750.00")]
+        assert report.cash_bridge_totals(activity.PlanMeasure.PLANNED) == report.cash_totals(
+            activity.PlanMeasure.PLANNED
+        )
+
+    def test_cash_bridge_exposes_credit_timing_without_losing_expense(self, db, book):
+        charge = ScheduledTransaction(
+            name="Card purchase",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 10)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("100.00")),
+                ScheduledSplit(book.card, Money("-100.00")),
+            ],
+        )
+        with db.transaction("planned card charge") as txn:
+            db.add_scheduled(charge, txn)
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2025, 12, 31)
+        )
+        bridge = {row.kind: row.planned[0] for row in report.cash_bridge}
+
+        assert bridge[activity.CashBridgeKind.EXPENSE] == Money("-100.00")
+        assert bridge[activity.CashBridgeKind.OTHER] == Money("100.00")
+        assert report.cash_bridge_grand_total(activity.PlanMeasure.PLANNED) == Money(0)
+        assert report.operating_net_grand_total(activity.PlanMeasure.PLANNED) == Money("-100")
+
+    def test_projected_cash_position_names_exact_low_point(self, db, book):
+        with db.transaction("opening and timed plan") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    date(2025, 12, 31),
+                    "Opening cash",
+                    book.checking,
+                    book.opening,
+                    "1000",
+                ),
+                txn,
+            )
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Large bill",
+                    recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 5)),
+                    splits=[
+                        ScheduledSplit(book.utilities, Money("700")),
+                        ScheduledSplit(book.checking, Money("-700")),
+                    ],
+                ),
+                txn,
+            )
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Payday",
+                    recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 1, 10)),
+                    splits=[
+                        ScheduledSplit(book.checking, Money("500")),
+                        ScheduledSplit(book.salary, Money("-500")),
+                    ],
+                ),
+                txn,
+            )
+
+        report = activity.build_category_report(
+            db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2025, 12, 31)
+        )
+
+        assert report.cash_position.opening == Money("1000")
+        assert report.cash_position.closing == Money("800")
+        assert report.cash_position.minimum == Money("300")
+        assert report.cash_position.minimum_date == date(2026, 1, 5)
+        assert report.operating_net_totals(activity.PlanMeasure.PLANNED) == [Money("-200")]
+
     def test_matching_actual_inherits_planning_flow_classification(self, db, book):
         contribution = ScheduledTransaction(
             name="401k contribution",
