@@ -158,7 +158,12 @@ interval even when the posting day varies. With at least six active months, isol
 amount spikes are excluded conservatively and disclosed in the proposal; shorter
 histories are never silently trimmed. Confidence reflects history coverage, sample
 depth, retained observations, and robust amount variability rather than coverage
-alone.
+alone. Analysis interprets the complete transaction before extracting ordinary
+categories: reinvested dividends and interest, investment fees, and rollovers do
+not become recurring household income or expense suggestions. In multi-split loan,
+retirement, and benefit transactions, repeated funding evidence is retained and a
+spendable-cash counterpart wins an otherwise equal choice instead of a principal,
+investment, or restricted-asset leg.
 
 Credit-card payment terms belong to the card account: whether it is paid in full,
 its usual carried-balance payment, payment day, and optional Bank or Cash **Paid

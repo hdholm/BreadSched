@@ -410,6 +410,15 @@ nominal behavior. Mixed gross-to-net payroll grows as one balanced income event.
 Economic-sense tests are required in addition to bookkeeping reconciliation. A
 projection that balances mathematically can still be financially wrong.
 
+Historical estimation also interprets transactions before aggregating account
+history. Flow-account legs paired with reinvested dividend/interest, investment-fee,
+or rollover activity are investment bookkeeping rather than recurring household
+income or expense. Funding-account inference retains occurrence frequency and uses
+spendable cash only as the deterministic tie-breaker, so a loan-principal,
+retirement, or restricted-asset leg cannot displace an equally observed cash
+counterpart. The same transaction-boundary exclusions apply to historical cadence
+evidence and matching future coverage.
+
 ## Dashboard aggregation
 
 Dashboard group names are account-style colon-delimited paths. The engine builds

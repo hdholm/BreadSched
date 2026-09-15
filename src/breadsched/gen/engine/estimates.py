@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
@@ -20,6 +21,7 @@ from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scenario import ScenarioSchedule
 from ..lib.scheduled import ScheduledMonthAmount, ScheduledSplit, ScheduledTransaction
+from ..lib.transaction import InvestmentActivityKind, Split
 from . import planning
 from .escrow import recognition as escrow_recognition
 
@@ -132,7 +134,28 @@ def _funding_account(db: DbSQLite, category: str, start: date, end: date) -> str
             if account is None or account.atype.is_flow or account.is_root:
                 continue
             counts[split.account] += 1
-    return counts.most_common(1)[0][0] if counts else None
+    if not counts:
+        return None
+    return max(
+        counts,
+        key=lambda handle: (
+            counts[handle],
+            bool((account := db.get_account(handle)) and account.is_spendable_cash),
+        ),
+    )
+
+
+_INVESTMENT_PERFORMANCE_ACTIVITY = {
+    InvestmentActivityKind.DIVIDEND,
+    InvestmentActivityKind.INTEREST,
+    InvestmentActivityKind.FEE,
+    InvestmentActivityKind.ROLLOVER,
+}
+
+
+def _is_investment_performance(splits: Iterable[Split | planning.PlannedSplit]) -> bool:
+    """Whether flow-account legs are investment bookkeeping, not household cash need."""
+    return any(split.investment_activity in _INVESTMENT_PERFORMANCE_ACTIVITY for split in splits)
 
 
 def _target_events(
@@ -167,6 +190,8 @@ def _planned_category_profiles(
     totals: dict[tuple[str, date], Money] = {}
     accounts = {account.handle: account for account in db.iter_accounts()}
     for event in _target_events(db, start, end, scenario_handle):
+        if _is_investment_performance(event.expected_splits):
+            continue
         escrow = escrow_recognition(
             ((split.account, split.amount) for split in event.expected_splits), accounts
         )
@@ -238,6 +263,8 @@ def _unscheduled_dates(db: DbSQLite, category: str, start: date, end: date) -> l
     dates: list[date] = []
     for txn in db.iter_transactions(account=category, start=start, end=end):
         if txn.planned_occurrence:
+            continue
+        if _is_investment_performance(txn.splits):
             continue
         if txn.value_for(category):
             dates.append(txn.post_date)
@@ -447,6 +474,8 @@ def propose_historical_estimates(
             end = _add_months(start, 1) - timedelta(days=1)
             total = Money(0)
             for txn in db.iter_transactions(account=account.handle, start=start, end=end):
+                if _is_investment_performance(txn.splits):
+                    continue
                 value = txn.value_for(account.handle) * account.sign()
                 escrow = escrow_recognition(
                     ((split.account, split.value) for split in txn.splits),

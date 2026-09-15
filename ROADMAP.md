@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0201 — scenario parent layering**.
+The current accepted baseline is **0202 — historical-estimator transaction semantics**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -93,9 +93,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Historical estimator balance-sheet semantics.** Interpret investment,
-   retirement, debt-principal, and FSA history without treating every transfer as
-   ordinary Income/Expense activity.
+1. **NEXT — Historical planning-flow proposals.** Infer reviewable recurring
+   retirement saving/distribution, investment contribution/withdrawal,
+   debt-principal, and benefit/FSA funding without folding those balance-sheet
+   movements into ordinary Income/Expense estimates.
 2. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
    for imported account and schedule forms, bounded by what can be round-tripped
    without guessing.
@@ -445,8 +446,19 @@ semantics, not duplicate business rules in presentation code.
 - [ ] Provide richer explanations of history, cadence, trend, seasonality, and
   residual calculation, with interactive adjustment before acceptance.
 - [ ] Refine category-specific seasonality/cadence inference.
-- [ ] Interpret investment, retirement, debt-principal, and FSA history correctly
-  rather than treating all balance-sheet flows as ordinary Income/Expense activity.
+- [x] **0202 — Historical-estimator transaction semantics.** Interpret an entire
+  transaction before extracting ordinary Income/Expense history. Reinvested
+  dividends/interest, investment fees, and rollovers do not become recurring
+  household income or expense suggestions. When a multi-split loan payment,
+  retirement contribution, or benefit allocation contains several balance-sheet
+  counterparts, retain the observed recurring counterpart and prefer spendable
+  cash to break equal-evidence ties. Apply the same exclusions to future coverage
+  and cadence evidence. Advance the alpha version to `0.2.0a40`.
+- [ ] **NEXT — Propose classified historical planning flows.** Add distinct,
+  reviewable proposals for recurring retirement saving/distribution, investment
+  contribution/withdrawal, debt principal, and benefit/FSA funding. Preserve the
+  shared planning-flow or investment-activity classification in accepted Base and
+  scenario estimates and subtract matching future classified coverage exactly once.
 
 ## Plan and planning-flow reporting
 
