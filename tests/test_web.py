@@ -872,6 +872,18 @@ class TestItServes:
         with client.database.transaction("Protected source") as txn:
             client.database.add_scheduled(source, txn)
 
+        status, definitions = client.get("/api/scheduled")
+        row = next(item for item in definitions["definitions"] if item["handle"] == source.handle)
+        assert status == 200
+        assert row["editable"] is False
+        assert row["editor_mode"] == "read_only"
+        assert row["editability_reason"] == "custom source recurrence"
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/scheduled/save", {"handle": source.handle})
+        assert caught.value.code == 400
+        assert json.loads(caught.value.read())["error"] == "custom source recurrence"
+
         status, copied = client.post(
             "/api/scheduled/duplicate",
             {"handle": source.handle, "name": "Reviewed protected copy"},

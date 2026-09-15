@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
+from enum import Enum
 
 from ..db.sqlite import DbSQLite
-from ..lib.account import Account, AccountType
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.base import create_handle
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence, add_months
@@ -23,6 +24,8 @@ __all__ = [
     "Occurrence",
     "AccountPaymentDefinition",
     "AccountPaymentOccurrence",
+    "ScheduleEditability",
+    "ScheduleEditorMode",
     "account_payment_definitions",
     "already_posted",
     "delete_definition",
@@ -34,8 +37,112 @@ __all__ = [
     "post_due",
     "post_occurrences",
     "skip_occurrences",
+    "schedule_editability",
     "upcoming_occurrences",
 ]
+
+
+class ScheduleEditorMode(str, Enum):
+    """Editor that can reproduce a saved definition without semantic loss."""
+
+    READ_ONLY = "read_only"
+    FIXED = "fixed"
+    FORMULA = "formula"
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleEditability:
+    """One shared editability decision for every presentation and write path."""
+
+    mode: ScheduleEditorMode
+    reason: str = ""
+
+    @property
+    def editable(self) -> bool:
+        return self.mode is not ScheduleEditorMode.READ_ONLY
+
+
+def schedule_editability(
+    db: DbSQLite,
+    scheduled: ScheduledTransaction | None,
+) -> ScheduleEditability:
+    """Return the safe editor mode and an actionable reason when protected."""
+    protected = ScheduleEditorMode.READ_ONLY
+    if scheduled is None:
+        return ScheduleEditability(protected, "No scheduled transaction is selected.")
+    if scheduled.unsupported_reason:
+        return ScheduleEditability(protected, scheduled.unsupported_reason)
+    if formula_problem := scheduled.formula_problem():
+        return ScheduleEditability(
+            protected,
+            f"This imported formula cannot currently be evaluated ({formula_problem}). "
+            "Its original text remains preserved.",
+        )
+    supported_periods = {
+        PeriodType.DAY,
+        PeriodType.WEEK,
+        PeriodType.SEMI_MONTH,
+        PeriodType.MONTH,
+        PeriodType.YEAR,
+        PeriodType.ONCE,
+    }
+    if scheduled.recurrence.period not in supported_periods:
+        return ScheduleEditability(
+            protected,
+            "This schedule uses a recurrence that the schedule editor cannot yet "
+            "reproduce without changing its meaning.",
+        )
+    if any(split.formula for split in scheduled.splits):
+        return ScheduleEditability(ScheduleEditorMode.FORMULA)
+    if len(scheduled.splits) < 2:
+        return ScheduleEditability(
+            protected,
+            "This imported schedule does not have enough split information for "
+            "the fixed schedule editor to reproduce it safely.",
+        )
+
+    classes: list[AccountClass | None] = []
+    funding_candidates = 0
+    planning_flow_splits = 0
+    for split in scheduled.splits:
+        account = db.get_account(split.account)
+        account_class = account.account_class if account is not None else None
+        classes.append(account_class)
+        if split.planning_flow is not None:
+            planning_flow_splits += 1
+        if account_class not in {AccountClass.INCOME, AccountClass.EXPENSE} and (
+            split.planning_flow is None
+        ):
+            funding_candidates += 1
+    has_income_expense = any(
+        value in {AccountClass.INCOME, AccountClass.EXPENSE} for value in classes
+    )
+    ordinary_balance_transfer = False
+    if not has_income_expense and planning_flow_splits == 0:
+        ordinary_balance_transfer = all(
+            value in {AccountClass.ASSET, AccountClass.LIABILITY} for value in classes
+        )
+        if ordinary_balance_transfer:
+            resolved = [split.resolve(scheduled.variables) for split in scheduled.splits]
+            positives = [value for value in resolved if value > 0]
+            negatives = [value for value in resolved if value < 0]
+            ordinary_balance_transfer = (
+                len(positives) == 1 and bool(negatives) and sum(resolved, Money(0)) == Money(0)
+            )
+    if not has_income_expense and planning_flow_splits < 1 and not ordinary_balance_transfer:
+        return ScheduleEditability(
+            protected,
+            "This schedule has neither an Income/Expense leg, an explicit "
+            "planning-purpose leg, nor an unambiguous fixed balance-sheet "
+            "transfer that the schedule editor can use as its primary amount.",
+        )
+    if funding_candidates < 1:
+        return ScheduleEditability(
+            protected,
+            "This schedule has no ordinary funding split that the fixed schedule "
+            "editor can preserve.",
+        )
+    return ScheduleEditability(ScheduleEditorMode.FIXED)
 
 
 @dataclass(slots=True)

@@ -1000,6 +1000,7 @@ class Api:
         for item in saved_schedules:
             simple = self._simple_schedule_parts(item)
             frequency = self._frequency_key(item.recurrence)
+            editability = schedule.schedule_editability(self.db, item)
             definitions.append(
                 {
                     "handle": item.handle,
@@ -1014,7 +1015,10 @@ class Api:
                     "auto": item.auto_create,
                     "growth_policy": item.growth_policy.value,
                     "simple": simple is not None and frequency is not None,
-                    "unsupported_reason": item.unsupported_reason or item.formula_problem(),
+                    "editable": editability.editable,
+                    "editor_mode": editability.mode.value,
+                    "editability_reason": editability.reason,
+                    "unsupported_reason": (editability.reason if not editability.editable else ""),
                     "source_recurrence": item.source_recurrence,
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
@@ -1062,6 +1066,9 @@ class Api:
                     "auto": False,
                     "growth_policy": "none",
                     "simple": False,
+                    "editable": True,
+                    "editor_mode": "account",
+                    "editability_reason": "",
                     "unsupported_reason": "",
                     "source_recurrence": None,
                     "category": None,
@@ -3173,10 +3180,18 @@ class Api:
         if handle and existing is None:
             raise KeyError(handle)
         existing_parts = self._simple_schedule_parts(existing) if existing is not None else None
-        if existing is not None and (
-            existing_parts is None or self._frequency_key(existing.recurrence) is None
-        ):
-            raise ValueError("formula schedules cannot be edited in the fixed-split editor")
+        if existing is not None:
+            editability = schedule.schedule_editability(self.db, existing)
+            if not editability.editable:
+                raise ValueError(editability.reason)
+            if (
+                editability.mode is not schedule.ScheduleEditorMode.FIXED
+                or existing_parts is None
+                or self._frequency_key(existing.recurrence) is None
+            ):
+                raise ValueError(
+                    "this schedule needs an editor that preserves its complete structure"
+                )
 
         name = str(payload.get("name") or "").strip()
         if not name:

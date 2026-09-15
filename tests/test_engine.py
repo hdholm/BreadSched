@@ -483,6 +483,64 @@ class TestScheduledTemplates:
         assert txn.scheduled_from == payday_schedule.handle
 
 
+class TestScheduleEditability:
+    def test_fixed_and_formula_definitions_choose_their_safe_editor(self, db, book):
+        fixed = ScheduledTransaction(
+            name="Rent",
+            splits=[
+                ScheduledSplit(book.rent, "1800"),
+                ScheduledSplit(book.checking, "-1800"),
+            ],
+        )
+        formula = ScheduledTransaction(
+            name="Mortgage",
+            splits=[
+                ScheduledSplit(book.rent, formula="payment"),
+                ScheduledSplit(book.checking, formula="-(payment)"),
+            ],
+        )
+        formula.variables = {"payment": "1800"}
+
+        fixed_result = schedule.schedule_editability(db, fixed)
+        formula_result = schedule.schedule_editability(db, formula)
+
+        assert fixed_result.mode is schedule.ScheduleEditorMode.FIXED
+        assert fixed_result.editable is True
+        assert formula_result.mode is schedule.ScheduleEditorMode.FORMULA
+        assert formula_result.editable is True
+
+    def test_protected_source_structure_returns_its_import_reason(self, db, book):
+        protected = ScheduledTransaction(
+            name="Source union",
+            splits=[
+                ScheduledSplit(book.rent, "1800"),
+                ScheduledSplit(book.checking, "-1800"),
+            ],
+        )
+        protected.unsupported_reason = "multiple source recurrence rules"
+
+        result = schedule.schedule_editability(db, protected)
+
+        assert result.mode is schedule.ScheduleEditorMode.READ_ONLY
+        assert result.editable is False
+        assert result.reason == "multiple source recurrence rules"
+
+    def test_ambiguous_balance_sheet_structure_explains_why_it_is_read_only(self, db, book):
+        ambiguous = ScheduledTransaction(
+            name="Ambiguous allocation",
+            splits=[
+                ScheduledSplit(book.checking, "-100"),
+                ScheduledSplit(book.savings, "60"),
+                ScheduledSplit(book.brokerage, "40"),
+            ],
+        )
+
+        result = schedule.schedule_editability(db, ambiguous)
+
+        assert result.mode is schedule.ScheduleEditorMode.READ_ONLY
+        assert "unambiguous fixed balance-sheet transfer" in result.reason
+
+
 class TestUnbalancedSchedules:
     """A schedule whose calculated legs disagree must not stop a forecast."""
 

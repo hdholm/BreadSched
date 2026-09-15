@@ -1223,7 +1223,7 @@ async function showScheduled() {
         : null,
       s.unsupported_reason
         ? el("div", { class:"muted", title:String(s.source_recurrence || "") },
-            `Preserved read-only: ${s.unsupported_reason}`)
+            `Read-only: ${s.unsupported_reason}`)
         : null),
     el("td", { class: "muted" }, s.frequency),
     el("td", { class: "num" }, money(s.amount)),
