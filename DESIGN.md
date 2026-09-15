@@ -659,6 +659,15 @@ description, commodity/SCU, placeholder, and hidden state. Local planning fields
 remain editable. This prevents a successful local edit from appearing durable only
 to be silently replaced by the next source refresh.
 
+The representative account-fidelity fixture is generated against the GnuCash
+SQLite schema and exercises these rules together rather than only as isolated
+fields: nested STOCK/MUTUAL holdings with a security commodity and non-default
+precision; assets locally modeled as FSA; liabilities locally modeled as Loan;
+historical money-market, receivable, and payable types; an unknown valid source
+type; hidden state; typed slots; hierarchy changes; and a second source refresh.
+Any expansion of imported-account editing should extend this matrix with the source
+form and the expected local/source ownership result.
+
 On a matching GnuCash transaction GUID, source-owned ledger facts (dates,
 descriptions, numbers, accounts, values, quantities, memos/actions, and reconcile
 state) and source transaction notes may refresh from the source. Source notes have

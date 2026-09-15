@@ -126,6 +126,92 @@ class TestDateParsing:
 
 
 class TestSqliteImport:
+    def test_representative_account_matrix_preserves_source_and_local_semantics(
+        self, db, gnucash_account_matrix_path
+    ):
+        source = gnucash_account_matrix_path
+        result = gnucash_sqlite.import_book(db, source.path)
+        accounts = {
+            name: db.get_account(getattr(source.ids, name))
+            for name in (
+                "brokerage",
+                "fund",
+                "house",
+                "fsa",
+                "money_market",
+                "receivable",
+                "mortgage",
+                "payable",
+                "unusual",
+            )
+        }
+        assert all(accounts.values())
+        assert accounts["brokerage"].atype is AccountType.INVESTMENT
+        assert accounts["fund"].atype is AccountType.INVESTMENT
+        assert accounts["money_market"].atype is AccountType.BANK
+        assert accounts["receivable"].atype is AccountType.ASSET
+        assert accounts["mortgage"].atype is AccountType.LIABILITY
+        assert accounts["payable"].atype is AccountType.LIABILITY
+        assert accounts["unusual"].atype is AccountType.TECHNICAL
+        assert db.full_name(accounts["fund"]) == "Assets:Brokerage:Balanced Fund"
+        assert accounts["fund"].commodity_scu == 10000
+        assert db.get_commodity(accounts["fund"].commodity).mnemonic == "BALANCED"
+        fields = {
+            (field.name, field.value_type): field.value
+            for field in accounts["unusual"].source_fields
+        }
+        assert fields[("slot:color", "string; source type 4")] == "#315a74"
+        assert fields[("slot:tax-related", "int64; source type 1")] == "1"
+        assert any("preserved as Technical" in warning for warning in result.warnings)
+
+        brokerage = accounts["brokerage"]
+        mortgage = accounts["mortgage"]
+        fsa = accounts["fsa"]
+        brokerage.annual_return = Decimal("0.061")
+        mortgage.atype = AccountType.LOAN
+        mortgage.linked_asset = accounts["house"].handle
+        mortgage.annual_interest = Decimal("0.0525")
+        fsa.atype = AccountType.FSA
+        fsa.notes = "Local enrollment context"
+        fsa.fsa_years = [
+            FsaFundingYear(
+                start=date(2026, 1, 1),
+                through=date(2026, 12, 31),
+                election=Money("2400"),
+            )
+        ]
+        with db.transaction("Local household semantics") as txn:
+            for account in (brokerage, mortgage, fsa):
+                db.commit_account(account, txn)
+
+        with sqlite3.connect(source.path) as gnc:
+            gnc.execute(
+                "UPDATE accounts SET name=?, hidden=1, commodity_scu=1000 WHERE guid=?",
+                ("Balanced Allocation Fund", source.ids.fund),
+            )
+            gnc.execute(
+                "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+                (source.ids.fsa, "notes", 4, "Source enrollment note"),
+            )
+        gnucash_sqlite.import_book(db, source.path)
+
+        refreshed_fund = db.get_account(source.ids.fund)
+        refreshed_brokerage = db.get_account(source.ids.brokerage)
+        refreshed_mortgage = db.get_account(source.ids.mortgage)
+        refreshed_fsa = db.get_account(source.ids.fsa)
+        assert refreshed_fund.name == "Balanced Allocation Fund"
+        assert refreshed_fund.hidden is True
+        assert refreshed_fund.commodity_scu == 1000
+        assert refreshed_fund.parent == source.ids.brokerage
+        assert refreshed_brokerage.annual_return == Decimal("0.061")
+        assert refreshed_mortgage.atype is AccountType.LOAN
+        assert refreshed_mortgage.linked_asset == source.ids.house
+        assert refreshed_mortgage.annual_interest == Decimal("0.0525")
+        assert refreshed_fsa.atype is AccountType.FSA
+        assert refreshed_fsa.notes == "Local enrollment context"
+        assert refreshed_fsa.source_notes == "Source enrollment note"
+        assert refreshed_fsa.fsa_years[0].election == Money("2400")
+
     def test_notify_false_suppresses_the_complete_importer_boundary(self, db, gnucash_sqlite_path):
         seen = []
         db.connect("database-changed", lambda *_: seen.append("changed"))
