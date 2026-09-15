@@ -438,6 +438,12 @@ class TestItServes:
         assert occurrence["account_linked"] is True
         assert Money(occurrence["amount"]) == Money("125.00")
 
+        _status, dashboard_data = client.get("/api/dashboard")
+        pending = next(item for item in dashboard_data["pending"] if item["account"] == card.handle)
+        assert pending["monthly"] is None
+        assert pending["annual"] is None
+        assert Money(pending["hold"]) == Money("125.00")
+
         status, changed = client.post(
             "/api/account/type",
             {"handle": card.handle, "type": "LIABILITY"},

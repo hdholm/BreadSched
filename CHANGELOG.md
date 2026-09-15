@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0209 — Statement-based credit-card obligations.** Freeze an unpaid overdue
+  occurrence at the card balance on its due date and hold only subsequent activity
+  for the next occurrence. Let any positive payment from a cash-like account,
+  including a partial payment, resolve the overdue occurrence while excluding
+  refunds and reversals. Hold each account-payment row exactly once, suppress
+  monthly/annual display amounts, and retain explicit-schedule precedence without
+  double-counting card purchases as immediate cash bills. Advance the alpha version
+  to `0.2.0a45`.
+
 - [x] **0208 — Separate commitments from estimates.** Keep planning estimates in
   Plan and Projection without presenting them as due or overdue obligations in
   Dashboard or Upcoming. Split Scheduled into commitments/account payments and

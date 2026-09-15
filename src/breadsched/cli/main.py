@@ -1423,9 +1423,9 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                     item.next_due.isoformat(),
                     f"{item.cycle_months:g}",
                     item.amount.format(),
-                    item.monthly.format(),
+                    "" if item.generated else item.monthly.format(),
                     "" if item.income else item.held.format(),
-                    item.annual.format(),
+                    "" if item.generated else item.annual.format(),
                     "account" if item.generated else "est" if item.estimate else "",
                 ]
                 for item in board.pending[: args.limit]

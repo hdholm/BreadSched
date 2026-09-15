@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0208 — separate commitments from estimates**.
+The current accepted baseline is **0209 — statement-based credit-card obligations**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,20 +27,12 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-1. **NEXT — 0209: Statement-based credit-card obligations.** Snapshot the account balance
-   on its due date as the overdue obligation. Exclude exactly that snapshot from the
-   next-cycle hold. Any later positive card payment from a cash-like account—even a
-   partial payment, but not a reversal/refund—resolves the overdue occurrence; the
-   next due occurrence then holds the entire current balance. Prevent card purchase
-   and payment double counting and cover GTK/web/API/Upcoming/Dashboard behavior.
-   Reference issue #11 and advance the alpha version.
-
-2. **0210 — Separate Dashboard income and bills.** Present committed income and
+1. **NEXT — 0210: Separate Dashboard income and bills.** Present committed income and
    pending bills in distinct lists, use terminology consistently across GTK, web,
    API, print, tests, and README, and document credit-card purchase-versus-payment
    timing. Close issue #11 and advance the alpha version.
 
-3. **Imported schedule fidelity matrix.** Add one representative generated fixture
+2. **Imported schedule fidelity matrix.** Add one representative generated fixture
    spanning native/imported schedules, unusual recurrences, formulas, overrides,
    and bounded schedules before widening their editable surface.
 

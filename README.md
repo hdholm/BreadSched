@@ -559,8 +559,13 @@ bill is protected. An overdue bill continues to count against liquidity while
 income received in its next cycle starts a separate reserve for the next occurrence.
 Paid-monthly cards contribute their full current balance on the configured payment
 date; cards carrying a balance contribute the configured usual payment, capped at
-the balance. An explicit payment schedule takes precedence over the account-derived
-card row.
+the balance. If a payment becomes overdue, its amount is frozen at the card balance
+on that due date. Later card activity is held separately for the next due date, so
+the statement balance is never held twice. Any later positive payment from a cash-
+like account—including a partial payment—resolves the overdue occurrence; a refund
+or payment reversal does not. Account-payment rows omit monthly and annual
+normalizations because the balance is already the dated obligation. An explicit
+payment schedule takes precedence over the account-derived card rows.
 
 ## FSA / benefit planning
 

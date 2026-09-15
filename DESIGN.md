@@ -298,10 +298,14 @@ This avoids a copied schedule becoming a conflicting second source of truth. A
 stable derived handle supports selection, but the editor returns to the account and
 the derived occurrence is never posted automatically.
 
-The current obligation is the live balance for a paid-in-full card or the lesser of
-live balance and usual payment for a carried card. A recognized cash-to-card actual
-within the current payment cycle advances the due date; otherwise an overdue
-obligation remains overdue. Any enabled usable explicit/imported schedule with a
+Before the due date, the current obligation is the live balance for a paid-in-full
+card or the lesser of live balance and usual payment for a carried card. Once
+unpaid and overdue, that occurrence is frozen at the account balance on its due
+date; a second next-cycle occurrence contains only subsequent card activity, so the
+statement amount is held exactly once. Any positive card payment funded by a
+cash-like account resolves the overdue occurrence, even when partial, and the next
+occurrence then uses the entire current balance normally. Merchant refunds and
+payment reversals do not resolve it. Any enabled usable explicit/imported schedule with a
 positive leg against the card suppresses the derived definition. The derived
 definition intentionally does not generate an indefinite Projection recurrence:
 future statement balances are not known, while the underlying purchases and an
@@ -504,11 +508,13 @@ gross obligation; its Hold-now value belongs to the next occurrence and is added
 separately, so the displayed obligation cannot disappear merely because a new
 cycle began.
 
-Credit-card accounts synthesize a monthly pending payment when they have a positive
+Credit-card accounts synthesize dated pending payments when they have a positive
 balance, a payment day, and no enabled explicit schedule already paying that card.
 A paid-monthly card uses its full balance. A revolving card uses its usual payment,
-capped at its balance. This is an account-tied presentation row, not an invented
-ledger or scheduled-transaction object.
+capped at its balance. An account-payment row holds its exact amount rather than an
+income-accrued fraction and does not display a monthly or annual normalization.
+This is an account-tied presentation row, not an invented ledger or scheduled-
+transaction object.
 
 ## Account types and imported source types
 

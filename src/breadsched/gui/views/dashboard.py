@@ -131,7 +131,7 @@ class DashboardView(BaseView):
         self.bills_view.append_column(
             column(
                 "Monthly",
-                lambda b: b.monthly.format(),
+                lambda b: "" if b.generated else b.monthly.format(),
                 sort_key=lambda b: b.monthly.to_decimal(),
                 numeric=True,
             )
@@ -147,7 +147,7 @@ class DashboardView(BaseView):
         self.bills_view.append_column(
             column(
                 "Annual",
-                lambda b: b.annual.format(),
+                lambda b: "" if b.generated else b.annual.format(),
                 sort_key=lambda b: b.annual.to_decimal(),
                 numeric=True,
             )

@@ -390,6 +390,29 @@ class TestCreditCardBills:
         assert row.next_due == date(2026, 3, 20)
         assert row.generated is True
 
+    def test_overdue_statement_and_new_activity_are_held_exactly_once(self, db, book):
+        card = self._card(db, book, "Paid monthly", "400", pays_in_full=True)
+        with db.transaction("New cycle purchase") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 3, 22),
+                    "New cycle purchase",
+                    book.utilities,
+                    card.handle,
+                    "25",
+                ),
+                txn,
+            )
+
+        board = dashboard.build(db, as_of=date(2026, 3, 25))
+        rows = [item for item in board.bills if item.account == card.handle]
+
+        assert [(row.next_due, row.amount, row.held) for row in rows] == [
+            (date(2026, 3, 20), Money("400"), Money("400")),
+            (date(2026, 4, 20), Money("25"), Money("25")),
+        ]
+        assert board.required_liquid == Money("425")
+
     def test_revolving_card_payment_is_capped_at_the_balance(self, db, book):
         card = self._card(
             db,
@@ -429,6 +452,25 @@ class TestCreditCardBills:
         rows = [item for item in board.bills if item.name.endswith("payment")]
 
         assert [(item.name, item.generated) for item in rows] == [("Card payment", False)]
+
+    def test_future_card_purchase_is_not_also_a_cash_bill(self, db, book):
+        card = self._card(db, book, "Paid monthly", "100", pays_in_full=True)
+        purchase = ScheduledTransaction(
+            name="Future card purchase",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 3, 18)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("50")),
+                ScheduledSplit(card.handle, Money("-50")),
+            ],
+        )
+        with db.transaction("Future card purchase") as txn:
+            db.add_scheduled(purchase, txn)
+
+        board = dashboard.build(db, as_of=date(2026, 3, 15))
+
+        assert "Future card purchase" not in [item.name for item in board.bills]
+        card_rows = [item for item in board.bills if item.account == card.handle]
+        assert [item.amount for item in card_rows] == [Money("100")]
 
 
 class TestLiquidityAndEmergencyFund:

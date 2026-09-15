@@ -459,7 +459,7 @@ class Dashboard:
             (
                 bill.held
                 for bill in self.bills
-                if bill.next_due > horizon or bill.next_due < self.as_of
+                if bill.next_due > horizon or (bill.next_due < self.as_of and not bill.generated)
             ),
             Money(0),
         )
@@ -973,27 +973,24 @@ def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:
 
 
 def _flow_amounts(db: DbSQLite, sched: ScheduledTransaction, when: date) -> tuple[Money, Money]:
-    """Return positive income and household outflow for one occurrence."""
-    income = Money(0)
-    outflow = Money(0)
+    """Return the occurrence's direct spendable-cash inflow and outflow.
+
+    Economic expense belongs in Plan. Dashboard liquidity changes only when a
+    Bank/Cash leg changes, so a purchase charged to a card is not counted once at
+    purchase and again when the account payment becomes due.
+    """
+    net_cash = Money(0)
     legs = list(sched.resolved_splits(when=when))
-    accounts = {
-        handle: account
-        for handle, _amount in legs
-        if (account := db.get_account(handle)) is not None
-    }
-    escrow = escrow_recognition(legs, accounts)
     for handle, amount in legs:
-        account = accounts.get(handle)
-        if account is None:
+        account = db.get_account(handle)
+        if account is None or not account.is_spendable_cash:
             continue
-        if account.account_class is AccountClass.INCOME:
-            income = income - amount  # income accounts carry credit balances
-        elif account.account_class is AccountClass.EXPENSE:
-            outflow = outflow + amount
-        elif account.account_class is AccountClass.LIABILITY and amount > 0:
-            outflow = outflow + amount
-    return income, outflow + escrow.planning_expense_adjustment
+        net_cash = net_cash + amount
+    if net_cash > 0:
+        return net_cash, Money(0)
+    if net_cash < 0:
+        return Money(0), -net_cash
+    return Money(0), Money(0)
 
 
 def _emergency_outflow(db: DbSQLite, sched: ScheduledTransaction, when: date) -> Money:
@@ -1084,6 +1081,10 @@ def _reserve_bill(
     today: date,
 ) -> None:
     """Attach the exact income-triggered reserve for one bill row."""
+    if bill.generated:
+        bill.held = bill.amount
+        bill.reserve_for = bill.next_due
+        return
     recurrence = bill.recurrence
     if recurrence is None:
         bill.held = bill.amount
@@ -1094,6 +1095,8 @@ def _reserve_bill(
     target_amount = bill.amount
     if target_due < today:
         if bill.schedule is None:
+            bill.held = bill.amount
+            bill.reserve_for = bill.next_due
             return
         next_due = _next_unskipped(bill.schedule, today)
         if next_due is None:
