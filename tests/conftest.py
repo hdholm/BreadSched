@@ -342,6 +342,81 @@ def gnucash_sqlite_path(tmp_path):
     return SimpleNamespace(path=str(path), ids=ids)
 
 
+@pytest.fixture
+def gnucash_account_matrix_path(tmp_path):
+    """One readable GnuCash chart spanning the account forms BreadSched promises."""
+    path = tmp_path / "account-matrix.gnucash"
+    conn = sqlite3.connect(path)
+    conn.executescript(GNUCASH_SCHEMA)
+    usd = write_commodity(conn, new_guid())
+    security = write_commodity(
+        conn,
+        new_guid(),
+        namespace="FUND",
+        mnemonic="BALANCED",
+        fullname="Balanced index fund",
+        fraction=10000,
+    )
+    ids = SimpleNamespace(
+        currency=usd,
+        security=security,
+        root=new_guid(),
+        assets=new_guid(),
+        bank=new_guid(),
+        brokerage=new_guid(),
+        fund=new_guid(),
+        house=new_guid(),
+        fsa=new_guid(),
+        money_market=new_guid(),
+        receivable=new_guid(),
+        debts=new_guid(),
+        mortgage=new_guid(),
+        payable=new_guid(),
+        unusual=new_guid(),
+        template_root=new_guid(),
+    )
+    write_account(conn, ids.root, "Root", "ROOT", None, usd)
+    write_account(conn, ids.assets, "Assets", "ASSET", ids.root, usd, placeholder=1)
+    write_account(conn, ids.bank, "Checking", "BANK", ids.assets, usd)
+    write_account(conn, ids.brokerage, "Brokerage", "STOCK", ids.assets, security)
+    write_account(conn, ids.fund, "Balanced Fund", "MUTUAL", ids.brokerage, security)
+    write_account(conn, ids.house, "Home", "ASSET", ids.assets, usd)
+    write_account(conn, ids.fsa, "Health FSA", "ASSET", ids.assets, usd)
+    write_account(conn, ids.money_market, "Money Market", "MONEYMRKT", ids.assets, usd)
+    write_account(conn, ids.receivable, "Receivable", "RECEIVABLE", ids.assets, usd)
+    write_account(conn, ids.debts, "Debts", "LIABILITY", ids.root, usd, placeholder=1)
+    write_account(conn, ids.mortgage, "Mortgage", "LIABILITY", ids.debts, usd)
+    write_account(conn, ids.payable, "Payable", "PAYABLE", ids.debts, usd)
+    write_account(
+        conn,
+        ids.unusual,
+        "Opaque source account",
+        "HOUSEHOLD-SPECIAL",
+        ids.assets,
+        usd,
+        code="X-42",
+        description="Valid source form BreadSched does not interpret",
+        hidden=1,
+    )
+    conn.execute(
+        "UPDATE accounts SET commodity_scu=10000, non_std_scu=1 WHERE guid=?",
+        (ids.fund,),
+    )
+    conn.execute(
+        "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+        (ids.unusual, "color", 4, "#315a74"),
+    )
+    conn.execute(
+        "INSERT INTO slots (obj_guid,name,slot_type,int64_val) VALUES (?,?,?,?)",
+        (ids.unusual, "tax-related", 1, 1),
+    )
+    write_account(conn, ids.template_root, "Template Root", "ROOT", None, usd)
+    conn.execute("INSERT INTO books VALUES (?,?,?)", (new_guid(), ids.root, ids.template_root))
+    conn.commit()
+    conn.close()
+    return SimpleNamespace(path=str(path), ids=ids)
+
+
 GNUCASH_XML = """<?xml version="1.0" encoding="utf-8" ?>
 <gnc-v2
      xmlns:gnc="http://www.gnucash.org/XML/gnc"

@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0205 — protect imported source-owned chart fields**.
+The current accepted baseline is **0206 — representative imported-account matrix**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -93,9 +93,9 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Account and schedule fidelity.** Continue lossless editing and fixture coverage
-   for imported account and schedule forms, bounded by what can be round-tripped
-   without guessing.
+1. **NEXT — Imported schedule fidelity matrix.** Add one representative generated
+   fixture spanning native/imported schedules, unusual recurrences, formulas,
+   overrides, and bounded schedules before widening their editable surface.
 
 ## Dashboard balances and group hierarchy
 
@@ -360,13 +360,17 @@ semantics, not duplicate business rules in presentation code.
   and source-owned metadata through GTK, web, and CLI JSON; verify source-GUID
   uniqueness; cover SQLite, nested XML slots, and re-import. Advance the alpha
   version to `0.2.0a27`.
-- [ ] **Fixture-driven imported-account fidelity.** Build one representative matrix
+- [x] **0206 — Fixture-driven imported-account fidelity.** Build one representative matrix
   of GnuCash account forms and relationships covering investment, debt, FSA,
   commodities/securities, and unusual valid metadata. Expand safe editing and
   explanations only for forms whose source semantics can demonstrably round-trip;
   expose every other supported form inspectably and read-only without destructive
   normalization. Add a fixture and round-trip/regression proof whenever the editable
-  surface grows.
+  surface grows. The generated SQLite contract covers nested STOCK/MUTUAL holdings,
+  a security commodity and precision, liabilities, local Loan/FSA semantics,
+  historical RECEIVABLE/PAYABLE/MONEYMRKT types, an unknown valid type, typed slots,
+  source refresh, and preservation of local fields. This test-only milestone does
+  not advance the application version.
 - [x] **0204 — Separate imported and local account notes.** Retain GnuCash account
   notes as read-only source provenance while keeping BreadSched-authored account
   notes independently editable across re-import. Expose both through GTK, web, and
