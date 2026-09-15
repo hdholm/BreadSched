@@ -556,6 +556,70 @@ class TestActualResolutionWorkflow:
 
 
 class TestHistoricalEstimateProposals:
+    def test_investment_performance_does_not_become_ordinary_income_or_expense(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import InvestmentActivityKind, Split, Transaction
+
+        with db.transaction("Investment performance history") as txn:
+            for month in (1, 2, 3):
+                dividend = Transaction(
+                    post_date=date(2026, month, 5), description="Reinvested distribution"
+                )
+                dividend.add_split(
+                    Split(
+                        book.brokerage,
+                        Money("100"),
+                        investment_activity=InvestmentActivityKind.DIVIDEND,
+                    )
+                )
+                dividend.add_split(Split(book.salary, Money("-100")))
+                db.add_transaction(dividend, txn)
+
+                fee = Transaction(post_date=date(2026, month, 10), description="Fund fee")
+                fee.add_split(Split(book.utilities, Money("10")))
+                fee.add_split(
+                    Split(
+                        book.brokerage,
+                        Money("-10"),
+                        investment_activity=InvestmentActivityKind.FEE,
+                    )
+                )
+                db.add_transaction(fee, txn)
+
+        proposals = estimates.propose_historical_estimates(db, as_of=date(2026, 4, 20), months=3)
+
+        assert all(item.category not in {book.salary, book.utilities} for item in proposals)
+
+    def test_multisplit_balance_sheet_legs_do_not_replace_cash_as_funding(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Account, AccountType, Split, Transaction
+
+        loan = Account(name="Household loan", atype=AccountType.LOAN, parent=book.liabilities)
+        retirement = Account(
+            name="Workplace plan", atype=AccountType.RETIREMENT, parent=book.assets
+        )
+        with db.transaction("Loan and payroll history") as txn:
+            db.add_account(loan, txn)
+            db.add_account(retirement, txn)
+            for month in (1, 2, 3):
+                payment = Transaction(post_date=date(2026, month, 5), description="Loan payment")
+                payment.add_split(Split(book.utilities, Money("100")))
+                payment.add_split(Split(loan.handle, Money("400")))
+                payment.add_split(Split(book.checking, Money("-500")))
+                db.add_transaction(payment, txn)
+
+                payroll = Transaction(post_date=date(2026, month, 15), description="Payroll")
+                payroll.add_split(Split(book.salary, Money("-1000")))
+                payroll.add_split(Split(retirement.handle, Money("200")))
+                payroll.add_split(Split(book.checking, Money("800")))
+                db.add_transaction(payroll, txn)
+
+        proposals = estimates.propose_historical_estimates(db, as_of=date(2026, 4, 20), months=3)
+        by_category = {item.category: item for item in proposals}
+
+        assert by_category[book.utilities].funding == book.checking
+        assert by_category[book.salary].funding == book.checking
+
     def test_escrow_paid_expenses_do_not_become_uncovered_suggestions(self, db, book):
         from breadsched.gen.engine import estimates
 
