@@ -1173,6 +1173,7 @@ class Api:
             "base": base,
             "name": "Base scenario" if base else scenario.name,
             "description": "" if base else scenario.description,
+            "parent_handle": None if base else scenario.parent_handle,
             "assumptions": assumptions.serialize(),
             "assumption_sources": scenario.assumption_sources(),
             "account_assumption_sources": scenario.account_assumption_sources(),
@@ -1299,6 +1300,10 @@ class Api:
         scenario.description = str(payload.get("description", "")).strip()
         previous = scenario.effective_assumptions()
         updated = self._assumptions_from_payload(payload.get("assumptions"), previous)
+        if "parent_handle" in payload:
+            requested_parent = payload.get("parent_handle")
+            scenario.parent_handle = str(requested_parent).strip() if requested_parent else None
+            scenario.inherits_base_assumptions = True
         if scenario.inherits_base_assumptions:
             requested = payload.get("assumption_overrides")
             if requested is not None:
@@ -1334,7 +1339,10 @@ class Api:
         scenario.assumptions = updated
         with self.db.transaction(f"Update scenario {scenario.name}") as txn:
             self.db.commit_scenario(scenario, txn)
-        return self._scenario_payload(scenario)
+        reloaded = self.db.get_scenario(scenario.handle)
+        if reloaded is None:  # pragma: no cover - guarded by the successful commit
+            raise KeyError(scenario.handle)
+        return self._scenario_payload(reloaded)
 
     def _unique_scenario_copy_name(self, name: str) -> str:
         base = f"{name} copy"
@@ -2742,6 +2750,7 @@ class Api:
             "scenario": {
                 "handle": None if base else scenario.handle,
                 "name": scenario.name,
+                "parent_handle": None if base else scenario.parent_handle,
                 "years": scenario.years,
                 "assumptions": assumptions.serialize(),
                 "assumption_sources": scenario.assumption_sources(scenario.start),

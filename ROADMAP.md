@@ -6,7 +6,7 @@ plans discussed during development belong here rather than only in chat history.
 **Maintenance rule:** every patch that completes, changes, discovers, splits, or
 reprioritizes roadmap work must update this file in the same patch.
 
-The current accepted baseline is **0200 — decision-ready Plan printing**.
+The current accepted baseline is **0201 — scenario parent layering**.
 Unchecked field reports below are requests or suspected regressions, not claims
 that a root cause has already been confirmed.
 
@@ -93,13 +93,10 @@ semantics, not duplicate business rules in presentation code.
 
 ## Immediate field-report priorities
 
-1. **NEXT — Scenario parent layering.** Allow a saved scenario to inherit from Base
-   or another saved scenario with deterministic resolution, cycle prevention, and
-   defined reparenting/deletion behavior.
-2. **Historical estimator balance-sheet semantics.** Interpret investment,
+1. **NEXT — Historical estimator balance-sheet semantics.** Interpret investment,
    retirement, debt-principal, and FSA history without treating every transfer as
    ordinary Income/Expense activity.
-3. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
+2. **Account and schedule fidelity.** Continue lossless editing and fixture coverage
    for imported account and schedule forms, bounded by what can be round-tripped
    without guessing.
 
@@ -663,11 +660,14 @@ semantics, not duplicate business rules in presentation code.
   scenario-management UI.
   Preserve preceding-alpha scenario values as deliberate overrides and advance the
   alpha version to `0.2.0a36`.
-- [ ] **NEXT — Layer scenarios on scenarios.** After Base inheritance is explicit, allow a
-  saved scenario to name Base or another saved scenario as its parent. Resolve a
-  deterministic parent chain followed by local overrides; reject cycles; define
-  reparenting and parent-deletion behavior; and preserve stable override identity so
-  parent changes flow through without overwriting a child's deliberate differences.
+- [x] **0201 — Layer scenarios on scenarios.** Allow a saved scenario to name Base or
+  another saved scenario as its assumption parent. Resolve the complete chain while
+  retaining the original source of every annual and account-specific value. Preserve
+  local override identity during reparenting, reject missing parents and cycles, and
+  refuse parent deletion until its children are reparented. Expose the relationship
+  through GTK, web, and CLI management. Dated periods and scenario events remain
+  deliberately local rather than using an undefined list-merge rule. Advance the
+  alpha version to `0.2.0a39`.
 - [ ] Add a custom per-schedule growth rate only if it can be explained cleanly within
   the scenario-assumption model.
 - [ ] Improve projection caching/reuse without storing stale calculated scenario

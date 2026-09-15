@@ -1934,6 +1934,42 @@ class TestScenarioManagementApi:
         assert projected["scenario"]["assumption_sources"]["income_growth"] == "Retire 2035"
         assert projected["scenario"]["assumption_sources"]["expense_inflation"] == "Base"
 
+    def test_saved_scenario_can_inherit_from_and_be_reparented_between_scenarios(self, client):
+        _status, parent = client.post("/api/scenario/duplicate", {"handle": None})
+        parent["name"] = "Earlier retirement"
+        parent["assumptions"]["income_growth"] = "0.01"
+        parent["assumption_overrides"] = ["income_growth"]
+        _status, parent = client.post("/api/scenario/save", parent)
+
+        _status, child = client.post("/api/scenario/duplicate", {"handle": None})
+        child["name"] = "Earlier retirement with lower returns"
+        child["parent_handle"] = parent["handle"]
+        child["assumptions"]["investment_return"] = "0.035"
+        child["assumption_overrides"] = ["investment_return"]
+        _status, child = client.post("/api/scenario/save", child)
+
+        assert child["parent_handle"] == parent["handle"]
+        assert child["assumptions"]["income_growth"] == "0.01"
+        assert child["assumption_sources"]["income_growth"] == "Earlier retirement"
+        assert (
+            child["assumption_sources"]["investment_return"]
+            == "Earlier retirement with lower returns"
+        )
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            parent["parent_handle"] = child["handle"]
+            client.post("/api/scenario/save", parent)
+        assert caught.value.code == 400
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/scenario/delete", {"handle": parent["handle"]})
+        assert caught.value.code == 400
+
+        child["parent_handle"] = None
+        _status, child = client.post("/api/scenario/save", child)
+        status, deleted = client.post("/api/scenario/delete", {"handle": parent["handle"]})
+        assert status == 200
+        assert deleted["deleted"] == parent["handle"]
+
     def test_dated_account_specific_projection_rates_can_be_saved(self, client):
         _status, listing = client.get("/api/scenarios")
         account = listing["projection_accounts"][0]
@@ -2023,6 +2059,8 @@ class TestScenarioManagementPage:
         page = body.decode()
         assert '"Manage scenarios…"' in page
         assert "async function showScenarios" in page
+        assert "Inherit assumptions from" in page
+        assert "Dated assumptions and scenario events remain local" in page
         assert "Add dated assumptions…" in page
         assert "Dated assumption periods belong to saved scenarios" in page
 

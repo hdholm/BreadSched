@@ -850,10 +850,15 @@ def cmd_scenario(args: argparse.Namespace) -> int:
         try:
             scenarios = list(db.iter_scenarios())
             effective = {s.handle: s.effective_assumptions() for s in scenarios}
+            names: dict[str | None, str] = {
+                None: "Base",
+                **{s.handle: s.name for s in scenarios},
+            }
             emit(
                 [
                     {
                         "name": s.name,
+                        "parent": names.get(s.parent_handle, "Base"),
                         "years": s.years,
                         "income_growth": effective[s.handle].income_growth,
                         "expense_inflation": effective[s.handle].expense_inflation,
@@ -867,6 +872,7 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                     [
                         [
                             s.name,
+                            names.get(s.parent_handle, "Base"),
                             str(s.years),
                             f"{effective[s.handle].income_growth:.1%}",
                             f"{effective[s.handle].expense_inflation:.1%}",
@@ -874,8 +880,8 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                         ]
                         for s in scenarios
                     ],
-                    ["name", "years", "income", "inflation", "return"],
-                    right={1, 2, 3, 4},
+                    ["name", "parent", "years", "income", "inflation", "return"],
+                    right={2, 3, 4, 5},
                 ),
             )
             return 0
@@ -914,6 +920,28 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                 {"name": scenario.name, "handle": scenario.handle},
                 args,
                 f"Saved scenario {scenario.name!r}",
+            )
+        elif args.action == "reparent":
+            reparented = db.get_scenario_by_name(args.name)
+            if reparented is None:
+                raise CommandError(f"no scenario named {args.name!r}")
+            parent_name = str(args.parent or "").strip()
+            if not parent_name or parent_name.casefold() == "base":
+                reparented.parent_handle = None
+                resolved_parent = "Base"
+            else:
+                parent = db.get_scenario_by_name(parent_name)
+                if parent is None:
+                    raise CommandError(f"no scenario named {parent_name!r}")
+                reparented.parent_handle = parent.handle
+                resolved_parent = parent.name
+            reparented.inherits_base_assumptions = True
+            with db.transaction(f"Reparent scenario {reparented.name}") as txn:
+                db.commit_scenario(reparented, txn)
+            emit(
+                {"name": reparented.name, "parent": resolved_parent},
+                args,
+                f"Scenario {reparented.name!r} now inherits from {resolved_parent!r}",
             )
         elif args.action == "delete":
             to_delete = db.get_scenario_by_name(args.name)
@@ -1781,9 +1809,10 @@ def build_parser() -> argparse.ArgumentParser:
     assumption_flags(project_cmd)
     project_cmd.set_defaults(func=cmd_project)
 
-    scenario = add("scenario", "Save, list or delete projection scenarios")
-    scenario.add_argument("action", choices=["list", "save", "delete"])
+    scenario = add("scenario", "Save, list, reparent or delete projection scenarios")
+    scenario.add_argument("action", choices=["list", "save", "reparent", "delete"])
     scenario.add_argument("--name")
+    scenario.add_argument("--parent", help="parent scenario name, or Base")
     scenario.add_argument("--years", type=int)
     scenario.add_argument("--start")
     assumption_flags(scenario)

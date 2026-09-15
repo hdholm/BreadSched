@@ -1757,24 +1757,77 @@ class DbSQLite(DbBase):
                 yield obj
 
     def add_scenario(self, scenario: Scenario, txn: DbTxn) -> str:
+        self._validate_scenario_parent(scenario)
         return self._write(scenario, txn, "scenario")
 
     def commit_scenario(self, scenario: Scenario, txn: DbTxn) -> None:
+        self._validate_scenario_parent(scenario)
         self._write(scenario, txn, "scenario")
 
     def remove_scenario(self, handle: str, txn: DbTxn) -> None:
+        children = [
+            child.name for child in self._iter_stored_scenarios() if child.parent_handle == handle
+        ]
+        if children:
+            names = ", ".join(sorted(children, key=str.casefold))
+            raise ValueError(f"reparent child scenario(s) before deleting: {names}")
         self._delete("scenario", handle, txn)
 
-    def _with_base_assumptions(self, scenario: Scenario) -> Scenario:
-        if scenario.inherits_base_assumptions:
+    def _stored_scenario(self, handle: str) -> Scenario | None:
+        data = self._read("scenario", handle)
+        return Scenario.from_dict(data) if data else None
+
+    def _iter_stored_scenarios(self) -> Iterator[Scenario]:
+        for row in self._require().execute("SELECT handle, blob FROM scenario ORDER BY name"):
+            obj = self._decode_row("scenario", row["handle"], row["blob"], Scenario)
+            if obj is not None:
+                yield obj
+
+    def _validate_scenario_parent(self, scenario: Scenario) -> None:
+        parent_handle = scenario.parent_handle
+        if parent_handle is None:
+            return
+        if not scenario.inherits_base_assumptions:
+            raise ValueError("a scenario parent requires assumption inheritance")
+        seen = {scenario.handle}
+        while parent_handle is not None:
+            if parent_handle in seen:
+                raise ValueError(f"scenario parent cycle involving {scenario.name!r}")
+            seen.add(parent_handle)
+            parent = self._stored_scenario(parent_handle)
+            if parent is None:
+                raise ValueError(f"scenario parent does not exist: {parent_handle}")
+            parent_handle = parent.parent_handle
+
+    def _with_parent_assumptions(
+        self, scenario: Scenario, resolving: tuple[str, ...] = ()
+    ) -> Scenario:
+        if not scenario.inherits_base_assumptions:
+            return scenario
+        if scenario.handle in resolving:
+            raise ValueError(f"scenario parent cycle involving {scenario.name!r}")
+        if scenario.parent_handle is None:
             stored = self.get_metadata("planning.base_assumptions", None)
             base = Assumptions.from_dict(stored) if isinstance(stored, dict) else Assumptions()
             scenario.attach_base_assumptions(base)
+            return scenario
+        parent = self._stored_scenario(scenario.parent_handle)
+        if parent is None:
+            raise ValueError(
+                f"scenario {scenario.name!r} has missing parent {scenario.parent_handle}"
+            )
+        parent = self._with_parent_assumptions(parent, (*resolving, scenario.handle))
+        scenario.attach_parent_assumptions(
+            parent.effective_assumptions(),
+            parent_name=parent.name,
+            assumption_sources=parent.assumption_sources(),
+            account_assumption_sources=parent.account_assumption_sources(),
+        )
         return scenario
 
     def get_scenario(self, handle: str) -> Scenario | None:
-        data = self._read("scenario", handle)
-        return self._with_base_assumptions(Scenario.from_dict(data)) if data else None
+        scenario = self._stored_scenario(handle)
+        return self._with_parent_assumptions(scenario) if scenario else None
 
     def get_scenario_by_name(self, name: str) -> Scenario | None:
         row = (
@@ -1783,16 +1836,14 @@ class DbSQLite(DbBase):
             .fetchone()
         )
         return (
-            self._with_base_assumptions(Scenario.from_dict(json.loads(row["blob"])))
+            self._with_parent_assumptions(Scenario.from_dict(json.loads(row["blob"])))
             if row
             else None
         )
 
     def iter_scenarios(self) -> Iterator[Scenario]:
-        for row in self._require().execute("SELECT handle, blob FROM scenario ORDER BY name"):
-            obj = self._decode_row("scenario", row["handle"], row["blob"], Scenario)
-            if obj is not None:
-                yield self._with_base_assumptions(obj)
+        for scenario in self._iter_stored_scenarios():
+            yield self._with_parent_assumptions(scenario)
 
     # --------------------------------------------------------------- FSA claims
 

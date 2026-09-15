@@ -2546,6 +2546,46 @@ class TestDerivedPlanView:
         assert reloaded.assumption_sources()["income_growth"] == "Inherited future"
         assert reloaded.effective_assumptions().income_growth == Decimal("0.0125")
 
+    def test_scenario_manager_reparents_without_offering_a_descendant(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.lib import Scenario
+        from breadsched.gui.dialogs.scenario_manager_dialog import (
+            ScenarioDeleteDialog,
+            ScenarioManagerDialog,
+        )
+        from breadsched.gui.planning_context import baseline_scenario
+
+        app.open_book(populated_book)
+        base = baseline_scenario(window, app.db)
+        parent = Scenario.derived_from_base(base.assumptions, name="A parent")
+        with app.db.transaction("Add parent") as txn:
+            app.db.add_scenario(parent, txn)
+        child = Scenario.derived_from_base(base.assumptions, name="B child")
+        with app.db.transaction("Add child") as txn:
+            app.db.add_scenario(child, txn)
+
+        dialog = ScenarioManagerDialog(window, app.db, window)
+        child_index = next(
+            index for index, item in enumerate(dialog._scenarios, 1) if item.handle == child.handle
+        )
+        dialog.picker.set_selected(child_index)
+        dialog.parent_picker.set_selected(dialog._parent_handles.index(parent.handle))
+        dialog._on_save(None)
+
+        reloaded = app.db.get_scenario(child.handle)
+        assert reloaded is not None
+        assert reloaded.parent_handle == parent.handle
+
+        parent_index = next(
+            index for index, item in enumerate(dialog._scenarios, 1) if item.handle == parent.handle
+        )
+        dialog.picker.set_selected(parent_index)
+        assert child.handle not in dialog._parent_handles
+        delete_dialog = ScenarioDeleteDialog(dialog, app.db, parent, lambda: None)
+        assert delete_dialog.children == ["B child"]
+        assert delete_dialog.delete_button.get_sensitive() is False
+
     def test_baseline_actions_stay_disabled_when_saved_scenarios_exist(
         self, app, window, populated_book
     ):
