@@ -241,3 +241,71 @@ def test_source_refresh_retains_only_breadsched_owned_schedule_state(db, gnucash
     assert refreshed.last_posted == date(2026, 1, 1)
     retained_expense = next(split for split in refreshed.splits if split.resolve() > 0)
     assert retained_expense.planning_flow is PlanningFlowKind.BENEFIT_FUNDING
+
+
+@pytest.mark.parametrize("source_kind", ["sqlite", "xml"])
+def test_imported_formula_edits_round_trip_and_source_refresh_respects_ownership(
+    db, tmp_path, gnucash_sqlite_path, source_kind
+):
+    if source_kind == "sqlite":
+        path = gnucash_sqlite_path.path
+        handle = gnucash_sqlite_path.ids.sched
+        with sqlite3.connect(path) as conn:
+            for split_guid, value in conn.execute(
+                "SELECT guid, value_num FROM splits WHERE account_guid=?",
+                (gnucash_sqlite_path.ids.template,),
+            ):
+                key = "debit-formula" if value > 0 else "credit-formula"
+                conn.execute(
+                    "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+                    (split_guid, f"sched-xaction/{key}", 4, "100 + period"),
+                )
+        importer = gnucash_sqlite.import_book
+    else:
+        source = create_xml_book(tmp_path / "formula-matrix.gnucash", compress=False)
+        path = source.path
+        handle = source.schedule
+        (tmp_path / "formula-matrix.gnucash").write_text(
+            source.body.replace(">1800.00<", ">100 + period<"),
+            encoding="utf-8",
+        )
+        importer = gnucash_xml.import_book
+
+    importer(db, path)
+    imported = db.get_scheduled(handle)
+    assert imported is not None
+    projection = schedule.schedule_edit_projection(db, imported)
+    assert projection.editability.mode is schedule.ScheduleEditorMode.FORMULA
+    assert set(projection.formula_split_indices) == {0, 1}
+
+    positive = next(
+        index
+        for index in projection.formula_split_indices
+        if imported.splits[index].resolve(imported.context(imported.recurrence.start)) > 0
+    )
+    formulas = {
+        index: "base + period" if index == positive else "-(base + period)"
+        for index in projection.formula_split_indices
+    }
+    edited = schedule.apply_formula_inputs(db, imported, formulas, {"base": "120"})
+    edited.skipped = [edited.recurrence.start]
+    with db.transaction("Edit imported formula inputs") as txn:
+        db.commit_scheduled(edited, txn)
+
+    restored = db.get_scheduled(handle)
+    assert restored is not None
+    assert [split.formula for split in restored.splits] == [
+        formulas[index] for index in range(len(restored.splits))
+    ]
+    assert restored.variables == {"base": "120"}
+    assert restored.skipped == [restored.recurrence.start]
+
+    importer(db, path)
+    refreshed = db.get_scheduled(handle)
+    assert refreshed is not None
+    assert {split.formula for split in refreshed.splits} == {
+        "100 + period",
+        "-(100 + period)",
+    }
+    assert refreshed.variables == {"base": "120"}
+    assert refreshed.skipped == [refreshed.recurrence.start]

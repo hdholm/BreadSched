@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0212 — shared schedule editability contract**.
+The current accepted baseline is **0213 — matrix-proven schedule editing**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,8 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-1. **NEXT — Matrix-proven schedule editing.** Widen GTK/web editing only for the
-   fixed and formula structures proven safe by the 0211 fidelity matrix; keep
-   unsupported and ambiguous source structures inspectable and read-only.
+No numbered implementation slice is currently selected. Choose the next focused
+slice from the unfinished work below before beginning implementation.
 
 ## Architecture and correctness
 

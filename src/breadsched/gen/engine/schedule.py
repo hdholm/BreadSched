@@ -15,6 +15,7 @@ from enum import Enum
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.base import create_handle
+from ..lib.formula import FormulaError, evaluate
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
@@ -25,8 +26,11 @@ __all__ = [
     "AccountPaymentDefinition",
     "AccountPaymentOccurrence",
     "ScheduleEditability",
+    "ScheduleEditProjection",
     "ScheduleEditorMode",
+    "ScheduleSplitProjection",
     "account_payment_definitions",
+    "apply_formula_inputs",
     "already_posted",
     "delete_definition",
     "due_occurrences",
@@ -38,6 +42,7 @@ __all__ = [
     "post_occurrences",
     "skip_occurrences",
     "schedule_editability",
+    "schedule_edit_projection",
     "upcoming_occurrences",
 ]
 
@@ -62,19 +67,53 @@ class ScheduleEditability:
         return self.mode is not ScheduleEditorMode.READ_ONLY
 
 
+@dataclass(frozen=True, slots=True)
+class ScheduleSplitProjection:
+    """One fixed editor row derived without presentation-specific guessing."""
+
+    index: int
+    account: str
+    amount: Money
+    ledger_direction: int
+    opposite_direction: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ScheduleEditProjection:
+    """The shared, lossless view of a definition exposed to schedule editors."""
+
+    editability: ScheduleEditability
+    primary: ScheduleSplitProjection | None = None
+    funding: ScheduleSplitProjection | None = None
+    additional: tuple[ScheduleSplitProjection, ...] = ()
+    formula_split_indices: tuple[int, ...] = ()
+
+
 def schedule_editability(
     db: DbSQLite,
     scheduled: ScheduledTransaction | None,
 ) -> ScheduleEditability:
     """Return the safe editor mode and an actionable reason when protected."""
+    return schedule_edit_projection(db, scheduled).editability
+
+
+def schedule_edit_projection(
+    db: DbSQLite,
+    scheduled: ScheduledTransaction | None,
+) -> ScheduleEditProjection:
+    """Return the one editor projection shared by GTK, web, API, and save guards."""
     protected = ScheduleEditorMode.READ_ONLY
+
+    def read_only(reason: str) -> ScheduleEditProjection:
+        return ScheduleEditProjection(ScheduleEditability(protected, reason))
+
     if scheduled is None:
-        return ScheduleEditability(protected, "No scheduled transaction is selected.")
-    if scheduled.unsupported_reason:
-        return ScheduleEditability(protected, scheduled.unsupported_reason)
-    if formula_problem := scheduled.formula_problem():
-        return ScheduleEditability(
-            protected,
+        return read_only("No scheduled transaction is selected.")
+    if unsupported_reason := getattr(scheduled, "unsupported_reason", ""):
+        return read_only(unsupported_reason)
+    formula_problem = scheduled.formula_problem() if hasattr(scheduled, "formula_problem") else None
+    if formula_problem:
+        return read_only(
             f"This imported formula cannot currently be evaluated ({formula_problem}). "
             "Its original text remains preserved.",
         )
@@ -87,33 +126,34 @@ def schedule_editability(
         PeriodType.ONCE,
     }
     if scheduled.recurrence.period not in supported_periods:
-        return ScheduleEditability(
-            protected,
+        return read_only(
             "This schedule uses a recurrence that the schedule editor cannot yet "
             "reproduce without changing its meaning.",
         )
-    if any(split.formula for split in scheduled.splits):
-        return ScheduleEditability(ScheduleEditorMode.FORMULA)
+    formula_indices = tuple(index for index, split in enumerate(scheduled.splits) if split.formula)
+    if formula_indices:
+        return ScheduleEditProjection(
+            ScheduleEditability(ScheduleEditorMode.FORMULA),
+            formula_split_indices=formula_indices,
+        )
     if len(scheduled.splits) < 2:
-        return ScheduleEditability(
-            protected,
+        return read_only(
             "This imported schedule does not have enough split information for "
             "the fixed schedule editor to reproduce it safely.",
         )
 
-    classes: list[AccountClass | None] = []
-    funding_candidates = 0
-    planning_flow_splits = 0
+    accounts: list[Account] = []
     for split in scheduled.splits:
         account = db.get_account(split.account)
-        account_class = account.account_class if account is not None else None
-        classes.append(account_class)
-        if split.planning_flow is not None:
-            planning_flow_splits += 1
-        if account_class not in {AccountClass.INCOME, AccountClass.EXPENSE} and (
-            split.planning_flow is None
-        ):
-            funding_candidates += 1
+        if account is None:
+            return read_only(
+                "This schedule references an account that is not available, so the "
+                "editor cannot reproduce its splits safely."
+            )
+        accounts.append(account)
+
+    classes = [account.account_class for account in accounts]
+    planning_flow_splits = sum(split.planning_flow is not None for split in scheduled.splits)
     has_income_expense = any(
         value in {AccountClass.INCOME, AccountClass.EXPENSE} for value in classes
     )
@@ -130,19 +170,123 @@ def schedule_editability(
                 len(positives) == 1 and bool(negatives) and sum(resolved, Money(0)) == Money(0)
             )
     if not has_income_expense and planning_flow_splits < 1 and not ordinary_balance_transfer:
-        return ScheduleEditability(
-            protected,
+        return read_only(
             "This schedule has neither an Income/Expense leg, an explicit "
             "planning-purpose leg, nor an unambiguous fixed balance-sheet "
             "transfer that the schedule editor can use as its primary amount.",
         )
-    if funding_candidates < 1:
-        return ScheduleEditability(
-            protected,
+
+    indexed = list(enumerate(zip(accounts, scheduled.splits, strict=True)))
+    investment = [item for item in indexed if item[1][1].investment_activity is not None]
+    primary = investment[0] if len(indexed) == 2 and investment else None
+    if primary is None:
+        primary = next(
+            (
+                item
+                for item in indexed
+                if item[1][0].account_class in {AccountClass.INCOME, AccountClass.EXPENSE}
+            ),
+            None,
+        )
+    if primary is None:
+        primary = next((item for item in indexed if item[1][1].planning_flow is not None), None)
+    if primary is None and investment:
+        primary = investment[0]
+    if primary is None and ordinary_balance_transfer:
+        primary = next(item for item in indexed if item[1][1].resolve(scheduled.variables) > 0)
+    if primary is None:
+        return read_only(
+            "This schedule has no unambiguous primary split that the fixed schedule "
+            "editor can preserve."
+        )
+
+    others = [item for item in indexed if item[0] != primary[0]]
+    funding_options = [
+        item
+        for item in others
+        if item[1][0].account_class not in {AccountClass.INCOME, AccountClass.EXPENSE}
+        and item[1][1].planning_flow is None
+    ]
+    abnormal_funding = [
+        item
+        for item in funding_options
+        if item[1][1].resolve(scheduled.variables) * item[1][0].sign() <= 0
+    ]
+    funding = (
+        abnormal_funding[0]
+        if len(abnormal_funding) == 1
+        else funding_options[-1]
+        if funding_options
+        else others[-1]
+        if others
+        else None
+    )
+    if funding is None:
+        return read_only(
             "This schedule has no ordinary funding split that the fixed schedule "
             "editor can preserve.",
         )
-    return ScheduleEditability(ScheduleEditorMode.FIXED)
+
+    def projected(item, *, additional: bool = False) -> ScheduleSplitProjection:
+        index, (account, split) = item
+        resolved = split.resolve(scheduled.variables)
+        if split.investment_activity is not None:
+            normal = abs(resolved)
+        elif split.planning_flow is not None:
+            normal = split.planning_flow.plan_amount(resolved)
+        else:
+            normal = resolved * account.sign()
+        return ScheduleSplitProjection(
+            index=index,
+            account=account.handle,
+            amount=abs(normal),
+            ledger_direction=1 if resolved >= 0 else -1,
+            opposite_direction=additional and normal < 0,
+        )
+
+    additional = tuple(projected(item, additional=True) for item in others if item[0] != funding[0])
+    return ScheduleEditProjection(
+        ScheduleEditability(ScheduleEditorMode.FIXED),
+        primary=projected(primary),
+        funding=projected(funding),
+        additional=additional,
+    )
+
+
+def apply_formula_inputs(
+    db: DbSQLite,
+    scheduled: ScheduledTransaction,
+    formulas: dict[int, str],
+    variables: dict[str, str],
+) -> ScheduledTransaction:
+    """Clone a formula definition and replace only its validated formula inputs."""
+    projection = schedule_edit_projection(db, scheduled)
+    if projection.editability.mode is not ScheduleEditorMode.FORMULA:
+        raise ValueError(
+            projection.editability.reason or "this schedule is not editable with the formula editor"
+        )
+    expected = set(projection.formula_split_indices)
+    if set(formulas) != expected:
+        raise ValueError("formula updates must include every formula split and no other fields")
+    checked_variables: dict[str, str] = {}
+    for name, value in variables.items():
+        if not name.isidentifier() or not isinstance(value, str) or not value.strip():
+            raise ValueError("formula variables must use identifier names and non-empty values")
+        try:
+            evaluate(value, {})
+        except (FormulaError, ValueError, ArithmeticError) as exc:
+            raise ValueError(f"formula variable {name!r} is invalid: {exc}") from exc
+        checked_variables[name] = value.strip()
+
+    candidate = ScheduledTransaction.from_dict(scheduled.serialize())
+    candidate.variables = checked_variables
+    for index, expression in formulas.items():
+        if not isinstance(expression, str) or not expression.strip():
+            raise ValueError("formula expressions cannot be blank")
+        candidate.splits[index].formula = expression.strip()
+    if problem := candidate.formula_problem():
+        raise ValueError(f"formula expressions or variables are invalid ({problem})")
+    return candidate
 
 
 @dataclass(slots=True)

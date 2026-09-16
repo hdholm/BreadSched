@@ -18,6 +18,7 @@ from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import investment
+from ...gen.engine import schedule as schedule_engine
 from ...gen.lib import (
     FormulaError,
     InvestmentActivityKind,
@@ -584,7 +585,7 @@ class ScheduleDialog(Gtk.Window):
         return None
 
     def _load_source(self, source: ScheduledTransaction) -> None:
-        """Populate the simple editor from an existing two-split schedule."""
+        """Populate the fixed editor from the engine-owned split projection."""
         self.name_entry.set_text(source.name)
         self.kind.set_selected(1 if source.placeholder else 0)
         self.growth_policy.set_selected(
@@ -594,70 +595,14 @@ class ScheduleDialog(Gtk.Window):
                 if policy is source.growth_policy
             )
         )
-        parts = []
-        for split in source.splits:
-            account = self.db.get_account(split.account)
-            if account is None or split.formula:
-                continue
-            parts.append((account, split))
-        investment_flows = [item for item in parts if item[1].investment_activity is not None]
-        flow = investment_flows[0] if len(parts) == 2 and investment_flows else None
-        if flow is None:
-            flow = next(
-                (item for item in parts if item[0].account_class.value in {"income", "expense"}),
-                None,
-            )
-        if flow is None:
-            planning_flows = [item for item in parts if item[1].planning_flow is not None]
-            if planning_flows:
-                flow = planning_flows[0]
-        if flow is None and investment_flows:
-            flow = investment_flows[0]
-        if flow is None:
-            ordinary_balance_splits = [
-                item
-                for item in parts
-                if item[0].account_class.value in {"asset", "liability"}
-                and item[1].planning_flow is None
-            ]
-            if len(ordinary_balance_splits) == len(parts):
-                positives = [
-                    item
-                    for item in ordinary_balance_splits
-                    if item[1].resolve(source.variables) > 0
-                ]
-                negatives = [
-                    item
-                    for item in ordinary_balance_splits
-                    if item[1].resolve(source.variables) < 0
-                ]
-                if len(positives) == 1 and negatives:
-                    flow = positives[0]
-                    self._category_ledger_direction = 1
-        if flow is not None:
-            flow_account, flow_split = flow
-            others = [item for item in parts if item is not flow]
-            funding_options = [
-                item
-                for item in others
-                if item[0].account_class.value not in {"income", "expense"}
-                and item[1].planning_flow is None
-            ]
-            abnormal_funding = [
-                item
-                for item in funding_options
-                if item[1].resolve(source.variables) * item[0].sign() <= 0
-            ]
-            funding_item = (
-                abnormal_funding[0]
-                if len(abnormal_funding) == 1
-                else funding_options[-1]
-                if funding_options
-                else others[-1]
-                if others
-                else None
-            )
-            if funding_item is not None:
+        projection = schedule_engine.schedule_edit_projection(self.db, source)
+        if projection.primary is not None and projection.funding is not None:
+            flow_split = source.splits[projection.primary.index]
+            funding_split = source.splits[projection.funding.index]
+            flow_account = self.db.get_account(flow_split.account)
+            funding_account = self.db.get_account(funding_split.account)
+            if flow_account is not None and funding_account is not None:
+                funding_item = (funding_account, funding_split)
                 category_index = next(
                     index
                     for index, account in enumerate(self._accounts)
@@ -701,13 +646,16 @@ class ScheduleDialog(Gtk.Window):
                         self._category_ledger_direction = 1 if resolved_flow >= 0 else -1
                 else:
                     amount = abs(resolved_flow * flow_account.sign())
+                    if flow_account.account_class.value not in {"income", "expense"}:
+                        self._category_ledger_direction = projection.primary.ledger_direction
                 self.amount_entry.set_text(str(amount.to_decimal()))
                 self.category_memo_entry.set_text(flow_split.memo or "")
                 self.funding_memo_entry.set_text(funding_item[1].memo or "")
                 extra_values = []
-                for account, split in others:
-                    if split is funding_item[1]:
-                        continue
+                for projected in projection.additional:
+                    split = source.splits[projected.index]
+                    account = self.db.get_account(split.account)
+                    assert account is not None
                     account_index = next(
                         index
                         for index, candidate in enumerate(self._accounts)
@@ -729,17 +677,12 @@ class ScheduleDialog(Gtk.Window):
                         ),
                         0,
                     )
-                    resolved = split.resolve(source.variables)
-                    normal_amount = (
-                        split.planning_flow.plan_amount(resolved)
-                        if split.planning_flow is not None
-                        else resolved * account.sign()
-                    )
-                    direction_index = 1 if split.planning_flow is None and normal_amount < 0 else 0
+                    normal_amount = projected.amount
+                    direction_index = 1 if projected.opposite_direction else 0
                     extra_values.append(
                         (
                             account_index,
-                            str(abs(normal_amount).to_decimal()),
+                            str(normal_amount.to_decimal()),
                             purpose_index,
                             activity_index,
                             split.memo or "",
@@ -988,7 +931,17 @@ class ScheduleDialog(Gtk.Window):
         assert recurrence is not None
         if self._formula_mode:
             assert self.source is not None
-            schedule = ScheduledTransaction.from_dict(self.source.serialize())
+            if self._formula_inputs_changed():
+                variables = self._formula_variables()
+                assert variables is not None
+                schedule = schedule_engine.apply_formula_inputs(
+                    self.db,
+                    self.source,
+                    {split_index: entry.get_text() for split_index, entry in self._formula_entries},
+                    variables,
+                )
+            else:
+                schedule = ScheduledTransaction.from_dict(self.source.serialize())
             old_name = schedule.name
             schedule.name = self.name_entry.get_text().strip()
             if schedule.description == old_name:
@@ -999,12 +952,6 @@ class ScheduleDialog(Gtk.Window):
             schedule.placeholder = self.kind.get_selected() == 1
             schedule.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
             schedule.skipped = self._skipped(recurrence) or []
-            if self._formula_inputs_changed():
-                variables = self._formula_variables()
-                assert variables is not None
-                schedule.variables = variables
-                for split_index, entry in self._formula_entries:
-                    schedule.splits[split_index].formula = entry.get_text().strip()
             return schedule
 
         amount = self._amount()

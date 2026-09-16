@@ -1234,9 +1234,13 @@ async function showScheduled() {
       s.account_linked ? el("button", {class:"action", type:"button", onclick:()=>{
         const account = state.accounts.find((item)=>item.handle === s.linked_account);
         if (account) openCardPaymentEditor(account, state.accounts);
-      }}, "Edit account…") : s.simple ? el("button", { class:"action", type:"button",
-        onclick:()=>openScheduledEditor(data, s) }, "Edit…")
-        : el("span", { class:"muted" }, "Complex (desktop view only)"),
+      }}, "Edit account…") : s.editor_mode === "fixed" && s.simple
+        ? el("button", { class:"action", type:"button",
+            onclick:()=>openScheduledEditor(data, s) }, "Edit…")
+        : s.editor_mode === "formula" && s.editable
+        ? el("button", { class:"action", type:"button",
+            onclick:()=>openFormulaScheduleEditor(s) }, "Edit formulas…")
+        : el("span", { class:"muted" }, "Read-only"),
       s.account_linked ? null : s.simple ? el("button", { class:"action", type:"button",
         onclick:()=>openScheduledEditor(data, {
           ...s, handle:null, name:`${s.name} copy`, skipped:[],
@@ -1266,7 +1270,11 @@ async function showScheduled() {
       if (source?.account_linked) {
         const account = state.accounts.find((item)=>item.handle === source.linked_account);
         if (account) openCardPaymentEditor(account, state.accounts);
-      } else if (source?.simple) openScheduledEditor(data, source);
+      } else if (source?.editor_mode === "fixed" && source?.simple) {
+        openScheduledEditor(data, source);
+      } else if (source?.editor_mode === "formula" && source?.editable) {
+        openFormulaScheduleEditor(source);
+      }
       else switchTo("Scheduled");
     },
   },
@@ -1295,7 +1303,7 @@ async function showScheduled() {
     el("p", { class: "note" },
       "Estimates shape Plan and Projection but are never posted. Account-linked card payments "
       + "show the current obligation and are edited on the account; they are not automatically posted. "
-      + "Complex/formula schedules remain read-only here."),
+      + "Safe fixed and formula schedules use the same editability decision as the desktop."),
     el("h3", {}, "Upcoming"),
     table(["Due", "Schedule", { label: "Amount", num: true }], upcoming),
     el("h3", {}, "Commitments and account payments"),
@@ -1516,8 +1524,96 @@ function openScheduledEditor(data, source) {
   });
   backdrop.append(el("section", { class:"detail-dialog" },
     el("div", { class:"detail-heading" }, el("h2", {}, source?.handle ? "Edit scheduled transaction" : "New scheduled transaction")),
-    el("p", { class:"note" }, "Fixed-split schedules are editable. Additional splits can represent payroll deductions, retirement/FSA funding, debt principal, and similar plan flows. Formula schedules remain read-only."), form));
+    el("p", { class:"note" }, "Fixed-split schedules are editable when their complete structure has a shared lossless projection. Additional splits can represent payroll deductions, retirement/FSA funding, debt principal, and similar plan flows."), form));
   document.body.append(backdrop);
+}
+
+function openFormulaScheduleEditor(source) {
+  const backdrop = el("div", { class:"detail-backdrop" });
+  const form = el("form", { class:"entry" });
+  const field = (label, control) => el("label", {}, label, control);
+  const select = (name, items, value) => el("select", { name }, items.map(([key, label]) =>
+    el("option", { value:key, selected:key === value ? "selected" : null }, label)));
+  const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
+    ["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],
+    ["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]],
+    source.frequency_key || "monthly");
+  const weekend = select("weekend", [["none","Leave on the day"],
+    ["previous","Friday before"],["next","Monday after"]], source.weekend || "none");
+  const skipped = occurrenceTimelineEditor("Skip occurrences", source.skipped || [], false, ()=>{});
+  const formulaInputs = (source.formula_splits || []).map((item) => ({
+    item,
+    input:el("input", {value:item.formula, required:"required", spellcheck:"false"}),
+  }));
+  const variableText = Object.entries(source.variables || {}).sort(([a],[b])=>a.localeCompare(b))
+    .map(([name,value])=>`${name}=${value}`).join("; ");
+  form.append(
+    field("Name", el("input", {name:"name", value:source.name, required:"required"})),
+    field("Status", select("enabled", [["true","Active"],["false","Inactive"]],
+      source.enabled === false ? "false" : "true")),
+    field("Kind", select("kind", [["commitment","Commitment"],["estimate","Estimate"]],
+      source.placeholder ? "estimate" : "commitment")),
+    field("Projection growth", select("growth_policy", [
+      ["auto","Automatic from schedule contents"],["none","No growth - fixed nominal amount"],
+      ["income","Income growth"],["inflation","Expense inflation"]], source.growth_policy || "auto")),
+    ...formulaInputs.map(({item,input})=>field(`Formula — ${item.account_name}`, input)),
+    field("Variables (name=value; …)", el("input", {name:"variables", value:variableText,
+      placeholder:"principal=200000; rate=0.05", spellcheck:"false"})),
+    skipped.node,
+    field("Frequency", frequency),
+    field("First due", el("input", {name:"start", type:"date", value:source.start,
+      required:"required"})),
+    field("End date", el("input", {name:"end", type:"date", value:source.end || ""})),
+    field("Occurrences", el("input", {name:"count", type:"number", min:"1",
+      value:source.count || ""})),
+    field("Weekend", weekend),
+    field("Posting", select("posting", [["manual","Manual"],["automatic","Automatic"]],
+      source.auto ? "automatic" : "manual")));
+  const refreshOccurrences = async () => {
+    const values = Object.fromEntries(new FormData(form).entries());
+    if (!values.start) return;
+    try {
+      const result = await post("/api/scheduled/occurrences", {
+        frequency:values.frequency, start:values.start, end:values.end || null,
+        count:values.count || null, weekend:values.weekend,
+      });
+      skipped.setOptions(result.occurrences);
+    } catch (_error) { skipped.setOptions([]); }
+  };
+  [frequency, form.elements.start, form.elements.end, form.elements.count, weekend]
+    .forEach((control)=>control.addEventListener("change", refreshOccurrences));
+  form.elements.start.addEventListener("input", refreshOccurrences);
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const values = Object.fromEntries(new FormData(form).entries());
+    const variables = {};
+    try {
+      for (const part of String(values.variables || "").split(";")) {
+        if (!part.trim()) continue;
+        const split = part.indexOf("=");
+        if (split < 1) throw new Error("Formula variables must use name=value entries.");
+        variables[part.slice(0, split).trim()] = part.slice(split + 1).trim();
+      }
+      await post("/api/scheduled/formula-save", {
+        handle:source.handle, name:values.name, enabled:values.enabled === "true",
+        placeholder:values.kind === "estimate", growth_policy:values.growth_policy,
+        formulas:formulaInputs.map(({item,input})=>({index:item.index, formula:input.value})),
+        variables, skipped:skipped.values(), frequency:values.frequency, start:values.start,
+        end:values.end || null, count:values.count || null, weekend:values.weekend,
+        auto:values.posting === "automatic" && values.kind !== "estimate",
+      });
+      backdrop.remove(); say("Formula schedule updated."); render();
+    } catch (error) { say(error.message, "error"); }
+  });
+  form.append(el("div", {class:"toolbar"},
+    el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()}, "Cancel"),
+    el("button", {class:"action primary", type:"submit"}, "Save")));
+  backdrop.append(el("section", {class:"detail-dialog wide"},
+    el("div", {class:"detail-heading"}, el("h2", {}, "Edit formula schedule")),
+    el("p", {class:"note"}, "Formula expressions, variables, recurrence, and metadata are editable. Split accounts and formula-owned amount timelines remain protected."),
+    form));
+  document.body.append(backdrop);
+  refreshOccurrences();
 }
 
 async function showPlan() {

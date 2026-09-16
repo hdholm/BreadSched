@@ -26,7 +26,10 @@ from breadsched.gen.lib import (
     InvestmentActivityKind,
     Money,
     PeriodType,
+    PlanningFlowKind,
     Recurrence,
+    ScheduledAmountChange,
+    ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledTransaction,
     Split,
@@ -900,6 +903,139 @@ class TestItServes:
         ]
         assert duplicate.last_posted is None
         assert duplicate.skipped == []
+
+    def test_web_fixed_editor_uses_shared_planning_and_balance_sheet_projection(self, client):
+        _status, data = client.get("/api/scheduled")
+        bank = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        reserve = next(a for a in data["accounts"] if a["name"].endswith(":401(k)"))
+        planning = ScheduledTransaction(
+            name="Benefit funding",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 3, 1)),
+            splits=[
+                ScheduledSplit(
+                    reserve["handle"],
+                    "125",
+                    memo="benefit",
+                    planning_flow=PlanningFlowKind.BENEFIT_FUNDING,
+                ),
+                ScheduledSplit(bank["handle"], "-125", memo="cash"),
+            ],
+        )
+        transfer = ScheduledTransaction(
+            name="Reserve transfer",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 4, 1)),
+            splits=[
+                ScheduledSplit(bank["handle"], "-90", memo="source"),
+                ScheduledSplit(reserve["handle"], "90", memo="destination"),
+            ],
+        )
+        with client.database.transaction("Add shared projection fixtures") as txn:
+            client.database.add_scheduled(planning, txn)
+            client.database.add_scheduled(transfer, txn)
+
+        _status, refreshed = client.get("/api/scheduled")
+        planning_row = next(
+            row for row in refreshed["definitions"] if row["handle"] == planning.handle
+        )
+        transfer_row = next(
+            row for row in refreshed["definitions"] if row["handle"] == transfer.handle
+        )
+        assert planning_row["simple"] is True
+        assert planning_row["category"] == reserve["handle"]
+        assert transfer_row["simple"] is True
+        assert transfer_row["category"] == reserve["handle"]
+
+        for row, amount in ((planning_row, "140"), (transfer_row, "95")):
+            status, _saved = client.post(
+                "/api/scheduled/save",
+                {
+                    "handle": row["handle"],
+                    "name": row["name"],
+                    "category": row["category"],
+                    "funding": row["funding"],
+                    "amount": amount,
+                    "frequency": row["frequency_key"],
+                    "start": row["start"],
+                    "weekend": row["weekend"],
+                },
+            )
+            assert status == 200
+
+        restored_planning = client.database.get_scheduled(planning.handle)
+        restored_transfer = client.database.get_scheduled(transfer.handle)
+        assert restored_planning is not None and restored_transfer is not None
+        assert restored_planning.splits[0].planning_flow is PlanningFlowKind.BENEFIT_FUNDING
+        assert [split.amount for split in restored_planning.splits] == [Money("140"), Money("-140")]
+        assert [split.amount for split in restored_transfer.splits] == [Money("95"), Money("-95")]
+
+    def test_web_formula_editor_validates_inputs_and_protects_owned_fields(self, client):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        source = ScheduledTransaction(
+            name="Formula fixture",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 15)),
+            splits=[
+                ScheduledSplit(category["handle"], formula="base"),
+                ScheduledSplit(funding["handle"], formula="-base"),
+            ],
+            amount_changes=[ScheduledAmountChange(date(2026, 7, 15), "300")],
+            occurrence_adjustments=[ScheduledOccurrenceAdjustment(date(2026, 5, 15), "275")],
+        )
+        source.variables = {"base": "250"}
+        with client.database.transaction("Add formula fixture") as txn:
+            client.database.add_scheduled(source, txn)
+
+        _status, definitions = client.get("/api/scheduled")
+        row = next(item for item in definitions["definitions"] if item["handle"] == source.handle)
+        assert row["editor_mode"] == "formula"
+        assert [item["index"] for item in row["formula_splits"]] == [0, 1]
+
+        status, _saved = client.post(
+            "/api/scheduled/formula-save",
+            {
+                "handle": source.handle,
+                "name": "Formula fixture updated",
+                "formulas": [
+                    {"index": 0, "formula": "base * factor"},
+                    {"index": 1, "formula": "-(base * factor)"},
+                ],
+                "variables": {"base": "120", "factor": "2"},
+                "frequency": "monthly",
+                "start": "2026-02-15",
+                "weekend": "none",
+                "splits": [{"account": "crafted", "amount": "999"}],
+                "amount_changes": [],
+                "occurrence_adjustments": [],
+            },
+        )
+        assert status == 200
+        restored = client.database.get_scheduled(source.handle)
+        assert restored is not None
+        assert restored.name == "Formula fixture updated"
+        assert restored.recurrence.start == date(2026, 2, 15)
+        assert [split.account for split in restored.splits] == [
+            category["handle"],
+            funding["handle"],
+        ]
+        assert restored.variables == {"base": "120", "factor": "2"}
+        assert restored.amount_changes[0].amount == Money("300")
+        assert restored.occurrence_adjustments[0].amount == Money("275")
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scheduled/formula-save",
+                {
+                    "handle": source.handle,
+                    "name": restored.name,
+                    "formulas": [{"index": 0, "formula": "unknown + 1"}],
+                    "variables": {},
+                    "frequency": "monthly",
+                    "start": "2026-02-15",
+                    "weekend": "none",
+                },
+            )
+        assert caught.value.code == 400
 
     def test_a_projection_is_computed(self, client):
         _status, payload = client.get("/api/projection?years=3")
