@@ -668,20 +668,44 @@ def _calendar_month_interval(dates: list[date]) -> int | None:
     return interval if supporting * 4 >= len(positive) * 3 else None
 
 
+def _next_weekly_start(dates: list[date], interval: int, floor: date) -> date:
+    """Keep a category's observed weekday and, for fortnightly data, its phase."""
+    if interval == 2:
+        candidate = dates[-1]
+        while candidate < floor:
+            candidate += timedelta(weeks=2)
+        return candidate
+    weekday = Counter(item.weekday() for item in dates).most_common(1)[0][0]
+    return floor + timedelta(days=(weekday - floor.weekday()) % 7)
+
+
+def _monthly_category_start(dates: list[date], floor: date) -> date:
+    """Use a stable once-per-month posting day; otherwise keep the neutral first."""
+    by_month: Counter[tuple[int, int]] = Counter((item.year, item.month) for item in dates)
+    if len(by_month) < 3 or any(count != 1 for count in by_month.values()):
+        return floor
+    typical_day = int(median(item.day for item in dates))
+    if sum(abs(item.day - typical_day) <= 3 for item in dates) * 4 < len(dates) * 3:
+        return floor
+    return date(floor.year, floor.month, min(typical_day, monthrange(floor.year, floor.month)[1]))
+
+
 def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None, str, Decimal]:
     if len(dates) < 2:
         return Recurrence(PeriodType.ONCE, start=start), "once (single observation)", Decimal("1")
     gaps = [(later - earlier).days for earlier, later in zip(dates[:-1], dates[1:], strict=True)]
     typical_gap = float(median(gaps))
-    if 5 <= typical_gap <= 9:
+    weekly_support = sum(5 <= gap <= 9 for gap in gaps)
+    if len(dates) >= 4 and 5 <= typical_gap <= 9 and weekly_support * 4 >= len(gaps) * 3:
         return (
-            Recurrence(PeriodType.WEEK, start=start),
+            Recurrence(PeriodType.WEEK, start=_next_weekly_start(dates, 1, start)),
             "weekly",
             Decimal(52) / Decimal(12),
         )
-    if 11 <= typical_gap <= 17:
+    fortnightly_support = sum(11 <= gap <= 17 for gap in gaps)
+    if len(dates) >= 4 and 11 <= typical_gap <= 17 and fortnightly_support * 4 >= len(gaps) * 3:
         return (
-            Recurrence(PeriodType.WEEK, interval=2, start=start),
+            Recurrence(PeriodType.WEEK, interval=2, start=_next_weekly_start(dates, 2, start)),
             "fortnightly",
             Decimal(26) / Decimal(12),
         )
@@ -708,11 +732,18 @@ def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None
             f"every {month_interval} months",
             Decimal("1"),
         )
-    return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
+    return (
+        Recurrence(PeriodType.MONTH, start=_monthly_category_start(dates, start)),
+        "monthly",
+        Decimal("1"),
+    )
 
 
 def _cadence_evidence(
-    dates: list[date], label: str, occurrences_per_month: Decimal
+    dates: list[date],
+    label: str,
+    occurrences_per_month: Decimal,
+    recurrence: Recurrence,
 ) -> EstimateCadenceEvidence:
     gaps = [(later - earlier).days for earlier, later in zip(dates[:-1], dates[1:], strict=True)]
     typical_gap = float(median(gaps)) if gaps else None
@@ -728,10 +759,22 @@ def _cadence_evidence(
     elif label == "annual" or label.endswith(" years"):
         explanation = f"{label} from the typical {typical_gap:g}-day gap."
     else:
-        explanation = (
-            f"monthly fallback because {len(dates)} observed date(s) did not form a "
-            "stable weekly, multi-month, or annual cadence."
-        )
+        if len(dates) < 4 and typical_gap is not None and 5 <= typical_gap <= 17:
+            explanation = (
+                f"monthly fallback: {len(dates)} date(s) are too sparse to prove a "
+                "weekly or fortnightly cadence; at least 4 are required."
+            )
+        elif recurrence.start.day != 1:
+            explanation = (
+                f"monthly with a category-specific day-{recurrence.start.day} anchor, "
+                f"supported by {len(dates)} stable once-per-month dates."
+            )
+        else:
+            explanation = (
+                f"monthly fallback because {len(dates)} observed date(s) did not form a "
+                "stable weekly, multi-month, or annual cadence."
+            )
+    explanation = explanation.rstrip(".") + f" First proposed occurrence: {recurrence.start}."
     return EstimateCadenceEvidence(
         label,
         tuple(dates),
@@ -800,22 +843,49 @@ def _trend_summary(values: list[Money]) -> tuple[list[Money], EstimateTrendEvide
     return recent, EstimateTrendEvidence(direction, percent, len(recent), explanation)
 
 
-def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> bool:
+def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> tuple[bool, str]:
     """Detect a repeated month-of-year pattern without overfitting one year."""
-    medians = [
-        _typical_amount(values)
-        for values in monthly_by_month.values()
+    repeated = {
+        month: values
+        for month, values in monthly_by_month.items()
         if len(values) >= 2 and any(values)
-    ]
-    if len(medians) < 4:
-        return False
+    }
+    medians = [_typical_amount(values) for values in repeated.values()]
+    if len(medians) < 6:
+        return (
+            False,
+            f"Only {len(medians)} calendar month(s) repeat across years; at least 6 "
+            "are required before applying a seasonal profile.",
+        )
     magnitudes = [abs(value.to_decimal()) for value in medians if value]
-    if len(magnitudes) < 4:
-        return False
+    if len(magnitudes) < 6:
+        return False, "Too few non-zero repeated calendar months support seasonality."
     middle = median(magnitudes)
     if not middle:
-        return False
-    return max(magnitudes) >= middle * Decimal("1.35")
+        return False, "Repeated calendar-month amounts have no non-zero seasonal baseline."
+    stable_months = 0
+    for values in repeated.values():
+        center = abs(_typical_amount(values).to_decimal())
+        deviations = [abs(abs(value.to_decimal()) - center) for value in values]
+        relative = median(deviations) / center if center else Decimal(0)
+        stable_months += relative <= Decimal("0.25")
+    if stable_months * 4 < len(repeated) * 3:
+        return (
+            False,
+            f"Only {stable_months}/{len(repeated)} repeated calendar months are stable; "
+            "the apparent pattern is treated as noise.",
+        )
+    ratio = max(magnitudes) / middle
+    if ratio < Decimal("1.35"):
+        return (
+            False,
+            f"Repeated month medians vary by only {ratio:.2f}×; 1.35× is required.",
+        )
+    return (
+        True,
+        f"{len(repeated)} repeated calendar months are stable and peak at "
+        f"{ratio:.2f}× the median month.",
+    )
 
 
 def _seasonal_amounts(
@@ -965,7 +1035,9 @@ def _propose_classified_flows(
             retained_months=len(robust),
             variability=variability_value,
         )
-        cadence_evidence = _cadence_evidence(observed_dates, cadence, occurrences_per_month)
+        cadence_evidence = _cadence_evidence(
+            observed_dates, cadence, occurrences_per_month, recurrence
+        )
         seasonality_evidence = EstimateSeasonalityEvidence(
             False,
             variability,
@@ -1121,7 +1193,7 @@ def propose_historical_estimates(
         if funding_account is None:
             continue
 
-        seasonal = _has_seasonality(monthly_by_month)
+        seasonal, seasonality_explanation = _has_seasonality(monthly_by_month)
         if seasonal:
             # Repeated winter/summer peaks are signal, not global outliers. The
             # month-specific profile below preserves them explicitly.
@@ -1184,16 +1256,18 @@ def propose_historical_estimates(
         )
         scheduled_total = applied_scheduled_total
         gross_median = _typical_amount(gross_monthly)
-        cadence_evidence = _cadence_evidence(observed_dates, cadence, occurrences_per_month)
+        cadence_evidence = _cadence_evidence(
+            observed_dates, cadence, occurrences_per_month, recurrence
+        )
         seasonality_evidence = EstimateSeasonalityEvidence(
             seasonal,
             variability,
             seasonal_amounts,
             (
-                f"Repeated calendar-month variation detected; {len(seasonal_amounts)} "
+                f"{seasonality_explanation} {len(seasonal_amounts)} "
                 "month-specific amount(s) will be retained."
                 if seasonal
-                else f"No repeated calendar-month pattern detected; amounts are {variability}."
+                else f"{seasonality_explanation} Amounts are {variability}."
             ),
         )
         evidence = EstimateEvidence(

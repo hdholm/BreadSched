@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0219 — Category-specific inference.** Require supported category history
+  before inferring weekly, fortnightly, or seasonal behavior; preserve stable
+  category posting-day/weekday anchors; and explain sparse or noisy evidence that
+  is deliberately rejected. Add sparse-history, false-positive, and accepted
+  seasonal-estimate convergence regressions. Advance the alpha version to
+  `0.2.0a55`.
+
 - [x] **0218 — Interactive estimate adjustment.** Build GTK and web historical
   review drafts through the same engine service, then allow amount, cadence, first
   date, seasonal month amounts, and category planning classification to be changed

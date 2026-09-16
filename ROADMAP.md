@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0218 — interactive estimate adjustment**.
+The current accepted baseline is **0219 — category-specific inference**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,8 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next focused slice is **0219 — category-specific inference**: refine seasonality
-and cadence only where structured explanations expose false positives, with
-convergence and sparse-history regressions.
+The next focused slice is **commodity precision**: remove assumptions that every
+account and commodity uses cents before expanding valuation and multi-currency work.
 
 ## Architecture and correctness
 
@@ -44,10 +43,6 @@ convergence and sparse-history regressions.
 
 - [ ] Improve register appearance and information density while keeping account-type
   debit/credit terminology clear.
-
-## Historical estimator
-
-- [ ] Refine category-specific seasonality/cadence inference.
 
 ## Plan and planning-flow reporting
 

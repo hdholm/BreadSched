@@ -180,7 +180,12 @@ alone. GTK presents those same named evidence sections; web review can expand th
 complete per-month gross, planned, residual, and inclusion decisions, and
 `breadsched estimate BOOK suggest --json` exposes the identical structured model
 for scripts. Funding inference lists every observed counterpart and its count rather
-than presenting the selected account as an unexplained guess. Analysis interprets
+than presenting the selected account as an unexplained guess. Weekly and fortnightly
+cadences require at least four supporting dates and retain the category's observed
+weekday; stable once-per-month history retains its posting-day anchor. Seasonal
+profiles require at least six repeated, internally stable calendar months. Sparse or
+noisy apparent patterns fall back conservatively, with the rejected evidence and the
+first proposed occurrence stated explicitly. Analysis interprets
 the complete transaction before extracting ordinary
 categories: reinvested dividends and interest, investment fees, and rollovers do
 not become recurring household income or expense suggestions. In multi-split loan,
