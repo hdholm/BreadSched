@@ -502,3 +502,16 @@ class TestPackagedResources:
         source = (SRC / "gui" / "app.py").read_text(encoding="utf-8")
         assert 'joinpath("resources/style.css")' in source
         assert 'STYLE = """' not in source
+
+    def test_all_web_assets_are_declared_as_package_data(self):
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib
+
+        root = Path(__file__).resolve().parent.parent
+        config = tomllib.loads((root / "pyproject.toml").read_text())
+        declared = config["tool"]["setuptools"]["package-data"]["breadsched"]
+        assert "web/static/*.html" in declared
+        assert "web/static/*.css" in declared
+        assert "web/static/*.js" in declared

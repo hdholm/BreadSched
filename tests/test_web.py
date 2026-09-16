@@ -200,30 +200,55 @@ class TestItServes:
         assert status == 200
         assert headers.get("Content-Type", "").startswith("text/html")
         assert b"<html" in body.lower()
+        policy = headers["Content-Security-Policy"]
+        assert "default-src 'none'" in policy
+        assert "script-src 'self'" in policy
+        assert "style-src 'self'" in policy
+        assert "frame-ancestors 'none'" in policy
+        assert "'unsafe-inline'" not in policy
 
     def test_the_current_view_has_a_printable_browser_presentation(self, client):
         _status, body, _headers = client.raw("/")
         page = body.decode("utf-8")
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode("utf-8")
+        _status, body, _headers = client.raw("/style.css")
+        style = body.decode("utf-8")
 
         assert 'id="print-view"' in page
-        assert 'onclick="window.print()"' in page
-        assert "@media print" in page
-        assert "document.body.dataset.view = current" in page
-        assert 'document.getElementById("print-title").textContent = current' in page
-        assert ".plan-table { max-height: none; }" in page
-        assert "Include category detail when printing" in page
-        assert "body.include-plan-detail .plan-detail" in page
-        assert "header { display: none !important; }" in page
-        assert ".plan-table thead th { position: static; }" in page
+        assert 'src="/app.js"' in page
+        assert 'href="/style.css"' in page
+        assert "window.print()" in script
+        assert "@media print" in style
+        assert "document.body.dataset.view = current" in script
+        assert 'document.getElementById("print-title").textContent = current' in script
+        assert ".plan-table { max-height: none; }" in style
+        assert "Include category detail when printing" in script
+        assert "body.include-plan-detail .plan-detail" in style
+        assert "header { display: none !important; }" in style
+        assert ".plan-table thead th { position: static; }" in style
+
+    def test_static_assets_need_no_inline_code_or_html_svg_interpolation(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode("utf-8")
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode("utf-8")
+
+        assert "<style" not in page
+        assert "<script>" not in page
+        assert "onclick=" not in page
+        assert "style=" not in page
+        assert "innerHTML" not in script
+        assert 'createElementNS("http://www.w3.org/2000/svg"' in script
 
     def test_accounts_offer_read_only_imported_metadata_details(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode("utf-8")
         assert "openAccountDetails" in page
         assert "Read-only GnuCash provenance" in page
 
     def test_schedule_occurrence_controls_are_structured(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         text = body.decode("utf-8")
         assert "timelineEditor" in text
         assert "occurrenceTimelineEditor" in text
@@ -1583,19 +1608,21 @@ class TestPlanApi:
         assert caught.value.code == 400
 
     def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert '"Scheduled", "Plan", "Review", "Projection"' in page
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
     def test_plan_values_are_keyboard_accessible_buttons(self, client):
-        _status, body, _headers = client.raw("/")
-        page = body.decode()
-        assert 'class: "plan-cell-button"' in page
-        assert 'type: "button"' in page
-        assert '"aria-label": `Explain ${category.full_name}' in page
-        assert ".plan-cell-button:focus-visible" in page
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode()
+        _status, body, _headers = client.raw("/style.css")
+        style = body.decode()
+        assert 'class: "plan-cell-button"' in script
+        assert 'type: "button"' in script
+        assert '"aria-label": `Explain ${category.full_name}' in script
+        assert ".plan-cell-button:focus-visible" in style
 
 
 class TestThreadSafety:
@@ -2112,7 +2139,7 @@ class TestDashboardApi:
         assert changed["emergency_fund_included"] is False
 
     def test_the_page_opens_on_the_dashboard(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert ': "Dashboard"' in page
         assert 'launchParams.get("view")' in page
@@ -2193,7 +2220,7 @@ class TestReviewApi:
         assert review["actuals"] == []
 
     def test_page_exposes_review_between_plan_and_projection(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert '"Plan", "Review", "Projection"' in page
         assert "async function showReview" in page
@@ -2411,7 +2438,7 @@ class TestScenarioManagementApi:
 
 class TestScenarioManagementPage:
     def test_plan_links_to_scenario_management(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert '"Manage scenarios…"' in page
         assert "async function showScenarios" in page
@@ -2731,16 +2758,18 @@ class TestScenarioEventWebParity:
         assert suppressed["changes"][0]["source_schedule"] == source["handle"]
 
     def test_page_has_sticky_plan_context_and_dashboard_group_cards(self, client):
-        _status, body, _headers = client.raw("/")
-        page = body.decode()
-        assert ".plan-table th:first-child, .plan-table td:first-child" in page
-        assert "max-height: calc(100vh - 310px)" in page
-        assert 'class:"balance-groups"' in page
-        assert '"Add estimate…"' in page
-        assert '"Alter baseline…"' in page
-        assert '"Suppress baseline…"' in page
-        assert '"Review…"' in page
-        assert "historicalEstimateDialog" in page
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode()
+        _status, body, _headers = client.raw("/style.css")
+        style = body.decode()
+        assert ".plan-table th:first-child, .plan-table td:first-child" in style
+        assert "max-height: calc(100vh - 310px)" in style
+        assert 'class:"balance-groups"' in script
+        assert '"Add estimate…"' in script
+        assert '"Alter baseline…"' in script
+        assert '"Suppress baseline…"' in script
+        assert '"Review…"' in script
+        assert "historicalEstimateDialog" in script
 
 
 def test_historical_estimate_proposals_and_acceptance(client):

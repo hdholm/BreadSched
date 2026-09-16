@@ -50,7 +50,23 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline'")
+        self.send_header(
+            "Content-Security-Policy",
+            "; ".join(
+                (
+                    "default-src 'none'",
+                    "script-src 'self'",
+                    "style-src 'self'",
+                    "connect-src 'self'",
+                    "img-src 'self' data:",
+                    "font-src 'self'",
+                    "base-uri 'none'",
+                    "form-action 'self'",
+                    "frame-ancestors 'none'",
+                    "object-src 'none'",
+                )
+            ),
+        )
         self.end_headers()
         self.wfile.write(body)
 

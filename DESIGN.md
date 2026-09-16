@@ -67,7 +67,10 @@ authentication, framing, body limits, status mapping, and static delivery. The
 transport never returns unexpected exception text: it logs the exception with a
 correlation identifier and returns only that identifier with a stable error code.
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
-not accept transfer encodings.
+not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,
+all events are registered from JavaScript, and charts construct SVG through namespaced
+DOM nodes rather than interpolating markup. This permits a directive-specific Content
+Security Policy with no inline-script or inline-style exception.
 
 ## Persistence verification
 
