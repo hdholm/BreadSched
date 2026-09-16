@@ -49,7 +49,7 @@ where = ["src"]
 version = {attr = "breadsched.__version__"}
 
 [tool.setuptools.package-data]
-breadsched = ["gui/resources/*.css", "plugins/**/*.gpr.py", "web/static/*.html"]
+breadsched = ["gui/resources/*.css", "web/static/*.html"]
 
 [tool.pytest.ini_options]
 minversion = "7.0"

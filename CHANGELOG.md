@@ -5,6 +5,22 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0220 — Architecture and contribution-policy review.** Reconcile the
+  architecture, persistence, migration, money/rate, formula, web-security,
+  concurrency, packaging, documentation, testing, and governance review against the
+  live tree and convert each accepted, narrowed, staged, or rejected recommendation
+  into ordered roadmap acceptance criteria. Make the shared-service extraction an
+  architecture gate before new financial features. Distinguish the application
+  version used for bug/release identity from the native data-format version used for
+  migration, and commit to retaining two predecessor formats when the next real
+  schema change occurs. Remove the dead `.gpr.py` package-data pattern rather than
+  implying support for runtime-scanned plugins. Require author DCO sign-offs and
+  `Assisted-by:` disclosure for material AI assistance, normalize the maintainer's
+  historical/GitHub author alias to the canonical DCO identity with `.mailmap`, and
+  enforce that canonical identity through trusted-base pull-request CI and a review
+  checklist. No application version change because this milestone changes project
+  policy and repository/packaging metadata, not runtime behavior.
+
 - [x] **0219 — Category-specific inference.** Require supported category history
   before inferring weekly, fortnightly, or seasonal behavior; preserve stable
   category posting-day/weekday anchors; and explain sparse or noisy evidence that
