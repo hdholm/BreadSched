@@ -259,6 +259,14 @@ cleared completed/skipped-occurrence state; this does not claim the copied sourc
 structure has become executable. Editing/translation is enabled only after the
 current recurrence and bounded formula engines can validate the result.
 
+Editable schedule presentation is an engine-owned projection, not a UI heuristic.
+The projection names the primary, funding, and additional fixed splits together
+with their ledger directions, or the exact formula split indices whose expressions
+may change. GTK and web consume that projection. Formula saves clone the complete
+definition and replace only validated expressions, named variables, recurrence,
+and ordinary metadata; split accounts and formula-owned amount timelines are never
+accepted from the request payload.
+
 Import acceptance for a GnuCash formula is defined by the same bounded AST evaluator
 that executes it, not by a second character whitelist. Safe arithmetic, supported
 financial functions, and the occurrence variables `period`/`i` therefore behave the

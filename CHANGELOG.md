@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0213 — Matrix-proven schedule editing.** Give GTK and web one shared
+  editable projection for primary, funding, and additional fixed splits, including
+  planning-only and unambiguous balance-sheet transfers. Add web formula editing
+  for validated expressions, named variables, recurrence, and metadata while
+  protecting formula-owned accounts and amount timelines. Cover native fixed
+  parity, crafted formula payloads, and GnuCash SQLite/XML save, reload, and source
+  refresh ownership. Advance the alpha version to `0.2.0a49`.
+
 - [x] **0212 — Shared schedule editability contract.** Centralize the fixed,
   formula, and read-only decision with one actionable reason in the schedule
   engine. Use that result in GTK selection/edit flows, web/API definition payloads,

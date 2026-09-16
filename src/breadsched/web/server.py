@@ -998,9 +998,10 @@ class Api:
         definitions = []
         saved_schedules = list(self.db.iter_scheduled())
         for item in saved_schedules:
+            projection = schedule.schedule_edit_projection(self.db, item)
             simple = self._simple_schedule_parts(item)
             frequency = self._frequency_key(item.recurrence)
-            editability = schedule.schedule_editability(self.db, item)
+            editability = projection.editability
             definitions.append(
                 {
                     "handle": item.handle,
@@ -1027,6 +1028,21 @@ class Api:
                     "category_memo": simple["category_memo"] if simple else "",
                     "funding_memo": simple["funding_memo"] if simple else "",
                     "additional_splits": (simple["additional_splits"] if simple else []),
+                    "formula_splits": [
+                        {
+                            "index": index,
+                            "account": item.splits[index].account,
+                            "account_name": (
+                                self.db.full_name(account)
+                                if (account := self.db.get_account(item.splits[index].account))
+                                is not None
+                                else item.splits[index].account
+                            ),
+                            "formula": item.splits[index].formula,
+                        }
+                        for index in projection.formula_split_indices
+                    ],
+                    "variables": dict(item.variables),
                     "account_handles": [split.account for split in item.splits],
                     "start": item.recurrence.start.isoformat(),
                     "end": (
@@ -1513,78 +1529,32 @@ class Api:
         return scenario
 
     def _simple_schedule_parts(self, scheduled) -> dict | None:
-        if len(scheduled.splits) < 2 or any(split.formula for split in scheduled.splits):
+        projection = schedule.schedule_edit_projection(self.db, scheduled)
+        if (
+            projection.editability.mode is not schedule.ScheduleEditorMode.FIXED
+            or projection.primary is None
+            or projection.funding is None
+        ):
             return None
-        investment_flows = [
-            split for split in scheduled.splits if split.investment_activity is not None
-        ]
-        flow = investment_flows[0] if len(scheduled.splits) == 2 and investment_flows else None
-        if flow is None:
-            for split in scheduled.splits:
-                account = self.db.get_account(split.account)
-                if account is not None and account.account_class in (
-                    AccountClass.INCOME,
-                    AccountClass.EXPENSE,
-                ):
-                    flow = split
-                    break
-        if flow is None:
-            flow = investment_flows[0] if investment_flows else None
-        if flow is None:
-            return None
-        others = [split for split in scheduled.splits if split is not flow]
-        funding = next(
-            (
-                split
-                for split in others
-                if (account := self.db.get_account(split.account)) is not None
-                and account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
-                and split.planning_flow is None
-            ),
-            others[-1] if others else None,
-        )
-        if funding is None:
-            return None
-        account = self.db.get_account(flow.account)
-        assert account is not None
-        resolved_flow = flow.resolve(scheduled.variables)
-        amount = (
-            abs(resolved_flow)
-            if flow.investment_activity is not None
-            else resolved_flow * account.sign()
-        )
+        primary_projection = projection.primary
+        funding_projection = projection.funding
+        flow = scheduled.splits[primary_projection.index]
+        funding = scheduled.splits[funding_projection.index]
+        flow_account = self.db.get_account(flow.account)
+        assert flow_account is not None
         additional = []
-        for split in others:
-            if split is funding:
-                continue
-            extra_account = self.db.get_account(split.account)
-            if extra_account is None:
-                return None
-            resolved = split.resolve(scheduled.variables)
-            normal_direction = (
-                split.investment_activity.direction
-                if split.investment_activity is not None and split.investment_activity.direction
-                else extra_account.sign()
-            )
-            normal_amount = (
-                abs(resolved)
-                if split.investment_activity is not None
-                else split.planning_flow.plan_amount(resolved)
-                if split.planning_flow is not None
-                else resolved * extra_account.sign()
-            )
-            if normal_amount <= 0:
-                return None
+        for item in projection.additional:
+            split = scheduled.splits[item.index]
             row = {
                 "account": split.account,
-                "amount": str(normal_amount.to_decimal()),
+                "amount": str(item.amount.to_decimal()),
                 "planning_flow": (
                     split.planning_flow.value if split.planning_flow is not None else None
                 ),
             }
             if split.investment_activity is not None:
                 row["investment_activity"] = split.investment_activity.value
-            if resolved * normal_direction < 0:
+            if item.opposite_direction:
                 row["direction"] = "opposite"
             if split.memo:
                 row["memo"] = split.memo
@@ -1592,9 +1562,17 @@ class Api:
         return {
             "category": flow.account,
             "funding": funding.account,
-            "amount": str(abs(amount).to_decimal()),
+            "amount": str(primary_projection.amount.to_decimal()),
             "category_memo": flow.memo,
             "funding_memo": funding.memo,
+            "category_planning_flow": (
+                flow.planning_flow.value if flow.planning_flow is not None else None
+            ),
+            "category_ledger_direction": (
+                primary_projection.ledger_direction
+                if flow_account.account_class not in {AccountClass.INCOME, AccountClass.EXPENSE}
+                else None
+            ),
             "planning_flow": (
                 funding.planning_flow.value if funding.planning_flow is not None else None
             ),
@@ -1610,6 +1588,66 @@ class Api:
             if recurrence.period is period and recurrence.interval == interval:
                 return key
         return None
+
+    def _schedule_recurrence_from_payload(
+        self,
+        payload: dict,
+        existing: ScheduledTransaction | None = None,
+    ) -> Recurrence:
+        """Parse web recurrence controls while retaining unexposed source details."""
+        frequency = str(payload.get("frequency") or "monthly")
+        if frequency not in self._SCENARIO_FREQUENCIES:
+            raise ValueError("unsupported schedule frequency")
+        period, interval = self._SCENARIO_FREQUENCIES[frequency]
+        try:
+            start = date.fromisoformat(str(payload.get("start") or ""))
+        except ValueError as exc:
+            raise ValueError("first due date is invalid") from exc
+        end = None
+        raw_end = str(payload.get("end") or "").strip()
+        if raw_end:
+            try:
+                end = date.fromisoformat(raw_end)
+            except ValueError as exc:
+                raise ValueError("end date is invalid") from exc
+            if end < start:
+                raise ValueError("end date cannot precede first due date")
+        count = None
+        raw_count = payload.get("count")
+        if raw_count is not None and raw_count != "":
+            try:
+                count = int(raw_count)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("occurrence count must be a whole number") from exc
+            if count < 1:
+                raise ValueError("occurrence count must be positive")
+        if end is not None and count is not None:
+            raise ValueError("choose an end date or occurrence count, not both")
+        if period is PeriodType.ONCE:
+            end = None
+            count = None
+        weekend_key = str(payload.get("weekend") or "none")
+        if weekend_key not in self._SCENARIO_WEEKENDS:
+            raise ValueError("unsupported weekend adjustment")
+        preserve_shape = (
+            existing is not None
+            and existing.recurrence.period is period
+            and existing.recurrence.interval == interval
+        )
+        day_of_month = existing.recurrence.day_of_month if existing and preserve_shape else None
+        second_day_of_month = (
+            existing.recurrence.second_day_of_month if existing and preserve_shape else None
+        )
+        return Recurrence(
+            period=period,
+            interval=interval,
+            start=start,
+            end=end,
+            count=count,
+            day_of_month=day_of_month,
+            second_day_of_month=second_day_of_month,
+            weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
+        )
 
     @staticmethod
     def _weekend_key(adjust: WeekendAdjust) -> str:
@@ -3211,11 +3249,25 @@ class Api:
             )
         except ValueError:
             raise ValueError("choose a valid investment activity") from None
+        category_planning_flow = None
+        category_ledger_direction = None
+        if existing is not None and existing_parts is not None:
+            raw_category_flow = existing_parts.get("category_planning_flow")
+            category_planning_flow = (
+                PlanningFlowKind(str(raw_category_flow)) if raw_category_flow else None
+            )
+            raw_direction = existing_parts.get("category_ledger_direction")
+            category_ledger_direction = int(raw_direction) if raw_direction is not None else None
         if (
             category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
             and investment_activity is None
+            and category_planning_flow is None
+            and category_ledger_direction is None
         ):
-            raise ValueError("category must be income/expense or have investment activity")
+            raise ValueError(
+                "category must be income/expense, have a planning purpose or investment "
+                "activity, or retain a proven balance-sheet direction"
+            )
 
         try:
             amount = self._input_money(payload, payload.get("amount") or "0")
@@ -3223,49 +3275,8 @@ class Api:
             raise ValueError("amount must be a valid number") from exc
         if amount <= 0:
             raise ValueError("amount must be greater than zero")
-        frequency = str(payload.get("frequency") or "monthly")
-        if frequency not in self._SCENARIO_FREQUENCIES:
-            raise ValueError("unsupported schedule frequency")
-        period, interval = self._SCENARIO_FREQUENCIES[frequency]
-        try:
-            start = date.fromisoformat(str(payload.get("start") or ""))
-        except ValueError as exc:
-            raise ValueError("first due date is invalid") from exc
-        end = None
-        raw_end = str(payload.get("end") or "").strip()
-        if raw_end:
-            try:
-                end = date.fromisoformat(raw_end)
-            except ValueError as exc:
-                raise ValueError("end date is invalid") from exc
-            if end < start:
-                raise ValueError("end date cannot precede first due date")
-        count = None
-        raw_count = payload.get("count")
-        if raw_count is not None and raw_count != "":
-            try:
-                count = int(raw_count)
-            except (TypeError, ValueError) as exc:
-                raise ValueError("occurrence count must be a whole number") from exc
-            if count < 1:
-                raise ValueError("occurrence count must be positive")
-        if end is not None and count is not None:
-            raise ValueError("choose an end date or occurrence count, not both")
-        if period is PeriodType.ONCE:
-            end = None
-            count = None
-        weekend_key = str(payload.get("weekend") or "none")
-        if weekend_key not in self._SCENARIO_WEEKENDS:
-            raise ValueError("unsupported weekend adjustment")
-        recurrence = Recurrence(
-            period=period,
-            interval=interval,
-            start=start,
-            end=end,
-            count=count,
-            weekend_adjust=self._SCENARIO_WEEKENDS[weekend_key],
-        )
-        amount_changes = self._parse_amount_changes(payload, start)
+        recurrence = self._schedule_recurrence_from_payload(payload, existing)
+        amount_changes = self._parse_amount_changes(payload, recurrence.start)
         skipped = self._parse_skipped(payload, recurrence)
         adjustments = self._parse_occurrence_adjustments(payload, recurrence)
         if set(skipped) & {change.when for change in adjustments}:
@@ -3291,8 +3302,12 @@ class Api:
         if existing is None or item.description == old_name:
             item.description = name
         signed = (
-            amount * investment_activity.direction
+            category_planning_flow.ledger_amount(amount)
+            if category_planning_flow is not None
+            else amount * investment_activity.direction
             if investment_activity is not None and investment_activity.direction
+            else amount * category_ledger_direction
+            if category_ledger_direction is not None
             else amount * category.sign()
         )
         planning_flow_raw = str(payload.get("planning_flow") or "").strip()
@@ -3336,6 +3351,7 @@ class Api:
                 category.handle,
                 signed,
                 memo=category_memo,
+                planning_flow=category_planning_flow,
                 investment_activity=investment_activity,
             ),
             *additional_splits,
@@ -3381,6 +3397,74 @@ class Api:
                 self.db.add_scheduled(item, txn)
             else:
                 self.db.commit_scheduled(item, txn)
+        return {"handle": item.handle, "name": item.name}
+
+    def scheduled_formula_save(self, payload: dict) -> dict:
+        """Update formula inputs and ordinary metadata without exposing owned mechanics."""
+        handle = str(payload.get("handle") or "").strip()
+        existing = self.db.get_scheduled(handle)
+        if existing is None:
+            raise KeyError(handle)
+        projection = schedule.schedule_edit_projection(self.db, existing)
+        if projection.editability.mode is not schedule.ScheduleEditorMode.FORMULA:
+            raise ValueError(
+                projection.editability.reason
+                or "this schedule is not editable with the formula editor"
+            )
+        raw_formulas = payload.get("formulas")
+        if not isinstance(raw_formulas, list):
+            raise ValueError("formula expressions must be a list")
+        formulas: dict[int, str] = {}
+        for row in raw_formulas:
+            if not isinstance(row, dict):
+                raise ValueError("formula expressions must identify their split")
+            raw_index = row.get("index")
+            if not isinstance(raw_index, (int, str)):
+                raise ValueError("formula split index is invalid")
+            try:
+                index = int(raw_index)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("formula split index is invalid") from exc
+            if index in formulas:
+                raise ValueError("formula split indices cannot be repeated")
+            formulas[index] = str(row.get("formula") or "")
+        raw_variables = payload.get("variables")
+        if not isinstance(raw_variables, dict) or not all(
+            isinstance(key, str) and isinstance(value, str) for key, value in raw_variables.items()
+        ):
+            raise ValueError("formula variables must be a name-to-value object")
+        item = schedule.apply_formula_inputs(self.db, existing, formulas, raw_variables)
+
+        name = str(payload.get("name") or "").strip()
+        if not name:
+            raise ValueError("schedule name is required")
+        old_name = item.name
+        item.name = name
+        if item.description == old_name:
+            item.description = name
+        item.recurrence = self._schedule_recurrence_from_payload(payload, existing)
+        item.skipped = self._parse_skipped(payload, item.recurrence)
+        try:
+            item.growth_policy = ScheduleGrowthPolicy(
+                str(payload.get("growth_policy") or item.growth_policy.value)
+            )
+        except ValueError:
+            raise ValueError("choose a valid projection growth policy") from None
+        if "enabled" in payload:
+            if not isinstance(payload["enabled"], bool):
+                raise ValueError("active status must be true or false")
+            item.enabled = payload["enabled"]
+        if "placeholder" in payload:
+            if not isinstance(payload["placeholder"], bool):
+                raise ValueError("schedule kind must be a boolean estimate flag")
+            item.placeholder = payload["placeholder"]
+        if "auto" in payload:
+            if not isinstance(payload["auto"], bool):
+                raise ValueError("automatic posting status must be true or false")
+            item.auto_create = payload["auto"] and not item.placeholder
+
+        with self.db.transaction(f"Update scheduled {item.name}") as txn:
+            self.db.commit_scheduled(item, txn)
         return {"handle": item.handle, "name": item.name}
 
     def scheduled_delete(self, payload: dict) -> dict:
@@ -3519,6 +3603,7 @@ POST_ROUTES = {
     "/api/post-scheduled": lambda a, body: a.post_scheduled(),
     "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),
     "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
+    "/api/scheduled/formula-save": lambda a, body: a.scheduled_formula_save(body),
     "/api/scheduled/delete": lambda a, body: a.scheduled_delete(body),
     "/api/scheduled/duplicate": lambda a, body: a.scheduled_duplicate(body),
     "/api/scheduled/draft": lambda a, body: a.scheduled_draft(body),
