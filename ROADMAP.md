@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0216 — advanced deterministic recurrences**.
+The current accepted baseline is **0217 — structured estimate evidence**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,9 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next focused slice is **0217 — structured estimate evidence**: explain selected
-history, exclusions, cadence, trend, seasonality, residuals, confidence, and the
-inferred funding account through one shared model.
+The next focused slice is **0218 — interactive estimate adjustment**: let users
+adjust amount, cadence, start date, seasonality, and classification before accepting
+an estimate in GTK and web, using shared validation and acceptance logic.
 
 ## Architecture and correctness
 
@@ -47,8 +47,8 @@ inferred funding account through one shared model.
 
 ## Historical estimator
 
-- [ ] Provide richer explanations of history, cadence, trend, seasonality, and
-  residual calculation, with interactive adjustment before acceptance.
+- [ ] Provide interactive adjustment of historical estimate amount, cadence, start
+  date, seasonality, and classification before acceptance.
 
 - [ ] Refine category-specific seasonality/cadence inference.
 

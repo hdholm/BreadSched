@@ -1374,13 +1374,35 @@ async function openHistoricalEstimateDialog() {
       if ([...target.options].some((option) => option.value === selectedTarget)) {
         target.value = selectedTarget;
       }
+      const evidenceView = (item) => {
+        const evidence = item.evidence;
+        const facts = [
+          evidence.cadence.explanation,
+          evidence.residual_explanation,
+          evidence.trend?.explanation || "No material trend detected.",
+          evidence.seasonality.explanation,
+          evidence.funding.explanation,
+          evidence.confidence.explanation,
+        ];
+        const history = evidence.history.map((month) => el("tr", {},
+          el("td", {}, month.month.slice(0, 7)),
+          el("td", {class:"num"}, money(month.gross)),
+          el("td", {class:"num"}, money(month.planned)),
+          el("td", {class:"num"}, money(month.residual)),
+          el("td", {}, month.selected ? "Selected" : month.exclusion || "Not selected")));
+        return el("details", {},
+          el("summary", {}, `${evidence.selected_months}/${data.months} months selected; ${evidence.exclusions.length} exclusions`),
+          el("ul", {}, ...facts.map((fact) => el("li", {}, fact))),
+          table(["Month", {label:"Gross",num:true}, {label:"Plan",num:true},
+            {label:"Residual",num:true}, "Decision"], history));
+      };
       const rows = data.proposals.map((item) => el("tr", {},
         el("td", {}, item.purpose_name),
         el("td", {}, item.category_name),
         el("td", {}, `${item.source_name} → ${item.destination_name}`),
         el("td", {}, item.frequency),
         el("td", { class:"num" }, money(item.amount)),
-        el("td", { class:"muted" }, `${item.active_months}/${data.months} months; ${money(item.scheduled_amount)} covered by plan`),
+        el("td", { class:"muted" }, evidenceView(item)),
         el("td", { class:"muted" }, `${Math.round(item.confidence * 100)}%`),
         el("td", {}, el("button", { class:"action", type:"button", onclick:async()=>{
           try {

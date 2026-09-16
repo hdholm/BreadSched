@@ -26,12 +26,201 @@ from . import activity, planning
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
+    "EstimateEvidence",
+    "EstimateHistoryEvidence",
     "HistoricalEstimateProposal",
     "accept_historical_estimate",
     "draft_historical_estimate",
     "draft_scenario_estimate",
     "propose_historical_estimates",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateHistoryEvidence:
+    """One completed historical month and how it affected the estimate."""
+
+    month: date
+    gross: Money
+    planned: Money
+    residual: Money
+    selected: bool
+    exclusion: str | None = None
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "month": self.month.isoformat(),
+            "gross": self.gross,
+            "planned": self.planned,
+            "residual": self.residual,
+            "selected": self.selected,
+            "exclusion": self.exclusion,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateCadenceEvidence:
+    """Observed dates and the deterministic cadence selected from them."""
+
+    label: str
+    observed_dates: tuple[date, ...]
+    typical_gap_days: float | None
+    occurrences_per_month: Decimal
+    explanation: str
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "label": self.label,
+            "observed_dates": [value.isoformat() for value in self.observed_dates],
+            "typical_gap_days": self.typical_gap_days,
+            "occurrences_per_month": str(self.occurrences_per_month),
+            "explanation": self.explanation,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateTrendEvidence:
+    """Conservative comparison between the earlier and later sample."""
+
+    direction: str
+    change_percent: Decimal
+    used_recent_months: int
+    explanation: str
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "direction": self.direction,
+            "change_percent": str(self.change_percent),
+            "used_recent_months": self.used_recent_months,
+            "explanation": self.explanation,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateSeasonalityEvidence:
+    """Calendar-month pattern and the month-specific amounts it produced."""
+
+    detected: bool
+    variability: str
+    monthly_amounts: tuple[ScheduledMonthAmount, ...]
+    explanation: str
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "detected": self.detected,
+            "variability": self.variability,
+            "monthly_amounts": [item.serialize() for item in self.monthly_amounts],
+            "explanation": self.explanation,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateConfidenceEvidence:
+    """Named inputs to the proposal confidence score."""
+
+    score: float
+    coverage: Decimal
+    depth: Decimal
+    retained_ratio: Decimal
+    consistency: Decimal
+    explanation: str
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "score": self.score,
+            "coverage": str(self.coverage),
+            "depth": str(self.depth),
+            "retained_ratio": str(self.retained_ratio),
+            "consistency": str(self.consistency),
+            "explanation": self.explanation,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateFundingCandidate:
+    """One observed non-flow counterpart considered as the funding account."""
+
+    account: str
+    account_name: str
+    transaction_count: int
+    spendable_cash: bool
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "account": self.account,
+            "account_name": self.account_name,
+            "transaction_count": self.transaction_count,
+            "spendable_cash": self.spendable_cash,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateFundingEvidence:
+    """Candidates and tie-break used to infer the proposal counterpart."""
+
+    selected: str
+    selected_name: str
+    candidates: tuple[EstimateFundingCandidate, ...]
+    explanation: str
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "selected": self.selected,
+            "selected_name": self.selected_name,
+            "candidates": [item.serialize() for item in self.candidates],
+            "explanation": self.explanation,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class EstimateEvidence:
+    """Shared, structured explanation for one historical estimate proposal."""
+
+    history_start: date
+    history_end: date
+    history: tuple[EstimateHistoryEvidence, ...]
+    cadence: EstimateCadenceEvidence
+    trend: EstimateTrendEvidence | None
+    seasonality: EstimateSeasonalityEvidence
+    confidence: EstimateConfidenceEvidence
+    funding: EstimateFundingEvidence
+    residual_explanation: str
+
+    @property
+    def selected_months(self) -> tuple[EstimateHistoryEvidence, ...]:
+        return tuple(item for item in self.history if item.selected)
+
+    @property
+    def exclusions(self) -> tuple[EstimateHistoryEvidence, ...]:
+        return tuple(item for item in self.history if item.exclusion is not None)
+
+    def serialize(self) -> dict[str, object]:
+        return {
+            "history_start": self.history_start.isoformat(),
+            "history_end": self.history_end.isoformat(),
+            "history": [item.serialize() for item in self.history],
+            "selected_months": len(self.selected_months),
+            "exclusions": [item.serialize() for item in self.exclusions],
+            "cadence": self.cadence.serialize(),
+            "trend": self.trend.serialize() if self.trend else None,
+            "seasonality": self.seasonality.serialize(),
+            "confidence": self.confidence.serialize(),
+            "funding": self.funding.serialize(),
+            "residual_explanation": self.residual_explanation,
+        }
+
+    def summary_lines(self) -> tuple[str, ...]:
+        trend = self.trend.explanation if self.trend else "No material trend detected."
+        return (
+            f"History: {len(self.selected_months)} selected month(s), "
+            f"{len(self.exclusions)} explained exclusion(s).",
+            f"Cadence: {self.cadence.explanation}",
+            f"Residuals: {self.residual_explanation}",
+            f"Trend: {trend}",
+            f"Seasonality: {self.seasonality.explanation}",
+            f"Funding: {self.funding.explanation}",
+            f"Confidence: {self.confidence.explanation}",
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,6 +238,7 @@ class HistoricalEstimateProposal:
     transaction_count: int
     confidence: float
     reason: str
+    evidence: EstimateEvidence
     scheduled_amount: Money = Money(0)
     seasonal: bool = False
     trend: str | None = None
@@ -116,7 +306,7 @@ def _typical_amount(values: list[Money]) -> Money:
     return Money(median(decimals)).quantize(100)
 
 
-def _robust_sample(values: list[Money]) -> tuple[list[Money], int, Decimal]:
+def _robust_sample(values: list[Money]) -> tuple[list[Money], tuple[int, ...], Decimal]:
     """Exclude isolated monthly spikes and return robust relative variability.
 
     A median already prevents one large value from moving the estimate very far,
@@ -126,7 +316,7 @@ def _robust_sample(values: list[Money]) -> tuple[list[Money], int, Decimal]:
     visible exactly as recorded.
     """
     if not values:
-        return [], 0, Decimal(0)
+        return [], (), Decimal(0)
     decimals = [value.to_decimal() for value in values]
     center = median(decimals)
     deviations = [abs(value - center) for value in decimals]
@@ -134,27 +324,28 @@ def _robust_sample(values: list[Money]) -> tuple[list[Money], int, Decimal]:
     magnitude = abs(center)
     relative_variability = mad / magnitude if magnitude else Decimal(0)
     if len(values) < 6:
-        return values, 0, relative_variability
+        return values, (), relative_variability
 
     # Three median absolute deviations is intentionally conservative. When most
     # months are identical MAD is zero, use a generous relative threshold so a
     # single annual purchase does not become the ordinary monthly estimate.
     threshold = mad * Decimal(3) if mad else max(magnitude * Decimal("0.75"), Decimal("1"))
-    retained = [
-        value for value, deviation in zip(values, deviations, strict=True) if deviation <= threshold
-    ]
+    excluded = tuple(index for index, deviation in enumerate(deviations) if deviation > threshold)
+    retained = [value for index, value in enumerate(values) if index not in excluded]
     # Never let anomaly handling erase the evidence required to make a proposal.
     if len(retained) < 3:
-        return values, 0, relative_variability
+        return values, (), relative_variability
     retained_decimals = [value.to_decimal() for value in retained]
     retained_center = median(retained_decimals)
     retained_mad = median(abs(value - retained_center) for value in retained_decimals)
     retained_magnitude = abs(retained_center)
     variability = retained_mad / retained_magnitude if retained_magnitude else Decimal(0)
-    return retained, len(values) - len(retained), variability
+    return retained, excluded, variability
 
 
-def _funding_account(db: DbSQLite, category: str, start: date, end: date) -> str | None:
+def _funding_evidence(
+    db: DbSQLite, category: str, start: date, end: date
+) -> EstimateFundingEvidence | None:
     counts: Counter[str] = Counter()
     for txn in db.iter_transactions(account=category, start=start, end=end):
         for split in txn.splits:
@@ -164,14 +355,45 @@ def _funding_account(db: DbSQLite, category: str, start: date, end: date) -> str
             if account is None or account.atype.is_flow or account.is_root:
                 continue
             counts[split.account] += 1
-    if not counts:
+    return _funding_evidence_from_counts(db, counts)
+
+
+def _funding_evidence_from_counts(
+    db: DbSQLite, counts: Counter[str]
+) -> EstimateFundingEvidence | None:
+    candidates = []
+    for handle, transaction_count in counts.items():
+        account = db.get_account(handle)
+        if account is None:
+            continue
+        candidates.append(
+            EstimateFundingCandidate(
+                handle,
+                db.full_name(account),
+                transaction_count,
+                account.is_spendable_cash,
+            )
+        )
+    if not candidates:
         return None
-    return max(
-        counts,
-        key=lambda handle: (
-            counts[handle],
-            bool((account := db.get_account(handle)) and account.is_spendable_cash),
-        ),
+    candidates.sort(
+        key=lambda item: (item.transaction_count, item.spendable_cash, item.account),
+        reverse=True,
+    )
+    selected = candidates[0]
+    explanation = (
+        f"{selected.account_name} appeared as the counterpart in "
+        f"{selected.transaction_count} qualifying transaction(s)"
+    )
+    if len(candidates) > 1:
+        explanation += "; transaction count wins, with spendable cash as the tie-break"
+    else:
+        explanation += "; it was the only qualifying counterpart"
+    return EstimateFundingEvidence(
+        selected.account,
+        selected.account_name,
+        tuple(candidates),
+        explanation + ".",
     )
 
 
@@ -485,9 +707,39 @@ def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None
     return Recurrence(PeriodType.MONTH, start=start), "monthly", Decimal("1")
 
 
+def _cadence_evidence(
+    dates: list[date], label: str, occurrences_per_month: Decimal
+) -> EstimateCadenceEvidence:
+    gaps = [(later - earlier).days for earlier, later in zip(dates[:-1], dates[1:], strict=True)]
+    typical_gap = float(median(gaps)) if gaps else None
+    if len(dates) < 2:
+        explanation = "one observation supports a one-time proposal."
+    elif label in {"weekly", "fortnightly"}:
+        explanation = f"{label} from a typical {typical_gap:g}-day gap across {len(dates)} dates."
+    elif label.startswith("every ") and label.endswith(" months"):
+        explanation = (
+            f"{label} from stable calendar-month spacing across {len(dates)} dates, "
+            "allowing posting-day drift."
+        )
+    elif label == "annual" or label.endswith(" years"):
+        explanation = f"{label} from the typical {typical_gap:g}-day gap."
+    else:
+        explanation = (
+            f"monthly fallback because {len(dates)} observed date(s) did not form a "
+            "stable weekly, multi-month, or annual cadence."
+        )
+    return EstimateCadenceEvidence(
+        label,
+        tuple(dates),
+        typical_gap,
+        occurrences_per_month,
+        explanation,
+    )
+
+
 def _confidence(
     *, sample_months: int, active_months: int, retained_months: int, variability: Decimal
-) -> float:
+) -> EstimateConfidenceEvidence:
     """Score evidence coverage, sample depth, anomalies, and amount stability."""
     coverage = Decimal(active_months) / Decimal(sample_months)
     depth = min(Decimal(1), Decimal(retained_months) / Decimal(12))
@@ -500,7 +752,19 @@ def _confidence(
         + retained_ratio * Decimal("0.10")
         + consistency * Decimal("0.20")
     )
-    return float(min(Decimal("0.95"), score))
+    bounded = float(min(Decimal("0.95"), score))
+    return EstimateConfidenceEvidence(
+        score=bounded,
+        coverage=coverage,
+        depth=depth,
+        retained_ratio=retained_ratio,
+        consistency=consistency,
+        explanation=(
+            f"{bounded:.0%}: {active_months}/{sample_months} months active, "
+            f"{retained_months}/{active_months} active months retained, "
+            f"amount consistency {consistency:.0%}."
+        ),
+    )
 
 
 def _variability_label(value: Decimal) -> str:
@@ -511,7 +775,7 @@ def _variability_label(value: Decimal) -> str:
     return "highly variable"
 
 
-def _trend_summary(values: list[Money]) -> tuple[list[Money], str | None]:
+def _trend_summary(values: list[Money]) -> tuple[list[Money], EstimateTrendEvidence | None]:
     """Return the sample to use and a conservative trend label."""
     if len(values) < 6:
         return values, None
@@ -525,7 +789,11 @@ def _trend_summary(values: list[Money]) -> tuple[list[Money], str | None]:
         return values, None
     recent = values[-min(3, len(values)) :]
     direction = "upward" if change > 0 else "downward"
-    return recent, f"{direction} trend ({abs(change) * Decimal(100):.1f}%)"
+    percent = abs(change) * Decimal(100)
+    explanation = (
+        f"{direction} trend ({percent:.1f}%); using the recent {len(recent)}-month median."
+    )
+    return recent, EstimateTrendEvidence(direction, percent, len(recent), explanation)
 
 
 def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> bool:
@@ -627,6 +895,8 @@ def _propose_classified_flows(
         target, flow, investment = signature
         target_account = accounts[target]
         residual_monthly: list[Money] = []
+        residual_row_indexes: list[int] = []
+        history_inputs: list[tuple[date, Money, Money, Money]] = []
         scheduled_total = Money(0)
         for offset in range(months):
             historical_month = _add_months(history_start, offset)
@@ -636,28 +906,44 @@ def _propose_classified_flows(
                 actual, planned.get((signature, future_month), Money(0))
             )
             scheduled_total = scheduled_total + applied
+            history_inputs.append((historical_month, actual, applied, residual))
             if residual:
+                residual_row_indexes.append(len(history_inputs) - 1)
                 residual_monthly.append(residual)
         if len(residual_monthly) < min_active_months:
             continue
-        counts = counterpart_counts.get(signature)
-        if not counts:
+        funding_evidence = _funding_evidence_from_counts(
+            db, counterpart_counts.get(signature, Counter())
+        )
+        if funding_evidence is None:
             continue
-        funding_handle = max(
-            counts,
-            key=lambda handle: (
-                counts[handle],
-                accounts[handle].is_spendable_cash,
-                handle,
-            ),
-        )
-        recurrence, cadence, occurrences_per_month = _infer_recurrence(
-            sorted(dates.get(signature, [])), future_start
-        )
+        funding_handle = funding_evidence.selected
+        observed_dates = sorted(dates.get(signature, []))
+        recurrence, cadence, occurrences_per_month = _infer_recurrence(observed_dates, future_start)
         if recurrence is None:
             continue
-        robust, outlier_months, variability_value = _robust_sample(residual_monthly)
-        trend_sample, trend = _trend_summary(robust)
+        robust, excluded_indexes, variability_value = _robust_sample(residual_monthly)
+        excluded_rows = {residual_row_indexes[index] for index in excluded_indexes}
+        history = tuple(
+            EstimateHistoryEvidence(
+                month,
+                actual,
+                applied,
+                residual,
+                bool(residual) and index not in excluded_rows,
+                (
+                    "isolated amount outlier"
+                    if index in excluded_rows
+                    else (
+                        "fully covered by the selected future plan"
+                        if actual and not residual
+                        else ("no qualifying activity" if not actual else None)
+                    )
+                ),
+            )
+            for index, (month, actual, applied, residual) in enumerate(history_inputs)
+        )
+        trend_sample, trend_evidence = _trend_summary(robust)
         monthly_residual = _typical_amount(trend_sample)
         amount = (monthly_residual / occurrences_per_month).quantize(100)
         if amount <= 0:
@@ -669,6 +955,19 @@ def _propose_classified_flows(
             else amount * (investment.direction if investment is not None else 0)
         )
         variability = _variability_label(variability_value)
+        confidence_evidence = _confidence(
+            sample_months=months,
+            active_months=len(residual_monthly),
+            retained_months=len(robust),
+            variability=variability_value,
+        )
+        cadence_evidence = _cadence_evidence(observed_dates, cadence, occurrences_per_month)
+        seasonality_evidence = EstimateSeasonalityEvidence(
+            False,
+            variability,
+            (),
+            f"No repeated calendar-month profile was applied; amounts are {variability}.",
+        )
         if flow is not None:
             purpose = flow.label
         elif investment is not None:
@@ -680,6 +979,22 @@ def _propose_classified_flows(
             for (candidate, _month), monthly_value in monthly.items()
             if candidate == signature
         ]
+        evidence = EstimateEvidence(
+            history_start,
+            history_end,
+            history,
+            cadence_evidence,
+            trend_evidence,
+            seasonality_evidence,
+            confidence_evidence,
+            funding_evidence,
+            (
+                f"Matching future classified plan contributed {scheduled_total.format()}; "
+                f"the retained median uncovered amount is {monthly_residual.format()}."
+            ),
+        )
+        trend = trend_evidence.explanation.rstrip(".") if trend_evidence else None
+        outlier_months = len(excluded_indexes)
         proposals.append(
             HistoricalEstimateProposal(
                 category=target,
@@ -691,12 +1006,7 @@ def _propose_classified_flows(
                 sample_months=months,
                 active_months=len(residual_monthly),
                 transaction_count=transaction_counts[signature],
-                confidence=_confidence(
-                    sample_months=months,
-                    active_months=len(residual_monthly),
-                    retained_months=len(robust),
-                    variability=variability_value,
-                ),
+                confidence=confidence_evidence.score,
                 reason=(
                     f"{cadence}; classified as {purpose}; historical median "
                     f"{_typical_amount(gross_values).format()}; "
@@ -710,6 +1020,7 @@ def _propose_classified_flows(
                     )
                     + (f"; {trend}, using recent median" if trend else "")
                 ),
+                evidence=evidence,
                 scheduled_amount=scheduled_total,
                 trend=trend,
                 outlier_months=outlier_months,
@@ -757,6 +1068,8 @@ def propose_historical_estimates(
             continue
 
         monthly: list[Money] = []
+        residual_row_indexes: list[int] = []
+        history_inputs: list[tuple[date, Money, Money, Money]] = []
         monthly_by_month: dict[int, list[Money]] = {}
         gross_monthly: list[Money] = []
         gross_by_month: dict[int, list[Money]] = {}
@@ -789,14 +1102,18 @@ def propose_historical_estimates(
             scheduled = planned_profiles.get((account.handle, future_month), Money(0))
             residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
             applied_scheduled_total = applied_scheduled_total + applied_scheduled
+            history_inputs.append((start, total, applied_scheduled, residual))
             if residual:
+                residual_row_indexes.append(len(history_inputs) - 1)
                 monthly.append(residual)
                 monthly_by_month.setdefault(start.month, []).append(residual)
 
         if len(monthly) < min_active_months:
             continue
-        funding = _funding_account(db, account.handle, history_start, history_end)
-        funding_account = db.get_account(funding) if funding else None
+        funding_evidence = _funding_evidence(db, account.handle, history_start, history_end)
+        if funding_evidence is None:
+            continue
+        funding_account = db.get_account(funding_evidence.selected)
         if funding_account is None:
             continue
 
@@ -805,14 +1122,35 @@ def propose_historical_estimates(
             # Repeated winter/summer peaks are signal, not global outliers. The
             # month-specific profile below preserves them explicitly.
             robust_monthly = monthly
-            outlier_months = 0
+            excluded_indexes: tuple[int, ...] = ()
             relative_variability = Decimal(0)
         else:
-            robust_monthly, outlier_months, relative_variability = _robust_sample(monthly)
-        trend_sample, trend = _trend_summary(robust_monthly)
+            robust_monthly, excluded_indexes, relative_variability = _robust_sample(monthly)
+        excluded_rows = {residual_row_indexes[index] for index in excluded_indexes}
+        history = tuple(
+            EstimateHistoryEvidence(
+                month,
+                gross,
+                applied,
+                residual,
+                bool(residual) and index not in excluded_rows,
+                (
+                    "isolated amount outlier"
+                    if index in excluded_rows
+                    else (
+                        "fully covered by the selected future plan"
+                        if gross and not residual
+                        else ("no qualifying activity" if not gross else None)
+                    )
+                ),
+            )
+            for index, (month, gross, applied, residual) in enumerate(history_inputs)
+        )
+        trend_sample, trend_evidence = _trend_summary(robust_monthly)
         monthly_residual = _typical_amount(trend_sample)
+        observed_dates = _unscheduled_dates(db, account.handle, history_start, history_end)
         recurrence, cadence, occurrences_per_month = _infer_recurrence(
-            _unscheduled_dates(db, account.handle, history_start, history_end),
+            observed_dates,
             current_month,
         )
         if recurrence is None:
@@ -834,7 +1172,7 @@ def propose_historical_estimates(
         variability = (
             "seasonal by calendar month" if seasonal else _variability_label(relative_variability)
         )
-        confidence = _confidence(
+        confidence_evidence = _confidence(
             sample_months=months,
             active_months=len(monthly),
             retained_months=len(robust_monthly),
@@ -842,6 +1180,34 @@ def propose_historical_estimates(
         )
         scheduled_total = applied_scheduled_total
         gross_median = _typical_amount(gross_monthly)
+        cadence_evidence = _cadence_evidence(observed_dates, cadence, occurrences_per_month)
+        seasonality_evidence = EstimateSeasonalityEvidence(
+            seasonal,
+            variability,
+            seasonal_amounts,
+            (
+                f"Repeated calendar-month variation detected; {len(seasonal_amounts)} "
+                "month-specific amount(s) will be retained."
+                if seasonal
+                else f"No repeated calendar-month pattern detected; amounts are {variability}."
+            ),
+        )
+        evidence = EstimateEvidence(
+            history_start,
+            history_end,
+            history,
+            cadence_evidence,
+            trend_evidence,
+            seasonality_evidence,
+            confidence_evidence,
+            funding_evidence,
+            (
+                f"Selected future plan contributed {scheduled_total.format()}; "
+                f"the retained median uncovered amount is {monthly_residual.format()}."
+            ),
+        )
+        trend = trend_evidence.explanation.rstrip(".") if trend_evidence else None
+        outlier_months = len(excluded_indexes)
         proposals.append(
             HistoricalEstimateProposal(
                 category=account.handle,
@@ -853,7 +1219,7 @@ def propose_historical_estimates(
                 sample_months=months,
                 active_months=len(monthly),
                 transaction_count=txn_count,
-                confidence=confidence,
+                confidence=confidence_evidence.score,
                 reason=(
                     f"{cadence}; historical median {gross_median.format()} across "
                     f"{len(gross_monthly)} active month(s); {scheduled_total.format()} "
@@ -868,6 +1234,7 @@ def propose_historical_estimates(
                     + (f"; {trend}, using recent median" if trend else "")
                     + ("; recurring seasonal variation detected" if seasonal else "")
                 ),
+                evidence=evidence,
                 scheduled_amount=scheduled_total,
                 seasonal=seasonal,
                 trend=trend,

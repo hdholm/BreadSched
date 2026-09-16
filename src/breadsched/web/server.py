@@ -940,6 +940,7 @@ class Api:
                     "outlier_months": item.outlier_months,
                     "variability": item.variability,
                     "reason": item.reason,
+                    "evidence": item.evidence.serialize(),
                     "planning_flow": (
                         item.planning_flow.value if item.planning_flow is not None else None
                     ),

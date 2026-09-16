@@ -2636,6 +2636,18 @@ def test_historical_estimate_proposals_and_acceptance(client):
     assert Money(rent["amount"]) == Money("1800.00")
     assert rent["frequency_key"] == "once"
     assert rent["seasonal_amounts"] == []
+    assert rent["evidence"]["selected_months"] == 1
+    assert rent["evidence"]["cadence"]["label"] == "once (single observation)"
+    assert rent["evidence"]["funding"]["selected"] == rent["funding"]
+    assert rent["evidence"]["confidence"]["score"] == rent["confidence"]
+    assert rent["evidence"]["history"][0].keys() == {
+        "month",
+        "gross",
+        "planned",
+        "residual",
+        "selected",
+        "exclusion",
+    }
     assert data["targets"][0]["name"] == "Base"
 
     status, result = client.post(

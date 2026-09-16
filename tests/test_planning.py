@@ -1214,6 +1214,19 @@ class TestHistoricalEstimateProposals:
         assert proposal.outlier_months == 1
         assert proposal.variability == "stable"
         assert "excluded 1 isolated outlier month" in proposal.reason
+        assert len(proposal.evidence.history) == 8
+        assert len(proposal.evidence.selected_months) == 7
+        assert [(item.month, item.exclusion) for item in proposal.evidence.exclusions] == [
+            (date(2025, 4, 1), "isolated amount outlier")
+        ]
+        assert proposal.evidence.cadence.label == "monthly"
+        assert len(proposal.evidence.cadence.observed_dates) == 8
+        assert proposal.evidence.trend is None
+        assert proposal.evidence.seasonality.detected is False
+        assert proposal.evidence.funding.selected == book.checking
+        assert proposal.evidence.funding.candidates[0].transaction_count == 8
+        assert proposal.evidence.confidence.score == proposal.confidence
+        assert proposal.evidence.confidence.retained_ratio == Decimal("0.875")
 
     def test_short_history_is_not_trimmed_as_an_outlier(self, db, book):
         from breadsched.gen.engine import estimates
@@ -1328,6 +1341,10 @@ class TestHistoricalEstimateProposals:
 
         assert base.amount == Money("800.00")
         assert base.scheduled_amount == Money("3000.00")
+        assert [item.gross for item in base.evidence.selected_months] == [Money("1800")] * 3
+        assert [item.planned for item in base.evidence.selected_months] == [Money("1000")] * 3
+        assert [item.residual for item in base.evidence.selected_months] == [Money("800")] * 3
+        assert "3,000.00" in base.evidence.residual_explanation
         assert alternate.amount == Money("1800.00")
         assert alternate.scheduled_amount == Money("0.00")
 
@@ -1462,6 +1479,9 @@ class TestHistoricalEstimateProposals:
         assert proposal.variability == "seasonal by calendar month"
         assert "seasonal variation detected" in proposal.reason
         assert len(proposal.seasonal_amounts) == 12
+        assert proposal.evidence.seasonality.detected is True
+        assert proposal.evidence.seasonality.monthly_amounts == proposal.seasonal_amounts
+        assert not proposal.evidence.exclusions
 
         handle = estimates.accept_historical_estimate(db, proposal)
         saved = db.get_scheduled(handle)

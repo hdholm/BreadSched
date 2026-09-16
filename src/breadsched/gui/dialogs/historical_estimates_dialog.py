@@ -100,8 +100,7 @@ class HistoricalEstimatesDialog(Gtk.Window):
                     f"{proposal.display_amount.format()} "
                     f"{proposal.recurrence.describe()} — {proposal.purpose_name}: "
                     f"{proposal.source_name} → {proposal.destination_name}\n"
-                    f"{proposal.reason}; "
-                    f"confidence {proposal.confidence:.0%}"
+                    + "\n".join(proposal.evidence.summary_lines())
                 ),
                 xalign=0,
                 wrap=True,

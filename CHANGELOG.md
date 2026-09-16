@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0217 — Structured estimate evidence.** Give every historical estimate one
+  shared evidence model covering each selected or excluded history month, gross
+  activity, applied future-plan coverage, residuals, observed cadence dates,
+  trend, seasonality, named confidence factors, and ranked funding-account
+  candidates. Present the shared summaries in GTK and expose the full structure
+  through web/API and the read-only `estimate suggest` CLI. Advance the alpha
+  version to `0.2.0a53`.
+
 - [x] **0216 — Advanced deterministic recurrences.** Add GnuCash-compatible nth-
   weekday and last-weekday monthly rules with canonical fifth-weekday behavior,
   stable occurrence identities, bounds, weekend adjustment, native round trips,

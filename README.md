@@ -173,7 +173,12 @@ interval even when the posting day varies. With at least six active months, isol
 amount spikes are excluded conservatively and disclosed in the proposal; shorter
 histories are never silently trimmed. Confidence reflects history coverage, sample
 depth, retained observations, and robust amount variability rather than coverage
-alone. Analysis interprets the complete transaction before extracting ordinary
+alone. GTK presents those same named evidence sections; web review can expand the
+complete per-month gross, planned, residual, and inclusion decisions, and
+`breadsched estimate BOOK suggest --json` exposes the identical structured model
+for scripts. Funding inference lists every observed counterpart and its count rather
+than presenting the selected account as an unexplained guess. Analysis interprets
+the complete transaction before extracting ordinary
 categories: reinvested dividends and interest, investment fees, and rollovers do
 not become recurring household income or expense suggestions. In multi-split loan,
 retirement, and benefit transactions, repeated funding evidence is retained and a

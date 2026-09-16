@@ -106,6 +106,52 @@ class TestPostingAndReading:
         assert code == 0
         assert "Assets" in out and "3,200.00" in out
 
+    def test_estimate_suggest_exposes_shared_structured_evidence(self, capsys, book_path):
+        from datetime import date
+
+        from breadsched.gen.lib import Account, AccountType, Transaction
+
+        run(capsys, "init", book_path)
+        db = DbSQLite()
+        db.load(book_path)
+        try:
+            assets = db.get_account_by_name("Assets")
+            expenses = db.get_account_by_name("Expenses")
+            assert assets is not None and expenses is not None
+            utilities = Account(name="Utilities", atype=AccountType.EXPENSE, parent=expenses.handle)
+            with db.transaction("Historical estimator fixture") as txn:
+                db.add_account(utilities, txn)
+                for month in (1, 2, 3):
+                    db.add_transaction(
+                        Transaction.simple(
+                            date(2026, month, 5),
+                            "Utilities",
+                            utilities.handle,
+                            assets.handle,
+                            "100",
+                        ),
+                        txn,
+                    )
+        finally:
+            db.close()
+
+        proposals = run_json(
+            capsys,
+            "estimate",
+            book_path,
+            "suggest",
+            "--as-of",
+            "2026-04-20",
+            "--months",
+            "3",
+        )
+
+        proposal = next(item for item in proposals if item["account"].endswith("Utilities"))
+        assert proposal["amount"] == "100.00"
+        assert proposal["evidence"]["selected_months"] == 3
+        assert proposal["evidence"]["funding"]["selected_name"] == "Assets"
+        assert proposal["evidence"]["confidence"]["score"] == proposal["confidence"]
+
     def test_an_unknown_account_is_a_clean_error(self, stocked):
         assert main(["balance", stocked, "Nonexistent"]) == 2
 
