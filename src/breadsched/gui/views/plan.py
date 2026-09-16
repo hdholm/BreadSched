@@ -15,12 +15,12 @@ from ...gen.engine.activity import (
     PlanMeasure,
     PlanSettings,
     ReportingPeriod,
-    build_category_report,
     explain_category_period,
     explain_mortgage_payment_period,
     explain_planning_flow_period,
 )
 from ...gen.lib import Money, Scenario
+from ...gen.services import PlanQuery, query_plan
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -552,14 +552,22 @@ class PlanView(BaseView):
             return
         self._initialize_range_bounds()
         self._populate_scenarios()
-        selected_scenario = self._selected_scenario() or baseline_scenario(self.manager, self.db)
-        self._report = build_category_report(
+        result = query_plan(
             self.db,
-            self._start_date,
-            self._end_date,
-            period=self._grouping(),
-            scenario=selected_scenario,
+            PlanQuery(
+                start=self._start_date,
+                end=self._end_date,
+                period=self._grouping(),
+                measure=self._measure(),
+                scenario=self._scenario_handle,
+                baseline=baseline_scenario(self.manager, self.db),
+            ),
         )
+        if result.value is None:
+            self.control_status.set_text(result.errors[0].code)
+            self.control_status.add_css_class("negative")
+            return
+        self._report = result.value.report
         activity = self._report.activity
         position = self._report.cash_position
         minimum_date = (

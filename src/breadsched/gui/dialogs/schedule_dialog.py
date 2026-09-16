@@ -17,7 +17,6 @@ import re
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import estimates, investment
 from ...gen.engine import schedule as schedule_engine
 from ...gen.lib import (
     AccountClass,
@@ -38,6 +37,7 @@ from ...gen.lib import (
     evaluate,
     scheduled_occurrence_preview,
 )
+from ...gen.services import SaveSchedule, save_schedule
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.schedule_timeline import (
@@ -1167,29 +1167,26 @@ class ScheduleDialog(Gtk.Window):
         return schedule
 
     def _on_save(self, _button) -> None:
-        schedule = self.build()
-        try:
-            estimates.validate_historical_estimate_adjustment(self.db, schedule)
-        except ValueError as exc:
-            self.status.set_text(str(exc))
+        result = save_schedule(
+            self.db,
+            SaveSchedule(
+                self.build(),
+                existing_handle=(
+                    self.source.handle if self.source is not None and not self.creating else None
+                ),
+            ),
+        )
+        if result.value is None:
+            messages = {
+                "schedule.split_amount_changes.unbalanced": (
+                    "Per-leg future amounts do not balance; update the funding or another leg."
+                ),
+                "schedule.estimate.invalid": "Check the historical-estimate amounts.",
+                "schedule.investment.invalid": "Check the investment activity splits.",
+                "schedule.read_only": (
+                    "This schedule cannot be edited without changing its meaning."
+                ),
+            }
+            self.status.set_text(messages.get(result.errors[0].code, result.errors[0].code))
             return
-        for when in sorted(
-            {change.start for split in schedule.splits for change in split.amount_changes}
-        ):
-            if schedule.imbalance(when=when):
-                self.status.set_text(
-                    f"Per-leg amounts effective {when.isoformat()} do not balance; "
-                    "update the funding or another leg for the same date."
-                )
-                return
-        problems = investment.scheduled_activity_problems(self.db, schedule)
-        if problems:
-            self.status.set_text("; ".join(problems))
-            return
-        action = "Add" if self.creating else "Update"
-        with self.db.transaction(f"{action} scheduled {schedule.name}") as txn:
-            if self.creating:
-                self.db.add_scheduled(schedule, txn)
-            else:
-                self.db.commit_scheduled(schedule, txn)
         self.close()

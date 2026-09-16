@@ -12,7 +12,6 @@ from collections.abc import Callable
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import estimates, investment
 from ...gen.lib import (
     AccountClass,
     FormulaError,
@@ -33,6 +32,7 @@ from ...gen.lib import (
     evaluate,
     scheduled_occurrence_preview,
 )
+from ...gen.services import SaveScenarioSchedule, save_scenario_schedule
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.schedule_timeline import (
@@ -994,25 +994,13 @@ class ScenarioScheduleDialog(Gtk.Window):
         )
 
     def _on_save(self, _button) -> None:
-        change = self.build()
-        try:
-            estimates.validate_historical_estimate_adjustment(self.db, change)
-        except ValueError as exc:
-            self.status.set_text(str(exc))
+        result = save_scenario_schedule(
+            self.db,
+            SaveScenarioSchedule(self.scenario.handle, self.build()),
+        )
+        if result.value is None:
+            self.status.set_text(result.errors[0].code)
             return
-        problems = investment.scheduled_activity_problems(self.db, change)
-        if problems:
-            self.status.set_text("; ".join(problems))
-            return
-        if change.source_schedule is not None:
-            self.scenario.schedule_overrides = [
-                existing
-                for existing in self.scenario.schedule_overrides
-                if existing.source_schedule != change.source_schedule
-            ]
-        self.scenario.schedule_overrides.append(change)
-        with self.db.transaction(f"Update scenario {self.scenario.name}") as txn:
-            self.db.commit_scenario(self.scenario, txn)
         self.close()
 
 

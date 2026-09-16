@@ -36,6 +36,11 @@ correctness and security fixes may proceed when they do not create another
 presentation-owned workflow.
 
 1. **0221 — Typed service foundation and first vertical slices.**
+   Deliver this as a documented stack: (a) typed result/error contracts, the Plan
+   query model, and service-owned baseline/scenario schedule transaction boundaries;
+   (b) typed schedule construction requests and removal of the remaining adapter-
+   owned construction rules; and (c) final adapter parity/round-trip evidence. Only
+   the final stack member completes 0221 and moves this contract to the changelog.
    - Add a `gen/services` package whose public use cases accept typed request
      dataclasses and return typed results or structured validation failures with a
      stable code and field references. Human-readable interface text must not be the

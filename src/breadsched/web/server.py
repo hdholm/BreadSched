@@ -77,6 +77,14 @@ from ..gen.plug import (
     remember_import_source,
     remembered_import_source,
 )
+from ..gen.services import (
+    PlanQuery,
+    SaveScenarioSchedule,
+    SaveSchedule,
+    query_plan,
+    save_scenario_schedule,
+    save_schedule,
+)
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..gen.utils.logs import get_logger
 
@@ -2187,19 +2195,12 @@ class Api:
                 else None
             ),
         )
-        activity_problems = investment.scheduled_activity_problems(self.db, change)
-        if activity_problems:
-            raise ValueError("; ".join(activity_problems))
-        estimates.validate_historical_estimate_adjustment(self.db, change)
-        if source_handle:
-            scenario.schedule_overrides = [
-                item
-                for item in scenario.schedule_overrides
-                if item.source_schedule != source_handle
-            ]
-        scenario.schedule_overrides.append(change)
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
+        result = save_scenario_schedule(
+            self.db,
+            SaveScenarioSchedule(scenario.handle, change),
+        )
+        if result.value is None:
+            raise ValueError(result.errors[0].code)
         return self.scenario_events(scenario.handle)
 
     def scenario_event_suppress(self, payload: dict) -> dict:
@@ -2226,15 +2227,6 @@ class Api:
         measure: str | None = None,
     ) -> dict:
         """Derived category Plan using the same event stream as the GTK view."""
-        today = date.today()
-        minimum = self._plan_earliest_data_date().replace(day=1)
-        maximum_month = self._plan_maximum_through_month()
-        maximum = self._month_end(maximum_month.year, maximum_month.month)
-        defaults = PlanSettings.load(
-            self.db,
-            date(today.year, 1, 1),
-            date(today.year + 1, 12, 31),
-        )
         use_saved = all(
             value is None
             for value in (
@@ -2246,90 +2238,53 @@ class Api:
                 measure,
             )
         )
-        if use_saved:
-            start_month = defaults.start.strftime("%Y-%m")
-            through_month = defaults.end.strftime("%Y-%m")
-            period = defaults.period.value
-            scenario_handle = defaults.scenario
-            compare_handle = defaults.compare
-            measure = defaults.measure.value
-
-        if start_month is None:
-            start = date(today.year, 1, 1)
-            if start < minimum:
-                start = minimum
-        else:
-            start = date.fromisoformat(f"{start_month}-01")
-
-        if through_month is None:
-            end = date(today.year + 1, 12, 31)
-            if end < start:
-                end = self._month_end(start.year, start.month)
-            if end > maximum:
-                end = maximum
-        else:
-            through = date.fromisoformat(f"{through_month}-01")
-            end = self._month_end(through.year, through.month)
-
-        if use_saved:
-            start = max(start, minimum)
-            end = min(end, maximum)
-            if end < start:
-                end = self._month_end(start.year, start.month)
-
-        if start < minimum:
-            raise ValueError(f"From cannot be earlier than the first book data ({minimum:%b %Y}).")
-        if end < start:
-            raise ValueError("Through must be the same month as From or later.")
-        if end > maximum:
-            raise ValueError(f"Through cannot be later than {maximum_month:%b %Y}.")
-
-        grouping = activity.ReportingPeriod(period or "month")
-        selected_measure = PlanMeasure(measure or "planned")
-        scenarios = list(self.db.iter_scenarios())
-        if scenario_handle:
-            selected = next((item for item in scenarios if item.handle == scenario_handle), None)
-            if selected is None:
-                if not use_saved:
-                    raise KeyError(scenario_handle)
-                scenario_handle = None
-                scenario = self._base_scenario(start, end)
-            else:
-                scenario = selected
-        else:
-            scenario = self._base_scenario(start, end)
-
-        report = activity.build_category_report(
-            self.db, start, end, period=grouping, scenario=scenario
+        start = date.fromisoformat(f"{start_month}-01") if start_month is not None else None
+        through = date.fromisoformat(f"{through_month}-01") if through_month is not None else None
+        end = self._month_end(through.year, through.month) if through is not None else None
+        service_result = query_plan(
+            self.db,
+            PlanQuery(
+                start=start,
+                end=end,
+                period=activity.ReportingPeriod(period) if period is not None else None,
+                measure=PlanMeasure(measure) if measure is not None else None,
+                scenario=scenario_handle,
+                compare=compare_handle,
+                use_saved=use_saved,
+            ),
         )
+        if service_result.value is None:
+            error = service_result.errors[0]
+            if error.code == "plan.scenario.not_found":
+                raise KeyError(scenario_handle)
+            if error.code == "plan.comparison.not_found":
+                raise KeyError(compare_handle)
+            if error.code == "plan.start.before_book_data":
+                raise ValueError("From cannot be earlier than the first book data.")
+            if error.code == "plan.end.before_start":
+                raise ValueError("Through must be the same month as From or later.")
+            if error.code == "plan.end.after_maximum":
+                raise ValueError("Through exceeds the supported planning horizon.")
+            if error.code == "plan.comparison.same":
+                raise ValueError("Plan comparison must use a different scenario.")
+            raise ValueError(error.code)
+        plan = service_result.value
+        start = plan.start
+        end = plan.end
+        minimum = plan.minimum
+        maximum_month = plan.maximum
+        grouping = plan.period
+        selected_measure = plan.measure
+        scenario_handle = plan.scenario.handle
+        compare_handle = plan.compare_handle
+        report = plan.report
         totals = report.activity
 
         comparison: dict[str, object] | None = None
-        if (
-            use_saved
-            and compare_handle not in {None, "__base__"}
-            and not any(item.handle == compare_handle for item in scenarios)
-        ):
-            compare_handle = None
-        if compare_handle is not None:
-            if compare_handle == "__base__":
-                compare_scenario = self._base_scenario(start, end)
-                compare_identity = None
-                compare_name = "Base scenario"
-            else:
-                selected_compare = next(
-                    (item for item in scenarios if item.handle == compare_handle), None
-                )
-                if selected_compare is None:
-                    raise KeyError(compare_handle)
-                compare_scenario = selected_compare
-                compare_identity = selected_compare.handle
-                compare_name = selected_compare.name
-            if compare_identity == scenario_handle:
-                raise ValueError("Plan comparison must use a different scenario.")
-            compare_report = activity.build_category_report(
-                self.db, start, end, period=grouping, scenario=compare_scenario
-            )
+        if plan.comparison is not None:
+            compare_identity = plan.comparison.scenario.handle
+            compare_name = plan.comparison.scenario.name
+            compare_report = plan.comparison.report
             compare_rows = {row.account: row for row in compare_report.categories}
             compare_bridges = {row.kind: row for row in compare_report.cash_bridge}
             compare_flows = {(row.kind, row.account): row for row in compare_report.planning_flows}
@@ -2341,7 +2296,7 @@ class Api:
             comparison = {
                 "handle": compare_identity,
                 "name": compare_name,
-                "assumption_sources": compare_scenario.assumption_sources(start),
+                "assumption_sources": plan.comparison.assumption_sources,
                 "summary": {
                     "planned_cash": compare_report.activity.planned_cash_change,
                     "actual_cash": compare_report.actual_cash_through_as_of,
@@ -2527,10 +2482,9 @@ class Api:
                 "scenario": scenario_handle,
                 "compare": compare_handle,
                 "scenarios": [
-                    {"handle": None, "name": "Base scenario"},
-                    *[{"handle": item.handle, "name": item.name} for item in scenarios],
+                    {"handle": item.handle, "name": item.name} for item in plan.scenarios
                 ],
-                "assumption_sources": scenario.assumption_sources(start),
+                "assumption_sources": plan.assumption_sources,
             },
             "periods": [
                 {
@@ -3554,18 +3508,13 @@ class Api:
         if item.placeholder:
             item.auto_create = False
 
-        activity_problems = investment.scheduled_activity_problems(self.db, item)
-        if activity_problems:
-            raise ValueError("; ".join(activity_problems))
-        estimates.validate_historical_estimate_adjustment(self.db, item)
-
-        action = "Update" if existing is not None else "Add"
-        with self.db.transaction(f"{action} scheduled {item.name}") as txn:
-            if existing is None:
-                self.db.add_scheduled(item, txn)
-            else:
-                self.db.commit_scheduled(item, txn)
-        return {"handle": item.handle, "name": item.name}
+        result = save_schedule(
+            self.db,
+            SaveSchedule(item, existing_handle=existing.handle if existing is not None else None),
+        )
+        if result.value is None:
+            raise ValueError(result.errors[0].code)
+        return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_formula_save(self, payload: dict) -> dict:
         """Update formula inputs and ordinary metadata without exposing owned mechanics."""
@@ -3631,9 +3580,10 @@ class Api:
                 raise ValueError("automatic posting status must be true or false")
             item.auto_create = payload["auto"] and not item.placeholder
 
-        with self.db.transaction(f"Update scheduled {item.name}") as txn:
-            self.db.commit_scheduled(item, txn)
-        return {"handle": item.handle, "name": item.name}
+        result = save_schedule(self.db, SaveSchedule(item, existing_handle=existing.handle))
+        if result.value is None:
+            raise ValueError(result.errors[0].code)
+        return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_delete(self, payload: dict) -> dict:
         """Remove one definition while retaining its posted ledger history."""

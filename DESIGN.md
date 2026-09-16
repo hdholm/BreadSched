@@ -43,6 +43,15 @@ application-service layer is strengthened, use cases such as resolving an actual
 saving a claim, reconciling an account, or editing a schedule should have one
 implementation called by every presentation.
 
+The application-service boundary lives in ``breadsched.gen.services``. Public use
+cases accept typed request dataclasses and return ``ServiceResult`` values containing
+either a typed result or stable ``ServiceError`` codes with field paths. Human-readable
+GTK/web wording is adapter-owned and is not part of the service contract. Plan range,
+scenario selection, primary/comparison calculation, and baseline/scenario schedule
+writes use this boundary. Schedule services clone the submitted candidate, apply the
+shared editability and timeline guards, and own the complete ``DbTxn`` so adapters
+cannot leave a partially validated write open.
+
 ## Persistence verification
 
 Normal writes are verified incrementally from the records already captured by the
