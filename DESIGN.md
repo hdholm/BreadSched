@@ -60,6 +60,15 @@ submit only the indexed expressions, variables, recurrence, and ordinary metadat
 that formula ownership permits; the service clones all protected structure. Baseline
 and scenario editors use the same construction contracts.
 
+The web presentation is split into three boundaries. ``web.server.Api`` translates
+plain request values to application/domain calls, ``web.resources`` declares routes
+and strictly parses one typed value per query field, and ``web.transport`` owns HTTP
+authentication, framing, body limits, status mapping, and static delivery. The
+transport never returns unexpected exception text: it logs the exception with a
+correlation identifier and returns only that identifier with a stable error code.
+JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
+not accept transfer encodings.
+
 ## Persistence verification
 
 Normal writes are verified incrementally from the records already captured by the

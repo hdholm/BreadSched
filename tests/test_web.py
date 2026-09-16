@@ -9,6 +9,7 @@ that a tool with no authentication refuses to listen on anything but loopback.
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import urllib.error
 import urllib.parse
@@ -35,7 +36,23 @@ from breadsched.gen.lib import (
     Split,
     Transaction,
 )
+from breadsched.web.resources import GET_ROUTES, QueryParams
 from breadsched.web.server import serve
+
+
+def raw_http(client, request: bytes) -> tuple[int, dict]:
+    """Send one exact HTTP/1.0 request without urllib normalizing its framing."""
+    parsed = urllib.parse.urlparse(client.base_url)
+    assert parsed.hostname is not None and parsed.port is not None
+    with socket.create_connection((parsed.hostname, parsed.port), timeout=10) as connection:
+        connection.sendall(request)
+        connection.shutdown(socket.SHUT_WR)
+        response = b""
+        while chunk := connection.recv(65536):
+            response += chunk
+    head, body = response.split(b"\r\n\r\n", 1)
+    status = int(head.split(b"\r\n", 1)[0].split()[1])
+    return status, json.loads(body)
 
 
 @pytest.fixture
@@ -1792,6 +1809,9 @@ class TestImportApi:
 
 
 class TestSafety:
+    def test_an_empty_query_is_valid_on_every_supported_python(self):
+        QueryParams("").finish()
+
     def test_it_refuses_to_bind_beyond_loopback(self, book_path):
         """No authentication means no listening on a network interface."""
         db = DbSQLite()
@@ -1854,6 +1874,104 @@ class TestSafety:
         with pytest.raises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(request, timeout=10)
         assert caught.value.code == 403
+
+    @pytest.mark.parametrize(
+        ("headers", "status", "code"),
+        (
+            (b"", 411, "request.content_length.required"),
+            (b"Content-Length: nope\r\n", 400, "request.content_length.invalid"),
+            (b"Content-Length: -1\r\n", 400, "request.content_length.invalid"),
+            (
+                b"Content-Length: 2\r\nContent-Length: 2\r\n",
+                400,
+                "request.content_length.repeated",
+            ),
+            (
+                b"Content-Length: 65537\r\n",
+                413,
+                "request.body.too_large",
+            ),
+            (
+                b"Transfer-Encoding: chunked\r\n",
+                400,
+                "request.transfer_encoding.unsupported",
+            ),
+        ),
+    )
+    def test_post_framing_is_rejected_before_reading(self, client, headers, status, code):
+        request = (
+            b"POST /api/post-scheduled HTTP/1.0\r\n"
+            b"Host: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\n"
+            + f"X-BreadSched-Token: {client.token}\r\n".encode()
+            + headers
+            + b"\r\n"
+        )
+
+        actual_status, payload = raw_http(client, request)
+
+        assert actual_status == status
+        assert payload["code"] == code
+
+    @pytest.mark.parametrize(
+        ("query", "code", "fields"),
+        (
+            ("days=abc", "query.integer.invalid", ["days"]),
+            ("days=-1", "query.integer.out_of_range", ["days"]),
+            ("days=1&days=2", "query.repeated", ["days"]),
+            ("unknown=1", "query.unknown", ["unknown"]),
+        ),
+    )
+    def test_query_contract_rejects_invalid_fields_consistently(self, client, query, code, fields):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get(f"/api/scheduled?{query}")
+
+        assert caught.value.code == 400
+        payload = json.loads(caught.value.read())
+        assert payload["code"] == code
+        assert payload["fields"] == fields
+
+    def test_service_errors_keep_their_stable_code_and_fields(self, client):
+        _status, data = client.get("/api/scheduled")
+        account = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scheduled/save",
+                {
+                    "name": "Invalid same-account schedule",
+                    "category": account["handle"],
+                    "funding": account["handle"],
+                    "amount": "75.00",
+                    "frequency": "monthly",
+                    "start": "2026-02-01",
+                    "weekend": "none",
+                },
+            )
+
+        payload = json.loads(caught.value.read())
+        assert caught.value.code == 400
+        assert payload["code"] == "schedule.accounts.same"
+        assert payload["fields"] == ["category", "funding"]
+
+    def test_unexpected_failures_return_only_a_correlation_id(
+        self, client, monkeypatch, breadsched_logs
+    ):
+        def explode(_api, query):
+            query.finish()
+            raise RuntimeError("private failure detail")
+
+        monkeypatch.setitem(GET_ROUTES, "/api/test-boom", explode)
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/test-boom")
+
+        payload = json.loads(caught.value.read())
+        assert caught.value.code == 500
+        assert payload["code"] == "internal.error"
+        assert "private failure detail" not in json.dumps(payload)
+        assert payload["correlation_id"]
+        assert breadsched_logs.containing(payload["correlation_id"])
 
 
 class TestCliIntegration:

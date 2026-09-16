@@ -275,6 +275,20 @@ class TestServiceBoundaries:
         assert "build_category_report" not in calls
 
 
+class TestWebBoundaries:
+    def test_financial_api_does_not_own_http_transport_or_route_tables(self):
+        source = (SRC / "web/server.py").read_text(encoding="utf-8")
+        assert "class Handler(" not in source
+        assert "BaseHTTPRequestHandler" not in source
+        assert "ROUTES =" not in source
+        assert "POST_ROUTES =" not in source
+
+    def test_transport_does_not_import_financial_engines(self):
+        source = (SRC / "web/transport.py").read_text(encoding="utf-8")
+        assert "gen.engine" not in source
+        assert "gen.services" not in source
+
+
 class TestSuiteIsLocationIndependent:
     """The suite must pass however pytest was invoked, from wherever.
 

@@ -12,18 +12,11 @@ Host/Origin checks reject cross-site and DNS-rebinding requests.
 
 from __future__ import annotations
 
-import json
-import secrets
-import threading
 from calendar import monthrange
 from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
-from functools import partial
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from typing import Literal, cast
-from urllib.parse import parse_qs, urlencode, urlparse
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
@@ -83,26 +76,16 @@ from ..gen.services import (
     PlanQuery,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
+    ServiceError,
     query_plan,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_schedule,
 )
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
-from ..gen.utils.logs import get_logger
+from .resources import ResourceError
 
 __all__ = ["serve", "build_handler", "api"]
-
-LOG = get_logger(__name__)
-STATIC = Path(__file__).parent / "static"
-
-
-def _encode(value: object) -> object:
-    if isinstance(value, Money):
-        return str(value.to_decimal())
-    if isinstance(value, (date, Decimal)):
-        return str(value)
-    raise TypeError(f"cannot serialise {type(value).__name__}")
 
 
 class Api:
@@ -1969,7 +1952,7 @@ class Api:
         return tuple(splits)
 
     @staticmethod
-    def _schedule_service_error(code: str) -> ValueError:
+    def _schedule_service_error(error: ServiceError) -> ResourceError:
         messages = {
             "schedule.account.not_found": "scheduled account no longer exists",
             "schedule.account.hidden": (
@@ -1989,7 +1972,7 @@ class Api:
                 "per-leg future amounts do not balance; update the funding or another leg"
             ),
         }
-        return ValueError(messages.get(code, code))
+        return ResourceError(400, error.code, error.fields, messages.get(error.code, error.code))
 
     def _parse_split_amount_changes(
         self,
@@ -2176,7 +2159,7 @@ class Api:
             ),
         )
         if result.value is None:
-            raise self._schedule_service_error(result.errors[0].code)
+            raise self._schedule_service_error(result.errors[0])
         return self.scenario_events(scenario.handle)
 
     def scenario_event_suppress(self, payload: dict) -> dict:
@@ -2231,19 +2214,21 @@ class Api:
         )
         if service_result.value is None:
             error = service_result.errors[0]
-            if error.code == "plan.scenario.not_found":
-                raise KeyError(scenario_handle)
-            if error.code == "plan.comparison.not_found":
-                raise KeyError(compare_handle)
-            if error.code == "plan.start.before_book_data":
-                raise ValueError("From cannot be earlier than the first book data.")
-            if error.code == "plan.end.before_start":
-                raise ValueError("Through must be the same month as From or later.")
-            if error.code == "plan.end.after_maximum":
-                raise ValueError("Through exceeds the supported planning horizon.")
-            if error.code == "plan.comparison.same":
-                raise ValueError("Plan comparison must use a different scenario.")
-            raise ValueError(error.code)
+            messages = {
+                "plan.scenario.not_found": "Scenario was not found.",
+                "plan.comparison.not_found": "Comparison scenario was not found.",
+                "plan.start.before_book_data": "From cannot be earlier than the first book data.",
+                "plan.end.before_start": "Through must be the same month as From or later.",
+                "plan.end.after_maximum": "Through exceeds the supported planning horizon.",
+                "plan.comparison.same": "Plan comparison must use a different scenario.",
+            }
+            status = 404 if error.code.endswith(".not_found") else 400
+            raise ResourceError(
+                status,
+                error.code,
+                error.fields,
+                messages.get(error.code, error.code),
+            )
         plan = service_result.value
         start = plan.start
         end = plan.end
@@ -3433,7 +3418,7 @@ class Api:
             ),
         )
         if result.value is None:
-            raise self._schedule_service_error(result.errors[0].code)
+            raise self._schedule_service_error(result.errors[0])
         return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_formula_save(self, payload: dict) -> dict:
@@ -3506,7 +3491,7 @@ class Api:
             ),
         )
         if result.value is None:
-            raise self._schedule_service_error(result.errors[0].code)
+            raise self._schedule_service_error(result.errors[0])
         return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_delete(self, payload: dict) -> dict:
@@ -3577,248 +3562,4 @@ def _plain(values: Mapping[str, object]) -> dict[str, str | None]:
     return out
 
 
-ROUTES = {
-    "/api/dashboard": lambda a, q: a.dashboard(
-        int(q.get("liquidity_days", ["0"])[0] or 0),
-        int(q.get("emergency_months", ["0"])[0] or 0),
-    ),
-    "/api/fsa/dashboard": lambda a, q: a.fsa_dashboard(),
-    "/api/summary": lambda a, q: a.summary(),
-    "/api/accounts": lambda a, q: a.accounts(),
-    "/api/loan/options": lambda a, q: a.loan_options(),
-    "/api/commodities": lambda a, q: a.commodities(),
-    "/api/fsa/claims": lambda a, q: a.fsa_claims(),
-    "/api/register": lambda a, q: a.register(
-        q.get("account", [""])[0], int(q.get("limit", ["250"])[0])
-    ),
-    "/api/reconciliation": lambda a, q: a.reconciliation(q.get("account", [""])[0]),
-    "/api/scheduled": lambda a, q: a.scheduled(int(q.get("days", ["60"])[0])),
-    "/api/historical-estimates": lambda a, q: a.historical_estimates(
-        int(q.get("months", ["12"])[0]),
-        int(q.get("min_active_months", ["3"])[0]),
-        q.get("scenario", [None])[0] or None,
-    ),
-    "/api/plan": lambda a, q: a.plan(
-        q.get("from", [None])[0],
-        q.get("through", [None])[0],
-        q.get("period", [None])[0],
-        q.get("scenario", [None])[0],
-        q.get("compare", [None])[0],
-        q.get("measure", [None])[0],
-    ),
-    "/api/plan/detail": lambda a, q: a.plan_detail(
-        q.get("account", [""])[0],
-        q.get("start", [""])[0],
-        q.get("end", [""])[0],
-        q.get("scenario", [None])[0],
-        q.get("flow_kind", [None])[0],
-        q.get("requirement_kind", [None])[0],
-    ),
-    "/api/review": lambda a, q: a.review(q.get("transaction", [None])[0]),
-    "/api/scenarios": lambda a, q: a.scenarios(),
-    "/api/scenario/events": lambda a, q: a.scenario_events(q.get("handle", [None])[0]),
-    "/api/projection": lambda a, q: a.projection(
-        q.get("scenario", [None])[0],
-        int(q["years"][0]) if q.get("years") else None,
-    ),
-    "/api/import": lambda a, q: a.import_defaults(),
-    "/api/verify": lambda a, q: a.verify(),
-}
-
-POST_ROUTES = {
-    "/api/dashboard/config": lambda a, body: a.dashboard_config_save(body),
-    "/api/account/type": lambda a, body: a.account_type_save(body),
-    "/api/account/card": lambda a, body: a.account_card_save(body),
-    "/api/account/emergency-fund": lambda a, body: a.account_emergency_fund_save(body),
-    "/api/commodity/price": lambda a, body: a.commodity_price_save(body),
-    "/api/plan/settings": lambda a, body: a.plan_settings_save(body),
-    "/api/account/fsa-years": lambda a, body: a.account_fsa_years_save(body),
-    "/api/fsa/claim/save": lambda a, body: a.fsa_claim_save(body),
-    "/api/fsa/claim/delete": lambda a, body: a.fsa_claim_delete(body),
-    "/api/transaction": lambda a, body: a.add_transaction(body),
-    "/api/reconciliation/start": lambda a, body: a.reconciliation_start(body),
-    "/api/reconciliation/update": lambda a, body: a.reconciliation_update(body),
-    "/api/reconciliation/complete": lambda a, body: a.reconciliation_complete(body),
-    "/api/reconciliation/cancel": lambda a, body: a.reconciliation_cancel(body),
-    "/api/reconciliation/reopen": lambda a, body: a.reconciliation_reopen(body),
-    "/api/import": lambda a, body: a.import_local(body),
-    "/api/post-scheduled": lambda a, body: a.post_scheduled(),
-    "/api/scheduled/occurrences": lambda a, body: a.scheduled_occurrence_options(body),
-    "/api/scheduled/save": lambda a, body: a.scheduled_save(body),
-    "/api/scheduled/formula-save": lambda a, body: a.scheduled_formula_save(body),
-    "/api/scheduled/delete": lambda a, body: a.scheduled_delete(body),
-    "/api/scheduled/duplicate": lambda a, body: a.scheduled_duplicate(body),
-    "/api/scheduled/draft": lambda a, body: a.scheduled_draft(body),
-    "/api/loan/preview": lambda a, body: a.loan_preview(body),
-    "/api/loan/save": lambda a, body: a.loan_save(body),
-    "/api/historical-estimate/accept": lambda a, body: a.historical_estimate_accept(body),
-    "/api/review/match": lambda a, body: a.review_match(body),
-    "/api/review/reject": lambda a, body: a.review_reject(body),
-    "/api/review/skip": lambda a, body: a.review_skip(body),
-    "/api/review/fsa-attach": lambda a, body: a.review_fsa_attach(body),
-    "/api/review/unexpected": lambda a, body: a.review_unexpected(body),
-    "/api/scenario/save": lambda a, body: a.scenario_save(body),
-    "/api/scenario/duplicate": lambda a, body: a.scenario_duplicate(body),
-    "/api/scenario/delete": lambda a, body: a.scenario_delete(body),
-    "/api/scenario/period/save": lambda a, body: a.scenario_period_save(body),
-    "/api/scenario/period/delete": lambda a, body: a.scenario_period_delete(body),
-    "/api/scenario/event/save": lambda a, body: a.scenario_event_save(body),
-    "/api/scenario/event/suppress": lambda a, body: a.scenario_event_suppress(body),
-    "/api/projection/calculate": lambda a, body: a.projection_calculate(body),
-    "/api/projection/compare": lambda a, body: a.projection_compare(body),
-    "/api/projection/explain": lambda a, body: a.projection_explain(body),
-    "/api/projection/save": lambda a, body: a.projection_save(body),
-}
-
-
-class Handler(BaseHTTPRequestHandler):
-    """Serves the single page and the JSON API. One database, guarded by a lock."""
-
-    server_version = "BreadSched"
-    api_object: Api
-    lock: threading.Lock
-    token: str
-
-    _LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
-
-    def log_message(self, fmt: str, *args) -> None:  # noqa: A003 - base class name
-        LOG.debug("%s %s", self.address_string(), fmt % args)
-
-    # ------------------------------------------------------------- responses
-
-    def _send(self, status: int, body: bytes, content_type: str) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        # The page never loads anything remote; say so.
-        self.send_header("Content-Security-Policy", "default-src 'self' 'unsafe-inline'")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _json(self, status: int, payload: object) -> None:
-        body = json.dumps(payload, default=_encode).encode("utf-8")
-        self._send(status, body, "application/json; charset=utf-8")
-
-    def _static(self, name: str) -> None:
-        path = (STATIC / name).resolve()
-        if not path.is_file() or STATIC.resolve() not in path.parents:
-            self._json(404, {"error": "not found"})
-            return
-        kind = {
-            ".html": "text/html; charset=utf-8",
-            ".css": "text/css; charset=utf-8",
-            ".js": "application/javascript; charset=utf-8",
-        }.get(path.suffix, "application/octet-stream")
-        self._send(200, path.read_bytes(), kind)
-
-    def _trusted_host(self) -> bool:
-        host = urlparse(f"//{self.headers.get('Host', '')}").hostname
-        return host in self._LOCAL_HOSTS
-
-    def _trusted_origin(self) -> bool:
-        origin = self.headers.get("Origin")
-        if not origin:
-            return True
-        parsed = urlparse(origin)
-        return parsed.scheme in {"http", "https"} and parsed.hostname in self._LOCAL_HOSTS
-
-    def _trusted_api_request(self, *, write: bool = False) -> bool:
-        if not self._trusted_host() or not self._trusted_origin():
-            return False
-        if write and self.headers.get_content_type() != "application/json":
-            return False
-        supplied = self.headers.get("X-BreadSched-Token", "")
-        return secrets.compare_digest(supplied, self.token)
-
-    # ---------------------------------------------------------------- routing
-
-    def do_GET(self) -> None:  # noqa: N802 - required by the base class
-        if not self._trusted_host():
-            self._json(403, {"error": "untrusted host"})
-            return
-        parsed = urlparse(self.path)
-        route = ROUTES.get(parsed.path)
-        if route is None:
-            self._static("index.html" if parsed.path in ("/", "") else parsed.path[1:])
-            return
-        if not self._trusted_api_request():
-            self._json(403, {"error": "untrusted request"})
-            return
-        query = parse_qs(parsed.query)
-        try:
-            with self.lock:
-                self._json(200, route(self.api_object, query))
-        except KeyError as exc:
-            self._json(404, {"error": str(exc)})
-        except ValueError as exc:
-            self._json(400, {"error": str(exc)})
-        except Exception as exc:  # noqa: BLE001 - a bad request must not kill the server
-            LOG.exception("request failed: %s", self.path)
-            self._json(500, {"error": str(exc)})
-
-    def do_POST(self) -> None:  # noqa: N802 - required by the base class
-        if not self._trusted_api_request(write=True):
-            self._json(403, {"error": "untrusted request"})
-            return
-        parsed = urlparse(self.path)
-        route = POST_ROUTES.get(parsed.path)
-        if route is None:
-            self._json(404, {"error": "not found"})
-            return
-        length = int(self.headers.get("Content-Length") or 0)
-        try:
-            body = json.loads(self.rfile.read(length) or b"{}")
-        except json.JSONDecodeError:
-            self._json(400, {"error": "body was not valid JSON"})
-            return
-        try:
-            with self.lock:
-                self._json(200, route(self.api_object, body))
-        except KeyError as exc:
-            self._json(400, {"error": f"unknown account: {exc}"})
-        except Exception as exc:  # noqa: BLE001
-            LOG.exception("request failed: %s", self.path)
-            self._json(400, {"error": str(exc)})
-
-
-class BreadSchedHTTPServer(ThreadingHTTPServer):
-    """Threaded local server carrying the API token exposed to the launcher."""
-
-    token: str
-
-
-def build_handler(db: DbSQLite, token: str) -> type[Handler]:
-    """A handler class bound to one database, with a lock around every request.
-
-    SQLite connections are not safe to share across threads, and the server is
-    threaded, so requests are serialised. For a single-user local tool that costs
-    nothing and removes a whole category of intermittent corruption.
-    """
-    return type(
-        "BoundHandler",
-        (Handler,),
-        {"api_object": Api(db), "lock": threading.Lock(), "token": token},
-    )
-
-
-def serve(
-    db: DbSQLite,
-    host: str = "127.0.0.1",
-    port: int = 8765,
-    open_browser: bool = False,
-) -> BreadSchedHTTPServer:
-    """Start the server. Returns it without blocking; call ``serve_forever``."""
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        raise ValueError("the web interface binds to loopback only")
-    token = secrets.token_urlsafe(32)
-    server = BreadSchedHTTPServer((host, port), build_handler(db, token))
-    server.token = token
-    if open_browser:  # pragma: no cover - depends on a desktop session
-        import webbrowser
-
-        query = urlencode({"token": token})
-        threading.Timer(
-            0.5,
-            partial(webbrowser.open, f"http://{host}:{server.server_port}/#{query}"),
-        ).start()
-    return server
+from .transport import build_handler, serve  # noqa: E402  (compatibility re-export)

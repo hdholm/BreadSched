@@ -1600,7 +1600,7 @@ def cmd_estimate(args: argparse.Namespace) -> int:
 
 def cmd_web(args: argparse.Namespace) -> int:
     """Serve the browser interface on this machine."""
-    from ..web.server import serve
+    from ..web.transport import serve
 
     db = open_book(args.book, "r" if args.read_only else "w")
     try:
