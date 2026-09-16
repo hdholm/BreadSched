@@ -283,10 +283,24 @@ class TestWebBoundaries:
         assert "ROUTES =" not in source
         assert "POST_ROUTES =" not in source
 
+    def test_resource_and_transport_ownership_is_explicit(self):
+        resources = (SRC / "web/resources.py").read_text(encoding="utf-8")
+        transport = (SRC / "web/transport.py").read_text(encoding="utf-8")
+        assert "GET_ROUTES:" in resources
+        assert "POST_ROUTES:" in resources
+        assert "class Handler(BaseHTTPRequestHandler):" in transport
+        assert "class BreadSchedHTTPServer(ThreadingHTTPServer):" in transport
+
     def test_transport_does_not_import_financial_engines(self):
         source = (SRC / "web/transport.py").read_text(encoding="utf-8")
         assert "gen.engine" not in source
         assert "gen.services" not in source
+
+    def test_transport_keeps_one_writer_and_opens_file_reads_read_only(self):
+        source = (SRC / "web/transport.py").read_text(encoding="utf-8")
+        assert 'reader.load(path, mode="r")' in source
+        assert '"writer_db": db' in source
+        assert "with self.lock:" in source
 
 
 class TestSuiteIsLocationIndependent:

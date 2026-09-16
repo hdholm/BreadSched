@@ -5,6 +5,19 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0222 — Web resource split and boundary hardening.** Separate strict typed
+  query/resource routing and authenticated HTTP transport from the financial web
+  adapter. Bound and validate request framing, map expected failures to stable
+  status/code/field responses, and return only correlation identifiers for
+  unexpected failures. Package external browser assets, construct charts without
+  interpolated markup, and enforce a directive-specific Content Security Policy
+  without inline exceptions. Keep one serialized writer while file-backed GET and
+  Projection requests use short-lived SQLite read-only connections; prove concurrent
+  reads, read/write visibility, cleanup, shutdown, and writer-lock ownership. Add
+  socket, packaging, security, concurrency, and architecture regressions. Advance
+  the alpha version through `0.2.0a58`–`0.2.0a60`; the native schema remains version
+  7.
+
 - [x] **0221 — Typed service foundation and first vertical slices.** Add shared,
   presentation-neutral service contracts with typed values and stable error codes
   and field paths. Put baseline and scenario schedule construction, validation, and

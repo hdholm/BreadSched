@@ -8,8 +8,8 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0221 — typed service foundation and first
-vertical slices**.
+The current accepted baseline is **0222 — web resource split and boundary
+hardening**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -28,34 +28,11 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next work is an **architecture gate before further financial features**. The
-shared-service boundary is an existing design rule, but the current 107-method web
-`Api` and independently validated GTK dialogs do not enforce it. Complete 0222
-before resuming commodity, investment, FSA, or other feature expansion. Small
-correctness and security fixes may proceed when they do not create another
-presentation-owned workflow.
+The web-boundary architecture gate is complete. Continue moving cross-interface
+workflows behind typed services before broadening financial semantics; a touched
+workflow may not add new presentation-owned rules.
 
-1. **0222 — Web resource split and boundary hardening.**
-   - Split routing, transport, and resource adapters out of `web/server.py`; resource
-     modules may translate HTTP but must call the 0221 services for use-case logic.
-   - Replace lambda/query indexing with typed parsers that reject missing, repeated,
-     malformed, and out-of-range fields consistently.
-   - Require a valid non-negative `Content-Length`, impose a small documented JSON
-     body limit before reading, reject unsupported transfer encodings, and cover the
-     boundary with socket-level regressions.
-   - Map structured service errors to stable status/code/fields responses. Log
-     unexpected exceptions server-side under a correlation identifier without
-     returning raw exception text; do not classify every `KeyError` as an unknown
-     account.
-   - Move script and style content to packaged static assets, replace interpolated
-     SVG `innerHTML` with DOM construction, and apply a restrictive directive-
-     specific Content Security Policy without `'unsafe-inline'`.
-   - Keep one serialized writer, but give safe GET/projection work a short-lived
-     read-only connection/snapshot so a long projection does not hold the global
-     request lock. Test concurrent reads, read/write visibility, shutdown, and book-
-     lock behavior before claiming concurrency.
-
-2. **0223 — Service adoption, structured errors, and localization seam.**
+1. **0223 — Service adoption, structured errors, and localization seam.**
    - Migrate remaining cross-interface mutations in coherent slices, prioritizing
      transactions, reconciliation, claims, loans, imports, Review, scenarios, and
      projection assumptions. A touched cross-interface workflow may not add new
@@ -68,10 +45,10 @@ presentation-owned workflow.
      not an acceptance test. Preserve behavior with characterization tests before
      structural edits.
 
-3. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
+2. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
    below before foreign exchange, lots, or deeper investment modeling.
 
-4. **0225 — Wider data-format compatibility and release discipline.** Apply the
+3. **0225 — Wider data-format compatibility and release discipline.** Apply the
    version/migration policy below when the next native format change is needed, and
    begin tagged releases with human-readable release notes.
 
