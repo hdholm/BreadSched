@@ -5,6 +5,17 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0221 — Typed service foundation and first vertical slices.** Add shared,
+  presentation-neutral service contracts with typed values and stable error codes
+  and field paths. Put baseline and scenario schedule construction, validation, and
+  transaction ownership behind those services, including fixed and protected
+  formula definitions, recurrence details, amount timelines, account roles, and
+  balancing. Make GTK and web schedule adapters submit the same typed requests and
+  make both Plan surfaces consume one typed query result. Enforce those boundaries
+  with architecture tests and prove baseline/scenario request parity while retaining
+  native and GnuCash save, reload, and source-refresh fidelity coverage. Advance the
+  alpha version to `0.2.0a57`; the native schema remains version 7.
+
 - [x] **0220 — Architecture and contribution-policy review.** Reconcile the
   architecture, persistence, migration, money/rate, formula, web-security,
   concurrency, packaging, documentation, testing, and governance review against the

@@ -8,8 +8,8 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0220 — architecture and contribution-policy
-review**.
+The current accepted baseline is **0221 — typed service foundation and first
+vertical slices**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -30,32 +30,12 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 The next work is an **architecture gate before further financial features**. The
 shared-service boundary is an existing design rule, but the current 107-method web
-`Api` and independently validated GTK dialogs do not enforce it. Complete 0221 and
-0222 before resuming commodity, investment, FSA, or other feature expansion. Small
+`Api` and independently validated GTK dialogs do not enforce it. Complete 0222
+before resuming commodity, investment, FSA, or other feature expansion. Small
 correctness and security fixes may proceed when they do not create another
 presentation-owned workflow.
 
-1. **0221 — Typed service foundation and first vertical slices.**
-   Deliver this as a documented stack: (a) typed result/error contracts, the Plan
-   query model, and service-owned baseline/scenario schedule transaction boundaries;
-   (b) typed schedule construction requests and removal of the remaining adapter-
-   owned construction rules; and (c) final adapter parity/round-trip evidence. Only
-   the final stack member completes 0221 and moves this contract to the changelog.
-   - Add a `gen/services` package whose public use cases accept typed request
-     dataclasses and return typed results or structured validation failures with a
-     stable code and field references. Human-readable interface text must not be the
-     service contract.
-   - Make each mutating service own its `DbTxn`; presentation adapters must not open
-     a transaction around partially duplicated business rules.
-   - Move baseline/scenario schedule validation and construction—including distinct
-     account rules, editability, formula ownership, recurrence, and amount timelines—
-     into shared services consumed by GTK, web, and CLI/tests.
-   - Move Plan request construction/calculation behind a typed query service so the
-     current 440-line web method and the GTK path consume one result model.
-   - Prove adapter parity with request/result contract tests and retain native and
-     GnuCash save/reload/source-refresh coverage.
-
-2. **0222 — Web resource split and boundary hardening.**
+1. **0222 — Web resource split and boundary hardening.**
    - Split routing, transport, and resource adapters out of `web/server.py`; resource
      modules may translate HTTP but must call the 0221 services for use-case logic.
    - Replace lambda/query indexing with typed parsers that reject missing, repeated,
@@ -75,7 +55,7 @@ presentation-owned workflow.
      request lock. Test concurrent reads, read/write visibility, shutdown, and book-
      lock behavior before claiming concurrency.
 
-3. **0223 — Service adoption, structured errors, and localization seam.**
+2. **0223 — Service adoption, structured errors, and localization seam.**
    - Migrate remaining cross-interface mutations in coherent slices, prioritizing
      transactions, reconciliation, claims, loans, imports, Review, scenarios, and
      projection assumptions. A touched cross-interface workflow may not add new
@@ -88,10 +68,10 @@ presentation-owned workflow.
      not an acceptance test. Preserve behavior with characterization tests before
      structural edits.
 
-4. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
+3. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
    below before foreign exchange, lots, or deeper investment modeling.
 
-5. **0225 — Wider data-format compatibility and release discipline.** Apply the
+4. **0225 — Wider data-format compatibility and release discipline.** Apply the
    version/migration policy below when the next native format change is needed, and
    begin tagged releases with human-readable release notes.
 
