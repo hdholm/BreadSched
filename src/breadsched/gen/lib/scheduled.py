@@ -345,6 +345,10 @@ class ScheduledTransaction(PrimaryObject):
         #: is a standing order that will arrive on the 3rd. Its periodicity is
         #: respected exactly as a real schedule's is.
         self.placeholder: bool = False
+        #: Structured analyzer evidence retained when this estimate began as a
+        #: historical proposal.  The saved schedule itself records the user's
+        #: accepted adjustments; this records why the original draft existed.
+        self.estimate_evidence: dict[str, Any] | None = None
         #: Occurrences the user chose not to post and does not want asked about
         #: again. Recorded per date rather than by moving ``last_posted``, because
         #: skipping March must not also dismiss February.
@@ -579,6 +583,7 @@ class ScheduledTransaction(PrimaryObject):
             "last_posted": self.last_posted.isoformat() if self.last_posted else None,
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
+            "estimate_evidence": self.estimate_evidence,
             "skipped": [when.isoformat() for when in self.skipped],
             "source_recurrence": self.source_recurrence,
             "unsupported_reason": self.unsupported_reason,
@@ -613,6 +618,7 @@ class ScheduledTransaction(PrimaryObject):
         self.last_posted = date.fromisoformat(raw) if raw else None
         self.variables = dict(data.get("variables", {}))
         self.placeholder = data.get("placeholder", False)
+        self.estimate_evidence = data.get("estimate_evidence")
         self.skipped = [date.fromisoformat(d) for d in data.get("skipped", [])]
         self.source_recurrence = data.get("source_recurrence")
         self.unsupported_reason = str(data.get("unsupported_reason", ""))

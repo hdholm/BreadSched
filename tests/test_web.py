@@ -2668,6 +2668,39 @@ def test_historical_estimate_proposals_and_acceptance(client):
     assert Money(accepted["amount"]) == Money("1800.00")
 
 
+def test_historical_estimate_draft_can_be_adjusted_before_save(client):
+    _status, data = client.get("/api/historical-estimates?months=12&min_active_months=1")
+    proposal = next(item for item in data["proposals"] if item["category_name"].endswith("Rent"))
+    draft = proposal["draft"]
+    assert draft["estimate_evidence"] == proposal["evidence"]
+
+    payload = {
+        **draft,
+        "amount": "1900",
+        "frequency": "biweekly",
+        "start": "2026-10-02",
+        "category_planning_flow": "debt_principal",
+        "seasonal_amounts": [
+            {"month": 1, "amount": "2100"},
+            {"month": 7, "amount": "1750"},
+        ],
+    }
+    status, saved = client.post("/api/scheduled/save", payload)
+    assert status == 200
+    restored = client.database.get_scheduled(saved["handle"])
+    assert restored is not None
+    assert restored.amount() == Money("1900")
+    assert restored.recurrence.period is PeriodType.WEEK
+    assert restored.recurrence.interval == 2
+    assert restored.recurrence.start == date(2026, 10, 2)
+    assert restored.splits[0].planning_flow is PlanningFlowKind.DEBT_PRINCIPAL
+    assert [(item.month, item.amount) for item in restored.seasonal_amounts] == [
+        (1, Money("2100")),
+        (7, Money("1750")),
+    ]
+    assert restored.estimate_evidence == proposal["evidence"]
+
+
 def test_fsa_claim_can_use_multiple_allocations(client):
     _status, accounts = client.get("/api/accounts")
     fsa_account = next(row for row in accounts if row["name"] == "401(k)")

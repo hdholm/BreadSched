@@ -941,6 +941,7 @@ class Api:
                     "variability": item.variability,
                     "reason": item.reason,
                     "evidence": item.evidence.serialize(),
+                    "draft": self._historical_estimate_draft_payload(item),
                     "planning_flow": (
                         item.planning_flow.value if item.planning_flow is not None else None
                     ),
@@ -959,6 +960,50 @@ class Api:
                     for scenario in self.db.iter_scenarios()
                 ],
             ],
+        }
+
+    def _historical_estimate_draft_payload(
+        self, proposal: estimates.HistoricalEstimateProposal
+    ) -> dict:
+        """Translate the engine-owned draft once for every interactive client."""
+        draft = estimates.draft_historical_estimate(self.db, proposal)
+        parts = self._simple_schedule_parts(draft)
+        if parts is None:
+            raise ValueError("historical estimate draft is not safely editable")
+        frequency = self._frequency_key(draft.recurrence)
+        if frequency is None:
+            raise ValueError("historical estimate cadence is not safely editable")
+        return {
+            "handle": None,
+            "name": draft.name,
+            "category": parts["category"],
+            "funding": parts["funding"],
+            "amount": parts["amount"],
+            "category_planning_flow": parts["category_planning_flow"],
+            "planning_flow": parts["planning_flow"],
+            "investment_activity": parts["investment_activity"],
+            "frequency": frequency,
+            "frequency_key": frequency,
+            "start": draft.recurrence.start.isoformat(),
+            "end": draft.recurrence.end.isoformat() if draft.recurrence.end else None,
+            "count": draft.recurrence.count,
+            "weekend": self._weekend_key(draft.recurrence.weekend_adjust),
+            "enabled": True,
+            "placeholder": True,
+            "auto": False,
+            "growth_policy": draft.growth_policy.value,
+            "category_memo": parts["category_memo"],
+            "funding_memo": parts["funding_memo"],
+            "additional_splits": parts["additional_splits"],
+            "amount_changes": [],
+            "split_amount_changes": [],
+            "seasonal_amounts": [
+                {"month": item.month, "amount": item.amount} for item in draft.seasonal_amounts
+            ],
+            "skipped": [],
+            "occurrence_adjustments": [],
+            "account_handles": [parts["category"], parts["funding"]],
+            "estimate_evidence": draft.estimate_evidence,
         }
 
     def historical_estimate_accept(self, payload: dict) -> dict:
@@ -1026,6 +1071,9 @@ class Api:
                     "category": simple["category"] if simple else None,
                     "funding": simple["funding"] if simple else None,
                     "planning_flow": simple["planning_flow"] if simple else None,
+                    "category_planning_flow": (
+                        simple["category_planning_flow"] if simple else None
+                    ),
                     "investment_activity": (simple["investment_activity"] if simple else None),
                     "category_memo": simple["category_memo"] if simple else "",
                     "funding_memo": simple["funding_memo"] if simple else "",
@@ -1074,6 +1122,7 @@ class Api:
                         {"when": change.when.isoformat(), "amount": change.amount}
                         for change in item.occurrence_adjustments
                     ],
+                    "estimate_evidence": item.estimate_evidence,
                 }
             )
         for payment_definition in schedule.account_payment_definitions(
@@ -1685,6 +1734,7 @@ class Api:
             "funding": simple["funding"] if simple else None,
             "amount": simple["amount"] if simple else None,
             "planning_flow": simple["planning_flow"] if simple else None,
+            "category_planning_flow": (simple["category_planning_flow"] if simple else None),
             "investment_activity": simple["investment_activity"] if simple else None,
             "additional_splits": simple["additional_splits"] if simple else [],
             "frequency": self._frequency_key(item.recurrence),
@@ -1704,6 +1754,7 @@ class Api:
                 {"when": change.when.isoformat(), "amount": change.amount}
                 for change in item.occurrence_adjustments
             ],
+            "estimate_evidence": item.estimate_evidence,
         }
 
     def scenario_events(self, handle: str | None) -> dict:
@@ -1737,6 +1788,7 @@ class Api:
                     "category": parts["category"] if parts else None,
                     "funding": parts["funding"] if parts else None,
                     "amount": parts["amount"] if parts else None,
+                    "category_planning_flow": (parts["category_planning_flow"] if parts else None),
                     "frequency": frequency if parts else None,
                     "start": item.recurrence.start.isoformat(),
                     "end": item.recurrence.end.isoformat() if item.recurrence.end else None,
@@ -1755,6 +1807,7 @@ class Api:
                         {"when": change.when.isoformat(), "amount": change.amount}
                         for change in item.occurrence_adjustments
                     ],
+                    "estimate_evidence": item.estimate_evidence,
                 }
                 for item in schedules
             ],
@@ -1981,11 +2034,23 @@ class Api:
             )
         except ValueError:
             raise ValueError("choose a valid investment activity") from None
+        category_planning_flow_raw = str(payload.get("category_planning_flow") or "").strip()
+        try:
+            category_planning_flow = (
+                PlanningFlowKind(category_planning_flow_raw) if category_planning_flow_raw else None
+            )
+        except ValueError:
+            raise ValueError("choose a valid category planning purpose") from None
+        if category_planning_flow is not None and investment_activity is not None:
+            raise ValueError("choose a category planning purpose or investment activity, not both")
         if (
             category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
             and investment_activity is None
+            and category_planning_flow is None
         ):
-            raise ValueError("choose income/expense or an investment activity")
+            raise ValueError(
+                "choose income/expense, a category planning purpose, or an investment activity"
+            )
         try:
             amount = abs(self._input_money(payload, payload.get("amount", "")))
         except (ValueError, ArithmeticError):
@@ -2037,7 +2102,9 @@ class Api:
         if set(skipped) & {item.when for item in adjustments}:
             raise ValueError("an occurrence cannot be both skipped and overridden")
         signed = (
-            amount * investment_activity.direction
+            category_planning_flow.ledger_amount(amount)
+            if category_planning_flow is not None
+            else amount * investment_activity.direction
             if investment_activity is not None and investment_activity.direction
             else amount * category.sign()
         )
@@ -2081,6 +2148,7 @@ class Api:
                 ScheduledSplit(
                     category.handle,
                     signed,
+                    planning_flow=category_planning_flow,
                     investment_activity=investment_activity,
                 ),
                 *additional_splits,
@@ -2109,10 +2177,20 @@ class Api:
             ),
             skipped=skipped,
             occurrence_adjustments=adjustments,
+            estimate_evidence=(
+                payload.get("estimate_evidence")
+                if isinstance(payload.get("estimate_evidence"), dict)
+                else existing_change.estimate_evidence
+                if existing_change is not None
+                else source.estimate_evidence
+                if source is not None
+                else None
+            ),
         )
         activity_problems = investment.scheduled_activity_problems(self.db, change)
         if activity_problems:
             raise ValueError("; ".join(activity_problems))
+        estimates.validate_historical_estimate_adjustment(self.db, change)
         if source_handle:
             scenario.schedule_overrides = [
                 item
@@ -3307,6 +3385,17 @@ class Api:
             )
             raw_direction = existing_parts.get("category_ledger_direction")
             category_ledger_direction = int(raw_direction) if raw_direction is not None else None
+        if "category_planning_flow" in payload:
+            raw_category_flow = str(payload.get("category_planning_flow") or "").strip()
+            try:
+                category_planning_flow = (
+                    PlanningFlowKind(raw_category_flow) if raw_category_flow else None
+                )
+            except ValueError:
+                raise ValueError("choose a valid category planning purpose") from None
+            category_ledger_direction = None
+        if category_planning_flow is not None and investment_activity is not None:
+            raise ValueError("choose a category planning purpose or investment activity, not both")
         if (
             category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
             and investment_activity is None
@@ -3441,6 +3530,11 @@ class Api:
                     "update the funding or another leg for the same date"
                 )
         item.placeholder = bool(payload.get("placeholder", False))
+        if "estimate_evidence" in payload:
+            raw_evidence = payload.get("estimate_evidence")
+            if raw_evidence is not None and not isinstance(raw_evidence, dict):
+                raise ValueError("estimate evidence must be an object")
+            item.estimate_evidence = raw_evidence
         item.growth_policy = growth_policy
         item.amount_changes = amount_changes
         item.seasonal_amounts = (
@@ -3463,6 +3557,7 @@ class Api:
         activity_problems = investment.scheduled_activity_problems(self.db, item)
         if activity_problems:
             raise ValueError("; ".join(activity_problems))
+        estimates.validate_historical_estimate_adjustment(self.db, item)
 
         action = "Update" if existing is not None else "Add"
         with self.db.transaction(f"{action} scheduled {item.name}") as txn:

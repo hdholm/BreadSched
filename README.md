@@ -153,7 +153,10 @@ formula text is not rewritten merely for display.
 
 Suggest from History produces reviewable drafts rather than writing directly to the
 book. Choosing **Review…** opens the normal Base or scenario schedule editor with
-the inferred accounts, amount, cadence, dates, and seasonal values populated. The
+the inferred accounts, amount, cadence, dates, seasonal values, and planning
+classification populated. GTK and web both let those fields be adjusted before
+Save and apply the same historical-estimate acceptance guard. The original
+structured evidence remains attached to the accepted estimate as provenance. The
 proposal is added only after **Save**; cancelling leaves the book unchanged, and a
 later analysis measures coverage from the values that were actually saved.
 Suggestions keep ordinary Income/Expense categories separate from retirement

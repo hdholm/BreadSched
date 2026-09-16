@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0218 — Interactive estimate adjustment.** Build GTK and web historical
+  review drafts through the same engine service, then allow amount, cadence, first
+  date, seasonal month amounts, and category planning classification to be changed
+  before saving. Apply one shared acceptance guard to both surfaces and retain the
+  original structured evidence on accepted Base and scenario estimates. Advance
+  the alpha version to `0.2.0a54`.
+
 - [x] **0217 — Structured estimate evidence.** Give every historical estimate one
   shared evidence model covering each selected or excluded history month, gross
   activity, applied future-plan coverage, residuals, observed cadence dates,

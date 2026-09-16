@@ -17,9 +17,10 @@ import re
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import investment
+from ...gen.engine import estimates, investment
 from ...gen.engine import schedule as schedule_engine
 from ...gen.lib import (
+    AccountClass,
     FormulaError,
     InvestmentActivityKind,
     Money,
@@ -27,6 +28,7 @@ from ...gen.lib import (
     PlanningFlowKind,
     Recurrence,
     ScheduledAmountChange,
+    ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
     ScheduledSplitAmountChange,
@@ -41,6 +43,7 @@ from ..gi_setup import Gtk
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
+    MonthAmountListEditor,
     PlanningSplitListEditor,
     SplitAmountTimelineEditor,
 )
@@ -121,7 +124,6 @@ class ScheduleDialog(Gtk.Window):
         self._formula_entries: list[tuple[int, Gtk.Entry]] = []
         self._formula_originals: list[str] = []
         self._formula_variables_original = ""
-        self._category_planning_flow: PlanningFlowKind | None = None
         self._category_ledger_direction: int | None = None
         self._frequencies = list(_FREQUENCIES)
         if source is not None and not any(
@@ -201,6 +203,14 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(self.category, 1, row, 1, 1)
         row += 1
 
+        self.category_planning_flow = Gtk.DropDown.new_from_strings(
+            [label for label, _kind in _PLANNING_FLOWS]
+        )
+        self.category_planning_flow.connect("notify::selected", self._validate)
+        grid.attach(Gtk.Label(label="Category planning purpose", xalign=0), 0, row, 1, 1)
+        grid.attach(self.category_planning_flow, 1, row, 1, 1)
+        row += 1
+
         self.funding = Gtk.DropDown.new_from_strings(self._names)
         if len(self._accounts) > 1:
             self.funding.set_selected(1)
@@ -269,6 +279,15 @@ class ScheduleDialog(Gtk.Window):
         label = Gtk.Label(label="Future amounts", xalign=0, valign=Gtk.Align.START)
         grid.attach(label, 0, row, 1, 1)
         grid.attach(self.amount_changes_editor, 1, row, 1, 1)
+        row += 1
+
+        self.seasonal_amounts_editor = MonthAmountListEditor(self._validate)
+        label = Gtk.Label(label="Seasonal month amounts", xalign=0, valign=Gtk.Align.START)
+        label.set_tooltip_text(
+            "Override the ordinary amount in selected calendar months. Each month may appear once."
+        )
+        grid.attach(label, 0, row, 1, 1)
+        grid.attach(self.seasonal_amounts_editor, 1, row, 1, 1)
         row += 1
 
         self.skipped_editor = DateListEditor(
@@ -494,6 +513,7 @@ class ScheduleDialog(Gtk.Window):
         """Protect formula accounts/amount mechanics while allowing validated formulas."""
         protected = (
             self.category,
+            self.category_planning_flow,
             self.funding,
             self.planning_flow,
             self.investment_activity,
@@ -502,6 +522,7 @@ class ScheduleDialog(Gtk.Window):
             self.funding_memo_entry,
             self.additional_splits,
             self.amount_changes_editor,
+            self.seasonal_amounts_editor,
             self.occurrence_adjustments_editor,
         )
         for widget in protected:
@@ -640,6 +661,16 @@ class ScheduleDialog(Gtk.Window):
                         0,
                     )
                 )
+                self.category_planning_flow.set_selected(
+                    next(
+                        (
+                            index
+                            for index, (_label, kind) in enumerate(_PLANNING_FLOWS)
+                            if kind is flow_split.planning_flow
+                        ),
+                        0,
+                    )
+                )
                 self.investment_activity.set_selected(
                     next(
                         (
@@ -652,7 +683,6 @@ class ScheduleDialog(Gtk.Window):
                 )
                 resolved_flow = flow_split.resolve(source.variables)
                 if flow_split.planning_flow is not None:
-                    self._category_planning_flow = flow_split.planning_flow
                     amount = flow_split.planning_flow.plan_amount(resolved_flow)
                 elif flow_split.investment_activity is not None:
                     amount = abs(resolved_flow)
@@ -724,6 +754,9 @@ class ScheduleDialog(Gtk.Window):
         self.auto_check.set_active(source.auto_create)
         self.amount_changes_editor.set_values(
             (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
+        )
+        self.seasonal_amounts_editor.set_values(
+            (item.month, str(item.amount.to_decimal())) for item in source.seasonal_amounts
         )
         split_changes: list[tuple[int, date, str]] = []
         for split in source.splits:
@@ -850,6 +883,21 @@ class ScheduleDialog(Gtk.Window):
             values.sort(key=lambda item: item.start)
         return grouped
 
+    def _seasonal_amounts(self) -> list[ScheduledMonthAmount] | None:
+        values = self.seasonal_amounts_editor.values()
+        if len({month for month, _amount in values}) != len(values):
+            return None
+        try:
+            amounts = [
+                ScheduledMonthAmount(month, Money(parse_user_amount(raw_amount)))
+                for month, raw_amount in values
+            ]
+        except (ValueError, ArithmeticError):
+            return None
+        if any(item.amount <= 0 for item in amounts):
+            return None
+        return sorted(amounts, key=lambda item: item.month)
+
     def _skipped(self, recurrence: Recurrence | None) -> list[date] | None:
         values = self.skipped_editor.values()
         if not values:
@@ -922,6 +970,8 @@ class ScheduleDialog(Gtk.Window):
             problems.append("check future amounts")
         if self._split_amount_changes() is None:
             problems.append("check per-leg future amounts")
+        if self._seasonal_amounts() is None:
+            problems.append("check seasonal month amounts")
         adjustments = self._occurrence_adjustments(recurrence)
         if adjustments is None:
             problems.append("check one-time amounts")
@@ -930,6 +980,20 @@ class ScheduleDialog(Gtk.Window):
                 problems.append("an occurrence cannot be both skipped and overridden")
         if self.category.get_selected() == self.funding.get_selected():
             problems.append("choose two different accounts")
+        category = self._accounts[self.category.get_selected()]
+        category_planning_flow = _PLANNING_FLOWS[self.category_planning_flow.get_selected()][1]
+        investment_activity = _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
+        if category_planning_flow is not None and investment_activity is not None:
+            problems.append("choose a category planning purpose or investment activity, not both")
+        if (
+            category.account_class not in {AccountClass.INCOME, AccountClass.EXPENSE}
+            and category_planning_flow is None
+            and investment_activity is None
+            and self._category_ledger_direction is None
+        ):
+            problems.append(
+                "choose income/expense, a category planning purpose, or an investment activity"
+            )
         for (
             _account_index,
             raw_amount,
@@ -1016,9 +1080,10 @@ class ScheduleDialog(Gtk.Window):
             schedule.description = schedule.name
         schedule.recurrence = recurrence
         planning_kind = _PLANNING_FLOWS[self.planning_flow.get_selected()][1]
+        category_planning_kind = _PLANNING_FLOWS[self.category_planning_flow.get_selected()][1]
         investment_activity = _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
-        if self._category_planning_flow is not None:
-            category_value = self._category_planning_flow.ledger_amount(amount)
+        if category_planning_kind is not None:
+            category_value = category_planning_kind.ledger_amount(amount)
         elif investment_activity is not None and investment_activity.direction:
             category_value = amount * investment_activity.direction
         elif self._category_ledger_direction is not None:
@@ -1062,7 +1127,7 @@ class ScheduleDialog(Gtk.Window):
                 category.handle,
                 category_value,
                 memo=self.category_memo_entry.get_text().strip(),
-                planning_flow=self._category_planning_flow,
+                planning_flow=category_planning_kind,
                 investment_activity=investment_activity,
             ),
             *extra_splits,
@@ -1085,12 +1150,18 @@ class ScheduleDialog(Gtk.Window):
         schedule.placeholder = self.kind.get_selected() == 1
         schedule.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
         schedule.amount_changes = self._amount_changes() or []
+        schedule.seasonal_amounts = self._seasonal_amounts() or []
         schedule.skipped = self._skipped(recurrence) or []
         schedule.occurrence_adjustments = self._occurrence_adjustments(recurrence) or []
         return schedule
 
     def _on_save(self, _button) -> None:
         schedule = self.build()
+        try:
+            estimates.validate_historical_estimate_adjustment(self.db, schedule)
+        except ValueError as exc:
+            self.status.set_text(str(exc))
+            return
         for when in sorted(
             {change.start for split in schedule.splits for change in split.amount_changes}
         ):

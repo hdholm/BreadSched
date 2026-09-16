@@ -109,6 +109,7 @@ class ScenarioSchedule:
         skipped: list[date] | None = None,
         occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
         growth_policy: ScheduleGrowthPolicy | str = ScheduleGrowthPolicy.AUTO,
+        estimate_evidence: dict[str, Any] | None = None,
     ) -> None:
         self.handle = handle or create_handle()
         self.name = name
@@ -126,6 +127,7 @@ class ScenarioSchedule:
         self.occurrence_adjustments = sorted(
             list(occurrence_adjustments or []), key=lambda item: item.when
         )
+        self.estimate_evidence = estimate_evidence
 
     @classmethod
     def from_scheduled(
@@ -158,6 +160,7 @@ class ScenarioSchedule:
                 ScheduledOccurrenceAdjustment.from_dict(item.serialize())
                 for item in schedule.occurrence_adjustments
             ],
+            estimate_evidence=schedule.estimate_evidence,
         )
 
     def context(self, when: date) -> dict[str, Any]:
@@ -237,6 +240,7 @@ class ScenarioSchedule:
             "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
             "skipped": [when.isoformat() for when in self.skipped],
             "occurrence_adjustments": [item.serialize() for item in self.occurrence_adjustments],
+            "estimate_evidence": self.estimate_evidence,
         }
 
     @classmethod
@@ -263,6 +267,7 @@ class ScenarioSchedule:
                 ScheduledOccurrenceAdjustment.from_dict(item)
                 for item in data.get("occurrence_adjustments", [])
             ],
+            estimate_evidence=data.get("estimate_evidence"),
         )
 
 

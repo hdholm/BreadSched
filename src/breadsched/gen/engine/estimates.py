@@ -33,6 +33,7 @@ __all__ = [
     "draft_historical_estimate",
     "draft_scenario_estimate",
     "propose_historical_estimates",
+    "validate_historical_estimate_adjustment",
 ]
 
 
@@ -50,9 +51,9 @@ class EstimateHistoryEvidence:
     def serialize(self) -> dict[str, object]:
         return {
             "month": self.month.isoformat(),
-            "gross": self.gross,
-            "planned": self.planned,
-            "residual": self.residual,
+            "gross": str(self.gross.to_decimal()),
+            "planned": str(self.planned.to_decimal()),
+            "residual": str(self.residual.to_decimal()),
             "selected": self.selected,
             "exclusion": self.exclusion,
         }
@@ -109,7 +110,10 @@ class EstimateSeasonalityEvidence:
         return {
             "detected": self.detected,
             "variability": self.variability,
-            "monthly_amounts": [item.serialize() for item in self.monthly_amounts],
+            "monthly_amounts": [
+                {"month": item.month, "amount": str(item.amount.to_decimal())}
+                for item in self.monthly_amounts
+            ],
             "explanation": self.explanation,
         }
 
@@ -1280,6 +1284,43 @@ def _proposal_splits(db: DbSQLite, proposal: HistoricalEstimateProposal) -> list
     ]
 
 
+def validate_historical_estimate_adjustment(
+    db: DbSQLite, adjusted: ScheduledTransaction | ScenarioSchedule
+) -> None:
+    """Shared acceptance guard for GTK, web, and direct engine callers."""
+    if adjusted.estimate_evidence is None:
+        return
+    if not adjusted.placeholder:
+        raise ValueError("a historical estimate must remain a planning estimate")
+    if not adjusted.name.strip():
+        raise ValueError("a historical estimate needs a name")
+    if len(adjusted.splits) < 2:
+        raise ValueError("a historical estimate needs a category and funding split")
+    missing = [split.account for split in adjusted.splits if db.get_account(split.account) is None]
+    if missing:
+        raise ValueError("a historical estimate references an account that no longer exists")
+    when = adjusted.recurrence.start
+    resolved = adjusted.resolved_splits(when=when)
+    if sum((value for _account, value in resolved), Money(0)):
+        raise ValueError("historical estimate adjustments must remain balanced")
+    if not any(value > 0 for _account, value in resolved):
+        raise ValueError("historical estimate amount must be greater than zero")
+    if not any(
+        (account := db.get_account(split.account)) is not None
+        and (
+            account.account_class in {AccountClass.INCOME, AccountClass.EXPENSE}
+            or split.planning_flow is not None
+            or split.investment_activity is not None
+        )
+        for split in adjusted.splits
+    ):
+        raise ValueError(
+            "choose an income/expense category, planning purpose, or investment activity"
+        )
+    if len({item.month for item in adjusted.seasonal_amounts}) != len(adjusted.seasonal_amounts):
+        raise ValueError("seasonal estimate months must be unique")
+
+
 def draft_historical_estimate(
     db: DbSQLite, proposal: HistoricalEstimateProposal
 ) -> ScheduledTransaction:
@@ -1295,12 +1336,14 @@ def draft_historical_estimate(
         ],
     )
     draft.placeholder = True
+    draft.estimate_evidence = proposal.evidence.serialize()
+    validate_historical_estimate_adjustment(db, draft)
     return draft
 
 
 def draft_scenario_estimate(db: DbSQLite, proposal: HistoricalEstimateProposal) -> ScenarioSchedule:
     """Build an editable, unsaved scenario estimate from one analyzer proposal."""
-    return ScenarioSchedule(
+    draft = ScenarioSchedule(
         name=proposal.estimate_name,
         recurrence=Recurrence.from_dict(proposal.recurrence.serialize()),
         splits=_proposal_splits(db, proposal),
@@ -1308,7 +1351,10 @@ def draft_scenario_estimate(db: DbSQLite, proposal: HistoricalEstimateProposal) 
         seasonal_amounts=[
             ScheduledMonthAmount.from_dict(item.serialize()) for item in proposal.seasonal_amounts
         ],
+        estimate_evidence=proposal.evidence.serialize(),
     )
+    validate_historical_estimate_adjustment(db, draft)
+    return draft
 
 
 def accept_historical_estimate(
@@ -1321,6 +1367,7 @@ def accept_historical_estimate(
 
     if scenario_handle is None:
         baseline_schedule = draft_historical_estimate(db, proposal)
+        validate_historical_estimate_adjustment(db, baseline_schedule)
         with db.transaction(f"Add historical estimate {proposal.category_name}") as txn:
             db.add_scheduled(baseline_schedule, txn)
         return baseline_schedule.handle
@@ -1329,6 +1376,7 @@ def accept_historical_estimate(
     if scenario is None:
         raise ValueError("saved scenario no longer exists")
     scenario_schedule = draft_scenario_estimate(db, proposal)
+    validate_historical_estimate_adjustment(db, scenario_schedule)
     scenario.schedule_overrides.append(scenario_schedule)
     with db.transaction(f"Add historical estimate to {scenario.name}") as txn:
         db.commit_scenario(scenario, txn)

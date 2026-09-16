@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0217 — structured estimate evidence**.
+The current accepted baseline is **0218 — interactive estimate adjustment**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,9 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next focused slice is **0218 — interactive estimate adjustment**: let users
-adjust amount, cadence, start date, seasonality, and classification before accepting
-an estimate in GTK and web, using shared validation and acceptance logic.
+The next focused slice is **0219 — category-specific inference**: refine seasonality
+and cadence only where structured explanations expose false positives, with
+convergence and sparse-history regressions.
 
 ## Architecture and correctness
 
@@ -46,9 +46,6 @@ an estimate in GTK and web, using shared validation and acceptance logic.
   debit/credit terminology clear.
 
 ## Historical estimator
-
-- [ ] Provide interactive adjustment of historical estimate amount, cadence, start
-  date, seasonality, and classification before acceptance.
 
 - [ ] Refine category-specific seasonality/cadence inference.
 
