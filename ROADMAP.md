@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0215 — per-leg amount timelines**.
+The current accepted baseline is **0216 — advanced deterministic recurrences**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,9 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next focused slice is **0216 — advanced deterministic recurrences**: add only
-patterns with unambiguous occurrence identities, bounded generation, import
-mapping, safe editing, and round-trip coverage.
+The next focused slice is **0217 — structured estimate evidence**: explain selected
+history, exclusions, cadence, trend, seasonality, residuals, confidence, and the
+inferred funding account through one shared model.
 
 ## Architecture and correctness
 
@@ -63,7 +63,9 @@ mapping, safe editing, and round-trip coverage.
 - [ ] Continue widening safe editing only where complete split/recurrence/import
   semantics can be round-tripped without guessing.
 
-- [ ] Support additional deterministic advanced/custom recurrence patterns.
+- [ ] Consider additional custom recurrence patterns only when their occurrence
+  identity, bounded generation, import mapping, editing, and round trip are all
+  unambiguous.
 
 - [ ] Add payroll templates and richer payroll editing.
 

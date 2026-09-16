@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0216 — Advanced deterministic recurrences.** Add GnuCash-compatible nth-
+  weekday and last-weekday monthly rules with canonical fifth-weekday behavior,
+  stable occurrence identities, bounds, weekend adjustment, native round trips,
+  and SQLite/XML import convergence. Expose only these proven-safe patterns in
+  shared editability, GTK, web, scenarios, projections, and loan cadence handling.
+  Advance the alpha version to `0.2.0a52`.
+
 - [x] **0215 — Per-leg amount timelines.** Add exact effective-dated changes to
   individual fixed schedule legs, including signed funding and deduction amounts.
   Preserve timelines through native serialization, safe editors, scenario copies,

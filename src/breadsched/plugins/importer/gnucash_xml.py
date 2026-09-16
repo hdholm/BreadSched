@@ -462,6 +462,8 @@ _PERIODS = {
     "week": PeriodType.WEEK,
     "semi_month": PeriodType.SEMI_MONTH,
     "month": PeriodType.MONTH,
+    "nth weekday": PeriodType.NTH_WEEKDAY,
+    "last weekday": PeriodType.LAST_WEEKDAY,
     "end of month": PeriodType.MONTH,
     "year": PeriodType.YEAR,
 }

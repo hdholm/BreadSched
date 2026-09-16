@@ -52,6 +52,8 @@ _FREQUENCIES = [
     ("Fortnightly", PeriodType.WEEK, 2),
     ("Twice a month", PeriodType.SEMI_MONTH, 1),
     ("Monthly", PeriodType.MONTH, 1),
+    ("Monthly — nth weekday", PeriodType.NTH_WEEKDAY, 1),
+    ("Monthly — last weekday", PeriodType.LAST_WEEKDAY, 1),
     ("Quarterly", PeriodType.MONTH, 3),
     ("Twice a year", PeriodType.MONTH, 6),
     ("Yearly", PeriodType.YEAR, 1),

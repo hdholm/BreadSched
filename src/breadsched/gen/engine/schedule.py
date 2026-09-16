@@ -122,6 +122,8 @@ def schedule_edit_projection(
         PeriodType.WEEK,
         PeriodType.SEMI_MONTH,
         PeriodType.MONTH,
+        PeriodType.NTH_WEEKDAY,
+        PeriodType.LAST_WEEKDAY,
         PeriodType.YEAR,
         PeriodType.ONCE,
     }

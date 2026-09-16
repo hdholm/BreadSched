@@ -523,6 +523,54 @@ class TestItServes:
         item = next(row for row in data["definitions"] if row["handle"] == created["handle"])
         assert item["enabled"] is True
 
+    @pytest.mark.parametrize(
+        ("frequency", "start", "period", "expected"),
+        [
+            (
+                "nth_weekday",
+                "2026-01-13",
+                PeriodType.NTH_WEEKDAY,
+                [date(2026, 1, 13), date(2026, 2, 10), date(2026, 3, 10)],
+            ),
+            (
+                "last_weekday",
+                "2026-01-06",
+                PeriodType.LAST_WEEKDAY,
+                [date(2026, 1, 27), date(2026, 2, 24), date(2026, 3, 31)],
+            ),
+        ],
+    )
+    def test_advanced_monthly_frequency_can_be_created_and_edited(
+        self, client, frequency, start, period, expected
+    ):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        values = {
+            "name": "Weekday schedule",
+            "category": category["handle"],
+            "funding": funding["handle"],
+            "amount": "25.00",
+            "frequency": frequency,
+            "start": start,
+            "count": "3",
+        }
+
+        status, created = client.post("/api/scheduled/save", values)
+        assert status == 200
+        saved = client.database.get_scheduled(created["handle"])
+        assert saved is not None
+        assert saved.recurrence.period is period
+        assert saved.recurrence.occurrences(date(2026, 3, 31)) == expected
+
+        values.update(handle=created["handle"], amount="30.00")
+        status, _updated = client.post("/api/scheduled/save", values)
+        assert status == 200
+        restored = client.database.get_scheduled(created["handle"])
+        assert restored is not None
+        assert restored.recurrence.period is period
+        assert restored.recurrence.occurrences(date(2026, 3, 31)) == expected
+
     def test_scheduled_review_preserves_seasonal_amounts(self, client):
         _status, data = client.get("/api/scheduled")
         category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))

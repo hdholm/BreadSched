@@ -1484,7 +1484,8 @@ function openScheduledEditor(data, source) {
   const investmentActivity = select(
     "investment_activity", INVESTMENT_ACTIVITY_OPTIONS, source?.investment_activity || "");
   const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
-    ["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],
+    ["semimonthly","Twice a month"],["monthly","Monthly"],
+    ["nth_weekday","Monthly — nth weekday"],["last_weekday","Monthly — last weekday"],["quarterly","Quarterly"],
     ["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]], source?.frequency_key || "monthly");
   const weekend = select("weekend", [["none","Leave on the day"],["previous","Friday before"],["next","Monday after"]], source?.weekend || "none");
   form.append(
@@ -1574,7 +1575,8 @@ function openFormulaScheduleEditor(source) {
   const select = (name, items, value) => el("select", { name }, items.map(([key, label]) =>
     el("option", { value:key, selected:key === value ? "selected" : null }, label)));
   const frequency = select("frequency", [["weekly","Weekly"],["biweekly","Fortnightly"],
-    ["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],
+    ["semimonthly","Twice a month"],["monthly","Monthly"],
+    ["nth_weekday","Monthly — nth weekday"],["last_weekday","Monthly — last weekday"],["quarterly","Quarterly"],
     ["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]],
     source.frequency_key || "monthly");
   const weekend = select("weekend", [["none","Leave on the day"],
@@ -2094,7 +2096,7 @@ async function scenarioEventPanel(handle, fromMonth) {
       el("label", {}, "Amount", el("input", {name:"amount", required:"required", inputmode:"decimal", value:editSource?.amount || ""})),
       additionalSplits.node,
       futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
-      el("label", {}, "Frequency", el("select", {name:"frequency"}, [["weekly","Weekly"],["biweekly","Fortnightly"],["semimonthly","Twice a month"],["monthly","Monthly"],["quarterly","Quarterly"],["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.frequency||"monthly")?"selected":null},l)))),
+      el("label", {}, "Frequency", el("select", {name:"frequency"}, [["weekly","Weekly"],["biweekly","Fortnightly"],["semimonthly","Twice a month"],["monthly","Monthly"],["nth_weekday","Monthly — nth weekday"],["last_weekday","Monthly — last weekday"],["quarterly","Quarterly"],["semiannual","Twice a year"],["annual","Yearly"],["once","Once"]].map(([v,l])=>el("option",{value:v,selected:v===(editSource?.frequency||"monthly")?"selected":null},l)))),
       el("label", {}, "First occurrence", el("input", {name:"start", type:"date", required:"required", value:editSource?.start || `${fromMonth}-01`})),
       el("label", {}, "End date (optional)", el("input", {name:"end", type:"date", value:editSource?.end || ""})),
       el("label", {}, "Occurrence count (optional)", el("input", {name:"count", type:"number", min:"1", step:"1", value:editSource?.count || ""})),

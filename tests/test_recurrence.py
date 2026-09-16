@@ -54,6 +54,59 @@ class TestMonthly:
             date(2026, 3, 31),
         ]
 
+    def test_nth_weekday_keeps_ordinal_and_weekday(self):
+        rule = Recurrence(PeriodType.NTH_WEEKDAY, start=date(2026, 1, 13), count=4)
+
+        assert rule.occurrences(date(2026, 5, 1)) == [
+            date(2026, 1, 13),
+            date(2026, 2, 10),
+            date(2026, 3, 10),
+            date(2026, 4, 14),
+        ]
+        assert rule.describe() == "the second Tuesday of every month, 4 times"
+
+    def test_last_weekday_canonicalizes_start_and_stays_last(self):
+        rule = Recurrence(PeriodType.LAST_WEEKDAY, start=date(2026, 1, 6), count=3)
+
+        assert rule.start == date(2026, 1, 27)
+        assert rule.occurrences(date(2026, 4, 1)) == [
+            date(2026, 1, 27),
+            date(2026, 2, 24),
+            date(2026, 3, 31),
+        ]
+
+    def test_fifth_weekday_is_the_stable_last_weekday_rule(self):
+        rule = Recurrence(PeriodType.NTH_WEEKDAY, start=date(2026, 3, 31))
+
+        assert rule.period is PeriodType.LAST_WEEKDAY
+        assert rule.occurrences(date(2026, 6, 30)) == [
+            date(2026, 3, 31),
+            date(2026, 4, 28),
+            date(2026, 5, 26),
+            date(2026, 6, 30),
+        ]
+
+    def test_nth_weekday_honours_bounds_weekend_and_identity(self):
+        rule = Recurrence(
+            PeriodType.NTH_WEEKDAY,
+            start=date(2026, 2, 7),  # first Saturday
+            end=date(2026, 5, 3),
+            weekend_adjust=WeekendAdjust.NEXT,
+        )
+
+        assert rule.occurrences(date(2026, 12, 31)) == [
+            date(2026, 2, 9),
+            date(2026, 3, 9),
+            date(2026, 4, 6),
+            date(2026, 5, 4),
+        ]
+        assert [item.number for item in rule.occurrence_details(date(2026, 12, 31))] == [
+            1,
+            2,
+            3,
+            4,
+        ]
+
 
 class TestOtherPeriods:
     def test_fortnightly(self):
@@ -204,6 +257,14 @@ class TestOccurrenceNumbering:
                     second_day_of_month=-1,
                 ),
                 date(2026, 12, 31),
+            ),
+            (
+                Recurrence(PeriodType.NTH_WEEKDAY, start=date(2026, 1, 13)),
+                date(2028, 12, 31),
+            ),
+            (
+                Recurrence(PeriodType.LAST_WEEKDAY, start=date(2026, 1, 6)),
+                date(2028, 12, 31),
             ),
             (
                 Recurrence(

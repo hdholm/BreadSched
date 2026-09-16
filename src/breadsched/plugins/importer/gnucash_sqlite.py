@@ -42,6 +42,8 @@ PERIOD_MAP = {
     "semi_month": PeriodType.SEMI_MONTH,
     "end of month": PeriodType.MONTH,
     "month": PeriodType.MONTH,
+    "nth weekday": PeriodType.NTH_WEEKDAY,
+    "last weekday": PeriodType.LAST_WEEKDAY,
     "year": PeriodType.YEAR,
 }
 

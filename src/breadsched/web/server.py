@@ -1519,6 +1519,8 @@ class Api:
         "biweekly": (PeriodType.WEEK, 2),
         "semimonthly": (PeriodType.SEMI_MONTH, 1),
         "monthly": (PeriodType.MONTH, 1),
+        "nth_weekday": (PeriodType.NTH_WEEKDAY, 1),
+        "last_weekday": (PeriodType.LAST_WEEKDAY, 1),
         "quarterly": (PeriodType.MONTH, 3),
         "semiannual": (PeriodType.MONTH, 6),
         "annual": (PeriodType.YEAR, 1),

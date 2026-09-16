@@ -26,6 +26,8 @@ def recurrence_cases(draw):
                 PeriodType.DAY,
                 PeriodType.WEEK,
                 PeriodType.MONTH,
+                PeriodType.NTH_WEEKDAY,
+                PeriodType.LAST_WEEKDAY,
                 PeriodType.YEAR,
                 PeriodType.SEMI_MONTH,
             ]

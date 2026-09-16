@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import date
+from pathlib import Path
 
 import pytest
 from gnucash_xml_fixtures import create_xml_book
@@ -158,6 +159,77 @@ def test_xml_import_matrix_preserves_month_end_bounds_and_weekend_adjustment(db,
         date(2026, 3, 31),
         date(2026, 4, 30),
     ]
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "period_name", "start", "period", "expected"),
+    [
+        (
+            "sqlite",
+            "nth weekday",
+            "20260113",
+            PeriodType.NTH_WEEKDAY,
+            [date(2026, 1, 13), date(2026, 2, 10), date(2026, 3, 10)],
+        ),
+        (
+            "xml",
+            "last weekday",
+            "2026-01-06",
+            PeriodType.LAST_WEEKDAY,
+            [date(2026, 1, 27), date(2026, 2, 24), date(2026, 3, 31)],
+        ),
+    ],
+)
+def test_gnucash_advanced_recurrence_import_is_editable_and_convergent(
+    db,
+    tmp_path,
+    gnucash_sqlite_path,
+    source_kind,
+    period_name,
+    start,
+    period,
+    expected,
+):
+    if source_kind == "sqlite":
+        path = gnucash_sqlite_path.path
+        handle = gnucash_sqlite_path.ids.sched
+        with sqlite3.connect(path) as conn:
+            conn.execute(
+                "UPDATE recurrences SET recurrence_period_type=?, recurrence_period_start=?",
+                (period_name, start),
+            )
+        importer = gnucash_sqlite.import_book
+    else:
+        source = create_xml_book(tmp_path / "advanced.gnucash", compress=False)
+        path = Path(source.path)
+        handle = source.schedule
+        path.write_text(
+            source.body.replace(
+                "<recurrence:period_type>month</recurrence:period_type>",
+                f"<recurrence:period_type>{period_name}</recurrence:period_type>",
+            ).replace(
+                "<recurrence:start><gdate>2026-01-01</gdate></recurrence:start>",
+                f"<recurrence:start><gdate>{start}</gdate></recurrence:start>",
+            ),
+            encoding="utf-8",
+        )
+        importer = gnucash_xml.import_book
+
+    importer(db, path)
+    imported = db.get_scheduled(handle)
+    assert imported is not None
+    assert imported.recurrence.period is period
+    assert imported.recurrence.occurrences(date(2026, 3, 31)) == expected
+    assert schedule.schedule_edit_projection(db, imported).editability.mode is not (
+        schedule.ScheduleEditorMode.READ_ONLY
+    )
+
+    serialized = imported.serialize()
+    importer(db, path)
+    refreshed = db.get_scheduled(handle)
+    assert refreshed is not None
+    assert refreshed.serialize() == serialized
+    assert len(list(db.iter_scheduled())) == 1
 
 
 @pytest.mark.parametrize("source_kind", ["sqlite", "xml"])
