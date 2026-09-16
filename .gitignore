@@ -8,6 +8,7 @@ dist/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
+.venv/
 *.breadsched
 *.breadsched-wal
 *.breadsched-shm

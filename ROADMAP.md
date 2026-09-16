@@ -8,7 +8,8 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0219 — category-specific inference**.
+The current accepted baseline is **0220 — architecture and contribution-policy
+review**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,16 +28,120 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next focused slice is **commodity precision**: remove assumptions that every
-account and commodity uses cents before expanding valuation and multi-currency work.
+The next work is an **architecture gate before further financial features**. The
+shared-service boundary is an existing design rule, but the current 107-method web
+`Api` and independently validated GTK dialogs do not enforce it. Complete 0221 and
+0222 before resuming commodity, investment, FSA, or other feature expansion. Small
+correctness and security fixes may proceed when they do not create another
+presentation-owned workflow.
+
+1. **0221 — Typed service foundation and first vertical slices.**
+   - Add a `gen/services` package whose public use cases accept typed request
+     dataclasses and return typed results or structured validation failures with a
+     stable code and field references. Human-readable interface text must not be the
+     service contract.
+   - Make each mutating service own its `DbTxn`; presentation adapters must not open
+     a transaction around partially duplicated business rules.
+   - Move baseline/scenario schedule validation and construction—including distinct
+     account rules, editability, formula ownership, recurrence, and amount timelines—
+     into shared services consumed by GTK, web, and CLI/tests.
+   - Move Plan request construction/calculation behind a typed query service so the
+     current 440-line web method and the GTK path consume one result model.
+   - Prove adapter parity with request/result contract tests and retain native and
+     GnuCash save/reload/source-refresh coverage.
+
+2. **0222 — Web resource split and boundary hardening.**
+   - Split routing, transport, and resource adapters out of `web/server.py`; resource
+     modules may translate HTTP but must call the 0221 services for use-case logic.
+   - Replace lambda/query indexing with typed parsers that reject missing, repeated,
+     malformed, and out-of-range fields consistently.
+   - Require a valid non-negative `Content-Length`, impose a small documented JSON
+     body limit before reading, reject unsupported transfer encodings, and cover the
+     boundary with socket-level regressions.
+   - Map structured service errors to stable status/code/fields responses. Log
+     unexpected exceptions server-side under a correlation identifier without
+     returning raw exception text; do not classify every `KeyError` as an unknown
+     account.
+   - Move script and style content to packaged static assets, replace interpolated
+     SVG `innerHTML` with DOM construction, and apply a restrictive directive-
+     specific Content Security Policy without `'unsafe-inline'`.
+   - Keep one serialized writer, but give safe GET/projection work a short-lived
+     read-only connection/snapshot so a long projection does not hold the global
+     request lock. Test concurrent reads, read/write visibility, shutdown, and book-
+     lock behavior before claiming concurrency.
+
+3. **0223 — Service adoption, structured errors, and localization seam.**
+   - Migrate remaining cross-interface mutations in coherent slices, prioritizing
+     transactions, reconciliation, claims, loans, imports, Review, scenarios, and
+     projection assumptions. A touched cross-interface workflow may not add new
+     presentation-owned financial rules.
+   - Centralize error codes, field paths, and presentation-message mapping. Introduce
+     gettext only after English service prose has ceased to be an API, then add
+     extraction/catalog checks and locale smoke tests for GTK and web.
+   - Decompose the oversized verification, category-report, estimate, and dialog
+     functions by responsibility while moving their rules; line count is a signal,
+     not an acceptance test. Preserve behavior with characterization tests before
+     structural edits.
+
+4. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
+   below before foreign exchange, lots, or deeper investment modeling.
+
+5. **0225 — Wider data-format compatibility and release discipline.** Apply the
+   version/migration policy below when the next native format change is needed, and
+   begin tagged releases with human-readable release notes.
 
 ## Architecture and correctness
 
 - [ ] Harden `Money` and amount handling:
   - [ ] Remove hard-coded cents where account/commodity precision differs.
+  - [ ] Keep `Money` as the exact rational scalar used to preserve GnuCash numerics;
+    introduce a commodity-tagged `Amount(value, commodity)` at ledger/service
+    arithmetic boundaries. Reject addition, comparison, and netting across unlike
+    commodities unless an explicit dated conversion has produced a reporting-
+    currency amount.
+  - [ ] Preserve the distinct split dimensions: transaction-currency `value` and
+    account-commodity `quantity`. Do not replace them with one ambiguous amount.
+  - [ ] Replace `Rate`'s `Decimal` subclassing, or override its complete arithmetic
+    surface, so operations cannot silently decay to an untyped `Decimal`; add static
+    and runtime closure tests.
 
-- [ ] Split oversized modules where it improves ownership/testability, especially web
-  routing and very large GUI test modules.
+- [ ] Bound formula resources before parsing/evaluation: cap normalized and raw input
+  length, use an explicit local `Decimal` context with precision and exponent limits,
+  normalize all resource failures to `FormulaError`, and test adversarial bases,
+  exponents, nesting, and imported formulas without rejecting representative GnuCash
+  loan expressions.
+
+- [ ] Split oversized modules/functions as part of the service/resource ownership
+  work, especially `web/server.py`, `verify_domain`, `build_category_report`,
+  `propose_historical_estimates`, and the account/schedule dialog constructors.
+  Split large GUI test modules only when the resulting fixture ownership and runtime
+  isolation improve; do not optimize for a line-count threshold alone.
+
+## Independent acceptance evidence and test quality
+
+- [ ] Add a Linux CI job with PyGObject installed but the GTK4 typelib deliberately
+  absent. Keep `tests/test_launcher.py` in the core suite, make its “PyGObject exists”
+  probe distinguish an importable GTK4 namespace, and prove help/version plus a real
+  launch attempt report the missing-runtime condition without collection failure or
+  traceback.
+
+- [ ] Add small, human-reviewed golden books for Plan and Projection. Store the
+  financial assumptions and hand-calculated expected dated flows, balances, and
+  conservation terms beside each synthetic fixture so expected results are not
+  generated by the implementation under test. Keep goldens reviewable and generic;
+  do not substitute large captured user books.
+
+- [ ] Add a bounded mutation-testing gate for `gen/engine` and `gen/lib`. Establish a
+  measured baseline first, exclude equivalent/platform-only mutants explicitly, and
+  ratchet the score in CI rather than imposing an arbitrary pass percentage that
+  makes the suite slow or flaky.
+
+- [ ] Consolidate historical-estimate thresholds, confidence weights, spike rules,
+  cadence tolerances, seasonal criteria, and funding tie-breaks into immutable,
+  documented rule objects passed to the engine. Preserve conservative defaults,
+  expose the applied rule-set/version in structured evidence, and test rule changes
+  against the independent goldens instead of scattering numeric constants through
+  inference code.
 
 
 ## Register workflow
@@ -173,15 +278,34 @@ account and commodity uses cents before expanding valuation and multi-currency w
 
 ## Storage, integrity, and recovery
 
-- [x] **Rolling alpha storage compatibility.** Restore and retain the explicit
-  migration registry and ledger, transactional migration runner, verified
-  pre-migration backup hook, and versioned fixtures. During the current
-  limited alpha, each release need only migrate a book from the immediately
-  preceding alpha format because alpha users are expected to update every release.
-  Do not remove the infrastructure after an individual migration expires: beta and
-  stable releases will require a wider compatibility window, and weakening the
-  sequential-update assumption must be a policy change rather than an emergency
-  reconstruction.
+- [ ] **Application version and native data-format version are independent.** The
+  package/application version (currently the `0.2.0aN` series) identifies the build
+  for bug reports and releases. The integer native schema/data-format version
+  (currently 7) alone controls book compatibility and migration. Display and
+  diagnostic output should report both; a behavior-only application release must not
+  bump the data format, and a data-format change must bump the schema even if the
+  application remains in the same prerelease series.
+
+- [ ] **Expand the migration window with the next data-format change.** When schema 8
+  or the next schema is introduced, retain sequential migrations from the two
+  immediately preceding data-format versions (for schema 8, both 6→7 and 7→8), so
+  the current application accepts current-format books plus those two predecessor
+  formats. Keep versioned fixtures for every supported starting format and prove
+  direct open, sequential migration, one pre-migration backup, rollback, ledger
+  evidence, and rejection outside the advertised window. Do not create a no-op
+  schema bump merely to enact this policy.
+
+- [ ] **Evaluate normalized transaction/split source-of-truth storage without a
+  big-bang rewrite.** Record an ADR and prototype the migration/query/round-trip
+  consequences before changing the current blob-plus-derived-index design. The
+  decision must compare normalized transaction and split tables with typed columns,
+  foreign keys, and CHECK constraints against lossless unknown/imported fields,
+  undo/redo, atomic writes, import refresh ownership, schema-evolution cost, and
+  realistic performance. If normalization wins, introduce it through an explicit
+  data-format migration with dual-representation verification during development;
+  retain blobs only for opaque source extensions and document-shaped planning
+  objects. Until then, `split_index` remains derived and must never silently diverge
+  from its transaction blob.
 
 - [ ] Longer term, separate planning resolutions/classifications from imported ledger
   records where doing so materially simplifies synchronization and ownership.
@@ -223,6 +347,13 @@ account and commodity uses cents before expanding valuation and multi-currency w
 
 ## In-application help and documentation
 
+- [ ] Move task-oriented user documentation into a versioned `docs/` site with link
+  and build checks (evaluate MkDocs, but do not couple content to a generator before
+  the information architecture is proven). Trim the README to product orientation,
+  installation, a first-run path, safety/recovery essentials, and links. Keep
+  `DESIGN.md` as the current architecture description; add short ADRs for new
+  consequential decisions instead of mechanically converting historical prose.
+
 - [ ] Build full user documentation and in-application help for Accounts, registers,
   Scheduled transactions, Plan, Review/Actuals, Projection, scenarios, account types,
   imports, reconciliation, and backup/recovery.
@@ -250,7 +381,14 @@ account and commodity uses cents before expanding valuation and multi-currency w
 ## Packaging and release quality
 
 - [ ] Finish cross-platform packaging/release workflows, Linux first, with Windows/
-  macOS behavior isolated behind small platform-specific layers.
+  macOS behavior isolated behind small platform-specific layers. Evaluate Flatpak as
+  the primary GTK/Linux artifact and prove portals, file import/export, printing,
+  settings, backups, and offline operation inside the sandbox before selecting it.
+
+- [ ] Tag releases from accepted `main`, publish release notes that state both the
+  application version and native data-format version/compatibility window, attach
+  verified artifacts, and document upgrade/rollback implications. Tags must follow
+  tested commits rather than merely marking every alpha code increment.
 
 - [ ] Improve crash recovery, diagnostic logging, and privacy-safe error reporting.
 
@@ -262,3 +400,18 @@ account and commodity uses cents before expanding valuation and multi-currency w
 
 - [ ] Keep documentation, versioning, and release notes synchronized with actual
   behavior.
+
+## Project governance and community health
+
+- [ ] Add `SECURITY.md`, privacy-aware issue forms, and `CODEOWNERS`; extend the
+  initial pull-request template as contribution patterns emerge. Security and field-
+  report forms must repeat the existing prohibition on uploading unsanitized
+  financial books and provide a private vulnerability-reporting route. Add a code of
+  conduct when the project is ready to invite a broader contributor community rather
+  than copying one without an enforcement/contact plan.
+
+- [ ] Retain the present documentation roles instead of requiring all four principal
+  documents to change in every PR: update only the files whose user behavior,
+  architecture, pending work, or completed acceptance contract changed. Do not
+  replace milestone acceptance contracts with a label-generated changelog; release
+  tooling may assemble notes from those reviewed contracts and PR metadata.

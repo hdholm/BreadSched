@@ -1,0 +1,1 @@
+include scripts/check_commit_trailers.py

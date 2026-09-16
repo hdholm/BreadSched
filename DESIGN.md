@@ -792,23 +792,31 @@ root.
 
 ## Storage and transactions
 
+The **application version** and **native data-format version** serve different
+purposes and never advance in lockstep. The application version reported by
+`breadsched --version` identifies the installed build for bug reports, packaging,
+and release notes. The integer data-format/schema version determines whether a
+native book can be opened or must be migrated; it is currently 7. A behavior-only
+release changes only the application version. A persistent representation change
+increments the data-format version and supplies an explicit migration.
+
 SQLite is the native persistence engine. The current application writes schema 7 and
-can migrate the immediately preceding schema 6 before decoding primary objects. An
+can migrate schema 6 before decoding primary objects. An
 explicit sequential registry and durable ledger, transactional runner, verified
 pre-migration backup hook, and versioned fixture make that compatibility boundary
 testable. Migration infrastructure is a durable architectural capability even when
 an individual obsolete transformation is allowed to expire.
 
-During the limited alpha, the compatibility promise is a rolling one-version window:
-each released alpha need only migrate the immediately preceding alpha's native
-format, because current alpha users are assumed to update every release. A migration
-must run before ordinary decoding, fail atomically, preserve a verified backup, and
-leave enough version evidence to diagnose or retry safely. The mechanism must not be
-removed when an old migration leaves the supported window. Beta and stable releases
-will require a wider window; weakening the sequential-update assumption is an
-explicit compatibility-policy change supported by retained infrastructure, not an
-emergency reconstruction. This native-book policy is independent of external
-GnuCash, QIF, OFX, and QFX import compatibility.
+The next representation change will widen the supported migration window to the two
+immediately preceding data-format versions. If that next format is schema 8, the
+registry will retain both 6→7 and 7→8 and the application will accept schemas 6, 7,
+and 8. The window changes when a real schema migration is needed; there is no no-op
+format bump. A migration must run before ordinary decoding, fail atomically, preserve
+a verified backup, and leave enough version evidence to diagnose or retry safely.
+The mechanism and supported migration steps are not removed merely because the
+application version advances. Stable releases may require a still wider promise.
+This native-book policy is independent of external GnuCash, QIF, OFX, and QFX import
+compatibility.
 
 The storage priorities are atomic financial writes, explicit format rejection,
 verified backups and recovery, undo/redo integrity, and realistic performance on

@@ -5,6 +5,37 @@ correctness, explainability, and preservation of user data over convenience.
 These expectations apply to every contribution, including patches generated with
 an AI assistant.
 
+## Developer Certificate of Origin and assisted work
+
+Every commit contributed through a pull request must carry a `Signed-off-by:`
+trailer certifying the [Developer Certificate of Origin, version 1.1](https://developercertificate.org/).
+The name and email in that trailer must match the commit author's canonical identity
+after applying the repository's `.mailmap`. Create it with `git commit --signoff` (or
+`git commit -s`) after setting the author identity that should appear in project
+history. A sign-off is a contributor certification, not a substitute for reviewing
+the patch.
+
+Howard Holm's canonical contribution and DCO identity is
+`Howard Holm <hdholm@alumni.iastate.edu>`; `.mailmap` normalizes the historical and
+GitHub-generated `howard@holmgrown.com` author alias to that identity.
+
+The human contributor remains the commit author and is responsible for checking
+financial behavior, tests, licensing, privacy, and source provenance even when an AI
+tool helped. Any commit materially assisted by an AI coding, writing, or review tool
+must also identify the tool in an `Assisted-by:` trailer, for example:
+
+```text
+Signed-off-by: A. Contributor <contributor@example.com>
+Assisted-by: OpenAI Codex <codex@openai.com>
+```
+
+Use `Assisted-by:`, not `Co-authored-by:`, for an AI tool: the tool does not make the
+DCO certification or take authorship responsibility. Name each materially used tool;
+do not add an `Assisted-by:` trailer for ordinary editor completion or formatting.
+Maintainers may ask how generated work was validated, but contributors must not put
+prompts, user financial data, credentials, or other sensitive material in commit
+messages or pull requests.
+
 ## Development principles
 
 - Keep accounting and planning rules in the domain/engine layers. GTK, web, and
@@ -82,10 +113,12 @@ Before opening or updating a pull request:
    PyGObject APIs without type stubs cannot be fully checked by mypy.
 8. Preserve a single coherent commit where practical and verify its parent and tree
    before publication.
-9. Push a named feature branch and open a pull request against `main` or the exact
+9. Verify every commit has the required DCO sign-off and add `Assisted-by:` whenever
+   an AI tool materially contributed.
+10. Push a named feature branch and open a pull request against `main` or the exact
    preceding branch in a documented stack. Record scope, tests, version, related
    issues, and dependency/merge order in the description.
-10. Monitor the complete GitHub Actions run. Correct failures on the same branch and
+11. Monitor the complete GitHub Actions run. Correct failures on the same branch and
     refresh every dependent stacked branch so its parent is exact.
 
 Use `Fixes #N` or `Closes #N` only on the pull request that completes the entire
