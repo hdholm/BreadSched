@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0214 — restored migration infrastructure**.
+The current accepted baseline is **0215 — per-leg amount timelines**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,9 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next focused slice is **0215 — per-leg amount timelines**: allow dated changes
-to individual legs of fixed multi-split schedules while preserving occurrence
-identity and carrying amount provenance into Plan and Projection explanations.
+The next focused slice is **0216 — advanced deterministic recurrences**: add only
+patterns with unambiguous occurrence identities, bounded generation, import
+mapping, safe editing, and round-trip coverage.
 
 ## Architecture and correctness
 
@@ -62,8 +62,6 @@ identity and carrying amount provenance into Plan and Projection explanations.
 
 - [ ] Continue widening safe editing only where complete split/recurrence/import
   semantics can be round-tripped without guessing.
-
-- [ ] Support per-leg amount timelines in fixed multi-split schedules.
 
 - [ ] Support additional deterministic advanced/custom recurrence patterns.
 

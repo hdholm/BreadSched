@@ -311,6 +311,42 @@ function timelineEditor(label, initial, withAmount, onChanged=()=>{}) {
   };
 }
 
+function splitAmountTimelineEditor(accounts, initial, onChanged=()=>{}) {
+  const rows = el("div", {});
+  const box = el("div", { class:"timeline-editor" },
+    el("strong", {}, "Per-leg future amounts"), rows,
+    el("p", { class:"note" },
+      "Use exact signed ledger amounts. Changes sharing a date must leave all legs balanced."));
+  const addRow = (item={}) => {
+    const row = el("div", { class:"timeline-row" });
+    const account = el("select", {}, accounts.map((entry)=>el("option", {
+      value:entry.handle, selected:entry.handle===item.account ? "selected" : null,
+    }, entry.name)));
+    const when = el("input", { type:"date", value:item.start || "" });
+    const amount = el("input", { inputmode:"decimal", placeholder:"Signed ledger amount",
+      value:item.amount ?? "" });
+    const remove = el("button", { class:"action", type:"button",
+      onclick:()=>{ row.remove(); onChanged(); } }, "Remove");
+    row.append(account, when, amount, remove);
+    rows.append(row);
+    [account, when, amount].forEach((control)=>control.addEventListener("change", onChanged));
+  };
+  (initial || []).forEach(addRow);
+  box.append(el("button", { class:"action", type:"button",
+    onclick:()=>{ addRow(); onChanged(); } }, "Add leg amount change"));
+  return {
+    node:box,
+    values:()=>Array.from(rows.children).map((row)=>{
+      const account=row.querySelector("select").value;
+      const inputs=row.querySelectorAll("input");
+      if (!inputs[0].value || !inputs[1].value.trim()) {
+        throw new Error("Per-leg future amounts: complete the account, date, and amount.");
+      }
+      return {account, start:inputs[0].value, amount:inputs[1].value.trim()};
+    }),
+  };
+}
+
 function occurrenceTimelineEditor(label, initial, withAmount, onChanged=()=>{}) {
   const rows = el("div", {});
   let options = [];
@@ -1359,7 +1395,7 @@ async function openHistoricalEstimateDialog() {
                 planning_flow:item.planning_flow, category_memo:"", funding_memo:"",
                 investment_activity:item.investment_activity,
                 additional_splits:[], account_handles:[item.category, item.funding],
-                amount_changes:[], seasonal_amounts:item.seasonal_amounts || [],
+                amount_changes:[], split_amount_changes:[], seasonal_amounts:item.seasonal_amounts || [],
                 skipped:[], occurrence_adjustments:[],
               };
               close();
@@ -1427,6 +1463,8 @@ function openScheduledEditor(data, source) {
   const preview = schedulePreviewNode();
   const additionalSplits = planningSplitEditor(
     accounts, source?.additional_splits || [], changed);
+  const splitAmountChanges = splitAmountTimelineEditor(
+    accounts, source?.split_amount_changes || [], changed);
   const category = select("category", accounts.map((a) => [a.handle, a.name]),
     source?.category || accounts[0]?.handle);
   const funding = select("funding", accounts.map((a) => [a.handle, a.name]), source?.funding || accounts[0]?.handle);
@@ -1460,7 +1498,7 @@ function openScheduledEditor(data, source) {
     field("Amount", el("input", { name:"amount", value:source?.amount || "", inputmode:"decimal", required:"required" })),
     field("Category memo", el("input", { name:"category_memo", value:source?.category_memo || "" })),
     field("Funding memo", el("input", { name:"funding_memo", value:source?.funding_memo || "" })),
-    additionalSplits.node,
+    additionalSplits.node, splitAmountChanges.node,
     futureEditor.node, skipEditor.node, oneTimeEditor.node, preview.node,
     field("Frequency", frequency),
     field("First due", el("input", { name:"start", type:"date", value:source?.start || today, required:"required" })),
@@ -1512,6 +1550,7 @@ function openScheduledEditor(data, source) {
         planning_flow: values.planning_flow || null, amount: values.amount,
         investment_activity: values.investment_activity || null,
         additional_splits: additionalSplits.values(),
+        split_amount_changes: splitAmountChanges.values(),
         amount_changes: futureEditor.values().map((item)=>({start:item.when, amount:item.amount})),
         seasonal_amounts: source?.seasonal_amounts || [],
         skipped: skipEditor.values(), occurrence_adjustments: oneTimeEditor.values(),
@@ -2820,6 +2859,8 @@ async function openProjectionDetail(index) {
       el("td", {}, item.description),
       el("td", { class: "muted" }, item.source),
       el("td", { class: "muted" }, item.status),
+      el("td", { class: "muted" }, (item.amount_explanations || [])
+        .map((detail) => `${detail.account}: ${detail.source}`).join("; ") || "—"),
       el("td", { class: cls(item.expected_amount) }, money(item.expected_amount)),
       el("td", { class: item.actual_amount == null ? "num muted" : cls(item.actual_amount) },
         item.actual_amount == null ? "—" : money(item.actual_amount)),
@@ -2857,7 +2898,7 @@ async function openProjectionDetail(index) {
       el("h3", {}, "Exact planned events"),
       ...(data.escrow_explanations || []).map((line) =>
         el("p", { class: "note" }, line)),
-      eventRows.length ? table(["Date", "Description", "Source", "Status",
+      eventRows.length ? table(["Date", "Description", "Source", "Status", "Amount basis",
         {label:"Expected",num:true}, {label:"Actual",num:true}, {label:"Variance",num:true}], eventRows)
         : el("p", { class: "note" }, "No planned events occur in this month."),
       el("h3", {}, "Investment accounts"),

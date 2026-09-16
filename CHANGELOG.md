@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0215 — Per-leg amount timelines.** Add exact effective-dated changes to
+  individual fixed schedule legs, including signed funding and deduction amounts.
+  Preserve timelines through native serialization, safe editors, scenario copies,
+  and unambiguous GnuCash source refresh; reject effective combinations that do not
+  balance. Carry each leg's amount source into shared Plan and Projection
+  explanations across GTK, web, and API. Advance the alpha version to `0.2.0a51`.
+
 - [x] **0214 — Restored migration infrastructure.** Restore the explicit sequential
   registry and durable ledger, transactional runner, verified pre-migration backup,
   immediately preceding schema-6 fixture, rollback tests, and recovery guidance.

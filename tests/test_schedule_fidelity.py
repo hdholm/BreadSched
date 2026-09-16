@@ -23,6 +23,7 @@ from breadsched.gen.lib import (
     ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
+    ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
     WeekendAdjust,
@@ -207,6 +208,7 @@ def test_source_refresh_retains_only_breadsched_owned_schedule_state(db, gnucash
     assert imported is not None
     expense = next(split for split in imported.splits if split.resolve() > 0)
     expense.planning_flow = PlanningFlowKind.BENEFIT_FUNDING
+    expense.amount_changes = [ScheduledSplitAmountChange(date(2026, 7, 1), "1950")]
     imported.description = "Local planning note"
     imported.growth_policy = ScheduleGrowthPolicy.NONE
     imported.amount_changes = [ScheduledAmountChange(date(2026, 7, 1), "1900")]
@@ -241,6 +243,7 @@ def test_source_refresh_retains_only_breadsched_owned_schedule_state(db, gnucash
     assert refreshed.last_posted == date(2026, 1, 1)
     retained_expense = next(split for split in refreshed.splits if split.resolve() > 0)
     assert retained_expense.planning_flow is PlanningFlowKind.BENEFIT_FUNDING
+    assert retained_expense.amount_changes[0].amount == Money("1950")
 
 
 @pytest.mark.parametrize("source_kind", ["sqlite", "xml"])

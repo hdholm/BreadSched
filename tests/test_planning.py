@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
-from breadsched.gen.engine import planning, projection, schedule
+from breadsched.gen.engine import activity, planning, projection, schedule
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -18,6 +18,7 @@ from breadsched.gen.lib import (
     ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
+    ScheduledSplitAmountChange,
     ScheduledTransaction,
     Split,
     Transaction,
@@ -101,6 +102,69 @@ class TestEventDomain:
 
         assert clone.amount(when=date(2029, 12, 1)) == Money("1800")
         assert clone.amount(when=date(2030, 1, 1)) == Money("1950")
+
+    def test_per_leg_timelines_round_trip_and_explain_plan_and_projection(self, db, book):
+        effective = date(2026, 7, 1)
+        payroll = ScheduledTransaction(
+            name="Payroll with deductions",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-1000")),
+                ScheduledSplit(
+                    book.utilities,
+                    Money("200"),
+                    amount_changes=[ScheduledSplitAmountChange(effective, Money("225"))],
+                ),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("100"),
+                    amount_changes=[ScheduledSplitAmountChange(effective, Money("125"))],
+                ),
+                ScheduledSplit(
+                    book.checking,
+                    Money("700"),
+                    amount_changes=[ScheduledSplitAmountChange(effective, Money("650"))],
+                ),
+            ],
+        )
+        clone = ScheduledTransaction.from_dict(payroll.serialize())
+
+        before = dict(clone.resolved_splits(when=date(2026, 6, 1)))
+        after = dict(clone.resolved_splits(when=effective))
+        assert before[book.utilities] == Money("200")
+        assert after[book.utilities] == Money("225")
+        assert after[book.brokerage] == Money("125")
+        assert after[book.checking] == Money("650")
+        posted = clone.instantiate(effective)
+        assert sum((split.value for split in posted.splits), Money(0)) == Money(0)
+
+        with db.transaction("payroll schedule") as txn:
+            db.add_scheduled(clone, txn)
+        event = planning.scheduled_events(db, effective, effective)[0]
+        sources = {split.account: split.amount_source for split in event.expected_splits}
+        assert sources[book.utilities] == "per-leg amount effective 2026-07-01"
+        assert event.as_dict()["amount_explanations"][1]["source"] == sources[book.utilities]
+
+        plan_detail = activity.explain_category_period(
+            db, book.utilities, effective, date(2026, 7, 31), as_of=effective
+        )
+        assert any(
+            "Amount for Utilities: per-leg amount effective 2026-07-01." in line
+            for line in plan_detail.planned_events[0].explanation
+        )
+
+        scenario = Scenario(
+            name="Timeline explanation",
+            start=effective,
+            years=1,
+            assumptions=_flat(),
+        )
+        result = projection.project(db, scenario)
+        projected = projection.explain_month(db, result, 0).events[0]
+        projected_sources = {
+            split.account: split.amount_source for split in projected.expected_splits
+        }
+        assert projected_sources[book.brokerage] == "per-leg amount effective 2026-07-01"
 
     def test_seasonal_amount_profile_round_trips_and_posts_resolved_amount(self):
         schedule = ScheduledTransaction(

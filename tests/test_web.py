@@ -632,6 +632,18 @@ class TestItServes:
                     {"start": "2026-05-15", "amount": "125.00"},
                     {"start": "2026-07-15", "amount": "140.00"},
                 ],
+                "split_amount_changes": [
+                    {
+                        "account": category["handle"],
+                        "start": "2026-06-15",
+                        "amount": "130.00",
+                    },
+                    {
+                        "account": funding["handle"],
+                        "start": "2026-06-15",
+                        "amount": "-130.00",
+                    },
+                ],
                 "skipped": ["2026-03-13"],
                 "occurrence_adjustments": [{"when": "2026-04-15", "amount": "150.00"}],
                 "frequency": "monthly",
@@ -659,6 +671,24 @@ class TestItServes:
             {"start": "2026-05-15", "amount": "125.00"},
             {"start": "2026-07-15", "amount": "140.00"},
         ]
+        assert item["split_amount_changes"] == [
+            {
+                "account": category["handle"],
+                "start": "2026-06-15",
+                "amount": "130.00",
+            },
+            {
+                "account": funding["handle"],
+                "start": "2026-06-15",
+                "amount": "-130.00",
+            },
+        ]
+        restored = client.database.get_scheduled(handle)
+        assert restored is not None
+        assert dict(restored.resolved_splits(when=date(2026, 6, 15))) == {
+            category["handle"]: Money("125.00"),
+            funding["handle"]: Money("-125.00"),
+        }
         assert item["skipped"] == ["2026-03-13"]
         assert item["occurrence_adjustments"] == [{"when": "2026-04-15", "amount": "150.00"}]
         _status, plan = client.get("/api/plan?from=2026-01&through=2026-12&period=month")

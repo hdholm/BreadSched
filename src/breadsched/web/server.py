@@ -62,6 +62,7 @@ from ..gen.lib import (
     ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
+    ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
     Split,
@@ -1054,6 +1055,15 @@ class Api:
                         {"start": change.start.isoformat(), "amount": change.amount}
                         for change in item.amount_changes
                     ],
+                    "split_amount_changes": [
+                        {
+                            "account": split.account,
+                            "start": change.start.isoformat(),
+                            "amount": change.amount,
+                        }
+                        for split in item.splits
+                        for change in split.amount_changes
+                    ],
                     "seasonal_amounts": [
                         {"month": value.month, "amount": value.amount}
                         for value in item.seasonal_amounts
@@ -1164,6 +1174,7 @@ class Api:
             "count": None,
             "weekend": "none",
             "amount_changes": [],
+            "split_amount_changes": [],
             "skipped": [],
             "occurrence_adjustments": [],
         }
@@ -1904,6 +1915,41 @@ class Api:
             total = total + value
             used.add(handle)
         return splits, total
+
+    def _parse_split_amount_changes(
+        self,
+        payload: dict,
+        schedule_start: date,
+        allowed_accounts: set[str],
+    ) -> dict[str, list[ScheduledSplitAmountChange]]:
+        raw_changes = payload.get("split_amount_changes") or []
+        if not isinstance(raw_changes, list):
+            raise ValueError("per-leg amount changes must be a list")
+        grouped: dict[str, list[ScheduledSplitAmountChange]] = {}
+        seen: set[tuple[str, date]] = set()
+        for raw in raw_changes:
+            if not isinstance(raw, dict):
+                raise ValueError("per-leg amount change entry is invalid")
+            account = str(raw.get("account") or "").strip()
+            if account not in allowed_accounts:
+                raise ValueError("per-leg amount change must reference a selected split account")
+            try:
+                when = date.fromisoformat(str(raw.get("start") or ""))
+                amount = self._input_money(payload, raw.get("amount") or "0")
+            except (ValueError, ArithmeticError):
+                raise ValueError(
+                    "per-leg amounts require YYYY-MM-DD dates and valid signed amounts"
+                ) from None
+            if when < schedule_start:
+                raise ValueError("per-leg amount changes cannot precede the first occurrence")
+            key = (account, when)
+            if key in seen:
+                raise ValueError("per-leg amount dates must be unique for each account")
+            seen.add(key)
+            grouped.setdefault(account, []).append(ScheduledSplitAmountChange(when, amount))
+        for changes in grouped.values():
+            changes.sort(key=lambda item: item.start)
+        return grouped
 
     def scenario_event_save(self, payload: dict) -> dict:
         scenario = self._scenario_for_events(payload.get("handle"))
@@ -3346,6 +3392,11 @@ class Api:
         if newly_hidden:
             raise ValueError("hidden accounts cannot be used for a new scheduled transaction")
         item.recurrence = recurrence
+        existing_split_changes = (
+            {split.account: list(split.amount_changes) for split in existing.splits}
+            if existing is not None
+            else {}
+        )
         item.splits = [
             ScheduledSplit(
                 category.handle,
@@ -3367,6 +3418,25 @@ class Api:
                 ),
             ),
         ]
+        split_changes = (
+            self._parse_split_amount_changes(
+                payload,
+                recurrence.start,
+                {split.account for split in item.splits},
+            )
+            if "split_amount_changes" in payload
+            else existing_split_changes
+        )
+        for split in item.splits:
+            split.amount_changes = list(split_changes.get(split.account, []))
+        for when in sorted(
+            {change.start for values in split_changes.values() for change in values}
+        ):
+            if item.imbalance(when=when):
+                raise ValueError(
+                    f"per-leg amounts effective {when.isoformat()} do not balance; "
+                    "update the funding or another leg for the same date"
+                )
         item.placeholder = bool(payload.get("placeholder", False))
         item.growth_policy = growth_policy
         item.amount_changes = amount_changes

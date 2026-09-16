@@ -29,6 +29,7 @@ from ...gen.lib import (
     ScheduledAmountChange,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
+    ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
     WeekendAdjust,
@@ -41,6 +42,7 @@ from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
     PlanningSplitListEditor,
+    SplitAmountTimelineEditor,
 )
 
 __all__ = ["ScheduleDialog"]
@@ -249,6 +251,16 @@ class ScheduleDialog(Gtk.Window):
         )
         grid.attach(label, 0, row, 1, 1)
         grid.attach(self.additional_splits, 1, row, 1, 1)
+        row += 1
+
+        self.split_amount_changes_editor = SplitAmountTimelineEditor(self._validate, self._names)
+        label = Gtk.Label(label="Per-leg future amounts", xalign=0, valign=Gtk.Align.START)
+        label.set_tooltip_text(
+            "Set the exact signed ledger amount for one leg from a date onward. "
+            "All effective legs must still balance."
+        )
+        grid.attach(label, 0, row, 1, 1)
+        grid.attach(self.split_amount_changes_editor, 1, row, 1, 1)
         row += 1
 
         self.amount_changes_editor = DatedAmountListEditor(self._validate, "Add future amount")
@@ -711,6 +723,16 @@ class ScheduleDialog(Gtk.Window):
         self.amount_changes_editor.set_values(
             (item.start, str(item.amount.to_decimal())) for item in source.amount_changes
         )
+        split_changes: list[tuple[int, date, str]] = []
+        for split in source.splits:
+            account = self.db.get_account(split.account)
+            if account is None or account not in self._accounts:
+                continue
+            index = self._accounts.index(account)
+            split_changes.extend(
+                (index, item.start, str(item.amount.to_decimal())) for item in split.amount_changes
+            )
+        self.split_amount_changes_editor.set_values(split_changes)
         self.skipped_editor.set_values(source.skipped)
         self.occurrence_adjustments_editor.set_values(
             (item.when, str(item.amount.to_decimal())) for item in source.occurrence_adjustments
@@ -805,6 +827,27 @@ class ScheduleDialog(Gtk.Window):
             return None
         return sorted(changes, key=lambda item: item.start)
 
+    def _split_amount_changes(self) -> dict[str, list[ScheduledSplitAmountChange]] | None:
+        grouped: dict[str, list[ScheduledSplitAmountChange]] = {}
+        seen: set[tuple[str, date]] = set()
+        try:
+            for account_index, when_text, amount_text in self.split_amount_changes_editor.values():
+                account = self._accounts[account_index]
+                when = date.fromisoformat(when_text)
+                amount = Money(parse_user_amount(amount_text))
+                key = (account.handle, when)
+                if key in seen:
+                    return None
+                seen.add(key)
+                grouped.setdefault(account.handle, []).append(
+                    ScheduledSplitAmountChange(when, amount)
+                )
+        except (IndexError, ValueError, ArithmeticError):
+            return None
+        for values in grouped.values():
+            values.sort(key=lambda item: item.start)
+        return grouped
+
     def _skipped(self, recurrence: Recurrence | None) -> list[date] | None:
         values = self.skipped_editor.values()
         if not values:
@@ -875,6 +918,8 @@ class ScheduleDialog(Gtk.Window):
         amount_changes = self._amount_changes()
         if amount_changes is None:
             problems.append("check future amounts")
+        if self._split_amount_changes() is None:
+            problems.append("check per-leg future amounts")
         adjustments = self._occurrence_adjustments(recurrence)
         if adjustments is None:
             problems.append("check one-time amounts")
@@ -1031,6 +1076,8 @@ class ScheduleDialog(Gtk.Window):
                 ),
             ),
         ]
+        for split in schedule.splits:
+            split.amount_changes = (self._split_amount_changes() or {}).get(split.account, [])
         schedule.enabled = self.enabled_check.get_active()
         schedule.auto_create = self.auto_check.get_active()
         schedule.placeholder = self.kind.get_selected() == 1
@@ -1042,6 +1089,15 @@ class ScheduleDialog(Gtk.Window):
 
     def _on_save(self, _button) -> None:
         schedule = self.build()
+        for when in sorted(
+            {change.start for split in schedule.splits for change in split.amount_changes}
+        ):
+            if schedule.imbalance(when=when):
+                self.status.set_text(
+                    f"Per-leg amounts effective {when.isoformat()} do not balance; "
+                    "update the funding or another leg for the same date."
+                )
+                return
         problems = investment.scheduled_activity_problems(self.db, schedule)
         if problems:
             self.status.set_text("; ".join(problems))

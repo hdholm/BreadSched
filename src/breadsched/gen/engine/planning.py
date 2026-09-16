@@ -67,6 +67,7 @@ class PlannedSplit:
     amount: Money
     planning_flow: PlanningFlowKind | None = None
     investment_activity: InvestmentActivityKind | None = None
+    amount_source: str = ""
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -76,6 +77,7 @@ class PlannedSplit:
             "investment_activity": (
                 self.investment_activity.value if self.investment_activity is not None else None
             ),
+            "amount_source": self.amount_source,
         }
 
 
@@ -140,6 +142,14 @@ class PlannedEvent:
             "variance": self.variance,
             "expected_splits": [split.as_dict() for split in self.expected_splits],
             "actual_splits": [split.as_dict() for split in self.actual_splits],
+            "amount_explanations": [
+                {
+                    "account": split.account,
+                    "amount": split.amount,
+                    "source": split.amount_source,
+                }
+                for split in self.expected_splits
+            ],
             "actual_transaction": self.actual_transaction,
             "placeholder": self.placeholder,
         }
@@ -180,6 +190,7 @@ def _transaction_splits(transaction: Transaction) -> tuple[PlannedSplit, ...]:
             split.value,
             split.planning_flow,
             split.investment_activity,
+            "actual ledger split",
         )
         for split in transaction.splits
     )
@@ -205,9 +216,18 @@ def _scheduled_event(
     actual: Transaction | None,
 ) -> PlannedEvent:
     expected = tuple(
-        PlannedSplit(account, amount, split.planning_flow, split.investment_activity)
-        for split, (account, amount) in zip(
-            schedule.splits, schedule.resolved_splits(when=when), strict=True
+        PlannedSplit(
+            account,
+            amount,
+            split.planning_flow,
+            split.investment_activity,
+            source,
+        )
+        for split, (account, amount), source in zip(
+            schedule.splits,
+            schedule.resolved_splits(when=when),
+            schedule.resolved_split_sources(when),
+            strict=True,
         )
     )
     expected_amount = _positive_total(expected)
@@ -284,9 +304,18 @@ def _scenario_schedule_event(
     actual: Transaction | None,
 ) -> PlannedEvent:
     expected = tuple(
-        PlannedSplit(account, amount, split.planning_flow, split.investment_activity)
-        for split, (account, amount) in zip(
-            schedule.splits, schedule.resolved_splits(when), strict=True
+        PlannedSplit(
+            account,
+            amount,
+            split.planning_flow,
+            split.investment_activity,
+            source,
+        )
+        for split, (account, amount), source in zip(
+            schedule.splits,
+            schedule.resolved_splits(when),
+            schedule.resolved_split_sources(when),
+            strict=True,
         )
     )
     expected_amount = _positive_total(expected)

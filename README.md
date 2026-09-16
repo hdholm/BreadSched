@@ -134,6 +134,12 @@ loan payments, transfers, savings, and estimates. They support recurrence bounds
 weekend adjustment, skips, one-time overrides, future-effective amount changes,
 multi-split transactions, and formula-driven schedules.
 
+Fixed multi-split schedules can also change individual signed legs from an exact
+date onward—for example, a payroll deduction and its net-deposit leg changing
+together. GTK and web reject an effective set that no longer balances. Plan and
+Projection details identify whether each amount came from the base template, a
+formula, a per-leg timeline, or a whole-schedule override.
+
 Imported schedules that BreadSched cannot reproduce safely remain inspectable
 rather than being silently simplified. Their original formula or recurrence data
 is shown read-only and excluded from planning, projection, and posting until it can

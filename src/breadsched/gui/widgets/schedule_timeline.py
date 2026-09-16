@@ -7,7 +7,12 @@ from datetime import date
 
 from ..gi_setup import Gtk
 
-__all__ = ["DateListEditor", "DatedAmountListEditor", "PlanningSplitListEditor"]
+__all__ = [
+    "DateListEditor",
+    "DatedAmountListEditor",
+    "PlanningSplitListEditor",
+    "SplitAmountTimelineEditor",
+]
 
 
 class _ListEditor(Gtk.Box):
@@ -274,4 +279,57 @@ class PlanningSplitListEditor(_ListEditor):
                 direction.get_selected(),
             )
             for _row, account, value, purpose, activity, direction, memo in self._row_data
+        ]
+
+
+class SplitAmountTimelineEditor(_ListEditor):
+    """Edit exact signed amount changes for individual fixed split legs."""
+
+    def __init__(self, on_changed: Callable[..., None], account_names: list[str]) -> None:
+        super().__init__(on_changed)
+        self._account_names = account_names
+        add = Gtk.Button(label="Add leg amount change", halign=Gtk.Align.START)
+        add.add_css_class("flat")
+        add.connect("clicked", lambda *_: self.add_row())
+        self.append(add)
+
+    def add_row(self, account_index: int = 0, when: date | None = None, amount: str = "") -> None:
+        row = Gtk.Box(spacing=6)
+        account = Gtk.DropDown.new_from_strings(self._account_names)
+        account.set_hexpand(True)
+        account.set_selected(account_index)
+        when_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        when_entry.set_text(when.isoformat() if when is not None else "")
+        amount_entry = Gtk.Entry(placeholder_text="Signed ledger amount")
+        amount_entry.set_text(amount)
+        account.connect("notify::selected", self._on_changed)
+        when_entry.connect("changed", self._on_changed)
+        amount_entry.connect("changed", self._on_changed)
+        remove = Gtk.Button(icon_name="list-remove-symbolic")
+        remove.set_tooltip_text("Remove")
+        remove.add_css_class("flat")
+        remove.connect("clicked", lambda *_: self._remove(row))
+        row.append(account)
+        row.append(when_entry)
+        row.append(amount_entry)
+        row.append(remove)
+        self._rows.append(row)
+        self._row_data.append((row, account, when_entry, amount_entry))
+        self._on_changed()
+
+    def set_values(self, values: Iterable[tuple[int, date, str]]) -> None:
+        while child := self._rows.get_first_child():
+            self._rows.remove(child)
+        self._row_data.clear()
+        for account_index, when, amount in values:
+            self.add_row(account_index, when, amount)
+
+    def values(self) -> list[tuple[int, str, str]]:
+        return [
+            (
+                account.get_selected(),
+                when.get_text().strip(),
+                amount.get_text().strip(),
+            )
+            for _row, account, when, amount in self._row_data
         ]
