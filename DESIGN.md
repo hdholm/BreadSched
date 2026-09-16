@@ -52,6 +52,14 @@ writes use this boundary. Schedule services clone the submitted candidate, apply
 shared editability and timeline guards, and own the complete ``DbTxn`` so adapters
 cannot leave a partially validated write open.
 
+Fixed schedule editors submit ``FixedScheduleInput`` rather than assembling ledger
+splits themselves. The service resolves account roles and ledger signs, balances the
+funding leg, applies planning/investment classifications, preserves safe fields from
+the existing definition, and then invokes the mutation boundary. Formula editors
+submit only the indexed expressions, variables, recurrence, and ordinary metadata
+that formula ownership permits; the service clones all protected structure. Baseline
+and scenario editors use the same construction contracts.
+
 ## Persistence verification
 
 Normal writes are verified incrementally from the records already captured by the

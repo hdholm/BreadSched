@@ -61,7 +61,6 @@ from ..gen.lib import (
     ScheduledAmountChange,
     ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
-    ScheduledSplit,
     ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
@@ -78,12 +77,16 @@ from ..gen.plug import (
     remembered_import_source,
 )
 from ..gen.services import (
+    FixedScheduleInput,
+    FixedSplitInput,
+    FormulaScheduleInput,
     PlanQuery,
-    SaveScenarioSchedule,
-    SaveSchedule,
+    SaveFixedScenarioSchedule,
+    SaveFixedSchedule,
     query_plan,
-    save_scenario_schedule,
-    save_schedule,
+    save_fixed_scenario_schedule,
+    save_fixed_schedule,
+    save_formula_schedule,
 )
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..gen.utils.logs import get_logger
@@ -1926,27 +1929,20 @@ class Api:
         return sorted(changes, key=lambda item: item.when)
 
     def _parse_additional_splits(
-        self, payload: dict, excluded: set[str]
-    ) -> tuple[list[ScheduledSplit], Money]:
+        self, payload: dict, _excluded: set[str]
+    ) -> tuple[FixedSplitInput, ...]:
         raw_splits = payload.get("additional_splits") or []
         if not isinstance(raw_splits, list):
             raise ValueError("additional splits must be a list")
-        splits: list[ScheduledSplit] = []
-        total = Money(0)
-        used = set(excluded)
+        splits: list[FixedSplitInput] = []
         for raw in raw_splits:
             if not isinstance(raw, dict):
                 raise ValueError("additional split entry is invalid")
             handle = str(raw.get("account") or "").strip()
-            account = self.db.get_account(handle) if handle else None
-            if account is None or handle in used:
-                raise ValueError("each additional split needs a different account")
             try:
                 amount = self._input_money(payload, raw.get("amount") or "0")
             except (ValueError, ArithmeticError) as exc:
                 raise ValueError("additional split amount must be a valid number") from exc
-            if amount <= 0:
-                raise ValueError("additional split amount must be greater than zero")
             raw_purpose = str(raw.get("planning_flow") or "").strip()
             try:
                 purpose = PlanningFlowKind(raw_purpose) if raw_purpose else None
@@ -1960,25 +1956,40 @@ class Api:
             direction = str(raw.get("direction") or "normal")
             if direction not in {"normal", "opposite"}:
                 raise ValueError("choose a valid additional split direction")
-            value = (
-                amount * investment_activity.direction
-                if investment_activity is not None and investment_activity.direction
-                else purpose.ledger_amount(amount)
-                if purpose is not None
-                else amount * account.sign() * (-1 if direction == "opposite" else 1)
-            )
             splits.append(
-                ScheduledSplit(
-                    handle,
-                    value,
+                FixedSplitInput(
+                    account=handle,
+                    amount=amount,
                     memo=str(raw.get("memo") or "").strip(),
                     planning_flow=purpose,
                     investment_activity=investment_activity,
+                    opposite_direction=direction == "opposite",
                 )
             )
-            total = total + value
-            used.add(handle)
-        return splits, total
+        return tuple(splits)
+
+    @staticmethod
+    def _schedule_service_error(code: str) -> ValueError:
+        messages = {
+            "schedule.account.not_found": "scheduled account no longer exists",
+            "schedule.account.hidden": (
+                "hidden accounts cannot be used for a new scheduled transaction"
+            ),
+            "schedule.accounts.same": "choose two different accounts",
+            "schedule.accounts.duplicate": "each additional split needs a different account",
+            "schedule.amount.non_positive": "amount must be greater than zero",
+            "schedule.category.classification_conflict": (
+                "choose a category planning purpose or investment activity, not both"
+            ),
+            "schedule.category.role_required": (
+                "category must be income/expense, have a planning purpose or investment "
+                "activity, or retain a proven balance-sheet direction"
+            ),
+            "schedule.split_amount_changes.unbalanced": (
+                "per-leg future amounts do not balance; update the funding or another leg"
+            ),
+        }
+        return ValueError(messages.get(code, code))
 
     def _parse_split_amount_changes(
         self,
@@ -2029,12 +2040,6 @@ class Api:
             raise ValueError("give the scenario estimate a name")
         category_handle = str(payload.get("category", "")).strip()
         funding_handle = str(payload.get("funding", "")).strip()
-        if not category_handle or not funding_handle or category_handle == funding_handle:
-            raise ValueError("choose two different accounts")
-        category = self.db.get_account(category_handle)
-        funding = self.db.get_account(funding_handle)
-        if category is None or funding is None:
-            raise ValueError("choose valid accounts")
         investment_activity_raw = str(payload.get("investment_activity") or "").strip()
         try:
             investment_activity = (
@@ -2049,22 +2054,10 @@ class Api:
             )
         except ValueError:
             raise ValueError("choose a valid category planning purpose") from None
-        if category_planning_flow is not None and investment_activity is not None:
-            raise ValueError("choose a category planning purpose or investment activity, not both")
-        if (
-            category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
-            and investment_activity is None
-            and category_planning_flow is None
-        ):
-            raise ValueError(
-                "choose income/expense, a category planning purpose, or an investment activity"
-            )
         try:
             amount = abs(self._input_money(payload, payload.get("amount", "")))
         except (ValueError, ArithmeticError):
             raise ValueError("enter a valid amount") from None
-        if not amount:
-            raise ValueError("amount must be greater than zero")
         frequency = str(payload.get("frequency", "monthly"))
         if frequency not in self._SCENARIO_FREQUENCIES:
             raise ValueError("choose a supported frequency")
@@ -2109,20 +2102,13 @@ class Api:
         adjustments = self._parse_occurrence_adjustments(payload, recurrence)
         if set(skipped) & {item.when for item in adjustments}:
             raise ValueError("an occurrence cannot be both skipped and overridden")
-        signed = (
-            category_planning_flow.ledger_amount(amount)
-            if category_planning_flow is not None
-            else amount * investment_activity.direction
-            if investment_activity is not None and investment_activity.direction
-            else amount * category.sign()
-        )
         planning_flow_raw = str(payload.get("planning_flow") or "").strip()
         try:
             planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
         except ValueError:
             raise ValueError("choose a valid planning purpose") from None
-        additional_splits, additional_total = self._parse_additional_splits(
-            payload, {category.handle, funding.handle}
+        additional_splits = self._parse_additional_splits(
+            payload, {category_handle, funding_handle}
         )
         existing_change = (
             next(
@@ -2149,58 +2135,48 @@ class Api:
             )
         except ValueError:
             raise ValueError("choose a valid projection growth policy") from None
-        change = ScenarioSchedule(
-            name=name,
-            recurrence=recurrence,
-            splits=[
-                ScheduledSplit(
-                    category.handle,
-                    signed,
-                    planning_flow=category_planning_flow,
+        result = save_fixed_scenario_schedule(
+            self.db,
+            SaveFixedScenarioSchedule(
+                scenario_handle=scenario.handle,
+                source_schedule=source_handle,
+                definition=FixedScheduleInput(
+                    name=name,
+                    recurrence=recurrence,
+                    category=category_handle,
+                    funding=funding_handle,
+                    amount=amount,
+                    category_planning_flow=category_planning_flow,
+                    funding_planning_flow=planning_flow,
                     investment_activity=investment_activity,
-                ),
-                *additional_splits,
-                ScheduledSplit(
-                    funding.handle,
-                    -(signed + additional_total),
-                    planning_flow=planning_flow,
-                    investment_activity=(
-                        InvestmentActivityKind.ROLLOVER
-                        if investment_activity is InvestmentActivityKind.ROLLOVER
+                    additional_splits=additional_splits,
+                    enabled=True,
+                    placeholder=source.placeholder if source is not None else True,
+                    growth_policy=growth_policy,
+                    amount_changes=tuple(self._parse_amount_changes(payload, start)),
+                    seasonal_amounts=tuple(
+                        self._parse_seasonal_amounts(payload)
+                        if "seasonal_amounts" in payload
+                        else source.seasonal_amounts
+                        if source is not None
+                        else ()
+                    ),
+                    skipped=tuple(skipped),
+                    occurrence_adjustments=tuple(adjustments),
+                    estimate_evidence=(
+                        payload.get("estimate_evidence")
+                        if isinstance(payload.get("estimate_evidence"), dict)
+                        else existing_change.estimate_evidence
+                        if existing_change is not None
+                        else source.estimate_evidence
+                        if source is not None
                         else None
                     ),
                 ),
-            ],
-            source_schedule=source_handle,
-            enabled=True,
-            placeholder=source.placeholder if source is not None else True,
-            growth_policy=growth_policy,
-            amount_changes=self._parse_amount_changes(payload, start),
-            seasonal_amounts=(
-                self._parse_seasonal_amounts(payload)
-                if "seasonal_amounts" in payload
-                else list(source.seasonal_amounts)
-                if source is not None
-                else []
             ),
-            skipped=skipped,
-            occurrence_adjustments=adjustments,
-            estimate_evidence=(
-                payload.get("estimate_evidence")
-                if isinstance(payload.get("estimate_evidence"), dict)
-                else existing_change.estimate_evidence
-                if existing_change is not None
-                else source.estimate_evidence
-                if source is not None
-                else None
-            ),
-        )
-        result = save_scenario_schedule(
-            self.db,
-            SaveScenarioSchedule(scenario.handle, change),
         )
         if result.value is None:
-            raise ValueError(result.errors[0].code)
+            raise self._schedule_service_error(result.errors[0].code)
         return self.scenario_events(scenario.handle)
 
     def scenario_event_suppress(self, payload: dict) -> dict:
@@ -3317,12 +3293,6 @@ class Api:
             raise ValueError("schedule name is required")
         category_handle = str(payload.get("category") or "").strip()
         funding_handle = str(payload.get("funding") or "").strip()
-        if not category_handle or not funding_handle or category_handle == funding_handle:
-            raise ValueError("choose two different accounts")
-        category = self.db.get_account(category_handle)
-        funding = self.db.get_account(funding_handle)
-        if category is None or funding is None:
-            raise ValueError("scheduled account no longer exists")
         investment_activity_raw = str(payload.get("investment_activity") or "").strip()
         try:
             investment_activity = (
@@ -3348,25 +3318,10 @@ class Api:
             except ValueError:
                 raise ValueError("choose a valid category planning purpose") from None
             category_ledger_direction = None
-        if category_planning_flow is not None and investment_activity is not None:
-            raise ValueError("choose a category planning purpose or investment activity, not both")
-        if (
-            category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
-            and investment_activity is None
-            and category_planning_flow is None
-            and category_ledger_direction is None
-        ):
-            raise ValueError(
-                "category must be income/expense, have a planning purpose or investment "
-                "activity, or retain a proven balance-sheet direction"
-            )
-
         try:
             amount = self._input_money(payload, payload.get("amount") or "0")
         except (ValueError, ArithmeticError) as exc:
             raise ValueError("amount must be a valid number") from exc
-        if amount <= 0:
-            raise ValueError("amount must be greater than zero")
         recurrence = self._schedule_recurrence_from_payload(payload, existing)
         amount_changes = self._parse_amount_changes(payload, recurrence.start)
         skipped = self._parse_skipped(payload, recurrence)
@@ -3384,31 +3339,13 @@ class Api:
         except ValueError:
             raise ValueError("choose a valid projection growth policy") from None
 
-        item = (
-            ScheduledTransaction.from_dict(existing.serialize())
-            if existing is not None
-            else ScheduledTransaction()
-        )
-        old_name = item.name
-        item.name = name
-        if existing is None or item.description == old_name:
-            item.description = name
-        signed = (
-            category_planning_flow.ledger_amount(amount)
-            if category_planning_flow is not None
-            else amount * investment_activity.direction
-            if investment_activity is not None and investment_activity.direction
-            else amount * category_ledger_direction
-            if category_ledger_direction is not None
-            else amount * category.sign()
-        )
         planning_flow_raw = str(payload.get("planning_flow") or "").strip()
         try:
             planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
         except ValueError:
             raise ValueError("choose a valid planning purpose") from None
-        additional_splits, additional_total = self._parse_additional_splits(
-            payload, {category.handle, funding.handle}
+        additional_splits = self._parse_additional_splits(
+            payload, {category_handle, funding_handle}
         )
         category_memo = (
             str(payload.get("category_memo") or "").strip()
@@ -3424,96 +3361,79 @@ class Api:
             if existing_parts is not None
             else ""
         )
-        previously_used = {split.account for split in existing.splits} if existing else set()
         selected_handles = {
-            category.handle,
-            funding.handle,
+            category_handle,
+            funding_handle,
             *(split.account for split in additional_splits),
         }
-        newly_hidden = [
-            account.name
-            for handle in selected_handles - previously_used
-            if (account := self.db.get_account(handle)) is not None and account.hidden
-        ]
-        if newly_hidden:
-            raise ValueError("hidden accounts cannot be used for a new scheduled transaction")
-        item.recurrence = recurrence
         existing_split_changes = (
-            {split.account: list(split.amount_changes) for split in existing.splits}
+            {split.account: tuple(split.amount_changes) for split in existing.splits}
             if existing is not None
             else {}
         )
-        item.splits = [
-            ScheduledSplit(
-                category.handle,
-                signed,
-                memo=category_memo,
-                planning_flow=category_planning_flow,
-                investment_activity=investment_activity,
-            ),
-            *additional_splits,
-            ScheduledSplit(
-                funding.handle,
-                -(signed + additional_total),
-                memo=funding_memo,
-                planning_flow=planning_flow,
-                investment_activity=(
-                    InvestmentActivityKind.ROLLOVER
-                    if investment_activity is InvestmentActivityKind.ROLLOVER
-                    else None
-                ),
-            ),
-        ]
         split_changes = (
             self._parse_split_amount_changes(
                 payload,
                 recurrence.start,
-                {split.account for split in item.splits},
+                selected_handles,
             )
             if "split_amount_changes" in payload
             else existing_split_changes
         )
-        for split in item.splits:
-            split.amount_changes = list(split_changes.get(split.account, []))
-        for when in sorted(
-            {change.start for values in split_changes.values() for change in values}
-        ):
-            if item.imbalance(when=when):
-                raise ValueError(
-                    f"per-leg amounts effective {when.isoformat()} do not balance; "
-                    "update the funding or another leg for the same date"
-                )
-        item.placeholder = bool(payload.get("placeholder", False))
+        placeholder = bool(payload.get("placeholder", False))
+        evidence = existing.estimate_evidence if existing is not None else None
         if "estimate_evidence" in payload:
             raw_evidence = payload.get("estimate_evidence")
             if raw_evidence is not None and not isinstance(raw_evidence, dict):
                 raise ValueError("estimate evidence must be an object")
-            item.estimate_evidence = raw_evidence
-        item.growth_policy = growth_policy
-        item.amount_changes = amount_changes
-        item.seasonal_amounts = (
+            evidence = raw_evidence
+        seasonal_amounts = (
             self._parse_seasonal_amounts(payload)
             if "seasonal_amounts" in payload
             else list(existing.seasonal_amounts)
             if existing is not None
             else []
         )
-        item.skipped = skipped
-        item.occurrence_adjustments = adjustments
+        enabled = existing.enabled if existing is not None else True
         if "enabled" in payload:
             if not isinstance(payload["enabled"], bool):
                 raise ValueError("active status must be true or false")
-            item.enabled = payload["enabled"]
-        item.auto_create = bool(payload.get("auto", False))
-        if item.placeholder:
-            item.auto_create = False
+            enabled = payload["enabled"]
 
-        result = save_schedule(
+        result = save_fixed_schedule(
             self.db,
-            SaveSchedule(item, existing_handle=existing.handle if existing is not None else None),
+            SaveFixedSchedule(
+                definition=FixedScheduleInput(
+                    name=name,
+                    recurrence=recurrence,
+                    category=category_handle,
+                    funding=funding_handle,
+                    amount=amount,
+                    category_planning_flow=category_planning_flow,
+                    funding_planning_flow=planning_flow,
+                    investment_activity=investment_activity,
+                    category_ledger_direction=category_ledger_direction,
+                    additional_splits=additional_splits,
+                    category_memo=category_memo,
+                    funding_memo=funding_memo,
+                    enabled=enabled,
+                    auto_create=bool(payload.get("auto", False)),
+                    placeholder=placeholder,
+                    growth_policy=growth_policy,
+                    amount_changes=tuple(amount_changes),
+                    split_amount_changes={
+                        account: tuple(changes) for account, changes in split_changes.items()
+                    },
+                    seasonal_amounts=tuple(seasonal_amounts),
+                    skipped=tuple(skipped),
+                    occurrence_adjustments=tuple(adjustments),
+                    estimate_evidence=evidence,
+                ),
+                existing_handle=existing.handle if existing is not None else None,
+            ),
         )
         if result.value is None:
-            raise ValueError(result.errors[0].code)
+            raise self._schedule_service_error(result.errors[0].code)
         return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_formula_save(self, payload: dict) -> dict:
@@ -3522,12 +3442,6 @@ class Api:
         existing = self.db.get_scheduled(handle)
         if existing is None:
             raise KeyError(handle)
-        projection = schedule.schedule_edit_projection(self.db, existing)
-        if projection.editability.mode is not schedule.ScheduleEditorMode.FORMULA:
-            raise ValueError(
-                projection.editability.reason
-                or "this schedule is not editable with the formula editor"
-            )
         raw_formulas = payload.get("formulas")
         if not isinstance(raw_formulas, list):
             raise ValueError("formula expressions must be a list")
@@ -3550,39 +3464,49 @@ class Api:
             isinstance(key, str) and isinstance(value, str) for key, value in raw_variables.items()
         ):
             raise ValueError("formula variables must be a name-to-value object")
-        item = schedule.apply_formula_inputs(self.db, existing, formulas, raw_variables)
-
         name = str(payload.get("name") or "").strip()
         if not name:
             raise ValueError("schedule name is required")
-        old_name = item.name
-        item.name = name
-        if item.description == old_name:
-            item.description = name
-        item.recurrence = self._schedule_recurrence_from_payload(payload, existing)
-        item.skipped = self._parse_skipped(payload, item.recurrence)
+        recurrence = self._schedule_recurrence_from_payload(payload, existing)
         try:
-            item.growth_policy = ScheduleGrowthPolicy(
-                str(payload.get("growth_policy") or item.growth_policy.value)
+            growth_policy = ScheduleGrowthPolicy(
+                str(payload.get("growth_policy") or existing.growth_policy.value)
             )
         except ValueError:
             raise ValueError("choose a valid projection growth policy") from None
+        enabled = existing.enabled
         if "enabled" in payload:
             if not isinstance(payload["enabled"], bool):
                 raise ValueError("active status must be true or false")
-            item.enabled = payload["enabled"]
+            enabled = payload["enabled"]
+        placeholder = existing.placeholder
         if "placeholder" in payload:
             if not isinstance(payload["placeholder"], bool):
                 raise ValueError("schedule kind must be a boolean estimate flag")
-            item.placeholder = payload["placeholder"]
+            placeholder = payload["placeholder"]
+        auto_create = existing.auto_create
         if "auto" in payload:
             if not isinstance(payload["auto"], bool):
                 raise ValueError("automatic posting status must be true or false")
-            item.auto_create = payload["auto"] and not item.placeholder
+            auto_create = payload["auto"]
 
-        result = save_schedule(self.db, SaveSchedule(item, existing_handle=existing.handle))
+        result = save_formula_schedule(
+            self.db,
+            FormulaScheduleInput(
+                existing_handle=existing.handle,
+                name=name,
+                recurrence=recurrence,
+                formulas=formulas,
+                variables=raw_variables,
+                enabled=enabled,
+                auto_create=auto_create,
+                placeholder=placeholder,
+                growth_policy=growth_policy,
+                skipped=tuple(self._parse_skipped(payload, recurrence)),
+            ),
+        )
         if result.value is None:
-            raise ValueError(result.errors[0].code)
+            raise self._schedule_service_error(result.errors[0].code)
         return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_delete(self, payload: dict) -> dict:
