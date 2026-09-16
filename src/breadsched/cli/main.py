@@ -25,6 +25,7 @@ from ..gen.db.base import DbError
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
+    estimates,
     inference,
     ledger,
     planning,
@@ -1489,7 +1490,8 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
 def cmd_estimate(args: argparse.Namespace) -> int:
     """Manage placeholder flows: recurring estimates that are never posted."""
     db = open_book(
-        args.book if args.action != "list" else args.book, "r" if args.action == "list" else "w"
+        args.book if args.action not in {"list", "suggest"} else args.book,
+        "r" if args.action in {"list", "suggest"} else "w",
     )
     try:
         if args.action == "list":
@@ -1514,6 +1516,45 @@ def cmd_estimate(args: argparse.Namespace) -> int:
                     }
                 )
             emit(payload, args, table(rows, ["name", "frequency", "amount", "enabled"], right={2}))
+            return 0
+
+        if args.action == "suggest":
+            proposals = estimates.propose_historical_estimates(
+                db,
+                as_of=parse_date(args.as_of),
+                months=args.months,
+                min_active_months=args.min_active_months,
+            )
+            payload = [
+                {
+                    "key": proposal.key,
+                    "purpose": proposal.purpose_name,
+                    "account": proposal.category_name,
+                    "funding": proposal.funding_name,
+                    "amount": proposal.display_amount,
+                    "frequency": proposal.recurrence.describe(),
+                    "confidence": proposal.confidence,
+                    "evidence": proposal.evidence.serialize(),
+                }
+                for proposal in proposals
+            ]
+            rows = [
+                [
+                    proposal.purpose_name,
+                    proposal.display_amount.format(),
+                    proposal.recurrence.describe(),
+                    f"{proposal.confidence:.0%}",
+                ]
+                for proposal in proposals
+            ]
+            details = "\n\n".join(
+                f"{proposal.purpose_name}\n" + "\n".join(proposal.evidence.summary_lines())
+                for proposal in proposals
+            )
+            text = table(rows, ["purpose", "amount", "frequency", "confidence"], right={1})
+            if details:
+                text += "\n\n" + details
+            emit(payload, args, text)
             return 0
 
         if args.action == "remove":
@@ -1818,7 +1859,7 @@ def build_parser() -> argparse.ArgumentParser:
     dash.set_defaults(func=cmd_dashboard)
 
     estimate = add("estimate", "Recurring Plan estimates that never post")
-    estimate.add_argument("action", choices=["list", "add", "remove"])
+    estimate.add_argument("action", choices=["list", "suggest", "add", "remove"])
     estimate.add_argument("--name")
     estimate.add_argument("--account", help="the income or expense account")
     estimate.add_argument(
@@ -1834,6 +1875,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     estimate.add_argument("--interval", type=int, default=1)
     estimate.add_argument("--start")
+    estimate.add_argument("--as-of", help="analysis date for suggest (YYYY-MM-DD)")
+    estimate.add_argument("--months", type=int, default=12, help="completed history months")
+    estimate.add_argument("--min-active-months", type=int, default=3)
     estimate.set_defaults(func=cmd_estimate)
 
     web = add("web", "Serve the browser interface on this machine")

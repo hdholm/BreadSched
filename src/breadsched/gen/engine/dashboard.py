@@ -68,6 +68,8 @@ _PERIOD_DAYS = {
     PeriodType.WEEK: Decimal(7),
     PeriodType.SEMI_MONTH: DAYS_PER_MONTH / 2,
     PeriodType.MONTH: DAYS_PER_MONTH,
+    PeriodType.NTH_WEEKDAY: DAYS_PER_MONTH,
+    PeriodType.LAST_WEEKDAY: DAYS_PER_MONTH,
     PeriodType.YEAR: DAYS_PER_YEAR,
 }
 

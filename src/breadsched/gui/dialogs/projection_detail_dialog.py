@@ -145,12 +145,22 @@ class ProjectionDetailDialog(Gtk.Window):
             )
             explanation.set_wrap(True)
             self.content.append(explanation)
+
+        def amount_basis(event) -> str:
+            lines = []
+            for split in event.expected_splits:
+                account = self.db.get_account(split.account)
+                name = account.name if account is not None else split.account
+                lines.append(f"{name}: {split.amount_source}")
+            return "\n".join(lines)
+
         event_rows = [
             (
                 event.when.isoformat(),
                 event.description,
                 event.source.value,
                 event.status.value,
+                amount_basis(event),
                 self._money(event.expected_amount),
                 "—" if event.actual_amount is None else self._money(event.actual_amount),
                 "—" if event.variance is None else self._money(event.variance),
@@ -165,12 +175,13 @@ class ProjectionDetailDialog(Gtk.Window):
                         "Description",
                         "Source",
                         "Status",
+                        "Amount basis",
                         "Expected",
                         "Actual",
                         "Variance",
                     ),
                     event_rows,
-                    left_columns=4,
+                    left_columns=5,
                 )
             )
         else:

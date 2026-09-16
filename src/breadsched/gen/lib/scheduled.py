@@ -28,6 +28,7 @@ from .transaction import (
 __all__ = [
     "ScheduleGrowthPolicy",
     "ScheduledAmountChange",
+    "ScheduledSplitAmountChange",
     "ScheduledMonthAmount",
     "ScheduledOccurrenceAdjustment",
     "ScheduledSplit",
@@ -66,6 +67,26 @@ class ScheduledAmountChange:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ScheduledAmountChange:
+        return cls(date.fromisoformat(data["start"]), Money(*data["amount"]))
+
+
+class ScheduledSplitAmountChange:
+    """An exact effective-dated amount for one fixed template leg."""
+
+    __slots__ = ("start", "amount")
+
+    def __init__(self, start: date, amount: Money | str | int) -> None:
+        self.start = start
+        self.amount = amount if isinstance(amount, Money) else Money(amount)
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "start": self.start.isoformat(),
+            "amount": [self.amount.numerator, self.amount.denominator],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScheduledSplitAmountChange:
         return cls(date.fromisoformat(data["start"]), Money(*data["amount"]))
 
 
@@ -159,6 +180,7 @@ class ScheduledSplit:
         "memo",
         "planning_flow",
         "investment_activity",
+        "amount_changes",
     )
 
     def __init__(
@@ -169,6 +191,7 @@ class ScheduledSplit:
         memo: str = "",
         planning_flow: PlanningFlowKind | str | None = None,
         investment_activity: InvestmentActivityKind | str | None = None,
+        amount_changes: list[ScheduledSplitAmountChange] | None = None,
     ) -> None:
         self.account = account
         self.amount = (
@@ -195,8 +218,14 @@ class ScheduledSplit:
             if isinstance(investment_activity, InvestmentActivityKind)
             else InvestmentActivityKind(investment_activity)
         )
+        self.amount_changes = sorted(list(amount_changes or []), key=lambda item: item.start)
 
-    def resolve(self, variables: dict[str, Any] | None = None) -> Money:
+    def resolve(
+        self,
+        variables: dict[str, Any] | None = None,
+        *,
+        when: date | None = None,
+    ) -> Money:
         """The amount this leg contributes, evaluating a formula if there is one.
 
         An imported formula may name variables only GnuCash can supply. Raising
@@ -215,7 +244,27 @@ class ScheduledSplit:
                     self.formula,
                 )
                 return Money(0)
-        return self.amount or Money(0)
+        effective = self.amount or Money(0)
+        if when is not None:
+            for change in self.amount_changes:
+                if change.start > when:
+                    break
+                effective = change.amount
+        return effective
+
+    def amount_source(self, when: date | None = None) -> str:
+        """Explain which fixed/formula definition supplied this leg's amount."""
+        if self.formula:
+            return "formula expression"
+        effective_change = None
+        if when is not None:
+            for change in self.amount_changes:
+                if change.start > when:
+                    break
+                effective_change = change
+        if effective_change is not None:
+            return f"per-leg amount effective {effective_change.start.isoformat()}"
+        return "fixed template amount"
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -229,6 +278,7 @@ class ScheduledSplit:
             "investment_activity": (
                 self.investment_activity.value if self.investment_activity else None
             ),
+            "amount_changes": [item.serialize() for item in self.amount_changes],
         }
 
     @classmethod
@@ -241,6 +291,10 @@ class ScheduledSplit:
             memo=data.get("memo", ""),
             planning_flow=data.get("planning_flow"),
             investment_activity=data.get("investment_activity"),
+            amount_changes=[
+                ScheduledSplitAmountChange.from_dict(item)
+                for item in data.get("amount_changes", [])
+            ],
         )
 
 
@@ -291,6 +345,10 @@ class ScheduledTransaction(PrimaryObject):
         #: is a standing order that will arrive on the 3rd. Its periodicity is
         #: respected exactly as a real schedule's is.
         self.placeholder: bool = False
+        #: Structured analyzer evidence retained when this estimate began as a
+        #: historical proposal.  The saved schedule itself records the user's
+        #: accepted adjustments; this records why the original draft existed.
+        self.estimate_evidence: dict[str, Any] | None = None
         #: Occurrences the user chose not to post and does not want asked about
         #: again. Recorded per date rather than by moving ``last_posted``, because
         #: skipping March must not also dismiss February.
@@ -372,7 +430,7 @@ class ScheduledTransaction(PrimaryObject):
     ) -> list[tuple[str, Money]]:
         """Each leg as ``(account, amount)``, with formulas evaluated."""
         merged = self.context(when, variables)
-        values = [(split.account, split.resolve(merged)) for split in self.splits]
+        values = [(split.account, split.resolve(merged, when=when)) for split in self.splits]
         target = self.effective_amount(when)
         if target is None:
             return values
@@ -385,7 +443,29 @@ class ScheduledTransaction(PrimaryObject):
         scale = target / positive
         return [(account, value * scale) for account, value in values]
 
-    def imbalance(self, variables: dict[str, Any] | None = None) -> Money:
+    def resolved_split_sources(self, when: date | None = None) -> list[str]:
+        """Return the provenance of every resolved leg in template order."""
+        sources = [split.amount_source(when) for split in self.splits]
+        if when is None or self.effective_amount(when) is None:
+            return sources
+        schedule_source = "seasonal schedule amount"
+        for adjustment in self.occurrence_adjustments:
+            if adjustment.when == when:
+                schedule_source = f"one-time schedule amount for {when.isoformat()}"
+                return [f"{source}; scaled by {schedule_source}" for source in sources]
+            if adjustment.when > when:
+                break
+        for change in self.amount_changes:
+            if change.start > when:
+                break
+            schedule_source = f"schedule amount effective {change.start.isoformat()}"
+        return [f"{source}; scaled by {schedule_source}" for source in sources]
+
+    def imbalance(
+        self,
+        variables: dict[str, Any] | None = None,
+        when: date | None = None,
+    ) -> Money:
         """How far the resolved legs are from summing to zero.
 
         A template whose two sides are calculated separately can disagree -- one
@@ -394,7 +474,7 @@ class ScheduledTransaction(PrimaryObject):
         cannot. Exposing the residual lets each caller decide which it is.
         """
         total = Money(0)
-        for _account, amount in self.resolved_splits(variables):
+        for _account, amount in self.resolved_splits(variables, when=when):
             total = total + amount
         return total
 
@@ -503,6 +583,7 @@ class ScheduledTransaction(PrimaryObject):
             "last_posted": self.last_posted.isoformat() if self.last_posted else None,
             "variables": dict(self.variables),
             "placeholder": self.placeholder,
+            "estimate_evidence": self.estimate_evidence,
             "skipped": [when.isoformat() for when in self.skipped],
             "source_recurrence": self.source_recurrence,
             "unsupported_reason": self.unsupported_reason,
@@ -537,6 +618,7 @@ class ScheduledTransaction(PrimaryObject):
         self.last_posted = date.fromisoformat(raw) if raw else None
         self.variables = dict(data.get("variables", {}))
         self.placeholder = data.get("placeholder", False)
+        self.estimate_evidence = data.get("estimate_evidence")
         self.skipped = [date.fromisoformat(d) for d in data.get("skipped", [])]
         self.source_recurrence = data.get("source_recurrence")
         self.unsupported_reason = str(data.get("unsupported_reason", ""))

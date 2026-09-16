@@ -56,7 +56,9 @@ from breadsched.gen.lib import (  # noqa: E402
     AccountType,
     Money,
     PeriodType,
+    PlanningFlowKind,
     Recurrence,
+    ScheduledMonthAmount,
     ScheduledSplit,
     ScheduledTransaction,
     Transaction,
@@ -1435,6 +1437,44 @@ class TestScheduleEntry:
         assert edited.growth_policy.value == "none"
         same_handle = [item for item in app.db.iter_scheduled() if item.handle == source.handle]
         assert len(same_handle) == 1
+
+    def test_historical_estimate_draft_adjusts_all_review_fields(self, app, window, populated_book):
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+
+        app.open_book(populated_book)
+        bank = app.db.get_account_by_name("Assets:Checking Account")
+        rent = app.db.get_account_by_name("Expenses:Rent")
+        assert bank is not None and rent is not None
+        source = ScheduledTransaction(
+            name="Estimated rent",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(rent.handle, Money("1800")),
+                ScheduledSplit(bank.handle, Money("-1800")),
+            ],
+            seasonal_amounts=[ScheduledMonthAmount(1, "1900")],
+        )
+        source.placeholder = True
+        source.estimate_evidence = {"history_start": "2025-01-01", "selected_months": 12}
+
+        dialog = ScheduleDialog(window, app.db, source=source, creating=True)
+        dialog.amount_entry.set_text("1850")
+        dialog.frequency.set_selected(1)
+        dialog.start_entry.set_text("2026-02-06")
+        dialog.category_planning_flow.set_selected(3)
+        dialog.seasonal_amounts_editor.set_values([(1, "2000"), (7, "1700")])
+        built = dialog.build()
+
+        assert built.amount() == Money("1850")
+        assert built.recurrence.period is PeriodType.WEEK
+        assert built.recurrence.interval == 2
+        assert built.recurrence.start == date(2026, 2, 6)
+        assert built.splits[0].planning_flow is PlanningFlowKind.DEBT_PRINCIPAL
+        assert [(item.month, item.amount) for item in built.seasonal_amounts] == [
+            (1, Money("2000")),
+            (7, Money("1700")),
+        ]
+        assert built.estimate_evidence == source.estimate_evidence
 
     def test_duplicate_dialog_adds_an_independent_definition(self, app, window, populated_book):
         from breadsched.gen.engine import schedule

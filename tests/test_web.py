@@ -523,6 +523,54 @@ class TestItServes:
         item = next(row for row in data["definitions"] if row["handle"] == created["handle"])
         assert item["enabled"] is True
 
+    @pytest.mark.parametrize(
+        ("frequency", "start", "period", "expected"),
+        [
+            (
+                "nth_weekday",
+                "2026-01-13",
+                PeriodType.NTH_WEEKDAY,
+                [date(2026, 1, 13), date(2026, 2, 10), date(2026, 3, 10)],
+            ),
+            (
+                "last_weekday",
+                "2026-01-06",
+                PeriodType.LAST_WEEKDAY,
+                [date(2026, 1, 27), date(2026, 2, 24), date(2026, 3, 31)],
+            ),
+        ],
+    )
+    def test_advanced_monthly_frequency_can_be_created_and_edited(
+        self, client, frequency, start, period, expected
+    ):
+        _status, data = client.get("/api/scheduled")
+        category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+        funding = next(a for a in data["accounts"] if a["name"].endswith(":Checking"))
+        values = {
+            "name": "Weekday schedule",
+            "category": category["handle"],
+            "funding": funding["handle"],
+            "amount": "25.00",
+            "frequency": frequency,
+            "start": start,
+            "count": "3",
+        }
+
+        status, created = client.post("/api/scheduled/save", values)
+        assert status == 200
+        saved = client.database.get_scheduled(created["handle"])
+        assert saved is not None
+        assert saved.recurrence.period is period
+        assert saved.recurrence.occurrences(date(2026, 3, 31)) == expected
+
+        values.update(handle=created["handle"], amount="30.00")
+        status, _updated = client.post("/api/scheduled/save", values)
+        assert status == 200
+        restored = client.database.get_scheduled(created["handle"])
+        assert restored is not None
+        assert restored.recurrence.period is period
+        assert restored.recurrence.occurrences(date(2026, 3, 31)) == expected
+
     def test_scheduled_review_preserves_seasonal_amounts(self, client):
         _status, data = client.get("/api/scheduled")
         category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
@@ -632,6 +680,18 @@ class TestItServes:
                     {"start": "2026-05-15", "amount": "125.00"},
                     {"start": "2026-07-15", "amount": "140.00"},
                 ],
+                "split_amount_changes": [
+                    {
+                        "account": category["handle"],
+                        "start": "2026-06-15",
+                        "amount": "130.00",
+                    },
+                    {
+                        "account": funding["handle"],
+                        "start": "2026-06-15",
+                        "amount": "-130.00",
+                    },
+                ],
                 "skipped": ["2026-03-13"],
                 "occurrence_adjustments": [{"when": "2026-04-15", "amount": "150.00"}],
                 "frequency": "monthly",
@@ -659,6 +719,24 @@ class TestItServes:
             {"start": "2026-05-15", "amount": "125.00"},
             {"start": "2026-07-15", "amount": "140.00"},
         ]
+        assert item["split_amount_changes"] == [
+            {
+                "account": category["handle"],
+                "start": "2026-06-15",
+                "amount": "130.00",
+            },
+            {
+                "account": funding["handle"],
+                "start": "2026-06-15",
+                "amount": "-130.00",
+            },
+        ]
+        restored = client.database.get_scheduled(handle)
+        assert restored is not None
+        assert dict(restored.resolved_splits(when=date(2026, 6, 15))) == {
+            category["handle"]: Money("125.00"),
+            funding["handle"]: Money("-125.00"),
+        }
         assert item["skipped"] == ["2026-03-13"]
         assert item["occurrence_adjustments"] == [{"when": "2026-04-15", "amount": "150.00"}]
         _status, plan = client.get("/api/plan?from=2026-01&through=2026-12&period=month")
@@ -2558,6 +2636,18 @@ def test_historical_estimate_proposals_and_acceptance(client):
     assert Money(rent["amount"]) == Money("1800.00")
     assert rent["frequency_key"] == "once"
     assert rent["seasonal_amounts"] == []
+    assert rent["evidence"]["selected_months"] == 1
+    assert rent["evidence"]["cadence"]["label"] == "once (single observation)"
+    assert rent["evidence"]["funding"]["selected"] == rent["funding"]
+    assert rent["evidence"]["confidence"]["score"] == rent["confidence"]
+    assert rent["evidence"]["history"][0].keys() == {
+        "month",
+        "gross",
+        "planned",
+        "residual",
+        "selected",
+        "exclusion",
+    }
     assert data["targets"][0]["name"] == "Base"
 
     status, result = client.post(
@@ -2576,6 +2666,39 @@ def test_historical_estimate_proposals_and_acceptance(client):
     accepted = next(item for item in scheduled["definitions"] if item["handle"] == result["handle"])
     assert accepted["placeholder"] is True
     assert Money(accepted["amount"]) == Money("1800.00")
+
+
+def test_historical_estimate_draft_can_be_adjusted_before_save(client):
+    _status, data = client.get("/api/historical-estimates?months=12&min_active_months=1")
+    proposal = next(item for item in data["proposals"] if item["category_name"].endswith("Rent"))
+    draft = proposal["draft"]
+    assert draft["estimate_evidence"] == proposal["evidence"]
+
+    payload = {
+        **draft,
+        "amount": "1900",
+        "frequency": "biweekly",
+        "start": "2026-10-02",
+        "category_planning_flow": "debt_principal",
+        "seasonal_amounts": [
+            {"month": 1, "amount": "2100"},
+            {"month": 7, "amount": "1750"},
+        ],
+    }
+    status, saved = client.post("/api/scheduled/save", payload)
+    assert status == 200
+    restored = client.database.get_scheduled(saved["handle"])
+    assert restored is not None
+    assert restored.amount() == Money("1900")
+    assert restored.recurrence.period is PeriodType.WEEK
+    assert restored.recurrence.interval == 2
+    assert restored.recurrence.start == date(2026, 10, 2)
+    assert restored.splits[0].planning_flow is PlanningFlowKind.DEBT_PRINCIPAL
+    assert [(item.month, item.amount) for item in restored.seasonal_amounts] == [
+        (1, Money("2100")),
+        (7, Money("1750")),
+    ]
+    assert restored.estimate_evidence == proposal["evidence"]
 
 
 def test_fsa_claim_can_use_multiple_allocations(client):

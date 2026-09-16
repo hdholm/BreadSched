@@ -949,9 +949,10 @@ def preserve_breadsched_schedule_state(
     Scheduled splits have no stable GnuCash GUID of their own. A classification is
     therefore retained only when its account occurs exactly once in both versions;
     ambiguous/restructured templates deliberately receive no stale annotation.
-    Recurrence, source flags, template amounts/formulas, and split memos remain
-    source-owned.  Planning timelines, exceptions, formula inputs, and local
-    completion state have no GnuCash representation and remain BreadSched-owned.
+    Recurrence, source flags, base template amounts/formulas, and split memos remain
+    source-owned. Planning timelines (including unambiguously mapped per-leg
+    changes), exceptions, formula inputs, and local completion state have no
+    GnuCash representation and remain BreadSched-owned.
     """
     if existing is None:
         return
@@ -979,6 +980,9 @@ def preserve_breadsched_schedule_state(
             continue
         incoming[0].planning_flow = prior[0].planning_flow
         incoming[0].investment_activity = prior[0].investment_activity
+        incoming[0].amount_changes = [
+            type(change).from_dict(change.serialize()) for change in prior[0].amount_changes
+        ]
 
 
 def _split_source_facts(split: Split) -> tuple[object, ...]:

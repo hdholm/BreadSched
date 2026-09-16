@@ -5,6 +5,42 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0219 — Category-specific inference.** Require supported category history
+  before inferring weekly, fortnightly, or seasonal behavior; preserve stable
+  category posting-day/weekday anchors; and explain sparse or noisy evidence that
+  is deliberately rejected. Add sparse-history, false-positive, and accepted
+  seasonal-estimate convergence regressions. Advance the alpha version to
+  `0.2.0a55`.
+
+- [x] **0218 — Interactive estimate adjustment.** Build GTK and web historical
+  review drafts through the same engine service, then allow amount, cadence, first
+  date, seasonal month amounts, and category planning classification to be changed
+  before saving. Apply one shared acceptance guard to both surfaces and retain the
+  original structured evidence on accepted Base and scenario estimates. Advance
+  the alpha version to `0.2.0a54`.
+
+- [x] **0217 — Structured estimate evidence.** Give every historical estimate one
+  shared evidence model covering each selected or excluded history month, gross
+  activity, applied future-plan coverage, residuals, observed cadence dates,
+  trend, seasonality, named confidence factors, and ranked funding-account
+  candidates. Present the shared summaries in GTK and expose the full structure
+  through web/API and the read-only `estimate suggest` CLI. Advance the alpha
+  version to `0.2.0a53`.
+
+- [x] **0216 — Advanced deterministic recurrences.** Add GnuCash-compatible nth-
+  weekday and last-weekday monthly rules with canonical fifth-weekday behavior,
+  stable occurrence identities, bounds, weekend adjustment, native round trips,
+  and SQLite/XML import convergence. Expose only these proven-safe patterns in
+  shared editability, GTK, web, scenarios, projections, and loan cadence handling.
+  Advance the alpha version to `0.2.0a52`.
+
+- [x] **0215 — Per-leg amount timelines.** Add exact effective-dated changes to
+  individual fixed schedule legs, including signed funding and deduction amounts.
+  Preserve timelines through native serialization, safe editors, scenario copies,
+  and unambiguous GnuCash source refresh; reject effective combinations that do not
+  balance. Carry each leg's amount source into shared Plan and Projection
+  explanations across GTK, web, and API. Advance the alpha version to `0.2.0a51`.
+
 - [x] **0214 — Restored migration infrastructure.** Restore the explicit sequential
   registry and durable ledger, transactional runner, verified pre-migration backup,
   immediately preceding schema-6 fixture, rollback tests, and recovery guidance.

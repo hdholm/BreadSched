@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
-from breadsched.gen.engine import planning, projection, schedule
+from breadsched.gen.engine import activity, planning, projection, schedule
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -18,6 +18,7 @@ from breadsched.gen.lib import (
     ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
     ScheduledSplit,
+    ScheduledSplitAmountChange,
     ScheduledTransaction,
     Split,
     Transaction,
@@ -101,6 +102,69 @@ class TestEventDomain:
 
         assert clone.amount(when=date(2029, 12, 1)) == Money("1800")
         assert clone.amount(when=date(2030, 1, 1)) == Money("1950")
+
+    def test_per_leg_timelines_round_trip_and_explain_plan_and_projection(self, db, book):
+        effective = date(2026, 7, 1)
+        payroll = ScheduledTransaction(
+            name="Payroll with deductions",
+            recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 1)),
+            splits=[
+                ScheduledSplit(book.salary, Money("-1000")),
+                ScheduledSplit(
+                    book.utilities,
+                    Money("200"),
+                    amount_changes=[ScheduledSplitAmountChange(effective, Money("225"))],
+                ),
+                ScheduledSplit(
+                    book.brokerage,
+                    Money("100"),
+                    amount_changes=[ScheduledSplitAmountChange(effective, Money("125"))],
+                ),
+                ScheduledSplit(
+                    book.checking,
+                    Money("700"),
+                    amount_changes=[ScheduledSplitAmountChange(effective, Money("650"))],
+                ),
+            ],
+        )
+        clone = ScheduledTransaction.from_dict(payroll.serialize())
+
+        before = dict(clone.resolved_splits(when=date(2026, 6, 1)))
+        after = dict(clone.resolved_splits(when=effective))
+        assert before[book.utilities] == Money("200")
+        assert after[book.utilities] == Money("225")
+        assert after[book.brokerage] == Money("125")
+        assert after[book.checking] == Money("650")
+        posted = clone.instantiate(effective)
+        assert sum((split.value for split in posted.splits), Money(0)) == Money(0)
+
+        with db.transaction("payroll schedule") as txn:
+            db.add_scheduled(clone, txn)
+        event = planning.scheduled_events(db, effective, effective)[0]
+        sources = {split.account: split.amount_source for split in event.expected_splits}
+        assert sources[book.utilities] == "per-leg amount effective 2026-07-01"
+        assert event.as_dict()["amount_explanations"][1]["source"] == sources[book.utilities]
+
+        plan_detail = activity.explain_category_period(
+            db, book.utilities, effective, date(2026, 7, 31), as_of=effective
+        )
+        assert any(
+            "Amount for Utilities: per-leg amount effective 2026-07-01." in line
+            for line in plan_detail.planned_events[0].explanation
+        )
+
+        scenario = Scenario(
+            name="Timeline explanation",
+            start=effective,
+            years=1,
+            assumptions=_flat(),
+        )
+        result = projection.project(db, scenario)
+        projected = projection.explain_month(db, result, 0).events[0]
+        projected_sources = {
+            split.account: split.amount_source for split in projected.expected_splits
+        }
+        assert projected_sources[book.brokerage] == "per-leg amount effective 2026-07-01"
 
     def test_seasonal_amount_profile_round_trips_and_posts_resolved_amount(self):
         schedule = ScheduledTransaction(
@@ -935,7 +999,7 @@ class TestHistoricalEstimateProposals:
             if item.category == book.rent
         )
         assert proposal.amount == Money("100")
-        assert proposal.recurrence.start == date(2026, 4, 1)
+        assert proposal.recurrence.start == date(2026, 4, 5)
         assert proposal.recurrence.end == date(2026, 9, 30)
         assert proposal.scheduled_amount == Money("600")
 
@@ -1117,8 +1181,37 @@ class TestHistoricalEstimateProposals:
         groceries = next(item for item in proposals if item.category == book.groceries)
         assert groceries.amount == Money("115.00")
         assert groceries.funding == book.checking
-        assert groceries.recurrence.start == date(2026, 5, 1)
+        assert groceries.recurrence.start == date(2026, 5, 10)
         assert groceries.active_months == 4
+        assert "category-specific day-10 anchor" in groceries.evidence.cadence.explanation
+
+    def test_sparse_weekly_dates_fall_back_with_visible_evidence(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Sparse groceries") as txn:
+            for day in (6, 13):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, 3, day),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        "50",
+                    ),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=1, min_active_months=1
+            )
+            if item.category == book.groceries
+        )
+        assert proposal.recurrence.period is PeriodType.MONTH
+        assert proposal.evidence.cadence.label == "monthly"
+        assert "too sparse" in proposal.evidence.cadence.explanation
+        assert "at least 4" in proposal.evidence.cadence.explanation
 
     def test_excludes_and_explains_an_isolated_amount_outlier(self, db, book):
         from breadsched.gen.engine import estimates
@@ -1150,6 +1243,19 @@ class TestHistoricalEstimateProposals:
         assert proposal.outlier_months == 1
         assert proposal.variability == "stable"
         assert "excluded 1 isolated outlier month" in proposal.reason
+        assert len(proposal.evidence.history) == 8
+        assert len(proposal.evidence.selected_months) == 7
+        assert [(item.month, item.exclusion) for item in proposal.evidence.exclusions] == [
+            (date(2025, 4, 1), "isolated amount outlier")
+        ]
+        assert proposal.evidence.cadence.label == "monthly"
+        assert len(proposal.evidence.cadence.observed_dates) == 8
+        assert proposal.evidence.trend is None
+        assert proposal.evidence.seasonality.detected is False
+        assert proposal.evidence.funding.selected == book.checking
+        assert proposal.evidence.funding.candidates[0].transaction_count == 8
+        assert proposal.evidence.confidence.score == proposal.confidence
+        assert proposal.evidence.confidence.retained_ratio == Decimal("0.875")
 
     def test_short_history_is_not_trimmed_as_an_outlier(self, db, book):
         from breadsched.gen.engine import estimates
@@ -1264,6 +1370,10 @@ class TestHistoricalEstimateProposals:
 
         assert base.amount == Money("800.00")
         assert base.scheduled_amount == Money("3000.00")
+        assert [item.gross for item in base.evidence.selected_months] == [Money("1800")] * 3
+        assert [item.planned for item in base.evidence.selected_months] == [Money("1000")] * 3
+        assert [item.residual for item in base.evidence.selected_months] == [Money("800")] * 3
+        assert "3,000.00" in base.evidence.residual_explanation
         assert alternate.amount == Money("1800.00")
         assert alternate.scheduled_amount == Money("0.00")
 
@@ -1334,8 +1444,40 @@ class TestHistoricalEstimateProposals:
         )
         assert proposal.recurrence.period is PeriodType.WEEK
         assert proposal.recurrence.interval == 1
+        assert proposal.recurrence.start == date(2026, 4, 3)
         assert Money("90") <= proposal.amount <= Money("110")
         assert "weekly" in proposal.reason
+        assert "First proposed occurrence: 2026-04-03" in (proposal.evidence.cadence.explanation)
+
+    def test_fortnightly_cadence_retains_the_observed_phase(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Fortnightly groceries") as txn:
+            for when in (
+                date(2026, 1, 2),
+                date(2026, 1, 16),
+                date(2026, 1, 30),
+                date(2026, 2, 13),
+                date(2026, 2, 27),
+                date(2026, 3, 13),
+                date(2026, 3, 27),
+            ):
+                db.add_transaction(
+                    Transaction.simple(when, "Groceries", book.groceries, book.checking, "100"),
+                    txn,
+                )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 4, 20), months=3
+            )
+            if item.category == book.groceries
+        )
+        assert proposal.recurrence.period is PeriodType.WEEK
+        assert proposal.recurrence.interval == 2
+        assert proposal.recurrence.start == date(2026, 4, 10)
+        assert proposal.evidence.cadence.label == "fortnightly"
 
     def test_detects_upward_trend_and_uses_recent_residual(self, db, book):
         from breadsched.gen.engine import estimates
@@ -1398,6 +1540,9 @@ class TestHistoricalEstimateProposals:
         assert proposal.variability == "seasonal by calendar month"
         assert "seasonal variation detected" in proposal.reason
         assert len(proposal.seasonal_amounts) == 12
+        assert proposal.evidence.seasonality.detected is True
+        assert proposal.evidence.seasonality.monthly_amounts == proposal.seasonal_amounts
+        assert not proposal.evidence.exclusions
 
         handle = estimates.accept_historical_estimate(db, proposal)
         saved = db.get_scheduled(handle)
@@ -1405,6 +1550,67 @@ class TestHistoricalEstimateProposals:
         assert saved.amount(when=date(2026, 1, 10)) == Money("240.00")
         assert saved.amount(when=date(2026, 4, 10)) == Money("100.00")
         assert saved.amount(when=date(2026, 7, 10)) == Money("240.00")
+        assert all(
+            item.category != book.utilities
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 1, 20), months=24
+            )
+        )
+
+    def test_sparse_repeated_months_do_not_claim_seasonality(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Sparse apparent seasonality") as txn:
+            for year in (2024, 2025):
+                for month in range(1, 5):
+                    amount = "300" if month == 1 else "100"
+                    db.add_transaction(
+                        Transaction.simple(
+                            date(year, month, 10),
+                            "Utilities",
+                            book.utilities,
+                            book.checking,
+                            amount,
+                        ),
+                        txn,
+                    )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 1, 20), months=24
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.seasonal is False
+        assert "Only 4 calendar month(s) repeat" in (proposal.evidence.seasonality.explanation)
+
+    def test_unstable_year_over_year_pattern_is_explained_as_noise(self, db, book):
+        from breadsched.gen.engine import estimates
+
+        with db.transaction("Noisy apparent seasonality") as txn:
+            for year, amount in ((2024, "100"), (2025, "300")):
+                for month in range(1, 13):
+                    db.add_transaction(
+                        Transaction.simple(
+                            date(year, month, 10),
+                            "Utilities",
+                            book.utilities,
+                            book.checking,
+                            amount,
+                        ),
+                        txn,
+                    )
+
+        proposal = next(
+            item
+            for item in estimates.propose_historical_estimates(
+                db, as_of=date(2026, 1, 20), months=24
+            )
+            if item.category == book.utilities
+        )
+        assert proposal.seasonal is False
+        assert "treated as noise" in proposal.evidence.seasonality.explanation
 
     def test_review_drafts_preserve_the_proposal_without_writing(self, db, book):
         from breadsched.gen.engine import estimates

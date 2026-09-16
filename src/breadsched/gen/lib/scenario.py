@@ -109,6 +109,7 @@ class ScenarioSchedule:
         skipped: list[date] | None = None,
         occurrence_adjustments: list[ScheduledOccurrenceAdjustment] | None = None,
         growth_policy: ScheduleGrowthPolicy | str = ScheduleGrowthPolicy.AUTO,
+        estimate_evidence: dict[str, Any] | None = None,
     ) -> None:
         self.handle = handle or create_handle()
         self.name = name
@@ -126,6 +127,7 @@ class ScenarioSchedule:
         self.occurrence_adjustments = sorted(
             list(occurrence_adjustments or []), key=lambda item: item.when
         )
+        self.estimate_evidence = estimate_evidence
 
     @classmethod
     def from_scheduled(
@@ -158,6 +160,7 @@ class ScenarioSchedule:
                 ScheduledOccurrenceAdjustment.from_dict(item.serialize())
                 for item in schedule.occurrence_adjustments
             ],
+            estimate_evidence=schedule.estimate_evidence,
         )
 
     def context(self, when: date) -> dict[str, Any]:
@@ -187,7 +190,7 @@ class ScenarioSchedule:
 
     def resolved_splits(self, when: date) -> list[tuple[str, Money]]:
         context = self.context(when)
-        values = [(split.account, split.resolve(context)) for split in self.splits]
+        values = [(split.account, split.resolve(context, when=when)) for split in self.splits]
         target = self.effective_amount(when)
         if target is None:
             return values
@@ -199,6 +202,24 @@ class ScenarioSchedule:
             return values
         scale = target / positive
         return [(account, value * scale) for account, value in values]
+
+    def resolved_split_sources(self, when: date) -> list[str]:
+        """Return amount provenance for scenario legs in template order."""
+        sources = [split.amount_source(when) for split in self.splits]
+        if self.effective_amount(when) is None:
+            return sources
+        schedule_source = "seasonal scenario amount"
+        for adjustment in self.occurrence_adjustments:
+            if adjustment.when == when:
+                schedule_source = f"one-time scenario amount for {when.isoformat()}"
+                return [f"{source}; scaled by {schedule_source}" for source in sources]
+            if adjustment.when > when:
+                break
+        for change in self.amount_changes:
+            if change.start > when:
+                break
+            schedule_source = f"scenario amount effective {change.start.isoformat()}"
+        return [f"{source}; scaled by {schedule_source}" for source in sources]
 
     def occurrence_key(self, scenario_handle: str, when: date) -> str:
         return f"scenario:{scenario_handle}:{self.handle}:{when.isoformat()}"
@@ -219,6 +240,7 @@ class ScenarioSchedule:
             "seasonal_amounts": [item.serialize() for item in self.seasonal_amounts],
             "skipped": [when.isoformat() for when in self.skipped],
             "occurrence_adjustments": [item.serialize() for item in self.occurrence_adjustments],
+            "estimate_evidence": self.estimate_evidence,
         }
 
     @classmethod
@@ -245,6 +267,7 @@ class ScenarioSchedule:
                 ScheduledOccurrenceAdjustment.from_dict(item)
                 for item in data.get("occurrence_adjustments", [])
             ],
+            estimate_evidence=data.get("estimate_evidence"),
         )
 
 

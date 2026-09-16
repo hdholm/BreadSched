@@ -32,6 +32,8 @@ class PeriodType(str, Enum):
     WEEK = "week"
     SEMI_MONTH = "semi_month"
     MONTH = "month"
+    NTH_WEEKDAY = "nth_weekday"
+    LAST_WEEKDAY = "last_weekday"
     YEAR = "year"
 
 
@@ -84,6 +86,16 @@ class Recurrence:
             raise ValueError("interval must be >= 1")
         self.interval = interval
         self.start = start or date.today()
+        # GnuCash defines a fifth-weekday rule as the last matching weekday and
+        # anchors last-weekday rules on the final matching weekday in the start
+        # month.  Canonicalising here gives every occurrence a stable identity.
+        if self.period is PeriodType.NTH_WEEKDAY and (self.start.day - 1) // 7 == 4:
+            self.period = PeriodType.LAST_WEEKDAY
+        if self.period is PeriodType.LAST_WEEKDAY:
+            month_last = add_months(self.start, 0, day=-1)
+            self.start = month_last - timedelta(
+                days=(month_last.weekday() - self.start.weekday()) % 7
+            )
         self.end = end
         self.count = count
         #: For MONTH/YEAR rules; ``-1`` means the last day of the month.
@@ -123,6 +135,17 @@ class Recurrence:
                 yield self.start + timedelta(weeks=index * self.interval)
             elif self.period is PeriodType.MONTH:
                 yield add_months(self.start, index * self.interval, day=self.day_of_month)
+            elif self.period in {PeriodType.NTH_WEEKDAY, PeriodType.LAST_WEEKDAY}:
+                target = add_months(self.start, index * self.interval, day=1)
+                if self.period is PeriodType.NTH_WEEKDAY:
+                    first_offset = (self.start.weekday() - target.weekday()) % 7
+                    ordinal = (self.start.day - 1) // 7
+                    yield target + timedelta(days=first_offset + ordinal * 7)
+                else:
+                    month_last = add_months(target, 0, day=-1)
+                    yield month_last - timedelta(
+                        days=(month_last.weekday() - self.start.weekday()) % 7
+                    )
             elif self.period is PeriodType.YEAR:
                 yield add_months(self.start, index * 12 * self.interval, day=self.day_of_month)
             else:  # pragma: no cover - exhaustive
@@ -140,7 +163,11 @@ class Recurrence:
             return max(0, (target - self.start).days // self.interval)
         if self.period is PeriodType.WEEK:
             return max(0, (target - self.start).days // (7 * self.interval))
-        if self.period is PeriodType.MONTH:
+        if self.period in {
+            PeriodType.MONTH,
+            PeriodType.NTH_WEEKDAY,
+            PeriodType.LAST_WEEKDAY,
+        }:
             months = (target.year - self.start.year) * 12 + target.month - self.start.month
             return max(0, months // self.interval - 1)
         if self.period is PeriodType.YEAR:
@@ -257,6 +284,19 @@ class Recurrence:
     def describe(self) -> str:
         if self.period is PeriodType.ONCE:
             return f"once on {self.start:%d %b %Y}"
+        if self.period in {PeriodType.NTH_WEEKDAY, PeriodType.LAST_WEEKDAY}:
+            weekday = self.start.strftime("%A")
+            if self.period is PeriodType.LAST_WEEKDAY:
+                position = "last"
+            else:
+                position = ("first", "second", "third", "fourth")[(self.start.day - 1) // 7]
+            cadence = "month" if self.interval == 1 else f"{self.interval} months"
+            text = f"the {position} {weekday} of every {cadence}"
+            if self.end:
+                text += f" until {self.end:%d %b %Y}"
+            elif self.count:
+                text += f", {self.count} times"
+            return text
         unit = {
             "day": "day",
             "week": "week",

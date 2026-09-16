@@ -134,6 +134,12 @@ loan payments, transfers, savings, and estimates. They support recurrence bounds
 weekend adjustment, skips, one-time overrides, future-effective amount changes,
 multi-split transactions, and formula-driven schedules.
 
+Fixed multi-split schedules can also change individual signed legs from an exact
+date onward—for example, a payroll deduction and its net-deposit leg changing
+together. GTK and web reject an effective set that no longer balances. Plan and
+Projection details identify whether each amount came from the base template, a
+formula, a per-leg timeline, or a whole-schedule override.
+
 Imported schedules that BreadSched cannot reproduce safely remain inspectable
 rather than being silently simplified. Their original formula or recurrence data
 is shown read-only and excluded from planning, projection, and posting until it can
@@ -147,7 +153,10 @@ formula text is not rewritten merely for display.
 
 Suggest from History produces reviewable drafts rather than writing directly to the
 book. Choosing **Review…** opens the normal Base or scenario schedule editor with
-the inferred accounts, amount, cadence, dates, and seasonal values populated. The
+the inferred accounts, amount, cadence, dates, seasonal values, and planning
+classification populated. GTK and web both let those fields be adjusted before
+Save and apply the same historical-estimate acceptance guard. The original
+structured evidence remains attached to the accepted estimate as provenance. The
 proposal is added only after **Save**; cancelling leaves the book unchanged, and a
 later analysis measures coverage from the values that were actually saved.
 Suggestions keep ordinary Income/Expense categories separate from retirement
@@ -167,7 +176,17 @@ interval even when the posting day varies. With at least six active months, isol
 amount spikes are excluded conservatively and disclosed in the proposal; shorter
 histories are never silently trimmed. Confidence reflects history coverage, sample
 depth, retained observations, and robust amount variability rather than coverage
-alone. Analysis interprets the complete transaction before extracting ordinary
+alone. GTK presents those same named evidence sections; web review can expand the
+complete per-month gross, planned, residual, and inclusion decisions, and
+`breadsched estimate BOOK suggest --json` exposes the identical structured model
+for scripts. Funding inference lists every observed counterpart and its count rather
+than presenting the selected account as an unexplained guess. Weekly and fortnightly
+cadences require at least four supporting dates and retain the category's observed
+weekday; stable once-per-month history retains its posting-day anchor. Seasonal
+profiles require at least six repeated, internally stable calendar months. Sparse or
+noisy apparent patterns fall back conservatively, with the rejected evidence and the
+first proposed occurrence stated explicitly. Analysis interprets
+the complete transaction before extracting ordinary
 categories: reinvested dividends and interest, investment fees, and rollovers do
 not become recurring household income or expense suggestions. In multi-split loan,
 retirement, and benefit transactions, repeated funding evidence is retained and a

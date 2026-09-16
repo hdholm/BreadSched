@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0214 — restored migration infrastructure**.
+The current accepted baseline is **0219 — category-specific inference**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,9 +27,8 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The next focused slice is **0215 — per-leg amount timelines**: allow dated changes
-to individual legs of fixed multi-split schedules while preserving occurrence
-identity and carrying amount provenance into Plan and Projection explanations.
+The next focused slice is **commodity precision**: remove assumptions that every
+account and commodity uses cents before expanding valuation and multi-currency work.
 
 ## Architecture and correctness
 
@@ -45,13 +44,6 @@ identity and carrying amount provenance into Plan and Projection explanations.
 - [ ] Improve register appearance and information density while keeping account-type
   debit/credit terminology clear.
 
-## Historical estimator
-
-- [ ] Provide richer explanations of history, cadence, trend, seasonality, and
-  residual calculation, with interactive adjustment before acceptance.
-
-- [ ] Refine category-specific seasonality/cadence inference.
-
 ## Plan and planning-flow reporting
 
 - [ ] Ensure planning classifications feed Plan, Projection explanations, scenario
@@ -63,9 +55,9 @@ identity and carrying amount provenance into Plan and Projection explanations.
 - [ ] Continue widening safe editing only where complete split/recurrence/import
   semantics can be round-tripped without guessing.
 
-- [ ] Support per-leg amount timelines in fixed multi-split schedules.
-
-- [ ] Support additional deterministic advanced/custom recurrence patterns.
+- [ ] Consider additional custom recurrence patterns only when their occurrence
+  identity, bounded generation, import mapping, editing, and round trip are all
+  unambiguous.
 
 - [ ] Add payroll templates and richer payroll editing.
 

@@ -146,6 +146,18 @@ class TestPersistence:
         assert len(loaded.splits) == 2
         assert loaded.value_for(book.rent) == Money("1800.00")
 
+    def test_committing_unchanged_object_preserves_serialized_identity(self, db, book):
+        account = db.get_account(book.checking)
+        assert account is not None
+        before = account.serialize()
+
+        with db.transaction("No-op account refresh") as txn:
+            db.commit_account(account, txn)
+
+        refreshed = db.get_account(book.checking)
+        assert refreshed is not None
+        assert refreshed.serialize() == before
+
     def test_metadata_round_trip(self, db):
         db.set_metadata("book_name", "Household")
         assert db.get_metadata("book_name") == "Household"

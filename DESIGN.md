@@ -230,7 +230,10 @@ not rewrite historical variance.
 ## Scheduled transactions and formulas
 
 Schedules are templates for dated future events. Recurrence, occurrence overrides,
-skips, amount changes, and formula-driven splits are part of the schedule semantics.
+skips, whole-schedule and per-leg amount changes, and formula-driven splits are part
+of the schedule semantics. Per-leg timelines store exact signed ledger amounts and
+must remain balanced at every effective boundary; their source follows each planned
+split into Plan and Projection explanations.
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 

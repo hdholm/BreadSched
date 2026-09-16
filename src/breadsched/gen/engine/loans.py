@@ -32,6 +32,8 @@ __all__ = ["LoanTerms", "build_schedule", "create_loan", "schedule_preview"]
 #: Payments per year for each supported frequency.
 _PER_YEAR = {
     PeriodType.MONTH: 12,
+    PeriodType.NTH_WEEKDAY: 12,
+    PeriodType.LAST_WEEKDAY: 12,
     PeriodType.WEEK: 52,
     PeriodType.YEAR: 1,
     PeriodType.SEMI_MONTH: 24,

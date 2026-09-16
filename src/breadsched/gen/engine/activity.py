@@ -767,6 +767,9 @@ def explain_category_period(
                             account.account_class,
                             accounts,
                         ),
+                        _amount_source_explanations(
+                            event.expected_splits, accounts, included=included
+                        ),
                         escrow_recognition(
                             ((split.account, split.amount) for split in event.expected_splits),
                             accounts,
@@ -928,6 +931,11 @@ def explain_planning_flow_period(
                     explanation=_unique_explanations(
                         _planned_resolution_explanation(event),
                         flow_explanations(event.expected_splits),
+                        _amount_source_explanations(
+                            event.expected_splits,
+                            accounts,
+                            included={account_handle},
+                        ),
                         escrow_recognition(
                             ((split.account, split.amount) for split in event.expected_splits),
                             accounts,
@@ -1048,6 +1056,7 @@ def explain_mortgage_payment_period(
                     explanation=_unique_explanations(
                         _planned_resolution_explanation(event),
                         _mortgage_payment_explanations(event.expected_splits, accounts),
+                        _amount_source_explanations(event.expected_splits, accounts),
                     ),
                 )
             )
@@ -1191,6 +1200,25 @@ def _unique_explanations(*groups: Iterable[str]) -> tuple[str, ...]:
             if explanation and explanation not in found:
                 found.append(explanation)
     return tuple(found)
+
+
+def _amount_source_explanations(
+    splits: Iterable[PlannedSplit],
+    accounts: dict[str, Account],
+    *,
+    included: set[str] | None = None,
+) -> tuple[str, ...]:
+    """Explain non-default amount provenance for relevant planned legs."""
+    found: list[str] = []
+    for split in splits:
+        if included is not None and split.account not in included:
+            continue
+        if not split.amount_source or split.amount_source == "fixed template amount":
+            continue
+        account = accounts.get(split.account)
+        name = account.name if account is not None else split.account
+        found.append(f"Amount for {name}: {split.amount_source}.")
+    return _unique_explanations(found)
 
 
 def _category_explanations(
