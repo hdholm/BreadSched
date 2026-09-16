@@ -887,6 +887,13 @@ class DbSQLite(DbBase):
         if self._active_txn is not txn:
             raise DbError("writes require the active database transaction")
         before = self._read(table, obj.handle)
+        candidate = obj.serialize()
+        if before is not None:
+            before_content = {key: value for key, value in before.items() if key != "change"}
+            candidate_content = {key: value for key, value in candidate.items() if key != "change"}
+            if candidate_content == before_content:
+                obj.change = int(before.get("change", obj.change))
+                return obj.handle
         obj.change = int(time.time())
         after = obj.serialize()
         self._store(table, obj.handle, after)

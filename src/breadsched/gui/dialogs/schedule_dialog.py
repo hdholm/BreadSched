@@ -199,6 +199,16 @@ class ScheduleDialog(Gtk.Window):
         row += 1
 
         self.category = Gtk.DropDown.new_from_strings(self._names)
+        category_default = next(
+            (
+                index
+                for index, account in enumerate(self._accounts)
+                if account.account_class in {AccountClass.INCOME, AccountClass.EXPENSE}
+            ),
+            0,
+        )
+        self.category.set_selected(category_default)
+        self.category.connect("notify::selected", self._validate)
         grid.attach(Gtk.Label(label="Category", xalign=0), 0, row, 1, 1)
         grid.attach(self.category, 1, row, 1, 1)
         row += 1
@@ -213,7 +223,8 @@ class ScheduleDialog(Gtk.Window):
 
         self.funding = Gtk.DropDown.new_from_strings(self._names)
         if len(self._accounts) > 1:
-            self.funding.set_selected(1)
+            self.funding.set_selected(0 if category_default else 1)
+        self.funding.connect("notify::selected", self._validate)
         grid.attach(Gtk.Label(label="Paid from / into", xalign=0), 0, row, 1, 1)
         grid.attach(self.funding, 1, row, 1, 1)
         row += 1
