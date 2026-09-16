@@ -376,15 +376,11 @@ class TestSchemaCompatibility:
                 (json.dumps(version),),
             )
 
-    def test_new_books_use_the_only_supported_schema_without_a_migration_ledger(self, db):
+    def test_new_books_record_the_current_baseline_in_the_migration_ledger(self, db):
         assert db.get_metadata("schema_version") == 7
         assert db.integrity_problems() == []
-        row = (
-            db._require()
-            .execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migration'")
-            .fetchone()
-        )
-        assert row is None
+        row = db._require().execute("SELECT version FROM schema_migration").fetchone()
+        assert tuple(row) == (7,)
 
     def test_current_books_with_the_old_unused_ledger_still_open(self, tmp_path):
         path = tmp_path / "current-with-extra-table.breadsched"
@@ -392,6 +388,7 @@ class TestSchemaCompatibility:
         db.load(str(path))
         db.close()
         with sqlite3.connect(path) as raw:
+            raw.execute("DROP TABLE schema_migration")
             raw.execute(
                 "CREATE TABLE schema_migration(version INTEGER PRIMARY KEY, applied_at TEXT)"
             )
@@ -402,16 +399,96 @@ class TestSchemaCompatibility:
         assert reopened.get_metadata("schema_version") == 7
         reopened.close()
 
-    @pytest.mark.parametrize("version", [3, 4, 5, 6])
+    @pytest.mark.parametrize("version", [3, 4, 5])
     @pytest.mark.parametrize("mode", ["r", "w"])
     def test_older_alpha_schemas_are_rejected(self, tmp_path, version, mode):
         path = tmp_path / f"schema-{version}.breadsched"
         self._book_with_schema(path, version)
 
         db = DbSQLite()
-        with pytest.raises(DbError, match=f"unsupported older schema {version}"):
+        message = f"schema {version} predates the supported rolling window"
+        with pytest.raises(DbError, match=message):
             db.load(str(path), mode=mode)
         assert not db.is_open
+
+    def test_read_only_schema_6_requires_a_writable_migration(self, tmp_path):
+        path = self._schema_6_fixture(tmp_path)
+        db = DbSQLite()
+        with pytest.raises(DbError, match="open it writable once to migrate"):
+            db.load(str(path), mode="r")
+        assert not (tmp_path / "schema-6.breadsched.pre-migration-v6.bak").exists()
+
+    @staticmethod
+    def _schema_6_fixture(tmp_path: Path) -> Path:
+        path = tmp_path / "schema-6.breadsched"
+        sql = (Path(__file__).parent / "fixtures" / "native" / "schema-6.sql").read_text()
+        with sqlite3.connect(path) as raw:
+            raw.executescript(sql)
+        return path
+
+    def test_schema_6_fixture_migrates_with_backup_and_version_evidence(self, tmp_path):
+        path = self._schema_6_fixture(tmp_path)
+        db = DbSQLite()
+        db.load(str(path))
+        assert db.get_metadata("schema_version") == 7
+        assert db.get_metadata("fixture_marker") == "schema-6"
+        assert db.get_account("fixture-account").name == "Fixture Checking"
+        assert [
+            row[0]
+            for row in db._require().execute(
+                "SELECT version FROM schema_migration ORDER BY version"
+            )
+        ] == [6, 7]
+        assert db.integrity_problems() == []
+        db.close()
+
+        backup = tmp_path / "schema-6.breadsched.pre-migration-v6.bak"
+        assert backup.exists()
+        with sqlite3.connect(backup) as raw:
+            assert raw.execute(
+                "SELECT value FROM metadata WHERE key='schema_version'"
+            ).fetchone() == ("6",)
+            assert (
+                raw.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='reconciliation'"
+                ).fetchone()
+                is None
+            )
+
+    def test_failed_migration_rolls_back_but_preserves_backup(self, tmp_path, monkeypatch):
+        from breadsched.gen.db import sqlite as sqlite_backend
+        from breadsched.gen.db.migrations import Migration
+
+        path = self._schema_6_fixture(tmp_path)
+
+        def fail_halfway(conn):
+            conn.execute("CREATE TABLE must_roll_back(value TEXT)")
+            raise RuntimeError("simulated migration failure")
+
+        monkeypatch.setitem(
+            sqlite_backend.MIGRATIONS,
+            6,
+            Migration(6, 7, "failing test migration", fail_halfway),
+        )
+        db = DbSQLite()
+        with pytest.raises(RuntimeError, match="simulated migration failure"):
+            db.load(str(path))
+        assert not db.is_open
+
+        with sqlite3.connect(path) as raw:
+            assert raw.execute(
+                "SELECT value FROM metadata WHERE key='schema_version'"
+            ).fetchone() == ("6",)
+            assert (
+                raw.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='must_roll_back'"
+                ).fetchone()
+                is None
+            )
+            assert raw.execute(
+                "SELECT version FROM schema_migration ORDER BY version"
+            ).fetchall() == [(6,)]
+        assert (tmp_path / "schema-6.breadsched.pre-migration-v6.bak").exists()
 
     def test_a_newer_schema_is_rejected(self, tmp_path):
         path = tmp_path / "future.breadsched"

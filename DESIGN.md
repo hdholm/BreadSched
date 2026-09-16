@@ -789,12 +789,11 @@ root.
 
 ## Storage and transactions
 
-SQLite is the native persistence engine. The current application opens exactly
-schema 7 and rejects any other declared schema before decoding primary objects; no
-newer native schema has yet required a supported migration. Before the next alpha
-schema change, BreadSched must restore an explicit migration registry and ledger,
-transactional migration runner, pre-migration backup hook, and versioned before/after
-fixtures. Migration infrastructure is a durable architectural capability even when
+SQLite is the native persistence engine. The current application writes schema 7 and
+can migrate the immediately preceding schema 6 before decoding primary objects. An
+explicit sequential registry and durable ledger, transactional runner, verified
+pre-migration backup hook, and versioned fixture make that compatibility boundary
+testable. Migration infrastructure is a durable architectural capability even when
 an individual obsolete transformation is allowed to expire.
 
 During the limited alpha, the compatibility promise is a rolling one-version window:

@@ -588,10 +588,13 @@ its continuing work is tracked in the roadmap.
 ## Book files and safety
 
 BreadSched native books use the `.breadsched` suffix and SQLite storage. During the
-alpha period, only the current native schema is supported; older and newer schema
-numbers are rejected explicitly rather than guessed or transformed. This boundary
-does not affect GnuCash, QIF, OFX, or QFX import. Verify and backup operations are
-available from the CLI. A writable book is protected by a small sidecar lock file;
+alpha period, each release supports a rolling one-version migration window; older
+and newer schema numbers are rejected explicitly rather than guessed. A writable
+migration first creates a verified `.pre-migration-vN.bak` beside the book, then
+applies all changes in one transaction. If migration fails, the book rolls back and
+the backup remains available for recovery. Read-only opens never migrate. This
+boundary does not affect GnuCash, QIF, OFX, or QFX import. Verify and backup
+operations are available from the CLI. A writable book is protected by a small sidecar lock file;
 a second process may still open the book read-only, but cannot become a competing
 writer. Clean shutdown removes the lock, and a stale same-host lock is reclaimed when
 its recorded process no longer exists.

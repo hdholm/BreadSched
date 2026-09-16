@@ -5,6 +5,12 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0214 — Restored migration infrastructure.** Restore the explicit sequential
+  registry and durable ledger, transactional runner, verified pre-migration backup,
+  immediately preceding schema-6 fixture, rollback tests, and recovery guidance.
+  Retain the rolling one-version alpha policy without coupling the safety mechanism
+  to a new native schema. Advance the alpha version to `0.2.0a50`.
+
 - [x] **0213 — Matrix-proven schedule editing.** Give GTK and web one shared
   editable projection for primary, funding, and additional fixed splits, including
   planning-only and unambiguous balance-sheet transfers. Add web formula editing

@@ -35,6 +35,7 @@ from ..lib.transaction import Transaction, UnbalancedError
 from ..utils.logs import get_logger
 from ..utils.user_paths import sync_service_for_path
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
+from .migrations import MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
 from .verification import BookIssue, BookVerification, verify_domain
 
 LOG = get_logger(__name__)
@@ -118,6 +119,10 @@ CREATE TABLE IF NOT EXISTS reconciliation (
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_account_date
     ON reconciliation(account, statement_date);
+CREATE TABLE IF NOT EXISTS schema_migration (
+    version    INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 #: table -> (object class, signal stem)
@@ -341,6 +346,10 @@ class DbSQLite(DbBase):
         conn = self._require_writable()
         conn.executescript(_SCHEMA)
         self._set_metadata_uncommitted("schema_version", SCHEMA_VERSION)
+        conn.execute(
+            "INSERT INTO schema_migration(version) VALUES (?)",
+            (SCHEMA_VERSION,),
+        )
         conn.commit()
 
     def _open_existing_book(self) -> None:
@@ -356,12 +365,63 @@ class DbSQLite(DbBase):
         except (TypeError, ValueError) as exc:
             raise DbError(f"invalid book schema version: {version!r}") from exc
 
-        if version != SCHEMA_VERSION:
-            direction = "newer" if version > SCHEMA_VERSION else "older"
+        if version > SCHEMA_VERSION:
             raise DbError(
-                f"book uses unsupported {direction} schema {version}; this BreadSched "
-                f"alpha opens schema {SCHEMA_VERSION} only"
+                f"book uses unsupported newer schema {version}; this BreadSched "
+                f"alpha opens through schema {SCHEMA_VERSION}"
             )
+        if version < MIN_SUPPORTED_SCHEMA_VERSION:
+            raise DbError(
+                f"book schema {version} predates the supported rolling window "
+                f"(schema {MIN_SUPPORTED_SCHEMA_VERSION})"
+            )
+        if version < SCHEMA_VERSION:
+            if self.readonly:
+                raise DbError(
+                    f"book uses schema {version}; open it writable once to migrate to "
+                    f"schema {SCHEMA_VERSION}"
+                )
+            self._migrate(version)
+
+    def _migrate(self, version: int) -> None:
+        conn = self._require_writable()
+        self._backup_before_migration(version)
+        current = version
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS schema_migration (
+                    version    INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.execute(
+                "INSERT OR IGNORE INTO schema_migration(version) VALUES (?)",
+                (current,),
+            )
+            while current < SCHEMA_VERSION:
+                migration = MIGRATIONS.get(current)
+                if migration is None or migration.target != current + 1:
+                    raise DbError(
+                        f"no sequential migration is available from schema {current} "
+                        f"to {current + 1}"
+                    )
+                migration.apply(conn)
+                current = migration.target
+                self._set_metadata_uncommitted("schema_version", current)
+                conn.execute(
+                    "INSERT OR REPLACE INTO schema_migration(version) VALUES (?)",
+                    (current,),
+                )
+            problems = self.integrity_problems()
+            if problems:
+                raise DbError("migrated book failed SQLite integrity check: " + "; ".join(problems))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     @staticmethod
     def _remove_sqlite_sidecars(path: Path) -> None:
@@ -407,6 +467,12 @@ class DbSQLite(DbBase):
         self._remove_sqlite_sidecars(target)
         os.replace(temporary, target)
         return str(target)
+
+    def _backup_before_migration(self, version: int) -> str | None:
+        """Preserve a verified snapshot before the first migration write."""
+        if self.path in {None, ":memory:"}:
+            return None
+        return self.backup_to(f"{self.path}.pre-migration-v{version}.bak", overwrite=True)
 
     @classmethod
     def restore_backup(cls, source: str, destination: str, *, overwrite: bool = False) -> str:

@@ -8,7 +8,7 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0213 — matrix-proven schedule editing**.
+The current accepted baseline is **0214 — restored migration infrastructure**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -27,8 +27,9 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-No numbered implementation slice is currently selected. Choose the next focused
-slice from the unfinished work below before beginning implementation.
+The next focused slice is **0215 — per-leg amount timelines**: allow dated changes
+to individual legs of fixed multi-split schedules while preserving occurrence
+identity and carrying amount provenance into Plan and Projection explanations.
 
 ## Architecture and correctness
 
@@ -180,9 +181,9 @@ slice from the unfinished work below before beginning implementation.
 
 ## Storage, integrity, and recovery
 
-- [ ] **Rolling alpha storage compatibility.** Before the next native schema change,
-  restore and retain the explicit migration registry, transactional migration
-  runner, pre-migration backup hook, and versioned fixtures. During the current
+- [x] **Rolling alpha storage compatibility.** Restore and retain the explicit
+  migration registry and ledger, transactional migration runner, verified
+  pre-migration backup hook, and versioned fixtures. During the current
   limited alpha, each release need only migrate a book from the immediately
   preceding alpha format because alpha users are expected to update every release.
   Do not remove the infrastructure after an individual migration expires: beta and
