@@ -1626,7 +1626,7 @@ class TestPlanApi:
 
 
 class TestThreadSafety:
-    """The database is opened on one thread and used from the request threads."""
+    """Reads use snapshots while writes remain serialized on one connection."""
 
     def test_a_request_thread_can_read_the_database(self, client):
         """Without check_same_thread=False, every API route fails with 500."""
@@ -1653,6 +1653,104 @@ class TestThreadSafety:
 
         assert errors == []
         assert results == [200] * 16
+
+    def test_a_long_projection_does_not_block_a_write_and_new_reads_see_it(
+        self, client, monkeypatch
+    ):
+        _status, accounts = client.get("/api/accounts")
+        expense = next(account for account in accounts if account["type"] == "EXPENSE")
+        assert expense["emergency_fund_included"] is True
+        read_started = threading.Event()
+        release_read = threading.Event()
+        write_finished = threading.Event()
+
+        projection = GET_ROUTES["/api/projection"]
+
+        def held_projection(api, query):
+            assert api.db.readonly is True
+            read_started.set()
+            assert release_read.wait(timeout=10)
+            return projection(api, query)
+
+        monkeypatch.setitem(GET_ROUTES, "/api/projection", held_projection)
+        held_result: list[tuple[int, object]] = []
+        write_result: list[tuple[int, object]] = []
+        errors: list[BaseException] = []
+
+        def read() -> None:
+            try:
+                held_result.append(client.get("/api/projection?years=1"))
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                errors.append(exc)
+
+        def write() -> None:
+            try:
+                write_result.append(
+                    client.post(
+                        "/api/account/emergency-fund",
+                        {"handle": expense["handle"], "included": False},
+                    )
+                )
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                errors.append(exc)
+            finally:
+                write_finished.set()
+
+        read_thread = threading.Thread(target=read)
+        write_thread = threading.Thread(target=write)
+        read_thread.start()
+        assert read_started.wait(timeout=10)
+        write_thread.start()
+        write_finished_while_reading = write_finished.wait(timeout=5)
+        release_read.set()
+        read_thread.join(timeout=10)
+        write_thread.join(timeout=10)
+
+        assert write_finished_while_reading is True
+        assert errors == []
+        assert write_result[0][0] == 200
+        assert held_result[0][0] == 200
+        _status, refreshed = client.get("/api/accounts")
+        refreshed_expense = next(
+            account for account in refreshed if account["handle"] == expense["handle"]
+        )
+        assert refreshed_expense["emergency_fund_included"] is False
+
+    def test_read_snapshots_close_without_disturbing_the_writer_lock(self, book_path, monkeypatch):
+        db = DbSQLite()
+        db.load(str(book_path))
+        lock_path = DbSQLite._writer_lock_path(str(book_path))
+        lock_contents = lock_path.read_text(encoding="utf-8")
+        closed_readers: list[DbSQLite] = []
+        close = DbSQLite.close
+
+        def record_close(candidate: DbSQLite) -> None:
+            if candidate.readonly:
+                closed_readers.append(candidate)
+            close(candidate)
+
+        monkeypatch.setattr(DbSQLite, "close", record_close)
+        httpd = serve(db, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{httpd.server_port}/api/accounts",
+            headers={"X-BreadSched-Token": httpd.token},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                assert response.status == 200
+            assert len(closed_readers) == 1
+            assert closed_readers[0].is_open is False
+            assert lock_path.read_text(encoding="utf-8") == lock_contents
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=10)
+
+        assert lock_path.read_text(encoding="utf-8") == lock_contents
+        db.close()
+        assert not lock_path.exists()
 
 
 class TestWriting:

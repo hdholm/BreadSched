@@ -38,6 +38,7 @@ class Handler(BaseHTTPRequestHandler):
 
     server_version = "BreadSched"
     api_object: Api
+    writer_db: DbSQLite
     lock: threading.Lock
     token: str
 
@@ -128,6 +129,27 @@ class Handler(BaseHTTPRequestHandler):
         LOG.exception("request %s failed: %s", correlation_id, self.path)
         self._error(500, "internal.error", correlation_id=correlation_id)
 
+    def _open_read_api(self) -> tuple[Api, DbSQLite | None]:
+        """Open one isolated GET view, or lock the non-reopenable writer."""
+        path = self.writer_db.path
+        if path in (None, ":memory:"):
+            self.lock.acquire()
+            return self.api_object, None
+
+        reader = DbSQLite()
+        try:
+            reader.load(path, mode="r")
+        except Exception:
+            reader.close()
+            raise
+        return Api(reader), reader
+
+    def _close_read_api(self, reader: DbSQLite | None) -> None:
+        if reader is None:
+            self.lock.release()
+        else:
+            reader.close()
+
     def do_GET(self) -> None:  # noqa: N802 - required by the base class
         if not self._trusted_host():
             self._error(403, "request.host.untrusted", ("Host",))
@@ -142,8 +164,11 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             query = QueryParams(parsed.query)
-            with self.lock:
-                result = route(self.api_object, query)
+            api, reader = self._open_read_api()
+            try:
+                result = route(api, query)
+            finally:
+                self._close_read_api(reader)
             self._json(200, result)
         except QueryError as exc:
             self._error(400, exc.code, exc.fields)
@@ -221,11 +246,16 @@ class BreadSchedHTTPServer(ThreadingHTTPServer):
 
 
 def build_handler(db: DbSQLite, token: str) -> type[Handler]:
-    """Bind one serialized writer connection and token to a handler class."""
+    """Bind one serialized writer and short-lived read snapshots to a handler."""
     return type(
         "BoundHandler",
         (Handler,),
-        {"api_object": Api(db), "lock": threading.Lock(), "token": token},
+        {
+            "api_object": Api(db),
+            "writer_db": db,
+            "lock": threading.Lock(),
+            "token": token,
+        },
     )
 
 

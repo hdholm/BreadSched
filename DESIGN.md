@@ -72,6 +72,13 @@ all events are registered from JavaScript, and charts construct SVG through name
 DOM nodes rather than interpolating markup. This permits a directive-specific Content
 Security Policy with no inline-script or inline-style exception.
 
+The server owns exactly one writable database connection and serializes every write
+through it. Each file-backed GET opens a short-lived SQLite read-only connection,
+giving projection and other read work an isolated snapshot without holding the global
+request lock; closing that connection neither acquires nor releases the writer's book
+lock. In-memory books cannot be reopened, so their GET requests deliberately fall back
+to the serialized writer connection.
+
 ## Persistence verification
 
 Normal writes are verified incrementally from the records already captured by the
