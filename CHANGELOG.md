@@ -5,6 +5,12 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0222 follow-up — Portable web read-path narrowing.** Express the
+  file-backed read-path guard with explicit `None` and in-memory checks so every
+  supported mypy version narrows the path to `str` before opening the read-only
+  database. Advance the alpha version to `0.2.0a61`; runtime behavior and native
+  schema version 7 are unchanged.
+
 - [x] **0222 — Web resource split and boundary hardening.** Separate strict typed
   query/resource routing and authenticated HTTP transport from the financial web
   adapter. Bound and validate request framing, map expected failures to stable

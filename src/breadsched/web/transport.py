@@ -132,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
     def _open_read_api(self) -> tuple[Api, DbSQLite | None]:
         """Open one isolated GET view, or lock the non-reopenable writer."""
         path = self.writer_db.path
-        if path in (None, ":memory:"):
+        if path is None or path == ":memory:":
             self.lock.acquire()
             return self.api_object, None
 
