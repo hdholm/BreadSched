@@ -33,6 +33,7 @@ from ..gen.engine import (
 )
 from ..gen.engine.activity import PlanMeasure, PlanSettings
 from ..gen.lib import (
+    Account,
     AccountClass,
     AccountType,
     AssumptionPeriod,
@@ -78,6 +79,7 @@ from ..gen.services import (
     ReviewClaimAttachment,
     ReviewOccurrence,
     ReviewTransaction,
+    SaveAccount,
     SaveAssumptionPeriod,
     SaveBaseAssumptions,
     SaveClaim,
@@ -105,6 +107,7 @@ from ..gen.services import (
     query_plan,
     reject_review,
     reopen_reconciliation,
+    save_account,
     save_assumption_period,
     save_base_assumptions,
     save_claim,
@@ -495,6 +498,7 @@ class Api:
         account = self.db.get_account(handle)
         if account is None:
             raise KeyError(handle)
+        source = Account.from_dict(account.serialize())
         raw_type = str(payload.get("type", ""))
         try:
             account_type = AccountType(raw_type.strip().upper())
@@ -505,8 +509,12 @@ class Api:
         account.atype = account_type
         if account_type is not AccountType.CREDIT:
             account.card_payment_account = None
-        with self.db.transaction(f"Set account type for {account.name}") as txn:
-            self.db.commit_account(account, txn)
+        result = save_account(
+            self.db,
+            SaveAccount(account, existing_handle=account.handle, source=source),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         return {"handle": account.handle, "type": account.atype.value}
 
     def account_emergency_fund_save(self, payload: dict) -> dict:
@@ -514,11 +522,16 @@ class Api:
         account = self.db.get_account(handle)
         if account is None:
             raise KeyError(handle)
+        source = Account.from_dict(account.serialize())
         if not account.emergency_fund_eligible:
             raise ValueError("this account type is always excluded from the emergency fund")
         account.emergency_fund_override = bool(payload.get("included"))
-        with self.db.transaction(f"Set emergency-fund treatment for {account.name}") as txn:
-            self.db.commit_account(account, txn)
+        result = save_account(
+            self.db,
+            SaveAccount(account, existing_handle=account.handle, source=source),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         return {
             "handle": account.handle,
             "emergency_fund_included": account.emergency_fund_included,
@@ -530,6 +543,7 @@ class Api:
         account = self.db.get_account(handle)
         if account is None:
             raise KeyError(handle)
+        source = Account.from_dict(account.serialize())
         if account.atype is not AccountType.CREDIT:
             raise ValueError("card payment settings require a Credit card account")
         raw_full = payload.get("pays_in_full", True)
@@ -557,8 +571,12 @@ class Api:
         account.usual_payment = usual_payment
         account.payment_day = payment_day
         account.card_payment_account = payment_handle
-        with self.db.transaction(f"Set card payment for {account.name}") as txn:
-            self.db.commit_account(account, txn)
+        result = save_account(
+            self.db,
+            SaveAccount(account, existing_handle=account.handle, source=source),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         return {
             "handle": account.handle,
             "pays_in_full": account.pays_in_full,
@@ -643,6 +661,7 @@ class Api:
         account = self.db.get_account(handle)
         if account is None:
             raise KeyError(handle)
+        source = Account.from_dict(account.serialize())
         if account.atype is not AccountType.FSA:
             raise ValueError("FSA funding years require an FSA account")
         years: list[FsaFundingYear] = []
@@ -661,8 +680,12 @@ class Api:
             if later.start <= earlier.through:
                 raise ValueError("FSA funding years cannot overlap")
         account.fsa_years = years
-        with self.db.transaction(f"Set FSA funding years for {account.name}") as txn:
-            self.db.commit_account(account, txn)
+        result = save_account(
+            self.db,
+            SaveAccount(account, existing_handle=account.handle, source=source),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         return {"handle": account.handle, "years": [year.serialize() for year in years]}
 
     def fsa_claims(self) -> dict:

@@ -613,6 +613,39 @@ class TestServiceBoundaries:
             {"Transaction", "add_transaction", "remove_transaction", "db.transaction"}
         )
 
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "service_call"),
+        (
+            ("gui/dialogs/account_dialog.py", "AccountDialog", "_on_save", "save_account"),
+            ("gui/dialogs/account_dialog.py", "AccountDialog", "_on_delete", "delete_account"),
+            ("web/server.py", "Api", "account_type_save", "save_account"),
+            ("web/server.py", "Api", "account_emergency_fund_save", "save_account"),
+            ("web/server.py", "Api", "account_card_save", "save_account"),
+            ("web/server.py", "Api", "account_fsa_years_save", "save_account"),
+        ),
+    )
+    def test_account_adapters_use_typed_services(
+        self, relative, class_name, method_name, service_call
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {"add_account", "commit_account", "remove_account", "db.transaction"}
+        )
+
+    def test_cli_account_mutations_use_typed_services(self):
+        calls = calls_in_function(SRC / "cli/main.py", "cmd_account")
+        assert {"save_account", "delete_account"} <= calls
+        assert calls.isdisjoint(
+            {
+                "add_account",
+                "commit_account",
+                "remove_account",
+                "add_transaction",
+                "db.transaction",
+            }
+        )
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):

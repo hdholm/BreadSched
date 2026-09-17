@@ -72,6 +72,13 @@ the same boundary as the full GTK editor and web. GTK and web translate stable
 service errors through shared presentation-owned wording; service error codes and
 field paths contain no English API prose.
 
+Account lifecycle and settings mutations likewise cross one typed service boundary.
+The service validates identity and parent chains, relationships to commodities,
+linked assets and card payment accounts, FSA period overlap, and source-owned fields.
+For a new account, the account and optional opening-balance transaction commit in one
+database transaction; deletion converts protected or referenced-account failures to
+a stable service error.
+
 The web presentation is split into three boundaries. ``web.server.Api`` translates
 plain request values to application/domain calls, ``web.resources`` declares routes
 and strictly parses one typed value per query field, and ``web.transport`` owns HTTP
