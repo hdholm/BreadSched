@@ -3301,20 +3301,19 @@ class TestAccountEditor:
         assert dialog.editing is True
         assert dialog.name_entry.get_text() == account.name
 
-    def test_invalid_opening_amount_does_not_raise_a_secondary_exception(self, accounts_view, app):
-        from breadsched.gen.lib import Account, AccountType
-
+    def test_invalid_opening_amount_does_not_raise_a_secondary_exception(
+        self, accounts_view, app
+    ):
         dialog = self._dialog(accounts_view)
-        account = app.db.get_account_by_name("Assets:Checking Account")
+        dialog.name_entry.set_text("Savings")
+        dialog.opening_entry.set_text("not an amount")
         before = sorted(item.handle for item in app.db.iter_transactions())
-        with app.db.transaction("Check malformed opening input") as txn:
-            if app.db.get_account_by_name("Equity") is None:
-                root = app.db.root_account()
-                app.db.add_account(
-                    Account(name="Equity", atype=AccountType.EQUITY, parent=root.handle), txn
-                )
-            dialog._post_opening(account, "not an amount", txn)
+
+        dialog._on_save(None)
+
         assert sorted(item.handle for item in app.db.iter_transactions()) == before
+        assert app.db.get_account_by_name("Savings") is None
+        assert dialog.status.get_text() == "Enter a valid opening balance."
 
     def test_dialog_close_refreshes_view_and_allows_default_close(self, accounts_view, monkeypatch):
         calls = []
