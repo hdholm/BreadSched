@@ -2040,29 +2040,6 @@ class Api:
             )
         return tuple(splits)
 
-    @staticmethod
-    def _schedule_service_error(error: ServiceError) -> ResourceError:
-        messages = {
-            "schedule.account.not_found": "scheduled account no longer exists",
-            "schedule.account.hidden": (
-                "hidden accounts cannot be used for a new scheduled transaction"
-            ),
-            "schedule.accounts.same": "choose two different accounts",
-            "schedule.accounts.duplicate": "each additional split needs a different account",
-            "schedule.amount.non_positive": "amount must be greater than zero",
-            "schedule.category.classification_conflict": (
-                "choose a category planning purpose or investment activity, not both"
-            ),
-            "schedule.category.role_required": (
-                "category must be income/expense, have a planning purpose or investment "
-                "activity, or retain a proven balance-sheet direction"
-            ),
-            "schedule.split_amount_changes.unbalanced": (
-                "per-leg future amounts do not balance; update the funding or another leg"
-            ),
-        }
-        return ResourceError(400, error.code, error.fields, messages.get(error.code, error.code))
-
     def _parse_split_amount_changes(
         self,
         payload: dict,
@@ -2248,7 +2225,7 @@ class Api:
             ),
         )
         if result.value is None:
-            raise self._schedule_service_error(result.errors[0])
+            raise self._service_resource_error(result.errors[0])
         return self.scenario_events(scenario.handle)
 
     def scenario_event_suppress(self, payload: dict) -> dict:
@@ -3489,7 +3466,7 @@ class Api:
             ),
         )
         if result.value is None:
-            raise self._schedule_service_error(result.errors[0])
+            raise self._service_resource_error(result.errors[0])
         return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_formula_save(self, payload: dict) -> dict:
@@ -3562,7 +3539,7 @@ class Api:
             ),
         )
         if result.value is None:
-            raise self._schedule_service_error(result.errors[0])
+            raise self._service_resource_error(result.errors[0])
         return {"handle": result.value.handle, "name": result.value.name}
 
     def scheduled_delete(self, payload: dict) -> dict:

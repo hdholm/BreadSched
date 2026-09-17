@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
+import gettext
+from pathlib import Path
+
 from .gen.services import ServiceError
+
+_LOCALE_DIR = Path(__file__).with_name("locale")
+_translation: gettext.NullTranslations = gettext.translation(
+    "breadsched", localedir=_LOCALE_DIR, fallback=True
+)
 
 _SERVICE_MESSAGES = {
     "account.not_found": "The account no longer exists",
@@ -112,7 +120,51 @@ _SERVICE_MESSAGES = {
     "scenario.parent.cycle": "A scenario cannot inherit from itself or its descendants",
     "scenario.children.exist": "Reparent child scenarios before deleting this scenario",
     "scenario.schedule.not_found": "The baseline schedule no longer exists",
+    "plan.start.before_book_data": "The plan starts before the book's available history",
+    "plan.end.before_start": "The plan end must not precede its start",
+    "plan.end.after_maximum": "The plan extends beyond the supported horizon",
+    "plan.scenario.not_found": "The selected scenario no longer exists",
+    "plan.comparison.not_found": "The comparison scenario no longer exists",
+    "plan.comparison.same": "Choose two different scenarios to compare",
     "schedule.name.required": "Give the scheduled transaction a name",
+    "schedule.not_found": "The scheduled transaction no longer exists",
+    "schedule.identity.changed": "The schedule identity changed while it was edited",
+    "schedule.source.not_found": "The baseline schedule no longer exists",
+    "schedule.account.not_found": "A scheduled account no longer exists",
+    "schedule.account.hidden": "Hidden accounts cannot be used for a new schedule",
+    "schedule.accounts.same": "Choose two different accounts",
+    "schedule.accounts.duplicate": "Each additional split needs a different account",
+    "schedule.amount.non_positive": "The scheduled amount must be greater than zero",
+    "schedule.category.classification_conflict": (
+        "Choose a planning purpose or investment activity, not both"
+    ),
+    "schedule.category.role_required": (
+        "Choose an income/expense account or an explicit planning role"
+    ),
+    "schedule.splits.too_few": "A schedule needs at least two splits",
+    "schedule.recurrence.end_before_start": "The recurrence end precedes its start",
+    "schedule.recurrence.count_invalid": "The recurrence count must be positive",
+    "schedule.amount_changes.duplicate": "Future amount dates must be unique",
+    "schedule.amount_changes.before_start": "Future amounts cannot precede the schedule",
+    "schedule.seasonal_amounts.duplicate": "Seasonal months must be unique",
+    "schedule.skipped.duplicate": "Skipped dates must be unique",
+    "schedule.skipped.not_occurrence": "A skipped date is not a scheduled occurrence",
+    "schedule.occurrence_adjustments.duplicate": "Adjusted occurrence dates must be unique",
+    "schedule.occurrence_adjustments.not_occurrence": (
+        "An adjusted date is not a scheduled occurrence"
+    ),
+    "schedule.occurrence_conflict": "An occurrence cannot be both skipped and adjusted",
+    "schedule.split_amount_changes.duplicate": "Per-split future dates must be unique",
+    "schedule.split_amount_changes.before_start": (
+        "Per-split future amounts cannot precede the schedule"
+    ),
+    "schedule.split_amount_changes.unbalanced": "Future split amounts do not balance",
+    "schedule.read_only": "This imported schedule is read-only",
+    "schedule.formula.ownership": "Formula-owned schedule structure cannot be changed here",
+    "schedule.formula.variables.invalid": "Check the formula variables",
+    "schedule.formula.invalid": "Check the schedule formulas",
+    "schedule.estimate.invalid": "The historical-estimate adjustment is invalid",
+    "schedule.investment.invalid": "Check the scheduled investment classification",
     "schedule.scenario_reference.exists": (
         "Remove this schedule's scenario overrides before deleting it"
     ),
@@ -129,4 +181,26 @@ _SERVICE_MESSAGES = {
 
 def service_error_message(error: ServiceError) -> str:
     """Translate a machine-readable service failure at the presentation boundary."""
-    return _SERVICE_MESSAGES.get(error.code, error.code)
+    message = _SERVICE_MESSAGES.get(error.code, error.code)
+    return _translation.gettext(message)
+
+
+def service_error_codes() -> frozenset[str]:
+    """Return the stable codes with presentation-owned English messages."""
+    return frozenset(_SERVICE_MESSAGES)
+
+
+def service_error_templates() -> frozenset[str]:
+    """Return the English gettext message identifiers for catalog validation."""
+    return frozenset(_SERVICE_MESSAGES.values())
+
+
+def configure_language(languages: list[str] | None = None) -> None:
+    """Load the gettext catalog for presentation-owned service wording."""
+    global _translation
+    _translation = gettext.translation(
+        "breadsched",
+        localedir=_LOCALE_DIR,
+        languages=languages,
+        fallback=True,
+    )

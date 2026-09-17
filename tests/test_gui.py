@@ -2241,6 +2241,19 @@ class TestEditingFromTheRegister:
         assert app.db.summary()["txn"] == before - 1
         assert app.db.get_transaction(transaction.handle) is None
 
+    def test_transaction_service_error_uses_the_selected_gettext_catalog(self, register, app):
+        from breadsched.gen.services import DeleteTransaction, delete_transaction
+        from breadsched.presentation import configure_language
+
+        dialog, transaction = self._dialog_for(register)
+        assert delete_transaction(app.db, DeleteTransaction(transaction.handle)).ok
+        try:
+            configure_language(["es"])
+            dialog._on_delete(None)
+            assert dialog.status.get_text() == "La transacción ya no existe"
+        finally:
+            configure_language(["C"])
+
     def test_the_register_offers_editing_on_activation(self, register):
         assert hasattr(register, "edit_transaction")
 

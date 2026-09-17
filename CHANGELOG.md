@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 error-catalog slice — Presentation-owned localization seam.** Map every
+  stable application-service error code and field path to human-readable wording at
+  one shared presentation boundary, removing the remaining web-only schedule map.
+  Load that English wording through packaged gettext catalogs without exposing prose
+  in the service contract. Add literal-code coverage, compiled-catalog validation,
+  and Spanish locale smoke tests through both web and GTK error paths. Advance the
+  alpha version to `0.2.0a73`; native schema version 7 is unchanged.
+
 - [x] **0223 schedule-lifecycle slice — Complete cross-interface mutation
   migration.** Route GTK/web schedule duplication and deletion plus CLI estimate
   add/remove through typed schedule services. Preserve protected schedule structure,

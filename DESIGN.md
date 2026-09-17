@@ -52,6 +52,12 @@ writes use this boundary. Schedule services clone the submitted candidate, apply
 shared editability and timeline guards, and own the complete ``DbTxn`` so adapters
 cannot leave a partially validated write open.
 
+Every literal service error code has one English message in the shared presentation
+catalog. Presentations pass that message identifier through gettext at their boundary;
+compiled locale catalogs are packaged with the application and never alter the stable
+service code or field path. Catalog tests keep newly introduced service codes from
+falling back to machine identifiers and reject translations for unknown messages.
+
 Fixed schedule editors submit ``FixedScheduleInput`` rather than assembling ledger
 splits themselves. The service resolves account roles and ledger signs, balances the
 funding leg, applies planning/investment classifications, preserves safe fields from
