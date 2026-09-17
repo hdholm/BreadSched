@@ -12,7 +12,6 @@ from collections.abc import Callable
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import estimates, investment
 from ...gen.lib import (
     AccountClass,
     FormulaError,
@@ -26,12 +25,21 @@ from ...gen.lib import (
     ScheduledAmountChange,
     ScheduledMonthAmount,
     ScheduledOccurrenceAdjustment,
-    ScheduledSplit,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
     WeekendAdjust,
     evaluate,
     scheduled_occurrence_preview,
+)
+from ...gen.services import (
+    FixedScheduleInput,
+    FixedSplitInput,
+    FormulaScenarioScheduleInput,
+    SaveFixedScenarioSchedule,
+    build_fixed_scenario_schedule,
+    build_formula_scenario_schedule,
+    save_fixed_scenario_schedule,
+    save_formula_scenario_schedule,
 )
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
@@ -816,34 +824,14 @@ class ScenarioScheduleDialog(Gtk.Window):
         if recurrence is None:
             problems.append("check the schedule dates/count")
         if not self._formula_mode:
-            if self.category.get_selected() == self.funding.get_selected():
-                problems.append("choose two different accounts")
-            category = self._accounts[self.category.get_selected()]
-            investment_activity = _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
-            category_planning_flow = _PLANNING_FLOWS[self.category_planning_flow.get_selected()][1]
-            if category_planning_flow is not None and investment_activity is not None:
-                problems.append(
-                    "choose a category planning purpose or investment activity, not both"
-                )
-            if (
-                category.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE)
-                and investment_activity is None
-                and category_planning_flow is None
-            ):
-                problems.append("choose an income/expense category or an investment activity")
-            selected_accounts = {self.category.get_selected(), self.funding.get_selected()}
             for (
-                account_index,
+                _account_index,
                 raw_amount,
                 _purpose_index,
                 _activity_index,
                 _memo,
                 _direction,
             ) in self.additional_splits.values():
-                if account_index in selected_accounts:
-                    problems.append("each additional split needs a different account")
-                    break
-                selected_accounts.add(account_index)
                 try:
                     extra_amount = Money(parse_user_amount(raw_amount))
                 except (ValueError, ArithmeticError):
@@ -852,6 +840,25 @@ class ScenarioScheduleDialog(Gtk.Window):
                 if extra_amount <= 0:
                     problems.append("additional split amounts must be greater than zero")
                     break
+            if not problems:
+                validation = build_fixed_scenario_schedule(self.db, self._fixed_request())
+                if validation.value is None:
+                    messages = {
+                        "schedule.accounts.same": "choose two different accounts",
+                        "schedule.accounts.duplicate": (
+                            "each additional split needs a different account"
+                        ),
+                        "schedule.category.classification_conflict": (
+                            "choose a category planning purpose or investment activity, not both"
+                        ),
+                        "schedule.category.role_required": (
+                            "choose an income/expense category, planning purpose, "
+                            "or investment activity"
+                        ),
+                    }
+                    problems.append(
+                        messages.get(validation.errors[0].code, validation.errors[0].code)
+                    )
 
         self.save_button.set_sensitive(not problems)
         self.status.set_text("; ".join(problems).capitalize() if problems else "")
@@ -874,145 +881,112 @@ class ScenarioScheduleDialog(Gtk.Window):
                 )
             )
 
+    def _formula_request(self) -> FormulaScenarioScheduleInput:
+        recurrence = self._recurrence()
+        variables = self._formula_variables()
+        assert self.source is not None and recurrence is not None and variables is not None
+        return FormulaScenarioScheduleInput(
+            scenario_handle=self.scenario.handle,
+            source_schedule=self.source.handle,
+            name=self.name_entry.get_text().strip(),
+            recurrence=recurrence,
+            formulas={index: entry.get_text() for index, entry in self._formula_entries},
+            variables=variables,
+            growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
+            skipped=tuple(self._skipped(recurrence) or ()),
+            source=self.source,
+            current=self.current,
+        )
+
+    def _fixed_request(self) -> SaveFixedScenarioSchedule:
+        recurrence = self._recurrence()
+        amount = self._amount()
+        assert recurrence is not None and amount is not None
+        additional = tuple(
+            FixedSplitInput(
+                account=self._accounts[account_index].handle,
+                amount=Money(parse_user_amount(raw_amount)),
+                planning_flow=_PLANNING_FLOWS[purpose_index][1],
+                investment_activity=_INVESTMENT_ACTIVITIES[activity_index][1],
+                memo=memo,
+                opposite_direction=direction_index == 1,
+            )
+            for (
+                account_index,
+                raw_amount,
+                purpose_index,
+                activity_index,
+                memo,
+                direction_index,
+            ) in self.additional_splits.values()
+        )
+        placeholder = (
+            self.current.placeholder
+            if self.current is not None
+            else self.source.placeholder
+            if self.source is not None
+            else True
+        )
+        evidence = (
+            self.current.estimate_evidence
+            if self.current is not None
+            else self.source.estimate_evidence
+            if self.source is not None
+            else None
+        )
+        return SaveFixedScenarioSchedule(
+            scenario_handle=self.scenario.handle,
+            source_schedule=self.source.handle if self.source is not None else None,
+            definition=FixedScheduleInput(
+                name=self.name_entry.get_text().strip(),
+                recurrence=recurrence,
+                category=self._accounts[self.category.get_selected()].handle,
+                funding=self._accounts[self.funding.get_selected()].handle,
+                amount=amount,
+                category_planning_flow=_PLANNING_FLOWS[self.category_planning_flow.get_selected()][
+                    1
+                ],
+                funding_planning_flow=_PLANNING_FLOWS[self.planning_flow.get_selected()][1],
+                investment_activity=_INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][
+                    1
+                ],
+                category_ledger_direction=self._category_ledger_direction,
+                additional_splits=additional,
+                enabled=True,
+                placeholder=placeholder,
+                growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
+                amount_changes=tuple(self._amount_changes() or ()),
+                seasonal_amounts=tuple(self._seasonal_amounts() or ()),
+                skipped=tuple(self._skipped(recurrence) or ()),
+                occurrence_adjustments=tuple(self._occurrence_adjustments(recurrence) or ()),
+                estimate_evidence=evidence,
+            ),
+            source=self.source,
+            current=self.current,
+        )
+
     def build(self) -> ScenarioSchedule:
         """Build the scenario-owned recurring estimate described by the form."""
         recurrence = self._recurrence()
         assert recurrence is not None
         if self._formula_mode:
-            initial = self.current or self.source
-            assert initial is not None
-            if isinstance(initial, ScenarioSchedule):
-                change = ScenarioSchedule.from_dict(initial.serialize())
-            else:
-                change = ScenarioSchedule.from_scheduled(initial)
-            old_name = change.name
-            change.name = self.name_entry.get_text().strip()
-            if change.description == old_name:
-                change.description = change.name
-            change.recurrence = recurrence
-            change.growth_policy = _GROWTH_POLICIES[self.growth_policy.get_selected()][1]
-            change.skipped = self._skipped(recurrence) or []
-            if self._formula_inputs_changed():
-                variables = self._formula_variables()
-                assert variables is not None
-                for index, entry in self._formula_entries:
-                    change.splits[index].formula = entry.get_text().strip()
-                change.variables = variables
-            if self.source is not None:
-                change.source_schedule = self.source.handle
-            return change
+            result = build_formula_scenario_schedule(self.db, self._formula_request())
+            assert result.value is not None
+            return result.value
 
-        amount = self._amount()
-        assert amount is not None
-        category = self._accounts[self.category.get_selected()]
-        funding = self._accounts[self.funding.get_selected()]
-        investment_activity = _INVESTMENT_ACTIVITIES[self.investment_activity.get_selected()][1]
-        category_planning_flow = _PLANNING_FLOWS[self.category_planning_flow.get_selected()][1]
-        signed = (
-            category_planning_flow.ledger_amount(amount)
-            if category_planning_flow is not None
-            else amount * investment_activity.direction
-            if investment_activity is not None and investment_activity.direction
-            else amount * self._category_ledger_direction
-            if self._category_ledger_direction is not None
-            else amount * category.sign()
-        )
-        extra_splits = []
-        extra_total = Money(0)
-        for (
-            account_index,
-            raw_amount,
-            purpose_index,
-            activity_index,
-            memo,
-            direction_index,
-        ) in self.additional_splits.values():
-            account = self._accounts[account_index]
-            extra_amount = Money(parse_user_amount(raw_amount))
-            purpose = _PLANNING_FLOWS[purpose_index][1]
-            investment_activity = _INVESTMENT_ACTIVITIES[activity_index][1]
-            value = (
-                extra_amount * investment_activity.direction
-                if investment_activity is not None and investment_activity.direction
-                else purpose.ledger_amount(extra_amount)
-                if purpose is not None
-                else extra_amount * account.sign() * (-1 if direction_index == 1 else 1)
-            )
-            extra_total = extra_total + value
-            extra_splits.append(
-                ScheduledSplit(
-                    account.handle,
-                    value,
-                    memo=memo,
-                    planning_flow=purpose,
-                    investment_activity=investment_activity,
-                )
-            )
-        funding_value = -(signed + extra_total)
-        placeholder = True
-        if self.current is not None:
-            placeholder = self.current.placeholder
-        elif self.source is not None:
-            placeholder = self.source.placeholder
-        return ScenarioSchedule(
-            name=self.name_entry.get_text().strip(),
-            recurrence=recurrence,
-            splits=[
-                ScheduledSplit(
-                    category.handle,
-                    signed,
-                    planning_flow=category_planning_flow,
-                    investment_activity=investment_activity,
-                ),
-                *extra_splits,
-                ScheduledSplit(
-                    funding.handle,
-                    funding_value,
-                    planning_flow=_PLANNING_FLOWS[self.planning_flow.get_selected()][1],
-                    investment_activity=(
-                        InvestmentActivityKind.ROLLOVER
-                        if investment_activity is InvestmentActivityKind.ROLLOVER
-                        else None
-                    ),
-                ),
-            ],
-            source_schedule=self.source.handle if self.source is not None else None,
-            enabled=True,
-            placeholder=placeholder,
-            growth_policy=_GROWTH_POLICIES[self.growth_policy.get_selected()][1],
-            amount_changes=self._amount_changes() or [],
-            seasonal_amounts=self._seasonal_amounts() or [],
-            skipped=self._skipped(recurrence) or [],
-            occurrence_adjustments=self._occurrence_adjustments(recurrence) or [],
-            estimate_evidence=(
-                self.current.estimate_evidence
-                if self.current is not None
-                else self.source.estimate_evidence
-                if self.source is not None
-                else None
-            ),
-        )
+        result = build_fixed_scenario_schedule(self.db, self._fixed_request())
+        assert result.value is not None
+        return result.value
 
     def _on_save(self, _button) -> None:
-        change = self.build()
-        try:
-            estimates.validate_historical_estimate_adjustment(self.db, change)
-        except ValueError as exc:
-            self.status.set_text(str(exc))
+        result = (
+            save_formula_scenario_schedule(self.db, self._formula_request())
+            if self._formula_mode
+            else save_fixed_scenario_schedule(self.db, self._fixed_request())
+        )
+        if result.value is None:
+            self.status.set_text(result.errors[0].code)
             return
-        problems = investment.scheduled_activity_problems(self.db, change)
-        if problems:
-            self.status.set_text("; ".join(problems))
-            return
-        if change.source_schedule is not None:
-            self.scenario.schedule_overrides = [
-                existing
-                for existing in self.scenario.schedule_overrides
-                if existing.source_schedule != change.source_schedule
-            ]
-        self.scenario.schedule_overrides.append(change)
-        with self.db.transaction(f"Update scenario {self.scenario.name}") as txn:
-            self.db.commit_scenario(self.scenario, txn)
         self.close()
 
 

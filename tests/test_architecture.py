@@ -59,6 +59,30 @@ def imported_names(path: Path) -> set[str]:
     return found
 
 
+def calls_in_method(path: Path, class_name: str, method_name: str) -> set[str]:
+    """Return the simple and qualified call names made below one adapter method."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    class_node = next(
+        node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name
+    )
+    method = next(
+        node
+        for node in class_node.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == method_name
+    )
+    calls: set[str] = set()
+    for node in ast.walk(method):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            calls.add(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            calls.add(node.func.attr)
+            if isinstance(node.func.value, ast.Attribute):
+                calls.add(f"{node.func.value.attr}.{node.func.attr}")
+    return calls
+
+
 class TestLayering:
     @pytest.mark.parametrize("layer", CORE_DIRS)
     def test_the_core_never_imports_gtk(self, layer):
@@ -175,6 +199,108 @@ class TestGuiIsCheckable:
                     if "Money" in segment:
                         offenders.append(f"{module.name}: {segment}")
         assert offenders == []
+
+
+class TestServiceBoundaries:
+    """Presentation adapters may translate fields, but services own use cases."""
+
+    _schedule_adapters = (
+        ("gui/dialogs/schedule_dialog.py", "ScheduleDialog", "build"),
+        ("gui/dialogs/schedule_dialog.py", "ScheduleDialog", "_on_save"),
+        ("gui/dialogs/scenario_schedule_dialog.py", "ScenarioScheduleDialog", "build"),
+        ("gui/dialogs/scenario_schedule_dialog.py", "ScenarioScheduleDialog", "_on_save"),
+        ("web/server.py", "Api", "scenario_event_save"),
+        ("web/server.py", "Api", "scheduled_save"),
+        ("web/server.py", "Api", "scheduled_formula_save"),
+    )
+
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name"),
+        _schedule_adapters,
+        ids=lambda value: str(value).rsplit("/", 1)[-1],
+    )
+    def test_schedule_adapters_do_not_construct_or_persist_domain_objects(
+        self, relative, class_name, method_name
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        forbidden = {
+            "ScheduledSplit",
+            "ScheduledTransaction",
+            "ScenarioSchedule",
+            "transaction",
+            "db.transaction",
+            "add_scheduled",
+            "commit_scheduled",
+            "add_scenario",
+            "commit_scenario",
+        }
+        assert calls.isdisjoint(forbidden), sorted(calls & forbidden)
+
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "expected"),
+        (
+            (
+                "gui/dialogs/schedule_dialog.py",
+                "ScheduleDialog",
+                "_on_save",
+                {"save_fixed_schedule", "save_formula_schedule"},
+            ),
+            (
+                "gui/dialogs/scenario_schedule_dialog.py",
+                "ScenarioScheduleDialog",
+                "_on_save",
+                {"save_fixed_scenario_schedule", "save_formula_scenario_schedule"},
+            ),
+            ("web/server.py", "Api", "scenario_event_save", {"save_fixed_scenario_schedule"}),
+            ("web/server.py", "Api", "scheduled_save", {"save_fixed_schedule"}),
+            ("web/server.py", "Api", "scheduled_formula_save", {"save_formula_schedule"}),
+        ),
+    )
+    def test_schedule_writes_call_the_typed_service(
+        self, relative, class_name, method_name, expected
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert expected <= calls
+
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name"),
+        (
+            ("gui/views/plan.py", "PlanView", "refresh"),
+            ("web/server.py", "Api", "plan"),
+        ),
+    )
+    def test_plan_adapters_consume_the_typed_query_service(self, relative, class_name, method_name):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert "query_plan" in calls
+        assert "build_category_report" not in calls
+
+
+class TestWebBoundaries:
+    def test_financial_api_does_not_own_http_transport_or_route_tables(self):
+        source = (SRC / "web/server.py").read_text(encoding="utf-8")
+        assert "class Handler(" not in source
+        assert "BaseHTTPRequestHandler" not in source
+        assert "ROUTES =" not in source
+        assert "POST_ROUTES =" not in source
+
+    def test_resource_and_transport_ownership_is_explicit(self):
+        resources = (SRC / "web/resources.py").read_text(encoding="utf-8")
+        transport = (SRC / "web/transport.py").read_text(encoding="utf-8")
+        assert "GET_ROUTES:" in resources
+        assert "POST_ROUTES:" in resources
+        assert "class Handler(BaseHTTPRequestHandler):" in transport
+        assert "class BreadSchedHTTPServer(ThreadingHTTPServer):" in transport
+
+    def test_transport_does_not_import_financial_engines(self):
+        source = (SRC / "web/transport.py").read_text(encoding="utf-8")
+        assert "gen.engine" not in source
+        assert "gen.services" not in source
+
+    def test_transport_keeps_one_writer_and_opens_file_reads_read_only(self):
+        source = (SRC / "web/transport.py").read_text(encoding="utf-8")
+        assert 'reader.load(path, mode="r")' in source
+        assert '"writer_db": db' in source
+        assert "with self.lock:" in source
 
 
 class TestSuiteIsLocationIndependent:
@@ -390,3 +516,16 @@ class TestPackagedResources:
         source = (SRC / "gui" / "app.py").read_text(encoding="utf-8")
         assert 'joinpath("resources/style.css")' in source
         assert 'STYLE = """' not in source
+
+    def test_all_web_assets_are_declared_as_package_data(self):
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            import tomli as tomllib
+
+        root = Path(__file__).resolve().parent.parent
+        config = tomllib.loads((root / "pyproject.toml").read_text())
+        declared = config["tool"]["setuptools"]["package-data"]["breadsched"]
+        assert "web/static/*.html" in declared
+        assert "web/static/*.css" in declared
+        assert "web/static/*.js" in declared

@@ -9,6 +9,7 @@ that a tool with no authentication refuses to listen on anything but loopback.
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import urllib.error
 import urllib.parse
@@ -35,7 +36,23 @@ from breadsched.gen.lib import (
     Split,
     Transaction,
 )
+from breadsched.web.resources import GET_ROUTES, QueryParams
 from breadsched.web.server import serve
+
+
+def raw_http(client, request: bytes) -> tuple[int, dict]:
+    """Send one exact HTTP/1.0 request without urllib normalizing its framing."""
+    parsed = urllib.parse.urlparse(client.base_url)
+    assert parsed.hostname is not None and parsed.port is not None
+    with socket.create_connection((parsed.hostname, parsed.port), timeout=10) as connection:
+        connection.sendall(request)
+        connection.shutdown(socket.SHUT_WR)
+        response = b""
+        while chunk := connection.recv(65536):
+            response += chunk
+    head, body = response.split(b"\r\n\r\n", 1)
+    status = int(head.split(b"\r\n", 1)[0].split()[1])
+    return status, json.loads(body)
 
 
 @pytest.fixture
@@ -183,30 +200,55 @@ class TestItServes:
         assert status == 200
         assert headers.get("Content-Type", "").startswith("text/html")
         assert b"<html" in body.lower()
+        policy = headers["Content-Security-Policy"]
+        assert "default-src 'none'" in policy
+        assert "script-src 'self'" in policy
+        assert "style-src 'self'" in policy
+        assert "frame-ancestors 'none'" in policy
+        assert "'unsafe-inline'" not in policy
 
     def test_the_current_view_has_a_printable_browser_presentation(self, client):
         _status, body, _headers = client.raw("/")
         page = body.decode("utf-8")
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode("utf-8")
+        _status, body, _headers = client.raw("/style.css")
+        style = body.decode("utf-8")
 
         assert 'id="print-view"' in page
-        assert 'onclick="window.print()"' in page
-        assert "@media print" in page
-        assert "document.body.dataset.view = current" in page
-        assert 'document.getElementById("print-title").textContent = current' in page
-        assert ".plan-table { max-height: none; }" in page
-        assert "Include category detail when printing" in page
-        assert "body.include-plan-detail .plan-detail" in page
-        assert "header { display: none !important; }" in page
-        assert ".plan-table thead th { position: static; }" in page
+        assert 'src="/app.js"' in page
+        assert 'href="/style.css"' in page
+        assert "window.print()" in script
+        assert "@media print" in style
+        assert "document.body.dataset.view = current" in script
+        assert 'document.getElementById("print-title").textContent = current' in script
+        assert ".plan-table { max-height: none; }" in style
+        assert "Include category detail when printing" in script
+        assert "body.include-plan-detail .plan-detail" in style
+        assert "header { display: none !important; }" in style
+        assert ".plan-table thead th { position: static; }" in style
+
+    def test_static_assets_need_no_inline_code_or_html_svg_interpolation(self, client):
+        _status, body, _headers = client.raw("/")
+        page = body.decode("utf-8")
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode("utf-8")
+
+        assert "<style" not in page
+        assert "<script>" not in page
+        assert "onclick=" not in page
+        assert "style=" not in page
+        assert "innerHTML" not in script
+        assert 'createElementNS("http://www.w3.org/2000/svg"' in script
 
     def test_accounts_offer_read_only_imported_metadata_details(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode("utf-8")
         assert "openAccountDetails" in page
         assert "Read-only GnuCash provenance" in page
 
     def test_schedule_occurrence_controls_are_structured(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         text = body.decode("utf-8")
         assert "timelineEditor" in text
         assert "occurrenceTimelineEditor" in text
@@ -1566,23 +1608,25 @@ class TestPlanApi:
         assert caught.value.code == 400
 
     def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert '"Scheduled", "Plan", "Review", "Projection"' in page
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
     def test_plan_values_are_keyboard_accessible_buttons(self, client):
-        _status, body, _headers = client.raw("/")
-        page = body.decode()
-        assert 'class: "plan-cell-button"' in page
-        assert 'type: "button"' in page
-        assert '"aria-label": `Explain ${category.full_name}' in page
-        assert ".plan-cell-button:focus-visible" in page
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode()
+        _status, body, _headers = client.raw("/style.css")
+        style = body.decode()
+        assert 'class: "plan-cell-button"' in script
+        assert 'type: "button"' in script
+        assert '"aria-label": `Explain ${category.full_name}' in script
+        assert ".plan-cell-button:focus-visible" in style
 
 
 class TestThreadSafety:
-    """The database is opened on one thread and used from the request threads."""
+    """Reads use snapshots while writes remain serialized on one connection."""
 
     def test_a_request_thread_can_read_the_database(self, client):
         """Without check_same_thread=False, every API route fails with 500."""
@@ -1609,6 +1653,104 @@ class TestThreadSafety:
 
         assert errors == []
         assert results == [200] * 16
+
+    def test_a_long_projection_does_not_block_a_write_and_new_reads_see_it(
+        self, client, monkeypatch
+    ):
+        _status, accounts = client.get("/api/accounts")
+        expense = next(account for account in accounts if account["type"] == "EXPENSE")
+        assert expense["emergency_fund_included"] is True
+        read_started = threading.Event()
+        release_read = threading.Event()
+        write_finished = threading.Event()
+
+        projection = GET_ROUTES["/api/projection"]
+
+        def held_projection(api, query):
+            assert api.db.readonly is True
+            read_started.set()
+            assert release_read.wait(timeout=10)
+            return projection(api, query)
+
+        monkeypatch.setitem(GET_ROUTES, "/api/projection", held_projection)
+        held_result: list[tuple[int, object]] = []
+        write_result: list[tuple[int, object]] = []
+        errors: list[BaseException] = []
+
+        def read() -> None:
+            try:
+                held_result.append(client.get("/api/projection?years=1"))
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                errors.append(exc)
+
+        def write() -> None:
+            try:
+                write_result.append(
+                    client.post(
+                        "/api/account/emergency-fund",
+                        {"handle": expense["handle"], "included": False},
+                    )
+                )
+            except BaseException as exc:  # noqa: BLE001 - reported below
+                errors.append(exc)
+            finally:
+                write_finished.set()
+
+        read_thread = threading.Thread(target=read)
+        write_thread = threading.Thread(target=write)
+        read_thread.start()
+        assert read_started.wait(timeout=10)
+        write_thread.start()
+        write_finished_while_reading = write_finished.wait(timeout=5)
+        release_read.set()
+        read_thread.join(timeout=10)
+        write_thread.join(timeout=10)
+
+        assert write_finished_while_reading is True
+        assert errors == []
+        assert write_result[0][0] == 200
+        assert held_result[0][0] == 200
+        _status, refreshed = client.get("/api/accounts")
+        refreshed_expense = next(
+            account for account in refreshed if account["handle"] == expense["handle"]
+        )
+        assert refreshed_expense["emergency_fund_included"] is False
+
+    def test_read_snapshots_close_without_disturbing_the_writer_lock(self, book_path, monkeypatch):
+        db = DbSQLite()
+        db.load(str(book_path))
+        lock_path = DbSQLite._writer_lock_path(str(book_path))
+        lock_contents = lock_path.read_text(encoding="utf-8")
+        closed_readers: list[DbSQLite] = []
+        close = DbSQLite.close
+
+        def record_close(candidate: DbSQLite) -> None:
+            if candidate.readonly:
+                closed_readers.append(candidate)
+            close(candidate)
+
+        monkeypatch.setattr(DbSQLite, "close", record_close)
+        httpd = serve(db, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{httpd.server_port}/api/accounts",
+            headers={"X-BreadSched-Token": httpd.token},
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=10) as response:
+                assert response.status == 200
+            assert len(closed_readers) == 1
+            assert closed_readers[0].is_open is False
+            assert lock_path.read_text(encoding="utf-8") == lock_contents
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            thread.join(timeout=10)
+
+        assert lock_path.read_text(encoding="utf-8") == lock_contents
+        db.close()
+        assert not lock_path.exists()
 
 
 class TestWriting:
@@ -1792,6 +1934,9 @@ class TestImportApi:
 
 
 class TestSafety:
+    def test_an_empty_query_is_valid_on_every_supported_python(self):
+        QueryParams("").finish()
+
     def test_it_refuses_to_bind_beyond_loopback(self, book_path):
         """No authentication means no listening on a network interface."""
         db = DbSQLite()
@@ -1854,6 +1999,104 @@ class TestSafety:
         with pytest.raises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(request, timeout=10)
         assert caught.value.code == 403
+
+    @pytest.mark.parametrize(
+        ("headers", "status", "code"),
+        (
+            (b"", 411, "request.content_length.required"),
+            (b"Content-Length: nope\r\n", 400, "request.content_length.invalid"),
+            (b"Content-Length: -1\r\n", 400, "request.content_length.invalid"),
+            (
+                b"Content-Length: 2\r\nContent-Length: 2\r\n",
+                400,
+                "request.content_length.repeated",
+            ),
+            (
+                b"Content-Length: 65537\r\n",
+                413,
+                "request.body.too_large",
+            ),
+            (
+                b"Transfer-Encoding: chunked\r\n",
+                400,
+                "request.transfer_encoding.unsupported",
+            ),
+        ),
+    )
+    def test_post_framing_is_rejected_before_reading(self, client, headers, status, code):
+        request = (
+            b"POST /api/post-scheduled HTTP/1.0\r\n"
+            b"Host: 127.0.0.1\r\n"
+            b"Content-Type: application/json\r\n"
+            + f"X-BreadSched-Token: {client.token}\r\n".encode()
+            + headers
+            + b"\r\n"
+        )
+
+        actual_status, payload = raw_http(client, request)
+
+        assert actual_status == status
+        assert payload["code"] == code
+
+    @pytest.mark.parametrize(
+        ("query", "code", "fields"),
+        (
+            ("days=abc", "query.integer.invalid", ["days"]),
+            ("days=-1", "query.integer.out_of_range", ["days"]),
+            ("days=1&days=2", "query.repeated", ["days"]),
+            ("unknown=1", "query.unknown", ["unknown"]),
+        ),
+    )
+    def test_query_contract_rejects_invalid_fields_consistently(self, client, query, code, fields):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get(f"/api/scheduled?{query}")
+
+        assert caught.value.code == 400
+        payload = json.loads(caught.value.read())
+        assert payload["code"] == code
+        assert payload["fields"] == fields
+
+    def test_service_errors_keep_their_stable_code_and_fields(self, client):
+        _status, data = client.get("/api/scheduled")
+        account = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scheduled/save",
+                {
+                    "name": "Invalid same-account schedule",
+                    "category": account["handle"],
+                    "funding": account["handle"],
+                    "amount": "75.00",
+                    "frequency": "monthly",
+                    "start": "2026-02-01",
+                    "weekend": "none",
+                },
+            )
+
+        payload = json.loads(caught.value.read())
+        assert caught.value.code == 400
+        assert payload["code"] == "schedule.accounts.same"
+        assert payload["fields"] == ["category", "funding"]
+
+    def test_unexpected_failures_return_only_a_correlation_id(
+        self, client, monkeypatch, breadsched_logs
+    ):
+        def explode(_api, query):
+            query.finish()
+            raise RuntimeError("private failure detail")
+
+        monkeypatch.setitem(GET_ROUTES, "/api/test-boom", explode)
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/test-boom")
+
+        payload = json.loads(caught.value.read())
+        assert caught.value.code == 500
+        assert payload["code"] == "internal.error"
+        assert "private failure detail" not in json.dumps(payload)
+        assert payload["correlation_id"]
+        assert breadsched_logs.containing(payload["correlation_id"])
 
 
 class TestCliIntegration:
@@ -1994,7 +2237,7 @@ class TestDashboardApi:
         assert changed["emergency_fund_included"] is False
 
     def test_the_page_opens_on_the_dashboard(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert ': "Dashboard"' in page
         assert 'launchParams.get("view")' in page
@@ -2075,7 +2318,7 @@ class TestReviewApi:
         assert review["actuals"] == []
 
     def test_page_exposes_review_between_plan_and_projection(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert '"Plan", "Review", "Projection"' in page
         assert "async function showReview" in page
@@ -2293,7 +2536,7 @@ class TestScenarioManagementApi:
 
 class TestScenarioManagementPage:
     def test_plan_links_to_scenario_management(self, client):
-        _status, body, _headers = client.raw("/")
+        _status, body, _headers = client.raw("/app.js")
         page = body.decode()
         assert '"Manage scenarios…"' in page
         assert "async function showScenarios" in page
@@ -2613,16 +2856,18 @@ class TestScenarioEventWebParity:
         assert suppressed["changes"][0]["source_schedule"] == source["handle"]
 
     def test_page_has_sticky_plan_context_and_dashboard_group_cards(self, client):
-        _status, body, _headers = client.raw("/")
-        page = body.decode()
-        assert ".plan-table th:first-child, .plan-table td:first-child" in page
-        assert "max-height: calc(100vh - 310px)" in page
-        assert 'class:"balance-groups"' in page
-        assert '"Add estimate…"' in page
-        assert '"Alter baseline…"' in page
-        assert '"Suppress baseline…"' in page
-        assert '"Review…"' in page
-        assert "historicalEstimateDialog" in page
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode()
+        _status, body, _headers = client.raw("/style.css")
+        style = body.decode()
+        assert ".plan-table th:first-child, .plan-table td:first-child" in style
+        assert "max-height: calc(100vh - 310px)" in style
+        assert 'class:"balance-groups"' in script
+        assert '"Add estimate…"' in script
+        assert '"Alter baseline…"' in script
+        assert '"Suppress baseline…"' in script
+        assert '"Review…"' in script
+        assert "historicalEstimateDialog" in script
 
 
 def test_historical_estimate_proposals_and_acceptance(client):

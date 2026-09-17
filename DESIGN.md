@@ -43,6 +43,42 @@ application-service layer is strengthened, use cases such as resolving an actual
 saving a claim, reconciling an account, or editing a schedule should have one
 implementation called by every presentation.
 
+The application-service boundary lives in ``breadsched.gen.services``. Public use
+cases accept typed request dataclasses and return ``ServiceResult`` values containing
+either a typed result or stable ``ServiceError`` codes with field paths. Human-readable
+GTK/web wording is adapter-owned and is not part of the service contract. Plan range,
+scenario selection, primary/comparison calculation, and baseline/scenario schedule
+writes use this boundary. Schedule services clone the submitted candidate, apply the
+shared editability and timeline guards, and own the complete ``DbTxn`` so adapters
+cannot leave a partially validated write open.
+
+Fixed schedule editors submit ``FixedScheduleInput`` rather than assembling ledger
+splits themselves. The service resolves account roles and ledger signs, balances the
+funding leg, applies planning/investment classifications, preserves safe fields from
+the existing definition, and then invokes the mutation boundary. Formula editors
+submit only the indexed expressions, variables, recurrence, and ordinary metadata
+that formula ownership permits; the service clones all protected structure. Baseline
+and scenario editors use the same construction contracts.
+
+The web presentation is split into three boundaries. ``web.server.Api`` translates
+plain request values to application/domain calls, ``web.resources`` declares routes
+and strictly parses one typed value per query field, and ``web.transport`` owns HTTP
+authentication, framing, body limits, status mapping, and static delivery. The
+transport never returns unexpected exception text: it logs the exception with a
+correlation identifier and returns only that identifier with a stable error code.
+JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
+not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,
+all events are registered from JavaScript, and charts construct SVG through namespaced
+DOM nodes rather than interpolating markup. This permits a directive-specific Content
+Security Policy with no inline-script or inline-style exception.
+
+The server owns exactly one writable database connection and serializes every write
+through it. Each file-backed GET opens a short-lived SQLite read-only connection,
+giving projection and other read work an isolated snapshot without holding the global
+request lock; closing that connection neither acquires nor releases the writer's book
+lock. In-memory books cannot be reopened, so their GET requests deliberately fall back
+to the serialized writer connection.
+
 ## Persistence verification
 
 Normal writes are verified incrementally from the records already captured by the
