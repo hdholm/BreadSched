@@ -4,6 +4,8 @@ from datetime import date
 
 from breadsched.gen.engine.activity import PlanMeasure, ReportingPeriod
 from breadsched.gen.lib import (
+    Account,
+    AccountType,
     InvestmentActivityKind,
     Money,
     PeriodType,
@@ -12,10 +14,12 @@ from breadsched.gen.lib import (
     Scenario,
     ScenarioSchedule,
     ScheduledSplit,
+    Transaction,
 )
 from breadsched.gen.lib.scheduled import ScheduledTransaction
 from breadsched.gen.services import (
     BASE_SCENARIO,
+    ClaimAttachment,
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScenarioScheduleInput,
@@ -25,7 +29,10 @@ from breadsched.gen.services import (
     SaveFixedSchedule,
     SaveScenarioSchedule,
     SaveSchedule,
+    SaveTransaction,
     ServiceError,
+    TransactionInput,
+    TransactionSplitInput,
     build_fixed_schedule,
     build_formula_scenario_schedule,
     query_plan,
@@ -35,7 +42,136 @@ from breadsched.gen.services import (
     save_formula_schedule,
     save_scenario_schedule,
     save_schedule,
+    save_transaction,
 )
+
+
+def _transaction_request(book, **changes) -> SaveTransaction:
+    values = {
+        "post_date": date(2026, 2, 1),
+        "description": "Typed entry",
+        "splits": (
+            TransactionSplitInput(book.rent, Money("125")),
+            TransactionSplitInput(book.checking, Money("-125")),
+        ),
+    }
+    values.update(changes)
+    return SaveTransaction(TransactionInput(**values))
+
+
+def test_transaction_service_owns_construction_validation_and_atomic_write(db, book):
+    result = save_transaction(db, _transaction_request(book))
+
+    assert result.ok
+    assert result.value is not None
+    stored = db.get_transaction(result.value.handle)
+    assert stored is not None
+    assert stored.description == "Typed entry"
+    assert stored.value_for(book.rent) == Money("125")
+    assert db.undo_stack[-1].message == "Add Typed entry"
+
+
+def test_transaction_service_returns_stable_errors_without_partial_write(db, book):
+    hidden = db.get_account(book.rent)
+    assert hidden is not None
+    hidden.hidden = True
+    with db.transaction("Hide category") as txn:
+        db.commit_account(hidden, txn)
+    before = db.summary()["txn"]
+
+    result = save_transaction(db, _transaction_request(book))
+
+    assert result.value is None
+    assert ServiceError("transaction.account.hidden", ("splits.0.account",)) in result.errors
+    assert db.summary()["txn"] == before
+
+
+def test_transaction_service_preserves_hidden_accounts_and_source_metadata_on_edit(db, book):
+    hidden = Account(name="Archived", atype=AccountType.EXPENSE, parent=book.expenses, hidden=True)
+    source = Transaction.simple(
+        date(2026, 1, 1), "Imported entry", hidden.handle, book.checking, Money("20")
+    )
+    source.source_notes = "Imported provenance"
+    source.splits[0].quantity = Money("2.5")
+    with db.transaction("Fixture") as txn:
+        db.add_account(hidden, txn)
+        db.add_transaction(source, txn)
+
+    result = save_transaction(
+        db,
+        SaveTransaction(
+            TransactionInput(
+                post_date=date(2026, 1, 2),
+                description="Corrected entry",
+                splits=tuple(
+                    TransactionSplitInput(
+                        split.account,
+                        split.value,
+                        handle=split.handle,
+                        memo=split.memo,
+                    )
+                    for split in source.splits
+                ),
+            ),
+            existing_handle=source.handle,
+        ),
+    )
+
+    assert result.ok
+    stored = db.get_transaction(source.handle)
+    assert stored is not None
+    assert stored.source_notes == "Imported provenance"
+    assert stored.splits[0].quantity == Money("2.5")
+
+
+def test_transaction_service_rejects_unbalanced_and_unknown_accounts(db, book):
+    request = _transaction_request(
+        book,
+        splits=(
+            TransactionSplitInput("missing", Money("100")),
+            TransactionSplitInput(book.checking, Money("-90")),
+        ),
+    )
+
+    result = save_transaction(db, request)
+
+    assert result.errors == (
+        ServiceError("transaction.account.not_found", ("splits.0.account",)),
+        ServiceError("transaction.unbalanced", ("splits",)),
+    )
+
+
+def test_transaction_service_rolls_back_when_claim_attachment_fails(db, book):
+    before = db.summary()["txn"]
+    base = _transaction_request(book)
+    request = SaveTransaction(
+        base.definition,
+        claim_attachment=ClaimAttachment("missing-claim", "payment"),
+    )
+
+    result = save_transaction(db, request)
+
+    assert result.errors == (ServiceError("transaction.claim.not_found", ("claim",)),)
+    assert db.summary()["txn"] == before
+
+
+def test_transaction_service_native_round_trip_preserves_exact_splits(db, book, tmp_path):
+    result = save_transaction(db, _transaction_request(book))
+    assert result.value is not None
+    path = tmp_path / "transaction-service.bread"
+    db.backup_to(str(path))
+
+    from breadsched.gen.db.sqlite import DbSQLite
+
+    reopened = DbSQLite()
+    reopened.load(str(path), mode="r")
+    try:
+        stored = reopened.get_transaction(result.value.handle)
+        assert stored is not None
+        assert [split.value for split in stored.splits] == [Money("125"), Money("-125")]
+        assert stored.is_balanced()
+    finally:
+        reopened.close()
 
 
 def _monthly_schedule(book) -> ScheduledTransaction:

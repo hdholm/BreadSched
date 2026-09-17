@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import escrow, fsa_claims, investment
+from ...gen.engine import escrow, fsa_claims
 from ...gen.lib import (
     InvestmentActivityKind,
     Money,
@@ -26,9 +26,17 @@ from ...gen.lib import (
     ReconcileState,
     Split,
     Transaction,
-    UnbalancedError,
+)
+from ...gen.services import (
+    ClaimAttachment,
+    SaveTransaction,
+    TransactionInput,
+    TransactionSplitInput,
+    build_transaction,
+    save_transaction,
 )
 from ...gen.utils.amount_input import parse_user_amount
+from ...presentation import service_error_message
 from ..gi_setup import Gtk
 
 __all__ = ["TransactionDialog"]
@@ -431,19 +439,12 @@ class TransactionDialog(Gtk.Window):
 
     # ------------------------------------------------------------------ saving
 
-    def build(self) -> Transaction:
-        """The transaction the form describes, balanced."""
+    def _request(self) -> SaveTransaction:
+        """Translate the form into the shared typed service contract."""
         when = date.fromisoformat(self.date_entry.get_text().strip())
         residual = self.residual()
-
-        target = self.transaction if self.transaction is not None else Transaction()
-        target.post_date = when
-        target.description = self.description_entry.get_text().strip() or "(no description)"
-        target.num = self.num_entry.get_text().strip()
         notes_start, notes_end = self.notes_view.get_buffer().get_bounds()
-        target.notes = self.notes_view.get_buffer().get_text(notes_start, notes_end, True).strip()
-
-        splits: list[Split] = []
+        splits: list[TransactionSplitInput] = []
         for editor in self.splits:
             value = editor.value()
             if value is None:
@@ -451,50 +452,17 @@ class TransactionDialog(Gtk.Window):
             account_handle = editor.account_handle
             if account_handle is None:
                 raise ValueError("Choose an account for every split")
-            split = Split(
-                account=account_handle,
-                value=value,
-                quantity=(
-                    editor.quantity
-                    if editor.quantity is not None and account_handle == editor.original_account
-                    else value
-                ),
-                memo=editor.memo.get_text().strip(),
-                action=editor.action,
-                reconcile=editor.reconcile,
-                handle=editor.handle,
-                planning_flow=editor.purpose,
-                investment_activity=editor.activity,
-                fsa_year_start=editor.fsa_year_start,
+            splits.append(
+                TransactionSplitInput(
+                    account=account_handle,
+                    value=value,
+                    handle=editor.handle,
+                    memo=editor.memo.get_text().strip(),
+                    planning_flow=editor.purpose,
+                    investment_activity=editor.activity,
+                )
             )
-            split.reconcile_date = editor.reconcile_date
-            splits.append(split)
-        target.splits = splits
-        return target
-
-    def _on_save(self, _button) -> None:
-        try:
-            target = self.build()
-        except ValueError as exc:
-            self.status.set_text(str(exc))
-            return
-        activity_problems = investment.activity_problems(self.db, target.splits)
-        if activity_problems:
-            self.status.set_text("; ".join(activity_problems))
-            self.status.add_css_class("negative")
-            return
-        try:
-            with self.db.transaction(
-                f"{'Edit' if self.editing else 'Add'} {target.description}"
-            ) as txn:
-                if self.editing:
-                    self.db.commit_transaction(target, txn)
-                else:
-                    self.db.add_transaction(target, txn)
-        except UnbalancedError as exc:  # pragma: no cover - guarded above
-            self.status.set_text(str(exc))
-            self.status.add_css_class("negative")
-            return
+        attachment = None
         if (
             self.fsa_claim is not None
             and self.fsa_role is not None
@@ -502,17 +470,38 @@ class TransactionDialog(Gtk.Window):
         ):
             claim = self.fsa_claims[self.fsa_claim.get_selected() - 1]
             roles = ("payment", "refund", "reimbursement")
-            role = roles[self.fsa_role.get_selected()]
-            try:
-                fsa_claims.attach_transaction_to_claim(
-                    self.db, claim.handle, target.handle, role=role
-                )
-            except (KeyError, ValueError) as exc:
-                self.transaction = target
-                self.editing = True
-                self.status.set_text(f"Transaction saved; FSA claim not attached: {exc}")
-                self.status.add_css_class("negative")
-                return
+            attachment = ClaimAttachment(claim.handle, roles[self.fsa_role.get_selected()])
+        return SaveTransaction(
+            TransactionInput(
+                post_date=when,
+                description=self.description_entry.get_text().strip() or "(no description)",
+                num=self.num_entry.get_text().strip(),
+                notes=self.notes_view.get_buffer().get_text(notes_start, notes_end, True).strip(),
+                splits=tuple(splits),
+            ),
+            existing_handle=self.transaction.handle if self.transaction is not None else None,
+            claim_attachment=attachment,
+            source=self.transaction,
+        )
+
+    def build(self) -> Transaction:
+        """Return the service-built preview used by editor interactions and tests."""
+        result = build_transaction(self.db, self._request())
+        if result.value is None:
+            raise ValueError(service_error_message(result.errors[0]))
+        return result.value
+
+    def _on_save(self, _button) -> None:
+        try:
+            request = self._request()
+        except ValueError as exc:
+            self.status.set_text(str(exc))
+            return
+        result = save_transaction(self.db, request)
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
+            self.status.add_css_class("negative")
+            return
         self.close()
 
     def _on_delete(self, _button) -> None:

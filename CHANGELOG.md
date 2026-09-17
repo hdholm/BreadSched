@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 transaction-service slice — Atomic typed ledger entry.** Route GTK and
+  web transaction creation/editing through one typed service with stable error
+  codes and field paths. Preserve imported and reconciliation-owned split metadata,
+  exact transaction value versus account quantity, and hidden accounts already
+  referenced by an edited entry. Commit optional FSA claim attachment in the same
+  database transaction, and centralize adapter-owned error wording. Add parity,
+  rollback, architecture, hidden-account, and native round-trip regressions.
+  Advance the alpha version to `0.2.0a62`; native schema version 7 is unchanged.
+
 - [x] **0222 follow-up — Portable web read-path narrowing.** Express the
   file-backed read-path guard with explicit `None` and in-memory checks so every
   supported mypy version narrows the path to `str` before opening the read-only

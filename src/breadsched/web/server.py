@@ -23,7 +23,6 @@ from ..gen.engine import (
     activity,
     estimates,
     fsa_claims,
-    investment,
     ledger,
     loans,
     planning,
@@ -57,7 +56,6 @@ from ..gen.lib import (
     ScheduledSplitAmountChange,
     ScheduledTransaction,
     ScheduleGrowthPolicy,
-    Split,
     Transaction,
     WeekendAdjust,
     scheduled_occurrence_preview,
@@ -70,19 +68,25 @@ from ..gen.plug import (
     remembered_import_source,
 )
 from ..gen.services import (
+    ClaimAttachment,
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScheduleInput,
     PlanQuery,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
+    SaveTransaction,
     ServiceError,
+    TransactionInput,
+    TransactionSplitInput,
     query_plan,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_schedule,
+    save_transaction,
 )
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
+from ..presentation import service_error_message
 from .resources import ResourceError
 
 __all__ = ["serve", "build_handler", "api"]
@@ -3052,67 +3056,56 @@ class Api:
         debit = self.db.get_account_by_name(payload["to"])
         credit = self.db.get_account_by_name(payload["from"])
         if debit is None or credit is None:
-            raise KeyError("unknown account")
-        if debit.hidden or credit.hidden:
-            raise ValueError("hidden accounts cannot be used for new transactions")
+            raise ResourceError(400, "transaction.account.not_found", ("from", "to"))
         when = date.fromisoformat(payload.get("date") or date.today().isoformat())
         amount = self._input_money(payload, payload["amount"])
         if amount <= 0:
-            raise ValueError("amount must be greater than zero")
+            raise ResourceError(400, "transaction.amount.non_positive", ("amount",))
         description = str(payload.get("description") or "").strip()
-        if not description:
-            raise ValueError("give the transaction a description")
-        txn = Transaction(post_date=when, description=description)
-        txn.notes = str(payload.get("notes") or "").strip()
+        notes = str(payload.get("notes") or "").strip()
         memo = payload.get("memo", "")
         investment_raw = str(payload.get("investment_activity") or "").strip()
         try:
             investment_activity = InvestmentActivityKind(investment_raw) if investment_raw else None
         except ValueError:
             raise ValueError("choose a valid investment activity") from None
-        debit_activity = (
-            investment_activity
-            if investment_activity is not None and investment_activity.direction >= 0
-            else None
-        )
-        credit_activity = (
-            investment_activity
-            if investment_activity is not None and investment_activity.direction <= 0
-            else None
-        )
-        txn.add_split(
-            Split(
-                debit.handle,
-                amount,
-                memo=memo,
-                investment_activity=debit_activity,
-            )
-        )
-        txn.add_split(
-            Split(
-                credit.handle,
-                -amount,
-                memo=memo,
-                investment_activity=credit_activity,
-            )
-        )
-        activity_problems = investment.activity_problems(self.db, txn.splits)
-        if activity_problems:
-            raise ValueError("; ".join(activity_problems))
-        with self.db.transaction(f"Add {txn.description}") as batch:
-            self.db.add_transaction(txn, batch)
         claim_handle = str(payload.get("fsa_claim") or "").strip()
         claim_role = str(payload.get("fsa_role") or "").strip()
-        if claim_handle and claim_role:
-            funding_year = str(payload.get("fsa_year") or "").strip()
-            fsa_claims.attach_transaction_to_claim(
-                self.db,
+        funding_year = str(payload.get("fsa_year") or "").strip()
+        attachment = (
+            ClaimAttachment(
                 claim_handle,
-                txn.handle,
-                role=claim_role,
-                funding_year_start=(date.fromisoformat(funding_year) if funding_year else None),
+                claim_role,
+                date.fromisoformat(funding_year) if funding_year else None,
             )
-        return {"handle": txn.handle, "date": when, "amount": amount}
+            if claim_handle and claim_role
+            else None
+        )
+        result = save_transaction(
+            self.db,
+            SaveTransaction(
+                TransactionInput(
+                    post_date=when,
+                    description=description,
+                    notes=notes,
+                    splits=(
+                        TransactionSplitInput(debit.handle, amount, memo=memo),
+                        TransactionSplitInput(credit.handle, -amount, memo=memo),
+                    ),
+                    investment_activity=investment_activity,
+                ),
+                claim_attachment=attachment,
+            ),
+        )
+        if result.value is None:
+            error = result.errors[0]
+            raise ResourceError(
+                404 if error.code.endswith(".not_found") else 400,
+                error.code,
+                error.fields,
+                service_error_message(error),
+            )
+        return {"handle": result.value.handle, "date": when, "amount": amount}
 
     def review_match(self, payload: dict) -> dict:
         transaction = self.db.get_transaction(str(payload["transaction"]))
