@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 verification-structure slice — Responsibility-specific diagnostics.**
+  Decompose exhaustive domain verification into a read-once state snapshot and
+  focused commodity, account, reconciliation, price, transaction, schedule, and
+  scenario checkers. Preserve issue codes, messages, handles, ordering, and the
+  non-destructive public entry point under the existing corruption-characterization
+  suite. Advance the alpha version to `0.2.0a74`; native schema version 7 is
+  unchanged.
+
 - [x] **0223 error-catalog slice — Presentation-owned localization seam.** Map every
   stable application-service error code and field path to human-readable wording at
   one shared presentation boundary, removing the remaining web-only schedule map.

@@ -122,6 +122,12 @@ backup/restore validation, tests, and corruption investigation.
 This separation is deliberate: correctness checks on ordinary edits should scale
 with the change, not with the lifetime size of the household ledger.
 
+The exhaustive domain pass materializes accounts, commodities, scenarios,
+transactions, and split ownership once, then dispatches that immutable snapshot to
+responsibility-specific checkers. This keeps cross-object checks consistent while
+letting each diagnostic family evolve without turning the public verification entry
+point into a second persistence implementation.
+
 Exhaustive verification checks exact transaction balance and references, global
 split identity, commodity and account-SCU precision, currency roles, scheduled
 fixed-split balance, unique occurrence realization, reconciliation snapshots, and

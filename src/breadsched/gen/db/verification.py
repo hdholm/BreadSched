@@ -10,9 +10,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from ..lib.account import Account
+from ..lib.commodity import Commodity
 from ..lib.money import Money
 from ..lib.reconciliation import ReconciliationStatus
-from ..lib.transaction import ReconcileState, UnbalancedError
+from ..lib.scenario import Scenario
+from ..lib.transaction import ReconcileState, Transaction, UnbalancedError
+from ..lib.transaction import Split as TransactionSplit
 
 if TYPE_CHECKING:
     from .base import DbBase
@@ -54,16 +58,36 @@ class BookVerification:
         }
 
 
-def verify_domain(db: DbBase) -> list[BookIssue]:
-    """Return non-destructive logical consistency findings for ``db``."""
-    issues: list[BookIssue] = []
-    accounts = {account.handle: account for account in db.iter_accounts()}
-    commodity_objects = {commodity.handle: commodity for commodity in db.iter_commodities()}
-    commodities = set(commodity_objects)
-    scenarios = {scenario.handle: scenario for scenario in db.iter_scenarios()}
+@dataclass(frozen=True, slots=True)
+class _VerificationState:
+    db: DbBase
+    accounts: dict[str, Account]
+    commodities: dict[str, Commodity]
+    scenarios: dict[str, Scenario]
+    transactions: list[Transaction]
+    splits: dict[str, TransactionSplit]
 
+    @classmethod
+    def load(cls, db: DbBase) -> _VerificationState:
+        accounts = {account.handle: account for account in db.iter_accounts()}
+        commodities = {commodity.handle: commodity for commodity in db.iter_commodities()}
+        transactions = list(db.iter_transactions())
+        return cls(
+            db=db,
+            accounts=accounts,
+            commodities=commodities,
+            scenarios={scenario.handle: scenario for scenario in db.iter_scenarios()},
+            transactions=transactions,
+            splits={
+                split.handle: split for transaction in transactions for split in transaction.splits
+            },
+        )
+
+
+def _verify_commodities(state: _VerificationState) -> list[BookIssue]:
+    issues: list[BookIssue] = []
     commodity_keys: dict[tuple[str, str], str] = {}
-    for commodity in commodity_objects.values():
+    for commodity in state.commodities.values():
         if commodity.fraction < 1:
             issues.append(
                 BookIssue(
@@ -86,9 +110,13 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
             )
         else:
             commodity_keys[key] = commodity.handle
+    return issues
 
+
+def _verify_accounts(state: _VerificationState) -> list[BookIssue]:
+    issues: list[BookIssue] = []
     source_guids: dict[str, str] = {}
-    for account in accounts.values():
+    for account in state.accounts.values():
         if not account.source_guid:
             continue
         previous = source_guids.get(account.source_guid)
@@ -104,11 +132,11 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
         else:
             source_guids[account.source_guid] = account.handle
 
-    # Account graph and references. A normal chart has one explicit ROOT account;
-    # once that root exists, any other parentless account is orphaned rather than
-    # another root. Rootless lightweight books remain valid for small tools/tests.
-    has_explicit_root = any(account.is_root for account in accounts.values())
-    for account in accounts.values():
+    # A normal chart has one explicit ROOT account. Once that root exists, any
+    # other parentless account is orphaned rather than another root. Rootless
+    # lightweight books remain valid for small tools and tests.
+    has_explicit_root = any(account.is_root for account in state.accounts.values())
+    for account in state.accounts.values():
         if has_explicit_root and account.parent is None and not account.is_root:
             issues.append(
                 BookIssue(
@@ -117,7 +145,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     account.handle,
                 )
             )
-        if account.parent is not None and account.parent not in accounts:
+        if account.parent is not None and account.parent not in state.accounts:
             issues.append(
                 BookIssue(
                     "account.missing_parent",
@@ -125,7 +153,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     account.handle,
                 )
             )
-        if account.commodity is not None and account.commodity not in commodities:
+        if account.commodity is not None and account.commodity not in state.commodities:
             issues.append(
                 BookIssue(
                     "account.missing_commodity",
@@ -142,7 +170,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     account.handle,
                 )
             )
-        if account.linked_asset is not None and account.linked_asset not in accounts:
+        if account.linked_asset is not None and account.linked_asset not in state.accounts:
             issues.append(
                 BookIssue(
                     "account.missing_linked_asset",
@@ -153,7 +181,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
             )
         if (
             account.card_payment_account is not None
-            and account.card_payment_account not in accounts
+            and account.card_payment_account not in state.accounts
         ):
             issues.append(
                 BookIssue(
@@ -164,10 +192,10 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                 )
             )
 
-    for account in accounts.values():
+    for account in state.accounts.values():
         seen: set[str] = set()
         current = account
-        while current.parent is not None and current.parent in accounts:
+        while current.parent is not None and current.parent in state.accounts:
             if current.handle in seen:
                 issues.append(
                     BookIssue(
@@ -178,12 +206,14 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                 )
                 break
             seen.add(current.handle)
-            current = accounts[current.parent]
+            current = state.accounts[current.parent]
+    return issues
 
-    transactions = list(db.iter_transactions())
-    splits = {split.handle: split for transaction in transactions for split in transaction.splits}
-    for reconciliation in db.iter_reconciliations():
-        if reconciliation.account not in accounts:
+
+def _verify_reconciliations(state: _VerificationState) -> list[BookIssue]:
+    issues: list[BookIssue] = []
+    for reconciliation in state.db.iter_reconciliations():
+        if reconciliation.account not in state.accounts:
             issues.append(
                 BookIssue(
                     "reconciliation.missing_account",
@@ -201,7 +231,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                 )
             )
         for split_handle in reconciliation.selected_splits:
-            split = splits.get(split_handle)
+            split = state.splits.get(split_handle)
             if split is None:
                 issues.append(
                     BookIssue(
@@ -232,9 +262,13 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         reconciliation.handle,
                     )
                 )
+    return issues
 
-    for price in db.iter_prices():
-        if price.commodity not in commodities:
+
+def _verify_prices(state: _VerificationState) -> list[BookIssue]:
+    issues: list[BookIssue] = []
+    for price in state.db.iter_prices():
+        if price.commodity not in state.commodities:
             issues.append(
                 BookIssue(
                     "price.missing_commodity",
@@ -242,7 +276,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     price.handle,
                 )
             )
-        if price.currency not in commodities:
+        if price.currency not in state.commodities:
             issues.append(
                 BookIssue(
                     "price.missing_currency",
@@ -251,7 +285,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                 )
             )
         else:
-            currency = db.get_commodity(price.currency)
+            currency = state.db.get_commodity(price.currency)
             if currency is not None and not currency.is_currency:
                 issues.append(
                     BookIssue(
@@ -260,12 +294,15 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         price.handle,
                     )
                 )
+    return issues
 
-    # Ledger transactions.
+
+def _verify_transactions(state: _VerificationState) -> list[BookIssue]:
+    issues: list[BookIssue] = []
     occurrence_owners: dict[str, str] = {}
     global_split_owners: dict[str, str] = {}
-    for transaction in transactions:
-        if transaction.currency is not None and transaction.currency not in commodities:
+    for transaction in state.transactions:
+        if transaction.currency is not None and transaction.currency not in state.commodities:
             issues.append(
                 BookIssue(
                     "transaction.missing_currency",
@@ -274,7 +311,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     transaction.handle,
                 )
             )
-        currency = commodity_objects.get(transaction.currency or "")
+        currency = state.commodities.get(transaction.currency or "")
         if currency is not None and not currency.is_currency:
             issues.append(
                 BookIssue(
@@ -329,7 +366,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     )
                 )
             split_handles.add(transaction_split.handle)
-            if transaction_split.account not in accounts:
+            if transaction_split.account not in state.accounts:
                 issues.append(
                     BookIssue(
                         "transaction.missing_account",
@@ -339,8 +376,8 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     )
                 )
                 continue
-            account = accounts[transaction_split.account]
-            account_commodity = commodity_objects.get(account.commodity or "")
+            account = state.accounts[transaction_split.account]
+            account_commodity = state.commodities.get(account.commodity or "")
             quantity_fraction = account.commodity_scu or (
                 account_commodity.fraction if account_commodity is not None else None
             )
@@ -372,10 +409,13 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         transaction.handle,
                     )
                 )
+    return issues
 
-    # Planning objects contain account references too.
-    for sched in db.iter_scheduled():
-        if sched.currency is not None and sched.currency not in commodities:
+
+def _verify_schedules(state: _VerificationState) -> list[BookIssue]:
+    issues: list[BookIssue] = []
+    for sched in state.db.iter_scheduled():
+        if sched.currency is not None and sched.currency not in state.commodities:
             issues.append(
                 BookIssue(
                     "scheduled.missing_currency",
@@ -384,7 +424,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     sched.handle,
                 )
             )
-        currency = commodity_objects.get(sched.currency or "")
+        currency = state.commodities.get(sched.currency or "")
         if currency is not None and not currency.is_currency:
             issues.append(
                 BookIssue(
@@ -429,7 +469,7 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                     )
                 )
         for scheduled_split in sched.splits:
-            if scheduled_split.account not in accounts:
+            if scheduled_split.account not in state.accounts:
                 issues.append(
                     BookIssue(
                         "scheduled.missing_account",
@@ -453,13 +493,18 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         sched.handle,
                     )
                 )
-    for scenario in scenarios.values():
+    return issues
+
+
+def _verify_scenarios(state: _VerificationState) -> list[BookIssue]:
+    issues: list[BookIssue] = []
+    for scenario in state.scenarios.values():
         refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
         refs.update(item.account for item in scenario.one_offs)
         for period in scenario.assumption_periods:
             refs.update(period.per_account)
         for account_handle in sorted(refs):
-            if account_handle not in accounts:
+            if account_handle not in state.accounts:
                 issues.append(
                     BookIssue(
                         "scenario.missing_account",
@@ -467,5 +512,18 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
                         scenario.handle,
                     )
                 )
+    return issues
+
+
+def verify_domain(db: DbBase) -> list[BookIssue]:
+    """Return non-destructive logical consistency findings for ``db``."""
+    state = _VerificationState.load(db)
+    issues = _verify_commodities(state)
+    issues.extend(_verify_accounts(state))
+    issues.extend(_verify_reconciliations(state))
+    issues.extend(_verify_prices(state))
+    issues.extend(_verify_transactions(state))
+    issues.extend(_verify_schedules(state))
+    issues.extend(_verify_scenarios(state))
 
     return issues
