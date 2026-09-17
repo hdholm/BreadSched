@@ -14,18 +14,18 @@ they got.
 from __future__ import annotations
 
 from pathlib import Path  # noqa: E402
-from typing import Any  # noqa: E402
 
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.plug import (  # noqa: E402
     IMPORTER,
     PluginManager,
-    remember_import_source,
     remembered_import_source,
 )
+from ...gen.services import ImportBook, import_book  # noqa: E402
 from ...gen.utils import logs  # noqa: E402
 from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
 from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
+from ...presentation import service_error_message  # noqa: E402
 from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
 
@@ -260,21 +260,28 @@ class ImportDialog(Gtk.Window):
                 stream=False,
             )
 
-        kwargs: dict[str, Any] = {
-            "include_scheduled": self.scheduled_check.get_active(),
-            "notify": False,
-        }
-        if plugin.id in {"qif", "ofx"}:
-            kwargs["number_format"] = ("auto", "dot", "comma")[self.number_format.get_selected()]
-        if plugin.id == "qif":
-            kwargs["date_format"] = ("auto", "month-first", "day-first")[
-                self.date_format.get_selected()
-            ]
+        include_scheduled = self.scheduled_check.get_active()
+        number_format = ("auto", "dot", "comma")[self.number_format.get_selected()]
+        date_format = ("auto", "month-first", "day-first")[self.date_format.get_selected()]
 
         def work(_cancel, report) -> ImportResult:
-            kwargs["progress"] = lambda stage, done, total: report((stage, done, total))
             try:
-                return plugin.run(self.db, path, **kwargs)
+                outcome = import_book(
+                    self.db,
+                    ImportBook(
+                        source=path,
+                        format=plugin.id,
+                        include_scheduled=include_scheduled,
+                        number_format=number_format,
+                        date_format=date_format,
+                        notify=False,
+                        progress=lambda stage, done, total: report((stage, done, total)),
+                    ),
+                )
+                if not outcome.ok:
+                    raise ValueError(service_error_message(outcome.errors[0]))
+                assert outcome.value is not None
+                return outcome.value.result
             finally:
                 logs.configure(verbosity=0)
 
@@ -287,7 +294,6 @@ class ImportDialog(Gtk.Window):
         )
 
     def _import_succeeded(self, path: str, result: ImportResult, log_path: Path | None) -> None:
-        remember_import_source(self.db, path)
         # The worker suppressed synchronous database callbacks: GTK must only be
         # notified after commit, here on its own main thread.
         self.db.emit("database-changed", (self.db,))

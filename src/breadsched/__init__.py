@@ -1,5 +1,5 @@
 """BreadSched: event-driven cash-flow planning and projection."""
 
-__version__ = "0.2.0a65"
+__version__ = "0.2.0a66"
 APP_NAME = "BreadSched"
 APP_ID = "org.breadsched.BreadSched"

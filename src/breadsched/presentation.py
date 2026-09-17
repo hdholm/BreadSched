@@ -60,6 +60,13 @@ _SERVICE_MESSAGES = {
     "loan.escrow.incomplete": "Give both an escrow amount and an escrow account",
     "loan.escrow.non_positive": "The escrow amount must be positive",
     "loan.account.escrow_required": "Choose an escrow account",
+    "import.source.required": "Choose a file to import",
+    "import.source.not_found": "no file at the selected path",
+    "import.source.not_file": "Choose a file, not a directory",
+    "import.format.not_found": "The requested importer is not available",
+    "import.format.unrecognized": "The file format is not recognised",
+    "import.number_format.invalid": "Choose a valid number format",
+    "import.date_format.invalid": "Choose a valid QIF date order",
 }
 
 

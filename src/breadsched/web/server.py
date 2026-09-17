@@ -58,9 +58,6 @@ from ..gen.lib import (
 )
 from ..gen.lib.base import create_handle
 from ..gen.plug import (
-    IMPORTER,
-    PluginManager,
-    remember_import_source,
     remembered_import_source,
 )
 from ..gen.services import (
@@ -73,6 +70,7 @@ from ..gen.services import (
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScheduleInput,
+    ImportBook,
     PlanQuery,
     ReconciliationAction,
     SaveClaim,
@@ -88,6 +86,7 @@ from ..gen.services import (
     cancel_reconciliation,
     complete_reconciliation,
     delete_claim,
+    import_book,
     query_plan,
     reopen_reconciliation,
     save_claim,
@@ -3539,27 +3538,24 @@ class Api:
 
     def import_local(self, payload: dict) -> dict:
         path = str(payload.get("path") or "").strip()
-        if not path:
-            raise ValueError("choose a file to import")
-        plugin = PluginManager.instance().for_file(path, IMPORTER)
-        if plugin is None:
-            raise ValueError("file format is not recognised")
-        kwargs: dict[str, object] = {
-            "include_scheduled": bool(payload.get("include_scheduled", True))
-        }
-        if plugin.id in {"qif", "ofx"}:
-            number_format = str(payload.get("number_format") or "auto")
-            if number_format not in {"auto", "dot", "comma"}:
-                raise ValueError("choose a valid number format")
-            kwargs["number_format"] = number_format
-        if plugin.id == "qif":
-            date_format = str(payload.get("date_format") or "auto")
-            if date_format not in {"auto", "month-first", "day-first"}:
-                raise ValueError("choose a valid QIF date order")
-            kwargs["date_format"] = date_format
-        result = plugin.run(self.db, path, **kwargs)
-        remember_import_source(self.db, path)
-        return {"format": plugin.name, "detail": result.detail(limit=50)}
+        include_scheduled = payload.get("include_scheduled", True)
+        if not isinstance(include_scheduled, bool):
+            raise ValueError("include_scheduled must be true or false")
+        result = import_book(
+            self.db,
+            ImportBook(
+                source=path,
+                format=(str(payload["format"]) if payload.get("format") else None),
+                include_scheduled=include_scheduled,
+                number_format=str(payload.get("number_format") or "auto"),
+                date_format=str(payload.get("date_format") or "auto"),
+            ),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        imported = result.value
+        assert imported is not None
+        return {"format": imported.format_name, "detail": imported.result.detail(limit=50)}
 
     def import_defaults(self) -> dict:
         """Return per-book presentation state without initiating an import."""

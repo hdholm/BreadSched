@@ -83,6 +83,24 @@ def calls_in_method(path: Path, class_name: str, method_name: str) -> set[str]:
     return calls
 
 
+def calls_in_function(path: Path, function_name: str) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == function_name
+    )
+    calls: set[str] = set()
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        if isinstance(node.func, ast.Name):
+            calls.add(node.func.id)
+        elif isinstance(node.func, ast.Attribute):
+            calls.add(node.func.attr)
+    return calls
+
+
 class TestLayering:
     @pytest.mark.parametrize("layer", CORE_DIRS)
     def test_the_core_never_imports_gtk(self, layer):
@@ -372,6 +390,25 @@ class TestServiceBoundaries:
         assert calls.isdisjoint(
             {"create_loan", "add_scheduled", "add_transaction", "db.transaction"}
         )
+
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name"),
+        (
+            ("gui/dialogs/import_dialog.py", "ImportDialog", "_on_import"),
+            ("web/server.py", "Api", "import_local"),
+        ),
+    )
+    def test_import_adapters_use_the_typed_service(self, relative, class_name, method_name):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert "import_book" in calls
+        assert "run" not in calls
+        assert "remember_import_source" not in calls
+
+    def test_cli_import_uses_the_typed_service(self):
+        calls = calls_in_function(SRC / "cli/main.py", "cmd_import")
+        assert "import_book" in calls
+        assert "run" not in calls
+        assert "remember_import_source" not in calls
 
 
 class TestWebBoundaries:

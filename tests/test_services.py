@@ -17,6 +17,7 @@ from breadsched.gen.lib import (
     Transaction,
 )
 from breadsched.gen.lib.scheduled import ScheduledTransaction
+from breadsched.gen.plug import remembered_import_source
 from breadsched.gen.services import (
     BASE_SCENARIO,
     ClaimAttachment,
@@ -24,6 +25,7 @@ from breadsched.gen.services import (
     FixedSplitInput,
     FormulaScenarioScheduleInput,
     FormulaScheduleInput,
+    ImportBook,
     PlanQuery,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
@@ -35,6 +37,7 @@ from breadsched.gen.services import (
     TransactionSplitInput,
     build_fixed_schedule,
     build_formula_scenario_schedule,
+    import_book,
     query_plan,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
@@ -57,6 +60,35 @@ def _transaction_request(book, **changes) -> SaveTransaction:
     }
     values.update(changes)
     return SaveTransaction(TransactionInput(**values))
+
+
+def test_import_service_selects_runs_and_remembers_the_importer(db, tmp_path):
+    source = tmp_path / "statement.qif"
+    source.write_text(
+        "!Account\nNImported checking\nTBank\n^\n!Type:Bank\nD01/02/2026\nT12.50\nPExample\n^\n"
+    )
+
+    outcome = import_book(
+        db,
+        ImportBook(str(source), number_format="dot", date_format="month-first"),
+    )
+
+    assert outcome.ok
+    assert outcome.value is not None
+    assert outcome.value.format_id == "qif"
+    assert outcome.value.result.transactions == 1
+    assert remembered_import_source(db) == str(source.resolve())
+
+
+def test_import_service_returns_stable_preflight_errors_without_running(db, tmp_path):
+    missing = import_book(db, ImportBook(str(tmp_path / "missing.qif")))
+    invalid = tmp_path / "statement.qif"
+    invalid.write_text("!Type:Bank\n")
+    option = import_book(db, ImportBook(str(invalid), number_format="guess"))
+
+    assert missing.errors == (ServiceError("import.source.not_found", ("source",)),)
+    assert option.errors == (ServiceError("import.number_format.invalid", ("number_format",)),)
+    assert remembered_import_source(db) is None
 
 
 def test_transaction_service_owns_construction_validation_and_atomic_write(db, book):
