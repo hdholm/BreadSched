@@ -26,6 +26,7 @@ from breadsched.gen.services import (
     ClaimAttachment,
     DeleteAssumptionPeriod,
     DeleteScenario,
+    DeleteTransaction,
     DuplicateScenario,
     FixedScheduleInput,
     FixedSplitInput,
@@ -52,6 +53,7 @@ from breadsched.gen.services import (
     build_formula_scenario_schedule,
     delete_assumption_period,
     delete_scenario,
+    delete_transaction,
     duplicate_scenario,
     import_book,
     mark_review_unexpected,
@@ -313,6 +315,17 @@ def test_transaction_service_owns_construction_validation_and_atomic_write(db, b
     assert stored.description == "Typed entry"
     assert stored.value_for(book.rent) == Money("125")
     assert db.undo_stack[-1].message == "Add Typed entry"
+
+
+def test_transaction_service_owns_delete_and_reports_stale_handles(db, book):
+    saved = save_transaction(db, _transaction_request(book))
+    assert saved.value is not None
+
+    deleted = delete_transaction(db, DeleteTransaction(saved.value.handle))
+    stale = delete_transaction(db, DeleteTransaction(saved.value.handle))
+
+    assert deleted.value == saved.value
+    assert stale.errors == (ServiceError("transaction.not_found", ("handle",)),)
 
 
 def test_transaction_service_returns_stable_errors_without_partial_write(db, book):

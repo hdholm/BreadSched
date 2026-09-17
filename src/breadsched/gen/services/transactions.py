@@ -60,6 +60,11 @@ class SaveTransaction:
 
 
 @dataclass(frozen=True, slots=True)
+class DeleteTransaction:
+    handle: str
+
+
+@dataclass(frozen=True, slots=True)
 class SavedTransaction:
     handle: str
     post_date: date
@@ -196,4 +201,16 @@ def save_transaction(
         return ServiceResult.failure(ServiceError("transaction.claim.invalid", ("claim",)))
     return ServiceResult.success(
         SavedTransaction(candidate.handle, candidate.post_date, candidate.description)
+    )
+
+
+def delete_transaction(db: DbSQLite, request: DeleteTransaction) -> ServiceResult[SavedTransaction]:
+    """Delete one persisted transaction through the shared mutation boundary."""
+    existing = db.get_transaction(request.handle)
+    if existing is None:
+        return ServiceResult.failure(ServiceError("transaction.not_found", ("handle",)))
+    with db.transaction(f"Delete {existing.description}") as txn:
+        db.remove_transaction(existing.handle, txn)
+    return ServiceResult.success(
+        SavedTransaction(existing.handle, existing.post_date, existing.description)
     )

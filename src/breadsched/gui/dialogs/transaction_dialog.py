@@ -29,10 +29,12 @@ from ...gen.lib import (
 )
 from ...gen.services import (
     ClaimAttachment,
+    DeleteTransaction,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
     build_transaction,
+    delete_transaction,
     save_transaction,
 )
 from ...gen.utils.amount_input import parse_user_amount
@@ -507,6 +509,9 @@ class TransactionDialog(Gtk.Window):
     def _on_delete(self, _button) -> None:
         if not self.editing or self.transaction is None:
             return
-        with self.db.transaction(f"Delete {self.transaction.description}") as txn:
-            self.db.remove_transaction(self.transaction.handle, txn)
+        result = delete_transaction(self.db, DeleteTransaction(self.transaction.handle))
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
+            self.status.add_css_class("negative")
+            return
         self.close()

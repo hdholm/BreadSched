@@ -90,11 +90,13 @@ from .schedules import (
 )
 from .transactions import (
     ClaimAttachment,
+    DeleteTransaction,
     SavedTransaction,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
     build_transaction,
+    delete_transaction,
     save_transaction,
 )
 
@@ -108,6 +110,7 @@ __all__ = [
     "DeleteClaim",
     "DeleteAssumptionPeriod",
     "DeleteScenario",
+    "DeleteTransaction",
     "DuplicateScenario",
     "SavedClaim",
     "SavedScenario",
@@ -183,6 +186,7 @@ __all__ = [
     "reject_review",
     "skip_review",
     "delete_scenario",
+    "delete_transaction",
     "duplicate_scenario",
     "save_scenario",
     "suppress_scenario_schedule",

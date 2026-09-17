@@ -51,18 +51,24 @@ from ..gen.lib import (
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
 from ..gen.services import (
     DeleteScenario,
+    DeleteTransaction,
     ImportBook,
     ReviewOccurrence,
     ReviewTransaction,
     SaveScenario,
     SaveScenarioAssumptions,
+    SaveTransaction,
+    TransactionInput,
+    TransactionSplitInput,
     delete_scenario,
+    delete_transaction,
     import_book,
     mark_review_unexpected,
     match_review,
     reject_review,
     save_scenario,
     save_scenario_assumptions,
+    save_transaction,
 )
 from ..gen.utils import logs
 from ..presentation import service_error_message
@@ -424,22 +430,29 @@ def cmd_add(args: argparse.Namespace) -> int:
         debit = resolve_account(db, args.to)
         credit = resolve_account(db, getattr(args, "from"))
         when = parse_date(args.date) or date.today()
-        posted = Transaction.simple(
-            when,
-            args.description,
-            debit.handle,
-            credit.handle,
-            Money(args.amount),
-            memo=args.memo,
+        amount = Money(args.amount)
+        result = save_transaction(
+            db,
+            SaveTransaction(
+                TransactionInput(
+                    post_date=when,
+                    description=args.description,
+                    num=args.num,
+                    splits=(
+                        TransactionSplitInput(debit.handle, amount, memo=args.memo),
+                        TransactionSplitInput(credit.handle, -amount, memo=args.memo),
+                    ),
+                )
+            ),
         )
-        posted.num = args.num
-        with db.transaction(f"Add {args.description}") as txn:
-            db.add_transaction(posted, txn)
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
+        saved = result.value
+        assert saved is not None
         emit(
-            {"handle": posted.handle, "date": when, "amount": posted.value_for(debit.handle)},
+            {"handle": saved.handle, "date": when, "amount": amount},
             args,
-            f"Posted {Money(args.amount).format()} {db.full_name(credit)} "
-            f"-> {db.full_name(debit)} on {when}",
+            f"Posted {amount.format()} {db.full_name(credit)} -> {db.full_name(debit)} on {when}",
         )
         return 0
     finally:
@@ -498,8 +511,16 @@ def cmd_edit(args: argparse.Namespace) -> int:
                 split.value = amount if split is positive else -amount
                 split.quantity = split.value
 
-        with db.transaction(f"Edit {target.description}") as txn:
-            db.commit_transaction(target, txn)
+        result = save_transaction(
+            db,
+            SaveTransaction(
+                _transaction_input(target),
+                existing_handle=target.handle,
+                source=target,
+            ),
+        )
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
 
         emit(
             {"handle": target.handle, "date": target.post_date, "description": target.description},
@@ -516,12 +537,35 @@ def cmd_delete(args: argparse.Namespace) -> int:
     try:
         target = _find_transaction(db, args.transaction)
         description = target.describe()
-        with db.transaction(f"Delete {target.description}") as txn:
-            db.remove_transaction(target.handle, txn)
+        result = delete_transaction(db, DeleteTransaction(target.handle))
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
         emit({"deleted": target.handle}, args, f"Deleted {description}")
         return 0
     finally:
         db.close()
+
+
+def _transaction_input(transaction: Transaction) -> TransactionInput:
+    """Translate one editable CLI model to the shared transaction contract."""
+    return TransactionInput(
+        post_date=transaction.post_date,
+        description=transaction.description,
+        num=transaction.num,
+        notes=transaction.notes,
+        currency=transaction.currency,
+        splits=tuple(
+            TransactionSplitInput(
+                split.account,
+                split.value,
+                handle=split.handle,
+                memo=split.memo,
+                planning_flow=split.planning_flow,
+                investment_activity=split.investment_activity,
+            )
+            for split in transaction.splits
+        ),
+    )
 
 
 def cmd_scheduled(args: argparse.Namespace) -> int:

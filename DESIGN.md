@@ -67,9 +67,10 @@ account-commodity quantity distinct from transaction-currency value, enforces th
 hidden-account retention rule, validates investment classifications, and owns the
 complete write transaction. An optional FSA claim attachment is committed inside
 that same boundary, so an invalid attachment cannot leave an otherwise successful
-ledger posting behind. GTK and web translate stable service errors through shared
-presentation-owned wording; service error codes and field paths contain no English
-API prose.
+ledger posting behind. CLI posting/edit/delete and GTK quick posting/deletion use
+the same boundary as the full GTK editor and web. GTK and web translate stable
+service errors through shared presentation-owned wording; service error codes and
+field paths contain no English API prose.
 
 The web presentation is split into three boundaries. ``web.server.Api`` translates
 plain request values to application/domain calls, ``web.resources`` declares routes

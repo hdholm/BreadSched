@@ -18,8 +18,14 @@ from datetime import date
 from ...gen.engine import ledger  # noqa: E402
 from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
 from ...gen.lib.money import Money
-from ...gen.lib.transaction import Transaction
+from ...gen.services import (
+    SaveTransaction,
+    TransactionInput,
+    TransactionSplitInput,
+    save_transaction,
+)
 from ...gen.utils.amount_input import parse_user_amount
+from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap  # noqa: E402
 
@@ -502,15 +508,23 @@ class RegisterView(BaseView):
 
         debit_account = current.handle if debit else transfer.handle
         credit_account = transfer.handle if debit else current.handle
-        transaction = Transaction.simple(
-            when,
-            description,
-            debit_account,
-            credit_account,
-            amount,
+        result = save_transaction(
+            self.db,
+            SaveTransaction(
+                TransactionInput(
+                    post_date=when,
+                    description=description,
+                    splits=(
+                        TransactionSplitInput(debit_account, amount),
+                        TransactionSplitInput(credit_account, -amount),
+                    ),
+                )
+            ),
         )
-        with self.db.transaction(f"Add {description}") as txn:
-            self.db.add_transaction(transaction, txn)
+        if not result.ok:
+            self.quick_status.set_text(service_error_message(result.errors[0]))
+            self.quick_status.add_css_class("negative")
+            return
         self.quick_description.set_text("")
         self.quick_amount.set_text("")
         self.quick_status.remove_css_class("negative")
