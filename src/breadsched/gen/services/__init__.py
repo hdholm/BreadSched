@@ -1,5 +1,17 @@
 """Typed application-service contracts shared by every presentation adapter."""
 
+from .claims import (
+    ClaimAllocationInput,
+    ClaimInput,
+    ClaimLinkInput,
+    ClaimRejectionInput,
+    DeleteClaim,
+    SaveClaim,
+    SavedClaim,
+    build_claim,
+    delete_claim,
+    save_claim,
+)
 from .contracts import ServiceError, ServiceResult
 from .plan import (
     BASE_SCENARIO,
@@ -53,6 +65,13 @@ from .transactions import (
 
 __all__ = [
     "BASE_SCENARIO",
+    "ClaimAllocationInput",
+    "ClaimInput",
+    "ClaimLinkInput",
+    "ClaimRejectionInput",
+    "DeleteClaim",
+    "SavedClaim",
+    "SaveClaim",
     "FixedScheduleInput",
     "FixedSplitInput",
     "FormulaScheduleInput",
@@ -78,6 +97,9 @@ __all__ = [
     "TransactionInput",
     "TransactionSplitInput",
     "query_plan",
+    "build_claim",
+    "delete_claim",
+    "save_claim",
     "cancel_reconciliation",
     "complete_reconciliation",
     "reopen_reconciliation",

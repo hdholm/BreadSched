@@ -16,6 +16,7 @@ from ..lib.transaction import Split, Transaction
 from . import fsa
 
 __all__ = [
+    "FsaClaimError",
     "FsaClaimStatus",
     "FsaClaimSuggestion",
     "FsaClaimSummary",
@@ -27,6 +28,15 @@ __all__ = [
     "save_claim",
     "suggest_claims_for_transaction",
 ]
+
+
+class FsaClaimError(ValueError):
+    """A stable claim failure independent of presentation wording."""
+
+    def __init__(self, code: str, fields: tuple[str, ...], message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.fields = fields
 
 
 @dataclass(frozen=True)
@@ -214,23 +224,39 @@ def iter_claims(db: DbSQLite) -> list[FsaClaim]:
 def _resolve_link(db: DbSQLite, link: FsaClaimSplitLink):
     transaction = db.get_transaction(link.transaction)
     if transaction is None:
-        raise ValueError("linked transaction no longer exists")
+        raise FsaClaimError(
+            "claim.link.transaction.not_found",
+            ("links",),
+            "linked transaction no longer exists",
+        )
     split = next((item for item in transaction.splits if item.handle == link.split), None)
     if split is None:
-        raise ValueError("linked transaction split no longer exists")
+        raise FsaClaimError(
+            "claim.link.split.not_found",
+            ("links",),
+            "linked transaction split no longer exists",
+        )
     return transaction, split
 
 
 def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFundingYear:
     account = db.get_account(allocation.account)
     if account is None or account.atype is not AccountType.FSA:
-        raise ValueError("claim allocation must reference an FSA account")
+        raise FsaClaimError(
+            "claim.allocation.account.invalid",
+            ("allocations",),
+            "claim allocation must reference an FSA account",
+        )
     year = next(
         (item for item in account.fsa_years if item.start == allocation.funding_year_start),
         None,
     )
     if year is None:
-        raise ValueError("claim allocation references an unknown FSA funding year")
+        raise FsaClaimError(
+            "claim.allocation.year.not_found",
+            ("allocations",),
+            "claim allocation references an unknown FSA funding year",
+        )
     return year
 
 
@@ -245,25 +271,47 @@ def save_claim(db: DbSQLite, claim: FsaClaim, *, txn: DbTxn | None = None) -> Fs
     for allocation in claim.allocations:
         year = _allocation_year(db, allocation)
         if allocation.target is not None and allocation.target < 0:
-            raise ValueError("FSA allocation target must not be negative")
+            raise FsaClaimError(
+                "claim.allocation.target.negative",
+                ("allocations",),
+                "FSA allocation target must not be negative",
+            )
         runout = year.runout_through or year.through
         for rejection in allocation.rejections:
             if rejection.amount < 0:
-                raise ValueError("rejected reimbursement amount must not be negative")
+                raise FsaClaimError(
+                    "claim.rejection.amount.negative",
+                    ("allocations",),
+                    "rejected reimbursement amount must not be negative",
+                )
             if rejection.attempted_on > runout:
-                raise ValueError(
-                    "rejected reimbursement is after the funding year's run-out window"
+                raise FsaClaimError(
+                    "claim.rejection.after_runout",
+                    ("allocations",),
+                    "rejected reimbursement is after the funding year's run-out window",
                 )
         for link in allocation.reimbursements:
             key = (link.transaction, link.split)
             if key in seen_reimbursements:
-                raise ValueError("an FSA reimbursement split can only be allocated once")
+                raise FsaClaimError(
+                    "claim.reimbursement.duplicate",
+                    ("allocations",),
+                    "an FSA reimbursement split can only be allocated once",
+                )
             seen_reimbursements.add(key)
             transaction, split = _resolve_link(db, link)
             if split.account != allocation.account:
-                raise ValueError("reimbursement split does not belong to allocation FSA")
+                raise FsaClaimError(
+                    "claim.reimbursement.account.mismatch",
+                    ("allocations",),
+                    "reimbursement split does not belong to allocation FSA",
+                )
             if transaction.post_date > runout:
-                raise ValueError("reimbursement is after the funding year's run-out window")
+                raise FsaClaimError(
+                    "claim.reimbursement.after_runout",
+                    ("allocations",),
+                    "reimbursement is after the funding year's run-out window",
+                )
             if split.fsa_year_start != year.start:
                 assignments.setdefault(transaction.handle, []).append((split.handle, year.start))
 
@@ -273,12 +321,20 @@ def save_claim(db: DbSQLite, claim: FsaClaim, *, txn: DbTxn | None = None) -> Fs
         for transaction_handle, split_assignments in assignments.items():
             transaction = db.get_transaction(transaction_handle)
             if transaction is None:
-                raise ValueError("linked transaction no longer exists")
+                raise FsaClaimError(
+                    "claim.link.transaction.not_found",
+                    ("links",),
+                    "linked transaction no longer exists",
+                )
             by_handle = {split.handle: split for split in transaction.splits}
             for split_handle, funding_year_start in split_assignments:
                 split = by_handle.get(split_handle)
                 if split is None:
-                    raise ValueError("linked transaction split no longer exists")
+                    raise FsaClaimError(
+                        "claim.link.split.not_found",
+                        ("links",),
+                        "linked transaction split no longer exists",
+                    )
                 split.fsa_year_start = funding_year_start
             db.commit_transaction(transaction, active)
         if existing is None:

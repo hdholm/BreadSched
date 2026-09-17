@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 claim-service slice — Typed FSA claim lifecycle.** Make GTK and web
+  submit typed claim, allocation, link, and rejection inputs to one shared mutation
+  service instead of constructing or persisting claim objects. Preserve atomic claim
+  and linked-split updates, expose expected validation through stable codes and field
+  paths, and route deletion through the same boundary. Add service and architecture
+  regressions. Advance the alpha version to `0.2.0a64`; native schema version 7 is
+  unchanged.
+
 - [x] **0223 reconciliation-service slice — Structured statement mutations.** Route
   GTK and web statement start, selection/balance updates, completion, cancellation,
   and reopening through typed application-service requests and results. Give every

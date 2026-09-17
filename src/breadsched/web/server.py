@@ -37,10 +37,6 @@ from ..gen.lib import (
     AccountType,
     AssumptionPeriod,
     Assumptions,
-    FsaClaim,
-    FsaClaimAllocation,
-    FsaClaimRejection,
-    FsaClaimSplitLink,
     FsaFundingYear,
     InvestmentActivityKind,
     Money,
@@ -68,12 +64,18 @@ from ..gen.plug import (
     remembered_import_source,
 )
 from ..gen.services import (
+    ClaimAllocationInput,
     ClaimAttachment,
+    ClaimInput,
+    ClaimLinkInput,
+    ClaimRejectionInput,
+    DeleteClaim,
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScheduleInput,
     PlanQuery,
     ReconciliationAction,
+    SaveClaim,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
     SaveTransaction,
@@ -84,8 +86,10 @@ from ..gen.services import (
     UpdateReconciliation,
     cancel_reconciliation,
     complete_reconciliation,
+    delete_claim,
     query_plan,
     reopen_reconciliation,
+    save_claim,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_schedule,
@@ -755,44 +759,57 @@ class Api:
 
     def fsa_claim_save(self, payload: dict) -> dict:
         eob = str(payload.get("eob_responsibility", "")).strip()
-        claim = FsaClaim(
-            handle=str(payload.get("handle") or create_handle()),
-            service_date=date.fromisoformat(str(payload["service_date"])),
-            provider=str(payload.get("provider", "")).strip(),
-            description=str(payload.get("description", "")).strip(),
-            eob_responsibility=self._input_money(payload, eob) if eob else None,
-            payments=[FsaClaimSplitLink.from_dict(item) for item in payload.get("payments", [])],
-            refunds=[FsaClaimSplitLink.from_dict(item) for item in payload.get("refunds", [])],
-            allocations=[
-                FsaClaimAllocation(
-                    account=str(item["account"]),
-                    funding_year_start=date.fromisoformat(str(item["funding_year_start"])),
-                    target=(
-                        self._input_money(payload, item["target"])
-                        if item.get("target") not in (None, "")
-                        else None
-                    ),
-                    reimbursements=[
-                        FsaClaimSplitLink.from_dict(link) for link in item.get("reimbursements", [])
-                    ],
-                    rejections=[
-                        FsaClaimRejection(
-                            attempted_on=date.fromisoformat(str(rejection["attempted_on"])),
-                            amount=self._input_money(payload, rejection["amount"]),
-                            reason=str(rejection.get("reason", "")),
+        handle = str(payload.get("handle") or "").strip() or None
+
+        def link(item: dict) -> ClaimLinkInput:
+            return ClaimLinkInput(str(item["transaction"]), str(item["split"]))
+
+        result = save_claim(
+            self.db,
+            SaveClaim(
+                ClaimInput(
+                    service_date=date.fromisoformat(str(payload["service_date"])),
+                    provider=str(payload.get("provider", "")).strip(),
+                    description=str(payload.get("description", "")).strip(),
+                    eob_responsibility=self._input_money(payload, eob) if eob else None,
+                    payments=tuple(link(item) for item in payload.get("payments", [])),
+                    refunds=tuple(link(item) for item in payload.get("refunds", [])),
+                    allocations=tuple(
+                        ClaimAllocationInput(
+                            account=str(item["account"]),
+                            funding_year_start=date.fromisoformat(str(item["funding_year_start"])),
+                            target=(
+                                self._input_money(payload, item["target"])
+                                if item.get("target") not in (None, "")
+                                else None
+                            ),
+                            reimbursements=tuple(
+                                link(raw_link) for raw_link in item.get("reimbursements", [])
+                            ),
+                            rejections=tuple(
+                                ClaimRejectionInput(
+                                    attempted_on=date.fromisoformat(str(rejection["attempted_on"])),
+                                    amount=self._input_money(payload, rejection["amount"]),
+                                    reason=str(rejection.get("reason", "")),
+                                )
+                                for rejection in item.get("rejections", [])
+                            ),
                         )
-                        for rejection in item.get("rejections", [])
-                    ],
-                )
-                for item in payload.get("allocations", [])
-            ],
+                        for item in payload.get("allocations", [])
+                    ),
+                ),
+                existing_handle=handle,
+            ),
         )
-        fsa_claims.save_claim(self.db, claim)
-        return {"handle": claim.handle}
+        if result.value is None:
+            raise self._service_resource_error(result.errors[0])
+        return {"handle": result.value.handle}
 
     def fsa_claim_delete(self, payload: dict) -> dict:
         handle = str(payload.get("handle", ""))
-        fsa_claims.delete_claim(self.db, handle)
+        result = delete_claim(self.db, DeleteClaim(handle))
+        if result.value is None:
+            raise self._service_resource_error(result.errors[0])
         return {"handle": handle}
 
     def register(self, handle: str, limit: int = 250) -> dict:

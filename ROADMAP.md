@@ -41,10 +41,13 @@ workflow may not add new presentation-owned rules.
      cancellation, and reopening through typed services with stable codes and field
      paths while retaining the shared exact calculation and atomic ledger/audit
      writes.
+   - [x] Put FSA claim construction, allocation/link/rejection validation, saving,
+     and deletion behind typed services used by GTK and web. Keep linked split
+     classification and claim persistence atomic, with stable validation codes.
    - [ ] Migrate the remaining cross-interface mutations in coherent slices,
-     prioritizing claims, loans, imports, Review, scenarios, and projection
-     assumptions. A touched cross-interface workflow may not add new
-     presentation-owned financial rules.
+     prioritizing loans, imports, Review, scenarios, and projection assumptions. A
+     touched cross-interface workflow may not add new presentation-owned financial
+     rules.
    - Centralize error codes, field paths, and presentation-message mapping. Introduce
      gettext only after English service prose has ceased to be an API, then add
      extraction/catalog checks and locale smoke tests for GTK and web.
