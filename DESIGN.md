@@ -783,6 +783,12 @@ updated inside the import transaction, so a failed/rolled-back import cannot cla
 that an issue was introduced or resolved. A later run can consequently distinguish
 new, repeated, and now-resolved source problems without parsing warning prose.
 
+Import initiation is an application-service workflow shared by CLI, GTK, and web.
+The typed request owns source preflight, importer selection, explicit format
+overrides, execution options, and recording the last successful source. Adapters
+retain only transport parsing, background-job presentation, and result rendering;
+stable preflight codes and field paths are independent of their English wording.
+
 Transaction deletion synchronization uses a separate complete-scan inventory keyed
 by the stable GnuCash chart-root identity, with the canonical source path only as a
 fallback. A previously observed transaction GUID that is absent from the source is

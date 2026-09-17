@@ -48,8 +48,10 @@ from ..gen.lib import (
     ScheduledTransaction,
     Transaction,
 )
-from ..gen.plug import EXPORTER, IMPORTER, PluginManager, remember_import_source
+from ..gen.plug import EXPORTER, IMPORTER, PluginManager
+from ..gen.services import ImportBook, import_book
 from ..gen.utils import logs
+from ..presentation import service_error_message
 
 LOG = logs.get_logger(__name__)
 
@@ -161,26 +163,20 @@ def cmd_init(args: argparse.Namespace) -> int:
 
 
 def cmd_import(args: argparse.Namespace) -> int:
-    source = Path(args.source)
-    if not source.exists():
-        raise CommandError(f"no file at {source}")
-    if source.is_dir():
-        raise CommandError(f"{source} is a directory, not a book file")
-    manager = PluginManager.instance()
-    plugin = (
-        manager.get(IMPORTER, args.format)
-        if args.format
-        else manager.for_file(args.source, IMPORTER)
-    )
-    if plugin is None:
-        raise CommandError(
-            f"no importer handles {args.source}; try --format with one of: "
-            + ", ".join(p.id for p in manager.by_category(IMPORTER))
-        )
     db = open_book(args.book)
     try:
-        result = plugin.run(db, args.source, include_scheduled=not args.no_scheduled)
-        remember_import_source(db, args.source)
+        imported = import_book(
+            db,
+            ImportBook(
+                source=args.source,
+                format=args.format,
+                include_scheduled=not args.no_scheduled,
+            ),
+        )
+        if not imported.ok:
+            raise CommandError(service_error_message(imported.errors[0]))
+        assert imported.value is not None
+        result = imported.value.result
         result.log_path = str(args.log_file) if args.log_file else None
     finally:
         db.close()

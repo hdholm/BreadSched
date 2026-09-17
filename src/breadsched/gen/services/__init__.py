@@ -13,6 +13,7 @@ from .claims import (
     save_claim,
 )
 from .contracts import ServiceError, ServiceResult
+from .imports import ImportBook, ImportedBook, import_book
 from .loans import SavedLoan, SaveLoan, save_loan, validate_loan
 from .plan import (
     BASE_SCENARIO,
@@ -77,6 +78,8 @@ __all__ = [
     "FixedSplitInput",
     "FormulaScheduleInput",
     "FormulaScenarioScheduleInput",
+    "ImportBook",
+    "ImportedBook",
     "PlanComparison",
     "PlanQuery",
     "PlanQueryResult",
@@ -122,4 +125,5 @@ __all__ = [
     "save_transaction",
     "save_loan",
     "validate_loan",
+    "import_book",
 ]

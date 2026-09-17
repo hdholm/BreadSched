@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 import-service slice — One typed import workflow.** Route CLI, GTK,
+  and web source validation, importer selection, format overrides, execution, and
+  last-successful-source recording through one typed service. Preserve background
+  progress and GTK main-thread notification behavior, expose preflight failures as
+  stable codes and field paths, and enforce the boundary with service, adapter, and
+  architecture regressions. Advance the alpha version to `0.2.0a66`; native schema
+  version 7 is unchanged.
+
 - [x] **0223 loan-service slice — Typed, atomic loan creation.** Route GTK and web
   loan mutations through one typed service that validates lender terms and account
   roles with stable codes and field paths before creating the formula schedule and

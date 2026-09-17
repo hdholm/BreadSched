@@ -1953,6 +1953,9 @@ class TestImportApi:
                 {"path": str(path), "number_format": "guess-hard"},
             )
         assert caught.value.code == 400
+        payload = json.loads(caught.value.read())
+        assert payload["code"] == "import.number_format.invalid"
+        assert payload["fields"] == ["number_format"]
 
 
 class TestSafety:
