@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
@@ -10,12 +11,21 @@ from ...gen.lib import (
     AccountClass,
     AccountType,
     FsaClaim,
-    FsaClaimAllocation,
-    FsaClaimRejection,
     FsaClaimSplitLink,
     Money,
 )
+from ...gen.services import (
+    ClaimAllocationInput,
+    ClaimInput,
+    ClaimLinkInput,
+    ClaimRejectionInput,
+    DeleteClaim,
+    SaveClaim,
+    delete_claim,
+    save_claim,
+)
 from ...gen.utils.amount_input import parse_user_amount
+from ...presentation import service_error_message
 from ..gi_setup import GLib, Gtk
 
 __all__ = ["FsaClaimsDialog"]
@@ -24,7 +34,7 @@ __all__ = ["FsaClaimsDialog"]
 class _LinkList(Gtk.Box):
     def __init__(self, candidates: list[tuple[str, str, date, str]]) -> None:
         super().__init__(orientation=Gtk.Orientation.VERTICAL, spacing=3)
-        self._checks: list[tuple[Gtk.CheckButton, FsaClaimSplitLink, date]] = []
+        self._checks: list[tuple[Gtk.CheckButton, ClaimLinkInput, date]] = []
         self.set_candidates(candidates)
 
     def set_candidates(self, candidates: list[tuple[str, str, date, str]]) -> None:
@@ -37,14 +47,14 @@ class _LinkList(Gtk.Box):
         for transaction, split, when, label in candidates:
             check = Gtk.CheckButton(label=label)
             self.append(check)
-            self._checks.append((check, FsaClaimSplitLink(transaction, split), when))
+            self._checks.append((check, ClaimLinkInput(transaction, split), when))
 
-    def set_links(self, links: list[FsaClaimSplitLink]) -> None:
+    def set_links(self, links: Sequence[FsaClaimSplitLink | ClaimLinkInput]) -> None:
         selected = {(item.transaction, item.split) for item in links}
         for check, link, _when in self._checks:
             check.set_active((link.transaction, link.split) in selected)
 
-    def links(self) -> list[FsaClaimSplitLink]:
+    def links(self) -> list[ClaimLinkInput]:
         return [link for check, link, _when in self._checks if check.get_active()]
 
     def index_on_or_after(self, when: date) -> int:
@@ -114,7 +124,7 @@ class _AllocationRow(Gtk.Frame):
         labels = [f"{year.start} – {year.through}" for year in account.fsa_years]
         self.year.set_model(Gtk.StringList.new(labels))
 
-    def value(self) -> FsaClaimAllocation:
+    def value(self) -> ClaimAllocationInput:
         if not self.accounts:
             raise ValueError("Create an FSA account and funding year first")
         account = self.accounts[self.account.get_selected()]
@@ -122,7 +132,7 @@ class _AllocationRow(Gtk.Frame):
             raise ValueError("Selected FSA account has no funding year")
         year = account.fsa_years[self.year.get_selected()]
         target_text = self.target.get_text().strip()
-        rejections: list[FsaClaimRejection] = []
+        rejections: list[ClaimRejectionInput] = []
         for raw in self.rejections.get_text().split(";"):
             raw = raw.strip()
             if not raw:
@@ -131,18 +141,18 @@ class _AllocationRow(Gtk.Frame):
             if len(parts) < 2:
                 raise ValueError("Rejected attempts use date | amount | reason")
             rejections.append(
-                FsaClaimRejection(
+                ClaimRejectionInput(
                     date.fromisoformat(parts[0]),
                     Money(parse_user_amount(parts[1])),
                     parts[2] if len(parts) > 2 else "",
                 )
             )
-        return FsaClaimAllocation(
+        return ClaimAllocationInput(
             account=account.handle,
             funding_year_start=year.start,
             target=Money(parse_user_amount(target_text)) if target_text else None,
-            reimbursements=self.reimburse.links(),
-            rejections=rejections,
+            reimbursements=tuple(self.reimburse.links()),
+            rejections=tuple(rejections),
         )
 
 
@@ -267,7 +277,7 @@ class FsaClaimsDialog(Gtk.Window):
         self,
         candidates: list[tuple[str, str, date, str]],
         service_date: date,
-        selected: list[FsaClaimSplitLink],
+        selected: Sequence[FsaClaimSplitLink | ClaimLinkInput],
     ) -> list[tuple[str, str, date, str]]:
         window = fsa_claims.claim_year_window(self.db, service_date)
         if window is None:
@@ -281,8 +291,8 @@ class FsaClaimsDialog(Gtk.Window):
     def _refresh_claim_candidates(
         self,
         service_date: date,
-        payments: list[FsaClaimSplitLink],
-        refunds: list[FsaClaimSplitLink],
+        payments: Sequence[FsaClaimSplitLink | ClaimLinkInput],
+        refunds: Sequence[FsaClaimSplitLink | ClaimLinkInput],
     ) -> None:
         self.payments.set_candidates(
             self._claim_candidates(self._payment_candidates, service_date, payments)
@@ -356,38 +366,36 @@ class FsaClaimsDialog(Gtk.Window):
     def _save(self, _button) -> None:
         try:
             eob_text = self.eob.get_text().strip()
-            claim = (
-                FsaClaim(
-                    handle=self.current.handle if self.current else None,
-                    service_date=date.fromisoformat(self.service.get_text().strip()),
-                    provider=self.provider.get_text().strip(),
-                    description=self.description.get_text().strip(),
-                    eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
-                    payments=self.payments.links(),
-                    refunds=self.refunds.links(),
-                    allocations=[row.value() for row in self._allocation_rows],
-                )
-                if self.current
-                else FsaClaim(
-                    service_date=date.fromisoformat(self.service.get_text().strip()),
-                    provider=self.provider.get_text().strip(),
-                    description=self.description.get_text().strip(),
-                    eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
-                    payments=self.payments.links(),
-                    refunds=self.refunds.links(),
-                    allocations=[row.value() for row in self._allocation_rows],
-                )
+            result = save_claim(
+                self.db,
+                SaveClaim(
+                    ClaimInput(
+                        service_date=date.fromisoformat(self.service.get_text().strip()),
+                        provider=self.provider.get_text().strip(),
+                        description=self.description.get_text().strip(),
+                        eob_responsibility=Money(parse_user_amount(eob_text)) if eob_text else None,
+                        payments=tuple(self.payments.links()),
+                        refunds=tuple(self.refunds.links()),
+                        allocations=tuple(row.value() for row in self._allocation_rows),
+                    ),
+                    existing_handle=self.current.handle if self.current else None,
+                ),
             )
-            fsa_claims.save_claim(self.db, claim)
         except (ValueError, IndexError) as exc:
             self.status.set_text(str(exc))
             return
-        self.current = claim
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
+            return
+        self.current = self.db.get_fsa_claim(result.value.handle)
         self.status.set_text("Claim saved.")
 
     def _delete(self, _button) -> None:
         if self.current is None:
             return
-        fsa_claims.delete_claim(self.db, self.current.handle)
+        result = delete_claim(self.db, DeleteClaim(self.current.handle))
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
+            return
         self.status.set_text("Claim deleted.")
         self._load(None)

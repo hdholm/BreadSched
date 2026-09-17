@@ -11,6 +11,15 @@ from breadsched.gen.lib import (
     Split,
     Transaction,
 )
+from breadsched.gen.services import (
+    ClaimAllocationInput,
+    ClaimInput,
+    DeleteClaim,
+    SaveClaim,
+    delete_claim,
+    save_claim,
+)
+from breadsched.gen.services.contracts import ServiceError
 
 
 def _fsa_account(db, book):
@@ -30,6 +39,47 @@ def _fsa_account(db, book):
     with db.transaction("Add FSA") as txn:
         db.add_account(account, txn)
     return account
+
+
+def test_typed_claim_service_owns_save_and_delete(db, book):
+    request = SaveClaim(
+        ClaimInput(
+            service_date=date(2026, 8, 1),
+            provider="Generic clinic",
+            description="Routine care",
+            eob_responsibility=Money("25"),
+        )
+    )
+
+    saved = save_claim(db, request)
+    assert saved.value is not None
+    assert db.get_fsa_claim(saved.value.handle).provider == "Generic clinic"
+
+    deleted = delete_claim(db, DeleteClaim(saved.value.handle))
+    assert deleted.ok
+    assert db.get_fsa_claim(saved.value.handle) is None
+
+
+def test_typed_claim_service_returns_stable_field_errors_without_writing(db, book):
+    before = list(db.iter_fsa_claims())
+    result = save_claim(
+        db,
+        SaveClaim(
+            ClaimInput(
+                service_date=date(2026, 8, 1),
+                provider="Generic clinic",
+                allocations=(
+                    ClaimAllocationInput(
+                        account=book.checking,
+                        funding_year_start=date(2026, 1, 1),
+                    ),
+                ),
+            )
+        ),
+    )
+
+    assert result.errors == (ServiceError("claim.allocation.account.invalid", ("allocations",)),)
+    assert list(db.iter_fsa_claims()) == before
 
 
 def test_election_not_ledger_balance_controls_available_benefit(db, book):

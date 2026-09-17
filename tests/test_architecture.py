@@ -333,6 +333,32 @@ class TestServiceBoundaries:
             {"start", "update", "set_selection", "complete", "cancel", "reopen"}
         )
 
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "service_call"),
+        (
+            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_save", "save_claim"),
+            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_delete", "delete_claim"),
+            ("web/server.py", "Api", "fsa_claim_save", "save_claim"),
+            ("web/server.py", "Api", "fsa_claim_delete", "delete_claim"),
+        ),
+    )
+    def test_claim_mutations_use_typed_services(
+        self, relative, class_name, method_name, service_call
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {
+                "FsaClaim",
+                "FsaClaimAllocation",
+                "FsaClaimRejection",
+                "db.transaction",
+                "add_fsa_claim",
+                "commit_fsa_claim",
+                "remove_fsa_claim",
+            }
+        )
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):

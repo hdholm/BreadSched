@@ -5,6 +5,19 @@ from __future__ import annotations
 from .gen.services import ServiceError
 
 _SERVICE_MESSAGES = {
+    "claim.not_found": "The FSA claim no longer exists",
+    "claim.link.transaction.not_found": "A linked transaction no longer exists",
+    "claim.link.split.not_found": "A linked transaction entry no longer exists",
+    "claim.allocation.account.invalid": "A claim allocation must use an FSA account",
+    "claim.allocation.year.not_found": "The selected FSA funding year no longer exists",
+    "claim.allocation.target.negative": "An FSA allocation target cannot be negative",
+    "claim.rejection.amount.negative": "A rejected reimbursement cannot be negative",
+    "claim.rejection.after_runout": "A rejected reimbursement is after the run-out window",
+    "claim.reimbursement.duplicate": "A reimbursement can only be allocated once",
+    "claim.reimbursement.account.mismatch": (
+        "A reimbursement does not belong to the selected FSA account"
+    ),
+    "claim.reimbursement.after_runout": "A reimbursement is after the run-out window",
     "reconciliation.not_found": "The reconciliation no longer exists",
     "reconciliation.account.not_found": "The account no longer exists",
     "reconciliation.account.ineligible": (
