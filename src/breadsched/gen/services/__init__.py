@@ -1,5 +1,16 @@
 """Typed application-service contracts shared by every presentation adapter."""
 
+from .assumptions import (
+    BASE_ASSUMPTIONS_KEY,
+    DeleteAssumptionPeriod,
+    SaveAssumptionPeriod,
+    SaveBaseAssumptions,
+    SaveScenarioAssumptions,
+    delete_assumption_period,
+    save_assumption_period,
+    save_base_assumptions,
+    save_scenario_assumptions,
+)
 from .claims import (
     ClaimAllocationInput,
     ClaimInput,
@@ -88,17 +99,22 @@ from .transactions import (
 )
 
 __all__ = [
+    "BASE_ASSUMPTIONS_KEY",
     "BASE_SCENARIO",
     "ClaimAllocationInput",
     "ClaimInput",
     "ClaimLinkInput",
     "ClaimRejectionInput",
     "DeleteClaim",
+    "DeleteAssumptionPeriod",
     "DeleteScenario",
     "DuplicateScenario",
     "SavedClaim",
     "SavedScenario",
     "SaveClaim",
+    "SaveAssumptionPeriod",
+    "SaveBaseAssumptions",
+    "SaveScenarioAssumptions",
     "SaveScenario",
     "SuppressScenarioSchedule",
     "FixedScheduleInput",
@@ -136,7 +152,11 @@ __all__ = [
     "query_plan",
     "build_claim",
     "delete_claim",
+    "delete_assumption_period",
     "save_claim",
+    "save_assumption_period",
+    "save_base_assumptions",
+    "save_scenario_assumptions",
     "cancel_reconciliation",
     "complete_reconciliation",
     "reopen_reconciliation",

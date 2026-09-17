@@ -15,10 +15,10 @@ from ..engine.activity import (
     build_category_report,
 )
 from ..lib.scenario import Assumptions, Scenario
+from .assumptions import BASE_ASSUMPTIONS_KEY
 from .contracts import ServiceError, ServiceResult
 
 BASE_SCENARIO = "__base__"
-_BASE_ASSUMPTIONS_KEY = "planning.base_assumptions"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +101,7 @@ def _baseline(db: DbSQLite, start: date, end: date) -> Scenario:
         start=start,
         years=max(1, end.year - start.year + 1),
     )
-    stored = db.get_metadata(_BASE_ASSUMPTIONS_KEY, None)
+    stored = db.get_metadata(BASE_ASSUMPTIONS_KEY, None)
     if isinstance(stored, dict):
         scenario.assumptions = Assumptions.from_dict(stored)
     return scenario

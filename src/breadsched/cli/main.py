@@ -55,12 +55,14 @@ from ..gen.services import (
     ReviewOccurrence,
     ReviewTransaction,
     SaveScenario,
+    SaveScenarioAssumptions,
     delete_scenario,
     import_book,
     mark_review_unexpected,
     match_review,
     reject_review,
     save_scenario,
+    save_scenario_assumptions,
 )
 from ..gen.utils import logs
 from ..presentation import service_error_message
@@ -918,9 +920,9 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                     "liability_interest",
                 }
             )
-            result = save_scenario(
+            result = save_scenario_assumptions(
                 db,
-                SaveScenario(
+                SaveScenarioAssumptions(
                     scenario,
                     existing_handle=existing.handle if existing is not None else None,
                 ),

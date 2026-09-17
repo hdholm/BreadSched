@@ -6,6 +6,8 @@ from breadsched.gen.engine.activity import PlanMeasure, ReportingPeriod
 from breadsched.gen.lib import (
     Account,
     AccountType,
+    AssumptionPeriod,
+    Assumptions,
     InvestmentActivityKind,
     Money,
     PeriodType,
@@ -22,6 +24,7 @@ from breadsched.gen.plug import remembered_import_source
 from breadsched.gen.services import (
     BASE_SCENARIO,
     ClaimAttachment,
+    DeleteAssumptionPeriod,
     DeleteScenario,
     DuplicateScenario,
     FixedScheduleInput,
@@ -32,9 +35,12 @@ from breadsched.gen.services import (
     PlanQuery,
     ReviewOccurrence,
     ReviewTransaction,
+    SaveAssumptionPeriod,
+    SaveBaseAssumptions,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
     SaveScenario,
+    SaveScenarioAssumptions,
     SaveScenarioSchedule,
     SaveSchedule,
     SaveTransaction,
@@ -44,6 +50,7 @@ from breadsched.gen.services import (
     TransactionSplitInput,
     build_fixed_schedule,
     build_formula_scenario_schedule,
+    delete_assumption_period,
     delete_scenario,
     duplicate_scenario,
     import_book,
@@ -51,11 +58,14 @@ from breadsched.gen.services import (
     match_review,
     query_plan,
     reject_review,
+    save_assumption_period,
+    save_base_assumptions,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_scenario_schedule,
     save_formula_schedule,
     save_scenario,
+    save_scenario_assumptions,
     save_scenario_schedule,
     save_schedule,
     save_transaction,
@@ -221,6 +231,76 @@ def test_scenario_service_suppresses_a_baseline_schedule(db, book):
     assert len(stored.schedule_overrides) == 1
     assert stored.schedule_overrides[0].source_schedule == schedule.handle
     assert stored.schedule_overrides[0].enabled is False
+
+
+def test_assumption_service_persists_valid_base_rates(db, book):
+    assumptions = Assumptions(investment_return="0.06", per_account={book.brokerage: "0.08"})
+
+    result = save_base_assumptions(db, SaveBaseAssumptions(assumptions))
+
+    assert result.ok
+    assert db.get_metadata("planning.base_assumptions", {}) == assumptions.serialize()
+
+
+def test_assumption_service_returns_stable_rate_and_account_errors(db, book):
+    assumptions = Assumptions(
+        income_growth="2", per_account={book.checking: "0.01", "missing": "0.02"}
+    )
+
+    result = save_base_assumptions(db, SaveBaseAssumptions(assumptions))
+
+    assert result.errors == (
+        ServiceError("assumptions.rate.out_of_range", ("income_growth",)),
+        ServiceError("assumptions.account.unsupported", (f"per_account.{book.checking}",)),
+        ServiceError("assumptions.account.not_found", ("per_account.missing",)),
+    )
+    assert db.get_metadata("planning.base_assumptions", None) is None
+
+
+def test_assumption_period_service_owns_add_replace_and_delete(db, book):
+    scenario = Scenario(name="Regimes")
+    assert save_scenario(db, SaveScenario(scenario)).ok
+    first = AssumptionPeriod(date(2027, 1, 1), investment_return="0.04")
+    replacement = AssumptionPeriod(
+        date(2027, 1, 1), investment_return="0.05", per_account={book.brokerage: "0.07"}
+    )
+
+    added = save_assumption_period(db, SaveAssumptionPeriod(scenario.handle, first))
+    replaced = save_assumption_period(
+        db, SaveAssumptionPeriod(scenario.handle, replacement, index=0)
+    )
+    deleted = delete_assumption_period(db, DeleteAssumptionPeriod(scenario.handle, 0))
+
+    assert added.ok and replaced.ok and deleted.ok
+    assert db.get_scenario(scenario.handle).assumption_periods == []
+
+
+def test_assumption_period_service_rejects_stale_identity_and_index(db):
+    period = AssumptionPeriod(date(2027, 1, 1), cash_interest="0.03")
+
+    missing = save_assumption_period(db, SaveAssumptionPeriod("missing", period))
+    scenario = Scenario(name="Regimes")
+    assert save_scenario(db, SaveScenario(scenario)).ok
+    stale = delete_assumption_period(db, DeleteAssumptionPeriod(scenario.handle, 0))
+
+    assert missing.errors == (ServiceError("assumptions.scenario.not_found", ("scenario",)),)
+    assert stale.errors == (ServiceError("assumptions.period.not_found", ("index",)),)
+
+
+def test_scenario_assumption_service_validates_horizon_and_dated_rates(db):
+    scenario = Scenario(name="Invalid assumptions", years=101)
+    scenario.assumption_periods.append(AssumptionPeriod(date(2027, 1, 1), investment_return="1.01"))
+
+    result = save_scenario_assumptions(db, SaveScenarioAssumptions(scenario))
+
+    assert result.errors == (
+        ServiceError("assumptions.years.out_of_range", ("years",)),
+        ServiceError(
+            "assumptions.rate.out_of_range",
+            ("periods.0.investment_return",),
+        ),
+    )
+    assert db.get_scenario(scenario.handle) is None
 
 
 def test_transaction_service_owns_construction_validation_and_atomic_write(db, book):
