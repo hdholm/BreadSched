@@ -112,6 +112,10 @@ _SERVICE_MESSAGES = {
     "scenario.parent.cycle": "A scenario cannot inherit from itself or its descendants",
     "scenario.children.exist": "Reparent child scenarios before deleting this scenario",
     "scenario.schedule.not_found": "The baseline schedule no longer exists",
+    "schedule.name.required": "Give the scheduled transaction a name",
+    "schedule.scenario_reference.exists": (
+        "Remove this schedule's scenario overrides before deleting it"
+    ),
     "assumptions.rate.out_of_range": "Projection rates must be between -100% and 100%",
     "assumptions.account.not_found": "A projection-rate account no longer exists",
     "assumptions.account.unsupported": (

@@ -52,6 +52,7 @@ from ..gen.plug import EXPORTER, IMPORTER, PluginManager
 from ..gen.services import (
     DeleteAccount,
     DeleteScenario,
+    DeleteSchedule,
     DeleteTransaction,
     ImportBook,
     ReviewOccurrence,
@@ -59,11 +60,13 @@ from ..gen.services import (
     SaveAccount,
     SaveScenario,
     SaveScenarioAssumptions,
+    SaveSchedule,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
     delete_account,
     delete_scenario,
+    delete_schedule,
     delete_transaction,
     import_book,
     mark_review_unexpected,
@@ -72,6 +75,7 @@ from ..gen.services import (
     save_account,
     save_scenario,
     save_scenario_assumptions,
+    save_schedule,
     save_transaction,
 )
 from ..gen.utils import logs
@@ -1615,8 +1619,9 @@ def cmd_estimate(args: argparse.Namespace) -> int:
             )
             if match is None:
                 raise CommandError(f"no estimate named {args.name!r}")
-            with db.transaction(f"Remove estimate {args.name}") as txn:
-                db.remove_scheduled(match.handle, txn)
+            result = delete_schedule(db, DeleteSchedule(match.handle))
+            if not result.ok:
+                raise CommandError(service_error_message(result.errors[0]))
             emit({"removed": args.name}, args, f"Removed estimate {args.name!r}")
             return 0
 
@@ -1637,8 +1642,9 @@ def cmd_estimate(args: argparse.Namespace) -> int:
             ],
         )
         sched.placeholder = True
-        with db.transaction(f"Add estimate {args.name}") as txn:
-            db.add_scheduled(sched, txn)
+        result = save_schedule(db, SaveSchedule(sched))
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
         emit(
             {"name": sched.name, "handle": sched.handle},
             args,

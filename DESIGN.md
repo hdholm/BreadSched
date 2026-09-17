@@ -60,6 +60,11 @@ submit only the indexed expressions, variables, recurrence, and ordinary metadat
 that formula ownership permits; the service clones all protected structure. Baseline
 and scenario editors use the same construction contracts.
 
+Schedule duplication and deletion also use this service boundary. Exact copies retain
+editor-protected custom structure, while deletion rejects stale identities and live
+scenario references before removing the baseline definition. Historical-estimate CLI
+writes use the same generic schedule save/delete contracts as interactive editors.
+
 Transaction creation and editing likewise submit ``TransactionInput`` and
 ``TransactionSplitInput`` values. The transaction service reconstructs editable
 splits from a stored source, preserves imported and reconciliation metadata, keeps

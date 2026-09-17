@@ -44,12 +44,6 @@ workflow may not add new presentation-owned rules.
    - [x] Put FSA claim construction, allocation/link/rejection validation, saving,
      and deletion behind typed services used by GTK and web. Keep linked split
      classification and claim persistence atomic, with stable validation codes.
-   - [ ] Migrate the remaining cross-interface mutations in coherent slices.
-     Loan creation, imports, Review, saved-scenario lifecycle, projection assumptions,
-     transaction adapters, and account lifecycle/settings are complete; continue
-     with the next coherent mutation slice. A
-     touched cross-interface workflow may not add new presentation-owned financial
-     rules.
    - Centralize error codes, field paths, and presentation-message mapping. Introduce
      gettext only after English service prose has ceased to be an API, then add
      extraction/catalog checks and locale smoke tests for GTK and web.

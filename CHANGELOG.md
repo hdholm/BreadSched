@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 schedule-lifecycle slice — Complete cross-interface mutation
+  migration.** Route GTK/web schedule duplication and deletion plus CLI estimate
+  add/remove through typed schedule services. Preserve protected schedule structure,
+  reject stale handles and live scenario references with stable errors, and enforce
+  adapter boundaries with service and architecture regressions. Together with the
+  preceding 0223 slices, GTK and web now perform no direct database persistence and
+  all cross-interface CLI mutations use shared services. Advance the alpha version
+  to `0.2.0a72`; native schema version 7 is unchanged.
+
 - [x] **0223 account-service slice — Typed account lifecycle and settings.** Route
   GTK and CLI account add/edit/delete plus web type, emergency-fund, card-payment,
   and FSA-year updates through one typed service. Validate account identity, parent

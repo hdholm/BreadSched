@@ -69,7 +69,9 @@ from ..gen.services import (
     DeleteAssumptionPeriod,
     DeleteClaim,
     DeleteScenario,
+    DeleteSchedule,
     DuplicateScenario,
+    DuplicateSchedule,
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScheduleInput,
@@ -100,7 +102,9 @@ from ..gen.services import (
     delete_assumption_period,
     delete_claim,
     delete_scenario,
+    delete_schedule,
     duplicate_scenario,
+    duplicate_schedule,
     import_book,
     mark_review_unexpected,
     match_review,
@@ -3564,16 +3568,26 @@ class Api:
     def scheduled_delete(self, payload: dict) -> dict:
         """Remove one definition while retaining its posted ledger history."""
         handle = str(payload.get("handle") or "").strip()
-        deleted = schedule.delete_definition(self.db, handle)
+        result = delete_schedule(self.db, DeleteSchedule(handle))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        deleted = result.value
+        assert deleted is not None
         return {"handle": deleted.handle, "name": deleted.name}
 
     def scheduled_duplicate(self, payload: dict) -> dict:
         """Save an independent exact copy, including editor-protected fields."""
-        copied = schedule.duplicate_saved_definition(
+        result = duplicate_schedule(
             self.db,
-            str(payload.get("handle") or ""),
-            name=str(payload.get("name") or ""),
+            DuplicateSchedule(
+                str(payload.get("handle") or ""),
+                name=str(payload.get("name") or ""),
+            ),
         )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        copied = result.value
+        assert copied is not None
         return {"handle": copied.handle, "name": copied.name}
 
     def import_local(self, payload: dict) -> dict:

@@ -43,6 +43,17 @@ class SavedSchedule:
 
 
 @dataclass(frozen=True, slots=True)
+class DuplicateSchedule:
+    handle: str
+    name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DeleteSchedule:
+    handle: str
+
+
+@dataclass(frozen=True, slots=True)
 class SaveScenarioSchedule:
     """A scenario-owned candidate and the scenario that atomically owns it."""
 
@@ -633,6 +644,41 @@ def save_schedule(db: DbSQLite, request: SaveSchedule) -> ServiceResult[SavedSch
         else:
             db.commit_scheduled(candidate, txn)
     return ServiceResult.success(SavedSchedule(candidate.handle, candidate.name))
+
+
+def duplicate_schedule(db: DbSQLite, request: DuplicateSchedule) -> ServiceResult[SavedSchedule]:
+    """Persist an independent exact copy, including protected custom structure."""
+    source = db.get_scheduled(request.handle)
+    if source is None:
+        return ServiceResult.failure(ServiceError("schedule.not_found", ("handle",)))
+    candidate = schedule_engine.duplicate_definition(source)
+    if request.name is not None:
+        chosen = request.name.strip()
+        if not chosen:
+            return ServiceResult.failure(ServiceError("schedule.name.required", ("name",)))
+        old_name = candidate.name
+        candidate.name = chosen
+        if candidate.description == old_name:
+            candidate.description = chosen
+    return save_schedule(db, SaveSchedule(candidate))
+
+
+def delete_schedule(db: DbSQLite, request: DeleteSchedule) -> ServiceResult[SavedSchedule]:
+    """Delete a baseline definition without leaving live scenario references."""
+    source = db.get_scheduled(request.handle)
+    if source is None:
+        return ServiceResult.failure(ServiceError("schedule.not_found", ("handle",)))
+    if any(
+        item.source_schedule == request.handle
+        for scenario in db.iter_scenarios()
+        for item in scenario.schedule_overrides
+    ):
+        return ServiceResult.failure(
+            ServiceError("schedule.scenario_reference.exists", ("handle",))
+        )
+    with db.transaction(f"Delete scheduled {source.name}") as txn:
+        db.remove_scheduled(source.handle, txn)
+    return ServiceResult.success(SavedSchedule(source.handle, source.name))
 
 
 def save_scenario_schedule(
