@@ -5,6 +5,23 @@ from __future__ import annotations
 from .gen.services import ServiceError
 
 _SERVICE_MESSAGES = {
+    "reconciliation.not_found": "The reconciliation no longer exists",
+    "reconciliation.account.not_found": "The account no longer exists",
+    "reconciliation.account.ineligible": (
+        "Reconciliation requires an asset or liability posting account"
+    ),
+    "reconciliation.open.multiple": "The account has more than one open reconciliation",
+    "reconciliation.open.exists": "Finish or cancel the open reconciliation first",
+    "reconciliation.statement_date.not_after_completed": (
+        "The statement date must follow the latest completed statement"
+    ),
+    "reconciliation.split.ineligible": "A selected entry is not eligible for this statement",
+    "reconciliation.unbalanced": "The reconciliation is out of balance",
+    "reconciliation.status.not_completed": "Only a completed reconciliation can be reopened",
+    "reconciliation.status.not_open": "The reconciliation is no longer open",
+    "reconciliation.later_completed.exists": "Reopen later statements first",
+    "reconciliation.split.changed": "A reconciled entry changed after completion",
+    "reconciliation.split.missing": "A reconciled entry is missing",
     "transaction.not_found": "The transaction no longer exists",
     "transaction.source.mismatch": "The transaction changed while it was being edited",
     "transaction.description.required": "Give the transaction a description",

@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 reconciliation-service slice — Structured statement mutations.** Route
+  GTK and web statement start, selection/balance updates, completion, cancellation,
+  and reopening through typed application-service requests and results. Give every
+  expected domain refusal a stable code and field path while retaining exact shared
+  calculations, atomic ledger/audit writes, and backward-compatible engine errors.
+  Extend architecture and service regressions. Advance the alpha version to
+  `0.2.0a63`; native schema version 7 is unchanged.
+
 - [x] **0223 transaction-service slice — Atomic typed ledger entry.** Route GTK and
   web transaction creation/editing through one typed service with stable error
   codes and field paths. Preserve imported and reconciliation-owned split metadata,

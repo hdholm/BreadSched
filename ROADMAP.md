@@ -37,9 +37,13 @@ workflow may not add new presentation-owned rules.
      validation, hidden-account retention, and optional claim attachment behind one
      typed, atomic service used by GTK and web. Preserve native round trips and
      imported split metadata; enforce the adapter boundary with architecture tests.
+   - [x] Route reconciliation start, selection/balance updates, completion,
+     cancellation, and reopening through typed services with stable codes and field
+     paths while retaining the shared exact calculation and atomic ledger/audit
+     writes.
    - [ ] Migrate the remaining cross-interface mutations in coherent slices,
-     prioritizing reconciliation, claims, loans, imports, Review, scenarios, and
-     projection assumptions. A touched cross-interface workflow may not add new
+     prioritizing claims, loans, imports, Review, scenarios, and projection
+     assumptions. A touched cross-interface workflow may not add new
      presentation-owned financial rules.
    - Centralize error codes, field paths, and presentation-message mapping. Introduce
      gettext only after English service prose has ceased to be an API, then add

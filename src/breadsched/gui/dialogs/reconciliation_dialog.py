@@ -7,7 +7,18 @@ from datetime import date
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import reconciliation
 from ...gen.lib import Account, Money, ReconciliationStatus
+from ...gen.services import (
+    ReconciliationAction,
+    StartReconciliation,
+    UpdateReconciliation,
+    cancel_reconciliation,
+    complete_reconciliation,
+    reopen_reconciliation,
+    start_reconciliation,
+    update_reconciliation,
+)
 from ...gen.utils.amount_input import parse_user_amount
+from ...presentation import service_error_message
 from ..gi_setup import Gtk
 
 __all__ = ["ReconciliationDialog"]
@@ -151,43 +162,61 @@ class ReconciliationDialog(Gtk.Window):
         try:
             statement_date = date.fromisoformat(self.statement_date.get_text().strip())
             ending = Money(parse_user_amount(self.ending_balance.get_text().strip()))
-            reconciliation.start(self.db, self.account.handle, statement_date, ending)
+            result = start_reconciliation(
+                self.db,
+                StartReconciliation(self.account.handle, statement_date, ending),
+            )
         except (ValueError, ArithmeticError) as exc:
             self.status.set_text(str(exc))
+            return
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
             return
         self._render()
 
     def _on_selection(self, handle: str) -> None:
         selected = [split for split, check in self.candidate_checks if check.get_active()]
-        state = reconciliation.set_selection(self.db, handle, selected)
-        self._show_totals(state)
+        result = update_reconciliation(
+            self.db,
+            UpdateReconciliation(handle, selected_splits=tuple(selected)),
+        )
+        if result.value is not None:
+            self._show_totals(result.value)
 
     def _on_update_target(self, handle: str) -> None:
         try:
             ending = Money(parse_user_amount(self.target_entry.get_text().strip()))
-            state = reconciliation.update_ending_balance(self.db, handle, ending)
+            result = update_reconciliation(
+                self.db,
+                UpdateReconciliation(handle, ending_balance=ending),
+            )
         except (ValueError, ArithmeticError):
             self.totals.set_text("Enter a valid ending balance")
             self.finish.set_sensitive(False)
             return
-        self._show_totals(state)
+        if result.value is None:
+            self.totals.set_text(service_error_message(result.errors[0]))
+            self.finish.set_sensitive(False)
+            return
+        self._show_totals(result.value)
 
     def _on_finish(self, handle: str) -> None:
-        try:
-            reconciliation.complete(self.db, handle)
-        except ValueError as exc:
-            self.totals.set_text(str(exc))
+        result = complete_reconciliation(self.db, ReconciliationAction(handle))
+        if result.value is None:
+            self.totals.set_text(service_error_message(result.errors[0]))
             return
         self.close()
 
     def _on_cancel(self, handle: str) -> None:
-        reconciliation.cancel(self.db, handle)
+        result = cancel_reconciliation(self.db, ReconciliationAction(handle))
+        if result.value is None:
+            self.totals.set_text(service_error_message(result.errors[0]))
+            return
         self._render()
 
     def _on_reopen(self, handle: str) -> None:
-        try:
-            reconciliation.reopen(self.db, handle)
-        except ValueError as exc:
-            self.status.set_text(str(exc))
+        result = reopen_reconciliation(self.db, ReconciliationAction(handle))
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
             return
         self._render()
