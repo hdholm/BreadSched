@@ -8,6 +8,17 @@ from ...gen.engine import fsa_claims, planning
 from ...gen.lib import AccountClass, AccountType
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import PlanningResolution
+from ...gen.services import (
+    ReviewClaimAttachment,
+    ReviewOccurrence,
+    ReviewTransaction,
+    attach_review_claim,
+    mark_review_unexpected,
+    match_review,
+    reject_review,
+    skip_review,
+)
+from ...presentation import service_error_message
 from ..gi_setup import Gtk, Pango
 from ._base import BaseView
 
@@ -258,42 +269,39 @@ class ResolutionView(BaseView):
         self.fsa_button.set_sensitive(has_fsa)
         self.unexpected_button.set_sensitive(has_actual)
 
-    def _selected_transaction_and_event(self):
-        if self.db is None or self._transaction_handle is None:
-            return None, None
-        transaction = self.db.get_transaction(self._transaction_handle)
-        event = (
-            planning.event_by_key(self.db, self._candidate_key)
-            if self._candidate_key is not None
-            else None
-        )
-        return transaction, event
-
     def _on_match(self, _button) -> None:
-        transaction, event = self._selected_transaction_and_event()
-        if transaction is None or event is None or self.db is None:
+        if self.db is None or self._transaction_handle is None or self._candidate_key is None:
             return
-        planning.actualize_transaction(transaction, event)
-        with self.db.transaction("Match transaction to planned occurrence") as txn:
-            self.db.commit_transaction(transaction, txn)
+        result = match_review(
+            self.db, ReviewOccurrence(self._transaction_handle, self._candidate_key)
+        )
+        if not result.ok:
+            self.variance.set_text(service_error_message(result.errors[0]))
+            return
         self._transaction_handle = None
         self.refresh()
 
     def _on_reject(self, _button) -> None:
-        transaction, event = self._selected_transaction_and_event()
-        if transaction is None or event is None or self.db is None:
+        if self.db is None or self._transaction_handle is None or self._candidate_key is None:
             return
-        planning.reject_candidate(transaction, event)
-        with self.db.transaction("Reject planned occurrence candidate") as txn:
-            self.db.commit_transaction(transaction, txn)
+        result = reject_review(
+            self.db, ReviewOccurrence(self._transaction_handle, self._candidate_key)
+        )
+        if not result.ok:
+            self.variance.set_text(service_error_message(result.errors[0]))
+            return
         self._candidate_key = None
         self._refresh_candidates()
 
     def _on_skip(self, _button) -> None:
-        _transaction, event = self._selected_transaction_and_event()
-        if event is None or self.db is None:
+        if self.db is None or self._transaction_handle is None or self._candidate_key is None:
             return
-        planning.skip_occurrence(self.db, event)
+        result = skip_review(
+            self.db, ReviewOccurrence(self._transaction_handle, self._candidate_key)
+        )
+        if not result.ok:
+            self.variance.set_text(service_error_message(result.errors[0]))
+            return
         self._candidate_key = None
         self._refresh_candidates()
 
@@ -385,17 +393,18 @@ class ResolutionView(BaseView):
                 from datetime import date as _date
 
                 year = _date.fromisoformat(item)
-            try:
-                fsa_claims.attach_transaction_to_claim(
-                    self.db,
-                    claim.handle,
+            result = attach_review_claim(
+                self.db,
+                ReviewClaimAttachment(
                     transaction.handle,
-                    role=role,
-                    split_handle=split,
-                    funding_year_start=year,
-                )
-            except (KeyError, ValueError) as exc:
-                status.set_text(str(exc))
+                    claim.handle,
+                    role,
+                    split,
+                    year,
+                ),
+            )
+            if not result.ok:
+                status.set_text(service_error_message(result.errors[0]))
                 return
             dialog.close()
             self.refresh()
@@ -418,11 +427,9 @@ class ResolutionView(BaseView):
     def _on_unexpected(self, _button) -> None:
         if self.db is None or self._transaction_handle is None:
             return
-        transaction = self.db.get_transaction(self._transaction_handle)
-        if transaction is None:
+        result = mark_review_unexpected(self.db, ReviewTransaction(self._transaction_handle))
+        if not result.ok:
+            self.variance.set_text(service_error_message(result.errors[0]))
             return
-        planning.mark_unexpected(transaction)
-        with self.db.transaction("Mark transaction as unexpected") as txn:
-            self.db.commit_transaction(transaction, txn)
         self._transaction_handle = None
         self.refresh()

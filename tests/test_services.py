@@ -10,6 +10,7 @@ from breadsched.gen.lib import (
     Money,
     PeriodType,
     PlanningFlowKind,
+    PlanningResolution,
     Recurrence,
     Scenario,
     ScenarioSchedule,
@@ -27,6 +28,8 @@ from breadsched.gen.services import (
     FormulaScheduleInput,
     ImportBook,
     PlanQuery,
+    ReviewOccurrence,
+    ReviewTransaction,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
     SaveScenarioSchedule,
@@ -38,7 +41,10 @@ from breadsched.gen.services import (
     build_fixed_schedule,
     build_formula_scenario_schedule,
     import_book,
+    mark_review_unexpected,
+    match_review,
     query_plan,
+    reject_review,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_scenario_schedule,
@@ -46,6 +52,7 @@ from breadsched.gen.services import (
     save_scenario_schedule,
     save_schedule,
     save_transaction,
+    skip_review,
 )
 
 
@@ -89,6 +96,71 @@ def test_import_service_returns_stable_preflight_errors_without_running(db, tmp_
     assert missing.errors == (ServiceError("import.source.not_found", ("source",)),)
     assert option.errors == (ServiceError("import.number_format.invalid", ("number_format",)),)
     assert remembered_import_source(db) is None
+
+
+def _review_fixture(db, book):
+    schedule = ScheduledTransaction(
+        name="Review utility",
+        recurrence=Recurrence(period=PeriodType.MONTH, start=date(2026, 5, 7)),
+        splits=[
+            ScheduledSplit(book.utilities, Money("100")),
+            ScheduledSplit(book.checking, Money("-100")),
+        ],
+    )
+    actual = Transaction.simple(
+        date(2026, 5, 8), "Actual utility", book.utilities, book.checking, Money("105")
+    )
+    with db.transaction("Review fixture") as txn:
+        db.add_scheduled(schedule, txn)
+        db.add_transaction(actual, txn)
+    return actual.handle, schedule.occurrence_key(date(2026, 5, 7)), schedule.handle
+
+
+def test_review_service_matches_an_actual_atomically(db, book):
+    transaction, occurrence, _schedule = _review_fixture(db, book)
+
+    result = match_review(db, ReviewOccurrence(transaction, occurrence))
+
+    assert result.ok
+    saved = db.get_transaction(transaction)
+    assert saved is not None
+    assert saved.planning_resolution is PlanningResolution.MATCHED
+    assert saved.planned_occurrence == occurrence
+
+
+def test_review_service_rejects_and_skips_candidates(db, book):
+    transaction, occurrence, schedule = _review_fixture(db, book)
+
+    rejected = reject_review(db, ReviewOccurrence(transaction, occurrence))
+    skipped = skip_review(db, ReviewOccurrence(transaction, occurrence))
+
+    assert rejected.ok and skipped.ok
+    saved = db.get_transaction(transaction)
+    assert saved is not None and occurrence in saved.rejected_plan_occurrences
+    stored_schedule = db.get_scheduled(schedule)
+    assert stored_schedule is not None and date(2026, 5, 7) in stored_schedule.skipped
+
+
+def test_review_service_marks_an_actual_unexpected(db, book):
+    transaction, _occurrence, _schedule = _review_fixture(db, book)
+
+    result = mark_review_unexpected(db, ReviewTransaction(transaction))
+
+    assert result.ok
+    saved = db.get_transaction(transaction)
+    assert saved is not None
+    assert saved.planning_resolution is PlanningResolution.UNEXPECTED
+
+
+def test_review_service_returns_stable_errors_without_writing(db, book):
+    transaction, occurrence, _schedule = _review_fixture(db, book)
+    assert mark_review_unexpected(db, ReviewTransaction(transaction)).ok
+
+    repeated = match_review(db, ReviewOccurrence(transaction, occurrence))
+    missing = reject_review(db, ReviewOccurrence("missing", occurrence))
+
+    assert repeated.errors == (ServiceError("review.transaction.not_unresolved", ("transaction",)),)
+    assert missing.errors == (ServiceError("review.transaction.not_found", ("transaction",)),)
 
 
 def test_transaction_service_owns_construction_validation_and_atomic_write(db, book):

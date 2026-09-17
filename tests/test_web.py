@@ -2333,6 +2333,18 @@ class TestReviewApi:
         _status, review = review_client.get("/api/review")
         assert review["actuals"] == []
 
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            review_client.post(
+                "/api/review/match",
+                {
+                    "transaction": review_client.actual_handle,
+                    "occurrence": review_client.occurrence,
+                },
+            )
+        error = json.loads(caught.value.read())
+        assert error["code"] == "review.transaction.not_unresolved"
+        assert error["fields"] == ["transaction"]
+
     def test_marking_unexpected_removes_the_actual_from_the_queue(self, review_client):
         status, payload = review_client.post(
             "/api/review/unexpected", {"transaction": review_client.actual_handle}
@@ -3170,6 +3182,19 @@ def test_review_can_attach_actual_to_existing_fsa_claim(client):
     )
     assert status == 200
     assert result["claim"] == saved["handle"]
+    with pytest.raises(urllib.error.HTTPError) as caught:
+        client.post(
+            "/api/review/fsa-attach",
+            {
+                "transaction": txn["handle"],
+                "claim": saved["handle"],
+                "role": "guess",
+                "split": role["split"],
+            },
+        )
+    error = json.loads(caught.value.read())
+    assert error["code"] == "claim.attachment.role.invalid"
+    assert error["fields"] == ["role"]
     _status, claims = client.get("/api/fsa/claims")
     claim = next(item for item in claims["claims"] if item["handle"] == saved["handle"])
     assert claim["paid"] == "250.00"

@@ -410,6 +410,63 @@ class TestServiceBoundaries:
         assert "run" not in calls
         assert "remember_import_source" not in calls
 
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "service_call"),
+        (
+            ("gui/views/resolution.py", "ResolutionView", "_on_match", "match_review"),
+            ("gui/views/resolution.py", "ResolutionView", "_on_reject", "reject_review"),
+            ("gui/views/resolution.py", "ResolutionView", "_on_skip", "skip_review"),
+            (
+                "gui/views/resolution.py",
+                "ResolutionView",
+                "_on_unexpected",
+                "mark_review_unexpected",
+            ),
+            (
+                "gui/views/resolution.py",
+                "ResolutionView",
+                "_on_fsa_attach",
+                "attach_review_claim",
+            ),
+            ("web/server.py", "Api", "review_match", "match_review"),
+            ("web/server.py", "Api", "review_reject", "reject_review"),
+            ("web/server.py", "Api", "review_skip", "skip_review"),
+            ("web/server.py", "Api", "review_unexpected", "mark_review_unexpected"),
+            ("web/server.py", "Api", "review_fsa_attach", "attach_review_claim"),
+        ),
+    )
+    def test_review_adapters_use_typed_services(
+        self, relative, class_name, method_name, service_call
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {
+                "actualize_transaction",
+                "reject_candidate",
+                "skip_occurrence",
+                "mark_unexpected",
+                "attach_transaction_to_claim",
+                "db.transaction",
+                "commit_transaction",
+            }
+        )
+
+    @pytest.mark.parametrize(
+        ("function_name", "service_call"),
+        (
+            ("cmd_plan_resolve", "match_review"),
+            ("cmd_plan_reject", "reject_review"),
+            ("cmd_plan_unexpected", "mark_review_unexpected"),
+        ),
+    )
+    def test_cli_review_mutations_use_typed_services(self, function_name, service_call):
+        calls = calls_in_function(SRC / "cli/main.py", function_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {"actualize_transaction", "reject_candidate", "mark_unexpected", "db.transaction"}
+        )
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):

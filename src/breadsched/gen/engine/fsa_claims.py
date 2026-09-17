@@ -389,7 +389,11 @@ def attach_transaction_to_claim(
         if eligible and (split_handle is None or split.handle == split_handle):
             candidates.append((split, account))
     if len(candidates) != 1:
-        raise ValueError("choose exactly one eligible transaction split")
+        raise FsaClaimError(
+            "claim.attachment.split.ineligible",
+            ("split",),
+            "choose exactly one eligible transaction split",
+        )
     split, account = candidates[0]
     link = FsaClaimSplitLink(transaction.handle, split.handle)
 
@@ -414,7 +418,11 @@ def attach_transaction_to_claim(
             if len(service_years) == 1:
                 eligible_years = service_years
         if len(eligible_years) != 1:
-            raise ValueError("choose an FSA funding year for this reimbursement")
+            raise FsaClaimError(
+                "claim.attachment.funding_year.required",
+                ("funding_year",),
+                "choose an FSA funding year for this reimbursement",
+            )
         year = eligible_years[0]
         allocation = next(
             (
@@ -430,7 +438,11 @@ def attach_transaction_to_claim(
         if link not in allocation.reimbursements:
             allocation.reimbursements.append(link)
     else:
-        raise ValueError("unknown FSA claim attachment role")
+        raise FsaClaimError(
+            "claim.attachment.role.invalid",
+            ("role",),
+            "unknown FSA claim attachment role",
+        )
 
     return save_claim(db, claim, txn=txn)
 

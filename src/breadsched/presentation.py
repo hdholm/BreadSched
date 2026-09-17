@@ -67,6 +67,15 @@ _SERVICE_MESSAGES = {
     "import.format.unrecognized": "The file format is not recognised",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
+    "review.transaction.not_found": "The transaction no longer exists",
+    "review.transaction.not_unresolved": "The transaction is no longer awaiting review",
+    "review.occurrence.not_found": "The planned occurrence no longer exists",
+    "review.occurrence.resolved": "The planned occurrence is already resolved",
+    "review.occurrence.not_skippable": "This planned occurrence cannot be skipped",
+    "review.claim.not_found": "The FSA claim no longer exists",
+    "claim.attachment.split.ineligible": "Choose one eligible transaction split",
+    "claim.attachment.funding_year.required": ("Choose an FSA funding year for this reimbursement"),
+    "claim.attachment.role.invalid": "Choose a valid FSA claim role",
 }
 
 
