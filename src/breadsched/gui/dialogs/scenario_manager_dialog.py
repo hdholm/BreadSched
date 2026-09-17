@@ -7,7 +7,15 @@ from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import AccountClass, AssumptionPeriod, Rate, Scenario
-from ...gen.lib.base import create_handle
+from ...gen.services import (
+    DeleteScenario,
+    DuplicateScenario,
+    SaveScenario,
+    delete_scenario,
+    duplicate_scenario,
+    save_scenario,
+)
+from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -314,8 +322,10 @@ class ScenarioManagerDialog(Gtk.Window):
                 scenario.set_account_assumption_override(handle, self._account_rates[handle])
             else:
                 scenario.inherit_account_assumption(handle)
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
+        result = save_scenario(self.db, SaveScenario(scenario, existing_handle=scenario.handle))
+        if not result.ok:
+            self._error(service_error_message(result.errors[0]))
+            return
         self._reload(scenario.handle)
         notify_planning_scenario_changed(self.manager)
         self.status.set_text("Scenario saved.")
@@ -364,34 +374,18 @@ class ScenarioManagerDialog(Gtk.Window):
         scenario = self._selected()
         if scenario is None:
             return
-        clone = (
-            Scenario.derived_from_base(
-                self._baseline.assumptions,
-                name=self._unique_copy_name(scenario.name),
-                start=scenario.start,
-                years=scenario.years,
-            )
-            if self._base_selected()
-            else scenario.clone()
+        result = duplicate_scenario(
+            self.db,
+            DuplicateScenario(scenario, from_base=self._base_selected()),
         )
-        clone.handle = create_handle()
-        clone.gid = ""
-        clone.change = 0
-        clone.name = self._unique_copy_name(scenario.name)
-        with self.db.transaction(f"Duplicate scenario {scenario.name}") as txn:
-            self.db.add_scenario(clone, txn)
-        self._reload(clone.handle)
-        self.status.set_text(f'Created "{clone.name}". Rename it or adjust assumptions as needed.')
+        if not result.ok:
+            self._error(service_error_message(result.errors[0]))
+            return
+        saved = result.value
+        assert saved is not None
+        self._reload(saved.handle)
+        self.status.set_text(f'Created "{saved.name}". Rename it or adjust assumptions as needed.')
         self.status.remove_css_class("negative")
-
-    def _unique_copy_name(self, name: str) -> str:
-        base = f"{name} copy"
-        candidate = base
-        number = 2
-        while self.db.get_scenario_by_name(candidate) is not None:
-            candidate = f"{base} {number}"
-            number += 1
-        return candidate
 
     def _on_edit_timeline(self, _button) -> None:
         scenario = self._selected()
@@ -801,7 +795,8 @@ class ScenarioDeleteDialog(Gtk.Window):
         box.append(buttons)
 
     def _confirm(self, _button) -> None:
-        with self.db.transaction(f"Delete scenario {self.scenario.name}") as txn:
-            self.db.remove_scenario(self.scenario.handle, txn)
+        result = delete_scenario(self.db, DeleteScenario(self.scenario.handle))
+        if not result.ok:
+            return
         self.close()
         self.deleted_callback()

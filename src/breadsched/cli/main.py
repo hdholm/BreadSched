@@ -50,13 +50,17 @@ from ..gen.lib import (
 )
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
 from ..gen.services import (
+    DeleteScenario,
     ImportBook,
     ReviewOccurrence,
     ReviewTransaction,
+    SaveScenario,
+    delete_scenario,
     import_book,
     mark_review_unexpected,
     match_review,
     reject_review,
+    save_scenario,
 )
 from ..gen.utils import logs
 from ..presentation import service_error_message
@@ -914,11 +918,15 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                     "liability_interest",
                 }
             )
-            with db.transaction(f"Save scenario {args.name}") as txn:
-                if existing:
-                    db.commit_scenario(scenario, txn)
-                else:
-                    db.add_scenario(scenario, txn)
+            result = save_scenario(
+                db,
+                SaveScenario(
+                    scenario,
+                    existing_handle=existing.handle if existing is not None else None,
+                ),
+            )
+            if not result.ok:
+                raise CommandError(service_error_message(result.errors[0]))
             emit(
                 {"name": scenario.name, "handle": scenario.handle},
                 args,
@@ -939,8 +947,9 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                 reparented.parent_handle = parent.handle
                 resolved_parent = parent.name
             reparented.inherits_base_assumptions = True
-            with db.transaction(f"Reparent scenario {reparented.name}") as txn:
-                db.commit_scenario(reparented, txn)
+            result = save_scenario(db, SaveScenario(reparented, existing_handle=reparented.handle))
+            if not result.ok:
+                raise CommandError(service_error_message(result.errors[0]))
             emit(
                 {"name": reparented.name, "parent": resolved_parent},
                 args,
@@ -950,8 +959,9 @@ def cmd_scenario(args: argparse.Namespace) -> int:
             to_delete = db.get_scenario_by_name(args.name)
             if to_delete is None:
                 raise CommandError(f"no scenario named {args.name!r}")
-            with db.transaction(f"Delete scenario {args.name}") as txn:
-                db.remove_scenario(to_delete.handle, txn)
+            result = delete_scenario(db, DeleteScenario(to_delete.handle))
+            if not result.ok:
+                raise CommandError(service_error_message(result.errors[0]))
             emit({"deleted": args.name}, args, f"Deleted scenario {args.name!r}")
         return 0
     finally:

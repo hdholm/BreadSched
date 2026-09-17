@@ -44,6 +44,17 @@ from .review import (
     reject_review,
     skip_review,
 )
+from .scenarios import (
+    DeleteScenario,
+    DuplicateScenario,
+    SavedScenario,
+    SaveScenario,
+    SuppressScenarioSchedule,
+    delete_scenario,
+    duplicate_scenario,
+    save_scenario,
+    suppress_scenario_schedule,
+)
 from .schedules import (
     FixedScheduleInput,
     FixedSplitInput,
@@ -83,8 +94,13 @@ __all__ = [
     "ClaimLinkInput",
     "ClaimRejectionInput",
     "DeleteClaim",
+    "DeleteScenario",
+    "DuplicateScenario",
     "SavedClaim",
+    "SavedScenario",
     "SaveClaim",
+    "SaveScenario",
+    "SuppressScenarioSchedule",
     "FixedScheduleInput",
     "FixedSplitInput",
     "FormulaScheduleInput",
@@ -146,4 +162,8 @@ __all__ = [
     "match_review",
     "reject_review",
     "skip_review",
+    "delete_scenario",
+    "duplicate_scenario",
+    "save_scenario",
+    "suppress_scenario_schedule",
 ]
