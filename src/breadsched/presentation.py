@@ -85,6 +85,14 @@ _SERVICE_MESSAGES = {
     "scenario.parent.cycle": "A scenario cannot inherit from itself or its descendants",
     "scenario.children.exist": "Reparent child scenarios before deleting this scenario",
     "scenario.schedule.not_found": "The baseline schedule no longer exists",
+    "assumptions.rate.out_of_range": "Projection rates must be between -100% and 100%",
+    "assumptions.account.not_found": "A projection-rate account no longer exists",
+    "assumptions.account.unsupported": (
+        "Account-specific projection rates require an investment or liability account"
+    ),
+    "assumptions.years.out_of_range": "Projection years must be between 1 and 100",
+    "assumptions.scenario.not_found": "The scenario no longer exists",
+    "assumptions.period.not_found": "The dated assumption period no longer exists",
 }
 
 

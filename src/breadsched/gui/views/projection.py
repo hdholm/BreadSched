@@ -20,6 +20,10 @@ from time import monotonic
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
+from ...gen.services import (
+    SaveScenarioAssumptions,
+    save_scenario_assumptions,
+)
 from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger  # noqa: E402
 from ..background import BackgroundJob
@@ -604,8 +608,10 @@ class ProjectionView(BaseView):
             return
         scenario = self._collect()
         if self._scenario_handle is not None:
-            with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-                self.db.commit_scenario(scenario, txn)
+            save_scenario_assumptions(
+                self.db,
+                SaveScenarioAssumptions(scenario, existing_handle=self._scenario_handle),
+            )
             return
 
         from ..dialogs.scenario_dialog import SaveScenarioDialog

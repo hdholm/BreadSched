@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from ..gen.lib import Assumptions, Scenario
+from ..gen.services import BASE_ASSUMPTIONS_KEY, SaveBaseAssumptions, save_base_assumptions
 
 __all__ = [
     "baseline_scenario",
@@ -13,8 +14,6 @@ __all__ = [
     "selected_scenario_handle",
     "select_scenario",
 ]
-
-_BASE_ASSUMPTIONS_KEY = "planning.base_assumptions"
 
 
 def _db_identity(db) -> object | None:
@@ -35,7 +34,7 @@ def baseline_scenario(manager, db=None) -> Scenario:
             years=10,
         )
         if db is not None:
-            stored = db.get_metadata(_BASE_ASSUMPTIONS_KEY, None)
+            stored = db.get_metadata(BASE_ASSUMPTIONS_KEY, None)
             if isinstance(stored, dict):
                 scenario.assumptions = Assumptions.from_dict(stored)
         manager._planning_baseline_scenario = scenario
@@ -46,7 +45,9 @@ def baseline_scenario(manager, db=None) -> Scenario:
 def persist_baseline_assumptions(manager, db) -> None:
     """Persist the current Base assumptions in the open book's metadata."""
     scenario = baseline_scenario(manager, db)
-    db.set_metadata(_BASE_ASSUMPTIONS_KEY, scenario.assumptions.serialize())
+    result = save_base_assumptions(db, SaveBaseAssumptions(scenario.assumptions))
+    if not result.ok:  # pragma: no cover - GTK controls constrain these values
+        raise ValueError(result.errors[0].code)
 
 
 def selected_scenario_handle(manager) -> str | None:

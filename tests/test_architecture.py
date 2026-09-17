@@ -480,7 +480,7 @@ class TestServiceBoundaries:
                 "gui/dialogs/scenario_manager_dialog.py",
                 "ScenarioManagerDialog",
                 "_on_save",
-                "save_scenario",
+                "save_scenario_assumptions",
             ),
             (
                 "gui/dialogs/scenario_manager_dialog.py",
@@ -500,7 +500,7 @@ class TestServiceBoundaries:
                 "_suppress_baseline_schedule",
                 "suppress_scenario_schedule",
             ),
-            ("web/server.py", "Api", "scenario_save", "save_scenario"),
+            ("web/server.py", "Api", "scenario_save", "save_scenario_assumptions"),
             ("web/server.py", "Api", "scenario_duplicate", "duplicate_scenario"),
             ("web/server.py", "Api", "scenario_delete", "delete_scenario"),
             (
@@ -526,6 +526,56 @@ class TestServiceBoundaries:
         assert calls.isdisjoint(
             {"add_scenario", "commit_scenario", "remove_scenario", "db.transaction"}
         )
+
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "service_call"),
+        (
+            (
+                "gui/dialogs/scenario_manager_dialog.py",
+                "AssumptionTimelineDialog",
+                "_save_new",
+                "save_assumption_period",
+            ),
+            (
+                "gui/dialogs/scenario_manager_dialog.py",
+                "AssumptionTimelineDialog",
+                "_save_edit",
+                "save_assumption_period",
+            ),
+            (
+                "gui/dialogs/scenario_manager_dialog.py",
+                "AssumptionTimelineDialog",
+                "_on_delete",
+                "delete_assumption_period",
+            ),
+            (
+                "gui/views/projection.py",
+                "ProjectionView",
+                "_on_save_clicked",
+                "save_scenario_assumptions",
+            ),
+            ("web/server.py", "Api", "scenario_period_save", "save_assumption_period"),
+            ("web/server.py", "Api", "scenario_period_delete", "delete_assumption_period"),
+        ),
+    )
+    def test_projection_assumption_adapters_use_typed_services(
+        self, relative, class_name, method_name, service_call
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert service_call in calls
+        assert calls.isdisjoint({"set_metadata", "commit_scenario", "db.transaction"})
+
+    def test_base_assumption_writes_use_typed_service(self):
+        helper_calls = calls_in_function(
+            SRC / "gui/planning_context.py", "persist_baseline_assumptions"
+        )
+        assert "save_base_assumptions" in helper_calls
+        assert "set_metadata" not in helper_calls
+        for method_name in ("scenario_save", "projection_save"):
+            calls = calls_in_method(SRC / "web/server.py", "Api", method_name)
+            assert "save_base_assumptions" in calls
+            assert "save_scenario_assumptions" in calls
+            assert "set_metadata" not in calls
 
 
 class TestWebBoundaries:

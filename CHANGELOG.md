@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 projection-assumption-service slice — Typed assumption writes.** Route
+  CLI, GTK, and web Base and saved-scenario assumption persistence plus dated-regime
+  creation, replacement, and deletion through shared typed services. Validate scalar
+  and account-specific rates, account roles, projection horizons, scenario identity,
+  and period indexes with stable codes and field paths; keep saved-scenario commits
+  atomic through the lifecycle boundary. Add service and architecture regressions.
+  Advance the alpha version to `0.2.0a69`; native schema version 7 is unchanged.
+
 - [x] **0223 scenario-service slice — Typed saved-scenario lifecycle.** Route CLI,
   GTK, and web saved-scenario creation/update, duplication, deletion, reparenting,
   and baseline-schedule suppression through shared typed services. Validate names,

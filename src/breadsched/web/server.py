@@ -65,6 +65,7 @@ from ..gen.services import (
     ClaimInput,
     ClaimLinkInput,
     ClaimRejectionInput,
+    DeleteAssumptionPeriod,
     DeleteClaim,
     DeleteScenario,
     DuplicateScenario,
@@ -77,11 +78,13 @@ from ..gen.services import (
     ReviewClaimAttachment,
     ReviewOccurrence,
     ReviewTransaction,
+    SaveAssumptionPeriod,
+    SaveBaseAssumptions,
     SaveClaim,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
     SaveLoan,
-    SaveScenario,
+    SaveScenarioAssumptions,
     SaveTransaction,
     ServiceError,
     StartReconciliation,
@@ -92,6 +95,7 @@ from ..gen.services import (
     attach_review_claim,
     cancel_reconciliation,
     complete_reconciliation,
+    delete_assumption_period,
     delete_claim,
     delete_scenario,
     duplicate_scenario,
@@ -101,12 +105,14 @@ from ..gen.services import (
     query_plan,
     reject_review,
     reopen_reconciliation,
+    save_assumption_period,
+    save_base_assumptions,
     save_claim,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_schedule,
     save_loan,
-    save_scenario,
+    save_scenario_assumptions,
     save_transaction,
     skip_review,
     start_reconciliation,
@@ -1452,7 +1458,9 @@ class Api:
             assumptions = self._assumptions_from_payload(
                 payload.get("assumptions"), base.assumptions
             )
-            self.db.set_metadata("planning.base_assumptions", assumptions.serialize())
+            base_result = save_base_assumptions(self.db, SaveBaseAssumptions(assumptions))
+            if not base_result.ok:
+                raise self._service_resource_error(base_result.errors[0])
             return self._scenario_payload(self._management_base_scenario(), base=True)
 
         scenario = self.db.get_scenario(str(handle))
@@ -1505,7 +1513,10 @@ class Api:
                 else:
                     scenario.inherit_account_assumption(account_handle)
         scenario.assumptions = updated
-        result = save_scenario(self.db, SaveScenario(scenario, existing_handle=scenario.handle))
+        result = save_scenario_assumptions(
+            self.db,
+            SaveScenarioAssumptions(scenario, existing_handle=scenario.handle),
+        )
         if not result.ok:
             raise self._service_resource_error(result.errors[0])
         reloaded = self.db.get_scenario(scenario.handle)
@@ -1580,13 +1591,19 @@ class Api:
                 existing_period.per_account if existing_period is not None else None,
             ),
         )
-        if existing_period is None:
-            scenario.assumption_periods.append(period)
-        else:
-            scenario.assumption_periods[index] = period
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
-        return self._scenario_payload(scenario)
+        result = save_assumption_period(
+            self.db,
+            SaveAssumptionPeriod(
+                scenario.handle,
+                period,
+                index=None if existing_period is None else index,
+            ),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        saved = self.db.get_scenario(scenario.handle)
+        assert saved is not None
+        return self._scenario_payload(saved)
 
     def scenario_period_delete(self, payload: dict) -> dict:
         handle = str(payload.get("handle", "")).strip()
@@ -1596,10 +1613,12 @@ class Api:
         index = int(payload.get("index", -1))
         if index < 0 or index >= len(scenario.assumption_periods):
             raise ValueError("dated assumption period no longer exists")
-        del scenario.assumption_periods[index]
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
-        return self._scenario_payload(scenario)
+        result = delete_assumption_period(self.db, DeleteAssumptionPeriod(scenario.handle, index))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        saved = self.db.get_scenario(scenario.handle)
+        assert saved is not None
+        return self._scenario_payload(saved)
 
     _SCENARIO_FREQUENCIES = {
         "weekly": (PeriodType.WEEK, 1),
@@ -3080,10 +3099,15 @@ class Api:
         scenario = self._projection_draft(handle)
         self._apply_projection_payload(scenario, payload)
         if handle is None:
-            self.db.set_metadata("planning.base_assumptions", scenario.assumptions.serialize())
+            base_result = save_base_assumptions(self.db, SaveBaseAssumptions(scenario.assumptions))
+            if not base_result.ok:
+                raise self._service_resource_error(base_result.errors[0])
             return self._projection_payload(scenario, base=True)
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
+        result = save_scenario_assumptions(
+            self.db, SaveScenarioAssumptions(scenario, existing_handle=handle)
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         return self._projection_payload(scenario)
 
     # ---------------------------------------------------------------- writing

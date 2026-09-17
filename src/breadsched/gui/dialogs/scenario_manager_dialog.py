@@ -8,12 +8,16 @@ from decimal import Decimal, InvalidOperation
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib import AccountClass, AssumptionPeriod, Rate, Scenario
 from ...gen.services import (
+    DeleteAssumptionPeriod,
     DeleteScenario,
     DuplicateScenario,
-    SaveScenario,
+    SaveAssumptionPeriod,
+    SaveScenarioAssumptions,
+    delete_assumption_period,
     delete_scenario,
     duplicate_scenario,
-    save_scenario,
+    save_assumption_period,
+    save_scenario_assumptions,
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
@@ -322,7 +326,10 @@ class ScenarioManagerDialog(Gtk.Window):
                 scenario.set_account_assumption_override(handle, self._account_rates[handle])
             else:
                 scenario.inherit_account_assumption(handle)
-        result = save_scenario(self.db, SaveScenario(scenario, existing_handle=scenario.handle))
+        result = save_scenario_assumptions(
+            self.db,
+            SaveScenarioAssumptions(scenario, existing_handle=scenario.handle),
+        )
         if not result.ok:
             self._error(service_error_message(result.errors[0]))
             return
@@ -587,9 +594,9 @@ class AssumptionTimelineDialog(Gtk.Window):
         AssumptionPeriodDialog(self, self.db, self._periods[index], self._save_edit).present()
 
     def _save_new(self, period: AssumptionPeriod) -> None:
-        self.scenario.assumption_periods.append(period)
-        self._commit()
-        self._reload(len(self.scenario.assumption_periods) - 1)
+        result = save_assumption_period(self.db, SaveAssumptionPeriod(self.scenario.handle, period))
+        if result.ok:
+            self._after_commit(len(self.scenario.assumption_periods))
 
     def _save_edit(self, period: AssumptionPeriod) -> None:
         index = self._selected_index()
@@ -597,22 +604,30 @@ class AssumptionTimelineDialog(Gtk.Window):
             return
         old = self._periods[index]
         original_index = self.scenario.assumption_periods.index(old)
-        self.scenario.assumption_periods[original_index] = period
-        self._commit()
-        self._reload(index)
+        result = save_assumption_period(
+            self.db,
+            SaveAssumptionPeriod(self.scenario.handle, period, index=original_index),
+        )
+        if result.ok:
+            self._after_commit(index)
 
     def _on_delete(self, _button) -> None:
         index = self._selected_index()
         if index is None:
             return
-        self.scenario.assumption_periods.remove(self._periods[index])
-        self._commit()
-        self._reload(max(0, index - 1))
+        original_index = self.scenario.assumption_periods.index(self._periods[index])
+        result = delete_assumption_period(
+            self.db, DeleteAssumptionPeriod(self.scenario.handle, original_index)
+        )
+        if result.ok:
+            self._after_commit(max(0, index - 1))
 
-    def _commit(self) -> None:
-        with self.db.transaction(f"Update scenario {self.scenario.name}") as txn:
-            self.db.commit_scenario(self.scenario, txn)
+    def _after_commit(self, selected: int) -> None:
+        saved = self.db.get_scenario(self.scenario.handle)
+        if saved is not None:
+            self.scenario = saved
         self.saved_callback(self.scenario.handle)
+        self._reload(selected)
 
 
 class AssumptionPeriodDialog(Gtk.Window):
