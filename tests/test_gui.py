@@ -3301,9 +3301,7 @@ class TestAccountEditor:
         assert dialog.editing is True
         assert dialog.name_entry.get_text() == account.name
 
-    def test_invalid_opening_amount_does_not_raise_a_secondary_exception(
-        self, accounts_view, app
-    ):
+    def test_invalid_opening_amount_does_not_raise_a_secondary_exception(self, accounts_view, app):
         dialog = self._dialog(accounts_view)
         dialog.name_entry.set_text("Savings")
         dialog.opening_entry.set_text("not an amount")
