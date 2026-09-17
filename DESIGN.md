@@ -688,7 +688,9 @@ reconciled or frozen splits through the statement date. Non-void, unreconciled a
 cleared splits through that date are candidates; Cleared candidates start checked.
 The displayed difference is always statement ending balance minus the account's
 natural-sign opening-plus-checked balance. GTK and web merely present this shared
-calculation.
+calculation. Their mutations submit typed start, update, complete, cancel, and reopen
+requests through the application-service boundary. Domain failures retain stable
+codes and field paths while adapter-owned wording remains presentation-only.
 
 Finishing is permitted only at an exact zero difference. It atomically changes every
 checked split to Reconciled with the statement date and records completion of the

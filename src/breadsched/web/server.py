@@ -73,17 +73,25 @@ from ..gen.services import (
     FixedSplitInput,
     FormulaScheduleInput,
     PlanQuery,
+    ReconciliationAction,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
     SaveTransaction,
     ServiceError,
+    StartReconciliation,
     TransactionInput,
     TransactionSplitInput,
+    UpdateReconciliation,
+    cancel_reconciliation,
+    complete_reconciliation,
     query_plan,
+    reopen_reconciliation,
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_schedule,
     save_transaction,
+    start_reconciliation,
+    update_reconciliation,
 )
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..presentation import service_error_message
@@ -94,6 +102,16 @@ __all__ = ["serve", "build_handler", "api"]
 
 class Api:
     """The JSON surface. Every method returns plain data, never a response object."""
+
+    @staticmethod
+    def _service_resource_error(error: ServiceError) -> ResourceError:
+        status = 404 if error.code.endswith(".not_found") else 400
+        return ResourceError(
+            status,
+            error.code,
+            error.fields,
+            service_error_message(error),
+        )
 
     @staticmethod
     def _input_money(payload: dict, raw: object) -> Money:
@@ -863,7 +881,13 @@ class Api:
         except ValueError as exc:
             raise ValueError("enter a valid statement date") from exc
         ending = self._input_money(payload, payload.get("ending_balance", ""))
-        started = reconciliation.start(self.db, account, statement_date, ending)
+        result = start_reconciliation(
+            self.db,
+            StartReconciliation(account, statement_date, ending),
+        )
+        if result.value is None:
+            raise self._service_resource_error(result.errors[0])
+        started = result.value.reconciliation
         return {"handle": started.handle, "status": started.status.value}
 
     def reconciliation_update(self, payload: dict) -> dict:
@@ -878,24 +902,47 @@ class Api:
             if "ending_balance" in payload
             else None
         )
-        state = reconciliation.update(
+        result = update_reconciliation(
             self.db,
-            handle,
-            split_handles=raw_splits,
-            ending_balance=ending,
+            UpdateReconciliation(
+                handle,
+                selected_splits=tuple(raw_splits),
+                ending_balance=ending,
+            ),
         )
+        if result.value is None:
+            raise self._service_resource_error(result.errors[0])
+        state = result.value
         return {"handle": handle, "difference": state.difference, "balanced": state.balanced}
 
     def reconciliation_complete(self, payload: dict) -> dict:
-        completed = reconciliation.complete(self.db, str(payload.get("handle") or ""))
+        result = complete_reconciliation(
+            self.db,
+            ReconciliationAction(str(payload.get("handle") or "")),
+        )
+        if result.value is None:
+            raise self._service_resource_error(result.errors[0])
+        completed = result.value
         return {"handle": completed.handle, "status": completed.status.value}
 
     def reconciliation_cancel(self, payload: dict) -> dict:
-        cancelled = reconciliation.cancel(self.db, str(payload.get("handle") or ""))
+        result = cancel_reconciliation(
+            self.db,
+            ReconciliationAction(str(payload.get("handle") or "")),
+        )
+        if result.value is None:
+            raise self._service_resource_error(result.errors[0])
+        cancelled = result.value
         return {"handle": cancelled.handle, "status": cancelled.status.value}
 
     def reconciliation_reopen(self, payload: dict) -> dict:
-        reopened = reconciliation.reopen(self.db, str(payload.get("handle") or ""))
+        result = reopen_reconciliation(
+            self.db,
+            ReconciliationAction(str(payload.get("handle") or "")),
+        )
+        if result.value is None:
+            raise self._service_resource_error(result.errors[0])
+        reopened = result.value
         return {"handle": reopened.handle, "status": reopened.status.value}
 
     def historical_estimates(
@@ -3098,13 +3145,7 @@ class Api:
             ),
         )
         if result.value is None:
-            error = result.errors[0]
-            raise ResourceError(
-                404 if error.code.endswith(".not_found") else 400,
-                error.code,
-                error.fields,
-                service_error_message(error),
-            )
+            raise self._service_resource_error(result.errors[0])
         return {"handle": result.value.handle, "date": when, "amount": amount}
 
     def review_match(self, payload: dict) -> dict:

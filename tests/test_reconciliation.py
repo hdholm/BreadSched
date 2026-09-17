@@ -15,6 +15,15 @@ from breadsched.gen.lib import (
     ReconciliationStatus,
     Transaction,
 )
+from breadsched.gen.services import (
+    ReconciliationAction,
+    StartReconciliation,
+    UpdateReconciliation,
+    complete_reconciliation,
+    start_reconciliation,
+    update_reconciliation,
+)
+from breadsched.gen.services.contracts import ServiceError
 
 
 @pytest.fixture
@@ -69,6 +78,57 @@ def test_start_selects_cleared_activity_and_calculates_exact_difference(db, stat
     assert balanced.balanced
     assert balanced.selected_balance == Money("750")
     assert pending.split_for(bank.handle).reconcile is ReconcileState.NOT_RECONCILED
+
+
+def test_typed_reconciliation_service_preserves_start_update_complete_workflow(db, statement_book):
+    bank, _cleared, _pending, _future = statement_book
+
+    started = start_reconciliation(
+        db,
+        StartReconciliation(bank.handle, date(2026, 1, 31), Money("750")),
+    )
+    assert started.value is not None
+    updated = update_reconciliation(
+        db,
+        UpdateReconciliation(
+            started.value.reconciliation.handle,
+            selected_splits=tuple(item.split for item in started.value.candidates),
+        ),
+    )
+    assert updated.value is not None and updated.value.balanced
+
+    completed = complete_reconciliation(
+        db,
+        ReconciliationAction(started.value.reconciliation.handle),
+    )
+
+    assert completed.value is not None
+    assert completed.value.status is ReconciliationStatus.COMPLETED
+
+
+def test_typed_reconciliation_service_returns_stable_errors_without_writing(db, statement_book):
+    bank, _cleared, _pending, _future = statement_book
+    before = len(db.undo_stack)
+
+    missing = start_reconciliation(
+        db,
+        StartReconciliation("missing", date(2026, 1, 31), Money("750")),
+    )
+    assert missing.errors == (ServiceError("reconciliation.account.not_found", ("account",)),)
+    assert len(db.undo_stack) == before
+
+    started = start_reconciliation(
+        db,
+        StartReconciliation(bank.handle, date(2026, 1, 31), Money("750")),
+    )
+    assert started.value is not None
+    unbalanced = complete_reconciliation(
+        db,
+        ReconciliationAction(started.value.reconciliation.handle),
+    )
+    assert unbalanced.errors == (
+        ServiceError("reconciliation.unbalanced", ("selected_splits", "ending_balance")),
+    )
 
 
 def test_completion_reconciles_selected_splits_atomically_and_can_be_reopened(db, statement_book):

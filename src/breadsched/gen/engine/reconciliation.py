@@ -14,6 +14,7 @@ from ..lib.transaction import ReconcileState, Split, Transaction
 __all__ = [
     "ReconciliationCandidate",
     "ReconciliationSummary",
+    "ReconciliationError",
     "cancel",
     "complete",
     "open_for_account",
@@ -24,6 +25,15 @@ __all__ = [
     "update",
     "update_ending_balance",
 ]
+
+
+class ReconciliationError(ValueError):
+    """A stable reconciliation failure independent of presentation wording."""
+
+    def __init__(self, code: str, fields: tuple[str, ...], message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.fields = fields
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +72,11 @@ def open_for_account(db: DbSQLite, account: str) -> Reconciliation | None:
         if item.status is ReconciliationStatus.OPEN
     ]
     if len(sessions) > 1:
-        raise ValueError("account has more than one open reconciliation")
+        raise ReconciliationError(
+            "reconciliation.open.multiple",
+            ("account",),
+            "account has more than one open reconciliation",
+        )
     return sessions[0] if sessions else None
 
 
@@ -145,16 +159,28 @@ def start(
         AccountClass.ASSET,
         AccountClass.LIABILITY,
     }:
-        raise ValueError("reconciliation requires an asset or liability posting account")
+        raise ReconciliationError(
+            "reconciliation.account.ineligible",
+            ("account",),
+            "reconciliation requires an asset or liability posting account",
+        )
     if open_for_account(db, account) is not None:
-        raise ValueError("finish or cancel the open reconciliation first")
+        raise ReconciliationError(
+            "reconciliation.open.exists",
+            ("account",),
+            "finish or cancel the open reconciliation first",
+        )
     completed = [
         item
         for item in db.iter_reconciliations(account)
         if item.status is ReconciliationStatus.COMPLETED
     ]
     if completed and statement_date <= max(item.statement_date for item in completed):
-        raise ValueError("new statement date must follow the latest completed statement")
+        raise ReconciliationError(
+            "reconciliation.statement_date.not_after_completed",
+            ("statement_date",),
+            "new statement date must follow the latest completed statement",
+        )
 
     reconciliation = Reconciliation(
         account=account,
@@ -202,7 +228,11 @@ def update(
         chosen = list(dict.fromkeys(split_handles))
         unknown = set(chosen) - candidate_handles
         if unknown:
-            raise ValueError(f"split is not eligible for this statement: {sorted(unknown)[0]}")
+            raise ReconciliationError(
+                "reconciliation.split.ineligible",
+                ("selected_splits",),
+                f"split is not eligible for this statement: {sorted(unknown)[0]}",
+            )
         reconciliation.selected_splits = chosen
     if ending_balance is not None:
         reconciliation.ending_balance = (
@@ -218,7 +248,11 @@ def complete(db: DbSQLite, handle: str) -> Reconciliation:
     reconciliation = _require_open(db, handle)
     state = summary(db, reconciliation)
     if not state.balanced:
-        raise ValueError(f"reconciliation is out of balance by {state.difference}")
+        raise ReconciliationError(
+            "reconciliation.unbalanced",
+            ("selected_splits", "ending_balance"),
+            f"reconciliation is out of balance by {state.difference}",
+        )
     selected = set(reconciliation.selected_splits)
     transactions: dict[str, Transaction] = {}
     for candidate in state.candidates:
@@ -268,9 +302,17 @@ def reopen(db: DbSQLite, handle: str) -> Reconciliation:
     if reconciliation is None:
         raise KeyError(handle)
     if reconciliation.status is not ReconciliationStatus.COMPLETED:
-        raise ValueError("only a completed reconciliation can be reopened")
+        raise ReconciliationError(
+            "reconciliation.status.not_completed",
+            ("handle",),
+            "only a completed reconciliation can be reopened",
+        )
     if open_for_account(db, reconciliation.account) is not None:
-        raise ValueError("finish or cancel the open reconciliation first")
+        raise ReconciliationError(
+            "reconciliation.open.exists",
+            ("handle",),
+            "finish or cancel the open reconciliation first",
+        )
     later = [
         item
         for item in db.iter_reconciliations(reconciliation.account)
@@ -278,7 +320,11 @@ def reopen(db: DbSQLite, handle: str) -> Reconciliation:
         and item.statement_date > reconciliation.statement_date
     ]
     if later:
-        raise ValueError("reopen later statements first")
+        raise ReconciliationError(
+            "reconciliation.later_completed.exists",
+            ("handle",),
+            "reopen later statements first",
+        )
 
     selected = set(reconciliation.selected_splits)
     transactions: dict[str, Transaction] = {}
@@ -291,13 +337,21 @@ def reopen(db: DbSQLite, handle: str) -> Reconciliation:
                 split.reconcile is not ReconcileState.RECONCILED
                 or split.reconcile_date != reconciliation.statement_date
             ):
-                raise ValueError("a reconciled split changed after this statement completed")
+                raise ReconciliationError(
+                    "reconciliation.split.changed",
+                    ("handle",),
+                    "a reconciled split changed after this statement completed",
+                )
             split.reconcile = ReconcileState.CLEARED
             split.reconcile_date = None
             transactions[transaction.handle] = transaction
             remaining.discard(split.handle)
     if remaining:
-        raise ValueError(f"reconciled split is missing: {sorted(remaining)[0]}")
+        raise ReconciliationError(
+            "reconciliation.split.missing",
+            ("handle",),
+            f"reconciled split is missing: {sorted(remaining)[0]}",
+        )
 
     reconciliation.status = ReconciliationStatus.OPEN
     reconciliation.completed_at = None
@@ -315,5 +369,9 @@ def _require_open(db: DbSQLite, handle: str) -> Reconciliation:
     if reconciliation is None:
         raise KeyError(handle)
     if reconciliation.status is not ReconciliationStatus.OPEN:
-        raise ValueError("reconciliation is not open")
+        raise ReconciliationError(
+            "reconciliation.status.not_open",
+            ("handle",),
+            "reconciliation is not open",
+        )
     return reconciliation
