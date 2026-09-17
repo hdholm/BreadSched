@@ -5,6 +5,38 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 category-report-structure slice — Separate report assembly.** Extract
+  category hierarchy roll-up, period variance calculation, cash-bridge rows,
+  planning-flow rows, and mortgage-payment rows from the event accumulation path.
+  Preserve exact dated planned/actual values, ordering, future-period null variance,
+  and cash-bridge conservation under the existing Plan characterization suite.
+  Advance the alpha version to `0.2.0a75`; native schema version 7 is unchanged.
+
+- [x] **0223 verification-structure slice — Responsibility-specific diagnostics.**
+  Decompose exhaustive domain verification into a read-once state snapshot and
+  focused commodity, account, reconciliation, price, transaction, schedule, and
+  scenario checkers. Preserve issue codes, messages, handles, ordering, and the
+  non-destructive public entry point under the existing corruption-characterization
+  suite. Advance the alpha version to `0.2.0a74`; native schema version 7 is
+  unchanged.
+
+- [x] **0223 error-catalog slice — Presentation-owned localization seam.** Map every
+  stable application-service error code and field path to human-readable wording at
+  one shared presentation boundary, removing the remaining web-only schedule map.
+  Load that English wording through packaged gettext catalogs without exposing prose
+  in the service contract. Add literal-code coverage, compiled-catalog validation,
+  and Spanish locale smoke tests through both web and GTK error paths. Advance the
+  alpha version to `0.2.0a73`; native schema version 7 is unchanged.
+
+- [x] **0223 schedule-lifecycle slice — Complete cross-interface mutation
+  migration.** Route GTK/web schedule duplication and deletion plus CLI estimate
+  add/remove through typed schedule services. Preserve protected schedule structure,
+  reject stale handles and live scenario references with stable errors, and enforce
+  adapter boundaries with service and architecture regressions. Together with the
+  preceding 0223 slices, GTK and web now perform no direct database persistence and
+  all cross-interface CLI mutations use shared services. Advance the alpha version
+  to `0.2.0a72`; native schema version 7 is unchanged.
+
 - [x] **0223 account-service slice — Typed account lifecycle and settings.** Route
   GTK and CLI account add/edit/delete plus web type, emergency-fund, card-payment,
   and FSA-year updates through one typed service. Validate account identity, parent

@@ -27,8 +27,10 @@ from breadsched.gen.services import (
     DeleteAccount,
     DeleteAssumptionPeriod,
     DeleteScenario,
+    DeleteSchedule,
     DeleteTransaction,
     DuplicateScenario,
+    DuplicateSchedule,
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScenarioScheduleInput,
@@ -56,8 +58,10 @@ from breadsched.gen.services import (
     delete_account,
     delete_assumption_period,
     delete_scenario,
+    delete_schedule,
     delete_transaction,
     duplicate_scenario,
+    duplicate_schedule,
     import_book,
     mark_review_unexpected,
     match_review,
@@ -287,6 +291,32 @@ def test_scenario_service_suppresses_a_baseline_schedule(db, book):
     assert len(stored.schedule_overrides) == 1
     assert stored.schedule_overrides[0].source_schedule == schedule.handle
     assert stored.schedule_overrides[0].enabled is False
+
+
+def test_schedule_service_owns_duplicate_and_delete(db, book):
+    schedule = _monthly_schedule(book)
+    assert save_schedule(db, SaveSchedule(schedule)).ok
+
+    duplicated = duplicate_schedule(db, DuplicateSchedule(schedule.handle, name="Monthly copy"))
+    deleted = delete_schedule(db, DeleteSchedule(schedule.handle))
+
+    assert duplicated.value is not None
+    assert duplicated.value.name == "Monthly copy"
+    assert deleted.value is not None
+    assert db.get_scheduled(schedule.handle) is None
+
+
+def test_schedule_delete_rejects_live_scenario_references(db, book):
+    schedule = _monthly_schedule(book)
+    scenario = Scenario(name="Alternative")
+    scenario.schedule_overrides.append(ScenarioSchedule.from_scheduled(schedule))
+    assert save_schedule(db, SaveSchedule(schedule)).ok
+    assert save_scenario(db, SaveScenario(scenario)).ok
+
+    result = delete_schedule(db, DeleteSchedule(schedule.handle))
+
+    assert result.errors == (ServiceError("schedule.scenario_reference.exists", ("handle",)),)
+    assert db.get_scheduled(schedule.handle) is not None
 
 
 def test_assumption_service_persists_valid_base_rates(db, book):

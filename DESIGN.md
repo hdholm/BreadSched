@@ -52,6 +52,12 @@ writes use this boundary. Schedule services clone the submitted candidate, apply
 shared editability and timeline guards, and own the complete ``DbTxn`` so adapters
 cannot leave a partially validated write open.
 
+Every literal service error code has one English message in the shared presentation
+catalog. Presentations pass that message identifier through gettext at their boundary;
+compiled locale catalogs are packaged with the application and never alter the stable
+service code or field path. Catalog tests keep newly introduced service codes from
+falling back to machine identifiers and reject translations for unknown messages.
+
 Fixed schedule editors submit ``FixedScheduleInput`` rather than assembling ledger
 splits themselves. The service resolves account roles and ledger signs, balances the
 funding leg, applies planning/investment classifications, preserves safe fields from
@@ -59,6 +65,11 @@ the existing definition, and then invokes the mutation boundary. Formula editors
 submit only the indexed expressions, variables, recurrence, and ordinary metadata
 that formula ownership permits; the service clones all protected structure. Baseline
 and scenario editors use the same construction contracts.
+
+Schedule duplication and deletion also use this service boundary. Exact copies retain
+editor-protected custom structure, while deletion rejects stale identities and live
+scenario references before removing the baseline definition. Historical-estimate CLI
+writes use the same generic schedule save/delete contracts as interactive editors.
 
 Transaction creation and editing likewise submit ``TransactionInput`` and
 ``TransactionSplitInput`` values. The transaction service reconstructs editable
@@ -110,6 +121,12 @@ untouched objects invalid. A changed ledger transaction verifies only its own
 backup/restore validation, tests, and corruption investigation.
 This separation is deliberate: correctness checks on ordinary edits should scale
 with the change, not with the lifetime size of the household ledger.
+
+The exhaustive domain pass materializes accounts, commodities, scenarios,
+transactions, and split ownership once, then dispatches that immutable snapshot to
+responsibility-specific checkers. This keeps cross-object checks consistent while
+letting each diagnostic family evolve without turning the public verification entry
+point into a second persistence implementation.
 
 Exhaustive verification checks exact transaction balance and references, global
 split identity, commodity and account-SCU precision, currency roles, scheduled
@@ -219,6 +236,11 @@ own rollup across the selected reporting periods. Section column totals use only
 outermost active category rollups, so a parent and descendant cannot both contribute
 the same ledger value. Income and expense detail uses positive budget magnitudes;
 the separate signed Income less expenses row exposes the operating result.
+
+Category-report construction keeps event accumulation separate from presentation-row
+assembly. Category hierarchy roll-up, cash-bridge rows, planning-flow rows, mortgage
+rows, and as-of variance calculation are independent transformations over the same
+exact period totals; the final report still executes the cash-conservation check.
 
 The primary reconciliation is a signed, non-overlapping spendable-cash bridge:
 income received minus ordinary expense, plus retirement distributions, minus

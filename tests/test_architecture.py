@@ -646,6 +646,39 @@ class TestServiceBoundaries:
             }
         )
 
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "service_call"),
+        (
+            (
+                "gui/views/scheduled.py",
+                "ScheduleDuplicateDialog",
+                "_confirm",
+                "duplicate_schedule",
+            ),
+            (
+                "gui/views/scheduled.py",
+                "ScheduleDeleteDialog",
+                "_confirm",
+                "delete_schedule",
+            ),
+            ("web/server.py", "Api", "scheduled_duplicate", "duplicate_schedule"),
+            ("web/server.py", "Api", "scheduled_delete", "delete_schedule"),
+        ),
+    )
+    def test_schedule_lifecycle_adapters_use_typed_services(
+        self, relative, class_name, method_name, service_call
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {"duplicate_saved_definition", "delete_definition", "db.transaction"}
+        )
+
+    def test_cli_estimate_writes_use_schedule_services(self):
+        calls = calls_in_function(SRC / "cli/main.py", "cmd_estimate")
+        assert {"save_schedule", "delete_schedule"} <= calls
+        assert calls.isdisjoint({"add_scheduled", "remove_scheduled", "db.transaction"})
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):

@@ -21,6 +21,13 @@ from ...gen.engine import schedule
 from ...gen.engine.schedule import AccountPaymentDefinition
 from ...gen.lib import ScheduledTransaction
 from ...gen.lib.money import Money
+from ...gen.services import (
+    DeleteSchedule,
+    DuplicateSchedule,
+    delete_schedule,
+    duplicate_schedule,
+)
+from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap
 
@@ -512,12 +519,12 @@ class ScheduleDuplicateDialog(Gtk.Window):
         self.status.set_text("" if valid else "Give the copied schedule a name.")
 
     def _confirm(self, _button) -> None:
-        try:
-            schedule.duplicate_saved_definition(
-                self.db, self.scheduled.handle, name=self.name_entry.get_text()
-            )
-        except (KeyError, ValueError) as exc:
-            self.status.set_text(str(exc))
+        result = duplicate_schedule(
+            self.db,
+            DuplicateSchedule(self.scheduled.handle, name=self.name_entry.get_text()),
+        )
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
             self.status.add_css_class("negative")
             return
         self.close()
@@ -561,10 +568,9 @@ class ScheduleDeleteDialog(Gtk.Window):
         box.append(buttons)
 
     def _confirm(self, _button) -> None:
-        try:
-            schedule.delete_definition(self.db, self.scheduled.handle)
-        except (KeyError, ValueError) as exc:
-            self.status.set_text(str(exc))
+        result = delete_schedule(self.db, DeleteSchedule(self.scheduled.handle))
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
             self.status.add_css_class("negative")
             return
         self.close()

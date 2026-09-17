@@ -54,6 +54,8 @@ breadsched = [
     "web/static/*.html",
     "web/static/*.css",
     "web/static/*.js",
+    "locale/*/LC_MESSAGES/*.mo",
+    "locale/*/LC_MESSAGES/*.po",
 ]
 
 [tool.pytest.ini_options]
