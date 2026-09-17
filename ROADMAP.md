@@ -44,8 +44,9 @@ workflow may not add new presentation-owned rules.
    - [x] Put FSA claim construction, allocation/link/rejection validation, saving,
      and deletion behind typed services used by GTK and web. Keep linked split
      classification and claim persistence atomic, with stable validation codes.
-   - [ ] Migrate the remaining cross-interface mutations in coherent slices,
-     prioritizing loans, imports, Review, scenarios, and projection assumptions. A
+   - [ ] Migrate the remaining cross-interface mutations in coherent slices.
+     Loan creation is complete; continue with imports, Review, scenarios, and
+     projection assumptions. A
      touched cross-interface workflow may not add new presentation-owned financial
      rules.
    - Centralize error codes, field paths, and presentation-message mapping. Introduce

@@ -13,6 +13,7 @@ from .claims import (
     save_claim,
 )
 from .contracts import ServiceError, ServiceResult
+from .loans import SavedLoan, SaveLoan, save_loan, validate_loan
 from .plan import (
     BASE_SCENARIO,
     PlanComparison,
@@ -91,6 +92,8 @@ __all__ = [
     "SavedScenarioSchedule",
     "ServiceError",
     "ServiceResult",
+    "SaveLoan",
+    "SavedLoan",
     "ClaimAttachment",
     "SavedTransaction",
     "SaveTransaction",
@@ -117,4 +120,6 @@ __all__ = [
     "save_scenario_schedule",
     "build_transaction",
     "save_transaction",
+    "save_loan",
+    "validate_loan",
 ]

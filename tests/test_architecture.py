@@ -359,6 +359,20 @@ class TestServiceBoundaries:
             }
         )
 
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name"),
+        (
+            ("gui/dialogs/loan_dialog.py", "LoanDialog", "_on_save"),
+            ("web/server.py", "Api", "loan_save"),
+        ),
+    )
+    def test_loan_mutations_use_the_typed_service(self, relative, class_name, method_name):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert "save_loan" in calls
+        assert calls.isdisjoint(
+            {"create_loan", "add_scheduled", "add_transaction", "db.transaction"}
+        )
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):
