@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 loan-service slice — Typed, atomic loan creation.** Route GTK and web
+  loan mutations through one typed service that validates lender terms and account
+  roles with stable codes and field paths before creating the formula schedule and
+  optional opening balance atomically. Keep preview arithmetic in the shared engine,
+  centralize adapter wording, and enforce the boundary with service and architecture
+  regressions. Advance the alpha version to `0.2.0a65`; native schema version 7 is
+  unchanged.
+
 - [x] **0223 claim-service slice — Typed FSA claim lifecycle.** Make GTK and web
   submit typed claim, allocation, link, and rejection inputs to one shared mutation
   service instead of constructing or persisting claim objects. Preserve atomic claim

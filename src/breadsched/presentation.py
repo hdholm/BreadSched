@@ -48,6 +48,18 @@ _SERVICE_MESSAGES = {
     "transaction.investment.invalid": "Check the investment activity classification",
     "transaction.claim.not_found": "The selected FSA claim no longer exists",
     "transaction.claim.invalid": "The transaction cannot be attached to that FSA claim",
+    "loan.name.required": "Give the loan a name",
+    "loan.principal.non_positive": "The amount borrowed must be positive",
+    "loan.rate.negative": "The annual rate cannot be negative",
+    "loan.years.out_of_range": "The term must be between 1 and 100 years",
+    "loan.account.not_found": "A selected loan account no longer exists",
+    "loan.account.unavailable": "Choose a visible posting account",
+    "loan.account.liability_required": "Choose a loan or liability account",
+    "loan.account.expense_required": "Choose an interest expense account",
+    "loan.account.cash_required": "Choose a Bank or Cash payment account",
+    "loan.escrow.incomplete": "Give both an escrow amount and an escrow account",
+    "loan.escrow.non_positive": "The escrow amount must be positive",
+    "loan.account.escrow_required": "Choose an escrow account",
 }
 
 

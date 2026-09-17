@@ -78,6 +78,7 @@ from ..gen.services import (
     SaveClaim,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
+    SaveLoan,
     SaveTransaction,
     ServiceError,
     StartReconciliation,
@@ -93,9 +94,11 @@ from ..gen.services import (
     save_fixed_scenario_schedule,
     save_fixed_schedule,
     save_formula_schedule,
+    save_loan,
     save_transaction,
     start_reconciliation,
     update_reconciliation,
+    validate_loan,
 )
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..presentation import service_error_message
@@ -568,61 +571,31 @@ class Api:
         }
 
     def _loan_terms(self, payload: dict) -> loans.LoanTerms:
-        """Validate untrusted web input and build the engine's loan terms."""
+        """Parse untrusted web input into the shared typed loan contract."""
         name = str(payload.get("name") or "").strip()
-        if not name:
-            raise ValueError("loan name is required")
         principal = self._input_money(payload, payload.get("principal", ""))
-        if principal <= 0:
-            raise ValueError("amount borrowed must be positive")
         try:
             annual_rate = Decimal(str(payload.get("annual_rate") or "0")) / Decimal(100)
             years = int(payload.get("years") or 0)
             start = date.fromisoformat(str(payload.get("start") or ""))
         except (ValueError, ArithmeticError) as exc:
             raise ValueError("enter a valid rate, term, and first-payment date") from exc
-        if annual_rate < 0:
-            raise ValueError("annual rate cannot be negative")
-        if not 1 <= years <= 100:
-            raise ValueError("term must be between 1 and 100 years")
-
-        liability = self.db.get_account(str(payload.get("liability") or ""))
-        interest = self.db.get_account(str(payload.get("interest_account") or ""))
-        payment = self.db.get_account(str(payload.get("payment_account") or ""))
-        if (
-            liability is None
-            or liability.account_class is not AccountClass.LIABILITY
-            or liability.placeholder
-            or liability.hidden
-        ):
-            raise ValueError("choose a visible loan or liability account")
-        if (
-            interest is None
-            or interest.account_class is not AccountClass.EXPENSE
-            or interest.placeholder
-            or interest.hidden
-        ):
-            raise ValueError("choose a visible interest expense account")
-        if (
-            payment is None
-            or not payment.atype.is_cash_like
-            or payment.placeholder
-            or payment.hidden
-        ):
-            raise ValueError("choose a visible Bank or Cash payment account")
         return loans.LoanTerms(
             name=name,
             principal=principal,
             annual_rate=annual_rate,
             years=years,
             start=start,
-            liability=liability.handle,
-            interest_account=interest.handle,
-            payment_account=payment.handle,
+            liability=str(payload.get("liability") or ""),
+            interest_account=str(payload.get("interest_account") or ""),
+            payment_account=str(payload.get("payment_account") or ""),
         )
 
     def loan_preview(self, payload: dict) -> dict:
         terms = self._loan_terms(payload)
+        errors = validate_loan(self.db, terms)
+        if errors:
+            raise self._service_resource_error(errors[0])
         return {
             "payment": terms.payment(),
             "total_interest": terms.total_interest(),
@@ -634,11 +607,15 @@ class Api:
         opening_balance = payload.get("opening_balance", True)
         if not isinstance(opening_balance, bool):
             raise ValueError("opening_balance must be true or false")
-        saved = loans.create_loan(self.db, terms, opening_balance=opening_balance)
+        result = save_loan(self.db, SaveLoan(terms, opening_balance=opening_balance))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        saved = result.value
+        assert saved is not None
         return {
             "handle": saved.handle,
             "name": saved.name,
-            "payment": terms.payment(),
+            "payment": saved.payment,
         }
 
     def account_fsa_years_save(self, payload: dict) -> dict:

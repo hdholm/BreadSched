@@ -13,10 +13,12 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.loans import LoanTerms, create_loan, schedule_preview
+from ...gen.engine.loans import LoanTerms, schedule_preview
 from ...gen.lib import Money
 from ...gen.lib.account import AccountClass
+from ...gen.services import SaveLoan, save_loan
 from ...gen.utils.amount_input import parse_user_amount
+from ...presentation import service_error_message
 from ..gi_setup import Gtk
 
 __all__ = ["LoanDialog"]
@@ -223,5 +225,11 @@ class LoanDialog(Gtk.Window):
         terms = self.terms()
         if terms is None:
             return
-        create_loan(self.db, terms, opening_balance=self.opening_check.get_active())
+        result = save_loan(
+            self.db,
+            SaveLoan(terms, opening_balance=self.opening_check.get_active()),
+        )
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
+            return
         self.close()

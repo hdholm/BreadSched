@@ -9,6 +9,7 @@ good anchor test.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
@@ -18,6 +19,7 @@ from breadsched.gen.engine.loans import LoanTerms, build_schedule, create_loan
 from breadsched.gen.lib import Assumptions, Money, PlanningFlowKind, ScheduledSplit
 from breadsched.gen.lib.finance import amortisation_schedule, fv, ipmt, nper, pmt, ppmt, pv
 from breadsched.gen.lib.formula import FormulaError, evaluate, normalise
+from breadsched.gen.services import SaveLoan, save_loan
 
 
 def q(value) -> Decimal:
@@ -229,6 +231,34 @@ class TestLoanSetup:
 
         create_loan(db, terms, opening_balance=False)
         assert ledger.balance(db, terms.liability) == Money(0)
+
+    def test_service_returns_the_saved_identity_and_payment(self, db, terms):
+        result = save_loan(db, SaveLoan(terms))
+
+        assert result.ok
+        assert result.value is not None
+        assert result.value.name == "Mortgage"
+        assert result.value.payment == Money("1199.10")
+        assert db.get_scheduled(result.value.handle) is not None
+
+    @pytest.mark.parametrize(
+        ("change", "code", "field"),
+        (
+            ({"name": " "}, "loan.name.required", "name"),
+            ({"principal": Money(0)}, "loan.principal.non_positive", "principal"),
+            ({"annual_rate": Decimal("-0.01")}, "loan.rate.negative", "annual_rate"),
+            ({"years": 0}, "loan.years.out_of_range", "years"),
+            ({"liability": "missing"}, "loan.account.not_found", "liability"),
+        ),
+    )
+    def test_service_rejects_invalid_terms_without_writing(self, db, terms, change, code, field):
+        invalid = replace(terms, **change)
+
+        result = save_loan(db, SaveLoan(invalid))
+
+        assert not result.ok
+        assert any(error.code == code and error.fields == (field,) for error in result.errors)
+        assert list(db.iter_scheduled()) == []
 
     def test_a_projection_shows_the_debt_falling(self, db, terms):
         from breadsched.gen.engine import projection

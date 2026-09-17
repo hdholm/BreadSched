@@ -389,9 +389,11 @@ bounded schedule stops suppressing the account definition once all of its
 occurrences have been posted or skipped.
 
 Loan creation is an application-service workflow around `LoanTerms`: GTK and web
-collect and validate the same lender-facing terms, preview the shared amortization
-table, and call `create_loan`. The stored schedule uses `ipmt`/`ppmt` formulas and an
-optional opening liability rather than freezing the preview into fixed splits.
+collect the same lender-facing terms, preview the shared amortization table, and
+submit a typed `SaveLoan` request. The service validates account roles and owns the
+atomic schedule/opening-balance mutation. The stored schedule uses `ipmt`/`ppmt`
+formulas and an optional opening liability rather than freezing the preview into
+fixed splits.
 
 ### Mortgage cash-flow semantics
 

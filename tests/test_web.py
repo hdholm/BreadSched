@@ -538,6 +538,28 @@ class TestItServes:
 
         assert ledger.balance(db, liability.handle) == Money("1200.00")
 
+    def test_web_loan_mutation_exposes_stable_service_errors(self, client):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/loan/save",
+                {
+                    "name": " ",
+                    "principal": "1200.00",
+                    "annual_rate": "0",
+                    "years": "1",
+                    "start": "2026-10-01",
+                    "liability": "missing",
+                    "interest_account": "missing",
+                    "payment_account": "missing",
+                    "opening_balance": True,
+                },
+            )
+
+        payload = json.loads(caught.value.read())
+        assert caught.value.code == 400
+        assert payload["code"] == "loan.name.required"
+        assert payload["fields"] == ["name"]
+
     def test_scheduled_active_state_can_be_edited(self, client):
         _status, data = client.get("/api/scheduled")
         category = next(a for a in data["accounts"] if a["name"].endswith(":Rent"))
