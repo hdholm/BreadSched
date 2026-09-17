@@ -577,6 +577,42 @@ class TestServiceBoundaries:
             assert "save_scenario_assumptions" in calls
             assert "set_metadata" not in calls
 
+    @pytest.mark.parametrize(
+        ("function_name", "service_call"),
+        (
+            ("cmd_add", "save_transaction"),
+            ("cmd_edit", "save_transaction"),
+            ("cmd_delete", "delete_transaction"),
+        ),
+    )
+    def test_cli_transaction_mutations_use_typed_services(self, function_name, service_call):
+        calls = calls_in_function(SRC / "cli/main.py", function_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {"add_transaction", "commit_transaction", "remove_transaction", "db.transaction"}
+        )
+
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "service_call"),
+        (
+            ("gui/views/register.py", "RegisterView", "_post_quick", "save_transaction"),
+            (
+                "gui/dialogs/transaction_dialog.py",
+                "TransactionDialog",
+                "_on_delete",
+                "delete_transaction",
+            ),
+        ),
+    )
+    def test_gtk_transaction_mutations_use_typed_services(
+        self, relative, class_name, method_name, service_call
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {"Transaction", "add_transaction", "remove_transaction", "db.transaction"}
+        )
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):

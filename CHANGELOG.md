@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 transaction-adapter slice — Complete shared transaction writes.** Route
+  CLI posting/edit/delete, GTK register quick posting, and dialog deletion through
+  the typed transaction service already used by the full GTK editor and web. Preserve
+  split identity and imported metadata on edits, provide stable stale-delete errors,
+  and enforce the boundary with service, CLI, and architecture regressions. Advance
+  the alpha version to `0.2.0a70`; native schema version 7 is unchanged.
+
 - [x] **0223 projection-assumption-service slice — Typed assumption writes.** Route
   CLI, GTK, and web Base and saved-scenario assumption persistence plus dated-regime
   creation, replacement, and deletion through shared typed services. Validate scalar

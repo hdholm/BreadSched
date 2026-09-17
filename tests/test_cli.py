@@ -101,6 +101,27 @@ class TestPostingAndReading:
         rows = run_json(capsys, "register", stocked, "Assets")
         assert rows[1]["transfer"] == "Expenses"
 
+    def test_edit_and_delete_use_the_shared_transaction_contract(self, capsys, stocked):
+        rows = run_json(capsys, "register", stocked, "Assets")
+        handle = rows[1]["handle"]
+
+        edited = run_json(
+            capsys,
+            "edit",
+            stocked,
+            handle,
+            "--description",
+            "Adjusted rent",
+            "--amount",
+            "1750.00",
+        )
+        assert edited["description"] == "Adjusted rent"
+        assert run_json(capsys, "balance", stocked, "Assets")["balance"] == "3250.00"
+
+        deleted = run_json(capsys, "delete", stocked, handle)
+        assert deleted == {"deleted": handle}
+        assert len(run_json(capsys, "register", stocked, "Assets")) == 1
+
     def test_table_output_is_aligned_and_readable(self, capsys, stocked):
         code, out = run(capsys, "accounts", stocked)
         assert code == 0
