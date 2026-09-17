@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 account-service slice — Typed account lifecycle and settings.** Route
+  GTK and CLI account add/edit/delete plus web type, emergency-fund, card-payment,
+  and FSA-year updates through one typed service. Validate account identity, parent
+  chains, sibling names, commodities, linked assets, card relationships, funding
+  periods, and imported source-owned fields with stable errors. Keep account creation
+  and its optional opening balance atomic, and normalize protected/in-use deletion
+  failures. Add service and architecture regressions. Advance the alpha version to
+  `0.2.0a71`; native schema version 7 is unchanged.
+
 - [x] **0223 transaction-adapter slice — Complete shared transaction writes.** Route
   CLI posting/edit/delete, GTK register quick posting, and dialog deletion through
   the typed transaction service already used by the full GTK editor and web. Preserve

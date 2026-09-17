@@ -50,22 +50,26 @@ from ..gen.lib import (
 )
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
 from ..gen.services import (
+    DeleteAccount,
     DeleteScenario,
     DeleteTransaction,
     ImportBook,
     ReviewOccurrence,
     ReviewTransaction,
+    SaveAccount,
     SaveScenario,
     SaveScenarioAssumptions,
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
+    delete_account,
     delete_scenario,
     delete_transaction,
     import_book,
     mark_review_unexpected,
     match_review,
     reject_review,
+    save_account,
     save_scenario,
     save_scenario_assumptions,
     save_transaction,
@@ -1196,24 +1200,16 @@ def cmd_account(args: argparse.Namespace) -> int:
                 placeholder=args.placeholder,
             )
             _apply_account_options(db, account, args)
-            with db.transaction(f"Add account {args.name}") as txn:
-                db.add_account(account, txn)
-                if args.opening:
-                    equity = db.get_account_by_name("Equity:Opening Balances") or (
-                        db.get_account_by_name("Equity")
-                    )
-                    if equity is None:
-                        raise CommandError("no equity account to post the opening balance against")
-                    db.add_transaction(
-                        Transaction.simple(
-                            parse_date(args.opening_date) or date.today(),
-                            f"{args.name} opening balance",
-                            account.handle,
-                            equity.handle,
-                            Money(args.opening),
-                        ),
-                        txn,
-                    )
+            result = save_account(
+                db,
+                SaveAccount(
+                    account,
+                    opening_balance=Money(args.opening) if args.opening else None,
+                    opening_date=parse_date(args.opening_date) or date.today(),
+                ),
+            )
+            if not result.ok:
+                raise CommandError(service_error_message(result.errors[0]))
             emit(
                 {"handle": account.handle, "name": db.full_name(account)},
                 args,
@@ -1223,19 +1219,14 @@ def cmd_account(args: argparse.Namespace) -> int:
 
         account = resolve_account(db, args.name or "")
         if args.action == "remove":
-            with db.transaction(f"Remove account {account.name}") as txn:
-                db.remove_account(account.handle, txn)
+            result = delete_account(db, DeleteAccount(account.handle))
+            if not result.ok:
+                raise CommandError(service_error_message(result.errors[0]))
             emit({"removed": account.handle}, args, f"Removed {db.full_name(account)}")
             return 0
 
         # edit
-        if (account.source_guid or account.source_type) and any(
-            value is not None for value in (args.rename, args.description, args.code, args.parent)
-        ):
-            raise CommandError(
-                "name, parent, code, and description are controlled by the GnuCash source; "
-                "change them there and re-import"
-            )
+        source = Account.from_dict(account.serialize())
         if args.rename:
             account.name = args.rename
         if args.type:
@@ -1247,8 +1238,12 @@ def cmd_account(args: argparse.Namespace) -> int:
         if args.parent:
             account.parent = resolve_account(db, args.parent).handle
         _apply_account_options(db, account, args)
-        with db.transaction(f"Edit account {account.name}") as txn:
-            db.commit_account(account, txn)
+        result = save_account(
+            db,
+            SaveAccount(account, existing_handle=account.handle, source=source),
+        )
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
         emit(
             {"handle": account.handle, "name": db.full_name(account)},
             args,

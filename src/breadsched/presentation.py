@@ -5,6 +5,33 @@ from __future__ import annotations
 from .gen.services import ServiceError
 
 _SERVICE_MESSAGES = {
+    "account.not_found": "The account no longer exists",
+    "account.name.required": "Give the account a name",
+    "account.name.duplicate": "An account with that name already exists under this parent",
+    "account.identity.changed": "The account identity changed while it was edited",
+    "account.source.mismatch": "The account changed while it was being edited",
+    "account.type.user_required": "Choose a user account type",
+    "account.parent.required": "Choose a parent account",
+    "account.parent.not_found": "The parent account no longer exists",
+    "account.parent.cycle": "An account cannot be its own ancestor",
+    "account.commodity.not_found": "The account commodity no longer exists",
+    "account.commodity_scu.invalid": "Commodity SCU must be a positive integer",
+    "account.linked_asset.not_found": "The linked asset no longer exists",
+    "account.linked_asset.invalid": "A loan can only link to an asset account",
+    "account.card.type_required": "Card payment settings require a credit-card account",
+    "account.card.payment_day.invalid": "Payment day must be between 1 and 28",
+    "account.card.usual_payment.required": "A card carrying a balance needs a usual payment",
+    "account.card.usual_payment.non_positive": "The usual payment must be positive",
+    "account.card.payment_account.not_found": "The card payment account no longer exists",
+    "account.card.payment_account.invalid": "Choose a Bank or Cash payment account",
+    "account.card.payment_account.hidden": "A hidden account cannot fund a new card payment",
+    "account.fsa.years.overlap": "FSA funding years cannot overlap",
+    "account.source_fields.read_only": (
+        "Imported name, parent, code, and description are controlled by the source book"
+    ),
+    "account.opening.equity.not_found": "No equity account can receive the opening balance",
+    "account.root.protected": "The root account cannot be deleted",
+    "account.in_use": "Accounts with history or children cannot be deleted",
     "claim.not_found": "The FSA claim no longer exists",
     "claim.link.transaction.not_found": "A linked transaction no longer exists",
     "claim.link.split.not_found": "A linked transaction entry no longer exists",

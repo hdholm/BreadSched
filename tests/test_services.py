@@ -24,6 +24,7 @@ from breadsched.gen.plug import remembered_import_source
 from breadsched.gen.services import (
     BASE_SCENARIO,
     ClaimAttachment,
+    DeleteAccount,
     DeleteAssumptionPeriod,
     DeleteScenario,
     DeleteTransaction,
@@ -36,6 +37,7 @@ from breadsched.gen.services import (
     PlanQuery,
     ReviewOccurrence,
     ReviewTransaction,
+    SaveAccount,
     SaveAssumptionPeriod,
     SaveBaseAssumptions,
     SaveFixedScenarioSchedule,
@@ -51,6 +53,7 @@ from breadsched.gen.services import (
     TransactionSplitInput,
     build_fixed_schedule,
     build_formula_scenario_schedule,
+    delete_account,
     delete_assumption_period,
     delete_scenario,
     delete_transaction,
@@ -60,6 +63,7 @@ from breadsched.gen.services import (
     match_review,
     query_plan,
     reject_review,
+    save_account,
     save_assumption_period,
     save_base_assumptions,
     save_fixed_scenario_schedule,
@@ -116,6 +120,56 @@ def test_import_service_returns_stable_preflight_errors_without_running(db, tmp_
     assert missing.errors == (ServiceError("import.source.not_found", ("source",)),)
     assert option.errors == (ServiceError("import.number_format.invalid", ("number_format",)),)
     assert remembered_import_source(db) is None
+
+
+def test_account_service_atomically_adds_an_opening_balance(db, book):
+    account = Account(name="New savings", atype=AccountType.BANK, parent=book.assets)
+
+    result = save_account(
+        db,
+        SaveAccount(
+            account,
+            opening_balance=Money("250"),
+            opening_date=date(2026, 2, 1),
+        ),
+    )
+
+    assert result.ok
+    stored = db.get_account(account.handle)
+    assert stored is not None
+    opening = next(
+        txn for txn in db.iter_transactions() if txn.description == "New savings opening balance"
+    )
+    assert opening.value_for(account.handle) == Money("250")
+    assert db.undo_stack[-1].message == "Add account New savings"
+
+
+def test_account_service_validates_parent_identity_and_source_owned_fields(db, book):
+    duplicate = Account(name="Savings", atype=AccountType.BANK, parent=book.assets)
+    duplicate_result = save_account(db, SaveAccount(duplicate))
+    imported = db.get_account(book.checking)
+    assert imported is not None
+    imported.source_guid = "source-account"
+    with db.transaction("Imported identity") as txn:
+        db.commit_account(imported, txn)
+    imported.name = "Renamed"
+    source_result = save_account(db, SaveAccount(imported, existing_handle=imported.handle))
+
+    assert duplicate_result.errors == (ServiceError("account.name.duplicate", ("name", "parent")),)
+    assert source_result.errors == (ServiceError("account.source_fields.read_only", ("name",)),)
+
+
+def test_account_service_deletes_unused_accounts_and_rejects_accounts_in_use(db, book):
+    unused = Account(name="Unused", atype=AccountType.BANK, parent=book.assets)
+    assert save_account(db, SaveAccount(unused)).ok
+
+    deleted = delete_account(db, DeleteAccount(unused.handle))
+    in_use = delete_account(db, DeleteAccount(book.assets))
+    missing = delete_account(db, DeleteAccount("missing"))
+
+    assert deleted.ok
+    assert in_use.errors == (ServiceError("account.in_use", ("handle",)),)
+    assert missing.errors == (ServiceError("account.not_found", ("handle",)),)
 
 
 def _review_fixture(db, book):

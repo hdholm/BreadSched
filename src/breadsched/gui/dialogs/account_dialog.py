@@ -13,6 +13,7 @@ same makes one household look poorer than it is and the other richer.
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
@@ -22,9 +23,10 @@ from ...gen.lib import (
     AccountType,
     FsaFundingYear,
     Money,
-    Transaction,
 )
+from ...gen.services import DeleteAccount, SaveAccount, delete_account, save_account
 from ...gen.utils.amount_input import parse_user_amount
+from ...presentation import service_error_message
 from ..gi_setup import Gtk
 
 __all__ = ["AccountDialog"]
@@ -540,7 +542,7 @@ class AccountDialog(Gtk.Window):
     # ----------------------------------------------------------------- saving
 
     def build(self) -> Account:
-        account = self.account or Account()
+        account = Account.from_dict(self.account.serialize()) if self.account else Account()
         account.name = self.name_entry.get_text().strip()
         account.atype = self.selected_type
         account.code = self.code_entry.get_text().strip()
@@ -588,52 +590,34 @@ class AccountDialog(Gtk.Window):
     def _on_save(self, _button) -> None:
         account = self.build()
         opening = self.opening_entry.get_text().strip()
-        with self.db.transaction(
-            f"{'Edit' if self.editing else 'Add'} account {account.name}"
-        ) as txn:
-            if self.editing:
-                self.db.commit_account(account, txn)
-            else:
-                self.db.add_account(account, txn)
-                if opening:
-                    self._post_opening(account, opening, txn)
+        try:
+            opening_value = Money(parse_user_amount(opening)) if opening else None
+        except (ValueError, InvalidOperation, ArithmeticError):
+            self.status.set_text("Enter a valid opening balance.")
+            self.status.add_css_class("negative")
+            return
+        result = save_account(
+            self.db,
+            SaveAccount(
+                account,
+                existing_handle=account.handle if self.editing else None,
+                opening_balance=opening_value if not self.editing else None,
+                opening_date=date.today(),
+                source=self.account,
+            ),
+        )
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
+            self.status.add_css_class("negative")
+            return
         self.close()
 
-    def _post_opening(self, account: Account, amount: str, txn) -> None:
-        equity = self.db.get_account_by_name(
-            "Equity:Opening Balances"
-        ) or self.db.get_account_by_name("Equity")
-        if equity is None:
-            return
-        try:
-            value = Money(parse_user_amount(amount))
-        except (ValueError, InvalidOperation, ArithmeticError):
-            return
-        from datetime import date
-
-        self.db.add_transaction(
-            Transaction.simple(
-                date.today(),
-                f"{account.name} opening balance",
-                account.handle,
-                equity.handle,
-                value,
-            ),
-            txn,
-        )
-
     def _on_delete(self, _button) -> None:
-        from ...gen.db.base import DbError
-
         if not self.editing or self.account is None:
             return
-        try:
-            with self.db.transaction(f"Remove account {self.account.name}") as txn:
-                self.db.remove_account(self.account.handle, txn)
-        except DbError as exc:
-            # An account with history or children cannot simply vanish; its
-            # entries would be orphaned and its balances would silently move.
-            self.status.set_text(str(exc))
+        result = delete_account(self.db, DeleteAccount(self.account.handle))
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
             self.status.add_css_class("negative")
             return
         self.close()
