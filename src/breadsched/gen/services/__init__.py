@@ -33,6 +33,17 @@ from .reconciliations import (
     start_reconciliation,
     update_reconciliation,
 )
+from .review import (
+    ReviewClaimAttachment,
+    ReviewMutation,
+    ReviewOccurrence,
+    ReviewTransaction,
+    attach_review_claim,
+    mark_review_unexpected,
+    match_review,
+    reject_review,
+    skip_review,
+)
 from .schedules import (
     FixedScheduleInput,
     FixedSplitInput,
@@ -85,6 +96,10 @@ __all__ = [
     "PlanQueryResult",
     "ScenarioChoice",
     "ReconciliationAction",
+    "ReviewClaimAttachment",
+    "ReviewMutation",
+    "ReviewOccurrence",
+    "ReviewTransaction",
     "StartReconciliation",
     "UpdateReconciliation",
     "SaveSchedule",
@@ -126,4 +141,9 @@ __all__ = [
     "save_loan",
     "validate_loan",
     "import_book",
+    "attach_review_claim",
+    "mark_review_unexpected",
+    "match_review",
+    "reject_review",
+    "skip_review",
 ]

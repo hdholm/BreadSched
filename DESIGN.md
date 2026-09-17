@@ -242,6 +242,12 @@ occurrences. GTK and web render those shared reasons. Corrections write the expl
 split purpose through the ordinary transaction or schedule editor; they do not add
 a separate classification record or mutate the account's ledger type.
 
+Review decisions cross one typed service boundary for CLI, GTK, and web. Matching,
+candidate rejection, occurrence skipping, unexpected classification, and attaching
+an actual to an FSA claim validate stable identities before owning their respective
+atomic transaction, schedule, or claim write. Expected stale-state failures use
+stable codes and field paths; candidate ranking remains read-only engine logic.
+
 Scheduled commitments and estimates use the same underlying event model. Historical
 analysis produces an unsaved schedule draft; Base and saved-scenario UIs must route
 that draft through their ordinary schedule editor before persistence. The draft

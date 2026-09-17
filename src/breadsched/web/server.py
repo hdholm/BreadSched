@@ -73,6 +73,9 @@ from ..gen.services import (
     ImportBook,
     PlanQuery,
     ReconciliationAction,
+    ReviewClaimAttachment,
+    ReviewOccurrence,
+    ReviewTransaction,
     SaveClaim,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
@@ -83,11 +86,15 @@ from ..gen.services import (
     TransactionInput,
     TransactionSplitInput,
     UpdateReconciliation,
+    attach_review_claim,
     cancel_reconciliation,
     complete_reconciliation,
     delete_claim,
     import_book,
+    mark_review_unexpected,
+    match_review,
     query_plan,
+    reject_review,
     reopen_reconciliation,
     save_claim,
     save_fixed_scenario_schedule,
@@ -95,6 +102,7 @@ from ..gen.services import (
     save_formula_schedule,
     save_loan,
     save_transaction,
+    skip_review,
     start_reconciliation,
     update_reconciliation,
     validate_loan,
@@ -3142,76 +3150,72 @@ class Api:
         return {"handle": result.value.handle, "date": when, "amount": amount}
 
     def review_match(self, payload: dict) -> dict:
-        transaction = self.db.get_transaction(str(payload["transaction"]))
-        if transaction is None:
-            raise KeyError(str(payload["transaction"]))
-        event = planning.event_by_key(self.db, str(payload["occurrence"]))
-        if event is None:
-            raise ValueError("planned occurrence does not exist")
-        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
-            raise ValueError("transaction is no longer awaiting review")
-        planning.actualize_transaction(transaction, event)
-        with self.db.transaction("Match transaction to planned occurrence") as txn:
-            self.db.commit_transaction(transaction, txn)
+        result = match_review(
+            self.db,
+            ReviewOccurrence(str(payload["transaction"]), str(payload["occurrence"])),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        mutation = result.value
+        assert mutation is not None and mutation.resolution is not None
         return {
-            "transaction": transaction.handle,
-            "resolution": transaction.planning_resolution.value,
-            "occurrence": event.key,
+            "transaction": mutation.transaction,
+            "resolution": mutation.resolution.value,
+            "occurrence": mutation.occurrence,
         }
 
     def review_reject(self, payload: dict) -> dict:
-        transaction = self.db.get_transaction(str(payload["transaction"]))
-        if transaction is None:
-            raise KeyError(str(payload["transaction"]))
-        event = planning.event_by_key(self.db, str(payload["occurrence"]))
-        if event is None:
-            raise ValueError("planned occurrence does not exist")
-        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
-            raise ValueError("transaction is no longer awaiting review")
-        planning.reject_candidate(transaction, event)
-        with self.db.transaction("Reject planned occurrence candidate") as txn:
-            self.db.commit_transaction(transaction, txn)
+        result = reject_review(
+            self.db,
+            ReviewOccurrence(str(payload["transaction"]), str(payload["occurrence"])),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        mutation = result.value
+        assert mutation is not None
         return {
-            "transaction": transaction.handle,
-            "rejected": event.key,
+            "transaction": mutation.transaction,
+            "rejected": mutation.occurrence,
         }
 
     def review_skip(self, payload: dict) -> dict:
-        transaction = self.db.get_transaction(str(payload["transaction"]))
-        if transaction is None:
-            raise KeyError(str(payload["transaction"]))
-        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
-            raise ValueError("transaction is no longer awaiting review")
-        event = planning.event_by_key(self.db, str(payload["occurrence"]))
-        if event is None:
-            raise ValueError("planned occurrence does not exist")
-        planning.skip_occurrence(self.db, event)
-        return {"transaction": transaction.handle, "skipped": event.key}
+        result = skip_review(
+            self.db,
+            ReviewOccurrence(str(payload["transaction"]), str(payload["occurrence"])),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        mutation = result.value
+        assert mutation is not None
+        return {"transaction": mutation.transaction, "skipped": mutation.occurrence}
 
     def review_fsa_attach(self, payload: dict) -> dict:
         funding_year = str(payload.get("funding_year") or "").strip()
-        claim = fsa_claims.attach_transaction_to_claim(
+        result = attach_review_claim(
             self.db,
-            str(payload["claim"]),
-            str(payload["transaction"]),
-            role=str(payload["role"]),
-            split_handle=str(payload.get("split") or "") or None,
-            funding_year_start=date.fromisoformat(funding_year) if funding_year else None,
+            ReviewClaimAttachment(
+                str(payload["transaction"]),
+                str(payload["claim"]),
+                str(payload["role"]),
+                str(payload.get("split") or "") or None,
+                date.fromisoformat(funding_year) if funding_year else None,
+            ),
         )
-        return {"claim": claim.handle, "transaction": str(payload["transaction"])}
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        mutation = result.value
+        assert mutation is not None
+        return {"claim": mutation.claim, "transaction": mutation.transaction}
 
     def review_unexpected(self, payload: dict) -> dict:
-        transaction = self.db.get_transaction(str(payload["transaction"]))
-        if transaction is None:
-            raise KeyError(str(payload["transaction"]))
-        if transaction.planning_resolution is not PlanningResolution.UNRESOLVED:
-            raise ValueError("transaction is no longer awaiting review")
-        planning.mark_unexpected(transaction)
-        with self.db.transaction("Mark transaction as unexpected") as txn:
-            self.db.commit_transaction(transaction, txn)
+        result = mark_review_unexpected(self.db, ReviewTransaction(str(payload["transaction"])))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        mutation = result.value
+        assert mutation is not None and mutation.resolution is not None
         return {
-            "transaction": transaction.handle,
-            "resolution": transaction.planning_resolution.value,
+            "transaction": mutation.transaction,
+            "resolution": mutation.resolution.value,
         }
 
     def scheduled_occurrence_options(self, payload: dict) -> dict:

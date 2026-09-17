@@ -49,7 +49,15 @@ from ..gen.lib import (
     Transaction,
 )
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
-from ..gen.services import ImportBook, import_book
+from ..gen.services import (
+    ImportBook,
+    ReviewOccurrence,
+    ReviewTransaction,
+    import_book,
+    mark_review_unexpected,
+    match_review,
+    reject_review,
+)
 from ..gen.utils import logs
 from ..presentation import service_error_message
 
@@ -661,34 +669,28 @@ def cmd_plan_matches(args: argparse.Namespace) -> int:
         db.close()
 
 
-def _event_for_resolution(db: DbSQLite, key: str) -> planning.PlannedEvent:
-    event = planning.event_by_key(db, key)
-    if event is None:
-        raise CommandError(f"no scheduled occurrence matches {key!r}")
-    if event.status is planning.EventStatus.ACTUALIZED:
-        raise CommandError(f"scheduled occurrence {key!r} is already resolved")
-    return event
-
-
 def cmd_plan_resolve(args: argparse.Namespace) -> int:
     """Resolve one actual transaction against a selected scheduled occurrence."""
     db = open_book(args.book)
     try:
         transaction = _find_transaction(db, args.transaction)
-        event = _event_for_resolution(db, args.occurrence)
-        planning.actualize_transaction(transaction, event)
-        with db.transaction("Resolve transaction against planned occurrence") as txn:
-            db.commit_transaction(transaction, txn)
+        result = match_review(db, ReviewOccurrence(transaction.handle, args.occurrence))
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
+        saved_transaction = db.get_transaction(transaction.handle)
+        assert saved_transaction is not None
+        event = planning.event_by_key(db, args.occurrence)
+        assert event is not None
         emit(
             {
-                "transaction": transaction.handle,
-                "resolution": transaction.planning_resolution.value,
+                "transaction": saved_transaction.handle,
+                "resolution": saved_transaction.planning_resolution.value,
                 "occurrence": event.key,
                 "planned_for": event.planned_date,
                 "planned_amount": event.expected_amount,
             },
             args,
-            f"Matched {transaction.handle[:8]} to {event.key}",
+            f"Matched {saved_transaction.handle[:8]} to {event.key}",
         )
         return 0
     finally:
@@ -700,18 +702,19 @@ def cmd_plan_reject(args: argparse.Namespace) -> int:
     db = open_book(args.book)
     try:
         transaction = _find_transaction(db, args.transaction)
-        event = _event_for_resolution(db, args.occurrence)
-        planning.reject_candidate(transaction, event)
-        with db.transaction("Reject planned occurrence candidate") as txn:
-            db.commit_transaction(transaction, txn)
+        result = reject_review(db, ReviewOccurrence(transaction.handle, args.occurrence))
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
+        saved_transaction = db.get_transaction(transaction.handle)
+        assert saved_transaction is not None
         emit(
             {
-                "transaction": transaction.handle,
-                "rejected_occurrence": event.key,
-                "rejected": list(transaction.rejected_plan_occurrences),
+                "transaction": saved_transaction.handle,
+                "rejected_occurrence": args.occurrence,
+                "rejected": list(saved_transaction.rejected_plan_occurrences),
             },
             args,
-            f"Rejected {event.key} for {transaction.handle[:8]}",
+            f"Rejected {args.occurrence} for {saved_transaction.handle[:8]}",
         )
         return 0
     finally:
@@ -723,16 +726,18 @@ def cmd_plan_unexpected(args: argparse.Namespace) -> int:
     db = open_book(args.book)
     try:
         transaction = _find_transaction(db, args.transaction)
-        planning.mark_unexpected(transaction)
-        with db.transaction("Mark transaction unexpected") as txn:
-            db.commit_transaction(transaction, txn)
+        result = mark_review_unexpected(db, ReviewTransaction(transaction.handle))
+        if not result.ok:
+            raise CommandError(service_error_message(result.errors[0]))
+        saved_transaction = db.get_transaction(transaction.handle)
+        assert saved_transaction is not None
         emit(
             {
-                "transaction": transaction.handle,
-                "resolution": transaction.planning_resolution.value,
+                "transaction": saved_transaction.handle,
+                "resolution": saved_transaction.planning_resolution.value,
             },
             args,
-            f"Marked {transaction.handle[:8]} as unexpected",
+            f"Marked {saved_transaction.handle[:8]} as unexpected",
         )
         return 0
     finally:

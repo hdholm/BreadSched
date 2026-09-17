@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 Review-service slice — Typed plan-resolution decisions.** Route CLI,
+  GTK, and web match, reject, skip, unexpected, and FSA-attachment mutations through
+  shared typed services. Validate stale transactions and occurrences with stable
+  codes and field paths, retain atomic transaction/schedule/claim writes, and keep
+  candidate ranking as read-only engine logic. Add service, adapter, architecture,
+  and web error regressions. Advance the alpha version to `0.2.0a67`; native schema
+  version 7 is unchanged.
+
 - [x] **0223 import-service slice — One typed import workflow.** Route CLI, GTK,
   and web source validation, importer selection, format overrides, execution, and
   last-successful-source recording through one typed service. Preserve background
