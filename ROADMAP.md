@@ -33,8 +33,12 @@ workflows behind typed services before broadening financial semantics; a touched
 workflow may not add new presentation-owned rules.
 
 1. **0223 — Service adoption, structured errors, and localization seam.**
-   - Migrate remaining cross-interface mutations in coherent slices, prioritizing
-     transactions, reconciliation, claims, loans, imports, Review, scenarios, and
+   - [x] Put transaction creation/editing, split reconstruction, investment
+     validation, hidden-account retention, and optional claim attachment behind one
+     typed, atomic service used by GTK and web. Preserve native round trips and
+     imported split metadata; enforce the adapter boundary with architecture tests.
+   - [ ] Migrate the remaining cross-interface mutations in coherent slices,
+     prioritizing reconciliation, claims, loans, imports, Review, scenarios, and
      projection assumptions. A touched cross-interface workflow may not add new
      presentation-owned financial rules.
    - Centralize error codes, field paths, and presentation-message mapping. Introduce

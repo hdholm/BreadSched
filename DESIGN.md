@@ -60,6 +60,17 @@ submit only the indexed expressions, variables, recurrence, and ordinary metadat
 that formula ownership permits; the service clones all protected structure. Baseline
 and scenario editors use the same construction contracts.
 
+Transaction creation and editing likewise submit ``TransactionInput`` and
+``TransactionSplitInput`` values. The transaction service reconstructs editable
+splits from a stored source, preserves imported and reconciliation metadata, keeps
+account-commodity quantity distinct from transaction-currency value, enforces the
+hidden-account retention rule, validates investment classifications, and owns the
+complete write transaction. An optional FSA claim attachment is committed inside
+that same boundary, so an invalid attachment cannot leave an otherwise successful
+ledger posting behind. GTK and web translate stable service errors through shared
+presentation-owned wording; service error codes and field paths contain no English
+API prose.
+
 The web presentation is split into three boundaries. ``web.server.Api`` translates
 plain request values to application/domain calls, ``web.resources`` declares routes
 and strictly parses one typed value per query field, and ``web.transport`` owns HTTP

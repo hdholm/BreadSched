@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 
+from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass, AccountType, FsaFundingYear
 from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
@@ -233,7 +234,7 @@ def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFunding
     return year
 
 
-def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
+def save_claim(db: DbSQLite, claim: FsaClaim, *, txn: DbTxn | None = None) -> FsaClaim:
     """Persist a claim and linked split classifications as one atomic edit."""
     seen_reimbursements: set[tuple[str, str]] = set()
     assignments: dict[str, list[tuple[str, date]]] = {}
@@ -267,7 +268,8 @@ def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
                 assignments.setdefault(transaction.handle, []).append((split.handle, year.start))
 
     existing = db.get_fsa_claim(claim.handle)
-    with db.transaction("Save FSA claim") as txn:
+
+    def persist(active: DbTxn) -> None:
         for transaction_handle, split_assignments in assignments.items():
             transaction = db.get_transaction(transaction_handle)
             if transaction is None:
@@ -278,11 +280,17 @@ def save_claim(db: DbSQLite, claim: FsaClaim) -> FsaClaim:
                 if split is None:
                     raise ValueError("linked transaction split no longer exists")
                 split.fsa_year_start = funding_year_start
-            db.commit_transaction(transaction, txn)
+            db.commit_transaction(transaction, active)
         if existing is None:
-            db.add_fsa_claim(claim, txn)
+            db.add_fsa_claim(claim, active)
         else:
-            db.commit_fsa_claim(claim, txn)
+            db.commit_fsa_claim(claim, active)
+
+    if txn is None:
+        with db.transaction("Save FSA claim") as active:
+            persist(active)
+    else:
+        persist(txn)
     return claim
 
 
@@ -294,6 +302,7 @@ def attach_transaction_to_claim(
     role: str,
     split_handle: str | None = None,
     funding_year_start: date | None = None,
+    txn: DbTxn | None = None,
 ) -> FsaClaim:
     """Attach one ledger split to an existing claim from entry/review workflows."""
     claim = next((item for item in iter_claims(db) if item.handle == claim_handle), None)
@@ -367,7 +376,7 @@ def attach_transaction_to_claim(
     else:
         raise ValueError("unknown FSA claim attachment role")
 
-    return save_claim(db, claim)
+    return save_claim(db, claim, txn=txn)
 
 
 def delete_claim(db: DbSQLite, handle: str) -> None:

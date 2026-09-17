@@ -274,6 +274,28 @@ class TestServiceBoundaries:
         assert "query_plan" in calls
         assert "build_category_report" not in calls
 
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name"),
+        (
+            ("gui/dialogs/transaction_dialog.py", "TransactionDialog", "_on_save"),
+            ("web/server.py", "Api", "add_transaction"),
+        ),
+    )
+    def test_transaction_adapters_do_not_construct_or_persist_domain_objects(
+        self, relative, class_name, method_name
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        forbidden = {
+            "Transaction",
+            "Split",
+            "transaction",
+            "db.transaction",
+            "add_transaction",
+            "commit_transaction",
+        }
+        assert calls.isdisjoint(forbidden), sorted(calls & forbidden)
+        assert "save_transaction" in calls
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):
