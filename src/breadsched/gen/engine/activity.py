@@ -1690,6 +1690,168 @@ def build_activity_report(
     return ActivityReport(start=start, end=end, period=grouping, periods=periods)
 
 
+def _period_variances(
+    planned_values: Sequence[Money],
+    actual_values: Sequence[Money],
+    periods: Sequence[PeriodActivity],
+    as_of: date,
+) -> list[Money | None]:
+    return [
+        actual - planned if bucket.start <= as_of else None
+        for planned, actual, bucket in zip(planned_values, actual_values, periods, strict=True)
+    ]
+
+
+def _category_rows(
+    db: DbSQLite,
+    accounts: dict[str, Account],
+    periods: Sequence[PeriodActivity],
+    direct_planned: dict[str, list[Money]],
+    direct_actual: dict[str, list[Money]],
+    as_of: date,
+) -> list[CategoryActivity]:
+    active = set(direct_planned) | set(direct_actual)
+    for handle in list(active):
+        account = accounts.get(handle)
+        while account is not None and account.parent is not None:
+            parent = accounts.get(account.parent)
+            if parent is None or parent.account_class is not account.account_class:
+                break
+            active.add(parent.handle)
+            account = parent
+
+    children: dict[str, list[str]] = {}
+    for account in accounts.values():
+        if account.parent is not None:
+            children.setdefault(account.parent, []).append(account.handle)
+
+    def rolled(handle: str, store: dict[str, list[Money]]) -> list[Money]:
+        result = list(store.get(handle, [Money(0) for _ in periods]))
+        for child in children.get(handle, []):
+            child_account = accounts.get(child)
+            account = accounts.get(handle)
+            if (
+                child_account is None
+                or account is None
+                or child_account.account_class is not account.account_class
+            ):
+                continue
+            values = rolled(child, store)
+            result = [left + right for left, right in zip(result, values, strict=True)]
+        return result
+
+    rows: list[CategoryActivity] = []
+    for handle in active:
+        account = accounts[handle]
+        if account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
+            continue
+        full_name = db.full_name(account)
+        planned_values = rolled(handle, direct_planned)
+        actual_values = rolled(handle, direct_actual)
+        rows.append(
+            CategoryActivity(
+                account=handle,
+                name=account.name,
+                full_name=full_name,
+                account_class=account.account_class,
+                # Hide a conventional top-level Income/Expenses root from indentation.
+                depth=max(0, full_name.count(":")),
+                planned=planned_values,
+                actual=actual_values,
+                variance=_period_variances(planned_values, actual_values, periods, as_of),
+            )
+        )
+    rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
+    return rows
+
+
+def _cash_bridge_rows(
+    periods: Sequence[PeriodActivity],
+    planned: dict[CashBridgeKind, list[Money]],
+    actual: dict[CashBridgeKind, list[Money]],
+    as_of: date,
+) -> list[CashBridgeActivity]:
+    rows: list[CashBridgeActivity] = []
+    for kind in CashBridgeKind:
+        planned_values = planned.get(kind, [Money(0) for _ in periods])
+        actual_values = actual.get(kind, [Money(0) for _ in periods])
+        if not any(planned_values) and not any(actual_values):
+            continue
+        rows.append(
+            CashBridgeActivity(
+                kind=kind,
+                name=kind.label,
+                planned=list(planned_values),
+                actual=list(actual_values),
+                variance=_period_variances(planned_values, actual_values, periods, as_of),
+            )
+        )
+    return rows
+
+
+def _planning_flow_rows(
+    db: DbSQLite,
+    accounts: dict[str, Account],
+    periods: Sequence[PeriodActivity],
+    planned: dict[tuple[PlanningFlowKind, str], list[Money]],
+    actual: dict[tuple[PlanningFlowKind, str], list[Money]],
+    as_of: date,
+) -> list[PlanningFlowActivity]:
+    rows: list[PlanningFlowActivity] = []
+    for flow_kind, handle in set(planned) | set(actual):
+        account = accounts.get(handle)
+        if account is None:
+            continue
+        planned_values = planned.get((flow_kind, handle), [Money(0) for _ in periods])
+        actual_values = actual.get((flow_kind, handle), [Money(0) for _ in periods])
+        full_name = db.full_name(account)
+        rows.append(
+            PlanningFlowActivity(
+                kind=flow_kind,
+                account=handle,
+                account_name=account.name,
+                full_name=full_name,
+                name=f"{flow_kind.label} — {full_name}",
+                planned=list(planned_values),
+                actual=list(actual_values),
+                variance=_period_variances(planned_values, actual_values, periods, as_of),
+            )
+        )
+    rows.sort(key=lambda row: (row.kind.value, row.full_name.casefold()))
+    return rows
+
+
+def _mortgage_rows(
+    db: DbSQLite,
+    accounts: dict[str, Account],
+    periods: Sequence[PeriodActivity],
+    planned: dict[str, list[Money]],
+    actual: dict[str, list[Money]],
+    as_of: date,
+) -> list[MortgagePaymentActivity]:
+    rows: list[MortgagePaymentActivity] = []
+    for handle in set(planned) | set(actual):
+        account = accounts.get(handle)
+        if account is None:
+            continue
+        planned_values = planned.get(handle, [Money(0) for _ in periods])
+        actual_values = actual.get(handle, [Money(0) for _ in periods])
+        full_name = db.full_name(account)
+        rows.append(
+            MortgagePaymentActivity(
+                account=handle,
+                account_name=account.name,
+                full_name=full_name,
+                name=f"Mortgage payment — {full_name}",
+                planned=list(planned_values),
+                actual=list(actual_values),
+                variance=_period_variances(planned_values, actual_values, periods, as_of),
+            )
+        )
+    rows.sort(key=lambda row: row.full_name.casefold())
+    return rows
+
+
 def build_category_report(
     db: DbSQLite,
     start: date,
@@ -1851,138 +2013,31 @@ def build_category_report(
                 values = amounts(direct_actual, handle)
                 values[period_index] = values[period_index] + amount
 
-    active = set(direct_planned) | set(direct_actual)
-    for handle in list(active):
-        account = accounts.get(handle)
-        while account is not None and account.parent is not None:
-            parent = accounts.get(account.parent)
-            if parent is None or parent.account_class is not account.account_class:
-                break
-            active.add(parent.handle)
-            account = parent
-
-    children: dict[str, list[str]] = {}
-    for account in accounts.values():
-        if account.parent is not None:
-            children.setdefault(account.parent, []).append(account.handle)
-
-    def rolled(handle: str, store: dict[str, list[Money]]) -> list[Money]:
-        result = list(store.get(handle, [Money(0) for _ in periods]))
-        for child in children.get(handle, []):
-            child_account = accounts.get(child)
-            account = accounts.get(handle)
-            if (
-                child_account is None
-                or account is None
-                or child_account.account_class is not account.account_class
-            ):
-                continue
-            values = rolled(child, store)
-            result = [left + right for left, right in zip(result, values, strict=True)]
-        return result
-
-    rows: list[CategoryActivity] = []
-    for handle in active:
-        account = accounts[handle]
-        if account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
-            continue
-        full_name = db.full_name(account)
-        # Hide a conventional top-level Income/Expenses root from indentation.
-        depth = max(0, full_name.count(":"))
-        rows.append(
-            CategoryActivity(
-                account=handle,
-                name=account.name,
-                full_name=full_name,
-                account_class=account.account_class,
-                depth=depth,
-                planned=rolled(handle, direct_planned),
-                actual=rolled(handle, direct_actual),
-                variance=[
-                    actual - planned if bucket.start <= effective_as_of else None
-                    for planned, actual, bucket in zip(
-                        rolled(handle, direct_planned),
-                        rolled(handle, direct_actual),
-                        periods,
-                        strict=True,
-                    )
-                ],
-            )
-        )
-    rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
-    bridge_rows: list[CashBridgeActivity] = []
-    for bridge_kind in CashBridgeKind:
-        planned_values = bridge_planned.get(bridge_kind, [Money(0) for _ in periods])
-        actual_values = bridge_actual.get(bridge_kind, [Money(0) for _ in periods])
-        if not any(planned_values) and not any(actual_values):
-            continue
-        bridge_rows.append(
-            CashBridgeActivity(
-                kind=bridge_kind,
-                name=bridge_kind.label,
-                planned=list(planned_values),
-                actual=list(actual_values),
-                variance=[
-                    actual - planned if bucket.start <= effective_as_of else None
-                    for planned, actual, bucket in zip(
-                        planned_values, actual_values, periods, strict=True
-                    )
-                ],
-            )
-        )
-
-    flow_rows: list[PlanningFlowActivity] = []
-    active_flows = set(flow_planned) | set(flow_actual)
-    for flow_kind, handle in active_flows:
-        account = accounts.get(handle)
-        if account is None:
-            continue
-        planned_values = flow_planned.get((flow_kind, handle), [Money(0) for _ in periods])
-        actual_values = flow_actual.get((flow_kind, handle), [Money(0) for _ in periods])
-        full_name = db.full_name(account)
-        flow_rows.append(
-            PlanningFlowActivity(
-                kind=flow_kind,
-                account=handle,
-                account_name=account.name,
-                full_name=full_name,
-                name=f"{flow_kind.label} — {full_name}",
-                planned=list(planned_values),
-                actual=list(actual_values),
-                variance=[
-                    actual - planned if bucket.start <= effective_as_of else None
-                    for planned, actual, bucket in zip(
-                        planned_values, actual_values, periods, strict=True
-                    )
-                ],
-            )
-        )
-    flow_rows.sort(key=lambda row: (row.kind.value, row.full_name.casefold()))
-    mortgage_rows: list[MortgagePaymentActivity] = []
-    for handle in set(mortgage_planned) | set(mortgage_actual):
-        account = accounts.get(handle)
-        if account is None:
-            continue
-        planned_values = mortgage_planned.get(handle, [Money(0) for _ in periods])
-        actual_values = mortgage_actual.get(handle, [Money(0) for _ in periods])
-        full_name = db.full_name(account)
-        mortgage_rows.append(
-            MortgagePaymentActivity(
-                account=handle,
-                account_name=account.name,
-                full_name=full_name,
-                name=f"Mortgage payment — {full_name}",
-                planned=list(planned_values),
-                actual=list(actual_values),
-                variance=[
-                    actual - planned if bucket.start <= effective_as_of else None
-                    for planned, actual, bucket in zip(
-                        planned_values, actual_values, periods, strict=True
-                    )
-                ],
-            )
-        )
-    mortgage_rows.sort(key=lambda row: row.full_name.casefold())
+    rows = _category_rows(
+        db,
+        accounts,
+        periods,
+        direct_planned,
+        direct_actual,
+        effective_as_of,
+    )
+    bridge_rows = _cash_bridge_rows(periods, bridge_planned, bridge_actual, effective_as_of)
+    flow_rows = _planning_flow_rows(
+        db,
+        accounts,
+        periods,
+        flow_planned,
+        flow_actual,
+        effective_as_of,
+    )
+    mortgage_rows = _mortgage_rows(
+        db,
+        accounts,
+        periods,
+        mortgage_planned,
+        mortgage_actual,
+        effective_as_of,
+    )
     report = CategoryReport(
         activity=activity,
         categories=rows,

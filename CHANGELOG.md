@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 category-report-structure slice — Separate report assembly.** Extract
+  category hierarchy roll-up, period variance calculation, cash-bridge rows,
+  planning-flow rows, and mortgage-payment rows from the event accumulation path.
+  Preserve exact dated planned/actual values, ordering, future-period null variance,
+  and cash-bridge conservation under the existing Plan characterization suite.
+  Advance the alpha version to `0.2.0a75`; native schema version 7 is unchanged.
+
 - [x] **0223 verification-structure slice — Responsibility-specific diagnostics.**
   Decompose exhaustive domain verification into a read-once state snapshot and
   focused commodity, account, reconciliation, price, transaction, schedule, and

@@ -237,6 +237,11 @@ outermost active category rollups, so a parent and descendant cannot both contri
 the same ledger value. Income and expense detail uses positive budget magnitudes;
 the separate signed Income less expenses row exposes the operating result.
 
+Category-report construction keeps event accumulation separate from presentation-row
+assembly. Category hierarchy roll-up, cash-bridge rows, planning-flow rows, mortgage
+rows, and as-of variance calculation are independent transformations over the same
+exact period totals; the final report still executes the cash-conservation check.
+
 The primary reconciliation is a signed, non-overlapping spendable-cash bridge:
 income received minus ordinary expense, plus retirement distributions, minus
 retirement saving, benefit funding, debt principal, and escrow funding, plus an
