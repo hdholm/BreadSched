@@ -76,6 +76,15 @@ _SERVICE_MESSAGES = {
     "claim.attachment.split.ineligible": "Choose one eligible transaction split",
     "claim.attachment.funding_year.required": ("Choose an FSA funding year for this reimbursement"),
     "claim.attachment.role.invalid": "Choose a valid FSA claim role",
+    "scenario.not_found": "The scenario no longer exists",
+    "scenario.name.required": "Give the scenario a name",
+    "scenario.name.duplicate": "A scenario with that name already exists",
+    "scenario.identity.changed": "The scenario identity changed while it was edited",
+    "scenario.parent.requires_inheritance": "A parent requires inherited assumptions",
+    "scenario.parent.not_found": "The parent scenario no longer exists",
+    "scenario.parent.cycle": "A scenario cannot inherit from itself or its descendants",
+    "scenario.children.exist": "Reparent child scenarios before deleting this scenario",
+    "scenario.schedule.not_found": "The baseline schedule no longer exists",
 }
 
 

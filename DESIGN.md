@@ -487,6 +487,13 @@ so reparenting is always explicit. Dated periods and scenario events remain loca
 their owning scenario until a separate, unambiguous identity-and-merge model is
 defined for those lists.
 
+Saved-scenario lifecycle writes use one typed service across CLI, GTK, and web.
+Creation/update, duplication, deletion, reparenting, and baseline-schedule
+suppression validate stable scenario identity, unique names, parent existence and
+cycles, dependent children, and source schedules before an atomic write. Base
+assumption persistence and dated overrides share a separate projection-assumption
+service because Base is book metadata rather than a saved scenario record.
+
 Reporting periods aggregate projection state but do not drive it.
 
 Schedule growth is explicit enough to be explainable. The current model supports

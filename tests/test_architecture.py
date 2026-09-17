@@ -467,6 +467,66 @@ class TestServiceBoundaries:
             {"actualize_transaction", "reject_candidate", "mark_unexpected", "db.transaction"}
         )
 
+    @pytest.mark.parametrize(
+        ("relative", "class_name", "method_name", "service_call"),
+        (
+            (
+                "gui/dialogs/scenario_dialog.py",
+                "SaveScenarioDialog",
+                "_on_save",
+                "save_scenario",
+            ),
+            (
+                "gui/dialogs/scenario_manager_dialog.py",
+                "ScenarioManagerDialog",
+                "_on_save",
+                "save_scenario",
+            ),
+            (
+                "gui/dialogs/scenario_manager_dialog.py",
+                "ScenarioManagerDialog",
+                "_on_duplicate",
+                "duplicate_scenario",
+            ),
+            (
+                "gui/dialogs/scenario_manager_dialog.py",
+                "ScenarioDeleteDialog",
+                "_confirm",
+                "delete_scenario",
+            ),
+            (
+                "gui/views/plan.py",
+                "PlanView",
+                "_suppress_baseline_schedule",
+                "suppress_scenario_schedule",
+            ),
+            ("web/server.py", "Api", "scenario_save", "save_scenario"),
+            ("web/server.py", "Api", "scenario_duplicate", "duplicate_scenario"),
+            ("web/server.py", "Api", "scenario_delete", "delete_scenario"),
+            (
+                "web/server.py",
+                "Api",
+                "scenario_event_suppress",
+                "suppress_scenario_schedule",
+            ),
+        ),
+    )
+    def test_scenario_lifecycle_adapters_use_typed_services(
+        self, relative, class_name, method_name, service_call
+    ):
+        calls = calls_in_method(SRC / relative, class_name, method_name)
+        assert service_call in calls
+        assert calls.isdisjoint(
+            {"add_scenario", "commit_scenario", "remove_scenario", "db.transaction"}
+        )
+
+    def test_cli_scenario_lifecycle_uses_typed_services(self):
+        calls = calls_in_function(SRC / "cli/main.py", "cmd_scenario")
+        assert {"save_scenario", "delete_scenario"} <= calls
+        assert calls.isdisjoint(
+            {"add_scenario", "commit_scenario", "remove_scenario", "db.transaction"}
+        )
+
 
 class TestWebBoundaries:
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):

@@ -20,7 +20,12 @@ from ...gen.engine.activity import (
     explain_planning_flow_period,
 )
 from ...gen.lib import Money, Scenario
-from ...gen.services import PlanQuery, query_plan
+from ...gen.services import (
+    PlanQuery,
+    SuppressScenarioSchedule,
+    query_plan,
+    suppress_scenario_schedule,
+)
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -409,16 +414,10 @@ class PlanView(BaseView):
         scenario = self._require_scenario()
         if scenario is None or self.db is None:
             return
-        from ...gen.lib import ScenarioSchedule
-
-        scenario.schedule_overrides = [
-            existing
-            for existing in scenario.schedule_overrides
-            if existing.source_schedule != schedule.handle
-        ]
-        scenario.schedule_overrides.append(ScenarioSchedule.from_scheduled(schedule, enabled=False))
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
+        suppress_scenario_schedule(
+            self.db,
+            SuppressScenarioSchedule(scenario.handle, schedule.handle),
+        )
 
     def _grouping(self) -> ReportingPeriod:
         return (

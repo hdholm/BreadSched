@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 scenario-service slice — Typed saved-scenario lifecycle.** Route CLI,
+  GTK, and web saved-scenario creation/update, duplication, deletion, reparenting,
+  and baseline-schedule suppression through shared typed services. Validate names,
+  identities, parent chains, cycles, children, and source schedules with stable
+  codes and field paths while retaining atomic writes. Add service and architecture
+  regressions. Advance the alpha version to `0.2.0a68`; native schema version 7 is
+  unchanged.
+
 - [x] **0223 Review-service slice — Typed plan-resolution decisions.** Route CLI,
   GTK, and web match, reject, skip, unexpected, and FSA-attachment mutations through
   shared typed services. Validate stale transactions and occurrences with stable

@@ -45,8 +45,8 @@ workflow may not add new presentation-owned rules.
      and deletion behind typed services used by GTK and web. Keep linked split
      classification and claim persistence atomic, with stable validation codes.
    - [ ] Migrate the remaining cross-interface mutations in coherent slices.
-     Loan creation, imports, and Review are complete; continue with scenarios and
-     projection assumptions. A
+     Loan creation, imports, Review, and saved-scenario lifecycle are complete;
+     continue with projection assumptions. A
      touched cross-interface workflow may not add new presentation-owned financial
      rules.
    - Centralize error codes, field paths, and presentation-message mapping. Introduce

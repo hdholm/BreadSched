@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib import Scenario  # noqa: E402
+from ...gen.services import SaveScenario, save_scenario  # noqa: E402
+from ...presentation import service_error_message  # noqa: E402
 from ..gi_setup import Gtk
 
 __all__ = ["SaveScenarioDialog"]
@@ -88,9 +90,12 @@ class SaveScenarioDialog(Gtk.Window):
         target.assumption_periods = list(self.scenario.assumption_periods)
         target.schedule_overrides = list(self.scenario.schedule_overrides)
 
-        with self.db.transaction(f"Save scenario {name}") as txn:
-            if existing:
-                self.db.commit_scenario(target, txn)
-            else:
-                self.db.add_scenario(target, txn)
+        result = save_scenario(
+            self.db,
+            SaveScenario(target, existing_handle=existing.handle if existing else None),
+        )
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
+            self.status.add_css_class("negative")
+            return
         self.close()

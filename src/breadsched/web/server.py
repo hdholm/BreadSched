@@ -56,7 +56,6 @@ from ..gen.lib import (
     WeekendAdjust,
     scheduled_occurrence_preview,
 )
-from ..gen.lib.base import create_handle
 from ..gen.plug import (
     remembered_import_source,
 )
@@ -67,6 +66,8 @@ from ..gen.services import (
     ClaimLinkInput,
     ClaimRejectionInput,
     DeleteClaim,
+    DeleteScenario,
+    DuplicateScenario,
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScheduleInput,
@@ -80,9 +81,11 @@ from ..gen.services import (
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
     SaveLoan,
+    SaveScenario,
     SaveTransaction,
     ServiceError,
     StartReconciliation,
+    SuppressScenarioSchedule,
     TransactionInput,
     TransactionSplitInput,
     UpdateReconciliation,
@@ -90,6 +93,8 @@ from ..gen.services import (
     cancel_reconciliation,
     complete_reconciliation,
     delete_claim,
+    delete_scenario,
+    duplicate_scenario,
     import_book,
     mark_review_unexpected,
     match_review,
@@ -101,9 +106,11 @@ from ..gen.services import (
     save_fixed_schedule,
     save_formula_schedule,
     save_loan,
+    save_scenario,
     save_transaction,
     skip_review,
     start_reconciliation,
+    suppress_scenario_schedule,
     update_reconciliation,
     validate_loan,
 )
@@ -1498,21 +1505,13 @@ class Api:
                 else:
                     scenario.inherit_account_assumption(account_handle)
         scenario.assumptions = updated
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
+        result = save_scenario(self.db, SaveScenario(scenario, existing_handle=scenario.handle))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         reloaded = self.db.get_scenario(scenario.handle)
         if reloaded is None:  # pragma: no cover - guarded by the successful commit
             raise KeyError(scenario.handle)
         return self._scenario_payload(reloaded)
-
-    def _unique_scenario_copy_name(self, name: str) -> str:
-        base = f"{name} copy"
-        candidate = base
-        number = 2
-        while self.db.get_scenario_by_name(candidate) is not None:
-            candidate = f"{base} {number}"
-            number += 1
-        return candidate
 
     def scenario_duplicate(self, payload: dict) -> dict:
         handle = payload.get("handle")
@@ -1522,33 +1521,25 @@ class Api:
                 raise KeyError(str(handle))
         else:
             source = self._management_base_scenario()
-        clone = (
-            source.clone()
-            if handle
-            else Scenario.derived_from_base(
-                source.assumptions,
-                name=source.name,
-                start=source.start,
-                years=source.years,
-            )
+        result = duplicate_scenario(
+            self.db,
+            DuplicateScenario(source, from_base=not bool(handle)),
         )
-        clone.handle = create_handle()
-        clone.gid = ""
-        clone.change = 0
-        clone.name = self._unique_scenario_copy_name(source.name)
-        with self.db.transaction(f"Duplicate scenario {source.name}") as txn:
-            self.db.add_scenario(clone, txn)
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        saved = result.value
+        assert saved is not None
+        clone = self.db.get_scenario(saved.handle)
+        assert clone is not None
         return self._scenario_payload(clone)
 
     def scenario_delete(self, payload: dict) -> dict:
-        handle = str(payload.get("handle", "")).strip()
+        handle = str(payload.get("handle") or "").strip()
         if not handle:
             raise ValueError("Base scenario cannot be deleted")
-        scenario = self.db.get_scenario(handle)
-        if scenario is None:
-            raise KeyError(handle)
-        with self.db.transaction(f"Delete scenario {scenario.name}") as txn:
-            self.db.remove_scenario(handle, txn)
+        result = delete_scenario(self.db, DeleteScenario(handle))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         return {"deleted": handle}
 
     @staticmethod
@@ -2216,16 +2207,14 @@ class Api:
 
     def scenario_event_suppress(self, payload: dict) -> dict:
         scenario = self._scenario_for_events(payload.get("handle"))
-        source_handle = str(payload.get("source_schedule", "")).strip()
-        source = self.db.get_scheduled(source_handle) if source_handle else None
-        if source is None:
-            raise KeyError(source_handle)
-        scenario.schedule_overrides = [
-            item for item in scenario.schedule_overrides if item.source_schedule != source_handle
-        ]
-        scenario.schedule_overrides.append(ScenarioSchedule.from_scheduled(source, enabled=False))
-        with self.db.transaction(f"Update scenario {scenario.name}") as txn:
-            self.db.commit_scenario(scenario, txn)
+        result = suppress_scenario_schedule(
+            self.db,
+            SuppressScenarioSchedule(
+                scenario.handle, str(payload.get("source_schedule", "")).strip()
+            ),
+        )
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
         return self.scenario_events(scenario.handle)
 
     def plan(

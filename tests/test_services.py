@@ -22,6 +22,8 @@ from breadsched.gen.plug import remembered_import_source
 from breadsched.gen.services import (
     BASE_SCENARIO,
     ClaimAttachment,
+    DeleteScenario,
+    DuplicateScenario,
     FixedScheduleInput,
     FixedSplitInput,
     FormulaScenarioScheduleInput,
@@ -32,14 +34,18 @@ from breadsched.gen.services import (
     ReviewTransaction,
     SaveFixedScenarioSchedule,
     SaveFixedSchedule,
+    SaveScenario,
     SaveScenarioSchedule,
     SaveSchedule,
     SaveTransaction,
     ServiceError,
+    SuppressScenarioSchedule,
     TransactionInput,
     TransactionSplitInput,
     build_fixed_schedule,
     build_formula_scenario_schedule,
+    delete_scenario,
+    duplicate_scenario,
     import_book,
     mark_review_unexpected,
     match_review,
@@ -49,10 +55,12 @@ from breadsched.gen.services import (
     save_fixed_schedule,
     save_formula_scenario_schedule,
     save_formula_schedule,
+    save_scenario,
     save_scenario_schedule,
     save_schedule,
     save_transaction,
     skip_review,
+    suppress_scenario_schedule,
 )
 
 
@@ -161,6 +169,58 @@ def test_review_service_returns_stable_errors_without_writing(db, book):
 
     assert repeated.errors == (ServiceError("review.transaction.not_unresolved", ("transaction",)),)
     assert missing.errors == (ServiceError("review.transaction.not_found", ("transaction",)),)
+
+
+def test_scenario_service_owns_save_duplicate_and_delete(db):
+    scenario = Scenario(name="Alternative", start=date(2026, 1, 1), years=2)
+
+    saved = save_scenario(db, SaveScenario(scenario))
+    duplicated = duplicate_scenario(db, DuplicateScenario(scenario))
+
+    assert saved.ok and duplicated.ok
+    assert duplicated.value is not None
+    assert duplicated.value.name == "Alternative copy"
+    deleted = delete_scenario(db, DeleteScenario(duplicated.value.handle))
+    assert deleted.ok
+    assert db.get_scenario(duplicated.value.handle) is None
+
+
+def test_scenario_service_returns_stable_name_parent_and_child_errors(db):
+    parent = Scenario(name="Parent")
+    assert save_scenario(db, SaveScenario(parent)).ok
+    duplicate = Scenario(name="Parent")
+    duplicate_result = save_scenario(db, SaveScenario(duplicate))
+    child = Scenario.derived_from_base(
+        parent.effective_assumptions(), name="Child", parent_handle=parent.handle
+    )
+    assert save_scenario(db, SaveScenario(child)).ok
+    delete_result = delete_scenario(db, DeleteScenario(parent.handle))
+    parent.parent_handle = child.handle
+    parent.inherits_base_assumptions = True
+    cycle_result = save_scenario(db, SaveScenario(parent, existing_handle=parent.handle))
+
+    assert duplicate_result.errors == (ServiceError("scenario.name.duplicate", ("name",)),)
+    assert delete_result.errors == (ServiceError("scenario.children.exist", ("handle",)),)
+    assert cycle_result.errors == (ServiceError("scenario.parent.cycle", ("parent",)),)
+
+
+def test_scenario_service_suppresses_a_baseline_schedule(db, book):
+    scenario = Scenario(name="Alternative")
+    schedule = _monthly_schedule(book)
+    with db.transaction("Scenario fixture") as txn:
+        db.add_scenario(scenario, txn)
+        db.add_scheduled(schedule, txn)
+
+    result = suppress_scenario_schedule(
+        db, SuppressScenarioSchedule(scenario.handle, schedule.handle)
+    )
+
+    assert result.ok
+    stored = db.get_scenario(scenario.handle)
+    assert stored is not None
+    assert len(stored.schedule_overrides) == 1
+    assert stored.schedule_overrides[0].source_schedule == schedule.handle
+    assert stored.schedule_overrides[0].enabled is False
 
 
 def test_transaction_service_owns_construction_validation_and_atomic_write(db, book):
