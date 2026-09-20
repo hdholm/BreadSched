@@ -59,6 +59,7 @@ class LoanTerms:
     escrow: Money | None = None
     escrow_account: str | None = None
     frequency: PeriodType = PeriodType.MONTH
+    fraction: int = 100
 
     @property
     def per_year(self) -> int:
@@ -75,12 +76,14 @@ class LoanTerms:
 
     def payment(self) -> Money:
         """The level payment, as a positive amount of money leaving the household."""
-        return Money(-pmt(self.period_rate, self.periods, self.principal.rate())).quantize(100)
+        return Money(-pmt(self.period_rate, self.periods, self.principal.rate())).quantize(
+            self.fraction
+        )
 
     def total_interest(self) -> Money:
         total = Money(0)
         for row in amortisation_schedule(self.period_rate, self.periods, self.principal.rate()):
-            total = total + Money(-row["interest"]).quantize(100)
+            total = total + Money(-row["interest"]).quantize(self.fraction)
         return total
 
 
@@ -137,10 +140,10 @@ def schedule_preview(terms: LoanTerms, rows: int = 12) -> list[dict[str, object]
     return [
         {
             "period": int(row["period"]),
-            "payment": Money(-row["payment"]).quantize(100),
-            "interest": Money(-row["interest"]).quantize(100),
-            "principal": Money(-row["principal"]).quantize(100),
-            "balance": Money(row["balance"]).quantize(100),
+            "payment": Money(-row["payment"]).quantize(terms.fraction),
+            "interest": Money(-row["interest"]).quantize(terms.fraction),
+            "principal": Money(-row["principal"]).quantize(terms.fraction),
+            "balance": Money(row["balance"]).quantize(terms.fraction),
         }
         for row in table[:rows]
     ]

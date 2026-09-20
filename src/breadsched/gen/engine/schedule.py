@@ -20,6 +20,7 @@ from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence, add_months
 from ..lib.scheduled import ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import Transaction
+from .currency import commodity_fraction
 
 __all__ = [
     "Occurrence",
@@ -303,8 +304,8 @@ class Occurrence:
     def name(self) -> str:
         return self.schedule.name
 
-    def instantiate(self) -> Transaction:
-        return self.schedule.instantiate(self.when)
+    def instantiate(self, fraction: int = 100) -> Transaction:
+        return self.schedule.instantiate(self.when, fraction=fraction)
 
 
 @dataclass(slots=True)
@@ -684,7 +685,7 @@ def post_due(
     with db.transaction(message) as txn:
         touched: dict[str, ScheduledTransaction] = {}
         for occ in candidates:
-            real = occ.instantiate()
+            real = occ.instantiate(commodity_fraction(db, occ.schedule.currency))
             db.add_transaction(real, txn)
             posted.append(real)
             sched = touched.setdefault(occ.schedule.handle, occ.schedule)
@@ -712,7 +713,7 @@ def post_occurrences(
     with db.transaction(message) as txn:
         touched: dict[str, ScheduledTransaction] = {}
         for occurrence in chosen:
-            real = occurrence.instantiate()
+            real = occurrence.instantiate(commodity_fraction(db, occurrence.schedule.currency))
             db.add_transaction(real, txn)
             posted.append(real)
             sched = touched.setdefault(occurrence.schedule.handle, occurrence.schedule)

@@ -154,6 +154,26 @@ class TestTotalsByClass:
 
 
 class TestScheduleEngine:
+    def test_posting_quantizes_to_the_schedule_currency_fraction(self, db, book):
+        currency = Commodity(mnemonic="TST", fullname="Thousandths", fraction=1000)
+        scheduled = ScheduledTransaction(
+            name="Precise transfer",
+            recurrence=Recurrence(period=PeriodType.MONTH, start=date(2026, 1, 1)),
+            auto_create=True,
+            currency=currency.handle,
+        )
+        scheduled.splits = [
+            ScheduledSplit(book.checking, formula="1.2344"),
+            ScheduledSplit(book.opening, formula="-1.2344"),
+        ]
+        with db.transaction("Precise schedule") as txn:
+            db.add_commodity(currency, txn)
+            db.add_scheduled(scheduled, txn)
+
+        posted = schedule.post_due(db, as_of=date(2026, 1, 1))
+
+        assert [split.value for split in posted[0].splits] == [Money("1.234"), Money("-1.234")]
+
     def test_due_list_covers_missed_occurrences(self, db, payday_schedule):
         due = schedule.due_occurrences(db, as_of=date(2026, 2, 1), horizon_days=0)
         assert [occ.when for occ in due] == [
