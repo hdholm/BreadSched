@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0224 rate-closure slice — Keep dimensionless arithmetic typed.** Replace
+  `Rate`'s `Decimal` inheritance with a finite wrapped decimal whose direct and
+  reflected arithmetic, unary operations, rounding, quantization, and `divmod`
+  remain `Rate` values. Retain exact decimal persistence, comparison, hashing, and
+  presentation formatting; reject rate/money addition while preserving monetary
+  scaling and division. Add runtime coverage plus a mypy-checked arithmetic contract
+  to the core type-check gate. Advance the alpha version to `0.2.0a78`; native schema
+  version 7 is unchanged.
+
 - [x] **0223 dialog-structure slice — Separate editor construction by
   responsibility.** Reduce the account and schedule dialog constructors to ordered
   orchestration over choice loading, related control groups, timeline/recurrence

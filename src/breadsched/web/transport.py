@@ -15,7 +15,7 @@ from typing import Any
 from urllib.parse import urlencode, urlparse
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.lib import Money
+from ..gen.lib import Money, Rate
 from ..gen.utils.logs import get_logger
 from .resources import GET_ROUTES, POST_ROUTES, QueryError, QueryParams, ResourceError
 from .server import Api
@@ -28,6 +28,8 @@ MAX_JSON_BODY = 64 * 1024
 def _encode(value: object) -> object:
     if isinstance(value, Money):
         return str(value.to_decimal())
+    if isinstance(value, Rate):
+        return str(value.decimal)
     if isinstance(value, (date, Decimal)):
         return str(value)
     raise TypeError(f"cannot serialise {type(value).__name__}")

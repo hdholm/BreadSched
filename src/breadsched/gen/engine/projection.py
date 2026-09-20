@@ -490,7 +490,7 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
     holdings: list[ProjectionAccountDetail] = []
     for handle in holding_handles:
         account = db.get_account(handle)
-        rate = _resolve_rate(assumptions, account) if account is not None else Decimal(0)
+        rate = _resolve_rate(assumptions, account).decimal if account is not None else Decimal(0)
         detail = ProjectionAccountDetail(
             handle=handle,
             name=account_name(handle),
@@ -522,7 +522,7 @@ def explain_month(db: DbSQLite, result: Projection, index: int) -> ProjectionMon
     liabilities: list[ProjectionAccountDetail] = []
     for handle in liability_handles:
         account = db.get_account(handle)
-        rate = _resolve_rate(assumptions, account) if account is not None else Decimal(0)
+        rate = _resolve_rate(assumptions, account).decimal if account is not None else Decimal(0)
         movement = ledger.liability_movements.get(handle)
         if movement is None:
             movement = -ledger.debt_payments.get(handle, Money(0))

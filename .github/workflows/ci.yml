@@ -59,7 +59,7 @@ jobs:
         run: ruff format --check src tests examples scripts
 
       - name: Type check
-        run: mypy src/breadsched/gen src/breadsched/plugins
+        run: mypy src/breadsched/gen src/breadsched/plugins tests/typecheck
 
       - name: Type check CLI, web and GUI
         run: make typecheck-extended

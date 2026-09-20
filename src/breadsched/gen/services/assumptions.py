@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass
+from ..lib.money import Rate
 from ..lib.scenario import ASSUMPTION_FIELDS, AssumptionPeriod, Assumptions, Scenario
 from .contracts import ServiceError, ServiceResult
 from .scenarios import SavedScenario, SaveScenario, save_scenario
@@ -118,8 +119,8 @@ def _assumption_errors(db: DbSQLite, assumptions: Assumptions) -> tuple[ServiceE
 
 def _rate_errors(
     db: DbSQLite,
-    values: dict[str, Decimal],
-    per_account: Mapping[str, Decimal],
+    values: Mapping[str, Rate],
+    per_account: Mapping[str, Rate],
 ) -> tuple[ServiceError, ...]:
     errors: list[ServiceError] = []
     for field, value in values.items():
