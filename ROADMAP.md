@@ -50,8 +50,9 @@ workflow may not add new presentation-owned rules.
     currency amount.
     - [x] Establish the closed `Amount` value and require dated `CommodityPrice`
       conversion at the security-valuation boundary.
-    - [ ] Carry tagged amounts through the remaining ledger and transaction-service
-      arithmetic boundaries.
+    - [x] Carry tagged transaction-currency values and separately tagged account-
+      commodity quantities through the transaction-service boundary.
+    - [ ] Enforce tagged amounts at the remaining ledger aggregation boundaries.
   - [ ] Preserve the distinct split dimensions: transaction-currency `value` and
     account-commodity `quantity`. Do not replace them with one ambiguous amount.
 - [ ] Split oversized modules/functions as part of the service/resource ownership

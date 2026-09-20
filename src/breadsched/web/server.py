@@ -36,6 +36,7 @@ from ..gen.lib import (
     Account,
     AccountClass,
     AccountType,
+    Amount,
     AssumptionPeriod,
     Assumptions,
     FsaFundingYear,
@@ -125,6 +126,7 @@ from ..gen.services import (
     skip_review,
     start_reconciliation,
     suppress_scenario_schedule,
+    transaction_currency,
     update_reconciliation,
     validate_loan,
 )
@@ -3152,6 +3154,7 @@ class Api:
             if claim_handle and claim_role
             else None
         )
+        currency = transaction_currency(self.db)
         result = save_transaction(
             self.db,
             SaveTransaction(
@@ -3159,9 +3162,10 @@ class Api:
                     post_date=when,
                     description=description,
                     notes=notes,
+                    currency=currency,
                     splits=(
-                        TransactionSplitInput(debit.handle, amount, memo=memo),
-                        TransactionSplitInput(credit.handle, -amount, memo=memo),
+                        TransactionSplitInput(debit.handle, Amount(amount, currency), memo=memo),
+                        TransactionSplitInput(credit.handle, Amount(-amount, currency), memo=memo),
                     ),
                     investment_activity=investment_activity,
                 ),

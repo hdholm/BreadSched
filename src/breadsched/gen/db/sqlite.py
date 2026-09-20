@@ -26,7 +26,7 @@ from typing import Any, TypeVar
 
 from ..lib.account import Account
 from ..lib.base import PrimaryObject
-from ..lib.commodity import Commodity, CommodityPrice
+from ..lib.commodity import DEFAULT_CURRENCY, Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
 from ..lib.reconciliation import Reconciliation
 from ..lib.scenario import Assumptions, Scenario
@@ -345,6 +345,16 @@ class DbSQLite(DbBase):
     def _initialise_new_book(self) -> None:
         conn = self._require_writable()
         conn.executescript(_SCHEMA)
+        currency = DEFAULT_CURRENCY.serialize()
+        conn.execute(
+            "INSERT INTO commodity(handle,mnemonic,blob) VALUES (?,?,?)",
+            (
+                DEFAULT_CURRENCY.handle,
+                DEFAULT_CURRENCY.mnemonic,
+                json.dumps(currency, separators=(",", ":")),
+            ),
+        )
+        self._set_metadata_uncommitted("default_currency", DEFAULT_CURRENCY.handle)
         self._set_metadata_uncommitted("schema_version", SCHEMA_VERSION)
         conn.execute(
             "INSERT INTO schema_migration(version) VALUES (?)",

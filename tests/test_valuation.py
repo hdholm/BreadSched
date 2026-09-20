@@ -19,7 +19,10 @@ from breadsched.gen.lib import (
 
 
 def _holding(db, book):
-    usd = Commodity(namespace="CURRENCY", mnemonic="USD", fullname="US Dollar")
+    usd = db.get_commodity_by_mnemonic("USD")
+    add_usd = usd is None
+    if usd is None:
+        usd = Commodity(namespace="CURRENCY", mnemonic="USD", fullname="US Dollar")
     fund = Commodity(namespace="FUND", mnemonic="INDEX", fullname="Index fund", fraction=1000)
     account = Account(
         name="Index holding",
@@ -35,7 +38,8 @@ def _holding(db, book):
         Split(book.opening, Money("-1000")),
     ]
     with db.transaction("Security holding") as txn:
-        db.add_commodity(usd, txn)
+        if add_usd:
+            db.add_commodity(usd, txn)
         db.add_commodity(fund, txn)
         db.add_account(account, txn)
         db.add_transaction(purchase, txn)

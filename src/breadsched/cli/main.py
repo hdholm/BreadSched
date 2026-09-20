@@ -39,6 +39,7 @@ from ..gen.engine import (
 from ..gen.lib import (
     Account,
     AccountType,
+    Amount,
     Assumptions,
     Money,
     PeriodType,
@@ -47,6 +48,7 @@ from ..gen.lib import (
     Scenario,
     ScheduledSplit,
     ScheduledTransaction,
+    Split,
     Transaction,
 )
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
@@ -78,6 +80,7 @@ from ..gen.services import (
     save_scenario_assumptions,
     save_schedule,
     save_transaction,
+    transaction_currency,
 )
 from ..gen.utils import logs
 from ..presentation import service_error_message
@@ -442,6 +445,7 @@ def cmd_add(args: argparse.Namespace) -> int:
         credit = resolve_account(db, getattr(args, "from"))
         when = parse_date(args.date) or date.today()
         amount = Money(args.amount)
+        currency = transaction_currency(db)
         result = save_transaction(
             db,
             SaveTransaction(
@@ -449,9 +453,14 @@ def cmd_add(args: argparse.Namespace) -> int:
                     post_date=when,
                     description=args.description,
                     num=args.num,
+                    currency=currency,
                     splits=(
-                        TransactionSplitInput(debit.handle, amount, memo=args.memo),
-                        TransactionSplitInput(credit.handle, -amount, memo=args.memo),
+                        TransactionSplitInput(
+                            debit.handle, Amount(amount, currency), memo=args.memo
+                        ),
+                        TransactionSplitInput(
+                            credit.handle, Amount(-amount, currency), memo=args.memo
+                        ),
                     ),
                 )
             ),
@@ -525,7 +534,7 @@ def cmd_edit(args: argparse.Namespace) -> int:
         result = save_transaction(
             db,
             SaveTransaction(
-                _transaction_input(target),
+                _transaction_input(db, target),
                 existing_handle=target.handle,
                 source=target,
             ),
@@ -557,25 +566,30 @@ def cmd_delete(args: argparse.Namespace) -> int:
         db.close()
 
 
-def _transaction_input(transaction: Transaction) -> TransactionInput:
+def _transaction_input(db: DbSQLite, transaction: Transaction) -> TransactionInput:
     """Translate one editable CLI model to the shared transaction contract."""
+    currency = transaction_currency(db, transaction.currency)
+
+    def split_input(split: Split) -> TransactionSplitInput:
+        account = db.get_account(split.account)
+        quantity_commodity = account.commodity if account is not None else None
+        return TransactionSplitInput(
+            split.account,
+            Amount(split.value, currency),
+            quantity=Amount(split.quantity, quantity_commodity or currency),
+            handle=split.handle,
+            memo=split.memo,
+            planning_flow=split.planning_flow,
+            investment_activity=split.investment_activity,
+        )
+
     return TransactionInput(
         post_date=transaction.post_date,
         description=transaction.description,
         num=transaction.num,
         notes=transaction.notes,
-        currency=transaction.currency,
-        splits=tuple(
-            TransactionSplitInput(
-                split.account,
-                split.value,
-                handle=split.handle,
-                memo=split.memo,
-                planning_flow=split.planning_flow,
-                investment_activity=split.investment_activity,
-            )
-            for split in transaction.splits
-        ),
+        currency=currency,
+        splits=tuple(split_input(split) for split in transaction.splits),
     )
 
 

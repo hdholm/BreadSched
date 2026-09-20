@@ -10,7 +10,7 @@ from .account import (
 )
 from .amount import Amount
 from .base import PrimaryObject, create_handle
-from .commodity import DEFAULT_CURRENCY, Commodity, CommodityPrice
+from .commodity import DEFAULT_CURRENCY, DEFAULT_CURRENCY_HANDLE, Commodity, CommodityPrice
 from .formula import FormulaError, evaluate
 from .fsa_claim import (
     FsaClaim,
@@ -66,6 +66,7 @@ __all__ = [
     "Commodity",
     "CommodityPrice",
     "DEFAULT_CURRENCY",
+    "DEFAULT_CURRENCY_HANDLE",
     "FormulaError",
     "Money",
     "OneOff",
