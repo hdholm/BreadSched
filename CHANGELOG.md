@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **Missing-GTK runtime CI slice — Exercise the partial-install boundary.** Add
+  a Linux job with PyGObject installed and the GTK4 typelib explicitly absent.
+  Distinguish that state from a usable GTK4 namespace in launcher tests, and prove
+  help, version, and a real book launch return the documented missing-runtime error
+  without collection failure or traceback. Application version `0.2.0a79` and
+  native schema version 7 are unchanged.
+
 - [x] **Formula resource-bounds slice — Deterministic untrusted arithmetic.** Cap
   formula text before and after GnuCash normalization, evaluate every literal,
   variable, operator, and finance function in a fixed local decimal context, and
