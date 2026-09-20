@@ -8,6 +8,7 @@ from .account import (
     GnuCashAccountField,
     GnuCashAccountType,
 )
+from .amount import Amount
 from .base import PrimaryObject, create_handle
 from .commodity import DEFAULT_CURRENCY, Commodity, CommodityPrice
 from .formula import FormulaError, evaluate
@@ -51,6 +52,7 @@ __all__ = [
     "Account",
     "AccountClass",
     "AccountType",
+    "Amount",
     "FsaClaim",
     "FsaClaimAllocation",
     "FsaClaimRejection",

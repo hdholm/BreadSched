@@ -2,10 +2,13 @@
 
 from datetime import date
 
+import pytest
+
 from breadsched.gen.engine import dashboard, ledger, projection, valuation
 from breadsched.gen.lib import (
     Account,
     AccountType,
+    Amount,
     Commodity,
     CommodityPrice,
     Money,
@@ -67,6 +70,21 @@ def test_latest_as_of_price_marks_units_to_market(db, book):
     assert after.price == Money("125")
     assert after.price_date == date(2026, 3, 1)
     assert after.source == "market"
+    assert after.quantity_amount == Amount(Money("10"), fund.handle)
+    assert after.total_amount == Amount(Money("1250"), usd.handle)
+
+
+def test_dated_price_rejects_units_of_another_commodity(db, book):
+    _account, fund, usd = _holding(db, book)
+    price = CommodityPrice(
+        commodity=fund.handle,
+        currency=usd.handle,
+        quote_date=date(2026, 3, 1),
+        value=Money("125"),
+    )
+
+    with pytest.raises(ValueError, match="does not match"):
+        price.convert(Amount(Money("10"), "some-other-security"), fraction=usd.fraction)
 
 
 def test_missing_quote_falls_back_to_the_book_value(db, book):

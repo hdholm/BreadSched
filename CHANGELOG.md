@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0224 commodity-amount foundation — Reject dimensionally invalid
+  arithmetic.** Add an immutable `Amount(value, commodity)` whose arithmetic,
+  comparison, ratios, scaling, and quantization retain or enforce commodity
+  identity. Convert security units only through an exact dated `CommodityPrice`,
+  rejecting a quote for another commodity, and carry tagged quantity and reporting-
+  currency evidence through market valuation while preserving the existing `Money`
+  presentation result. Add runtime and mypy closure contracts. Advance the alpha
+  version to `0.2.0a80`; native schema version 7 is unchanged.
+
 - [x] **Missing-GTK runtime CI slice — Exercise the partial-install boundary.** Add
   a Linux job with PyGObject installed and the GTK4 typelib explicitly absent.
   Distinguish that state from a usable GTK4 namespace in launcher tests, and prove
