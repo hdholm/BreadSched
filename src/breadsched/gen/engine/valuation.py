@@ -11,7 +11,7 @@ from ..lib.amount import Amount
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.money import Money
 from . import ledger
-from .currency import book_currency, reporting_currency_handle
+from .currency import book_currency, commodity_fraction, reporting_currency_handle
 
 __all__ = [
     "AccountValuation",
@@ -97,7 +97,7 @@ def account_value(
         return AccountValuation(ledger_total, commodity=commodity, total_amount=ledger_amount)
     quantity = quantity_balance(db, obj, as_of=as_of)
     currency = db.get_commodity(price.currency)
-    fraction = currency.fraction if currency is not None else 100
+    fraction = commodity_fraction(db, price.currency)
     quantity_amount = Amount(quantity, commodity.handle)
     total_amount = price.convert(quantity_amount, fraction=fraction)
     return AccountValuation(

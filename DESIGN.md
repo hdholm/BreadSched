@@ -213,10 +213,10 @@ transaction-service write creates that same default commodity and metadata insid
 the transaction's atomic database change.
 
 Rounding uses the selected commodity's declared ``fraction`` rather than assuming
-cents. Scheduled posting uses the schedule currency; Projection and loan interfaces
-use the reporting currency; exact allocation accepts the caller's commodity
-fraction. Stored ``Money`` remains rational and unrounded until one of these
-minor-unit boundaries is crossed.
+cents. Scheduled posting uses the schedule currency; Projection, Dashboard, loan,
+inference, and historical-estimate interfaces use the reporting currency; exact
+allocation accepts the caller's commodity fraction. Stored ``Money`` remains
+rational and unrounded until one of these minor-unit boundaries is crossed.
 
 ### Investment activity semantics
 
