@@ -608,7 +608,9 @@ its continuing work is tracked in the roadmap.
 
 BreadSched native books use the `.breadsched` suffix and SQLite storage. The
 application version (shown by `breadsched --version`) identifies the build for bug
-reports; the separate integer data-format/schema version controls native-book
+reports and is displayed with the separate integer data-format/schema version and
+supported compatibility window. `breadsched verify --json` includes the same version
+details for diagnostics. The data-format/schema version controls native-book
 migration. The current data format is schema 7. The next real format change will
 retain sequential migrations from the two preceding schema versions; older and
 newer schema numbers are rejected explicitly rather than guessed. A writable

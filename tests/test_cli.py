@@ -51,6 +51,8 @@ class TestInit:
     def test_version(self, capsys):
         code, out = run(capsys, "--version")
         assert code == 0 and out.startswith("breadsched ")
+        assert "native schema 7" in out
+        assert "supports 6–7" in out
 
 
 class TestPostingAndReading:
@@ -703,7 +705,25 @@ class TestVerify:
         assert main(["init", str(path)]) == 0
         capsys.readouterr()
         assert main(["verify", str(path)]) == 0
-        assert "verification passed" in capsys.readouterr().out.lower()
+        output = capsys.readouterr().out.lower()
+        assert "native schema 7" in output
+        assert "verification passed" in output
+
+    def test_verify_json_reports_build_and_schema_versions(self, tmp_path, capsys):
+        import json
+
+        from breadsched import __version__
+
+        path = tmp_path / "versions.cp"
+        assert main(["init", str(path)]) == 0
+        capsys.readouterr()
+
+        assert main(["verify", str(path), "--json"]) == 0
+        payload = json.loads(capsys.readouterr().out)
+
+        assert payload["application_version"] == __version__
+        assert payload["native_schema_version"] == 7
+        assert payload["supported_schema_versions"] == {"minimum": 6, "maximum": 7}
 
     def test_verify_json_reports_logical_damage(self, tmp_path, capsys):
         import json

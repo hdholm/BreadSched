@@ -133,6 +133,7 @@ from ..gen.services import (
 )
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..presentation import service_error_message
+from ..versioning import version_details
 from .resources import ResourceError
 
 __all__ = ["serve", "build_handler", "api"]
@@ -361,7 +362,10 @@ class Api:
 
     def verify(self) -> dict[str, object]:
         """Run physical and logical checks without modifying the open book."""
-        return self.db.verification_report().as_dict()
+        report = self.db.verification_report()
+        payload = report.as_dict()
+        payload.update(version_details(native_schema_version=report.native_schema_version))
+        return payload
 
     def accounts(self) -> list[dict]:
         """The chart of accounts as a flat list carrying its own depth."""
