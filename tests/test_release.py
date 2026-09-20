@@ -54,3 +54,13 @@ def test_release_notes_must_match_the_application_and_schema(tmp_path: Path):
     assert any("does not match application version" in problem for problem in problems)
     assert any("Native schema version" in problem for problem in problems)
     assert any("Upgrade and rollback" in problem for problem in problems)
+
+
+def test_release_workflow_sets_an_annotated_tag_identity():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+
+    name = workflow.index('git config user.name "github-actions[bot]"')
+    email = workflow.index("git config user.email")
+    tag = workflow.index('git tag -a "$TAG"')
+    assert name < tag
+    assert email < tag
