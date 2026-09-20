@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, localcontext
 
 import pytest
 
@@ -157,6 +157,35 @@ class TestFormulaIntegration:
     def test_evaluator_failures_are_reported_as_formula_errors(self, formula):
         with pytest.raises(FormulaError):
             evaluate(formula)
+
+
+class TestFormulaResourceBounds:
+    def test_raw_input_is_bounded_before_parsing(self):
+        with pytest.raises(FormulaError, match="too long"):
+            evaluate(" " * 4097)
+
+    def test_decimal_context_is_local_and_deterministic(self):
+        with localcontext() as context:
+            context.prec = 6
+            context.Emax = 9
+            result = evaluate("1 / 7")
+        assert result == Decimal(
+            "0.1428571428571428571428571428571428571428571428571428571428571429"
+        )
+
+    @pytest.mark.parametrize(
+        ("formula", "variables"),
+        [
+            ("10 ** 1000", {}),
+            ("base * 10", {"base": Decimal("1e999")}),
+            ("(-1) ** 0.5", {}),
+            ("value", {"value": "9" * 5000}),
+            ("abs(" * 40 + "1" + ")" * 40, {}),
+        ],
+    )
+    def test_resource_failures_are_formula_errors(self, formula, variables):
+        with pytest.raises(FormulaError):
+            evaluate(formula, variables)
 
 
 class TestLoanSetup:

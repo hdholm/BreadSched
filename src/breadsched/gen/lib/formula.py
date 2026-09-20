@@ -13,7 +13,7 @@ import ast
 import operator
 import re
 from collections.abc import Callable
-from decimal import Decimal, DecimalException, localcontext
+from decimal import Context, Decimal, DecimalException, getcontext, localcontext
 from typing import Any
 
 from . import finance
@@ -22,9 +22,12 @@ __all__ = ["evaluate", "normalise", "FormulaError", "FUNCTIONS"]
 
 #: A comma sitting between digits, with three digits and no more after it.
 _THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+_MAX_RAW_LENGTH = 4096
+_MAX_NORMALISED_LENGTH = 4096
 _MAX_NODES = 256
 _MAX_DEPTH = 32
 _MAX_POWER_ABS = Decimal("1000")
+_FORMULA_CONTEXT = Context(prec=64, Emin=-999, Emax=999)
 
 
 class FormulaError(ValueError):
@@ -86,17 +89,21 @@ FUNCTIONS: dict[str, Callable[..., Any]] = {
 
 
 def _to_decimal(value: Any) -> Decimal:
-    if isinstance(value, Decimal):
-        return value
-    if isinstance(value, int):
-        return Decimal(value)
-    if isinstance(value, str):
-        return Decimal(value)
-    if hasattr(value, "rate"):  # a Money
-        return value.rate()
-    if isinstance(value, float):
-        return Decimal(str(value))
-    raise FormulaError(f"cannot use {value!r} in a formula")
+    if hasattr(value, "decimal") and isinstance(value.decimal, Decimal):  # a Rate
+        value = value.decimal
+    elif hasattr(value, "rate"):  # a Money
+        value = value.rate()
+    elif isinstance(value, float):
+        value = str(value)
+    elif not isinstance(value, (Decimal, int, str)):
+        raise FormulaError(f"cannot use {value!r} in a formula")
+    try:
+        result = getcontext().create_decimal(value)
+    except (DecimalException, ValueError, TypeError, OverflowError) as exc:
+        raise FormulaError(f"cannot use {value!r} in a formula") from exc
+    if not result.is_finite():
+        raise FormulaError("formula values must be finite")
+    return result
 
 
 def _walk(node: ast.AST, variables: dict[str, Any]) -> Decimal:
@@ -120,9 +127,7 @@ def _walk(node: ast.AST, variables: dict[str, Any]) -> Decimal:
         if isinstance(node.op, ast.Pow):
             if abs(right) > _MAX_POWER_ABS:
                 raise FormulaError("power exponent is too large")
-            with localcontext() as context:
-                context.prec = max(context.prec, 28)
-                return Decimal(left) ** Decimal(right)
+            return left**right
         return binary_func(left, right)
     if isinstance(node, ast.UnaryOp):
         unary_func = _UNARY.get(type(node.op))
@@ -166,6 +171,8 @@ def normalise(expression: str) -> str:
     formulas already use commas as argument separators, so grouping commas are
     stripped only when a colon-delimited GnuCash call is actually present.
     """
+    if len(expression) > _MAX_RAW_LENGTH:
+        raise FormulaError("formula text is too long")
     if _uses_gnucash_argument_syntax(expression):
         expression = _THOUSANDS.sub("", expression)
     out: list[str] = []
@@ -176,7 +183,10 @@ def normalise(expression: str) -> str:
         elif character in ")]":
             depth = max(0, depth - 1)
         out.append("," if character == ":" and depth > 0 else character)
-    return "".join(out)
+    result = "".join(out)
+    if len(result) > _MAX_NORMALISED_LENGTH:
+        raise FormulaError("normalised formula is too long")
+    return result
 
 
 def _check_complexity(tree: ast.AST) -> None:
@@ -194,15 +204,24 @@ def _check_complexity(tree: ast.AST) -> None:
 
 def evaluate(expression: str, variables: dict[str, Any] | None = None) -> Decimal:
     """Evaluate an arithmetic expression over ``variables``."""
-    if not expression or not expression.strip():
-        return Decimal(0)
     try:
-        tree = ast.parse(normalise(expression), mode="eval")
-        _check_complexity(tree)
-        return _walk(tree, variables or {})
+        normalised = normalise(expression)
+        if not normalised.strip():
+            return Decimal(0)
+        with localcontext(_FORMULA_CONTEXT):
+            tree = ast.parse(normalised, mode="eval")
+            _check_complexity(tree)
+            return _walk(tree, variables or {})
     except FormulaError:
         raise
     except SyntaxError as exc:
         raise FormulaError(f"cannot parse {expression!r}: {exc.msg}") from exc
-    except (DecimalException, ArithmeticError, TypeError, ValueError, RecursionError) as exc:
+    except (
+        DecimalException,
+        ArithmeticError,
+        MemoryError,
+        TypeError,
+        ValueError,
+        RecursionError,
+    ) as exc:
         raise FormulaError(f"cannot evaluate {expression!r}: {exc}") from exc

@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **Formula resource-bounds slice — Deterministic untrusted arithmetic.** Cap
+  formula text before and after GnuCash normalization, evaluate every literal,
+  variable, operator, and finance function in a fixed local decimal context, and
+  reject non-finite or out-of-range results. Normalize syntax, decimal, arithmetic,
+  recursion, and memory failures to `FormulaError`. Add adversarial length, base,
+  exponent, value, nesting, and ambient-context tests while retaining the
+  representative imported mortgage formula suite. Advance the alpha version to
+  `0.2.0a79`; native schema version 7 is unchanged.
+
 - [x] **0224 rate-closure slice — Keep dimensionless arithmetic typed.** Replace
   `Rate`'s `Decimal` inheritance with a finite wrapped decimal whose direct and
   reflected arithmetic, unary operations, rounding, quantization, and `divmod`
