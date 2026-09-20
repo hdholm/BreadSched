@@ -628,6 +628,11 @@ or filesystem behavior is not safe for SQLite. BreadSched warns when a book path
 inside a recognized OneDrive, iCloud Drive, Dropbox, or Google Drive root. Keep
 independent backups.
 
+Published releases are tagged only from an accepted `main` commit whose complete CI
+matrix passed. Each release includes human-reviewed notes covering application and
+schema versions plus upgrade/rollback implications, and attaches the source archive,
+wheel, and `SHA256SUMS` generated from that exact commit.
+
 Settings use the platform's normal per-user configuration directory, and the default
 book chooser follows the platform Documents location (including XDG `user-dirs.dirs`
 on Linux and common OneDrive Documents redirection on Windows).

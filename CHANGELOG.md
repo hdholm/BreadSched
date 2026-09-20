@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0225 release discipline — Publish only tested, documented `main`.** Add an
+  opt-in release workflow driven by successful `main` CI, exact-version release-note
+  validation, accepted-tip and tag checks, installed-wheel smoke testing, SHA-256
+  verification, annotated tags, and immutable GitHub releases with sdist/wheel
+  artifacts. Add the human-reviewed `0.2.0a85` notes; application and schema versions
+  are unchanged by this workflow/documentation slice.
+
 - [x] **0225 version diagnostics — Report build and native compatibility together.**
   Keep package and native schema versions independent while showing the application
   version, current schema 7, and supported schema 6–7 window in both CLI/GTK version
