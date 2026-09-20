@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from ..db.sqlite import DbSQLite
-from ..lib.commodity import DEFAULT_CURRENCY_HANDLE, Commodity
+from ..lib.commodity import DEFAULT_CURRENCY, DEFAULT_CURRENCY_HANDLE, Commodity
 
-__all__ = ["book_currency", "reporting_currency_handle"]
+__all__ = [
+    "book_currency",
+    "commodity_fraction",
+    "reporting_currency_handle",
+    "reporting_fraction",
+]
 
 
 def book_currency(db: DbSQLite) -> Commodity | None:
@@ -25,3 +30,16 @@ def reporting_currency_handle(db: DbSQLite) -> str:
     """Return the reporting tag, including the stable legacy-empty fallback."""
     currency = book_currency(db)
     return currency.handle if currency is not None else DEFAULT_CURRENCY_HANDLE
+
+
+def commodity_fraction(db: DbSQLite, commodity: str | None) -> int:
+    """Smallest exact subdivision for one commodity or the reporting currency."""
+    found = db.get_commodity(commodity) if commodity is not None else book_currency(db)
+    if found is not None and found.fraction > 0:
+        return found.fraction
+    return DEFAULT_CURRENCY.fraction
+
+
+def reporting_fraction(db: DbSQLite) -> int:
+    """Smallest exact subdivision of the selected reporting currency."""
+    return commodity_fraction(db, reporting_currency_handle(db))

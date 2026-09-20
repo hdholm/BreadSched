@@ -483,6 +483,7 @@ class ScheduledTransaction(PrimaryObject):
         when: date,
         variables: dict[str, Any] | None = None,
         strict: bool = True,
+        fraction: int = 100,
     ) -> Transaction:
         """Build a concrete :class:`Transaction` for one occurrence.
 
@@ -506,15 +507,15 @@ class ScheduledTransaction(PrimaryObject):
         # leg to the currency's smallest unit and give the last leg the remainder,
         # so the stored transaction balances exactly rather than by a hair.
         resolved = self.resolved_splits(variables=variables, when=when)
-        values = [value.quantize(100) for _account, value in resolved]
+        values = [value.quantize(fraction) for _account, value in resolved]
         if values:
             residual = Money(0)
             for value in values:
                 residual = residual + value
-            # Only rounding noise is absorbed. A residual of a cent or more means
+            # Only rounding noise is absorbed. A residual of one minor unit or more means
             # the legs genuinely disagree, and hiding that would turn a broken
             # schedule into a silently wrong one.
-            if residual and not residual.quantize(100):
+            if residual and not residual.quantize(fraction):
                 values[-1] = values[-1] - residual
         for split, value in zip(self.splits, values, strict=False):
             txn.add_split(

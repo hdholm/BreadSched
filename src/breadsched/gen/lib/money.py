@@ -448,18 +448,20 @@ class Money:
             ctx.prec = 40
             return Decimal(self._num) / Decimal(self._den)
 
-    def allocate(self, parts: int) -> list[Money]:
-        """Split into ``parts`` cent-exact amounts that sum back to ``self``.
+    def allocate(self, parts: int, fraction: int = 100) -> list[Money]:
+        """Split into ``parts`` minor-unit-exact amounts that sum to ``self``.
 
         Used when a yearly planning figure has to be spread across months without
-        losing or inventing a cent.
+        losing or inventing the commodity's smallest subdivision.
         """
         if parts < 1:
             raise ValueError("parts must be >= 1")
-        total_cents = self._num_at(100)
-        base, remainder = divmod(abs(total_cents), parts)
-        sign = 1 if total_cents >= 0 else -1
-        return [Money(sign * (base + (1 if i < remainder else 0)), 100) for i in range(parts)]
+        if fraction < 1:
+            raise ValueError("fraction must be >= 1")
+        total_units = self._num_at(fraction)
+        base, remainder = divmod(abs(total_units), parts)
+        sign = 1 if total_units >= 0 else -1
+        return [Money(sign * (base + (1 if i < remainder else 0)), fraction) for i in range(parts)]
 
     # ------------------------------------------------------------ presentation
 

@@ -212,6 +212,12 @@ currency. A legacy native book without any currency remains readable; its first
 transaction-service write creates that same default commodity and metadata inside
 the transaction's atomic database change.
 
+Rounding uses the selected commodity's declared ``fraction`` rather than assuming
+cents. Scheduled posting uses the schedule currency; Projection and loan interfaces
+use the reporting currency; exact allocation accepts the caller's commodity
+fraction. Stored ``Money`` remains rational and unrounded until one of these
+minor-unit boundaries is crossed.
+
 ### Investment activity semantics
 
 Investment activity is an optional split classification, separate from both the

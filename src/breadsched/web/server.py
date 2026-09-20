@@ -32,6 +32,7 @@ from ..gen.engine import (
     valuation,
 )
 from ..gen.engine.activity import PlanMeasure, PlanSettings
+from ..gen.engine.currency import reporting_fraction
 from ..gen.lib import (
     Account,
     AccountClass,
@@ -634,6 +635,7 @@ class Api:
             liability=str(payload.get("liability") or ""),
             interest_account=str(payload.get("interest_account") or ""),
             payment_account=str(payload.get("payment_account") or ""),
+            fraction=reporting_fraction(self.db),
         )
 
     def loan_preview(self, payload: dict) -> dict:

@@ -13,6 +13,7 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine.currency import reporting_fraction
 from ...gen.engine.loans import LoanTerms, schedule_preview
 from ...gen.lib import Money
 from ...gen.lib.account import AccountClass
@@ -173,6 +174,7 @@ class LoanDialog(Gtk.Window):
             liability=self._liabilities[self.liability_picker.get_selected()].handle,
             interest_account=self._expenses[self.interest_picker.get_selected()].handle,
             payment_account=self._funding[self.funding_picker.get_selected()].handle,
+            fraction=reporting_fraction(self.db),
         )
 
     # ----------------------------------------------------------------- preview

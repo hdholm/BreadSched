@@ -225,6 +225,24 @@ class TestOneOffs:
         result = projection.project(db, scenario)
         assert result.total("expense") == Money(0)
 
+    def test_event_rounding_uses_the_reporting_currency_fraction(self, db, book):
+        currency = db.get_commodity_by_mnemonic("USD")
+        assert currency is not None
+        currency.fraction = 1
+        with db.transaction("Whole-unit currency") as txn:
+            db.commit_commodity(currency, txn)
+        scenario = Scenario(
+            name="Whole units",
+            start=date(2026, 1, 1),
+            years=1,
+            assumptions=flat_assumptions(),
+        )
+        scenario.add_one_off(date(2026, 1, 15), book.utilities, "12.6", "Rounded expense")
+
+        result = projection.project(db, scenario)
+
+        assert result.rows[0].expense == Money("13")
+
 
 class TestDatedAssumptions:
     def test_periods_overlay_base_assumptions_and_later_periods_win(self):

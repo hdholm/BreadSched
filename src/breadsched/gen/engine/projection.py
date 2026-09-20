@@ -22,6 +22,7 @@ from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
 from ..lib.transaction import InvestmentActivityKind
 from . import investment, planning, valuation
+from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -811,6 +812,7 @@ def _apply_event(
     flows: _EventMonthFlows,
     schedule_growth_policies: dict[str, ScheduleGrowthPolicy],
     formula_schedule_handles: set[str],
+    fraction: int,
 ) -> Money:
     """Apply one event's effective splits to financial state on its exact date."""
     flows.events.append(event)
@@ -827,7 +829,7 @@ def _apply_event(
         account = accounts.get(planned_split.account)
         if account is None or account.exclude_from_projection:
             continue
-        amount = (planned_split.amount * factor).quantize(100)
+        amount = (planned_split.amount * factor).quantize(fraction)
         cls = account.account_class
 
         if cls is AccountClass.INCOME:
@@ -871,7 +873,7 @@ def _apply_event(
                 cash = cash - amount
                 flows.cash_flow = flows.cash_flow - amount
     effective_legs = (
-        (split.account, (split.amount * factor).quantize(100)) for split in event.splits
+        (split.account, (split.amount * factor).quantize(fraction)) for split in event.splits
     )
     escrow = escrow_recognition(effective_legs, accounts)
     flows.expense = flows.expense + escrow.planning_expense_adjustment
@@ -903,6 +905,7 @@ def _project_events(
     end = end_exclusive - timedelta(days=1)
     day_before = start - timedelta(days=1)
     timeline = _AssumptionTimeline(scenario, start, end)
+    fraction = reporting_fraction(db)
 
     cash = Money(0)
     holdings: dict[str, Money] = {}
@@ -963,7 +966,7 @@ def _project_events(
         ):
             continue
         residual = _sum(split.amount for split in event.expected_splits)
-        if residual.quantize(100):
+        if residual.quantize(fraction):
             _warn_once(
                 result,
                 f"scheduled transaction {event.description!r} does not balance: its "
@@ -1011,6 +1014,7 @@ def _project_events(
                 flows,
                 schedule_growth_policies,
                 formula_schedule_handles,
+                fraction,
             )
             cursor = event.when
 

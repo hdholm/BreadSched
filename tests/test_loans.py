@@ -15,7 +15,7 @@ from decimal import Decimal, localcontext
 
 import pytest
 
-from breadsched.gen.engine.loans import LoanTerms, build_schedule, create_loan
+from breadsched.gen.engine.loans import LoanTerms, build_schedule, create_loan, schedule_preview
 from breadsched.gen.lib import Assumptions, Money, PlanningFlowKind, ScheduledSplit
 from breadsched.gen.lib.finance import amortisation_schedule, fv, ipmt, nper, pmt, ppmt, pv
 from breadsched.gen.lib.formula import FormulaError, evaluate, normalise
@@ -204,6 +204,12 @@ class TestLoanSetup:
 
     def test_the_payment_is_the_expected_figure(self, terms):
         assert terms.payment() == Money("1199.10")
+
+    def test_payment_and_preview_use_the_currency_fraction(self, terms):
+        terms.fraction = 1
+
+        assert terms.payment() == Money("1199")
+        assert schedule_preview(terms, rows=1)[0]["interest"] == Money("1000")
 
     def test_the_schedule_uses_formulas_not_fixed_amounts(self, terms):
         schedule = build_schedule(terms)

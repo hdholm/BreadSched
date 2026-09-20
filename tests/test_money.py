@@ -217,9 +217,18 @@ class TestRoundingAndAllocation:
         parts = Money("-10.00").allocate(3)
         assert sum((p.to_decimal() for p in parts), Decimal(0)) == Decimal("-10.00")
 
+    def test_allocation_uses_the_requested_commodity_fraction(self):
+        parts = Money("1.001").allocate(2, fraction=1000)
+
+        assert parts == [Money("0.501"), Money("0.500")]
+
     def test_allocation_needs_at_least_one_part(self):
         with pytest.raises(ValueError):
             Money("1.00").allocate(0)
+
+    def test_allocation_rejects_an_invalid_fraction(self):
+        with pytest.raises(ValueError, match="fraction"):
+            Money("1.00").allocate(2, fraction=0)
 
 
 class TestFormatting:

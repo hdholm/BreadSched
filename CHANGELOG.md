@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0224 commodity-precision slice — Use declared minor units.** Centralize
+  reporting and commodity fraction lookup; let exact allocation accept a commodity
+  fraction; quantize scheduled posting, projection event application/balance checks,
+  and loan payments/previews to the relevant declared fraction rather than cents.
+  Route web and GTK loan construction through the reporting-currency fraction and
+  add whole-unit and thousandth-unit regressions. Advance the alpha version to
+  `0.2.0a83`; native schema version 7 is unchanged.
+
 - [x] **0224 ledger-amount boundary — Reject mixed-currency aggregation.** Expose
   tagged account, recursive, class-total, net-worth, and cash-on-hand balances while
   retaining compatibility `Money` results. Carry transaction currency through the
