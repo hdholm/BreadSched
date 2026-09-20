@@ -6,13 +6,17 @@ import pytest
 
 from breadsched.gen.engine import ledger, schedule
 from breadsched.gen.lib import (
+    DEFAULT_CURRENCY_HANDLE,
     AccountClass,
     AccountType,
+    Amount,
+    Commodity,
     Money,
     PeriodType,
     Recurrence,
     ScheduledSplit,
     ScheduledTransaction,
+    Split,
     Transaction,
 )
 
@@ -54,6 +58,38 @@ class TestBalances:
 
     def test_cash_on_hand_ignores_investments(self, db, funded_book):
         assert ledger.cash_on_hand(db, as_of=date(2026, 1, 31)) == Money("7089.45")
+
+    def test_balance_retains_transaction_currency_identity(self, db, book):
+        transaction = Transaction.simple(
+            date(2026, 1, 1), "Tagged", book.checking, book.opening, Money("10")
+        )
+        transaction.currency = DEFAULT_CURRENCY_HANDLE
+        with db.transaction("Tagged transaction") as txn:
+            db.add_transaction(transaction, txn)
+
+        assert ledger.balance_amount(db, book.checking) == Amount(
+            Money("10"), DEFAULT_CURRENCY_HANDLE
+        )
+
+    def test_balance_and_register_reject_unlike_transaction_currencies(self, db, book):
+        eur = Commodity(mnemonic="EUR", fullname="Euro")
+        usd_transaction = Transaction.simple(
+            date(2026, 1, 1), "USD", book.checking, book.opening, Money("10")
+        )
+        usd_transaction.currency = DEFAULT_CURRENCY_HANDLE
+        eur_transaction = Transaction.simple(
+            date(2026, 1, 2), "EUR", book.checking, book.opening, Money("5")
+        )
+        eur_transaction.currency = eur.handle
+        with db.transaction("Mixed currencies") as txn:
+            db.add_commodity(eur, txn)
+            db.add_transaction(usd_transaction, txn)
+            db.add_transaction(eur_transaction, txn)
+
+        with pytest.raises(TypeError, match="unlike commodities"):
+            ledger.balance(db, book.checking)
+        with pytest.raises(TypeError, match="unlike commodities"):
+            ledger.register(db, book.checking)
 
 
 class TestRegister:
@@ -97,7 +133,7 @@ class TestRegister:
         assert rows[0].running == Money("5289.45")
 
     def test_multi_split_transactions_show_as_split(self, db, book):
-        from breadsched.gen.lib import Split, Transaction
+        from breadsched.gen.lib import Transaction
 
         with db.transaction("Split purchase") as txn:
             purchase = Transaction(post_date=date(2026, 3, 1), description="Big shop")
@@ -414,7 +450,7 @@ class TestScheduleEngine:
         assert db.get_scheduled(copied.handle) is not None
 
     def test_actual_becomes_an_unsaved_one_time_template(self, db, book):
-        from breadsched.gen.lib import PlanningFlowKind, Split, Transaction
+        from breadsched.gen.lib import PlanningFlowKind, Transaction
 
         actual = Transaction(post_date=date(2026, 4, 9), description="Annual service")
         actual.add_split(

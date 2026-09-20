@@ -1739,15 +1739,18 @@ class DbSQLite(DbBase):
         end: date | None = None,
     ) -> list[sqlite3.Row]:
         """Indexed split lookup: the fast path for balances and registers."""
-        sql = "SELECT * FROM split_index WHERE account=?"
+        sql = (
+            "SELECT s.*, json_extract(t.blob, '$.currency') AS currency "
+            "FROM split_index s JOIN txn t ON t.handle=s.txn WHERE s.account=?"
+        )
         params: list[Any] = [account]
         if start:
-            sql += " AND post_date >= ?"
+            sql += " AND s.post_date >= ?"
             params.append(start.isoformat())
         if end:
-            sql += " AND post_date <= ?"
+            sql += " AND s.post_date <= ?"
             params.append(end.isoformat())
-        sql += " ORDER BY post_date, handle"
+        sql += " ORDER BY s.post_date, s.handle"
         return list(self._require().execute(sql, params))
 
     # ------------------------------------------------------------- commodities

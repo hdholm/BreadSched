@@ -7,6 +7,7 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine import fsa_claims, investment
+from ..engine.currency import reporting_currency_handle
 from ..lib.amount import Amount
 from ..lib.commodity import DEFAULT_CURRENCY, DEFAULT_CURRENCY_HANDLE, Commodity
 from ..lib.money import Money
@@ -78,16 +79,7 @@ def transaction_currency(db: DbSQLite, preferred: str | None = None) -> str:
     """Resolve a transaction-currency handle, including legacy empty books."""
     if preferred is not None:
         return preferred
-    configured = db.get_metadata("default_currency")
-    if isinstance(configured, str):
-        commodity = db.get_commodity(configured)
-        if commodity is not None and commodity.is_currency:
-            return commodity.handle
-    usd = db.get_commodity_by_mnemonic("USD")
-    if usd is not None and usd.is_currency:
-        return usd.handle
-    first = next((item for item in db.iter_commodities() if item.is_currency), None)
-    return first.handle if first is not None else DEFAULT_CURRENCY_HANDLE
+    return reporting_currency_handle(db)
 
 
 def build_transaction(
