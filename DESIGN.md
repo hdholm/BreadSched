@@ -165,6 +165,12 @@ Multiplying two monetary amounts is invalid; scaling a monetary amount requires 
 dimensionless scalar/rate, and dividing one monetary amount by another yields an
 exact dimensionless ratio.
 
+``Amount`` pairs one exact ``Money`` scalar with a commodity identifier. Combining
+or comparing two amounts requires identical commodity identity; scaling retains the
+tag, and dividing like amounts produces an exact dimensionless ratio. Unlike
+commodities become comparable only after an explicit dated conversion has returned
+a new amount in the reporting currency.
+
 ### Security quantities and dated valuation
 
 A split has two exact rational dimensions: ``value`` is expressed in the
@@ -174,8 +180,9 @@ ledger value remains an accounting fact even when a security's market price chan
 
 A commodity price is a first-class dated object identifying the security, quote
 currency, exact positive price, source, and quote type. As-of valuation selects the
-latest direct quote on or before the requested date and multiplies it by the exact
-account-commodity quantity. It quantizes only the resulting presentation value to
+latest direct quote on or before the requested date and converts a commodity-tagged
+exact account quantity to a quote-currency-tagged amount. The price rejects units of
+another commodity. Valuation quantizes only the resulting presentation value to
 the quote currency fraction. Investment and Retirement accounts with a non-currency
 commodity use this market value in current-value presentations; absent a compatible
 quote, they explicitly fall back to ledger value. Ordinary accounts are never

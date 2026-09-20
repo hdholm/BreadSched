@@ -5,6 +5,7 @@ from fractions import Fraction
 
 import pytest
 
+from breadsched.gen.lib.amount import Amount
 from breadsched.gen.lib.money import Money, Rate
 
 
@@ -135,6 +136,43 @@ class TestRate:
     def test_rate_cannot_be_added_to_money(self):
         with pytest.raises(TypeError):
             Money("10") + Rate("0.05")
+
+
+class TestAmount:
+    def test_requires_exact_money_and_a_commodity(self):
+        with pytest.raises(TypeError, match="must be Money"):
+            Amount(Decimal("1.00"), "USD")  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="non-empty"):
+            Amount(Money("1.00"), "")
+
+    def test_same_commodity_arithmetic_stays_tagged(self):
+        left = Amount(Money("10.25"), "USD")
+        right = Amount(Money("2.25"), "USD")
+
+        assert left + right == Amount(Money("12.50"), "USD")
+        assert left - right == Amount(Money("8.00"), "USD")
+        assert -right == Amount(Money("-2.25"), "USD")
+        assert left * Rate("2") == Amount(Money("20.50"), "USD")
+        assert left / 2 == Amount(Money("5.125"), "USD")
+        assert left / right == Fraction(41, 9)
+        assert left.quantize(10) == Amount(Money("10.3"), "USD")
+
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            lambda usd, eur: usd + eur,
+            lambda usd, eur: usd - eur,
+            lambda usd, eur: usd == eur,
+            lambda usd, eur: usd < eur,
+            lambda usd, eur: usd / eur,
+        ],
+    )
+    def test_unlike_commodities_cannot_be_netted_or_compared(self, operation):
+        usd = Amount(Money("1"), "USD")
+        eur = Amount(Money("1"), "EUR")
+
+        with pytest.raises(TypeError, match="unlike commodities"):
+            operation(usd, eur)
 
 
 class TestComparison:

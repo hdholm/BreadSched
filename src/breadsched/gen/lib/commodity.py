@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from datetime import date
+from fractions import Fraction
 from typing import Any
 
+from .amount import Amount
 from .base import PrimaryObject
 from .money import Money
 
@@ -94,6 +96,19 @@ class CommodityPrice(PrimaryObject):
             "source": self.source,
             "quote_type": self.quote_type,
         }
+
+    def convert(self, amount: Amount, *, fraction: int | None = None) -> Amount:
+        """Convert security units with this exact dated quote.
+
+        The quote date is part of this object, so callers cannot perform an
+        implicit timeless conversion or accidentally apply a quote for another
+        security. ``fraction`` is the quote currency's smallest subdivision.
+        """
+        if amount.commodity != self.commodity:
+            raise ValueError("price commodity does not match amount commodity")
+        scalar = Fraction(amount.value.numerator, amount.value.denominator)
+        result = Amount(self.value * scalar, self.currency)
+        return result.quantize(fraction) if fraction is not None else result
 
     def _unserialize(self, data: dict[str, Any]) -> None:
         self.commodity = str(data["commodity"])

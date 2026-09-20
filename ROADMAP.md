@@ -48,6 +48,10 @@ workflow may not add new presentation-owned rules.
     arithmetic boundaries. Reject addition, comparison, and netting across unlike
     commodities unless an explicit dated conversion has produced a reporting-
     currency amount.
+    - [x] Establish the closed `Amount` value and require dated `CommodityPrice`
+      conversion at the security-valuation boundary.
+    - [ ] Carry tagged amounts through the remaining ledger and transaction-service
+      arithmetic boundaries.
   - [ ] Preserve the distinct split dimensions: transaction-currency `value` and
     account-commodity `quantity`. Do not replace them with one ambiguous amount.
 - [ ] Split oversized modules/functions as part of the service/resource ownership

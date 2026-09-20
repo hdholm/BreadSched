@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
-from fractions import Fraction
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
+from ..lib.amount import Amount
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.money import Money
 from . import ledger
@@ -36,6 +36,8 @@ class AccountValuation:
     price_date: date | None = None
     commodity: Commodity | None = None
     currency: Commodity | None = None
+    total_amount: Amount | None = None
+    quantity_amount: Amount | None = None
 
 
 def book_currency(db: DbSQLite) -> Commodity | None:
@@ -104,18 +106,20 @@ def account_value(
     if price is None:
         return AccountValuation(ledger_total, commodity=commodity)
     quantity = quantity_balance(db, obj, as_of=as_of)
-    scalar = Fraction(quantity.numerator, quantity.denominator)
     currency = db.get_commodity(price.currency)
     fraction = currency.fraction if currency is not None else 100
-    total = (price.value * scalar).quantize(fraction)
+    quantity_amount = Amount(quantity, commodity.handle)
+    total_amount = price.convert(quantity_amount, fraction=fraction)
     return AccountValuation(
-        total=total,
+        total=total_amount.value,
         source="market",
         quantity=quantity,
         price=price.value,
         price_date=price.quote_date,
         commodity=commodity,
         currency=currency,
+        total_amount=total_amount,
+        quantity_amount=quantity_amount,
     )
 
 
