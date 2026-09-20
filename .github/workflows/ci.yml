@@ -121,6 +121,51 @@ jobs:
           PY
           breadsched --help >/dev/null
 
+  missing-gtk-runtime:
+    name: PyGObject without GTK4 typelib
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install PyGObject without GTK4
+        run: |
+          sudo apt-get update
+          sudo apt-get remove -y gir1.2-gtk-4.0 || true
+          sudo apt-get install -y python3-gi python3-venv
+          /usr/bin/python3 -m venv --system-site-packages .venv
+          .venv/bin/python -m pip install --upgrade pip
+          .venv/bin/pip install -e ".[dev]"
+          .venv/bin/python - <<'PY'
+          import gi
+
+          try:
+              gi.require_version("Gtk", "4.0")
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("GTK4 typelib is unexpectedly importable")
+          PY
+
+      - name: Help, version, and launch failure stay usable
+        run: |
+          .venv/bin/pytest -n 0 tests/test_launcher.py
+          .venv/bin/breadsched-gtk --help >/dev/null
+          .venv/bin/breadsched-gtk --version >/dev/null
+          book="${RUNNER_TEMP}/missing-gtk.breadsched"
+          .venv/bin/breadsched init "$book" >/dev/null
+          set +e
+          output=$(.venv/bin/breadsched-gtk "$book" 2>&1)
+          status=$?
+          set -e
+          test "$status" -eq 3
+          case "$output" in
+            *Traceback*) exit 1 ;;
+          esac
+          case "$output" in
+            *"GTK 4 and PyGObject"*) ;;
+            *) exit 1 ;;
+          esac
+
   gui:
     name: GTK4 interface
     runs-on: ubuntu-latest

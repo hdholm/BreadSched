@@ -57,12 +57,6 @@ workflow may not add new presentation-owned rules.
 
 ## Independent acceptance evidence and test quality
 
-- [ ] Add a Linux CI job with PyGObject installed but the GTK4 typelib deliberately
-  absent. Keep `tests/test_launcher.py` in the core suite, make its “PyGObject exists”
-  probe distinguish an importable GTK4 namespace, and prove help/version plus a real
-  launch attempt report the missing-runtime condition without collection failure or
-  traceback.
-
 - [ ] Add small, human-reviewed golden books for Plan and Projection. Store the
   financial assumptions and hand-calculated expected dated flows, balances, and
   conservation terms beside each synthetic fixture so expected results are not

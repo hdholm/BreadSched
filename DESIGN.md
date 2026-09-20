@@ -1020,7 +1020,10 @@ process cannot delete another writer's lock.
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
 (`ValueError` from `gi.require_version`) skip the GTK module cleanly; once GTK4 is
-available, runtime/widget failures remain real test failures.
+available, runtime/widget failures remain real test failures. CI separately installs
+PyGObject while deliberately removing the GTK4 typelib, then runs launcher help,
+version, and real-launch checks so a partial system installation cannot turn test
+collection or startup into a traceback.
 
 ## GTK4 and web parity
 

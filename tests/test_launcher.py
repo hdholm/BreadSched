@@ -18,6 +18,23 @@ from breadsched.gui import launcher
 _HAS_PYGOBJECT = importlib.util.find_spec("gi") is not None
 
 
+def _has_gtk4_namespace() -> bool:
+    """Distinguish an installed binding from an importable GTK4 runtime."""
+    if not _HAS_PYGOBJECT:
+        return False
+    try:
+        import gi
+
+        gi.require_version("Gtk", "4.0")
+        from gi.repository import Gtk  # noqa: F401
+    except (ImportError, ValueError):
+        return False
+    return True
+
+
+_HAS_GTK4 = _has_gtk4_namespace()
+
+
 @pytest.fixture
 def book(tmp_path, capsys):
     path = tmp_path / "household.breadsched"
@@ -115,6 +132,17 @@ class TestMissingGtk:
         launcher.main([str(book)])
         assert "underlying error" in capsys.readouterr().err
 
+    @pytest.mark.skipif(
+        not _HAS_PYGOBJECT or _HAS_GTK4,
+        reason="requires PyGObject installed without an importable GTK4 namespace",
+    )
+    def test_installed_pygobject_without_gtk4_is_explained(self, book, capsys):
+        code = launcher.main([str(book)])
+        assert code == 3
+        error = capsys.readouterr().err
+        assert "Traceback" not in error
+        assert "GTK 4 and PyGObject" in error
+
 
 class TestCliSubcommand:
     def test_breadsched_gui_delegates_to_the_launcher(self, book, capsys, no_gtk):
@@ -124,7 +152,7 @@ class TestCliSubcommand:
     def test_breadsched_gui_accepts_no_book(self, capsys, no_gtk):
         assert cli_main(["gui"]) == 3
 
-    @pytest.mark.skipif(not _HAS_PYGOBJECT, reason="PyGObject is not installed")
+    @pytest.mark.skipif(not _HAS_GTK4, reason="GTK4 is not importable")
     def test_breadsched_gui_starts_the_application(self, book, fake_gtk):
         assert cli_main(["gui", str(book)]) == 0
         assert str(book) in fake_gtk[0]
@@ -136,7 +164,7 @@ class TestCliSubcommand:
 
 
 @pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib needs 3.11")
-@pytest.mark.skipif(not _HAS_PYGOBJECT, reason="PyGObject is not installed")
+@pytest.mark.skipif(not _HAS_GTK4, reason="GTK4 is not importable")
 class TestStartingSuccessfully:
     """Requires PyGObject importable; the run() call itself is stubbed out."""
 
