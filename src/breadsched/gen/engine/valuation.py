@@ -11,6 +11,7 @@ from ..lib.amount import Amount
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.money import Money
 from . import ledger
+from .currency import book_currency, reporting_currency_handle
 
 __all__ = [
     "AccountValuation",
@@ -38,19 +39,6 @@ class AccountValuation:
     currency: Commodity | None = None
     total_amount: Amount | None = None
     quantity_amount: Amount | None = None
-
-
-def book_currency(db: DbSQLite) -> Commodity | None:
-    """The configured reporting currency, then USD, then the first currency."""
-    configured = db.get_metadata("default_currency")
-    if isinstance(configured, str):
-        found = db.get_commodity(configured) or db.get_commodity_by_mnemonic(configured)
-        if found is not None and found.is_currency:
-            return found
-    usd = db.get_commodity_by_mnemonic("USD")
-    if usd is not None and usd.is_currency:
-        return usd
-    return next((commodity for commodity in db.iter_commodities() if commodity.is_currency), None)
 
 
 def latest_price(
@@ -95,16 +83,18 @@ def account_value(
     """Market-value a security account, falling back explicitly to ledger value."""
     obj = db.get_account(account) if isinstance(account, str) else account
     if obj is None:
-        return AccountValuation(Money(0))
-    ledger_total = ledger.balance(db, obj, as_of=as_of)
+        total_amount = Amount(Money(0), reporting_currency_handle(db))
+        return AccountValuation(Money(0), total_amount=total_amount)
+    ledger_amount = ledger.balance_amount(db, obj, as_of=as_of)
+    ledger_total = ledger_amount.value
     if obj.atype not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
-        return AccountValuation(ledger_total)
+        return AccountValuation(ledger_total, total_amount=ledger_amount)
     commodity = db.get_commodity(obj.commodity) if obj.commodity else None
     if commodity is None or commodity.is_currency:
-        return AccountValuation(ledger_total)
+        return AccountValuation(ledger_total, total_amount=ledger_amount)
     price = latest_price(db, commodity, as_of=as_of)
     if price is None:
-        return AccountValuation(ledger_total, commodity=commodity)
+        return AccountValuation(ledger_total, commodity=commodity, total_amount=ledger_amount)
     quantity = quantity_balance(db, obj, as_of=as_of)
     currency = db.get_commodity(price.currency)
     fraction = currency.fraction if currency is not None else 100
@@ -128,21 +118,27 @@ def value_recursive(db: DbSQLite, account: str | Account, as_of: date | None = N
     obj = db.get_account(account) if isinstance(account, str) else account
     if obj is None:
         return Money(0)
-    total = account_value(db, obj, as_of=as_of).total
+    own = account_value(db, obj, as_of=as_of)
+    total = own.total_amount or Amount(own.total, reporting_currency_handle(db))
     for child in db.descendants(obj.handle):
-        total = total + account_value(db, child, as_of=as_of).total
-    return total
+        valued = account_value(db, child, as_of=as_of)
+        amount = valued.total_amount or Amount(valued.total, total.commodity)
+        if amount:
+            total = amount if not total else total + amount
+    return total.value
 
 
 def totals_by_class(db: DbSQLite, as_of: date | None = None) -> dict[AccountClass, Money]:
     """Top-level accounting totals with security accounts marked to market."""
-    totals: dict[AccountClass, Money] = {}
+    tagged: dict[AccountClass, Amount] = {}
     for account in db.iter_accounts():
         if account.is_root:
             continue
         cls = account.account_class
-        totals[cls] = totals.get(cls, Money(0)) + account_value(db, account, as_of=as_of).total
-    return totals
+        valued = account_value(db, account, as_of=as_of)
+        amount = valued.total_amount or Amount(valued.total, reporting_currency_handle(db))
+        tagged[cls] = tagged[cls] + amount if cls in tagged else amount
+    return {cls: amount.value for cls, amount in tagged.items()}
 
 
 def net_worth(db: DbSQLite, as_of: date | None = None) -> Money:

@@ -174,6 +174,13 @@ tag, and dividing like amounts produces an exact dimensionless ratio. Unlike
 commodities become comparable only after an explicit dated conversion has returned
 a new amount in the reporting currency.
 
+Ledger reads preserve that identity internally. Account, recursive, class-total,
+net-worth, cash-on-hand, and register-running arithmetic uses tagged transaction
+values and refuses to combine material values with different currency identifiers.
+The long-standing scalar APIs unwrap the checked result to ``Money`` for callers
+that only present one reporting currency. An empty zero has no economic dimension
+to net and therefore adopts the first material amount's commodity.
+
 ### Security quantities and dated valuation
 
 A split has two exact rational dimensions: ``value`` is expressed in the

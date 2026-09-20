@@ -5,6 +5,17 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0224 ledger-amount boundary — Reject mixed-currency aggregation.** Expose
+  tagged account, recursive, class-total, net-worth, and cash-on-hand balances while
+  retaining compatibility `Money` results. Carry transaction currency through the
+  derived split query, register running balances, ordinary-account valuation, and
+  market-value aggregation. Material amounts in unlike currencies now fail instead
+  of silently netting; empty zero balances remain neutral. Consolidate reporting-
+  currency selection and add mixed-currency balance/register regressions. This
+  completes the commodity-tagged ledger/service boundary and distinct value-versus-
+  quantity work. Advance the alpha version to `0.2.0a82`; native schema version 7
+  is unchanged.
+
 - [x] **0224 transaction-amount boundary — Keep value and quantity dimensions
   explicit.** Give every new native book a stable default USD commodity and route
   CLI, web, and GTK transaction writes through commodity-tagged split values.

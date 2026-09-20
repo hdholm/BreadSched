@@ -43,7 +43,7 @@ workflow may not add new presentation-owned rules.
 
 - [ ] Harden `Money` and amount handling:
   - [ ] Remove hard-coded cents where account/commodity precision differs.
-  - [ ] Keep `Money` as the exact rational scalar used to preserve GnuCash numerics;
+  - [x] Keep `Money` as the exact rational scalar used to preserve GnuCash numerics;
     introduce a commodity-tagged `Amount(value, commodity)` at ledger/service
     arithmetic boundaries. Reject addition, comparison, and netting across unlike
     commodities unless an explicit dated conversion has produced a reporting-
@@ -52,8 +52,8 @@ workflow may not add new presentation-owned rules.
       conversion at the security-valuation boundary.
     - [x] Carry tagged transaction-currency values and separately tagged account-
       commodity quantities through the transaction-service boundary.
-    - [ ] Enforce tagged amounts at the remaining ledger aggregation boundaries.
-  - [ ] Preserve the distinct split dimensions: transaction-currency `value` and
+    - [x] Enforce tagged amounts at the remaining ledger aggregation boundaries.
+  - [x] Preserve the distinct split dimensions: transaction-currency `value` and
     account-commodity `quantity`. Do not replace them with one ambiguous amount.
 - [ ] Split oversized modules/functions as part of the service/resource ownership
   work, especially the remaining seams in `web/server.py`.
