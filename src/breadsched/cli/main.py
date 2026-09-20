@@ -304,10 +304,18 @@ def cmd_verify(args: argparse.Namespace) -> int:
     """Check SQLite integrity and logical book invariants without modifying the book."""
     report = DbSQLite.verify_path(args.book)
     payload = report.as_dict()
+    from ..versioning import version_details, version_summary
+
+    payload.update(version_details(native_schema_version=report.native_schema_version))
+    version_line = version_summary()
     if report.ok:
-        emit(payload, args, "Book verification passed: SQLite and logical checks are clean")
+        emit(
+            payload,
+            args,
+            f"{version_line}\nBook verification passed: SQLite and logical checks are clean",
+        )
         return 0
-    lines = ["Book verification failed:"]
+    lines = [version_line, "Book verification failed:"]
     lines.extend(f"  sqlite: {problem}" for problem in report.sqlite)
     lines.extend(f"  {issue.code}: {issue.message}" for issue in report.issues)
     emit(payload, args, "\n".join(lines))
@@ -2024,9 +2032,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if getattr(args, "version", False):
-        from .. import __version__
+        from ..versioning import version_summary
 
-        print(f"breadsched {__version__}")
+        print(version_summary())
         return 0
     if not getattr(args, "func", None):
         parser.print_help()

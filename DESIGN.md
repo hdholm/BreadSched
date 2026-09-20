@@ -938,7 +938,9 @@ root.
 The **application version** and **native data-format version** serve different
 purposes and never advance in lockstep. The application version reported by
 `breadsched --version` identifies the installed build for bug reports, packaging,
-and release notes. The integer data-format/schema version determines whether a
+and release notes and reports the native compatibility window beside it. Book
+verification includes the same application and schema details in its human and JSON
+diagnostics. The integer data-format/schema version determines whether a
 native book can be opened or must be migrated; it is currently 7. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.

@@ -57,7 +57,10 @@ class TestHelpAndVersion:
         from breadsched import __version__
 
         assert launcher.main(["--version"]) == 0
-        assert __version__ in capsys.readouterr().out
+        output = capsys.readouterr().out
+        assert __version__ in output
+        assert "native schema 7" in output
+        assert "supports 6–7" in output
 
     def test_help_lists_the_equivalent_commands(self, capsys):
         launcher.main(["--help"])

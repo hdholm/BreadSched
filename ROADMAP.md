@@ -219,7 +219,7 @@ workflow may not add new presentation-owned rules.
 
 ## Storage, integrity, and recovery
 
-- [ ] **Application version and native data-format version are independent.** The
+- [x] **Application version and native data-format version are independent.** The
   package/application version (currently the `0.2.0aN` series) identifies the build
   for bug reports and releases. The integer native schema/data-format version
   (currently 7) alone controls book compatibility and migration. Display and

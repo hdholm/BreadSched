@@ -45,6 +45,7 @@ class BookVerification:
 
     sqlite: tuple[str, ...] = ()
     issues: tuple[BookIssue, ...] = ()
+    native_schema_version: int | None = None
 
     @property
     def ok(self) -> bool:
@@ -53,6 +54,7 @@ class BookVerification:
     def as_dict(self) -> dict[str, object]:
         return {
             "ok": self.ok,
+            "native_schema_version": self.native_schema_version,
             "sqlite": list(self.sqlite),
             "issues": [issue.as_dict() for issue in self.issues],
         }

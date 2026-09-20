@@ -61,9 +61,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if "--version" in args:
-        from .. import __version__
+        from ..versioning import version_summary
 
-        print(f"breadsched-gtk {__version__}")
+        print(version_summary("breadsched-gtk"))
         return 0
 
     positional = [a for a in args if not a.startswith("-")]

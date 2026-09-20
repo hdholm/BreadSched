@@ -263,9 +263,18 @@ class TestItServes:
         assert payload
 
     def test_verify_reports_a_clean_book(self, client):
+        from breadsched import __version__
+
         status, payload = client.get("/api/verify")
         assert status == 200
-        assert payload == {"ok": True, "sqlite": [], "issues": []}
+        assert payload == {
+            "ok": True,
+            "application_version": __version__,
+            "native_schema_version": 7,
+            "supported_schema_versions": {"minimum": 6, "maximum": 7},
+            "sqlite": [],
+            "issues": [],
+        }
 
     def test_accounts_carry_balances(self, client):
         _status, payload = client.get("/api/accounts")

@@ -572,7 +572,16 @@ class DbSQLite(DbBase):
 
     def verification_report(self) -> BookVerification:
         """Return one combined physical/logical verification result."""
-        return BookVerification(tuple(self.integrity_problems()), tuple(self.verify_book()))
+        raw_version = self.get_metadata("schema_version")
+        try:
+            native_schema_version = int(raw_version) if raw_version is not None else None
+        except (TypeError, ValueError):
+            native_schema_version = None
+        return BookVerification(
+            tuple(self.integrity_problems()),
+            tuple(self.verify_book()),
+            native_schema_version,
+        )
 
     @classmethod
     def verify_path(cls, path: str) -> BookVerification:
