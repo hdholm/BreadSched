@@ -5,6 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 estimate-structure slice — Isolate historical observation.** Move
+  per-category monthly ledger scanning, escrow recognition, future-plan coverage,
+  and residual/gross evidence collection into one typed history result consumed by
+  proposal scoring. Preserve proposal amounts, cadence, evidence, ordering, and
+  conservative filtering under the historical-estimate characterization suite.
+  Advance the alpha version to `0.2.0a76`; native schema version 7 is unchanged.
+
 - [x] **0223 category-report-structure slice — Separate report assembly.** Extract
   category hierarchy roll-up, period variance calculation, cash-bridge rows,
   planning-flow rows, and mortgage-payment rows from the event accumulation path.

@@ -288,7 +288,11 @@ unplanned need rather than repeatedly suggesting the same amount.
 Historical category actuals supply gross inferred need, including actuals matched
 to an earlier schedule. The selected future plan supplies coverage: committed
 schedules and planning-only estimates contribute their category splits once, using
-the next twelve planning months as a calendar-month profile. Historical scheduled
+the next twelve planning months as a calendar-month profile. One monthly-history
+pass records gross activity, applied coverage, residuals, escrow adjustments,
+transaction counts, and month-of-year samples before any proposal scoring. This
+observation result is kept separate from cadence, trend, seasonality, confidence,
+funding, and final proposal assembly. Historical scheduled
 occurrences are not also subtracted, since a schedule may have ended or changed
 amounts. Calendar-month matching retains the exact future year/month rather than
 collapsing it to a month number. Sustained full coverage through the remainder of
