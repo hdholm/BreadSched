@@ -160,6 +160,28 @@ class TestBillNormalisation:
         assert daycare.annual == Money("2295.81")
         assert daycare.monthly > daycare.amount * 2
 
+    def test_normalisation_uses_the_reporting_currency_fraction(self, db, book):
+        currency = db.get_commodity_by_mnemonic("USD")
+        assert currency is not None
+        currency.fraction = 1
+        bill = ScheduledTransaction(
+            name="Whole-unit HOA",
+            recurrence=Recurrence(PeriodType.MONTH, interval=3, start=date(2026, 10, 1)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("619")),
+                ScheduledSplit(book.checking, Money("-619")),
+            ],
+        )
+        with db.transaction("Whole-unit dashboard") as txn:
+            db.commit_commodity(currency, txn)
+            db.add_scheduled(bill, txn)
+
+        board = dashboard.build(db, as_of=TODAY)
+        row = next(item for item in board.bills if item.name == bill.name)
+
+        assert board.fraction == 1
+        assert row.monthly == Money("206")
+
     def test_estimates_are_excluded_from_pending_bills_but_retained_in_outlook(self, household):
         assert "Groceries" not in [bill.name for bill in household.bills]
         groceries = next(item for item in household.estimates if item.name == "Groceries")

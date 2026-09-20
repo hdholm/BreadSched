@@ -334,6 +334,14 @@ class TestInference:
         finally:
             db.close()
 
+    def test_the_usual_payment_uses_the_reporting_currency_fraction(self):
+        payments = [
+            (date(2026, 1, 1), Money("400.4")),
+            (date(2026, 2, 1), Money("401.4")),
+        ]
+
+        assert inference._typical_payment(payments, fraction=1) == Money("401")
+
     def test_the_payment_account_comes_from_cash_to_card_activity(self, book_path):
         db = open_book(book_path)
         try:

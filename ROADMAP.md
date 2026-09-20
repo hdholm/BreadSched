@@ -41,11 +41,11 @@ workflow may not add new presentation-owned rules.
 
 ## Architecture and correctness
 
-- [ ] Harden `Money` and amount handling:
-  - [ ] Remove hard-coded cents where account/commodity precision differs.
+- [x] Harden `Money` and amount handling:
+  - [x] Remove hard-coded cents where account/commodity precision differs.
     - [x] Use declared fractions for exact allocation, scheduled posting, Projection
       event rounding, and loan payment/preview calculations.
-    - [ ] Carry declared reporting precision through Dashboard, inference, and
+    - [x] Carry declared reporting precision through Dashboard, inference, and
       historical-estimate calculations.
   - [x] Keep `Money` as the exact rational scalar used to preserve GnuCash numerics;
     introduce a commodity-tagged `Amount(value, commodity)` at ledger/service

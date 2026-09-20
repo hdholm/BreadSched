@@ -43,6 +43,7 @@ from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scheduled import ScheduledTransaction
 from . import fsa, ledger, schedule, valuation
+from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -244,6 +245,7 @@ class BillRow:
     recurrence: Recurrence | None = None
     generated: bool = False
     emergency_amount: Money = field(default_factory=lambda: Money(0))
+    fraction: int = 100
 
     @property
     def frequency(self) -> str:
@@ -263,15 +265,15 @@ class BillRow:
 
     @property
     def monthly(self) -> Money:
-        return (self.amount * (DAYS_PER_MONTH / self.cycle_days)).quantize(100)
+        return (self.amount * (DAYS_PER_MONTH / self.cycle_days)).quantize(self.fraction)
 
     @property
     def annual(self) -> Money:
-        return (self.amount * (DAYS_PER_YEAR / self.cycle_days)).quantize(100)
+        return (self.amount * (DAYS_PER_YEAR / self.cycle_days)).quantize(self.fraction)
 
     @property
     def emergency_monthly(self) -> Money:
-        return (self.emergency_amount * (DAYS_PER_MONTH / self.cycle_days)).quantize(100)
+        return (self.emergency_amount * (DAYS_PER_MONTH / self.cycle_days)).quantize(self.fraction)
 
     def days_until(self, today: date) -> int:
         return (self.next_due - today).days
@@ -314,6 +316,7 @@ class Dashboard:
 
     as_of: date
     config: DashboardConfig
+    fraction: int = 100
     groups: list[GroupResult] = field(default_factory=list)
     pending: list[BillRow] = field(default_factory=list)
     estimates: list[BillRow] = field(default_factory=list)
@@ -480,7 +483,9 @@ class Dashboard:
     @property
     def emergency_fund(self) -> Money:
         """What the household would need to run with no income at all."""
-        return (self.emergency_monthly_outgoings * self.config.emergency_months).quantize(100)
+        return (self.emergency_monthly_outgoings * self.config.emergency_months).quantize(
+            self.fraction
+        )
 
     @property
     def available(self) -> Money:
@@ -539,7 +544,8 @@ def build(
     """Compute the dashboard from the book."""
     today = as_of or date.today()
     config = config or DashboardConfig.load(db)
-    board = Dashboard(as_of=today, config=config)
+    fraction = reporting_fraction(db)
+    board = Dashboard(as_of=today, config=config, fraction=fraction)
     paid_off = _paid_off_loans(db, today)
     resolved = resolve_groups(db, config)
     board.groups = _hierarchical_results(db, resolved, today, paid_off)
@@ -549,7 +555,7 @@ def build(
     else:
         board.liquid = ledger.cash_on_hand(db, as_of=today)
     pending, estimates, income_per_month, income_with_estimates, next_income, income_events = (
-        _pending_cash_flow(db, today, horizon_days, paid_off)
+        _pending_cash_flow(db, today, horizon_days, paid_off, fraction)
     )
     board.pending = pending
     board.estimates = estimates
@@ -1119,13 +1125,14 @@ def _reserve_bill(
         # only known funding source; protect the complete obligation.
         bill.held = target_amount
         return
-    bill.held = (target_amount * (received_income / total_income)).quantize(100)
+    bill.held = (target_amount * (received_income / total_income)).quantize(bill.fraction)
 
 
 def _credit_card_rows(
     db: DbSQLite,
     today: date,
     schedules: list[ScheduledTransaction],
+    fraction: int,
 ) -> list[BillRow]:
     """Account-tied card payments shared with Scheduled and Upcoming."""
     rows: list[BillRow] = []
@@ -1142,6 +1149,7 @@ def _credit_card_rows(
                 account=definition.account,
                 recurrence=definition.recurrence,
                 generated=True,
+                fraction=fraction,
                 emergency_amount=(
                     definition.amount_due
                     if account is not None and account.emergency_fund_included
@@ -1157,6 +1165,7 @@ def _pending_cash_flow(
     today: date,
     horizon_days: int,
     paid_off: set[str],
+    fraction: int,
 ) -> tuple[list[BillRow], list[BillRow], Money, Money, date | None, list[tuple[date, Money]]]:
     """Build dated pending income and bills, plus income used by liquidity."""
     horizon = today + timedelta(days=horizon_days)
@@ -1188,7 +1197,7 @@ def _pending_cash_flow(
 
         days = cycle_days(sched)
         if income > 0 and income >= outflow:
-            normalised_income = (income * (DAYS_PER_MONTH / days)).quantize(100)
+            normalised_income = (income * (DAYS_PER_MONTH / days)).quantize(fraction)
             income_per_month_with_estimates = income_per_month_with_estimates + normalised_income
             if not sched.placeholder:
                 income_per_month = income_per_month + normalised_income
@@ -1205,6 +1214,7 @@ def _pending_cash_flow(
                     estimate=sched.placeholder,
                     income=True,
                     recurrence=sched.recurrence,
+                    fraction=fraction,
                 )
                 (estimates if sched.placeholder else pending).append(row)
             for occurrence_date in sched.recurrence.occurrences(horizon, since=today):
@@ -1243,11 +1253,12 @@ def _pending_cash_flow(
                 estimate=sched.placeholder,
                 recurrence=sched.recurrence,
                 emergency_amount=_emergency_outflow(db, sched, when),
+                fraction=fraction,
             )
             bills.append(bill)
             (estimates if sched.placeholder else pending).append(bill)
 
-    card_rows = _credit_card_rows(db, today, schedules)
+    card_rows = _credit_card_rows(db, today, schedules, fraction)
     bills.extend(card_rows)
     pending.extend(card_rows)
     latest_overdue = {

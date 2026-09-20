@@ -5,6 +5,12 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0224 reporting-precision completion — Remove the remaining cent assumptions.**
+  Carry the reporting currency fraction through Dashboard normalization, reserves,
+  and emergency-fund sizing; credit-card payment inference; and historical category,
+  classified-flow, trend, seasonal, and cadence estimates. Add whole-unit regressions
+  and advance the alpha version to `0.2.0a84`; native schema version 7 is unchanged.
+
 - [x] **0224 commodity-precision slice — Use declared minor units.** Centralize
   reporting and commodity fraction lookup; let exact allocation accept a commodity
   fraction; quantize scheduled posting, projection event application/balance checks,

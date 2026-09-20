@@ -20,6 +20,7 @@ from datetime import date
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
+from .currency import reporting_fraction
 
 __all__ = [
     "Suggestion",
@@ -189,6 +190,7 @@ def infer_card_settings(db: DbSQLite, months: int = 12) -> list[Suggestion]:
     The payment day is the most common day of the month on which payments arrived.
     """
     suggestions: list[Suggestion] = []
+    fraction = reporting_fraction(db)
     for card in db.iter_accounts():
         if card.atype is not AccountType.CREDIT or card.placeholder:
             continue
@@ -270,7 +272,7 @@ def infer_card_settings(db: DbSQLite, months: int = 12) -> list[Suggestion]:
             )
 
         if carries:
-            typical = _typical_payment(payments)
+            typical = _typical_payment(payments, fraction)
             if typical and card.usual_payment != typical:
                 suggestions.append(
                     Suggestion(
@@ -296,7 +298,7 @@ def _balance_after_last_payment(db: DbSQLite, handle: str, payments) -> Money:
     return ledger.balance(db, handle, as_of=last)
 
 
-def _typical_payment(payments) -> Money | None:
+def _typical_payment(payments, fraction: int = 100) -> Money | None:
     """The median payment, which a single unusual month cannot skew."""
     amounts = sorted(amount.to_decimal() for _when, amount in payments)
     if not amounts:
@@ -304,7 +306,7 @@ def _typical_payment(payments) -> Money | None:
     middle = len(amounts) // 2
     if len(amounts) % 2:
         return Money(amounts[middle])
-    return Money((amounts[middle - 1] + amounts[middle]) / 2).quantize(100)
+    return Money((amounts[middle - 1] + amounts[middle]) / 2).quantize(fraction)
 
 
 # ------------------------------------------------------------------ applying

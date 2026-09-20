@@ -1185,6 +1185,34 @@ class TestHistoricalEstimateProposals:
         assert groceries.active_months == 4
         assert "category-specific day-10 anchor" in groceries.evidence.cadence.explanation
 
+    def test_historical_estimate_uses_the_reporting_currency_fraction(self, db, book):
+        from breadsched.gen.engine import estimates
+        from breadsched.gen.lib import Transaction
+
+        currency = db.get_commodity_by_mnemonic("USD")
+        assert currency is not None
+        currency.fraction = 1
+        with db.transaction("Whole-unit estimate history") as txn:
+            db.commit_commodity(currency, txn)
+            for month, amount in ((1, "100.2"), (2, "100.8")):
+                db.add_transaction(
+                    Transaction.simple(
+                        date(2026, month, 10),
+                        "Groceries",
+                        book.groceries,
+                        book.checking,
+                        amount,
+                    ),
+                    txn,
+                )
+
+        proposals = estimates.propose_historical_estimates(
+            db, as_of=date(2026, 3, 15), months=2, min_active_months=1
+        )
+        groceries = next(item for item in proposals if item.category == book.groceries)
+
+        assert groceries.amount == Money("101")
+
     def test_sparse_weekly_dates_fall_back_with_visible_evidence(self, db, book):
         from breadsched.gen.engine import estimates
 

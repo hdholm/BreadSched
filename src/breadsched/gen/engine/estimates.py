@@ -23,6 +23,7 @@ from ..lib.scenario import ScenarioSchedule
 from ..lib.scheduled import ScheduledMonthAmount, ScheduledSplit, ScheduledTransaction
 from ..lib.transaction import InvestmentActivityKind, PlanningFlowKind, Split
 from . import activity, planning
+from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -305,9 +306,9 @@ def _add_months(when: date, months: int) -> date:
     return date(index // 12, index % 12 + 1, 1)
 
 
-def _typical_amount(values: list[Money]) -> Money:
+def _typical_amount(values: list[Money], fraction: int) -> Money:
     decimals = sorted(value.to_decimal() for value in values)
-    return Money(median(decimals)).quantize(100)
+    return Money(median(decimals)).quantize(fraction)
 
 
 def _robust_sample(values: list[Money]) -> tuple[list[Money], tuple[int, ...], Decimal]:
@@ -593,6 +594,7 @@ def _bridge_end_before_continuing_coverage(
     planned: dict[tuple[str, date], Money],
     gross_by_month: dict[int, list[Money]],
     gross_default: Money,
+    fraction: int,
 ) -> date | None:
     """End a monthly bridge before sustained full coverage begins.
 
@@ -604,7 +606,7 @@ def _bridge_end_before_continuing_coverage(
     for offset in range(12):
         month = _add_months(future_start, offset)
         samples = gross_by_month.get(month.month, [])
-        need = _typical_amount(samples) if samples else gross_default
+        need = _typical_amount(samples, fraction) if samples else gross_default
         residual, _applied = _residual_after_scheduled(
             need, planned.get((account, month), Money(0))
         )
@@ -822,13 +824,15 @@ def _variability_label(value: Decimal) -> str:
     return "highly variable"
 
 
-def _trend_summary(values: list[Money]) -> tuple[list[Money], EstimateTrendEvidence | None]:
+def _trend_summary(
+    values: list[Money], fraction: int
+) -> tuple[list[Money], EstimateTrendEvidence | None]:
     """Return the sample to use and a conservative trend label."""
     if len(values) < 6:
         return values, None
     split = len(values) // 2
-    earlier = _typical_amount(values[:split])
-    later = _typical_amount(values[split:])
+    earlier = _typical_amount(values[:split], fraction)
+    later = _typical_amount(values[split:], fraction)
     if not earlier or (earlier > 0) != (later > 0):
         return values, None
     change = (later.to_decimal() - earlier.to_decimal()) / abs(earlier.to_decimal())
@@ -843,14 +847,14 @@ def _trend_summary(values: list[Money]) -> tuple[list[Money], EstimateTrendEvide
     return recent, EstimateTrendEvidence(direction, percent, len(recent), explanation)
 
 
-def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> tuple[bool, str]:
+def _has_seasonality(monthly_by_month: dict[int, list[Money]], fraction: int) -> tuple[bool, str]:
     """Detect a repeated month-of-year pattern without overfitting one year."""
     repeated = {
         month: values
         for month, values in monthly_by_month.items()
         if len(values) >= 2 and any(values)
     }
-    medians = [_typical_amount(values) for values in repeated.values()]
+    medians = [_typical_amount(values, fraction) for values in repeated.values()]
     if len(medians) < 6:
         return (
             False,
@@ -865,7 +869,7 @@ def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> tuple[bool, st
         return False, "Repeated calendar-month amounts have no non-zero seasonal baseline."
     stable_months = 0
     for values in repeated.values():
-        center = abs(_typical_amount(values).to_decimal())
+        center = abs(_typical_amount(values, fraction).to_decimal())
         deviations = [abs(abs(value.to_decimal()) - center) for value in values]
         relative = median(deviations) / center if center else Decimal(0)
         stable_months += relative <= Decimal("0.25")
@@ -890,6 +894,7 @@ def _has_seasonality(monthly_by_month: dict[int, list[Money]]) -> tuple[bool, st
 
 def _seasonal_amounts(
     monthly_by_month: dict[int, list[Money]],
+    fraction: int,
 ) -> tuple[ScheduledMonthAmount, ...]:
     """Return repeated month-of-year magnitudes supported by at least two years."""
     result: list[ScheduledMonthAmount] = []
@@ -897,7 +902,7 @@ def _seasonal_amounts(
         values = monthly_by_month.get(month, [])
         if len(values) < 2:
             continue
-        typical = _typical_amount(values)
+        typical = _typical_amount(values, fraction)
         if typical:
             result.append(ScheduledMonthAmount(month, abs(typical)))
     return tuple(result)
@@ -933,6 +938,7 @@ def _propose_classified_flows(
     min_active_months: int,
     scenario_handle: str | None,
     accounts: dict[str, Account],
+    fraction: int,
 ) -> list[HistoricalEstimateProposal]:
     """Infer recurring balance-sheet purposes without relabeling them as categories."""
     monthly: dict[tuple[_FlowSignature, date], Money] = {}
@@ -1017,9 +1023,9 @@ def _propose_classified_flows(
             )
             for index, (month, actual, applied, residual) in enumerate(history_inputs)
         )
-        trend_sample, trend_evidence = _trend_summary(robust)
-        monthly_residual = _typical_amount(trend_sample)
-        amount = (monthly_residual / occurrences_per_month).quantize(100)
+        trend_sample, trend_evidence = _trend_summary(robust, fraction)
+        monthly_residual = _typical_amount(trend_sample, fraction)
+        amount = (monthly_residual / occurrences_per_month).quantize(fraction)
         if amount <= 0:
             continue
         funding_account = accounts[funding_handle]
@@ -1085,7 +1091,7 @@ def _propose_classified_flows(
                 confidence=confidence_evidence.score,
                 reason=(
                     f"{cadence}; classified as {purpose}; historical median "
-                    f"{_typical_amount(gross_values).format()}; "
+                    f"{_typical_amount(gross_values, fraction).format()}; "
                     f"{scheduled_total.format()} of matching future classified plan applied; "
                     f"median uncovered {monthly_residual.format()} across "
                     f"{len(residual_monthly)} month(s); {variability} amounts"
@@ -1209,6 +1215,7 @@ def propose_historical_estimates(
     proposals: list[HistoricalEstimateProposal] = []
     planned_profiles = _planned_category_profiles(db, current_month, scenario_handle)
     accounts_by_handle = {account.handle: account for account in db.iter_accounts()}
+    fraction = reporting_fraction(db)
 
     for account in db.iter_accounts():
         if account.is_root or account.placeholder:
@@ -1239,7 +1246,7 @@ def propose_historical_estimates(
         if funding_account is None:
             continue
 
-        seasonal, seasonality_explanation = _has_seasonality(monthly_by_month)
+        seasonal, seasonality_explanation = _has_seasonality(monthly_by_month, fraction)
         if seasonal:
             # Repeated winter/summer peaks are signal, not global outliers. The
             # month-specific profile below preserves them explicitly.
@@ -1268,8 +1275,8 @@ def propose_historical_estimates(
             )
             for index, (month, gross, applied, residual) in enumerate(category_history.rows)
         )
-        trend_sample, trend_evidence = _trend_summary(robust_monthly)
-        monthly_residual = _typical_amount(trend_sample)
+        trend_sample, trend_evidence = _trend_summary(robust_monthly, fraction)
+        monthly_residual = _typical_amount(trend_sample, fraction)
         observed_dates = _unscheduled_dates(db, account.handle, history_start, history_end)
         recurrence, cadence, occurrences_per_month = _infer_recurrence(
             observed_dates,
@@ -1283,11 +1290,12 @@ def propose_historical_estimates(
                 current_month,
                 planned_profiles,
                 gross_by_month,
-                _typical_amount(gross_monthly),
+                _typical_amount(gross_monthly, fraction),
+                fraction,
             )
-        amount = (monthly_residual / occurrences_per_month).quantize(100)
+        amount = (monthly_residual / occurrences_per_month).quantize(fraction)
         seasonal_amounts = (
-            _seasonal_amounts(monthly_by_month)
+            _seasonal_amounts(monthly_by_month, fraction)
             if seasonal and recurrence.period is PeriodType.MONTH
             else ()
         )
@@ -1301,7 +1309,7 @@ def propose_historical_estimates(
             variability=relative_variability,
         )
         scheduled_total = category_history.applied_scheduled_total
-        gross_median = _typical_amount(gross_monthly)
+        gross_median = _typical_amount(gross_monthly, fraction)
         cadence_evidence = _cadence_evidence(
             observed_dates, cadence, occurrences_per_month, recurrence
         )
@@ -1378,6 +1386,7 @@ def propose_historical_estimates(
             min_active_months=min_active_months,
             scenario_handle=scenario_handle,
             accounts=accounts_by_handle,
+            fraction=fraction,
         )
     )
     return sorted(proposals, key=lambda item: (item.purpose_name, item.category_name))
