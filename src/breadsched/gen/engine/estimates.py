@@ -1109,6 +1109,79 @@ def _propose_classified_flows(
     return proposals
 
 
+@dataclass(frozen=True, slots=True)
+class _CategoryHistory:
+    residual_monthly: list[Money]
+    residual_row_indexes: list[int]
+    rows: list[tuple[date, Money, Money, Money]]
+    residual_by_month: dict[int, list[Money]]
+    gross_monthly: list[Money]
+    gross_by_month: dict[int, list[Money]]
+    transaction_count: int
+    applied_scheduled_total: Money
+
+
+def _category_history(
+    db: DbSQLite,
+    account: Account,
+    accounts: dict[str, Account],
+    history_start: date,
+    future_start: date,
+    months: int,
+    planned_profiles: dict[tuple[str, date], Money],
+) -> _CategoryHistory:
+    residual_monthly: list[Money] = []
+    residual_row_indexes: list[int] = []
+    rows: list[tuple[date, Money, Money, Money]] = []
+    residual_by_month: dict[int, list[Money]] = {}
+    gross_monthly: list[Money] = []
+    gross_by_month: dict[int, list[Money]] = {}
+    transaction_count = 0
+    applied_scheduled_total = Money(0)
+    for offset in range(months):
+        start = _add_months(history_start, offset)
+        end = _add_months(start, 1) - timedelta(days=1)
+        total = Money(0)
+        for txn in db.iter_transactions(account=account.handle, start=start, end=end):
+            if _is_investment_performance(txn.splits):
+                continue
+            value = txn.value_for(account.handle) * account.sign()
+            escrow = escrow_recognition(
+                ((split.account, split.value) for split in txn.splits),
+                accounts,
+            )
+            value = (
+                value
+                - escrow.covered_expenses.get(account.handle, Money(0))
+                + escrow.restored_expenses.get(account.handle, Money(0))
+            )
+            if value:
+                total = total + value
+                transaction_count += 1
+        if total:
+            gross_monthly.append(total)
+            gross_by_month.setdefault(start.month, []).append(total)
+        future_month = _corresponding_future_month(start, future_start)
+        scheduled = planned_profiles.get((account.handle, future_month), Money(0))
+        residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
+        applied_scheduled_total = applied_scheduled_total + applied_scheduled
+        rows.append((start, total, applied_scheduled, residual))
+        if residual:
+            residual_row_indexes.append(len(rows) - 1)
+            residual_monthly.append(residual)
+            residual_by_month.setdefault(start.month, []).append(residual)
+    return _CategoryHistory(
+        residual_monthly,
+        residual_row_indexes,
+        rows,
+        residual_by_month,
+        gross_monthly,
+        gross_by_month,
+        transaction_count,
+        applied_scheduled_total,
+    )
+
+
 def propose_historical_estimates(
     db: DbSQLite,
     *,
@@ -1143,46 +1216,19 @@ def propose_historical_estimates(
         if account.account_class not in (AccountClass.INCOME, AccountClass.EXPENSE):
             continue
 
-        monthly: list[Money] = []
-        residual_row_indexes: list[int] = []
-        history_inputs: list[tuple[date, Money, Money, Money]] = []
-        monthly_by_month: dict[int, list[Money]] = {}
-        gross_monthly: list[Money] = []
-        gross_by_month: dict[int, list[Money]] = {}
-        txn_count = 0
-        applied_scheduled_total = Money(0)
-        for offset in range(months):
-            start = _add_months(history_start, offset)
-            end = _add_months(start, 1) - timedelta(days=1)
-            total = Money(0)
-            for txn in db.iter_transactions(account=account.handle, start=start, end=end):
-                if _is_investment_performance(txn.splits):
-                    continue
-                value = txn.value_for(account.handle) * account.sign()
-                escrow = escrow_recognition(
-                    ((split.account, split.value) for split in txn.splits),
-                    accounts_by_handle,
-                )
-                value = (
-                    value
-                    - escrow.covered_expenses.get(account.handle, Money(0))
-                    + escrow.restored_expenses.get(account.handle, Money(0))
-                )
-                if value:
-                    total = total + value
-                    txn_count += 1
-            if total:
-                gross_monthly.append(total)
-                gross_by_month.setdefault(start.month, []).append(total)
-            future_month = _corresponding_future_month(start, current_month)
-            scheduled = planned_profiles.get((account.handle, future_month), Money(0))
-            residual, applied_scheduled = _residual_after_scheduled(total, scheduled)
-            applied_scheduled_total = applied_scheduled_total + applied_scheduled
-            history_inputs.append((start, total, applied_scheduled, residual))
-            if residual:
-                residual_row_indexes.append(len(history_inputs) - 1)
-                monthly.append(residual)
-                monthly_by_month.setdefault(start.month, []).append(residual)
+        category_history = _category_history(
+            db,
+            account,
+            accounts_by_handle,
+            history_start,
+            current_month,
+            months,
+            planned_profiles,
+        )
+        monthly = category_history.residual_monthly
+        monthly_by_month = category_history.residual_by_month
+        gross_monthly = category_history.gross_monthly
+        gross_by_month = category_history.gross_by_month
 
         if len(monthly) < min_active_months:
             continue
@@ -1202,7 +1248,7 @@ def propose_historical_estimates(
             relative_variability = Decimal(0)
         else:
             robust_monthly, excluded_indexes, relative_variability = _robust_sample(monthly)
-        excluded_rows = {residual_row_indexes[index] for index in excluded_indexes}
+        excluded_rows = {category_history.residual_row_indexes[index] for index in excluded_indexes}
         history = tuple(
             EstimateHistoryEvidence(
                 month,
@@ -1220,7 +1266,7 @@ def propose_historical_estimates(
                     )
                 ),
             )
-            for index, (month, gross, applied, residual) in enumerate(history_inputs)
+            for index, (month, gross, applied, residual) in enumerate(category_history.rows)
         )
         trend_sample, trend_evidence = _trend_summary(robust_monthly)
         monthly_residual = _typical_amount(trend_sample)
@@ -1254,7 +1300,7 @@ def propose_historical_estimates(
             retained_months=len(robust_monthly),
             variability=relative_variability,
         )
-        scheduled_total = applied_scheduled_total
+        scheduled_total = category_history.applied_scheduled_total
         gross_median = _typical_amount(gross_monthly)
         cadence_evidence = _cadence_evidence(
             observed_dates, cadence, occurrences_per_month, recurrence
@@ -1296,7 +1342,7 @@ def propose_historical_estimates(
                 recurrence=recurrence,
                 sample_months=months,
                 active_months=len(monthly),
-                transaction_count=txn_count,
+                transaction_count=category_history.transaction_count,
                 confidence=confidence_evidence.score,
                 reason=(
                     f"{cadence}; historical median {gross_median.format()} across "
