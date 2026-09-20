@@ -15,34 +15,190 @@ from __future__ import annotations
 import re
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from fractions import Fraction
+from functools import total_ordering
 from math import gcd
 from numbers import Integral
-from typing import overload
+from typing import Any, overload
 
 __all__ = ["Money", "Rate", "ZERO"]
 
 _US_GROUPED = re.compile(r"^[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?$")
 
 
-class Rate(Decimal):
+@total_ordering
+class Rate:
     """Dimensionless decimal rate used for growth, interest, and returns.
 
-    ``Rate`` subclasses :class:`Decimal` deliberately: rates retain Decimal's
-    exact arithmetic, formatting, JSON boundary handling, and compatibility with
-    existing scenario data while remaining distinguishable from monetary amounts.
+    The wrapped :class:`Decimal` retains exact arithmetic and persistence text,
+    while composition prevents Decimal operators from silently erasing the rate
+    dimension. Arithmetic between rates and decimal scalars remains a ``Rate``.
     """
 
-    def __new__(cls, value: Rate | Decimal | str | int = 0) -> Rate:
+    __slots__ = ("_value",)
+    _value: Decimal
+
+    def __init__(self, value: Rate | Decimal | str | int = 0) -> None:
         if isinstance(value, float):
             raise TypeError("refusing to build Rate from float; use str or Decimal")
-        result = super().__new__(cls, str(value))
+        result = value._value if isinstance(value, Rate) else Decimal(str(value))
         if not result.is_finite():
             raise ValueError("rate must be finite")
-        return result
+        self._value = result
 
     @property
     def decimal(self) -> Decimal:
-        return Decimal(self)
+        return self._value
+
+    @staticmethod
+    def _coerce(other: object) -> Decimal | None:
+        if isinstance(other, Rate):
+            return other._value
+        if isinstance(other, Decimal):
+            return other
+        if isinstance(other, Integral):
+            return Decimal(int(other))
+        return None
+
+    def __add__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(self._value + value)
+
+    __radd__ = __add__
+
+    def __sub__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(self._value - value)
+
+    def __rsub__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(value - self._value)
+
+    def __mul__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(self._value * value)
+
+    __rmul__ = __mul__
+
+    def __truediv__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(self._value / value)
+
+    def __rtruediv__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(value / self._value)
+
+    def __floordiv__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(self._value // value)
+
+    def __rfloordiv__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(value // self._value)
+
+    def __mod__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(self._value % value)
+
+    def __rmod__(self, other: object) -> Rate:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return Rate(value % self._value)
+
+    def __divmod__(self, other: object) -> tuple[Rate, Rate]:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        quotient, remainder = divmod(self._value, value)
+        return Rate(quotient), Rate(remainder)
+
+    def __rdivmod__(self, other: object) -> tuple[Rate, Rate]:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        quotient, remainder = divmod(value, self._value)
+        return Rate(quotient), Rate(remainder)
+
+    def __pow__(self, other: object, modulo: object | None = None) -> Rate:
+        value = self._coerce(other)
+        if value is None or modulo is not None:
+            return NotImplemented
+        return Rate(self._value**value)
+
+    def __rpow__(self, other: object, modulo: object | None = None) -> Rate:
+        value = self._coerce(other)
+        if value is None or modulo is not None:
+            return NotImplemented
+        return Rate(value**self._value)
+
+    def __neg__(self) -> Rate:
+        return Rate(-self._value)
+
+    def __pos__(self) -> Rate:
+        return self
+
+    def __abs__(self) -> Rate:
+        return Rate(abs(self._value))
+
+    def quantize(self, exponent: Rate | Decimal | int, **kwargs: Any) -> Rate:
+        value = self._coerce(exponent)
+        if value is None:
+            raise TypeError("rate quantization requires a Rate, Decimal, or integer exponent")
+        return Rate(self._value.quantize(value, **kwargs))
+
+    def __round__(self, ndigits: int | None = None) -> Rate:
+        return Rate(round(self._value, ndigits))
+
+    def __bool__(self) -> bool:
+        return bool(self._value)
+
+    def __eq__(self, other: object) -> bool:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return self._value == value
+
+    def __lt__(self, other: object) -> bool:
+        value = self._coerce(other)
+        if value is None:
+            return NotImplemented
+        return self._value < value
+
+    def __hash__(self) -> int:
+        return hash(self._value)
+
+    def __str__(self) -> str:
+        return str(self._value)
+
+    def __repr__(self) -> str:
+        return f"Rate({str(self._value)!r})"
+
+    def __format__(self, format_spec: str) -> str:
+        return format(self._value, format_spec)
+
+    def __int__(self) -> int:
+        return int(self._value)
+
+    def __float__(self) -> float:
+        return float(self._value)
 
 
 class Money:
@@ -208,14 +364,16 @@ class Money:
     def __truediv__(self, other: Money) -> Fraction: ...
 
     @overload
-    def __truediv__(self, other: int | Decimal) -> Money: ...
+    def __truediv__(self, other: int | Decimal | Rate) -> Money: ...
 
     def __truediv__(self, other: object) -> Money | Fraction:
         if isinstance(other, Money):
             if other._num == 0:
                 raise ZeroDivisionError("division by zero Money")
             return Fraction(self._num * other._den, self._den * other._num)
-        if isinstance(other, Decimal):
+        if isinstance(other, Rate):
+            num, den = self._from_decimal(other.decimal)
+        elif isinstance(other, Decimal):
             num, den = self._from_decimal(other)
         elif isinstance(other, Integral):
             num, den = int(other), 1

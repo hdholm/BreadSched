@@ -158,10 +158,12 @@ SCU, and eventually multi-commodity valuation are distinct concerns from the exa
 stored ledger fraction.
 
 Rates are dimensionless and distinct from money amounts. The ``Rate`` domain type
-is Decimal-compatible for persistence and presentation, while ``Money`` remains an
-exact rational ledger quantity. Multiplying two monetary amounts is invalid; scaling
-a monetary amount requires a dimensionless scalar/rate, and dividing one monetary
-amount by another yields an exact dimensionless ratio.
+wraps a finite ``Decimal`` for exact persistence and presentation rather than
+subclassing it: direct and reflected arithmetic stays a ``Rate`` instead of silently
+decaying to an untyped decimal. ``Money`` remains an exact rational ledger quantity.
+Multiplying two monetary amounts is invalid; scaling a monetary amount requires a
+dimensionless scalar/rate, and dividing one monetary amount by another yields an
+exact dimensionless ratio.
 
 ### Security quantities and dated valuation
 

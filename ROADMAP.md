@@ -50,10 +50,6 @@ workflow may not add new presentation-owned rules.
     currency amount.
   - [ ] Preserve the distinct split dimensions: transaction-currency `value` and
     account-commodity `quantity`. Do not replace them with one ambiguous amount.
-  - [ ] Replace `Rate`'s `Decimal` subclassing, or override its complete arithmetic
-    surface, so operations cannot silently decay to an untyped `Decimal`; add static
-    and runtime closure tests.
-
 - [ ] Bound formula resources before parsing/evaluation: cap normalized and raw input
   length, use an explicit local `Decimal` context with precision and exponent limits,
   normalize all resource failures to `FormulaError`, and test adversarial bases,

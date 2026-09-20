@@ -44,6 +44,7 @@ from ..gen.lib import (
     PeriodType,
     PlanningFlowKind,
     PlanningResolution,
+    Rate,
     Recurrence,
     Scenario,
     ScenarioSchedule,
@@ -1418,10 +1419,15 @@ class Api:
         }
 
     def _per_account_rates(
-        self, payload: object, existing: Mapping[str, Decimal] | None = None
+        self,
+        payload: object,
+        existing: Mapping[str, Decimal | Rate] | None = None,
     ) -> dict[str, Decimal]:
         if payload is None:
-            return dict(existing or {})
+            return {
+                handle: value.decimal if isinstance(value, Rate) else value
+                for handle, value in (existing or {}).items()
+            }
         if not isinstance(payload, dict):
             raise ValueError("per_account assumptions must be an object")
         per_account: dict[str, Decimal] = {}

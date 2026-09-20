@@ -42,6 +42,7 @@ from ..gen.lib import (
     Assumptions,
     Money,
     PeriodType,
+    Rate,
     Recurrence,
     Scenario,
     ScheduledSplit,
@@ -118,6 +119,8 @@ def emit(payload: Any, args: argparse.Namespace, text: str | None = None) -> Non
 def _encode(value: Any) -> Any:
     if isinstance(value, Money):
         return str(value.to_decimal())
+    if isinstance(value, Rate):
+        return str(value.decimal)
     if isinstance(value, (date, datetime)):
         return value.isoformat()
     if isinstance(value, Decimal):

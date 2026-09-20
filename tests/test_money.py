@@ -67,6 +67,10 @@ class TestArithmetic:
     def test_multiplication_by_a_rate(self):
         assert (Money("1000.00") * Rate("1.05")).to_decimal() == Decimal("1050.00")
 
+    def test_rate_scaling_and_division_are_symmetric(self):
+        assert Rate("1.05") * Money("1000.00") == Money("1050.00")
+        assert Money("1000.00") / Rate("0.5") == Money("2000.00")
+
     def test_dividing_money_by_money_returns_an_exact_ratio(self):
         assert Money(1) / Money(3) == Fraction(1, 3)
 
@@ -93,6 +97,44 @@ class TestRate:
     def test_rate_rejects_float(self):
         with pytest.raises(TypeError):
             Rate(0.1)
+
+    @pytest.mark.parametrize(
+        "operation",
+        [
+            lambda rate: rate + Decimal("0.01"),
+            lambda rate: Decimal("0.10") + rate,
+            lambda rate: rate - 1,
+            lambda rate: 1 - rate,
+            lambda rate: rate * Decimal("2"),
+            lambda rate: Decimal("2") * rate,
+            lambda rate: rate / 2,
+            lambda rate: Decimal("1") / rate,
+            lambda rate: rate // Decimal("0.02"),
+            lambda rate: Decimal("1") % rate,
+            lambda rate: rate**2,
+            lambda rate: Decimal("2") ** rate,
+            lambda rate: -rate,
+            lambda rate: abs(rate),
+            lambda rate: round(rate, 2),
+            lambda rate: rate.quantize(Decimal("0.01")),
+        ],
+    )
+    def test_arithmetic_stays_dimensionally_typed(self, operation):
+        assert type(operation(Rate("0.125"))) is Rate
+
+    def test_divmod_results_stay_dimensionally_typed(self):
+        quotient, remainder = divmod(Rate("0.125"), Decimal("0.05"))
+        assert type(quotient) is Rate
+        assert type(remainder) is Rate
+
+    def test_decimal_equality_and_hash_contract(self):
+        rate = Rate("1.0")
+        assert rate == Decimal("1.0")
+        assert hash(rate) == hash(Decimal("1.0"))
+
+    def test_rate_cannot_be_added_to_money(self):
+        with pytest.raises(TypeError):
+            Money("10") + Rate("0.05")
 
 
 class TestComparison:
