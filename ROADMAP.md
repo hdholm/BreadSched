@@ -8,8 +8,8 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0222 — web resource split and boundary
-hardening**.
+The current accepted baseline is **0223 — service adoption, structured errors, and
+localization seam**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -32,27 +32,10 @@ The web-boundary architecture gate is complete. Continue moving cross-interface
 workflows behind typed services before broadening financial semantics; a touched
 workflow may not add new presentation-owned rules.
 
-1. **0223 — Service adoption, structured errors, and localization seam.**
-   - [x] Put transaction creation/editing, split reconstruction, investment
-     validation, hidden-account retention, and optional claim attachment behind one
-     typed, atomic service used by GTK and web. Preserve native round trips and
-     imported split metadata; enforce the adapter boundary with architecture tests.
-   - [x] Route reconciliation start, selection/balance updates, completion,
-     cancellation, and reopening through typed services with stable codes and field
-     paths while retaining the shared exact calculation and atomic ledger/audit
-     writes.
-   - [x] Put FSA claim construction, allocation/link/rejection validation, saving,
-     and deletion behind typed services used by GTK and web. Keep linked split
-     classification and claim persistence atomic, with stable validation codes.
-   - Decompose the oversized verification, category-report, estimate, and dialog
-     functions by responsibility while moving their rules; line count is a signal,
-     not an acceptance test. Preserve behavior with characterization tests before
-     structural edits.
-
-2. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
+1. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
    below before foreign exchange, lots, or deeper investment modeling.
 
-3. **0225 — Wider data-format compatibility and release discipline.** Apply the
+2. **0225 — Wider data-format compatibility and release discipline.** Apply the
    version/migration policy below when the next native format change is needed, and
    begin tagged releases with human-readable release notes.
 
@@ -78,8 +61,7 @@ workflow may not add new presentation-owned rules.
   loan expressions.
 
 - [ ] Split oversized modules/functions as part of the service/resource ownership
-  work, especially `web/server.py`, `verify_domain`, `build_category_report`,
-  `propose_historical_estimates`, and the account/schedule dialog constructors.
+  work, especially the remaining seams in `web/server.py`.
   Split large GUI test modules only when the resulting fixture ownership and runtime
   isolation improve; do not optimize for a line-count threshold alone.
 
