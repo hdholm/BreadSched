@@ -32,12 +32,13 @@ The web-boundary architecture gate is complete. Continue moving cross-interface
 workflows behind typed services before broadening financial semantics; a touched
 workflow may not add new presentation-owned rules.
 
-1. **0224 — Commodity-tagged amounts and scalar rates.** Complete the amount work
-   below before foreign exchange, lots, or deeper investment modeling.
+1. [x] **0224 — Commodity-tagged amounts and scalar rates.** The amount, rate,
+   quantity/value, aggregation, and declared-precision boundaries are complete.
 
-2. **0225 — Wider data-format compatibility and release discipline.** Apply the
-   version/migration policy below when the next native format change is needed, and
-   begin tagged releases with human-readable release notes.
+2. [x] **0225 — Wider data-format compatibility and release discipline.** Application
+   and native-format versions are reported independently, the next migration window
+   is specified without a no-op schema bump, and tested-main releases began with
+   `v0.2.0a85` and human-readable compatibility/rollback notes.
 
 ## Architecture and correctness
 
@@ -326,14 +327,14 @@ workflow may not add new presentation-owned rules.
   the primary GTK/Linux artifact and prove portals, file import/export, printing,
   settings, backups, and offline operation inside the sandbox before selecting it.
 
-- [ ] Tag releases from accepted `main`, publish release notes that state both the
+- [x] Tag releases from accepted `main`, publish release notes that state both the
   application version and native data-format version/compatibility window, attach
   verified artifacts, and document upgrade/rollback implications. Tags must follow
   tested commits rather than merely marking every alpha code increment.
 
 - [ ] Improve crash recovery, diagnostic logging, and privacy-safe error reporting.
 
-- [ ] Keep Ruff, mypy, randomized tests, GTK runtime tests, end-to-end demo, and
+- [x] Keep Ruff, mypy, randomized tests, GTK runtime tests, end-to-end demo, and
   package build/install checks as release gates.
 
 - [ ] Add property-based monetary arithmetic tests and fuzz-style malformed-import
