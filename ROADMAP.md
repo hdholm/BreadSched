@@ -50,12 +50,6 @@ workflow may not add new presentation-owned rules.
     currency amount.
   - [ ] Preserve the distinct split dimensions: transaction-currency `value` and
     account-commodity `quantity`. Do not replace them with one ambiguous amount.
-- [ ] Bound formula resources before parsing/evaluation: cap normalized and raw input
-  length, use an explicit local `Decimal` context with precision and exponent limits,
-  normalize all resource failures to `FormulaError`, and test adversarial bases,
-  exponents, nesting, and imported formulas without rejecting representative GnuCash
-  loan expressions.
-
 - [ ] Split oversized modules/functions as part of the service/resource ownership
   work, especially the remaining seams in `web/server.py`.
   Split large GUI test modules only when the resulting fixture ownership and runtime

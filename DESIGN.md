@@ -405,9 +405,12 @@ explicit importer format override. Year-first QIF dates remain inherently unambi
 The formula language is parsed through a restricted evaluator, never Python
 `eval()`. Formula expressions are treated as untrusted imported/user input and must
 have bounded, predictable evaluation behavior. Expression depth, node count, and
-power magnitude are bounded; evaluator failures cross the API boundary as
+power magnitude are bounded, raw and normalized text have fixed limits, and all
+decimal construction and arithmetic run in a local 64-digit context with bounded
+exponents independent of process settings. Non-finite values and syntax, decimal,
+arithmetic, recursion, or resource failures cross the API boundary as
 `FormulaError`. GnuCash colon-delimited argument syntax and grouping commas are
-normalised without rewriting ordinary comma-delimited function calls.
+normalized without rewriting ordinary comma-delimited function calls.
 
 Formula-driven loans own their payment arithmetic. Projection must not separately
 inflate a formula loan payment or add generic liability interest to a liability
