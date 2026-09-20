@@ -10,7 +10,7 @@ from .amount import Amount
 from .base import PrimaryObject
 from .money import Money
 
-__all__ = ["Commodity", "CommodityPrice", "DEFAULT_CURRENCY"]
+__all__ = ["Commodity", "CommodityPrice", "DEFAULT_CURRENCY", "DEFAULT_CURRENCY_HANDLE"]
 
 
 class Commodity(PrimaryObject):
@@ -126,4 +126,10 @@ class CommodityPrice(PrimaryObject):
 
 _SYMBOLS = {"USD": "$", "CAD": "$", "AUD": "$", "GBP": "\u00a3", "EUR": "\u20ac", "JPY": "\u00a5"}
 
-DEFAULT_CURRENCY = Commodity(mnemonic="USD", fullname="US Dollar", fraction=100)
+DEFAULT_CURRENCY_HANDLE = "00000000000000000000000000000840"
+DEFAULT_CURRENCY = Commodity(
+    handle=DEFAULT_CURRENCY_HANDLE,
+    mnemonic="USD",
+    fullname="US Dollar",
+    fraction=100,
+)

@@ -17,12 +17,14 @@ from datetime import date
 
 from ...gen.engine import ledger  # noqa: E402
 from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
+from ...gen.lib.amount import Amount
 from ...gen.lib.money import Money
 from ...gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
     save_transaction,
+    transaction_currency,
 )
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
@@ -508,15 +510,17 @@ class RegisterView(BaseView):
 
         debit_account = current.handle if debit else transfer.handle
         credit_account = transfer.handle if debit else current.handle
+        currency = transaction_currency(self.db)
         result = save_transaction(
             self.db,
             SaveTransaction(
                 TransactionInput(
                     post_date=when,
                     description=description,
+                    currency=currency,
                     splits=(
-                        TransactionSplitInput(debit_account, amount),
-                        TransactionSplitInput(credit_account, -amount),
+                        TransactionSplitInput(debit_account, Amount(amount, currency)),
+                        TransactionSplitInput(credit_account, Amount(-amount, currency)),
                     ),
                 )
             ),

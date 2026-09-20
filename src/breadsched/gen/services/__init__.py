@@ -109,6 +109,7 @@ from .transactions import (
     build_transaction,
     delete_transaction,
     save_transaction,
+    transaction_currency,
 )
 
 __all__ = [
@@ -197,6 +198,7 @@ __all__ = [
     "save_scenario_schedule",
     "build_transaction",
     "save_transaction",
+    "transaction_currency",
     "save_loan",
     "validate_loan",
     "import_book",

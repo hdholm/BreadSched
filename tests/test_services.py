@@ -4,10 +4,13 @@ from datetime import date
 
 from breadsched.gen.engine.activity import PlanMeasure, ReportingPeriod
 from breadsched.gen.lib import (
+    DEFAULT_CURRENCY_HANDLE,
     Account,
     AccountType,
+    Amount,
     AssumptionPeriod,
     Assumptions,
+    Commodity,
     InvestmentActivityKind,
     Money,
     PeriodType,
@@ -81,17 +84,20 @@ from breadsched.gen.services import (
     save_transaction,
     skip_review,
     suppress_scenario_schedule,
+    transaction_currency,
 )
 
 
-def _transaction_request(book, **changes) -> SaveTransaction:
+def _transaction_request(db, book, **changes) -> SaveTransaction:
+    currency = transaction_currency(db)
     values = {
         "post_date": date(2026, 2, 1),
         "description": "Typed entry",
         "splits": (
-            TransactionSplitInput(book.rent, Money("125")),
-            TransactionSplitInput(book.checking, Money("-125")),
+            TransactionSplitInput(book.rent, Amount(Money("125"), currency)),
+            TransactionSplitInput(book.checking, Amount(Money("-125"), currency)),
         ),
+        "currency": currency,
     }
     values.update(changes)
     return SaveTransaction(TransactionInput(**values))
@@ -390,7 +396,7 @@ def test_scenario_assumption_service_validates_horizon_and_dated_rates(db):
 
 
 def test_transaction_service_owns_construction_validation_and_atomic_write(db, book):
-    result = save_transaction(db, _transaction_request(book))
+    result = save_transaction(db, _transaction_request(db, book))
 
     assert result.ok
     assert result.value is not None
@@ -398,11 +404,26 @@ def test_transaction_service_owns_construction_validation_and_atomic_write(db, b
     assert stored is not None
     assert stored.description == "Typed entry"
     assert stored.value_for(book.rent) == Money("125")
+    assert stored.currency == transaction_currency(db)
     assert db.undo_stack[-1].message == "Add Typed entry"
 
 
+def test_transaction_service_adds_default_currency_atomically_for_legacy_empty_book(db, book):
+    with db.transaction("Simulate legacy empty book") as txn:
+        db.remove_commodity(DEFAULT_CURRENCY_HANDLE, txn)
+        db.set_metadata("default_currency", None, txn)
+
+    result = save_transaction(db, _transaction_request(db, book))
+
+    assert result.ok
+    currency = db.get_commodity(DEFAULT_CURRENCY_HANDLE)
+    assert currency is not None
+    assert currency.mnemonic == "USD"
+    assert db.get_metadata("default_currency") == DEFAULT_CURRENCY_HANDLE
+
+
 def test_transaction_service_owns_delete_and_reports_stale_handles(db, book):
-    saved = save_transaction(db, _transaction_request(book))
+    saved = save_transaction(db, _transaction_request(db, book))
     assert saved.value is not None
 
     deleted = delete_transaction(db, DeleteTransaction(saved.value.handle))
@@ -420,7 +441,7 @@ def test_transaction_service_returns_stable_errors_without_partial_write(db, boo
         db.commit_account(hidden, txn)
     before = db.summary()["txn"]
 
-    result = save_transaction(db, _transaction_request(book))
+    result = save_transaction(db, _transaction_request(db, book))
 
     assert result.value is None
     assert ServiceError("transaction.account.hidden", ("splits.0.account",)) in result.errors
@@ -447,7 +468,7 @@ def test_transaction_service_preserves_hidden_accounts_and_source_metadata_on_ed
                 splits=tuple(
                     TransactionSplitInput(
                         split.account,
-                        split.value,
+                        Amount(split.value, transaction_currency(db)),
                         handle=split.handle,
                         memo=split.memo,
                     )
@@ -466,11 +487,13 @@ def test_transaction_service_preserves_hidden_accounts_and_source_metadata_on_ed
 
 
 def test_transaction_service_rejects_unbalanced_and_unknown_accounts(db, book):
+    currency = transaction_currency(db)
     request = _transaction_request(
+        db,
         book,
         splits=(
-            TransactionSplitInput("missing", Money("100")),
-            TransactionSplitInput(book.checking, Money("-90")),
+            TransactionSplitInput("missing", Amount(Money("100"), currency)),
+            TransactionSplitInput(book.checking, Amount(Money("-90"), currency)),
         ),
     )
 
@@ -482,9 +505,109 @@ def test_transaction_service_rejects_unbalanced_and_unknown_accounts(db, book):
     )
 
 
+def test_transaction_service_rejects_unlike_value_commodities_without_netting(db, book):
+    currency = transaction_currency(db)
+    request = _transaction_request(
+        db,
+        book,
+        splits=(
+            TransactionSplitInput(book.rent, Amount(Money("100"), currency)),
+            TransactionSplitInput(book.checking, Amount(Money("-100"), "EUR")),
+        ),
+    )
+
+    result = save_transaction(db, request)
+
+    assert result.errors == (ServiceError("transaction.value.commodity", ("splits.1.value",)),)
+
+
+def test_transaction_service_preserves_value_and_quantity_as_distinct_dimensions(db, book):
+    currency = transaction_currency(db)
+    security = Commodity(namespace="FUND", mnemonic="INDEX", fraction=1000)
+    holding = Account(
+        name="Index holding",
+        atype=AccountType.ASSET,
+        parent=book.assets,
+        commodity=security.handle,
+        commodity_scu=1000,
+    )
+    with db.transaction("Security fixture") as txn:
+        db.add_commodity(security, txn)
+        db.add_account(holding, txn)
+    request = _transaction_request(
+        db,
+        book,
+        splits=(
+            TransactionSplitInput(
+                holding.handle,
+                Amount(Money("1250"), currency),
+                quantity=Amount(Money("10"), security.handle),
+            ),
+            TransactionSplitInput(book.checking, Amount(Money("-1250"), currency)),
+        ),
+    )
+
+    result = save_transaction(db, request)
+
+    assert result.value is not None
+    stored = db.get_transaction(result.value.handle)
+    assert stored is not None
+    assert stored.splits[0].value == Money("1250")
+    assert stored.splits[0].quantity == Money("10")
+
+
+def test_transaction_service_rejects_quantity_in_another_commodity(db, book):
+    currency = transaction_currency(db)
+    request = _transaction_request(
+        db,
+        book,
+        splits=(
+            TransactionSplitInput(
+                book.rent,
+                Amount(Money("100"), currency),
+                quantity=Amount(Money("100"), "EUR"),
+            ),
+            TransactionSplitInput(book.checking, Amount(Money("-100"), currency)),
+        ),
+    )
+
+    result = save_transaction(db, request)
+
+    assert result.errors == (
+        ServiceError("transaction.quantity.commodity", ("splits.0.quantity",)),
+    )
+
+
+def test_transaction_service_requires_security_quantity_separately_from_value(db, book):
+    currency = transaction_currency(db)
+    security = Commodity(namespace="FUND", mnemonic="INDEX", fraction=1000)
+    holding = Account(
+        name="Index holding",
+        atype=AccountType.ASSET,
+        parent=book.assets,
+        commodity=security.handle,
+        commodity_scu=1000,
+    )
+    with db.transaction("Security fixture") as txn:
+        db.add_commodity(security, txn)
+        db.add_account(holding, txn)
+    request = _transaction_request(
+        db,
+        book,
+        splits=(
+            TransactionSplitInput(holding.handle, Amount(Money("1250"), currency)),
+            TransactionSplitInput(book.checking, Amount(Money("-1250"), currency)),
+        ),
+    )
+
+    result = save_transaction(db, request)
+
+    assert result.errors == (ServiceError("transaction.quantity.required", ("splits.0.quantity",)),)
+
+
 def test_transaction_service_rolls_back_when_claim_attachment_fails(db, book):
     before = db.summary()["txn"]
-    base = _transaction_request(book)
+    base = _transaction_request(db, book)
     request = SaveTransaction(
         base.definition,
         claim_attachment=ClaimAttachment("missing-claim", "payment"),
@@ -497,7 +620,7 @@ def test_transaction_service_rolls_back_when_claim_attachment_fails(db, book):
 
 
 def test_transaction_service_native_round_trip_preserves_exact_splits(db, book, tmp_path):
-    result = save_transaction(db, _transaction_request(book))
+    result = save_transaction(db, _transaction_request(db, book))
     assert result.value is not None
     path = tmp_path / "transaction-service.bread"
     db.backup_to(str(path))

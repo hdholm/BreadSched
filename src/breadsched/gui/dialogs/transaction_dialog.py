@@ -20,6 +20,7 @@ from datetime import date
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import escrow, fsa_claims
 from ...gen.lib import (
+    Amount,
     InvestmentActivityKind,
     Money,
     PlanningFlowKind,
@@ -36,6 +37,7 @@ from ...gen.services import (
     build_transaction,
     delete_transaction,
     save_transaction,
+    transaction_currency,
 )
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
@@ -445,6 +447,9 @@ class TransactionDialog(Gtk.Window):
         """Translate the form into the shared typed service contract."""
         when = date.fromisoformat(self.date_entry.get_text().strip())
         residual = self.residual()
+        currency = transaction_currency(
+            self.db, self.transaction.currency if self.transaction is not None else None
+        )
         notes_start, notes_end = self.notes_view.get_buffer().get_bounds()
         splits: list[TransactionSplitInput] = []
         for editor in self.splits:
@@ -457,7 +462,7 @@ class TransactionDialog(Gtk.Window):
             splits.append(
                 TransactionSplitInput(
                     account=account_handle,
-                    value=value,
+                    value=Amount(value, currency),
                     handle=editor.handle,
                     memo=editor.memo.get_text().strip(),
                     planning_flow=editor.purpose,
@@ -479,6 +484,7 @@ class TransactionDialog(Gtk.Window):
                 description=self.description_entry.get_text().strip() or "(no description)",
                 num=self.num_entry.get_text().strip(),
                 notes=self.notes_view.get_buffer().get_text(notes_start, notes_end, True).strip(),
+                currency=currency,
                 splits=tuple(splits),
             ),
             existing_handle=self.transaction.handle if self.transaction is not None else None,

@@ -80,11 +80,14 @@ writes use the same generic schedule save/delete contracts as interactive editor
 Transaction creation and editing likewise submit ``TransactionInput`` and
 ``TransactionSplitInput`` values. The transaction service reconstructs editable
 splits from a stored source, preserves imported and reconciliation metadata, keeps
-account-commodity quantity distinct from transaction-currency value, enforces the
-hidden-account retention rule, validates investment classifications, and owns the
-complete write transaction. An optional FSA claim attachment is committed inside
-that same boundary, so an invalid attachment cannot leave an otherwise successful
-ledger posting behind. CLI posting/edit/delete and GTK quick posting/deletion use
+account-commodity quantity distinct from transaction-currency value, and rejects
+unlike-currency values before balance arithmetic. A quantity is separately tagged
+and required whenever an account commodity differs from the transaction currency.
+The service also enforces the hidden-account retention rule, validates investment
+classifications, and owns the complete write transaction. An optional FSA claim
+attachment is committed inside that same boundary, so an invalid attachment cannot
+leave an otherwise successful ledger posting behind. CLI posting/edit/delete and
+GTK quick posting/deletion use
 the same boundary as the full GTK editor and web. GTK and web translate stable
 service errors through shared presentation-owned wording; service error codes and
 field paths contain no English API prose.
@@ -196,6 +199,11 @@ requires a direct security-to-reporting-currency quote. Foreign-exchange graphs,
 automatic quote retrieval, lot/cost-basis accounting, and projected market prices
 are separate concerns and must not be approximated by treating monetary amounts as
 prices or quantities.
+
+New native books contain a stable USD commodity and select it as their default
+currency. A legacy native book without any currency remains readable; its first
+transaction-service write creates that same default commodity and metadata inside
+the transaction's atomic database change.
 
 ### Investment activity semantics
 

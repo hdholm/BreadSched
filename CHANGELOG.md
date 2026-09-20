@@ -5,6 +5,16 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0224 transaction-amount boundary — Keep value and quantity dimensions
+  explicit.** Give every new native book a stable default USD commodity and route
+  CLI, web, and GTK transaction writes through commodity-tagged split values.
+  Validate transaction currency, reject unlike-currency netting, retain account-
+  commodity quantity as a separately tagged input, and require it when the account
+  commodity differs from the transaction currency. Preserve legacy empty-book
+  compatibility by adding the default commodity atomically with the first service
+  write. Advance the alpha version to `0.2.0a81`; native schema version 7 is
+  unchanged.
+
 - [x] **0224 commodity-amount foundation — Reject dimensionally invalid
   arithmetic.** Add an immutable `Amount(value, commodity)` whose arithmetic,
   comparison, ratios, scaling, and quantization retain or enforce commodity

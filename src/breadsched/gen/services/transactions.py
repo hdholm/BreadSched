@@ -7,6 +7,8 @@ from datetime import date
 
 from ..db.sqlite import DbSQLite
 from ..engine import fsa_claims, investment
+from ..lib.amount import Amount
+from ..lib.commodity import DEFAULT_CURRENCY, DEFAULT_CURRENCY_HANDLE, Commodity
 from ..lib.money import Money
 from ..lib.transaction import (
     InvestmentActivityKind,
@@ -19,10 +21,11 @@ from .contracts import ServiceError, ServiceResult
 
 @dataclass(frozen=True, slots=True)
 class TransactionSplitInput:
-    """One editable ledger leg, using exact transaction-currency value."""
+    """One ledger leg with distinct value and account-commodity quantity."""
 
     account: str
-    value: Money
+    value: Amount
+    quantity: Amount | None = None
     handle: str | None = None
     memo: str = ""
     planning_flow: PlanningFlowKind | None = None
@@ -71,6 +74,22 @@ class SavedTransaction:
     description: str
 
 
+def transaction_currency(db: DbSQLite, preferred: str | None = None) -> str:
+    """Resolve a transaction-currency handle, including legacy empty books."""
+    if preferred is not None:
+        return preferred
+    configured = db.get_metadata("default_currency")
+    if isinstance(configured, str):
+        commodity = db.get_commodity(configured)
+        if commodity is not None and commodity.is_currency:
+            return commodity.handle
+    usd = db.get_commodity_by_mnemonic("USD")
+    if usd is not None and usd.is_currency:
+        return usd.handle
+    first = next((item for item in db.iter_commodities() if item.is_currency), None)
+    return first.handle if first is not None else DEFAULT_CURRENCY_HANDLE
+
+
 def build_transaction(
     db: DbSQLite,
     request: SaveTransaction,
@@ -93,6 +112,16 @@ def build_transaction(
     if len({split.account for split in definition.splits}) < 2:
         errors.append(ServiceError("transaction.accounts.same", ("splits",)))
 
+    preferred_currency = definition.currency or (
+        existing.currency if existing is not None else None
+    )
+    currency = transaction_currency(db, preferred_currency)
+    currency_commodity = db.get_commodity(currency)
+    if currency_commodity is None and currency != DEFAULT_CURRENCY_HANDLE:
+        errors.append(ServiceError("transaction.currency.not_found", ("currency",)))
+    elif currency_commodity is not None and not currency_commodity.is_currency:
+        errors.append(ServiceError("transaction.currency.invalid", ("currency",)))
+
     source_splits = {split.handle: split for split in existing.splits} if existing else {}
     seen_handles: set[str] = set()
     candidate_splits: list[Split] = []
@@ -101,6 +130,12 @@ def build_transaction(
         account = db.get_account(item.account)
         if account is None:
             errors.append(ServiceError("transaction.account.not_found", (f"{path}.account",)))
+        if item.value.commodity != currency:
+            errors.append(ServiceError("transaction.value.commodity", (f"{path}.value",)))
+        account_commodity = account.commodity if account is not None else None
+        quantity_commodity = account_commodity or currency
+        if item.quantity is not None and item.quantity.commodity != quantity_commodity:
+            errors.append(ServiceError("transaction.quantity.commodity", (f"{path}.quantity",)))
         source = source_splits.get(item.handle or "")
         if item.handle is not None:
             if item.handle in seen_handles:
@@ -108,6 +143,13 @@ def build_transaction(
             seen_handles.add(item.handle)
             if existing is not None and source is None:
                 errors.append(ServiceError("transaction.split.not_found", (f"{path}.handle",)))
+        if (
+            account_commodity is not None
+            and account_commodity != currency
+            and item.quantity is None
+            and (source is None or source.account != item.account)
+        ):
+            errors.append(ServiceError("transaction.quantity.required", (f"{path}.quantity",)))
         if (
             account is not None
             and account.hidden
@@ -118,22 +160,32 @@ def build_transaction(
         if source is not None:
             split = Split.from_dict(source.serialize())
             if split.account != item.account:
-                split.quantity = item.value
+                split.quantity = (
+                    item.quantity.value if item.quantity is not None else item.value.value
+                )
         else:
-            split = Split(item.account, item.value, handle=item.handle)
+            quantity = item.quantity.value if item.quantity is not None else item.value.value
+            split = Split(item.account, item.value.value, quantity=quantity, handle=item.handle)
         split.account = item.account
-        split.value = item.value
+        split.value = item.value.value
+        if item.quantity is not None:
+            split.quantity = item.quantity.value
         split.memo = item.memo.strip()
         split.planning_flow = item.planning_flow
         split.investment_activity = item.investment_activity
         default_activity = definition.investment_activity
         if split.investment_activity is None and default_activity is not None:
             direction = default_activity.direction
-            if (direction >= 0 and item.value > 0) or (direction <= 0 and item.value < 0):
+            if (direction >= 0 and item.value.value > 0) or (
+                direction <= 0 and item.value.value < 0
+            ):
                 split.investment_activity = default_activity
         candidate_splits.append(split)
 
-    if sum((split.value for split in definition.splits), Money(0)):
+    values_share_currency = all(item.value.commodity == currency for item in definition.splits)
+    if values_share_currency and sum(
+        (item.value for item in definition.splits), Amount(Money(0), currency)
+    ):
         errors.append(ServiceError("transaction.unbalanced", ("splits",)))
     if errors:
         return ServiceResult.failure(*errors)
@@ -146,8 +198,7 @@ def build_transaction(
     candidate.description = definition.description.strip()
     candidate.num = definition.num.strip()
     candidate.notes = definition.notes.strip()
-    if existing is None:
-        candidate.currency = definition.currency
+    candidate.currency = currency
     candidate.splits = candidate_splits
 
     if investment.activity_problems(db, candidate.splits):
@@ -176,6 +227,12 @@ def save_transaction(
 
     try:
         with db.transaction(f"{action} {candidate.description}") as txn:
+            if (
+                candidate.currency == DEFAULT_CURRENCY_HANDLE
+                and db.get_commodity(DEFAULT_CURRENCY_HANDLE) is None
+            ):
+                db.add_commodity(Commodity.from_dict(DEFAULT_CURRENCY.serialize()), txn)
+                db.set_metadata("default_currency", DEFAULT_CURRENCY_HANDLE, txn)
             if request.existing_handle is None:
                 db.add_transaction(candidate, txn)
             else:

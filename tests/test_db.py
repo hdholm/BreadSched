@@ -389,7 +389,11 @@ class TestSchemaCompatibility:
             )
 
     def test_new_books_record_the_current_baseline_in_the_migration_ledger(self, db):
+        from breadsched.gen.lib import DEFAULT_CURRENCY_HANDLE
+
         assert db.get_metadata("schema_version") == 7
+        assert db.get_metadata("default_currency") == DEFAULT_CURRENCY_HANDLE
+        assert db.get_commodity(DEFAULT_CURRENCY_HANDLE).mnemonic == "USD"
         assert db.integrity_problems() == []
         row = db._require().execute("SELECT version FROM schema_migration").fetchone()
         assert tuple(row) == (7,)
