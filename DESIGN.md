@@ -66,6 +66,12 @@ submit only the indexed expressions, variables, recurrence, and ordinary metadat
 that formula ownership permits; the service clones all protected structure. Baseline
 and scenario editors use the same construction contracts.
 
+GTK account and schedule dialog constructors only orchestrate construction. Focused
+helpers snapshot eligible choices, build related control groups, and load initial or
+read-only state in callback-safe order; validation and financial meaning remain in
+the existing adapter and service boundaries. This makes construction order explicit
+without turning widget helpers into a second workflow implementation.
+
 Schedule duplication and deletion also use this service boundary. Exact copies retain
 editor-protected custom structure, while deletion rejects stale identities and live
 scenario references before removing the baseline definition. Historical-estimate CLI

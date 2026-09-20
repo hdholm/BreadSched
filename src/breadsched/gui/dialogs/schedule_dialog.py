@@ -133,6 +133,20 @@ class ScheduleDialog(Gtk.Window):
         self._formula_originals: list[str] = []
         self._formula_variables_original = ""
         self._category_ledger_direction: int | None = None
+        self.set_default_size(560, 520)
+        self._load_choices(source)
+
+        box, content = self._build_shell()
+        grid = Gtk.Grid(column_spacing=10, row_spacing=8)
+        content.append(grid)
+        row = self._build_transaction_fields(grid)
+        row = self._build_timeline_fields(grid, row)
+        self._build_recurrence_fields(grid, row)
+        self._build_supplemental_content(content)
+        self._build_actions(box, read_only_reason)
+        self._load_initial_state(source, read_only_reason, grid)
+
+    def _load_choices(self, source: ScheduledTransaction | None) -> None:
         self._frequencies = list(_FREQUENCIES)
         if source is not None and not any(
             period is source.recurrence.period and interval == source.recurrence.interval
@@ -145,23 +159,27 @@ class ScheduleDialog(Gtk.Window):
                     source.recurrence.interval,
                 )
             )
-        self.set_default_size(560, 520)
         referenced = {split.account for split in source.splits} if source is not None else set()
         self._accounts = sorted(
             (
                 account
-                for account in db.iter_accounts()
+                for account in self.db.iter_accounts()
                 if not account.is_root
                 and not account.placeholder
                 and (not account.hidden or account.handle in referenced)
             ),
-            key=db.full_name,
+            key=self.db.full_name,
         )
         self._names = [
-            f"{db.full_name(account)} (hidden)" if account.hidden else db.full_name(account)
+            (
+                f"{self.db.full_name(account)} (hidden)"
+                if account.hidden
+                else self.db.full_name(account)
+            )
             for account in self._accounts
         ]
 
+    def _build_shell(self) -> tuple[Gtk.Box, Gtk.Box]:
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
@@ -172,11 +190,10 @@ class ScheduleDialog(Gtk.Window):
         self.content_scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         self.content_scroller.set_vexpand(True)
         box.append(self.content_scroller)
+        return box, content
 
-        grid = Gtk.Grid(column_spacing=10, row_spacing=8)
-        content.append(grid)
+    def _build_transaction_fields(self, grid: Gtk.Grid) -> int:
         row = 0
-
         self.name_entry = Gtk.Entry(placeholder_text="Rent")
         self.name_entry.set_hexpand(True)
         self.name_entry.connect("changed", self._validate)
@@ -283,7 +300,9 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(label, 0, row, 1, 1)
         grid.attach(self.additional_splits, 1, row, 1, 1)
         row += 1
+        return row
 
+    def _build_timeline_fields(self, grid: Gtk.Grid, row: int) -> int:
         self.split_amount_changes_editor = SplitAmountTimelineEditor(self._validate, self._names)
         label = Gtk.Label(label="Per-leg future amounts", xalign=0, valign=Gtk.Align.START)
         label.set_tooltip_text(
@@ -326,7 +345,9 @@ class ScheduleDialog(Gtk.Window):
         grid.attach(label, 0, row, 1, 1)
         grid.attach(self.occurrence_adjustments_editor, 1, row, 1, 1)
         row += 1
+        return row
 
+    def _build_recurrence_fields(self, grid: Gtk.Grid, row: int) -> None:
         self.frequency = Gtk.DropDown.new_from_strings([item[0] for item in self._frequencies])
         self.frequency.set_selected(3)
         self.frequency.connect("notify::selected", self._recurrence_changed)
@@ -376,6 +397,7 @@ class ScheduleDialog(Gtk.Window):
         self.auto_check = Gtk.CheckButton(label="Post automatically once the date arrives")
         grid.attach(self.auto_check, 1, row, 1, 1)
 
+    def _build_supplemental_content(self, content: Gtk.Box) -> None:
         self.formula_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.formula_box.set_visible(False)
         content.append(self.formula_box)
@@ -388,6 +410,7 @@ class ScheduleDialog(Gtk.Window):
         self.preview.add_css_class("dim")
         content.append(self.preview)
 
+    def _build_actions(self, box: Gtk.Box, read_only_reason: str | None) -> None:
         self.status = Gtk.Label(xalign=0)
         box.append(self.status)
 
@@ -403,6 +426,12 @@ class ScheduleDialog(Gtk.Window):
         buttons.append(self.save_button)
         box.append(buttons)
 
+    def _load_initial_state(
+        self,
+        source: ScheduledTransaction | None,
+        read_only_reason: str | None,
+        grid: Gtk.Grid,
+    ) -> None:
         if source is not None and read_only_reason:
             grid.set_visible(False)
             self.preview.set_visible(False)

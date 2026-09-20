@@ -59,42 +59,7 @@ class AccountDialog(Gtk.Window):
         self.editing = editing
         self.set_default_size(600, 700)
 
-        all_accounts = list(db.iter_accounts())
-        blocked_parents: set[str] = set()
-        if account is not None:
-            blocked_parents.add(account.handle)
-            changed = True
-            while changed:
-                changed = False
-                for candidate in all_accounts:
-                    if (
-                        candidate.handle not in blocked_parents
-                        and candidate.parent in blocked_parents
-                    ):
-                        blocked_parents.add(candidate.handle)
-                        changed = True
-        self.parents = [a for a in all_accounts if a.handle not in blocked_parents]
-        self.parents.sort(key=db.full_name)
-        self.commodities = list(db.iter_commodities())
-        self.commodities.sort(key=lambda item: (item.namespace, item.mnemonic))
-        self.commodity_handles: list[str | None] = [None] + [
-            commodity.handle for commodity in self.commodities
-        ]
-        self.assets = [
-            a
-            for a in db.iter_accounts()
-            if a.account_class is AccountClass.ASSET and not a.is_root and not a.atype.is_cash_like
-        ]
-        self.assets.sort(key=db.full_name)
-        current_payment = account.card_payment_account if account is not None else None
-        self.payment_accounts = [
-            a
-            for a in db.iter_accounts()
-            if a.atype.is_cash_like
-            and not a.placeholder
-            and (not a.hidden or a.handle == current_payment)
-        ]
-        self.payment_accounts.sort(key=db.full_name)
+        self._load_choices(account)
 
         # Built before anything that can emit: setting a dropdown's initial value
         # fires notify::selected, which reaches _validate long before the widgets
@@ -312,12 +277,59 @@ class AccountDialog(Gtk.Window):
         )
         grid.attach(Gtk.Label(label="Opening balance", xalign=0), 0, row, 1, 1)
         grid.attach(self.opening_entry, 1, row, 1, 1)
-        row += 1
 
-        # --- loan --------------------------------------------------------
+        self._build_loan_controls(box, account)
+        self._build_card_controls(box, account)
+
+        box.append(self.status)
+        self._build_actions(box, account)
+
+        self._ready = True
+        self._on_type_changed()
+        self._validate()
+
+    def _load_choices(self, account: Account | None) -> None:
+        all_accounts = list(self.db.iter_accounts())
+        blocked_parents: set[str] = set()
+        if account is not None:
+            blocked_parents.add(account.handle)
+            changed = True
+            while changed:
+                changed = False
+                for candidate in all_accounts:
+                    if (
+                        candidate.handle not in blocked_parents
+                        and candidate.parent in blocked_parents
+                    ):
+                        blocked_parents.add(candidate.handle)
+                        changed = True
+        self.parents = [a for a in all_accounts if a.handle not in blocked_parents]
+        self.parents.sort(key=self.db.full_name)
+        self.commodities = list(self.db.iter_commodities())
+        self.commodities.sort(key=lambda item: (item.namespace, item.mnemonic))
+        self.commodity_handles: list[str | None] = [None] + [
+            commodity.handle for commodity in self.commodities
+        ]
+        self.assets = [
+            a
+            for a in self.db.iter_accounts()
+            if a.account_class is AccountClass.ASSET and not a.is_root and not a.atype.is_cash_like
+        ]
+        self.assets.sort(key=self.db.full_name)
+        current_payment = account.card_payment_account if account is not None else None
+        self.payment_accounts = [
+            a
+            for a in self.db.iter_accounts()
+            if a.atype.is_cash_like
+            and not a.placeholder
+            and (not a.hidden or a.handle == current_payment)
+        ]
+        self.payment_accounts.sort(key=self.db.full_name)
+
+    def _build_loan_controls(self, box: Gtk.Box, account: Account | None) -> None:
         self.loan_box = Gtk.Box(spacing=8)
         self.asset_picker = Gtk.DropDown.new_from_strings(
-            ["(none)"] + [db.full_name(a) for a in self.assets]
+            ["(none)"] + [self.db.full_name(a) for a in self.assets]
         )
         if account is not None and account.linked_asset:
             for index, asset in enumerate(self.assets, start=1):
@@ -328,7 +340,7 @@ class AccountDialog(Gtk.Window):
         self.loan_box.append(self.asset_picker)
         box.append(self.loan_box)
 
-        # --- credit card -------------------------------------------------
+    def _build_card_controls(self, box: Gtk.Box, account: Account | None) -> None:
         self.card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.card_box.add_css_class("card")
         self.full_check = Gtk.CheckButton(label="Cleared in full every month")
@@ -354,7 +366,7 @@ class AccountDialog(Gtk.Window):
 
         self.card_payment_picker = Gtk.DropDown.new_from_strings(
             ["(choose when recording payment)"]
-            + [db.full_name(item) for item in self.payment_accounts]
+            + [self.db.full_name(item) for item in self.payment_accounts]
         )
         if account is not None and account.card_payment_account:
             for index, payment_account in enumerate(self.payment_accounts, start=1):
@@ -366,8 +378,7 @@ class AccountDialog(Gtk.Window):
         self.card_box.append(card_grid)
         box.append(self.card_box)
 
-        box.append(self.status)
-
+    def _build_actions(self, box: Gtk.Box, account: Account | None) -> None:
         buttons = Gtk.Box(spacing=8, halign=Gtk.Align.END)
         if account is not None:
             delete = Gtk.Button(label="Delete")
@@ -381,10 +392,6 @@ class AccountDialog(Gtk.Window):
         self.save_button.connect("clicked", self._on_save)
         buttons.append(self.save_button)
         box.append(buttons)
-
-        self._ready = True
-        self._on_type_changed()
-        self._validate()
 
     # -------------------------------------------------------------- reactions
 

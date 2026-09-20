@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0223 dialog-structure slice — Separate editor construction by
+  responsibility.** Reduce the account and schedule dialog constructors to ordered
+  orchestration over choice loading, related control groups, timeline/recurrence
+  sections, actions, and initial-state loading. Preserve widget creation order,
+  callbacks, imported/read-only behavior, and request construction under the
+  existing GTK characterization suite. Together with the verification,
+  category-report, and estimate slices, this completes the 0223 structural work.
+  Advance the alpha version to `0.2.0a77`; native schema version 7 is unchanged.
+
 - [x] **0223 estimate-structure slice — Isolate historical observation.** Move
   per-category monthly ledger scanning, escrow recognition, future-plan coverage,
   and residual/gross evidence collection into one typed history result consumed by
