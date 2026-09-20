@@ -963,6 +963,13 @@ application version advances. Stable releases may require a still wider promise.
 This native-book policy is independent of external GnuCash, QIF, OFX, and QFX import
 compatibility.
 
+Releases are selected explicitly by a checked-in `docs/releases/vVERSION.md`; an
+alpha increment alone is not a release request. After the full CI push run succeeds,
+the release workflow requires that exact tested commit still be the tip of `main`,
+validates the notes against application and schema constants, builds and installs the
+wheel, verifies SHA-256 checksums, and only then creates the annotated tag and GitHub
+release. Release artifacts and notes are never silently replaced.
+
 The storage priorities are atomic financial writes, explicit format rejection,
 verified backups and recovery, undo/redo integrity, and realistic performance on
 long household histories.

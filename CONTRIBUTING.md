@@ -121,6 +121,20 @@ Before opening or updating a pull request:
 11. Monitor the complete GitHub Actions run. Correct failures on the same branch and
     refresh every dependent stacked branch so its parent is exact.
 
+## Releases
+
+Releases are opt-in, not automatic for every alpha increment. To select a tested
+application version for release, add `docs/releases/vVERSION.md` using the exact
+application version and the required compatibility, upgrade/rollback, and verified-
+artifact headings enforced by `scripts/check_release_notes.py`.
+
+After that notes file reaches `main`, the release workflow waits for the complete CI
+push run to succeed and verifies that the tested commit is still the tip of `main`.
+It then builds and installs the distribution, checks the installed application/schema
+report, creates an annotated tag on that exact commit, publishes the human-reviewed
+notes, and attaches the wheel, source distribution, and `SHA256SUMS`. An existing tag
+must resolve to the same commit; an existing release is never overwritten.
+
 Use `Fixes #N` or `Closes #N` only on the pull request that completes the entire
 issue. Earlier members of a stack should use `Related to #N` so merging a partial
 slice cannot close the issue prematurely.
