@@ -8,8 +8,8 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current accepted baseline is **0223 — service adoption, structured errors, and
-localization seam**.
+The current released baseline is **0225 / `v0.2.0a85` — commodity-safe arithmetic,
+independent application/data-format versions, and tested-main release discipline**.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -28,38 +28,24 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The web-boundary architecture gate is complete. Continue moving cross-interface
-workflows behind typed services before broadening financial semantics; a touched
-workflow may not add new presentation-owned rules.
+The typed-mutation-service, web-boundary, commodity-arithmetic, and release gates are
+complete. The next work should strengthen independent evidence before broadening
+financial semantics, while continuing responsibility-based decomposition whenever a
+touched adapter or engine would otherwise accumulate another workflow rule.
 
-1. [x] **0224 — Commodity-tagged amounts and scalar rates.** The amount, rate,
-   quantity/value, aggregation, and declared-precision boundaries are complete.
-
-2. [x] **0225 — Wider data-format compatibility and release discipline.** Application
-   and native-format versions are reported independently, the next migration window
-   is specified without a no-op schema bump, and tested-main releases began with
-   `v0.2.0a85` and human-readable compatibility/rollback notes.
+1. **Independent Plan and Projection goldens.** Add small, human-reviewed books with
+   hand-calculated dated flows, balances, and conservation terms.
+2. **Versioned historical-estimation rules.** Consolidate thresholds, confidence
+   weights, cadence/seasonal criteria, and funding tie-breaks, then prove changes
+   against those independent goldens.
+3. **Bounded mutation testing.** Establish and ratchet a measured `gen/engine` and
+   `gen/lib` baseline without making the suite slow or flaky.
+4. **Responsibility-based decomposition.** Continue reducing the remaining oversized
+   `web/server.py` and related seams as the work above touches them; do not optimize
+   for line count alone.
 
 ## Architecture and correctness
 
-- [x] Harden `Money` and amount handling:
-  - [x] Remove hard-coded cents where account/commodity precision differs.
-    - [x] Use declared fractions for exact allocation, scheduled posting, Projection
-      event rounding, and loan payment/preview calculations.
-    - [x] Carry declared reporting precision through Dashboard, inference, and
-      historical-estimate calculations.
-  - [x] Keep `Money` as the exact rational scalar used to preserve GnuCash numerics;
-    introduce a commodity-tagged `Amount(value, commodity)` at ledger/service
-    arithmetic boundaries. Reject addition, comparison, and netting across unlike
-    commodities unless an explicit dated conversion has produced a reporting-
-    currency amount.
-    - [x] Establish the closed `Amount` value and require dated `CommodityPrice`
-      conversion at the security-valuation boundary.
-    - [x] Carry tagged transaction-currency values and separately tagged account-
-      commodity quantities through the transaction-service boundary.
-    - [x] Enforce tagged amounts at the remaining ledger aggregation boundaries.
-  - [x] Preserve the distinct split dimensions: transaction-currency `value` and
-    account-commodity `quantity`. Do not replace them with one ambiguous amount.
 - [ ] Split oversized modules/functions as part of the service/resource ownership
   work, especially the remaining seams in `web/server.py`.
   Split large GUI test modules only when the resulting fixture ownership and runtime
@@ -220,14 +206,6 @@ workflow may not add new presentation-owned rules.
 
 ## Storage, integrity, and recovery
 
-- [x] **Application version and native data-format version are independent.** The
-  package/application version (currently the `0.2.0aN` series) identifies the build
-  for bug reports and releases. The integer native schema/data-format version
-  (currently 7) alone controls book compatibility and migration. Display and
-  diagnostic output should report both; a behavior-only application release must not
-  bump the data format, and a data-format change must bump the schema even if the
-  application remains in the same prerelease series.
-
 - [ ] **Expand the migration window with the next data-format change.** When schema 8
   or the next schema is introduced, retain sequential migrations from the two
   immediately preceding data-format versions (for schema 8, both 6→7 and 7→8), so
@@ -327,15 +305,7 @@ workflow may not add new presentation-owned rules.
   the primary GTK/Linux artifact and prove portals, file import/export, printing,
   settings, backups, and offline operation inside the sandbox before selecting it.
 
-- [x] Tag releases from accepted `main`, publish release notes that state both the
-  application version and native data-format version/compatibility window, attach
-  verified artifacts, and document upgrade/rollback implications. Tags must follow
-  tested commits rather than merely marking every alpha code increment.
-
 - [ ] Improve crash recovery, diagnostic logging, and privacy-safe error reporting.
-
-- [x] Keep Ruff, mypy, randomized tests, GTK runtime tests, end-to-end demo, and
-  package build/install checks as release gates.
 
 - [ ] Add property-based monetary arithmetic tests and fuzz-style malformed-import
   tests where they add useful coverage.

@@ -37,11 +37,11 @@ Financial engines and application/use-case services
 GTK4 / web / CLI presentations
 ```
 
-Financial calculations belong below the UI layers. GTK and web should present the
-same operations rather than reimplement business workflows independently. As the
-application-service layer is strengthened, use cases such as resolving an actual,
-saving a claim, reconciling an account, or editing a schedule should have one
-implementation called by every presentation.
+Financial calculations belong below the UI layers. GTK and web present the same
+operations rather than reimplementing business workflows independently.
+Cross-interface financial mutations—including resolving an actual, saving a claim,
+reconciling an account, and editing a schedule—have one service implementation used
+by every presentation that exposes them.
 
 The application-service boundary lives in ``breadsched.gen.services``. Public use
 cases accept typed request dataclasses and return ``ServiceResult`` values containing
@@ -98,6 +98,11 @@ linked assets and card payment accounts, FSA period overlap, and source-owned fi
 For a new account, the account and optional opening-balance transaction commit in one
 database transaction; deletion converts protected or referenced-account failures to
 a stable service error.
+
+That service ownership applies to financial and domain mutations. Presentation-only
+book settings, such as Dashboard grouping and an applied Plan display range, may use
+the ordinary metadata boundary described under Storage and transactions; this does
+not make presentation code an owner of ledger or planning semantics.
 
 The web presentation is split into three boundaries. ``web.server.Api`` translates
 plain request values to application/domain calls, ``web.resources`` declares routes
@@ -157,7 +162,7 @@ inventing semantics.
 
 Ledger values use exact rational arithmetic to preserve imported GnuCash numeric
 values and avoid binary floating-point error. Commodity precision, account-specific
-SCU, and eventually multi-commodity valuation are distinct concerns from the exact
+SCU, and multi-commodity valuation are distinct concerns from the exact
 stored ledger fraction.
 
 Rates are dimensionless and distinct from money amounts. The ``Rate`` domain type
@@ -805,14 +810,9 @@ Source GUIDs should remain stable identifiers where appropriate. Imported accoun
 transaction, schedule, formula, commodity, and reconciliation semantics should be
 preserved rather than normalized simply because BreadSched exposes a smaller UI.
 
-Interoperability must eventually include an honest exit path, not import alone.
-Exports and portable archives must retain exact supported ledger and BreadSched-owned
-planning data, stable provenance where useful, a versioned human-readable manifest,
-and integrity information. Any representational loss must be disclosed and covered
-by fixture-based round-trip expectations; unsupported imported structures should be
-preserved opaquely where safe rather than silently discarded. BreadSched must not
-claim complete GnuCash round-trip compatibility beyond the structures demonstrated
-by those fixtures.
+Compatibility claims are limited to structures demonstrated by fixture-based
+round-trip evidence. BreadSched does not claim complete GnuCash round-trip
+compatibility for structures it cannot yet export or reconstruct safely.
 
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
@@ -884,9 +884,6 @@ sessions and FSA claims are durable BreadSched audit data, so a missing source
 transaction referenced by either is retained and reported as a conflict instead of
 creating a dangling reference. Moving or renaming the same GnuCash book does not
 reset its stable inventory when its root GUID is available.
-
-Longer-term separation of imported ledger state from BreadSched classifications/resolutions is
-preferred where it makes synchronization safer.
 
 Escrow is a restricted asset kind even when GnuCash stores it as `BANK`. Projection
 therefore tracks its balance as a holding rather than spendable cash. Funding an
@@ -1092,7 +1089,7 @@ balance-sheet classifications form an optional appendix selected in the preview.
 The appendix begins on a new page, repeats static table headings, and uses compact
 numeric spacing; sticky screen headers must never enter print layout. Printed Plan
 headers omit the book path. Browser-added URL/date/page margins remain controlled by
-the browser print dialog until the native GTK rendering path replaces that fallback.
+the browser print dialog.
 
 The web interface prints its current rendered view directly. Print-specific CSS
 removes navigation and editing actions, restores tables hidden by screen scroll
@@ -1122,15 +1119,17 @@ write content types.
 
 ## Documentation boundaries
 
-Documentation has three distinct jobs:
+Documentation has four distinct jobs:
 
 - `README.md`: user-facing overview and first operational entry point;
 - `DESIGN.md`: current architecture, rationale, and durable design decisions;
-- `ROADMAP.md`: the one authoritative list of incomplete/future work.
+- `ROADMAP.md`: the one authoritative list of incomplete/future work;
+- `CHANGELOG.md`: completed milestones and their durable acceptance contracts.
 
 When a patch changes architecture, update this design document. When it adds,
-completes, changes, or reprioritizes pending work, update the roadmap. Do not use
-the README or design document as an alternate TODO list.
+changes, or reprioritizes pending work, update the roadmap. When it completes an
+accepted outcome, move that contract to the changelog. Do not use the README or
+design document as an alternate TODO list.
 
 ## Money and exact arithmetic
 
