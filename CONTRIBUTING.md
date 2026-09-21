@@ -50,11 +50,12 @@ messages or pull requests.
   pull request that completes, changes, discovers, splits, or reprioritizes roadmap
   work must update the roadmap in the same pull request. Move completed outcomes
   and their acceptance contracts to [`CHANGELOG.md`](CHANGELOG.md).
-- Keep documentation roles distinct: `README.md` is the user-facing overview and
-  entry point; `DESIGN.md` records current architecture and rationale; `ROADMAP.md`
-  is the only future-work list; and `CHANGELOG.md` preserves completed milestones.
-  Update the appropriate documents when a pull request changes behavior, design,
-  completed history, or pending work rather than letting those descriptions drift.
+- Keep documentation roles distinct: `README.md` is the product/developer entry
+  point; `src/breadsched/USER_GUIDE.md` is the packaged task-oriented user guide;
+  `DESIGN.md` records current architecture and rationale; `ROADMAP.md` is the only
+  future-work list; and `CHANGELOG.md` preserves completed milestones. Update the
+  appropriate documents when a pull request changes behavior, design, completed
+  history, or pending work rather than letting those descriptions drift.
 
 ## Tests are part of the change
 

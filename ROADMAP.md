@@ -267,16 +267,10 @@ touched adapter or engine would otherwise accumulate another workflow rule.
 
 ## In-application help and documentation
 
-- [ ] Move task-oriented user documentation into a versioned `docs/` site with link
-  and build checks (evaluate MkDocs, but do not couple content to a generator before
-  the information architecture is proven). Trim the README to product orientation,
-  installation, a first-run path, safety/recovery essentials, and links. Keep
-  `DESIGN.md` as the current architecture description; add short ADRs for new
-  consequential decisions instead of mechanically converting historical prose.
-
-- [ ] Build full user documentation and in-application help for Accounts, registers,
-  Scheduled transactions, Plan, Review/Actuals, Projection, scenarios, account types,
-  imports, reconciliation, and backup/recovery.
+- [ ] Evolve the packaged Markdown user guide into a versioned `docs/` site if its
+  proven information architecture would benefit from generator-backed navigation.
+  Keep the guide usable as a standalone document and packaged for offline help; do
+  not make a documentation generator a runtime requirement.
 
 - [ ] Add a generic-household walkthrough that creates a comprehensive chart of
   accounts, recurring income/expenses, savings/debt/retirement flows, and Base plan.
@@ -284,18 +278,8 @@ touched adapter or engine would otherwise accumulate another workflow rule.
 - [ ] Add a multiple-scenario walkthrough that duplicates Base and compares alternate
   assumptions/scheduled estimates.
 
-- [ ] Explain why BreadSched models budgets as dated planned events rather than
-  arbitrary monthly cells, with annual/weekly/semi-monthly examples.
-
-- [ ] Explain how actual transactions resolve planned/scheduled occurrences while
-  preserving expected date/amount for variance history.
-
-- [ ] Explain commitments vs estimates, convergent historical estimation, planning
-  account types/split purposes, GnuCash compatibility, growth policies, formula schedules,
-  and Projection explanations.
-
-- [ ] Prefer versioned shared help content that GTK and web can both surface where
-  practical; add smoke/link tests against stale views/terminology.
+- [ ] Surface the packaged shared guide from the web interface and add contextual
+  links from complex GTK/web workflows where they materially improve discovery.
 
 
 ## Packaging and release quality

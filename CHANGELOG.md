@@ -5,7 +5,13 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
-No completed changes yet.
+- [x] **Packaged user guide and in-application help.** Move task-oriented user
+  information out of the README into one expanded, standalone Markdown guide that
+  is shipped as package data. Add an offline GTK **Help → User Guide** (`F1`) reader
+  for that same source, keep one guide window per application instance, and trim the
+  README to product orientation, development installation/invocation, project links,
+  and book-safety essentials. Advance the alpha version to `0.2.0a86`; native schema
+  version 7 is unchanged.
 
 ## 0.2.0a85 - 2026-09-20
 

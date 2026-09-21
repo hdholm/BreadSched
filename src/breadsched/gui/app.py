@@ -17,6 +17,7 @@ from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.utils.logs import get_logger  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
 from .gi_setup import Gdk, Gio, GLib, Gtk
+from .user_guide import UserGuideWindow
 from .viewmanager import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .viewmanager import ViewManager  # noqa: E402
 
@@ -125,6 +126,7 @@ class BreadSchedApplication(Gtk.Application):
             ("verify", self.on_verify, None),
             ("post-scheduled", self.on_post_scheduled, None),
             ("new-transaction", self.on_new_transaction, "<Control>t"),
+            ("user-guide", self.on_user_guide, "F1"),
             ("about", self.on_about, None),
             ("quit", lambda *_: self.quit(), "<Control>q"),
         ):
@@ -453,6 +455,14 @@ class BreadSchedApplication(Gtk.Application):
         )
         about.present()
 
+    def on_user_guide(self, *_args) -> None:
+        """Present the packaged guide, reusing its window when it is already open."""
+        for window in self.get_windows():
+            if isinstance(window, UserGuideWindow):
+                window.present()
+                return
+        UserGuideWindow(self, self.props.active_window).present()
+
     def _report(self, message: str) -> None:
         window = self.props.active_window
         if window is None:
@@ -508,6 +518,7 @@ def build_menu_model() -> Gio.Menu:
     menubar.append_submenu("_Actions", actions_menu)
 
     help_menu = Gio.Menu()
+    help_menu.append("_User Guide", "app.user-guide")
     help_menu.append("_About BreadSched", "app.about")
     menubar.append_submenu("_Help", help_menu)
     return menubar

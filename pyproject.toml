@@ -50,6 +50,7 @@ version = {attr = "breadsched.__version__"}
 
 [tool.setuptools.package-data]
 breadsched = [
+    "USER_GUIDE.md",
     "gui/resources/*.css",
     "web/static/*.html",
     "web/static/*.css",
