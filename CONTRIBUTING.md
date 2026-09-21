@@ -15,10 +15,6 @@ after applying the repository's `.mailmap`. Create it with `git commit --signoff
 history. A sign-off is a contributor certification, not a substitute for reviewing
 the patch.
 
-Howard Holm's canonical contribution and DCO identity is
-`Howard Holm <hdholm@alumni.iastate.edu>`; `.mailmap` normalizes the historical and
-GitHub-generated `howard@holmgrown.com` author alias to that identity.
-
 The human contributor remains the commit author and is responsible for checking
 financial behavior, tests, licensing, privacy, and source provenance even when an AI
 tool helped. Any commit materially assisted by an AI coding, writing, or review tool
