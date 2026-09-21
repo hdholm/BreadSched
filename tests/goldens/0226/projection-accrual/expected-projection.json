@@ -1,0 +1,8 @@
+{
+  "scenario": "Accrual",
+  "months": [
+    {"month": "2026-01-01", "cash_open": "10000.00", "contributions": "1000.00", "debt_payments": "500.00", "interest_earned": "28.33", "investment_growth": "123.14", "interest_charged": "42.61", "cash_close": "8528.33", "holdings": "21123.14", "liabilities": "4542.61", "net_worth": "25108.86", "reconciles": true},
+    {"month": "2026-02-01", "cash_open": "8528.33", "interest_earned": "23.49", "investment_growth": "114.48", "interest_charged": "36.35", "cash_close": "8551.82", "holdings": "21237.62", "liabilities": "4578.96", "net_worth": "25210.47", "reconciles": true}
+  ],
+  "ending_cash": "8812.74", "minimum_cash": "8528.33", "warnings": []
+}

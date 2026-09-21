@@ -1,0 +1,22 @@
+{
+  "plan": {"start": "2026-01-01", "end": "2026-02-28", "today": "2026-02-28"},
+  "accounts": [
+    {"id": "root", "name": "Root", "type": "ROOT"},
+    {"id": "assets", "name": "Assets", "type": "ASSET", "parent": "root", "placeholder": true},
+    {"id": "checking", "name": "Checking", "type": "BANK", "parent": "assets"},
+    {"id": "house", "name": "House", "type": "ASSET", "parent": "assets"},
+    {"id": "escrow", "name": "Escrow", "type": "ESCROW", "parent": "assets", "linked_asset": "house"},
+    {"id": "mortgage", "name": "Mortgage", "type": "LOAN", "parent": "root", "linked_asset": "house"},
+    {"id": "interest", "name": "Mortgage interest", "type": "EXPENSE", "parent": "root"},
+    {"id": "tax", "name": "Property tax", "type": "EXPENSE", "parent": "root"},
+    {"id": "equity", "name": "Opening", "type": "EQUITY", "parent": "root"}
+  ],
+  "transactions": [
+    {"id": "opening", "date": "2025-12-31", "description": "Buy house", "planning_resolution": "historical", "splits": [{"account": "house", "amount": "400000"}, {"account": "checking", "amount": "10000"}, {"account": "mortgage", "amount": "-320000"}, {"account": "equity", "amount": "-90000"}]}
+  ],
+  "schedules": [
+    {"id": "mortgage-payment", "name": "Mortgage payment", "recurrence": {"start": "2026-01-15", "count": 2}, "splits": [{"account": "mortgage", "amount": "800", "planning_flow": "debt_principal"}, {"account": "interest", "amount": "1150"}, {"account": "escrow", "amount": "450", "planning_flow": "escrow_funding"}, {"account": "checking", "amount": "-2400"}]},
+    {"id": "escrow-tax", "name": "Escrow tax payment", "recurrence": {"start": "2026-02-20", "period": "once"}, "splits": [{"account": "tax", "amount": "900"}, {"account": "escrow", "amount": "-900"}]}
+  ],
+  "scenarios": [{"id": "mortgage-projection", "name": "Mortgage projection", "start": "2026-01-01", "years": 1, "assumptions": {}}]
+}

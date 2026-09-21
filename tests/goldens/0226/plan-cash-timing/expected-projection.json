@@ -1,0 +1,8 @@
+{
+  "scenario": "Flat projection",
+  "months": [
+    {"month": "2026-01-01", "cash_open": "1000.00", "income": "1250.00", "expense": "600.00", "cash_close": "1750.00", "liabilities": "100.00", "net_worth": "1650.00", "reconciles": true},
+    {"month": "2026-02-01", "cash_open": "1750.00", "income": "1200.00", "expense": "600.00", "debt_payments": "100.00", "cash_close": "2350.00", "liabilities": "100.00", "net_worth": "2250.00", "reconciles": true}
+  ],
+  "minimum_cash": "1750.00", "warnings": []
+}

@@ -150,6 +150,23 @@ derived indexes. Projection independently refuses to return a reporting month wh
 opening stocks, dated movements, accruals, and closing stocks do not reconcile.
 These checks diagnose facts; they do not round or repair imported ledger data.
 
+### Independent financial acceptance books
+
+Plan and Projection also have a small acceptance corpus independent of their unit
+fixtures. Each golden book is a human-readable declaration with stable account,
+transaction, schedule, and scenario identifiers. Its financial assumptions and
+hand calculations live beside static expected Plan and Projection results; product
+code never generates those expectations.
+
+The tests materialize each declaration as native SQLite, close the writer, reopen the
+book, and only then call the shared Plan service and Projection engine. The corpus
+covers exact dated cash timing and matched actual retention, classified balance-sheet
+flows, mortgage/escrow non-additivity, actual/365 accrual and stock conservation, and
+scenario schedule/rate overlays without mutating Base. Large captured user books are
+not golden fixtures: compatibility imports, formula schedules, multi-currency,
+historical-estimator thresholds, and presentation rendering keep their focused test
+ownership.
+
 ## Exact financial representation
 
 ### Double entry

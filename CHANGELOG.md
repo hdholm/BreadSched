@@ -5,6 +5,17 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0226 — Independent Plan and Projection golden books.** Add five small,
+  human-readable native-book declarations covering cash timing and matched actuals,
+  classified planning flows, mortgage/escrow treatment, actual/365 projection
+  accruals, and scenario replacement/suppression/one-off overlays. Store independent
+  calculation notes and static expected Plan/Projection results beside each book;
+  materialize each fixture into native SQLite, close and reopen it, then exercise the
+  shared service/engine boundaries. Prove monthly and quarterly aggregation,
+  planning-flow and mortgage non-additivity, scenario immutability and assumption
+  provenance, and monthly stock conservation. This test/documentation milestone
+  leaves application version `0.2.0a86` and native schema version 7 unchanged.
+
 ## 0.2.0a86 - 2026-09-21
 
 - [x] **Packaged user guide and in-application help.** Move task-oriented user

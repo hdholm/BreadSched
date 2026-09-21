@@ -1,0 +1,10 @@
+{
+  "planned_cash": ["1800.00", "1200.00"], "operating_net_planned": ["1800.00", "1200.00"], "cash_bridge_planned": ["1800.00", "1200.00"],
+  "cash_position": {"opening": "5000.00", "closing": "8000.00", "minimum": "5000.00"},
+  "categories": {
+    "Travel": {"planned": ["0.00", "600.00"], "actual": ["0.00", "0.00"], "variance": ["0.00", "-600.00"]},
+    "Salary": {"planned": ["1800.00", "1800.00"], "actual": ["0.00", "0.00"], "variance": ["-1800.00", "-1800.00"]}
+  },
+  "scenario": "Alternative", "comparison": "Base scenario",
+  "assumption_sources": {"income_growth": "Base", "investment_return": "Base", "cash_interest": "Alternative", "liability_interest": "Base"}
+}

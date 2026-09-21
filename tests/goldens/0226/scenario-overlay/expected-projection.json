@@ -1,0 +1,8 @@
+{
+  "scenario": "Alternative",
+  "months": [
+    {"month": "2026-01-01", "cash_open": "5000.00", "income": "1800.00", "expense": "0.00", "interest_earned": "10.08", "investment_growth": "33.37", "cash_close": "6810.08", "holdings": "10033.37", "net_worth": "16843.44", "reconciles": true},
+    {"month": "2026-02-01", "cash_open": "6810.08", "income": "1800.00", "expense": "600.00", "interest_earned": "16.58", "investment_growth": "37.62", "cash_close": "8026.65", "holdings": "10070.99", "net_worth": "18097.64", "reconciles": true}
+  ],
+  "ending_cash": "8228.05", "minimum_cash": "6810.08", "warnings": []
+}

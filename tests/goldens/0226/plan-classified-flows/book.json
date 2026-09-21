@@ -1,0 +1,22 @@
+{
+  "plan": {"start": "2026-01-01", "end": "2026-01-31", "today": "2026-01-31"},
+  "accounts": [
+    {"id": "root", "name": "Root", "type": "ROOT"},
+    {"id": "assets", "name": "Assets", "type": "ASSET", "parent": "root", "placeholder": true},
+    {"id": "checking", "name": "Checking", "type": "BANK", "parent": "assets"},
+    {"id": "retirement", "name": "401k", "type": "RETIREMENT", "parent": "assets"},
+    {"id": "fsa", "name": "FSA", "type": "FSA", "parent": "assets"},
+    {"id": "loan", "name": "Loan", "type": "LOAN", "parent": "root"},
+    {"id": "income", "name": "Salary", "type": "INCOME", "parent": "root"},
+    {"id": "equity", "name": "Opening", "type": "EQUITY", "parent": "root"}
+  ],
+  "transactions": [
+    {"id": "opening", "date": "2025-12-31", "description": "Opening", "planning_resolution": "historical", "splits": [{"account": "checking", "amount": "1000"}, {"account": "loan", "amount": "-500"}, {"account": "equity", "amount": "-500"}]}
+  ],
+  "schedules": [
+    {"id": "payroll", "name": "Payroll with benefits", "recurrence": {"start": "2026-01-15", "period": "once"}, "splits": [{"account": "checking", "amount": "900"}, {"account": "retirement", "amount": "200", "planning_flow": "retirement_saving", "investment_activity": "contribution"}, {"account": "fsa", "amount": "100", "planning_flow": "benefit_funding"}, {"account": "income", "amount": "-1200"}]},
+    {"id": "principal", "name": "Loan principal", "recurrence": {"start": "2026-01-20", "period": "once"}, "splits": [{"account": "loan", "amount": "100", "planning_flow": "debt_principal"}, {"account": "checking", "amount": "-100"}]},
+    {"id": "distribution", "name": "Retirement distribution", "recurrence": {"start": "2026-01-25", "period": "once"}, "splits": [{"account": "checking", "amount": "50"}, {"account": "retirement", "amount": "-50", "planning_flow": "retirement_income", "investment_activity": "retirement_distribution"}]}
+  ],
+  "scenarios": [{"id": "flat", "name": "Flat projection", "start": "2026-01-01", "years": 1, "assumptions": {}}]
+}

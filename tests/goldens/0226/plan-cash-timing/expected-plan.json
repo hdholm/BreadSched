@@ -1,0 +1,12 @@
+{
+  "periods": ["Jan 2026", "Feb 2026"],
+  "planned_cash": ["700.00", "600.00"],
+  "actual_cash": ["1175.00", "0.00"],
+  "operating_net_planned": ["600.00", "600.00"],
+  "cash_bridge_planned": ["700.00", "600.00"],
+  "cash_position": {"opening": "1000.00", "closing": "2300.00", "minimum": "500.00", "minimum_date": "2026-01-05"},
+  "activity": {"unresolved": 6, "unexpected": 1, "actuals": [
+    {"id": "salary-actual", "date": "2026-01-22", "resolution": "matched", "planned_for": "2026-01-20", "planned_amount": "1200.00", "variance": "50.00", "date_variance_days": 2},
+    {"id": "unexpected-grocery", "date": "2026-01-25", "resolution": "unexpected", "planned_for": null, "planned_amount": null, "variance": null, "date_variance_days": null}
+  ]}
+}

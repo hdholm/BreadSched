@@ -1,0 +1,31 @@
+{
+  "plan": {"start": "2026-01-01", "end": "2026-02-28", "today": "2026-02-28", "scenario": "alternative", "compare": "__base__"},
+  "base_assumptions": {"cash_interest": "0.01", "investment_return": "0.06", "liability_interest": "0.05", "per_account": {"investment": "0.07"}},
+  "accounts": [
+    {"id": "root", "name": "Root", "type": "ROOT"},
+    {"id": "assets", "name": "Assets", "type": "ASSET", "parent": "root", "placeholder": true},
+    {"id": "checking", "name": "Checking", "type": "BANK", "parent": "assets"},
+    {"id": "investment", "name": "Investment", "type": "INVESTMENT", "parent": "assets"},
+    {"id": "equity", "name": "Opening", "type": "EQUITY", "parent": "root"},
+    {"id": "income", "name": "Salary", "type": "INCOME", "parent": "root"},
+    {"id": "rent", "name": "Rent", "type": "EXPENSE", "parent": "root"},
+    {"id": "travel", "name": "Travel", "type": "EXPENSE", "parent": "root"}
+  ],
+  "transactions": [{"id": "opening", "date": "2025-12-31", "description": "Opening", "planning_resolution": "historical", "splits": [{"account": "checking", "amount": "5000"}, {"account": "investment", "amount": "10000"}, {"account": "equity", "amount": "-15000"}]}],
+  "schedules": [
+    {"id": "salary", "name": "Salary", "recurrence": {"start": "2026-01-15", "count": 2}, "splits": [{"account": "checking", "amount": "2000"}, {"account": "income", "amount": "-2000"}]},
+    {"id": "rent", "name": "Rent", "recurrence": {"start": "2026-01-05", "count": 2}, "splits": [{"account": "rent", "amount": "800"}, {"account": "checking", "amount": "-800"}]}
+  ],
+  "scenarios": [{
+    "id": "alternative", "name": "Alternative", "start": "2026-01-01", "years": 1,
+    "inherits_base_assumptions": true,
+    "assumptions": {"cash_interest": "0.02", "per_account": {"investment": "0.04"}},
+    "assumption_overrides": ["cash_interest"], "account_assumption_overrides": ["investment"],
+    "assumption_periods": [{"start": "2026-02-01", "cash_interest": "0.03", "per_account": {"investment": "0.05"}, "description": "February rates"}],
+    "schedule_overrides": [
+      {"id": "salary-replacement", "name": "Reduced salary", "source_schedule": "salary", "recurrence": {"start": "2026-01-15", "count": 2}, "splits": [{"account": "checking", "amount": "1800"}, {"account": "income", "amount": "-1800"}]},
+      {"id": "rent-suppressed", "name": "Rent suppressed", "source_schedule": "rent", "enabled": false, "recurrence": {"start": "2026-01-05", "count": 2}, "splits": []}
+    ],
+    "one_offs": [{"date": "2026-02-10", "account": "travel", "amount": "600", "description": "Trip"}]
+  }]
+}
