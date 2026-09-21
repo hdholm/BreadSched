@@ -3,8 +3,9 @@
 This document records the architectural principles and important design decisions
 that explain how BreadSched works. It describes the current intended design; it is
 **not** a list of future work. All pending work belongs in [`ROADMAP.md`](ROADMAP.md).
-User operation belongs in the README and, as that documentation grows, dedicated
-user/in-application help.
+Task-oriented user operation belongs in the packaged
+[`USER_GUIDE.md`](src/breadsched/USER_GUIDE.md), while the README remains the
+product and developer entry point.
 
 ## Product boundary
 

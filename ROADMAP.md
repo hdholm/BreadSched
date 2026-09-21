@@ -8,8 +8,10 @@ Completed milestones and their durable acceptance contracts are retained in
 or reprioritizes roadmap work must update this file. Completed items move to the
 changelog in the same pull request.
 
-The current released baseline is **0225 / `v0.2.0a85` — commodity-safe arithmetic,
-independent application/data-format versions, and tested-main release discipline**.
+The current released application baseline is **`v0.2.0a86`**, which adds the
+packaged standalone user guide and offline GTK help to the completed **0225 /
+`v0.2.0a85`** commodity-safe arithmetic, independent application/data-format
+versions, and tested-main release-discipline baseline.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
