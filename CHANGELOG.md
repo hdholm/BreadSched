@@ -5,6 +5,10 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+No completed changes yet.
+
+## 0.2.0a85 - 2026-09-20
+
 - [x] **0225 release discipline — Publish only tested, documented `main`.** Add an
   opt-in release workflow driven by successful `main` CI, exact-version release-note
   validation, accepted-tip and tag checks, installed-wheel smoke testing, SHA-256
@@ -131,9 +135,9 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   add/remove through typed schedule services. Preserve protected schedule structure,
   reject stale handles and live scenario references with stable errors, and enforce
   adapter boundaries with service and architecture regressions. Together with the
-  preceding 0223 slices, GTK and web now perform no direct database persistence and
-  all cross-interface CLI mutations use shared services. Advance the alpha version
-  to `0.2.0a72`; native schema version 7 is unchanged.
+  preceding 0223 slices, GTK and web now perform no direct financial/domain mutation
+  persistence and all cross-interface CLI mutations use shared services. Advance the
+  alpha version to `0.2.0a72`; native schema version 7 is unchanged.
 
 - [x] **0223 account-service slice — Typed account lifecycle and settings.** Route
   GTK and CLI account add/edit/delete plus web type, emergency-fund, card-payment,
@@ -353,7 +357,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   wide `AGENTS.md` pointer, move completed roadmap history here, and keep
   `ROADMAP.md` limited to unfinished outcomes. No application version change.
 
-## Architecture and hardening
+### Architecture and hardening
 
 - [x] **0127 — Formula-loan economic consistency.** Formula-driven schedules are not
   escalated by generic expense inflation, and liabilities whose interest is already
@@ -399,7 +403,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   exclude the dedicated performance marker, which executes once in CI.
 
 
-## Dashboard and application hardening
+### Dashboard and application hardening
 
 - [x] **0157 — Keep paid-in-full card payment days editable.** A card cleared each
   month still has a payment due day. Only the usual carried-balance payment amount
@@ -413,7 +417,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   earlier request to hide every closed year immediately.
 
 
-## Dashboard balances and group hierarchy
+### Dashboard balances and group hierarchy
 
 - [x] **0177 — Account-controlled emergency-fund expenses.** Add an explicit account
   setting for whether activity against that account must be carried when sizing the
@@ -613,7 +617,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   `DELETE`/`FULL` SQLite durability under the single-writer book lock and advance
   the alpha version to `0.2.0a18`.
 
-## Planning, scenarios, and projection
+### Planning, scenarios, and projection
 
 - [x] Plan is derived from actual, scheduled, and estimated **dated** transactions,
   not stored monthly budget cells.
@@ -632,7 +636,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   and recurrence/formula period numbering is stable across date adjustments.
 
 
-## Scheduled transactions
+### Scheduled transactions
 
 - [x] Occurrences support bounds, future-effective amounts, skips, one-time overrides,
   and fixed multi-split schedules.
@@ -656,7 +660,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   while protected split/account/timeline semantics remain intact.
 
 
-## Accounts and GnuCash account fidelity
+### Accounts and GnuCash account fidelity
 
 - [x] Accounts view uses the single BreadSched account type; Account, Type,
   Description, and Balance are hierarchy-aware sortable columns.
@@ -671,7 +675,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   configuration while refreshing source-owned account fields.
 
 
-## FSA / benefit workflows
+### FSA / benefit workflows
 
 - [x] FSA funding years, election, run-out, availability, used/remaining/forfeited
   concepts are separate from ordinary custodial ledger balance.
@@ -683,7 +687,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   undo/redo and linked split classifications.
 
 
-## Import and interoperability
+### Import and interoperability
 
 - [x] Native deterministic QIF and banking/credit-card OFX/QFX import exists.
 
@@ -693,7 +697,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   stable source GUID while refreshing source-owned ledger facts.
 
 
-## Dashboard / UI architecture
+### Dashboard / UI architecture
 
 - [x] Dashboard groups are explicit and account-owned or configuration-owned; there
   are no inferred default groups. Hidden accounts are not direct group members.
@@ -705,7 +709,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   behavior and major workflows.
 
 
-## Account editor and Accounts view
+### Account editor and Accounts view
 
 - [x] **0188 — Durable imported-account provenance.** Retain the exact GnuCash
   source GUID independently from the BreadSched object handle so roots and
@@ -745,7 +749,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   then disappear on re-import. Advance the alpha version to `0.2.0a43`.
 
 
-## Register workflow
+### Register workflow
 
 - [x] **Hidden account choices.** Exclude hidden accounts from account lists for
   new transaction/split entry in GTK and web. When editing a transaction already
@@ -771,7 +775,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   exclude hidden transfer accounts, and advance the alpha version to `0.2.0a31`.
 
 
-## Reconciliation
+### Reconciliation
 
 - [x] **0185 — Add first-class account reconciliation:** statement date, ending balance,
   cleared/reconciled state, running difference, completion, cancel/restart, and
@@ -787,7 +791,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   Advance the alpha version to `0.2.0a24` and native schema to 7.
 
 
-## Historical estimator
+### Historical estimator
 
 - [x] **0159 — Restore estimate convergence and monthly future coverage.** Gross
   need comes from historical actuals; the selected future plan contributes the
@@ -847,7 +851,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   distribution proposal. Advance the alpha version to `0.2.0a41`.
 
 
-## Plan and planning-flow reporting
+### Plan and planning-flow reporting
 
 - [x] **0160 — Account kinds and initial Escrow planning/projection.** This historical
   intermediate introduced a BreadSched account kind independent of the GnuCash
@@ -952,7 +956,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 - [x] Improve explanations of account-type/split-purpose classification decisions.
 
-## Scheduled transactions and loans
+### Scheduled transactions and loans
 
 - [x] **0158 — Frequency terminology.** Display `Once` in GTK and web schedule
   and scenario editors without changing the saved recurrence identifier.
@@ -1021,7 +1025,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   preview, formula schedule, and optional opening-liability service. Exclude hidden
   accounts from all new-loan account choices.
 
-## Investment and retirement modeling
+### Investment and retirement modeling
 
 - [x] **0186 — Explicit investment activity.** Persist contribution, taxable
   withdrawal, retirement distribution, reinvested dividend/interest, fee, and
@@ -1045,7 +1049,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
   quantity, dated direct price, current value, and assumed return without rewriting
   ledger value. GTK/web support manual entry and GnuCash SQLite/XML import.
 
-## Projection and scenarios
+### Projection and scenarios
 
 - [x] **0198 — Base is reality; saved scenarios are alternatives.** Treat Base as the one
   canonical expected plan: current actual ledger state, baseline scheduled and
@@ -1071,14 +1075,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 - [x] **0179 — Add cancellation/progress for expensive projections.** GTK Projection
   uses a cancellable read-only worker and marshals progress/results back to GTK.
 
-## FSA / benefit accounts and claims
+### FSA / benefit accounts and claims
 
 - [x] **0168 — Separate FSA Dashboard.** Move benefit-year availability and open
   healthcare claims out of the general Dashboard into dedicated GTK/web views while
   retaining the shared FSA calculation and claim engines.
 
 
-## Import and GnuCash interoperability
+### Import and GnuCash interoperability
 
 - [x] **0158 — Preserve and expose inactive schedule state.** Decode GnuCash
   SQLite textual false flags without treating them as truthy. Regressions cover
@@ -1147,7 +1151,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 - [x] **0144 — Reject missing GnuCash dates.** Required transaction and scheduled-transaction dates are reported and skipped instead of silently substituting today.
 
-## Storage, integrity, and recovery
+### Storage, integrity, and recovery
 
 - [x] **0190 — Current-schema-only alpha storage.** Remove obsolete schema 3→7
   migrations, the migration registry/ledger, pre-migration backup hook, and
@@ -1194,7 +1198,7 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 - [x] Add user-visible GTK/web **Verify book** diagnostics before a stable release.
 
-## GTK, web parity, and reporting
+### GTK, web parity, and reporting
 
 - [x] **0149 — Missing GTK4 typelib handling.** GUI test collection skips cleanly
   when PyGObject exists but `gi.require_version("Gtk", "4.0")` cannot load the GTK4
