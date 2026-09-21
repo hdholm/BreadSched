@@ -1082,6 +1082,22 @@ class TestMenuBarAndToolbar:
     def test_the_window_shows_it(self, window):
         assert window.get_show_menubar() is True
 
+    def test_help_menu_opens_the_packaged_user_guide(self, app):
+        from breadsched.gui.user_guide import UserGuideWindow, read_user_guide
+
+        menu = app.get_menubar()
+        actions = _menu_actions(menu)
+        assert "app.user-guide" in actions
+        assert read_user_guide()
+
+        app.activate_action("user-guide")
+        guides = [window for window in app.get_windows() if isinstance(window, UserGuideWindow)]
+        assert len(guides) == 1
+        assert guides[0].text_view.get_buffer().get_char_count() > 0
+
+        app.activate_action("user-guide")
+        assert len([w for w in app.get_windows() if isinstance(w, UserGuideWindow)]) == 1
+
     def test_there_is_a_separate_icon_toolbar(self, window):
         children = []
         child = window.toolbar.get_first_child()

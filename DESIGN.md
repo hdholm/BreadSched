@@ -1119,9 +1119,11 @@ write content types.
 
 ## Documentation boundaries
 
-Documentation has four distinct jobs:
+Documentation has five distinct jobs:
 
-- `README.md`: user-facing overview and first operational entry point;
+- `README.md`: product orientation, development installation/invocation, and links;
+- `src/breadsched/USER_GUIDE.md`: standalone task-oriented user documentation,
+  packaged verbatim for offline application help;
 - `DESIGN.md`: current architecture, rationale, and durable design decisions;
 - `ROADMAP.md`: the one authoritative list of incomplete/future work;
 - `CHANGELOG.md`: completed milestones and their durable acceptance contracts.
@@ -1130,6 +1132,12 @@ When a patch changes architecture, update this design document. When it adds,
 changes, or reprioritizes pending work, update the roadmap. When it completes an
 accepted outcome, move that contract to the changelog. Do not use the README or
 design document as an alternate TODO list.
+
+The GTK **Help → User Guide** action reads the installed package resource and
+presents it in a bounded, scrollable native window. The Markdown file remains the
+only content source: the application performs a deliberately conservative
+presentation transform instead of maintaining a second embedded copy or requiring
+a browser, network access, or a Markdown-rendering runtime dependency.
 
 ## Money and exact arithmetic
 
