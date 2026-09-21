@@ -1,0 +1,10 @@
+{
+  "planned_cash": ["850.00"], "operating_net_planned": ["1200.00"], "cash_bridge_planned": ["850.00"],
+  "cash_position": {"opening": "1000.00", "closing": "1850.00", "minimum": "1000.00"},
+  "planning_flows": {
+    "benefit_funding:Assets:FSA": {"planned": ["100.00"], "actual": ["0.00"]},
+    "debt_principal:Loan": {"planned": ["100.00"], "actual": ["0.00"]},
+    "retirement_income:Assets:401k": {"planned": ["50.00"], "actual": ["0.00"]},
+    "retirement_saving:Assets:401k": {"planned": ["200.00"], "actual": ["0.00"]}
+  }
+}

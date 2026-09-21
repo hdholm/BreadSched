@@ -1,0 +1,8 @@
+{
+  "scenario": "Mortgage projection",
+  "months": [
+    {"month": "2026-01-01", "cash_open": "10000.00", "expense": "1600.00", "debt_payments": "800.00", "cash_close": "7600.00", "holdings": "400450.00", "liabilities": "319200.00", "net_worth": "88850.00", "reconciles": true},
+    {"month": "2026-02-01", "cash_open": "7600.00", "expense": "1600.00", "debt_payments": "800.00", "cash_close": "5200.00", "holdings": "400000.00", "liabilities": "318400.00", "net_worth": "86800.00", "reconciles": true}
+  ],
+  "ending_cash": "5200.00", "minimum_cash": "5200.00", "warnings": []
+}

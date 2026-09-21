@@ -1,0 +1,9 @@
+{
+  "planned_cash": ["-2400.00", "-2400.00"], "operating_net_planned": ["-1150.00", "-1150.00"], "cash_bridge_planned": ["-2400.00", "-2400.00"],
+  "cash_position": {"opening": "10000.00", "closing": "5200.00", "minimum": "5200.00", "minimum_date": "2026-02-15"},
+  "planning_flows": {
+    "debt_principal:Mortgage": {"planned": ["800.00", "800.00"], "actual": ["0.00", "0.00"]},
+    "escrow_funding:Assets:Escrow": {"planned": ["450.00", "450.00"], "actual": ["0.00", "0.00"]}
+  },
+  "mortgage_payments": {"Mortgage": ["2400.00", "2400.00"]}
+}

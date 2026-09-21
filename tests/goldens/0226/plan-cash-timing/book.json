@@ -1,0 +1,28 @@
+{
+  "plan": {"start": "2026-01-01", "end": "2026-02-28", "today": "2026-01-31"},
+  "accounts": [
+    {"id": "root", "name": "Root", "type": "ROOT"},
+    {"id": "assets", "name": "Assets", "type": "ASSET", "parent": "root", "placeholder": true},
+    {"id": "checking", "name": "Checking", "type": "BANK", "parent": "assets"},
+    {"id": "liabilities", "name": "Liabilities", "type": "LIABILITY", "parent": "root", "placeholder": true},
+    {"id": "card", "name": "Card", "type": "CREDIT CARD", "parent": "liabilities"},
+    {"id": "equity", "name": "Opening", "type": "EQUITY", "parent": "root"},
+    {"id": "income", "name": "Income", "type": "INCOME", "parent": "root", "placeholder": true},
+    {"id": "salary", "name": "Salary", "type": "INCOME", "parent": "income"},
+    {"id": "expenses", "name": "Expenses", "type": "EXPENSE", "parent": "root", "placeholder": true},
+    {"id": "rent", "name": "Rent", "type": "EXPENSE", "parent": "expenses"},
+    {"id": "groceries", "name": "Groceries", "type": "EXPENSE", "parent": "expenses"}
+  ],
+  "transactions": [
+    {"id": "opening-cash", "date": "2025-12-31", "description": "Opening cash", "planning_resolution": "historical", "splits": [{"account": "checking", "amount": "1000"}, {"account": "equity", "amount": "-1000"}]},
+    {"id": "salary-actual", "date": "2026-01-22", "description": "January pay", "scheduled_from": "salary-schedule", "planned_occurrence": "scheduled:salary-schedule:2026-01-20", "planned_for": "2026-01-20", "planned_amount": "1200", "planning_resolution": "matched", "splits": [{"account": "checking", "amount": "1250"}, {"account": "salary", "amount": "-1250"}]},
+    {"id": "unexpected-grocery", "date": "2026-01-25", "description": "Unexpected groceries", "planning_resolution": "unexpected", "splits": [{"account": "groceries", "amount": "75"}, {"account": "checking", "amount": "-75"}]}
+  ],
+  "schedules": [
+    {"id": "rent-schedule", "name": "Rent", "recurrence": {"start": "2026-01-05", "count": 2}, "splits": [{"account": "rent", "amount": "500"}, {"account": "checking", "amount": "-500"}]},
+    {"id": "salary-schedule", "name": "Salary", "recurrence": {"start": "2026-01-20", "count": 2}, "splits": [{"account": "checking", "amount": "1200"}, {"account": "salary", "amount": "-1200"}]},
+    {"id": "card-purchase", "name": "Card groceries", "recurrence": {"start": "2026-01-10", "count": 2}, "splits": [{"account": "groceries", "amount": "100"}, {"account": "card", "amount": "-100"}]},
+    {"id": "card-settlement", "name": "Card settlement", "recurrence": {"start": "2026-02-02", "period": "once"}, "splits": [{"account": "card", "amount": "100"}, {"account": "checking", "amount": "-100"}]}
+  ],
+  "scenarios": [{"id": "flat", "name": "Flat projection", "start": "2026-01-01", "years": 1, "assumptions": {}}]
+}

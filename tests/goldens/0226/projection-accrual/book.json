@@ -1,0 +1,19 @@
+{
+  "plan": {"start": "2026-01-01", "end": "2026-02-28", "today": "2026-02-28"},
+  "accounts": [
+    {"id": "root", "name": "Root", "type": "ROOT"},
+    {"id": "assets", "name": "Assets", "type": "ASSET", "parent": "root", "placeholder": true},
+    {"id": "checking", "name": "Checking", "type": "BANK", "parent": "assets"},
+    {"id": "investment", "name": "Investment", "type": "INVESTMENT", "parent": "assets"},
+    {"id": "loan", "name": "Loan", "type": "LOAN", "parent": "root"},
+    {"id": "equity", "name": "Opening", "type": "EQUITY", "parent": "root"}
+  ],
+  "transactions": [
+    {"id": "opening", "date": "2025-12-31", "description": "Opening stocks", "planning_resolution": "historical", "splits": [{"account": "checking", "amount": "10000"}, {"account": "investment", "amount": "20000"}, {"account": "loan", "amount": "-5000"}, {"account": "equity", "amount": "-25000"}]}
+  ],
+  "schedules": [
+    {"id": "contribution", "name": "Investment contribution", "recurrence": {"start": "2026-01-16", "period": "once"}, "splits": [{"account": "investment", "amount": "1000", "investment_activity": "contribution"}, {"account": "checking", "amount": "-1000"}]},
+    {"id": "loan-payment", "name": "Loan principal", "recurrence": {"start": "2026-01-20", "period": "once"}, "splits": [{"account": "loan", "amount": "500", "planning_flow": "debt_principal"}, {"account": "checking", "amount": "-500"}]}
+  ],
+  "scenarios": [{"id": "accrual", "name": "Accrual", "start": "2026-01-01", "years": 1, "assumptions": {"cash_interest": "0.0365", "investment_return": "0.073", "liability_interest": "0.1095"}}]
+}
