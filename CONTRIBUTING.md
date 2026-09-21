@@ -96,6 +96,10 @@ Before opening or updating a pull request:
    when required.
    Advance the application alpha version when a commit changes code or runtime
    behavior. Documentation-only commits do not require a version change.
+   Every pull request must explicitly review `AGENTS.md`, `CONTRIBUTING.md`,
+   `DESIGN.md`, `ROADMAP.md`, and `src/breadsched/USER_GUIDE.md`; update each one
+   affected by the change and record every disposition in the pull-request
+   description. Avoid content-free documentation churn.
 3. Add or update focused tests for new functionality or bug fixes where
    practicable.
 4. Run `git diff --check` while developing and `git show --check` on the final

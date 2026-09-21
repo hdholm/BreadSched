@@ -3,7 +3,9 @@
 BreadSched is a household-finance application for keeping an exact double-entry
 ledger, planning cash flow from dated financial events, and comparing alternate
 multi-year projections. This guide describes the GTK desktop application, the web
-interface, and the command-line tools shipped in the same release.
+interface, and the command-line tools shipped in the same release. The installed
+copy is release-specific; consult the guide packaged with the BreadSched version
+you are running.
 
 BreadSched is under active development. Keep independent backups of any financial
 book and review imported or inferred data before relying on it.
