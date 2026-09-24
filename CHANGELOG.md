@@ -5,6 +5,15 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **Bounded money mutation gate.** Measure engine reporting-currency selection
+  and library commodity-tagged Amount operations with selected financial tests. A
+  fresh Linux run generated 123 mutants: 118 killed, four surviving message-only
+  mutations, and one explicitly reviewed equivalent reporting-fraction call; none
+  lacked tests or timed out. CI gates the measured 118/122 eligible baseline in a
+  separate ten-minute job, with a clean workspace on each run. Add focused currency
+  and tagged-amount tests. This test-only milestone leaves application version
+  `0.2.0a89` and native schema version 7 unchanged.
+
 - [x] **Expense Explorer GTK, web, and printing.** Expose shared Plan expense values as
   category comparison bars, time-series trends, exact-value tables, and merchant
   drilldown in both interfaces. Web Plan printing includes the applied explorer;

@@ -139,6 +139,20 @@ class TestRate:
 
 
 class TestAmount:
+    def test_comparison_truth_hash_and_format_preserve_commodity(self):
+        low = Amount(Money("-2.5"), "USD")
+        high = Amount(Money("3"), "USD")
+        assert low < high and low <= high
+        assert high > low and high >= low
+        assert abs(low) == Amount(Money("2.5"), "USD")
+        assert bool(low) and not bool(Amount(Money(0), "USD"))
+        assert len({low, Amount(Money("-2.50"), "USD")}) == 1
+        assert hash(low) != hash(high)
+        assert not high < high and not high > high and high <= high and high >= high
+        assert low.format("$", 2, parens_negative=True) == "($2.50)"
+        assert high.format() == "3.00"
+        assert low.format() == "-2.50"
+
     def test_requires_exact_money_and_a_commodity(self):
         with pytest.raises(TypeError, match="must be Money"):
             Amount(Decimal("1.00"), "USD")  # type: ignore[arg-type]

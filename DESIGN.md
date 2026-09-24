@@ -167,6 +167,15 @@ not golden fixtures: compatibility imports, formula schedules, multi-currency,
 historical-estimator thresholds, and presentation rendering keep their focused test
 ownership.
 
+A separate Linux CI job mutation-tests only reporting-currency selection in
+`gen/engine/currency.py` and commodity-tagged arithmetic in `gen/lib/amount.py`.
+It copies source and selected tests into a fresh temporary workspace before each
+run. The measured baseline is a score over tested, non-equivalent mutants, with
+untested, skipped, timed-out, or suspicious outcomes failing the gate. This focused
+contract keeps mutation testing independent of the platform matrix and ordinary
+core test runtime. The measured selection and one reviewed equivalent case are
+recorded in `docs/quality/mutation-baseline.md`.
+
 ## Exact financial representation
 
 ### Double entry
