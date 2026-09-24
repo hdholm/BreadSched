@@ -284,6 +284,14 @@ add the whole-payment row to its components.
 Actual and variance totals stop at the report's as-of date. Future-only actual and
 variance summaries are not applicable rather than zero.
 
+Expense exploration follows the same Plan horizon, period grouping, and scenario.
+Its category plan, actual, and variance come from Plan; merchant groups use the
+actual transactions in a selected category and period. Descriptions are trimmed
+and compared without case, and a blank description appears as **Unknown merchant**.
+These groups are temporary and have actual amounts only: a category budget is not
+divided into merchant budgets. The shared reporting contract is currently available
+to application integrations; the GTK and web explorer views are still being built.
+
 ## Projection and scenarios
 
 Base is the household's current expected plan: the ledger, baseline schedules and

@@ -5,6 +5,12 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **Expense Explorer shared contract.** Add a typed read-only query over Plan
+  expense categories, periods, section totals, selected-cell occurrences, and
+  temporary merchant actual groups. Reconcile the drilldown to its Plan cell,
+  without allocating a category budget to merchants or storing group rules.
+  Advance application version to `0.2.0a88`; native schema version 7 is unchanged.
+
 - [x] **0227 — Versioned historical-estimation rules.** Consolidate anomaly
   thresholds, confidence weights, cadence/trend/seasonal criteria, variability
   bands, and deterministic funding tie-breaks into one immutable
