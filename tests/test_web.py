@@ -1367,6 +1367,25 @@ class TestItServes:
 class TestPlanApi:
     """The web Plan is the same derived event-driven report as GTK."""
 
+    def test_expense_explorer_reconciles_category_and_merchant_actual(self, client):
+        status, report = client.get("/api/expense-explorer?from=2026-01&through=2026-01")
+        assert status == 200
+        rent = next(row for row in report["categories"] if row["full_name"] == "Expenses:Rent")
+        assert Money(rent["periods"][0]["actual"]) == Money(1800)
+        assert Money(report["totals"][0]["actual"]) == Money(1800)
+        params = urllib.parse.urlencode(
+            {"from": "2026-01", "through": "2026-01", "account": rent["account"], "index": "0"}
+        )
+        status, detail = client.get(f"/api/expense-explorer?{params}")
+        assert status == 200
+        merchants = detail["drilldown"]["merchants"]
+        assert [(item["name"], Money(item["amount"])) for item in merchants] == [
+            ("Rent", Money(1800))
+        ]
+        assert sum((Money(item["amount"]) for item in merchants), Money(0)) == Money(
+            detail["drilldown"]["period"]["actual"]
+        )
+
     def test_the_endpoint_answers_with_derived_categories(self, client):
         status, payload = client.get("/api/plan")
         assert status == 200

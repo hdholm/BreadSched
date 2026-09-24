@@ -289,8 +289,12 @@ Its category plan, actual, and variance come from Plan; merchant groups use the
 actual transactions in a selected category and period. Descriptions are trimmed
 and compared without case, and a blank description appears as **Unknown merchant**.
 These groups are temporary and have actual amounts only: a category budget is not
-divided into merchant budgets. The shared reporting contract is currently available
-to application integrations; the GTK and web explorer views are still being built.
+divided into merchant budgets. In GTK Plan, select **Explore expenses…** to compare
+category bars, inspect a category trend, and review merchant transactions. The web
+Plan page includes the same explorer below the cash outlook. Choose a period and
+category to update its tables, chart, and merchant detail. The web print view
+includes the applied explorer; use **Print…** in the GTK Explorer to print the
+selected category and period with its merchant detail.
 
 ## Projection and scenarios
 

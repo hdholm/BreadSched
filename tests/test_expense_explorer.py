@@ -4,6 +4,8 @@ from datetime import date
 
 from breadsched.gen.engine.activity import ReportingPeriod
 from breadsched.gen.lib import (
+    Account,
+    AccountType,
     Money,
     PeriodType,
     Recurrence,
@@ -14,6 +16,7 @@ from breadsched.gen.lib import (
 )
 from breadsched.gen.services.expense_explorer import query_expense_explorer
 from breadsched.gen.services.plan import PlanQuery
+from breadsched.plugins.export.html_report import expense_explorer_report
 
 
 def test_merchant_grouping_keeps_category_plan_unallocated(db, book):
@@ -75,3 +78,64 @@ def test_multisplit_refund_and_blank_description_reconcile(db, book):
     ]
     assert explorer.totals[0].actual == Money(45)
     assert not query_expense_explorer(db, request, account=book.groceries, period_index=2).ok
+
+
+def test_printable_merchant_detail_escapes_descriptions(db, book):
+    with db.transaction("expense explorer") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 3, 2), "<Store>", book.groceries, book.checking, "8"),
+            txn,
+        )
+    request = PlanQuery(start=date(2026, 3, 1), end=date(2026, 3, 31))
+    result = query_expense_explorer(db, request, account=book.groceries, period_index=0)
+    assert result.value is not None
+    html = expense_explorer_report(result.value)
+    assert "&lt;Store&gt;" in html
+    assert "<Store>" not in html
+    assert "Category plan is unallocated" in html
+
+
+def test_escrow_payout_does_not_create_merchant_expense(db, book):
+    escrow = Account(name="Escrow", atype=AccountType.ESCROW, parent=book.assets)
+    with db.transaction("expense explorer") as txn:
+        db.add_account(escrow, txn)
+        db.add_transaction(
+            Transaction.simple(date(2026, 4, 3), "Fund", escrow.handle, book.checking, "100"),
+            txn,
+        )
+        payout = Transaction(post_date=date(2026, 4, 10), description="Tax office")
+        payout.add_split(Split(book.utilities, Money(80)))
+        payout.add_split(Split(escrow.handle, Money(-80)))
+        db.add_transaction(payout, txn)
+    result = query_expense_explorer(
+        db,
+        PlanQuery(start=date(2026, 4, 1), end=date(2026, 4, 30)),
+        account=book.utilities,
+        period_index=0,
+    )
+    assert result.value is not None and result.value.drilldown is not None
+    assert result.value.drilldown.period.actual == Money(0)
+    assert result.value.drilldown.merchants == ()
+
+
+def test_future_expense_variance_is_not_applicable(db, book):
+    estimate = ScheduledTransaction(
+        name="Future estimate",
+        recurrence=Recurrence(PeriodType.ONCE, start=date(2028, 2, 2)),
+        splits=[
+            ScheduledSplit(book.groceries, Money(12)),
+            ScheduledSplit(book.checking, Money(-12)),
+        ],
+    )
+    with db.transaction("expense explorer") as txn:
+        db.add_scheduled(estimate, txn)
+    result = query_expense_explorer(
+        db,
+        PlanQuery(start=date(2028, 2, 1), end=date(2028, 2, 29)),
+        account=book.groceries,
+        period_index=0,
+    )
+    assert result.value is not None and result.value.drilldown is not None
+    assert result.value.drilldown.period.planned == Money(12)
+    assert result.value.drilldown.period.variance is None
+    assert result.value.totals[0].variance is None

@@ -5,6 +5,20 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **Expense Explorer GTK, web, and printing.** Expose shared Plan expense values as
+  category comparison bars, time-series trends, exact-value tables, and merchant
+  drilldown in both interfaces. Web Plan printing includes the applied explorer;
+  the GTK Explorer prints its selected category, period, and merchant contributions.
+  The shared contract follows the selected Plan horizon, month/quarter/year grouping,
+  as-of boundary, and scenario plan while actuals remain ledger facts. Parent and
+  child rows do not double-count section totals. Merchant grouping trims descriptions,
+  compares them case-insensitively, labels blanks Unknown merchant, and is temporary;
+  category plans remain unallocated to merchants. Multi-split transactions, refunds,
+  escrow suppression, and unresolved actuals retain Plan's existing treatment. A
+  category estimate of 100 and merchant purchases of 120 show a 20 category overage,
+  with no merchant budgets. Advance application version to `0.2.0a89`; native
+  schema version 7 is unchanged.
+
 - [x] **Expense Explorer shared contract.** Add a typed read-only query over Plan
   expense categories, periods, section totals, selected-cell occurrences, and
   temporary merchant actual groups. Reconcile the drilldown to its Plan cell,

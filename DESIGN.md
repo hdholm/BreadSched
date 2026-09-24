@@ -307,6 +307,12 @@ uses Plan's detail calculation for occurrences and actual transactions; merchant
 groups fold trimmed transaction descriptions case-insensitively in memory and sum
 those actual contributions. The category's plan is never allocated to merchants.
 The service checks merchant and detail totals against the Plan cell before returning.
+GTK's Explorer dialog and the web Plan explorer use the same read-only service.
+The web API exposes its typed values and one selected category cell; presentation
+code draws comparison and trend charts without calculating financial totals.
+Web printing includes the applied explorer state with the Plan page. GTK prints
+its selected category and period from a self-contained report using the same service
+result as its tables; HTML escaping keeps imported descriptions as text.
 
 The primary reconciliation is a signed, non-overlapping spendable-cash bridge:
 income received minus ordinary expense, plus retirement distributions, minus

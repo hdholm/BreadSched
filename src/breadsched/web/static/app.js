@@ -3,7 +3,7 @@ const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
   accounts: [], account: launchParams.get("account"), plan: null, review: null,
-  planPrintDetail: false,
+  planPrintDetail: false, expenseCategory: null, expenseIndex: 0, expenseSort: "actual",
   scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
   projectionData: null, projectionHandle: null, projectionCompareHandle: null,
   projectionComparison: null,
@@ -1509,6 +1509,109 @@ function openFormulaScheduleEditor(source) {
   refreshOccurrences();
 }
 
+function expenseBars(items, periodIndex) {
+  const max = Math.max(1, ...items.flatMap((item) => [
+    Math.abs(Number(item.periods[periodIndex].planned)),
+    Math.abs(Number(item.periods[periodIndex].actual)),
+  ]));
+  return el("div", { class: "expense-bars" }, items.map((item) => {
+    const value = item.periods[periodIndex];
+    const bars = svgEl("svg", { viewBox: "0 0 300 26", role: "img",
+      "aria-label": `${item.full_name}: plan ${value.planned}, actual ${value.actual}` });
+    bars.append(svgEl("rect", { x: 0, y: 1, height: 10,
+      width: 300 * Math.abs(Number(value.planned)) / max, fill: "#2563a4" }));
+    bars.append(svgEl("rect", { x: 0, y: 14, height: 10,
+      width: 300 * Math.abs(Number(value.actual)) / max, fill: "#bd5824" }));
+    return el("div", { class: "expense-bar-row" },
+      el("span", { title: item.full_name }, item.full_name),
+      bars,
+      el("span", {}, `${value.planned} / ${value.actual}`));
+  }));
+}
+
+function expenseTrend(category) {
+  const points = category.periods;
+  const values = points.flatMap((item) => [Number(item.planned), Number(item.actual)]);
+  const low = Math.min(0, ...values);
+  const high = Math.max(1, ...values);
+  const svg = svgEl("svg", { viewBox: "0 0 600 140", role: "img",
+    "aria-label": `Plan and actual expense trend for ${category.full_name}` });
+  for (const [key, color] of [["planned", "#2563a4"], ["actual", "#bd5824"]]) {
+    const path = points.map((item, index) => {
+      const x = 20 + index * 560 / Math.max(1, points.length - 1);
+      const y = 120 - 100 * (Number(item[key]) - low) / (high - low);
+      return `${index ? "L" : "M"}${x},${y}`;
+    }).join(" ");
+    svg.append(svgEl("path", { d: path, fill: "none", stroke: color, "stroke-width": "3" }));
+  }
+  return svg;
+}
+
+async function expenseExplorerPanel(currentPlan) {
+  const params = new URLSearchParams({
+    from: currentPlan.from, through: currentPlan.through, period: currentPlan.period,
+  });
+  if (currentPlan.scenario) params.set("scenario", currentPlan.scenario);
+  const data = await get(`/api/expense-explorer?${params}`);
+  const choices = data.categories;
+  const selected = choices.find((item) => item.account === state.expenseCategory) || choices[0];
+  const index = Math.min(state.expenseIndex, Math.max(0, data.totals.length - 1));
+  const panel = el("section", { class: "expense-explorer" },
+    el("h2", {}, "Expense Explorer"),
+    el("p", { class: "note" },
+      "Blue: category plan · Orange: actual. Merchant groups use actuals only; the category plan is unallocated."));
+  if (!selected) return panel;
+  const periodSelect = el("select", { onchange: (event) => {
+    state.expenseIndex = Number(event.target.value); render();
+  } }, data.totals.map((item, i) => el("option", {
+    value: String(i), selected: i === index ? "selected" : null,
+  }, item.label)));
+  const categorySelect = el("select", { onchange: (event) => {
+    state.expenseCategory = event.target.value; render();
+  } }, choices.map((item) => el("option", {
+    value: item.account, selected: item.account === selected.account ? "selected" : null,
+  }, item.full_name)));
+  const sortSelect = el("select", { onchange: (event) => {
+    state.expenseSort = event.target.value; render();
+  } }, [["actual", "Actual"], ["planned", "Plan"], ["variance", "Variance"],
+    ["name", "Category"]].map(([value, label]) => el("option", {
+    value, selected: value === state.expenseSort ? "selected" : null,
+  }, label)));
+  panel.append(el("div", { class: "toolbar" },
+    el("label", {}, "Period ", periodSelect),
+    el("label", {}, "Category trend ", categorySelect),
+    el("label", {}, "Sort by ", sortSelect)));
+  const ordered = [...choices].sort((a, b) => state.expenseSort === "name"
+    ? a.full_name.localeCompare(b.full_name)
+    : Number(b.periods[index][state.expenseSort] || 0)
+      - Number(a.periods[index][state.expenseSort] || 0));
+  panel.append(expenseBars(ordered, index),
+    table(["Category", {label:"Plan",num:true}, {label:"Actual",num:true},
+      {label:"Variance",num:true}], ordered.map((item) => el("tr", {},
+      el("td", {}, item.full_name),
+      ...["planned", "actual", "variance"].map((key) => el("td", {class:"num"},
+        item.periods[index][key] == null ? "—" : String(item.periods[index][key])))))));
+  panel.append(el("h3", {}, `${selected.full_name} trend`), expenseTrend(selected),
+    table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
+      {label:"Variance",num:true}], selected.periods.map((item) => el("tr", {},
+      el("td", {}, item.label), ...["planned", "actual", "variance"].map((key) =>
+        el("td", {class:"num"}, item[key] == null ? "—" : String(item[key])))))));
+  const detailParams = new URLSearchParams(params);
+  detailParams.set("account", selected.account);
+  detailParams.set("index", String(index));
+  const detail = (await get(`/api/expense-explorer?${detailParams}`)).drilldown;
+  panel.append(el("h3", {}, `${selected.full_name} merchants — ${detail.period.label}`),
+    table(["Merchant", {label:"Actual",num:true}, "Transactions"],
+      detail.merchants.map((group) => el("tr", {},
+        el("td", {}, group.name), el("td", {class:"num"}, String(group.amount)),
+        el("td", {}, group.transactions.map((item) => el("div", {},
+          `${item.date} · ${item.description || "Unknown merchant"} · ${item.amount}`)))))),
+    el("p", {class:"note"}, `Category plan ${detail.period.planned}; actual ${detail.period.actual}; `
+      + `variance ${detail.period.variance == null ? "—" : detail.period.variance}. `
+      + "No merchant budgets are assigned."));
+  return panel;
+}
+
 async function showPlan() {
   const applied = state.plan || {};
   const params = new URLSearchParams();
@@ -1817,7 +1920,7 @@ async function showPlan() {
       : null,
     detailOption,
     el("h2", { class: "plan-summary-heading" }, "Cash outlook"),
-    summaryTable, detailSection);
+    summaryTable, await expenseExplorerPanel(currentPlan), detailSection);
 }
 
 async function openPlanDetail(

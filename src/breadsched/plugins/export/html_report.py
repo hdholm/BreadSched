@@ -15,8 +15,9 @@ from ...gen.engine.dashboard import Dashboard
 from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
+from ...gen.services.expense_explorer import ExpenseExplorer
 
-__all__ = ["dashboard_report", "plan_report", "projection_report"]
+__all__ = ["dashboard_report", "expense_explorer_report", "plan_report", "projection_report"]
 
 
 _STYLE = """
@@ -119,6 +120,62 @@ def _cards(items: list[tuple[str, object, bool]]) -> str:
             "</div>"
         )
     return f'<div class="cards">{"".join(cards)}</div>'
+
+
+def expense_explorer_report(explorer: ExpenseExplorer) -> str:
+    """Print the selected expense cell and its shared Plan breakdown."""
+    detail = explorer.drilldown
+    if detail is None:
+        raise ValueError("expense printout requires a selected category and period")
+    category = next(item for item in explorer.categories if item.account == detail.account)
+    selected = detail.period
+    comparison_rows = []
+    index = next(i for i, item in enumerate(category.periods) if item.start == selected.start)
+    for row in explorer.categories:
+        value = row.periods[index]
+        comparison_rows.append(
+            f"<tr><td>{escape(row.full_name)}</td>{_amount(value.planned)}"
+            f"{_amount(value.actual)}{_amount(value.variance)}</tr>"
+        )
+    comparison = (
+        "<h2>Category comparison</h2><table><thead><tr><th>Category</th>"
+        '<th class="num">Plan</th><th class="num">Actual</th>'
+        '<th class="num">Variance</th></tr></thead><tbody>'
+        f"{''.join(comparison_rows)}</tbody></table>"
+    )
+    trend_rows = "".join(
+        f"<tr><td>{escape(item.label)}</td>{_amount(item.planned)}"
+        f"{_amount(item.actual)}{_amount(item.variance)}</tr>"
+        for item in category.periods
+    )
+    trend = (
+        f"<h2>{escape(category.full_name)} trend</h2><table><thead><tr><th>Period</th>"
+        '<th class="num">Plan</th><th class="num">Actual</th>'
+        f'<th class="num">Variance</th></tr></thead><tbody>{trend_rows}</tbody></table>'
+    )
+    merchant_rows = []
+    for group in detail.merchants:
+        merchant_rows.append(
+            f"<tr><td>{escape(group.name)}</td>{_amount(group.amount)}<td>"
+            + "<br>".join(
+                f"{item.post_date.isoformat()} · "
+                f"{escape(item.description.strip() or 'Unknown merchant')}"
+                f" · {escape(_money(item.amount))}"
+                for item in group.transactions
+            )
+            + "</td></tr>"
+        )
+    merchants = (
+        "<h2>Merchants — actual only</h2><p class='note'>Category plan is unallocated "
+        "across merchants.</p><table><thead><tr><th>Merchant</th>"
+        '<th class="num">Actual</th><th>Transactions</th></tr></thead><tbody>'
+        f"{''.join(merchant_rows)}</tbody></table>"
+    )
+    subtitle = (
+        f"{explorer.plan.scenario.name} · {explorer.plan.start.isoformat()} through "
+        f"{explorer.plan.end.isoformat()} · {escape(selected.label)}"
+    )
+    return _document("Expense Explorer", subtitle, comparison + trend + merchants)
 
 
 def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
