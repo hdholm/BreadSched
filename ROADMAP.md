@@ -4,9 +4,10 @@ This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones and their durable acceptance contracts are retained in
 [`CHANGELOG.md`](CHANGELOG.md).
 
-**Maintenance rule:** every pull request that completes, changes, discovers, splits,
-or reprioritizes roadmap work must update this file. Completed items move to the
-changelog in the same pull request.
+**Maintenance rule:** every pull request must update this file to reflect its effect
+on unfinished work, including when a documentation correction confirms that the
+existing priorities remain. Completed items move to the changelog in the same PR;
+tests, design, the user guide, and README must also reflect each PR's changes.
 
 The current released application baseline is **`v0.2.0a86`**, which adds the
 packaged standalone user guide and offline GTK help to the completed **0225 /
@@ -38,6 +39,9 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 The typed-mutation-service, web-boundary, commodity-arithmetic, release, independent
 financial acceptance, versioned historical-estimation rule, Expense Explorer, and
 bounded money-mutation gates are complete.
+The Expense Explorer guide and README now describe its existing GTK/web controls,
+periods, merchant detail, and printing. No new feature work follows from that
+documentation correction; the remaining priority is the decomposition below.
 Continue responsibility-based decomposition whenever a touched adapter or engine
 would otherwise accumulate another workflow rule.
 

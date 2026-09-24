@@ -5,6 +5,14 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **Expense Explorer documentation and PR completeness.** Expand the packaged
+  guide and README with the existing GTK/web comparison, trend, merchant detail,
+  and print workflow. Require every PR to update relevant tests, the roadmap,
+  changelog, design, guide, and README for all changes it makes. Add a focused
+  regression assertion for the guide's category and merchant example. This
+  documentation/test-only change leaves application version `0.2.0a90` and native
+  schema version 7 unchanged.
+
 - [x] **Expense Explorer web responsibility split.** Move read-only query
   translation and response serialization from `web.server.Api` into a focused
   resource adapter. Keep route parsing, shared financial semantics, API shape, and

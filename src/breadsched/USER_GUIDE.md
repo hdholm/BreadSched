@@ -284,17 +284,41 @@ add the whole-payment row to its components.
 Actual and variance totals stop at the report's as-of date. Future-only actual and
 variance summaries are not applicable rather than zero.
 
-Expense exploration follows the same Plan horizon, period grouping, and scenario.
-Its category plan, actual, and variance come from Plan; merchant groups use the
-actual transactions in a selected category and period. Descriptions are trimmed
-and compared without case, and a blank description appears as **Unknown merchant**.
-These groups are temporary and have actual amounts only: a category budget is not
-divided into merchant budgets. In GTK Plan, select **Explore expenses…** to compare
-category bars, inspect a category trend, and review merchant transactions. The web
-Plan page includes the same explorer below the cash outlook. Choose a period and
-category to update its tables, chart, and merchant detail. The web print view
-includes the applied explorer; use **Print…** in the GTK Explorer to print the
-selected category and period with its merchant detail.
+### Explore expenses
+
+Apply the Plan horizon, **Group by** period (month, quarter, or year), and scenario
+first. Expense Explorer uses those applied Plan choices; changing them changes the
+periods and planned amounts it shows. Actuals are recorded transactions, with the
+same as-of boundary and treatment of refunds and other special flows as Plan.
+
+In GTK, choose **Explore expenses…** from Plan. In the web interface, scroll to
+**Expense Explorer** on the Plan page, below the cash outlook. Then:
+
+1. Choose a **Period** for the category comparison. Each category shows a plan bar
+   and an actual bar plus exact Plan, Actual, and Variance values. The web chart
+   labels plan in blue and actual in orange. **Sort categories** (GTK) or **Sort by**
+   (web) orders the rows by Actual, Plan, Variance, or name/category.
+2. Choose **Category trend** to compare that category's plan and actual across all
+   periods in the applied Plan range. The trend remains for the chosen category when
+   you change the comparison period or sort order.
+3. Read **Merchants — actual only** for that category and comparison period. Each
+   group has an actual total and its dated transactions. The web page also shows the
+   selected category's Plan, Actual, and Variance beneath the merchant table.
+
+Category values and section totals come from Plan; category hierarchy rows can
+include child accounts, so do not add parent and child rows together. Variance may
+show **—** where actuals are not yet applicable, including future-only periods.
+Merchant groups are temporary views of transaction descriptions, trimmed and matched
+without regard to case; blank descriptions appear as **Unknown merchant**. They
+include refunds in the same actual total. A category plan is never split into
+merchant budgets: for example, a plan of 100 and purchases totaling 120 show a
+category variance of 20, even if the purchases appear under several merchants.
+The explorer does not create or save merchant rules or change the ledger.
+
+To keep a copy, use **Print…** in the GTK Explorer for a self-contained preview of
+the selected category and period with merchant detail, then print or save as PDF
+from the browser. Web **Print** includes the currently displayed Plan and applied
+Expense Explorer, including its selected comparison and detail.
 
 ## Projection and scenarios
 

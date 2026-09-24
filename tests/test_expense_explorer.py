@@ -43,10 +43,13 @@ def test_merchant_grouping_keeps_category_plan_unallocated(db, book):
     assert explorer.drilldown.period.planned == Money(100)
     assert explorer.drilldown.period.actual == Money(120)
     assert explorer.drilldown.period.variance == Money(20)
+    assert explorer.totals[0].planned == Money(100)
+    assert explorer.totals[0].variance == Money(20)
     assert [(group.name, group.amount) for group in explorer.drilldown.merchants] == [
         ("Shop A", Money(55)),
         ("Shop B", Money(65)),
     ]
+    assert [len(group.transactions) for group in explorer.drilldown.merchants] == [2, 1]
     assert explorer.totals[0].actual == Money(120)
 
 
