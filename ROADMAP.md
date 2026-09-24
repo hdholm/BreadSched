@@ -48,7 +48,9 @@ would otherwise accumulate another workflow rule.
 ## Architecture and correctness
 
 - [ ] Split oversized modules/functions as part of the service/resource ownership
-  work, especially the remaining seams in `web/server.py`.
+  work, especially the remaining seams in `web/server.py`. The read-only Expense
+  Explorer response has its own resource adapter; continue with Plan detail and
+  other workflows when responsibility boundaries are clear.
   Split large GUI test modules only when the resulting fixture ownership and runtime
   isolation improve; do not optimize for a line-count threshold alone.
 

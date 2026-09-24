@@ -5,6 +5,12 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **Expense Explorer web responsibility split.** Move read-only query
+  translation and response serialization from `web.server.Api` into a focused
+  resource adapter. Keep route parsing, shared financial semantics, API shape, and
+  user-visible behavior intact. Advance application version to `0.2.0a90`; native
+  schema version 7 is unchanged.
+
 - [x] **Bounded money mutation gate.** Measure engine reporting-currency selection
   and library commodity-tagged Amount operations with selected financial tests. A
   fresh Linux run generated 123 mutants: 118 killed, four surviving message-only
