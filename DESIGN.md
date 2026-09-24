@@ -369,6 +369,16 @@ exclusion is reported to the user. Calendar-month cadence inference recognizes
 stable multi-month intervals independently of day-of-month drift, while weekly and
 multi-year rules retain their dedicated date-gap semantics.
 
+Those thresholds, confidence weights, cadence and trend tolerances, seasonal
+criteria, variability bands, and funding-candidate tie-breaks belong to one immutable
+versioned rule object passed through the estimator. Each proposal's structured
+evidence contains the complete applied policy and its stable version; an accepted
+draft retains that evidence. A policy change therefore receives a new version and is
+rechecked against the independent historical-estimation golden book, whose authored
+calculations cover spike handling, funding selection, recurrence anchors,
+seasonality, trend selection, and confidence arithmetic. The rule version is
+explanatory evidence, not a claim that the confidence score is a probability.
+
 When an actual resolves a planned occurrence, BreadSched preserves the original
 occurrence identity, planned date, and expected value so later schedule changes do
 not rewrite historical variance.

@@ -25,11 +25,13 @@ from ..lib.transaction import InvestmentActivityKind, PlanningFlowKind, Split
 from . import activity, planning
 from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
+from .estimate_rules import DEFAULT_HISTORICAL_ESTIMATE_RULES, HistoricalEstimateRules
 
 __all__ = [
     "EstimateEvidence",
     "EstimateHistoryEvidence",
     "HistoricalEstimateProposal",
+    "HistoricalEstimateRules",
     "accept_historical_estimate",
     "draft_historical_estimate",
     "draft_scenario_estimate",
@@ -190,6 +192,7 @@ class EstimateEvidence:
     confidence: EstimateConfidenceEvidence
     funding: EstimateFundingEvidence
     residual_explanation: str
+    rules: HistoricalEstimateRules
 
     @property
     def selected_months(self) -> tuple[EstimateHistoryEvidence, ...]:
@@ -212,6 +215,7 @@ class EstimateEvidence:
             "confidence": self.confidence.serialize(),
             "funding": self.funding.serialize(),
             "residual_explanation": self.residual_explanation,
+            "rules": self.rules.serialize(),
         }
 
     def summary_lines(self) -> tuple[str, ...]:
@@ -225,6 +229,7 @@ class EstimateEvidence:
             f"Seasonality: {self.seasonality.explanation}",
             f"Funding: {self.funding.explanation}",
             f"Confidence: {self.confidence.explanation}",
+            f"Rules: {self.rules.version}.",
         )
 
 
@@ -311,7 +316,9 @@ def _typical_amount(values: list[Money], fraction: int) -> Money:
     return Money(median(decimals)).quantize(fraction)
 
 
-def _robust_sample(values: list[Money]) -> tuple[list[Money], tuple[int, ...], Decimal]:
+def _robust_sample(
+    values: list[Money], rules: HistoricalEstimateRules
+) -> tuple[list[Money], tuple[int, ...], Decimal]:
     """Exclude isolated monthly spikes and return robust relative variability.
 
     A median already prevents one large value from moving the estimate very far,
@@ -328,17 +335,24 @@ def _robust_sample(values: list[Money]) -> tuple[list[Money], tuple[int, ...], D
     mad = median(deviations)
     magnitude = abs(center)
     relative_variability = mad / magnitude if magnitude else Decimal(0)
-    if len(values) < 6:
+    policy = rules.anomaly
+    if len(values) < policy.minimum_observations:
         return values, (), relative_variability
 
-    # Three median absolute deviations is intentionally conservative. When most
-    # months are identical MAD is zero, use a generous relative threshold so a
-    # single annual purchase does not become the ordinary monthly estimate.
-    threshold = mad * Decimal(3) if mad else max(magnitude * Decimal("0.75"), Decimal("1"))
+    # When most months are identical MAD is zero, use the policy's relative and
+    # absolute floors so a single annual purchase does not become ordinary history.
+    threshold = (
+        mad * policy.median_deviation_multiplier
+        if mad
+        else max(
+            magnitude * policy.zero_mad_relative_threshold,
+            policy.zero_mad_absolute_floor,
+        )
+    )
     excluded = tuple(index for index, deviation in enumerate(deviations) if deviation > threshold)
     retained = [value for index, value in enumerate(values) if index not in excluded]
     # Never let anomaly handling erase the evidence required to make a proposal.
-    if len(retained) < 3:
+    if len(retained) < policy.minimum_retained_observations:
         return values, (), relative_variability
     retained_decimals = [value.to_decimal() for value in retained]
     retained_center = median(retained_decimals)
@@ -349,7 +363,11 @@ def _robust_sample(values: list[Money]) -> tuple[list[Money], tuple[int, ...], D
 
 
 def _funding_evidence(
-    db: DbSQLite, category: str, start: date, end: date
+    db: DbSQLite,
+    category: str,
+    start: date,
+    end: date,
+    rules: HistoricalEstimateRules,
 ) -> EstimateFundingEvidence | None:
     counts: Counter[str] = Counter()
     for txn in db.iter_transactions(account=category, start=start, end=end):
@@ -360,11 +378,13 @@ def _funding_evidence(
             if account is None or account.atype.is_flow or account.is_root:
                 continue
             counts[split.account] += 1
-    return _funding_evidence_from_counts(db, counts)
+    return _funding_evidence_from_counts(db, counts, rules)
 
 
 def _funding_evidence_from_counts(
-    db: DbSQLite, counts: Counter[str]
+    db: DbSQLite,
+    counts: Counter[str],
+    rules: HistoricalEstimateRules,
 ) -> EstimateFundingEvidence | None:
     candidates = []
     for handle, transaction_count in counts.items():
@@ -381,10 +401,19 @@ def _funding_evidence_from_counts(
         )
     if not candidates:
         return None
-    candidates.sort(
-        key=lambda item: (item.transaction_count, item.spendable_cash, item.account),
-        reverse=True,
-    )
+    funding_keys = {
+        "transaction_count": lambda item: item.transaction_count,
+        "spendable_cash": lambda item: item.spendable_cash,
+        "account_handle": lambda item: item.account,
+    }
+    for criterion in reversed(rules.funding.tie_break_order):
+        try:
+            key = funding_keys[criterion]
+        except KeyError as exc:
+            raise ValueError(
+                f"unsupported historical-estimate funding tie-break {criterion!r}"
+            ) from exc
+        candidates.sort(key=key, reverse=True)
     selected = candidates[0]
     explanation = (
         f"{selected.account_name} appeared as the counterpart in "
@@ -652,22 +681,27 @@ def _next_monthly_start(last: date, interval: int, floor: date) -> date:
     return candidate
 
 
-def _calendar_month_interval(dates: list[date]) -> int | None:
+def _calendar_month_interval(dates: list[date], rules: HistoricalEstimateRules) -> int | None:
     """Recognize stable every-N-month activity despite varying day-of-month."""
-    if len(dates) < 3:
+    policy = rules.cadence
+    if len(dates) < policy.calendar_interval_minimum_observations:
         return None
     gaps = [
         (later.year - earlier.year) * 12 + later.month - earlier.month
         for earlier, later in zip(dates[:-1], dates[1:], strict=True)
     ]
     positive = [gap for gap in gaps if gap > 0]
-    if len(positive) < 2:
+    if len(positive) < policy.calendar_interval_minimum_positive_gaps:
         return None
     interval = int(median(positive))
-    if not 2 <= interval <= 11:
+    if not policy.calendar_month_interval_min <= interval <= policy.calendar_month_interval_max:
         return None
-    supporting = sum(abs(gap - interval) <= 1 for gap in positive)
-    return interval if supporting * 4 >= len(positive) * 3 else None
+    supporting = sum(abs(gap - interval) <= policy.calendar_month_gap_tolerance for gap in positive)
+    return (
+        interval
+        if supporting * policy.support_denominator >= len(positive) * policy.support_numerator
+        else None
+    )
 
 
 def _next_weekly_start(dates: list[date], interval: int, floor: date) -> date:
@@ -681,38 +715,62 @@ def _next_weekly_start(dates: list[date], interval: int, floor: date) -> date:
     return floor + timedelta(days=(weekday - floor.weekday()) % 7)
 
 
-def _monthly_category_start(dates: list[date], floor: date) -> date:
+def _monthly_category_start(dates: list[date], floor: date, rules: HistoricalEstimateRules) -> date:
     """Use a stable once-per-month posting day; otherwise keep the neutral first."""
     by_month: Counter[tuple[int, int]] = Counter((item.year, item.month) for item in dates)
-    if len(by_month) < 3 or any(count != 1 for count in by_month.values()):
+    policy = rules.cadence
+    if len(by_month) < policy.monthly_anchor_minimum_months or any(
+        count != 1 for count in by_month.values()
+    ):
         return floor
     typical_day = int(median(item.day for item in dates))
-    if sum(abs(item.day - typical_day) <= 3 for item in dates) * 4 < len(dates) * 3:
+    if (
+        sum(abs(item.day - typical_day) <= policy.monthly_anchor_day_tolerance for item in dates)
+        * policy.support_denominator
+        < len(dates) * policy.support_numerator
+    ):
         return floor
     return date(floor.year, floor.month, min(typical_day, monthrange(floor.year, floor.month)[1]))
 
 
-def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None, str, Decimal]:
+def _infer_recurrence(
+    dates: list[date], start: date, rules: HistoricalEstimateRules
+) -> tuple[Recurrence | None, str, Decimal]:
     if len(dates) < 2:
         return Recurrence(PeriodType.ONCE, start=start), "once (single observation)", Decimal("1")
     gaps = [(later - earlier).days for earlier, later in zip(dates[:-1], dates[1:], strict=True)]
     typical_gap = float(median(gaps))
-    weekly_support = sum(5 <= gap <= 9 for gap in gaps)
-    if len(dates) >= 4 and 5 <= typical_gap <= 9 and weekly_support * 4 >= len(gaps) * 3:
+    policy = rules.cadence
+    weekly_support = sum(
+        policy.weekly_gap_min_days <= gap <= policy.weekly_gap_max_days for gap in gaps
+    )
+    if (
+        len(dates) >= policy.minimum_short_cadence_observations
+        and policy.weekly_gap_min_days <= typical_gap <= policy.weekly_gap_max_days
+        and weekly_support * policy.support_denominator >= len(gaps) * policy.support_numerator
+    ):
         return (
             Recurrence(PeriodType.WEEK, start=_next_weekly_start(dates, 1, start)),
             "weekly",
             Decimal(52) / Decimal(12),
         )
-    fortnightly_support = sum(11 <= gap <= 17 for gap in gaps)
-    if len(dates) >= 4 and 11 <= typical_gap <= 17 and fortnightly_support * 4 >= len(gaps) * 3:
+    fortnightly_support = sum(
+        policy.fortnightly_gap_min_days <= gap <= policy.fortnightly_gap_max_days for gap in gaps
+    )
+    if (
+        len(dates) >= policy.minimum_short_cadence_observations
+        and policy.fortnightly_gap_min_days <= typical_gap <= policy.fortnightly_gap_max_days
+        and fortnightly_support * policy.support_denominator >= len(gaps) * policy.support_numerator
+    ):
         return (
             Recurrence(PeriodType.WEEK, interval=2, start=_next_weekly_start(dates, 2, start)),
             "fortnightly",
             Decimal(26) / Decimal(12),
         )
-    for years in range(1, 4):
-        if abs(typical_gap - 365.2425 * years) <= 70:
+    for years in range(1, policy.maximum_year_interval + 1):
+        if abs(Decimal(str(typical_gap)) - policy.mean_year_days * years) <= Decimal(
+            policy.annual_tolerance_days
+        ):
             cadence = "annual" if years == 1 else f"every {years} years"
             return (
                 Recurrence(
@@ -723,7 +781,7 @@ def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None
                 cadence,
                 Decimal("1"),
             )
-    month_interval = _calendar_month_interval(dates)
+    month_interval = _calendar_month_interval(dates, rules)
     if month_interval is not None:
         return (
             Recurrence(
@@ -735,7 +793,7 @@ def _infer_recurrence(dates: list[date], start: date) -> tuple[Recurrence | None
             Decimal("1"),
         )
     return (
-        Recurrence(PeriodType.MONTH, start=_monthly_category_start(dates, start)),
+        Recurrence(PeriodType.MONTH, start=_monthly_category_start(dates, start, rules)),
         "monthly",
         Decimal("1"),
     )
@@ -746,6 +804,7 @@ def _cadence_evidence(
     label: str,
     occurrences_per_month: Decimal,
     recurrence: Recurrence,
+    rules: HistoricalEstimateRules,
 ) -> EstimateCadenceEvidence:
     gaps = [(later - earlier).days for earlier, later in zip(dates[:-1], dates[1:], strict=True)]
     typical_gap = float(median(gaps)) if gaps else None
@@ -761,10 +820,16 @@ def _cadence_evidence(
     elif label == "annual" or label.endswith(" years"):
         explanation = f"{label} from the typical {typical_gap:g}-day gap."
     else:
-        if len(dates) < 4 and typical_gap is not None and 5 <= typical_gap <= 17:
+        policy = rules.cadence
+        if (
+            len(dates) < policy.minimum_short_cadence_observations
+            and typical_gap is not None
+            and policy.weekly_gap_min_days <= typical_gap <= policy.fortnightly_gap_max_days
+        ):
             explanation = (
                 f"monthly fallback: {len(dates)} date(s) are too sparse to prove a "
-                "weekly or fortnightly cadence; at least 4 are required."
+                "weekly or fortnightly cadence; at least "
+                f"{policy.minimum_short_cadence_observations} are required."
             )
         elif recurrence.start.day != 1:
             explanation = (
@@ -787,21 +852,27 @@ def _cadence_evidence(
 
 
 def _confidence(
-    *, sample_months: int, active_months: int, retained_months: int, variability: Decimal
+    *,
+    sample_months: int,
+    active_months: int,
+    retained_months: int,
+    variability: Decimal,
+    rules: HistoricalEstimateRules,
 ) -> EstimateConfidenceEvidence:
     """Score evidence coverage, sample depth, anomalies, and amount stability."""
     coverage = Decimal(active_months) / Decimal(sample_months)
-    depth = min(Decimal(1), Decimal(retained_months) / Decimal(12))
+    policy = rules.confidence
+    depth = min(Decimal(1), Decimal(retained_months) / Decimal(policy.full_depth_months))
     retained_ratio = Decimal(retained_months) / Decimal(active_months)
     consistency = max(Decimal(0), Decimal(1) - min(variability, Decimal(1)))
     score = (
-        Decimal("0.20")
-        + coverage * Decimal("0.30")
-        + depth * Decimal("0.20")
-        + retained_ratio * Decimal("0.10")
-        + consistency * Decimal("0.20")
+        policy.base_weight
+        + coverage * policy.coverage_weight
+        + depth * policy.depth_weight
+        + retained_ratio * policy.retained_weight
+        + consistency * policy.consistency_weight
     )
-    bounded = float(min(Decimal("0.95"), score))
+    bounded = float(min(policy.maximum_score, score))
     return EstimateConfidenceEvidence(
         score=bounded,
         coverage=coverage,
@@ -816,19 +887,20 @@ def _confidence(
     )
 
 
-def _variability_label(value: Decimal) -> str:
-    if value <= Decimal("0.10"):
+def _variability_label(value: Decimal, rules: HistoricalEstimateRules) -> str:
+    if value <= rules.variability.stable_maximum:
         return "stable"
-    if value <= Decimal("0.25"):
+    if value <= rules.variability.moderate_maximum:
         return "moderately variable"
     return "highly variable"
 
 
 def _trend_summary(
-    values: list[Money], fraction: int
+    values: list[Money], fraction: int, rules: HistoricalEstimateRules
 ) -> tuple[list[Money], EstimateTrendEvidence | None]:
     """Return the sample to use and a conservative trend label."""
-    if len(values) < 6:
+    policy = rules.trend
+    if len(values) < policy.minimum_observations:
         return values, None
     split = len(values) // 2
     earlier = _typical_amount(values[:split], fraction)
@@ -836,9 +908,9 @@ def _trend_summary(
     if not earlier or (earlier > 0) != (later > 0):
         return values, None
     change = (later.to_decimal() - earlier.to_decimal()) / abs(earlier.to_decimal())
-    if abs(change) < Decimal("0.10"):
+    if abs(change) < policy.minimum_relative_change:
         return values, None
-    recent = values[-min(3, len(values)) :]
+    recent = values[-min(policy.recent_observations, len(values)) :]
     direction = "upward" if change > 0 else "downward"
     percent = abs(change) * Decimal(100)
     explanation = (
@@ -847,22 +919,28 @@ def _trend_summary(
     return recent, EstimateTrendEvidence(direction, percent, len(recent), explanation)
 
 
-def _has_seasonality(monthly_by_month: dict[int, list[Money]], fraction: int) -> tuple[bool, str]:
+def _has_seasonality(
+    monthly_by_month: dict[int, list[Money]],
+    fraction: int,
+    rules: HistoricalEstimateRules,
+) -> tuple[bool, str]:
     """Detect a repeated month-of-year pattern without overfitting one year."""
+    policy = rules.seasonality
     repeated = {
         month: values
         for month, values in monthly_by_month.items()
-        if len(values) >= 2 and any(values)
+        if len(values) >= policy.minimum_samples_per_month and any(values)
     }
     medians = [_typical_amount(values, fraction) for values in repeated.values()]
-    if len(medians) < 6:
+    if len(medians) < policy.minimum_repeated_months:
         return (
             False,
-            f"Only {len(medians)} calendar month(s) repeat across years; at least 6 "
+            f"Only {len(medians)} calendar month(s) repeat across years; at least "
+            f"{policy.minimum_repeated_months} "
             "are required before applying a seasonal profile.",
         )
     magnitudes = [abs(value.to_decimal()) for value in medians if value]
-    if len(magnitudes) < 6:
+    if len(magnitudes) < policy.minimum_repeated_months:
         return False, "Too few non-zero repeated calendar months support seasonality."
     middle = median(magnitudes)
     if not middle:
@@ -872,18 +950,22 @@ def _has_seasonality(monthly_by_month: dict[int, list[Money]], fraction: int) ->
         center = abs(_typical_amount(values, fraction).to_decimal())
         deviations = [abs(abs(value.to_decimal()) - center) for value in values]
         relative = median(deviations) / center if center else Decimal(0)
-        stable_months += relative <= Decimal("0.25")
-    if stable_months * 4 < len(repeated) * 3:
+        stable_months += relative <= policy.maximum_within_month_variability
+    if (
+        stable_months * policy.stable_month_support_denominator
+        < len(repeated) * policy.stable_month_support_numerator
+    ):
         return (
             False,
             f"Only {stable_months}/{len(repeated)} repeated calendar months are stable; "
             "the apparent pattern is treated as noise.",
         )
     ratio = max(magnitudes) / middle
-    if ratio < Decimal("1.35"):
+    if ratio < policy.minimum_peak_to_median_ratio:
         return (
             False,
-            f"Repeated month medians vary by only {ratio:.2f}×; 1.35× is required.",
+            f"Repeated month medians vary by only {ratio:.2f}×; "
+            f"{policy.minimum_peak_to_median_ratio}× is required.",
         )
     return (
         True,
@@ -895,12 +977,13 @@ def _has_seasonality(monthly_by_month: dict[int, list[Money]], fraction: int) ->
 def _seasonal_amounts(
     monthly_by_month: dict[int, list[Money]],
     fraction: int,
+    rules: HistoricalEstimateRules,
 ) -> tuple[ScheduledMonthAmount, ...]:
     """Return repeated month-of-year magnitudes supported by at least two years."""
     result: list[ScheduledMonthAmount] = []
     for month in range(1, 13):
         values = monthly_by_month.get(month, [])
-        if len(values) < 2:
+        if len(values) < rules.seasonality.minimum_samples_per_month:
             continue
         typical = _typical_amount(values, fraction)
         if typical:
@@ -939,6 +1022,7 @@ def _propose_classified_flows(
     scenario_handle: str | None,
     accounts: dict[str, Account],
     fraction: int,
+    rules: HistoricalEstimateRules,
 ) -> list[HistoricalEstimateProposal]:
     """Infer recurring balance-sheet purposes without relabeling them as categories."""
     monthly: dict[tuple[_FlowSignature, date], Money] = {}
@@ -993,16 +1077,18 @@ def _propose_classified_flows(
         if len(residual_monthly) < min_active_months:
             continue
         funding_evidence = _funding_evidence_from_counts(
-            db, counterpart_counts.get(signature, Counter())
+            db, counterpart_counts.get(signature, Counter()), rules
         )
         if funding_evidence is None:
             continue
         funding_handle = funding_evidence.selected
         observed_dates = sorted(dates.get(signature, []))
-        recurrence, cadence, occurrences_per_month = _infer_recurrence(observed_dates, future_start)
+        recurrence, cadence, occurrences_per_month = _infer_recurrence(
+            observed_dates, future_start, rules
+        )
         if recurrence is None:
             continue
-        robust, excluded_indexes, variability_value = _robust_sample(residual_monthly)
+        robust, excluded_indexes, variability_value = _robust_sample(residual_monthly, rules)
         excluded_rows = {residual_row_indexes[index] for index in excluded_indexes}
         history = tuple(
             EstimateHistoryEvidence(
@@ -1023,7 +1109,7 @@ def _propose_classified_flows(
             )
             for index, (month, actual, applied, residual) in enumerate(history_inputs)
         )
-        trend_sample, trend_evidence = _trend_summary(robust, fraction)
+        trend_sample, trend_evidence = _trend_summary(robust, fraction, rules)
         monthly_residual = _typical_amount(trend_sample, fraction)
         amount = (monthly_residual / occurrences_per_month).quantize(fraction)
         if amount <= 0:
@@ -1034,15 +1120,16 @@ def _propose_classified_flows(
             if flow is not None
             else amount * (investment.direction if investment is not None else 0)
         )
-        variability = _variability_label(variability_value)
+        variability = _variability_label(variability_value, rules)
         confidence_evidence = _confidence(
             sample_months=months,
             active_months=len(residual_monthly),
             retained_months=len(robust),
             variability=variability_value,
+            rules=rules,
         )
         cadence_evidence = _cadence_evidence(
-            observed_dates, cadence, occurrences_per_month, recurrence
+            observed_dates, cadence, occurrences_per_month, recurrence, rules
         )
         seasonality_evidence = EstimateSeasonalityEvidence(
             False,
@@ -1074,6 +1161,7 @@ def _propose_classified_flows(
                 f"Matching future classified plan contributed {scheduled_total.format()}; "
                 f"the retained median uncovered amount is {monthly_residual.format()}."
             ),
+            rules,
         )
         trend = trend_evidence.explanation.rstrip(".") if trend_evidence else None
         outlier_months = len(excluded_indexes)
@@ -1195,6 +1283,7 @@ def propose_historical_estimates(
     months: int = 12,
     min_active_months: int = 3,
     scenario_handle: str | None = None,
+    rules: HistoricalEstimateRules = DEFAULT_HISTORICAL_ESTIMATE_RULES,
 ) -> list[HistoricalEstimateProposal]:
     """Propose residual category estimates from completed historical months.
 
@@ -1239,14 +1328,14 @@ def propose_historical_estimates(
 
         if len(monthly) < min_active_months:
             continue
-        funding_evidence = _funding_evidence(db, account.handle, history_start, history_end)
+        funding_evidence = _funding_evidence(db, account.handle, history_start, history_end, rules)
         if funding_evidence is None:
             continue
         funding_account = db.get_account(funding_evidence.selected)
         if funding_account is None:
             continue
 
-        seasonal, seasonality_explanation = _has_seasonality(monthly_by_month, fraction)
+        seasonal, seasonality_explanation = _has_seasonality(monthly_by_month, fraction, rules)
         if seasonal:
             # Repeated winter/summer peaks are signal, not global outliers. The
             # month-specific profile below preserves them explicitly.
@@ -1254,7 +1343,7 @@ def propose_historical_estimates(
             excluded_indexes: tuple[int, ...] = ()
             relative_variability = Decimal(0)
         else:
-            robust_monthly, excluded_indexes, relative_variability = _robust_sample(monthly)
+            robust_monthly, excluded_indexes, relative_variability = _robust_sample(monthly, rules)
         excluded_rows = {category_history.residual_row_indexes[index] for index in excluded_indexes}
         history = tuple(
             EstimateHistoryEvidence(
@@ -1275,12 +1364,13 @@ def propose_historical_estimates(
             )
             for index, (month, gross, applied, residual) in enumerate(category_history.rows)
         )
-        trend_sample, trend_evidence = _trend_summary(robust_monthly, fraction)
+        trend_sample, trend_evidence = _trend_summary(robust_monthly, fraction, rules)
         monthly_residual = _typical_amount(trend_sample, fraction)
         observed_dates = _unscheduled_dates(db, account.handle, history_start, history_end)
         recurrence, cadence, occurrences_per_month = _infer_recurrence(
             observed_dates,
             current_month,
+            rules,
         )
         if recurrence is None:
             continue
@@ -1295,23 +1385,26 @@ def propose_historical_estimates(
             )
         amount = (monthly_residual / occurrences_per_month).quantize(fraction)
         seasonal_amounts = (
-            _seasonal_amounts(monthly_by_month, fraction)
+            _seasonal_amounts(monthly_by_month, fraction, rules)
             if seasonal and recurrence.period is PeriodType.MONTH
             else ()
         )
         variability = (
-            "seasonal by calendar month" if seasonal else _variability_label(relative_variability)
+            "seasonal by calendar month"
+            if seasonal
+            else _variability_label(relative_variability, rules)
         )
         confidence_evidence = _confidence(
             sample_months=months,
             active_months=len(monthly),
             retained_months=len(robust_monthly),
             variability=relative_variability,
+            rules=rules,
         )
         scheduled_total = category_history.applied_scheduled_total
         gross_median = _typical_amount(gross_monthly, fraction)
         cadence_evidence = _cadence_evidence(
-            observed_dates, cadence, occurrences_per_month, recurrence
+            observed_dates, cadence, occurrences_per_month, recurrence, rules
         )
         seasonality_evidence = EstimateSeasonalityEvidence(
             seasonal,
@@ -1337,6 +1430,7 @@ def propose_historical_estimates(
                 f"Selected future plan contributed {scheduled_total.format()}; "
                 f"the retained median uncovered amount is {monthly_residual.format()}."
             ),
+            rules,
         )
         trend = trend_evidence.explanation.rstrip(".") if trend_evidence else None
         outlier_months = len(excluded_indexes)
@@ -1387,6 +1481,7 @@ def propose_historical_estimates(
             scenario_handle=scenario_handle,
             accounts=accounts_by_handle,
             fraction=fraction,
+            rules=rules,
         )
     )
     return sorted(proposals, key=lambda item: (item.purpose_name, item.category_name))

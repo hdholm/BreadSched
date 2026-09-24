@@ -5,6 +5,17 @@ contracts. Current and proposed work belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- [x] **0227 — Versioned historical-estimation rules.** Consolidate anomaly
+  thresholds, confidence weights, cadence/trend/seasonal criteria, variability
+  bands, and deterministic funding tie-breaks into one immutable
+  `historical-estimates-v1` policy passed to the estimator. Include the complete
+  applied policy and version in structured proposal and saved-draft evidence, and
+  show the version in review explanations. Add an independent reopened-book golden
+  with authored calculations for an isolated spike, a funding tie, monthly anchors,
+  a repeated seasonal profile, a material trend, and confidence arithmetic; prove a
+  deliberately changed named policy against the same book. Advance the application
+  version to `0.2.0a87`; native schema version 7 is unchanged.
+
 - [x] **0226 — Independent Plan and Projection golden books.** Add five small,
   human-readable native-book declarations covering cash timing and matched actuals,
   classified planning flows, mortgage/escrow treatment, actual/365 projection

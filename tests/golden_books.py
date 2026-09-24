@@ -1,4 +1,4 @@
-"""Loader and stable snapshots for the hand-calculated 0226 golden books."""
+"""Loader and stable snapshots for independent, hand-calculated golden books."""
 
 from __future__ import annotations
 
@@ -28,15 +28,15 @@ from breadsched.gen.lib import (
 from breadsched.gen.services.assumptions import BASE_ASSUMPTIONS_KEY
 from breadsched.gen.services.plan import PlanQuery, query_plan
 
-ROOT = Path(__file__).with_name("goldens") / "0226"
+ROOT = Path(__file__).with_name("goldens")
 
 
-def read_book(name: str) -> dict[str, Any]:
-    return json.loads((ROOT / name / "book.json").read_text())
+def read_book(name: str, *, milestone: str = "0226") -> dict[str, Any]:
+    return json.loads((ROOT / milestone / name / "book.json").read_text())
 
 
-def read_expected(name: str, report: str) -> dict[str, Any]:
-    return json.loads((ROOT / name / f"expected-{report}.json").read_text())
+def read_expected(name: str, report: str, *, milestone: str = "0226") -> dict[str, Any]:
+    return json.loads((ROOT / milestone / name / f"expected-{report}.json").read_text())
 
 
 def _when(value: str | None) -> date | None:
@@ -85,9 +85,9 @@ def _assumptions(item: dict[str, Any]) -> Assumptions:
     )
 
 
-def build_and_reopen_book(name: str, path: Path) -> DbSQLite:
+def build_and_reopen_book(name: str, path: Path, *, milestone: str = "0226") -> DbSQLite:
     """Materialize a declaration, close it, and return a fresh database handle."""
-    data = read_book(name)
+    data = read_book(name, milestone=milestone)
     db = DbSQLite()
     db.load(str(path))
     with db.transaction(f"Build golden book {name}") as txn:
