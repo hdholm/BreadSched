@@ -78,8 +78,10 @@ would otherwise accumulate another workflow rule.
   sortable exact-value tables, and drilldown to contributing occurrences and
   transactions. Use the selected horizon, as-of date, and scenario consistently;
   actuals remain ledger facts, while the scenario selects planned activity.
-  Within a category, group actual expense splits temporarily by transaction
-  description as the merchant name: trim whitespace, compare case-insensitively,
+  The shared typed report contract is available; connect it to GTK and web
+  presentation and then printing. Within a category, group actual expense splits
+  temporarily by transaction description as the merchant name: trim whitespace,
+  compare case-insensitively,
   and show blank descriptions as Unknown merchant. Keep distinct descriptions
   distinct otherwise. Do not save groups, add matching rules, change imported
   descriptions, or infer per-merchant budgets. Compare merchant totals only with

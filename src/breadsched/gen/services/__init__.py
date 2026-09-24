@@ -31,6 +31,15 @@ from .claims import (
     save_claim,
 )
 from .contracts import ServiceError, ServiceResult
+from .expense_explorer import (
+    ExpenseCategory,
+    ExpenseDrilldown,
+    ExpenseExplorer,
+    ExpensePeriod,
+    MerchantActual,
+    MerchantGroup,
+    query_expense_explorer,
+)
 from .imports import ImportBook, ImportedBook, import_book
 from .loans import SavedLoan, SaveLoan, save_loan, validate_loan
 from .plan import (
@@ -170,6 +179,13 @@ __all__ = [
     "TransactionInput",
     "TransactionSplitInput",
     "query_plan",
+    "ExpenseCategory",
+    "ExpenseDrilldown",
+    "ExpenseExplorer",
+    "ExpensePeriod",
+    "MerchantActual",
+    "MerchantGroup",
+    "query_expense_explorer",
     "build_claim",
     "delete_claim",
     "delete_account",

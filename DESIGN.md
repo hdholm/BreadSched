@@ -301,6 +301,13 @@ assembly. Category hierarchy roll-up, cash-bridge rows, planning-flow rows, mort
 rows, and as-of variance calculation are independent transformations over the same
 exact period totals; the final report still executes the cash-conservation check.
 
+Expense exploration is a read-only service built from the same typed Plan query.
+Category periods and section totals reuse Plan's rollups. A selected category cell
+uses Plan's detail calculation for occurrences and actual transactions; merchant
+groups fold trimmed transaction descriptions case-insensitively in memory and sum
+those actual contributions. The category's plan is never allocated to merchants.
+The service checks merchant and detail totals against the Plan cell before returning.
+
 The primary reconciliation is a signed, non-overlapping spendable-cash bridge:
 income received minus ordinary expense, plus retirement distributions, minus
 retirement saving, benefit funding, debt principal, and escrow funding, plus an
