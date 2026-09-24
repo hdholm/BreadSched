@@ -42,22 +42,23 @@ messages or pull requests.
   safely reproduce a structure, expose it read-only rather than silently
   normalizing or discarding it.
 - Maintain GTK/web parity when a feature is intended to exist on both surfaces.
-- Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog. A
-  pull request that completes, changes, discovers, splits, or reprioritizes roadmap
-  work must update the roadmap in the same pull request. Move completed outcomes
-  and their acceptance contracts to [`CHANGELOG.md`](CHANGELOG.md).
+- Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog. Every
+  pull request must update the roadmap to reflect its effect on pending work and
+  move completed outcomes and acceptance contracts to [`CHANGELOG.md`](CHANGELOG.md).
 - Keep documentation roles distinct: `README.md` is the product/developer entry
   point; `src/breadsched/USER_GUIDE.md` is the packaged task-oriented user guide;
   `DESIGN.md` records current architecture and rationale; `ROADMAP.md` is the only
   future-work list; and `CHANGELOG.md` preserves completed milestones. Update the
-  appropriate documents when a pull request changes behavior, design, completed
-  history, or pending work rather than letting those descriptions drift.
+  documents in every pull request to reflect all changes made by that pull request,
+  including documentation-only or maintenance work.
 
 ## Tests are part of the change
 
-New functionality and bug fixes should, to the extent practicable, include tests
-that demonstrate the intended behavior and prevent regression. Prefer a focused
-regression test that fails for the original defect and passes after the fix.
+Every pull request must update relevant tests and run them. For documentation-only
+changes, strengthen or add a focused test for a documented contract, example, or
+documentation integration; keep tests meaningful rather than asserting wording.
+Prefer a focused regression test that fails for the original defect and passes after
+the fix.
 
 Tests must be generic. Do not copy names, account identifiers, transaction labels,
 amounts, dates, memos, institutions, or other user-specific data into fixtures just
@@ -99,16 +100,18 @@ Before opening or updating a pull request:
 
 1. Start from the latest accepted repository state, not from stale excerpts or a
    synthetic reconstruction when the real tree is available.
-2. Make one coherent change at a time and update `ROADMAP.md` and `CHANGELOG.md`
-   when required.
+2. Make one coherent change at a time. **Every pull request must update tests,
+   `ROADMAP.md`, `CHANGELOG.md`, `DESIGN.md`, `src/breadsched/USER_GUIDE.md`, and
+   `README.md` to reflect every change the pull request makes.** Review and update
+   `AGENTS.md` and `CONTRIBUTING.md` as needed to keep repository instructions
+   accurate. Record the disposition of all these files in the pull-request
+   description; do not make content-free edits. For internal changes without a new
+   user action, update the user-facing documents with a brief, accurate status or
+   clarification rather than inventing a feature.
    Advance the application alpha version when a commit changes code or runtime
    behavior. Documentation-only commits do not require a version change.
-   Every pull request must explicitly review `AGENTS.md`, `CONTRIBUTING.md`,
-   `DESIGN.md`, `ROADMAP.md`, and `src/breadsched/USER_GUIDE.md`; update each one
-   affected by the change and record every disposition in the pull-request
-   description. Avoid content-free documentation churn.
-3. Add or update focused tests for new functionality or bug fixes where
-   practicable.
+3. Add or update focused tests that verify the relevant behavior or documented
+   contract, including for documentation-only work.
 4. Run `git diff --check` while developing and `git show --check` on the final
    commit.
 5. Compile changed Python modules.
@@ -166,9 +169,11 @@ this repository. Read this file completely before changing files.
 5. Run the focused test slice while developing, then all gates described above.
    GitHub Actions on its supported platforms, including the GTK job, is the final
    authority when a required runtime is unavailable locally.
-6. Maintain `README.md`, `DESIGN.md`, `ROADMAP.md`, and `CHANGELOG.md` according to
-   their roles. Documentation and acceptance tests are part of the implementation,
-   not deferred cleanup.
+6. For **each PR**, update tests, `ROADMAP.md`, `CHANGELOG.md`, `DESIGN.md`,
+   `src/breadsched/USER_GUIDE.md`, and `README.md` to reflect all changes in that
+   PR, including changes to workflow and documentation. Read `AGENTS.md` and this
+   file and update them when their instructions change. Documentation and
+   acceptance tests are part of the implementation, not deferred cleanup.
 7. Submit work through the pull-request workflow above, link the relevant issue,
    and state any unverified platform/runtime explicitly.
 

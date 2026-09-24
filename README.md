@@ -31,6 +31,17 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
 
+## Explore expenses
+
+Apply a Plan horizon, grouping, and scenario, then choose **Explore expenses…** in
+GTK Plan or scroll to **Expense Explorer** on the web Plan page. Compare category
+plan and actual amounts for a selected period, sort categories, inspect a category
+trend across periods, and open merchant transaction detail. Merchant totals are
+actuals grouped temporarily by transaction description; the category plan is not
+allocated into merchant budgets. Both interfaces can print the applied view. See
+the [User Guide](src/breadsched/USER_GUIDE.md#explore-expenses) for steps and
+interpretation.
+
 ## Install and run for development
 
 ```bash
