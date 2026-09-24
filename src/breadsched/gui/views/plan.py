@@ -153,6 +153,9 @@ class PlanView(BaseView):
             "clicked", lambda *_: self.manager.show_category("resolution")
         )
         bar.append(self.review_actuals_button)
+        explorer = Gtk.Button(label="Explore expenses…")
+        explorer.connect("clicked", self._open_expense_explorer)
+        bar.append(explorer)
         schedules = Gtk.Button(label="Edit baseline schedules…")
         schedules.connect("clicked", lambda *_: self.manager.show_category("scheduled"))
         bar.append(schedules)
@@ -587,6 +590,23 @@ class PlanView(BaseView):
         self.review_actuals_button.set_sensitive(activity.unresolved_actual_count > 0)
         self._update_scenario_actions()
         self._render()
+
+    def _open_expense_explorer(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.expense_explorer_dialog import ExpenseExplorerDialog
+
+        ExpenseExplorerDialog(
+            self.get_root(),
+            self.db,
+            PlanQuery(
+                start=self._start_date,
+                end=self._end_date,
+                period=self._grouping(),
+                scenario=self._scenario_handle,
+                baseline=baseline_scenario(self.manager, self.db),
+            ),
+        ).present()
 
     def printable_html(self) -> str | None:
         """Return the applied Plan state, not un-applied control edits."""

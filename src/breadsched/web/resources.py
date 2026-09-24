@@ -150,6 +150,17 @@ def _plan_detail(api: Api, query: QueryParams) -> object:
     return api.plan_detail(account, start, end, scenario, flow_kind, requirement_kind)
 
 
+def _expense_explorer(api: Api, query: QueryParams) -> object:
+    start = query.text("from")
+    through = query.text("through")
+    period = query.text("period")
+    scenario = query.text("scenario")
+    account = query.text("account")
+    index = query.integer("index", minimum=0)
+    query.finish()
+    return api.expense_explorer(start, through, period, scenario, account, index)
+
+
 def _projection(api: Api, query: QueryParams) -> object:
     scenario = query.text("scenario")
     years = query.integer("years", minimum=1, maximum=100)
@@ -188,6 +199,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/historical-estimates": _historical_estimates,
     "/api/plan": _plan,
     "/api/plan/detail": _plan_detail,
+    "/api/expense-explorer": _expense_explorer,
     "/api/review": _optional_text("review", "transaction"),
     "/api/scenarios": _no_query("scenarios"),
     "/api/scenario/events": _optional_text("scenario_events", "handle"),

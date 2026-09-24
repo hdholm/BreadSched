@@ -2430,6 +2430,27 @@ class TestPlanToolbarIcon:
 
 
 class TestDerivedPlanView:
+    def test_expense_explorer_builds_from_applied_plan(self, app, window, populated_book):
+        from breadsched.gen.services.plan import PlanQuery
+        from breadsched.gui.dialogs.expense_explorer_dialog import ExpenseExplorerDialog
+
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        dialog = ExpenseExplorerDialog(
+            window,
+            app.db,
+            PlanQuery(start=view._start_date, end=view._end_date, period=view._grouping()),
+        )
+        try:
+            assert dialog._report.categories
+            assert dialog.content.get_first_child() is not None
+            assert dialog.period.get_selected() == 0
+            dialog.sort.set_selected(3)
+            assert dialog.content.get_first_child() is not None
+        finally:
+            dialog.destroy()
+
     def test_detaching_does_not_try_to_read_book_metadata(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("plan")
