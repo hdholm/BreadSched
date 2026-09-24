@@ -37,13 +37,16 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 The typed-mutation-service, web-boundary, commodity-arithmetic, release, independent
 financial acceptance, and versioned historical-estimation rule gates are complete.
-The next work should establish a bounded mutation-testing baseline, while continuing
-responsibility-based decomposition whenever a touched adapter or engine would
-otherwise accumulate another workflow rule.
+Next, make expense categories and their merchant-level actuals easier to inspect.
+Continue responsibility-based decomposition whenever a touched adapter or engine
+would otherwise accumulate another workflow rule.
 
-1. **Bounded mutation testing.** Establish and ratchet a measured `gen/engine` and
+1. **Expense Explorer.** Graph and report expenses by category against planned
+   amounts, with a temporary merchant breakdown of actuals within a category.
+   Deliver the shared reporting contract first, then GTK/web views and printing.
+2. **Bounded mutation testing.** Establish and ratchet a measured `gen/engine` and
    `gen/lib` baseline without making the suite slow or flaky.
-2. **Responsibility-based decomposition.** Continue reducing the remaining oversized
+3. **Responsibility-based decomposition.** Continue reducing the remaining oversized
    `web/server.py` and related seams as the work above touches them; do not optimize
    for line count alone.
 
@@ -67,6 +70,27 @@ otherwise accumulate another workflow rule.
   debit/credit terminology clear.
 
 ## Plan and planning-flow reporting
+
+- [ ] **Expense Explorer — category, trend, and merchant views.** Build a shared
+  read-only report over the existing Plan expense semantics: planned, actual, and
+  variance by expense category and selected month/quarter/year, plus a trend for
+  selected categories. Provide grouped comparison bars, a time-series chart,
+  sortable exact-value tables, and drilldown to contributing occurrences and
+  transactions. Use the selected horizon, as-of date, and scenario consistently;
+  actuals remain ledger facts, while the scenario selects planned activity.
+  Within a category, group actual expense splits temporarily by transaction
+  description as the merchant name: trim whitespace, compare case-insensitively,
+  and show blank descriptions as Unknown merchant. Keep distinct descriptions
+  distinct otherwise. Do not save groups, add matching rules, change imported
+  descriptions, or infer per-merchant budgets. Compare merchant totals only with
+  the category's plan; show plan as unallocated across merchants. Reconcile merchant
+  totals to their category actual and category totals to existing Plan totals,
+  without double-counting parent/child rollups, multi-split transactions, escrow
+  movements, or refunds. Unscheduled actuals count as actual spending without
+  automatically resolving estimates. Expose the same report through GTK and web,
+  then printable output; test these accounting cases, empty descriptions, case and
+  whitespace, as-of/future periods, and a $100 category estimate with $120 in
+  purchases across two merchants ($20 over plan, no invented merchant budgets).
 
 - [ ] Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
