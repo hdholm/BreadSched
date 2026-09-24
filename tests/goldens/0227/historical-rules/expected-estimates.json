@@ -1,0 +1,132 @@
+{
+  "rules": {
+    "version": "historical-estimates-v1",
+    "anomaly": {
+      "minimum_observations": 6,
+      "median_deviation_multiplier": "3",
+      "zero_mad_relative_threshold": "0.75",
+      "zero_mad_absolute_floor": "1",
+      "minimum_retained_observations": 3
+    },
+    "confidence": {
+      "base_weight": "0.20",
+      "coverage_weight": "0.30",
+      "depth_weight": "0.20",
+      "retained_weight": "0.10",
+      "consistency_weight": "0.20",
+      "full_depth_months": 12,
+      "maximum_score": "0.95"
+    },
+    "cadence": {
+      "minimum_short_cadence_observations": 4,
+      "support_numerator": 3,
+      "support_denominator": 4,
+      "weekly_gap_min_days": 5,
+      "weekly_gap_max_days": 9,
+      "fortnightly_gap_min_days": 11,
+      "fortnightly_gap_max_days": 17,
+      "maximum_year_interval": 3,
+      "mean_year_days": "365.2425",
+      "annual_tolerance_days": 70,
+      "calendar_interval_minimum_observations": 3,
+      "calendar_interval_minimum_positive_gaps": 2,
+      "calendar_month_interval_min": 2,
+      "calendar_month_interval_max": 11,
+      "calendar_month_gap_tolerance": 1,
+      "monthly_anchor_minimum_months": 3,
+      "monthly_anchor_day_tolerance": 3
+    },
+    "trend": {
+      "minimum_observations": 6,
+      "minimum_relative_change": "0.10",
+      "recent_observations": 3
+    },
+    "seasonality": {
+      "minimum_samples_per_month": 2,
+      "minimum_repeated_months": 6,
+      "maximum_within_month_variability": "0.25",
+      "stable_month_support_numerator": 3,
+      "stable_month_support_denominator": 4,
+      "minimum_peak_to_median_ratio": "1.35"
+    },
+    "variability": {
+      "stable_maximum": "0.10",
+      "moderate_maximum": "0.25"
+    },
+    "funding": {
+      "tie_break_order": ["transaction_count", "spendable_cash", "account_handle"]
+    }
+  },
+  "proposals": {
+    "groceries": {
+      "amount": "100.00",
+      "recurrence": {"period": "month", "interval": 1, "start": "2026-01-10"},
+      "confidence": "0.704167",
+      "selected_months": 7,
+      "outlier_months": ["2025-09-01"],
+      "trend": null,
+      "seasonal_amounts": [],
+      "funding": {
+        "selected": "checking",
+        "selected_name": "Assets:Checking",
+        "candidates": [
+          {"account": "checking", "account_name": "Assets:Checking", "transaction_count": 4, "spendable_cash": true},
+          {"account": "brokerage", "account_name": "Assets:Brokerage", "transaction_count": 4, "spendable_cash": false}
+        ],
+        "explanation": "Assets:Checking appeared as the counterpart in 4 qualifying transaction(s); transaction count wins, with spendable cash as the tie-break."
+      }
+    },
+    "utilities": {
+      "amount": "100.00",
+      "recurrence": {"period": "month", "interval": 1, "start": "2026-01-05"},
+      "confidence": "0.950000",
+      "selected_months": 24,
+      "outlier_months": [],
+      "trend": null,
+      "seasonal_amounts": [
+        {"month": 1, "amount": "240.00"},
+        {"month": 2, "amount": "240.00"},
+        {"month": 3, "amount": "100.00"},
+        {"month": 4, "amount": "100.00"},
+        {"month": 5, "amount": "100.00"},
+        {"month": 6, "amount": "100.00"},
+        {"month": 7, "amount": "240.00"},
+        {"month": 8, "amount": "240.00"},
+        {"month": 9, "amount": "100.00"},
+        {"month": 10, "amount": "100.00"},
+        {"month": 11, "amount": "100.00"},
+        {"month": 12, "amount": "100.00"}
+      ],
+      "funding": {
+        "selected": "checking",
+        "selected_name": "Assets:Checking",
+        "candidates": [
+          {"account": "checking", "account_name": "Assets:Checking", "transaction_count": 24, "spendable_cash": true}
+        ],
+        "explanation": "Assets:Checking appeared as the counterpart in 24 qualifying transaction(s); it was the only qualifying counterpart."
+      }
+    },
+    "salary": {
+      "amount": "1550.00",
+      "recurrence": {"period": "month", "interval": 1, "start": "2026-01-15"},
+      "confidence": "0.636538",
+      "selected_months": 6,
+      "outlier_months": [],
+      "trend": {
+        "direction": "upward",
+        "change_percent": "47.61904761904761904761904762",
+        "used_recent_months": 3,
+        "explanation": "upward trend (47.6%); using the recent 3-month median."
+      },
+      "seasonal_amounts": [],
+      "funding": {
+        "selected": "checking",
+        "selected_name": "Assets:Checking",
+        "candidates": [
+          {"account": "checking", "account_name": "Assets:Checking", "transaction_count": 6, "spendable_cash": true}
+        ],
+        "explanation": "Assets:Checking appeared as the counterpart in 6 qualifying transaction(s); it was the only qualifying counterpart."
+      }
+    }
+  }
+}

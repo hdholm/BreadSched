@@ -14,6 +14,9 @@ packaged standalone user guide and offline GTK help to the completed **0225 /
 versions, and tested-main release-discipline baseline.
 The completed test-only **0226** milestone adds independent Plan and Projection
 acceptance books without changing the application or native data-format version.
+The current development baseline is **`0.2.0a87`**, which completes **0227** by
+versioning historical-estimation policy and adding independent estimator acceptance
+evidence; native schema version 7 is unchanged.
 Unchecked field reports are requests or suspected regressions, not
 claims that a root cause has already been confirmed.
 
@@ -32,18 +35,15 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The typed-mutation-service, web-boundary, commodity-arithmetic, and release gates are
-complete. Independent Plan and Projection acceptance books now establish the
-financial evidence baseline. The next work should version historical-estimation rules
-against that baseline, while continuing responsibility-based decomposition whenever a
-touched adapter or engine would otherwise accumulate another workflow rule.
+The typed-mutation-service, web-boundary, commodity-arithmetic, release, independent
+financial acceptance, and versioned historical-estimation rule gates are complete.
+The next work should establish a bounded mutation-testing baseline, while continuing
+responsibility-based decomposition whenever a touched adapter or engine would
+otherwise accumulate another workflow rule.
 
-1. **Versioned historical-estimation rules.** Consolidate thresholds, confidence
-   weights, cadence/seasonal criteria, and funding tie-breaks, then prove changes
-   against those independent goldens.
-2. **Bounded mutation testing.** Establish and ratchet a measured `gen/engine` and
+1. **Bounded mutation testing.** Establish and ratchet a measured `gen/engine` and
    `gen/lib` baseline without making the suite slow or flaky.
-3. **Responsibility-based decomposition.** Continue reducing the remaining oversized
+2. **Responsibility-based decomposition.** Continue reducing the remaining oversized
    `web/server.py` and related seams as the work above touches them; do not optimize
    for line count alone.
 
@@ -60,14 +60,6 @@ touched adapter or engine would otherwise accumulate another workflow rule.
   measured baseline first, exclude equivalent/platform-only mutants explicitly, and
   ratchet the score in CI rather than imposing an arbitrary pass percentage that
   makes the suite slow or flaky.
-
-- [ ] Consolidate historical-estimate thresholds, confidence weights, spike rules,
-  cadence tolerances, seasonal criteria, and funding tie-breaks into immutable,
-  documented rule objects passed to the engine. Preserve conservative defaults,
-  expose the applied rule-set/version in structured evidence, and test rule changes
-  against the independent goldens instead of scattering numeric constants through
-  inference code.
-
 
 ## Register workflow
 

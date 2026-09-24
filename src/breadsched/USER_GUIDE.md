@@ -103,7 +103,10 @@ estimates belong in Plan and Projection and are not presented as bills already d
 **Suggest from History** creates reviewable estimate drafts. It never writes a
 schedule directly. Open **Review**, check the inferred account, purpose, amount,
 cadence, dates, seasonal profile, and evidence, then save or cancel. Accepted
-estimates retain their evidence as provenance.
+estimates retain their evidence as provenance. The evidence names the versioned
+inference rules used for anomaly handling, cadence, trend, seasonality, confidence,
+and funding selection, so a later rule revision does not disguise how an older
+suggestion was produced.
 
 ### Actuals and planned occurrences
 
