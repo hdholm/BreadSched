@@ -111,6 +111,11 @@ and strictly parses one typed value per query field, and ``web.transport`` owns 
 authentication, framing, body limits, status mapping, and static delivery. The
 transport never returns unexpected exception text: it logs the exception with a
 correlation identifier and returns only that identifier with a stable error code.
+The read-only Expense Explorer response projection lives in ``web.expense_resource``:
+it translates query choices to the shared Plan service and serializes its typed
+category and merchant results. ``Api.expense_explorer`` delegates to that adapter;
+neither layer calculates financial totals.
+
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
 not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,
 all events are registered from JavaScript, and charts construct SVG through namespaced
