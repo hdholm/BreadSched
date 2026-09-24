@@ -36,14 +36,12 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 ## Immediate priorities
 
 The typed-mutation-service, web-boundary, commodity-arithmetic, release, independent
-financial acceptance, and versioned historical-estimation rule gates are complete.
-Expense Explorer is complete across the shared service, GTK, web, and printing.
+financial acceptance, versioned historical-estimation rule, Expense Explorer, and
+bounded money-mutation gates are complete.
 Continue responsibility-based decomposition whenever a touched adapter or engine
 would otherwise accumulate another workflow rule.
 
-1. **Bounded mutation testing.** Establish and ratchet a measured `gen/engine` and
-   `gen/lib` baseline without making the suite slow or flaky.
-2. **Responsibility-based decomposition.** Continue reducing the remaining oversized
+1. **Responsibility-based decomposition.** Continue reducing the remaining oversized
    `web/server.py` and related seams as the work above touches them; do not optimize
    for line count alone.
 
@@ -53,13 +51,6 @@ would otherwise accumulate another workflow rule.
   work, especially the remaining seams in `web/server.py`.
   Split large GUI test modules only when the resulting fixture ownership and runtime
   isolation improve; do not optimize for a line-count threshold alone.
-
-## Independent acceptance evidence and test quality
-
-- [ ] Add a bounded mutation-testing gate for `gen/engine` and `gen/lib`. Establish a
-  measured baseline first, exclude equivalent/platform-only mutants explicitly, and
-  ratchet the score in CI rather than imposing an arbitrary pass percentage that
-  makes the suite slow or flaky.
 
 ## Register workflow
 

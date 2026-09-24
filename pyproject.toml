@@ -68,6 +68,19 @@ markers = [
     "performance: realistic-size performance guard; run separately from the normal matrix",
 ]
 
+[tool.mutmut]
+source_paths = [
+    "src/breadsched/gen/engine/currency.py",
+    "src/breadsched/gen/lib/amount.py",
+]
+pytest_add_cli_args_test_selection = [
+    "tests/test_money.py",
+    "tests/test_currency.py",
+    "tests/test_valuation.py",
+    "tests/test_activity.py",
+]
+also_copy = ["src/breadsched"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"

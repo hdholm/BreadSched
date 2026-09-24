@@ -9,6 +9,7 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 .venv/
+mutants/
 *.breadsched
 *.breadsched-wal
 *.breadsched-shm
