@@ -132,6 +132,7 @@ from .expense_resource import expense_report
 from .plan_detail_resource import plan_detail_report
 from .plan_resource import plan_report
 from .resources import ResourceError
+from .scenario_resource import scenario_payload, scenarios_report
 from .schedule_write_resource import save_fixed_schedule_request, save_scenario_schedule_request
 
 __all__ = ["serve", "build_handler", "api"]
@@ -1284,56 +1285,9 @@ class Api:
             date(today.year + 9, 12, 31),
         )
 
-    @staticmethod
-    def _scenario_payload(scenario: Scenario, *, base: bool = False) -> dict:
-        assumptions = scenario.effective_assumptions()
-        return {
-            "handle": None if base else scenario.handle,
-            "base": base,
-            "name": "Base scenario" if base else scenario.name,
-            "description": "" if base else scenario.description,
-            "parent_handle": None if base else scenario.parent_handle,
-            "assumptions": assumptions.serialize(),
-            "assumption_sources": scenario.assumption_sources(),
-            "account_assumption_sources": scenario.account_assumption_sources(),
-            "assumption_overrides": sorted(scenario.assumption_overrides),
-            "periods": [
-                {"index": index, **period.serialize()}
-                for index, period in enumerate(scenario.assumption_periods)
-            ],
-            "schedule_changes": 0 if base else len(scenario.schedule_overrides),
-        }
-
     def scenarios(self) -> dict:
         """Base and saved planning scenarios for the management surface."""
-        base = self._management_base_scenario()
-        projection_accounts = []
-        for account in self.db.iter_accounts():
-            if not (
-                account.account_class is AccountClass.LIABILITY
-                or (account.account_class is AccountClass.ASSET and account.atype.is_investment)
-            ):
-                continue
-            projection_accounts.append(
-                {
-                    "handle": account.handle,
-                    "name": self.db.full_name(account),
-                    "class": account.account_class.value,
-                    "account_rate": (
-                        account.annual_interest
-                        if account.account_class is AccountClass.LIABILITY
-                        else account.annual_return
-                    ),
-                }
-            )
-        projection_accounts.sort(key=lambda item: item["name"].casefold())
-        return {
-            "scenarios": [
-                self._scenario_payload(base, base=True),
-                *(self._scenario_payload(item) for item in self.db.iter_scenarios()),
-            ],
-            "projection_accounts": projection_accounts,
-        }
+        return scenarios_report(self.db, self._management_base_scenario())
 
     def _per_account_rates(
         self,
@@ -1411,7 +1365,7 @@ class Api:
             base_result = save_base_assumptions(self.db, SaveBaseAssumptions(assumptions))
             if not base_result.ok:
                 raise self._service_resource_error(base_result.errors[0])
-            return self._scenario_payload(self._management_base_scenario(), base=True)
+            return scenario_payload(self._management_base_scenario(), base=True)
 
         scenario = self.db.get_scenario(str(handle))
         if scenario is None:
@@ -1472,7 +1426,7 @@ class Api:
         reloaded = self.db.get_scenario(scenario.handle)
         if reloaded is None:  # pragma: no cover - guarded by the successful commit
             raise KeyError(scenario.handle)
-        return self._scenario_payload(reloaded)
+        return scenario_payload(reloaded)
 
     def scenario_duplicate(self, payload: dict) -> dict:
         handle = payload.get("handle")
@@ -1492,7 +1446,7 @@ class Api:
         assert saved is not None
         clone = self.db.get_scenario(saved.handle)
         assert clone is not None
-        return self._scenario_payload(clone)
+        return scenario_payload(clone)
 
     def scenario_delete(self, payload: dict) -> dict:
         handle = str(payload.get("handle") or "").strip()
@@ -1553,7 +1507,7 @@ class Api:
             raise self._service_resource_error(result.errors[0])
         saved = self.db.get_scenario(scenario.handle)
         assert saved is not None
-        return self._scenario_payload(saved)
+        return scenario_payload(saved)
 
     def scenario_period_delete(self, payload: dict) -> dict:
         handle = str(payload.get("handle", "")).strip()
@@ -1568,7 +1522,7 @@ class Api:
             raise self._service_resource_error(result.errors[0])
         saved = self.db.get_scenario(scenario.handle)
         assert saved is not None
-        return self._scenario_payload(saved)
+        return scenario_payload(saved)
 
     _SCENARIO_FREQUENCIES = {
         "weekly": (PeriodType.WEEK, 1),

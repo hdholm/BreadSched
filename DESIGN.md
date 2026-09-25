@@ -125,6 +125,10 @@ Dashboard's read-only response is projected by ``web.dashboard_resource`` from t
 shared dashboard engine. The resource formats summary, group, bill, and income
 values and applies temporary query horizons to an in-memory configuration; saving
 group paths and persistent horizons remains the separate metadata write endpoint.
+The read-only scenario-management listing and shared scenario response shape live in
+``web.scenario_resource``. It displays effective assumptions, inheritance sources,
+dated periods, and accounts eligible for account-specific projection rates. Scenario
+saves still pass through the existing typed service and retain its write ownership.
 Fixed baseline schedule web requests are assembled by ``web.schedule_write_resource``.
 It uses the existing web control parsers and the schedule editability projection,
 then submits a typed ``SaveFixedSchedule`` request to the shared schedule service.

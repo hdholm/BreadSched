@@ -373,6 +373,9 @@ To compare an alternative:
 Untouched assumptions inherit through a deterministic, cycle-free scenario chain.
 Later parent edits reach inheriting children; deliberate child overrides remain.
 Dated assumption periods and scenario events belong to their owning scenario.
+The web Scenarios list shows each effective assumption and its source, along with
+the saved dated periods and eligible account-specific rate choices. Review those
+sources after changing a parent to see which values a child still inherits.
 
 Projection advances account state between dated actual, scheduled, estimated, and
 one-off events. Months and years are reports of those transitions, not the engine's
