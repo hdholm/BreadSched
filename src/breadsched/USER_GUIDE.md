@@ -182,6 +182,9 @@ reporting-currency quote is available, they say so and retain the security holdi
 ledger value. An older quote remains visible by its date; BreadSched does not yet
 apply a stale-price cutoff or automatically convert foreign-currency holdings.
 Review the quote date and source before treating a market-valued total as current.
+Currency totals in the current views still require a compatible reporting-currency
+value; an inverse or intermediate currency quote does not silently supply one.
+Do not add values in unlike currencies when estimating net worth.
 
 For an Investment or Retirement account, use **Security price…** to define a
 security and record an exact dated price. Assign the account's commodity to that

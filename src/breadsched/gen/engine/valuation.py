@@ -15,8 +15,10 @@ from .currency import book_currency, commodity_fraction, reporting_currency_hand
 
 __all__ = [
     "AccountValuation",
+    "CurrencyConversion",
     "account_value",
     "book_currency",
+    "convert_currency",
     "latest_price",
     "net_worth",
     "quantity_balance",
@@ -41,6 +43,61 @@ class AccountValuation:
     currency: Commodity | None = None
     total_amount: Amount | None = None
     quantity_amount: Amount | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class CurrencyConversion:
+    """One as-of direct conversion, or explicit evidence of a missing quote."""
+
+    amount: Amount | None
+    source_currency: str
+    target_currency: str
+    quote_date: date | None = None
+    quote_source: str | None = None
+    quote_type: str | None = None
+
+    @property
+    def missing_quote(self) -> bool:
+        return self.amount is None
+
+
+def convert_currency(
+    db: DbSQLite,
+    amount: Amount,
+    *,
+    as_of: date | None = None,
+    currency: str | Commodity | None = None,
+) -> CurrencyConversion:
+    """Convert with an applicable direct currency quote, without guessing a path.
+
+    Keep the result exact so a caller can sum converted values before rounding
+    once for presentation. An absent quote returns no converted amount; callers
+    must choose and disclose any fallback themselves.
+    """
+    source = db.get_commodity(amount.commodity)
+    if currency is None:
+        target = book_currency(db)
+    elif isinstance(currency, str):
+        target = db.get_commodity(currency)
+    else:
+        target = db.get_commodity(currency.handle)
+    if source is None or not source.is_currency:
+        raise ValueError("source must be a known currency")
+    if target is None or not target.is_currency or db.get_commodity(target.handle) is None:
+        raise ValueError("target must be a known currency")
+    if source.handle == target.handle:
+        return CurrencyConversion(amount, source.handle, target.handle)
+    quote = latest_price(db, source, as_of=as_of, currency=target)
+    if quote is None:
+        return CurrencyConversion(None, source.handle, target.handle)
+    return CurrencyConversion(
+        quote.convert(amount),
+        source.handle,
+        target.handle,
+        quote_date=quote.quote_date,
+        quote_source=quote.source,
+        quote_type=quote.quote_type,
+    )
 
 
 def latest_price(

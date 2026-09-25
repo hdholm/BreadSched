@@ -95,6 +95,83 @@ def test_dated_price_rejects_units_of_another_commodity(db, book):
         price.convert(Amount(Money("10"), "some-other-security"), fraction=usd.fraction)
 
 
+def test_direct_currency_conversion_is_exact_and_as_of_with_quote_evidence(db, book):
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    old = CommodityPrice(
+        commodity=euro.handle,
+        currency=usd.handle,
+        quote_date=date(2026, 2, 1),
+        value=Money(4, 3),
+        source="imported-book",
+        quote_type="last",
+    )
+    future = CommodityPrice(
+        commodity=euro.handle,
+        currency=usd.handle,
+        quote_date=date(2026, 3, 1),
+        value=Money(3, 2),
+    )
+    with db.transaction("Currency quotes") as txn:
+        db.add_commodity(euro, txn)
+        db.add_price(old, txn)
+        db.add_price(future, txn)
+
+    source = Amount(Money(1), euro.handle)
+    missing = valuation.convert_currency(db, source, as_of=date(2026, 1, 31))
+    converted = valuation.convert_currency(db, source, as_of=date(2026, 2, 15))
+    current = valuation.convert_currency(db, source, as_of=date(2026, 3, 2))
+
+    assert missing.missing_quote and missing.amount is None
+    assert missing.quote_date is None
+    assert (missing.source_currency, missing.target_currency) == (euro.handle, usd.handle)
+    assert converted.amount == Amount(Money(4, 3), usd.handle)
+    assert converted.quote_date == date(2026, 2, 1)
+    assert converted.quote_source == "imported-book"
+    assert converted.quote_type == "last"
+    assert current.amount == Amount(Money(3, 2), usd.handle)
+    assert source == Amount(Money(1), euro.handle)
+
+
+def test_currency_conversion_requires_a_direct_quote_and_valid_currency_units(db, book):
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    pound = Commodity(namespace="CURRENCY", mnemonic="GBP", fullname="Pound")
+    fund = Commodity(namespace="FUND", mnemonic="INDEX", fullname="Index fund")
+    with db.transaction("Currency units") as txn:
+        for commodity in (euro, pound, fund):
+            db.add_commodity(commodity, txn)
+        db.add_price(
+            CommodityPrice(
+                commodity=usd.handle,
+                currency=euro.handle,
+                quote_date=date(2026, 1, 1),
+                value=Money("0.8"),
+            ),
+            txn,
+        )
+        db.add_price(
+            CommodityPrice(
+                commodity=euro.handle,
+                currency=pound.handle,
+                quote_date=date(2026, 1, 1),
+                value=Money("0.9"),
+            ),
+            txn,
+        )
+
+    same = valuation.convert_currency(db, Amount(Money("2.50"), usd.handle))
+    assert same.amount == Amount(Money("2.50"), usd.handle)
+    assert same.quote_date is None and not same.missing_quote
+    assert valuation.convert_currency(db, Amount(Money(2), euro.handle)).missing_quote
+    with pytest.raises(ValueError, match="source must be a known currency"):
+        valuation.convert_currency(db, Amount(Money(1), fund.handle))
+    with pytest.raises(ValueError, match="target must be a known currency"):
+        valuation.convert_currency(db, Amount(Money(1), euro.handle), currency=fund)
+
+
 def test_missing_quote_falls_back_to_the_book_value(db, book):
     account, fund, _usd = _holding(db, book)
 
