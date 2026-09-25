@@ -111,6 +111,11 @@ The read-only Expense Explorer response projection lives in ``web.expense_resour
 it translates query choices to the shared Plan service and serializes its typed
 category and merchant results. ``Api.expense_explorer`` delegates to that adapter;
 neither layer calculates financial totals.
+The read-only Plan detail response is similarly owned by
+``web.plan_detail_resource``: it selects the stored or Base scenario, asks the
+activity engine for category, planning-flow, or mortgage explanations, and
+serializes the response. ``Api.plan_detail`` delegates without reproducing that
+logic; route query parsing remains in ``web.resources``.
 
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
 not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,

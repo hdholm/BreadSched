@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Plan detail response boundary and trailer discipline.** Extract the read-only
+  category, planning-flow, and mortgage detail response from the web API class to
+  a dedicated adapter while preserving the HTTP contract and shared calculation.
+  Document adjacent DCO/AI trailers and verification of parsed and remote messages.
+  Advance application version to `0.2.0a91`; native schema version 7 is unchanged.
+
 - **Expense Explorer documentation and PR completeness.** Expand the packaged
   guide and README with the existing GTK/web comparison, trend, merchant detail,
   and print workflow. Require every PR to update relevant tests, the roadmap,

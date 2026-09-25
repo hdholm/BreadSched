@@ -1575,6 +1575,23 @@ class TestPlanApi:
         assert "remains pending" in " ".join(detail["planned"][0]["explanation"])
         assert "Use Resolve actuals" in " ".join(detail["actuals"][0]["explanation"])
 
+    def test_plan_detail_rejects_missing_scenario_and_unknown_requirement(self, client):
+        account = client.database.get_account_by_name("Expenses")
+        assert account is not None
+        base = {
+            "account": account.handle,
+            "start": "2026-01-01",
+            "end": "2026-01-31",
+        }
+        for extra, expected_status in (
+            ({"scenario": "missing-scenario"}, 404),
+            ({"requirement_kind": "unknown"}, 400),
+        ):
+            query = urllib.parse.urlencode(base | extra)
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(f"/api/plan/detail?{query}")
+            assert caught.value.code == expected_status
+
     def test_plan_detail_exposes_shared_escrow_treatment(self, client):
         assets = client.database.get_account_by_name("Assets")
         checking = client.database.get_account_by_name("Assets:Checking")

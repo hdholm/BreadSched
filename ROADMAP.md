@@ -25,7 +25,7 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The remaining priority is **Responsibility-based decomposition.**. Continue
+The remaining priority is **Responsibility-based decomposition.** Continue
 reducing the remaining oversized `web/server.py` and related seams as the
 work above touches them; do not optimize for line count alone.
 
@@ -36,8 +36,10 @@ work above touches them; do not optimize for line count alone.
   work, especially the remaining seams in `web/server.py`. The read-only Expense
   Explorer response has its own resource adapter; continue with Plan detail and
   other workflows when responsibility boundaries are clear.
-  Split large GUI test modules only when the resulting fixture ownership and runtime
-  isolation improve; do not optimize for a line-count threshold alone.
+  Plan detail now has a dedicated read-only resource adapter. Continue with other
+  workflows when responsibility boundaries are clear. Split large GUI test modules
+  only when the resulting fixture ownership and runtime isolation improve; do not
+  optimize for a line-count threshold alone.
 
 
 ## Register workflow
