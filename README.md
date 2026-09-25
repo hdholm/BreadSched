@@ -65,6 +65,8 @@ a scenario still uses the shared scenario service.
 Web Projection month details use the shared projection calculation and show opening
 and closing cash, account movements, dated events, and effective assumption sources.
 Inspecting a draft month does not save edited projection controls.
+Web Projection summaries and comparisons also use that shared engine. The comparison
+shows aligned monthly and ending-value differences without saving either draft.
 
 ## Install and run for development
 

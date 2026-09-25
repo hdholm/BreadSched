@@ -133,6 +133,10 @@ Projection month explanations use ``web.projection_resource`` to calculate a
 detached scenario draft with the shared projection engine and serialize its cash,
 holdings, liabilities, events, and assumption-source evidence. The API still parses
 draft controls; requesting detail does not save the draft.
+The same resource owns Projection summary and comparison response projection: it
+uses the shared engine for both drafts, checks aligned horizons, and returns
+matching monthly and summary deltas. ``Api`` keeps the request parsing and
+detached draft construction; only explicit save requests persist assumptions.
 Fixed baseline schedule web requests are assembled by ``web.schedule_write_resource``.
 It uses the existing web control parsers and the schedule editability projection,
 then submits a typed ``SaveFixedSchedule`` request to the shared schedule service.

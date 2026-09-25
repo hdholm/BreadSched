@@ -26,7 +26,6 @@ from ..gen.engine import (
     ledger,
     loans,
     planning,
-    projection,
     reconciliation,
     schedule,
     valuation,
@@ -131,7 +130,11 @@ from .dashboard_resource import dashboard_report
 from .expense_resource import expense_report
 from .plan_detail_resource import plan_detail_report
 from .plan_resource import plan_report
-from .projection_resource import projection_month_report
+from .projection_resource import (
+    projection_comparison_report,
+    projection_month_report,
+    projection_report,
+)
 from .resources import ResourceError
 from .scenario_resource import scenario_payload, scenarios_report
 from .schedule_write_resource import save_fixed_schedule_request, save_scenario_schedule_request
@@ -2209,46 +2212,6 @@ class Api:
             scenario.assumptions = updated
         return scenario
 
-    def _projection_payload(self, scenario: Scenario, *, base: bool = False, result=None) -> dict:
-        if result is None:
-            result = projection.project(self.db, scenario)
-        assumptions = scenario.effective_assumptions()
-        return {
-            "scenario": {
-                "handle": None if base else scenario.handle,
-                "name": scenario.name,
-                "parent_handle": None if base else scenario.parent_handle,
-                "years": scenario.years,
-                "assumptions": assumptions.serialize(),
-                "assumption_sources": scenario.assumption_sources(scenario.start),
-                "account_assumption_sources": scenario.account_assumption_sources(scenario.start),
-                "assumption_overrides": sorted(scenario.assumption_overrides),
-            },
-            "controls": {
-                "scenarios": [
-                    {"handle": None, "name": "Base scenario"},
-                    *[
-                        {"handle": item.handle, "name": item.name}
-                        for item in self.db.iter_scenarios()
-                    ],
-                ],
-            },
-            "summary": result.summary(),
-            "warnings": list(result.warnings),
-            "rows": [
-                {
-                    "label": row.label,
-                    "income": row.income,
-                    "expense": row.expense,
-                    "cash": row.cash_close,
-                    "holdings": row.holdings,
-                    "liabilities": row.liabilities,
-                    "net_worth": row.net_worth,
-                }
-                for row in result.rows
-            ],
-        }
-
     def projection_explain(self, payload: dict) -> dict:
         """Explain one month of the currently applied projection draft."""
         scenario = self._projection_draft(payload.get("handle"))
@@ -2257,8 +2220,8 @@ class Api:
 
     def projection(self, scenario_handle: str | None = None, years: int | None = None) -> dict:
         """Calculate a persisted Base/saved scenario without mutating it."""
-        return self._projection_payload(
-            self._projection_draft(scenario_handle, years), base=scenario_handle is None
+        return projection_report(
+            self.db, self._projection_draft(scenario_handle, years), base=scenario_handle is None
         )
 
     def projection_calculate(self, payload: dict) -> dict:
@@ -2266,7 +2229,7 @@ class Api:
         handle = str(payload.get("handle") or "").strip() or None
         scenario = self._projection_draft(handle)
         self._apply_projection_payload(scenario, payload)
-        return self._projection_payload(scenario, base=handle is None)
+        return projection_report(self.db, scenario, base=handle is None)
 
     def projection_compare(self, payload: dict) -> dict:
         """Compare an edited projection draft with another persisted scenario."""
@@ -2280,54 +2243,13 @@ class Api:
         comparison = self._projection_draft(compare_handle)
         comparison.years = primary.years
 
-        primary_result = projection.project(self.db, primary)
-        comparison_result = projection.project(self.db, comparison)
-        if len(primary_result.rows) != len(comparison_result.rows):
-            raise ValueError("projection comparison horizons do not align")
-
-        def difference(left, right):
-            return left - right
-
-        primary_summary = primary_result.summary()
-        comparison_summary = comparison_result.summary()
-        return {
-            "primary": self._projection_payload(
-                primary, base=handle is None, result=primary_result
-            ),
-            "comparison": {
-                "scenario": {
-                    "handle": None if compare_handle is None else comparison.handle,
-                    "name": comparison.name,
-                    "assumptions": comparison.effective_assumptions().serialize(),
-                    "assumption_sources": comparison.assumption_sources(comparison.start),
-                },
-                "summary": comparison_summary,
-                "summary_delta": {
-                    "ending_net_worth": difference(
-                        primary_summary["ending_net_worth"],
-                        comparison_summary["ending_net_worth"],
-                    ),
-                    "ending_cash": difference(
-                        primary_summary["ending_cash"],
-                        comparison_summary["ending_cash"],
-                    ),
-                    "minimum_cash": difference(
-                        primary_summary["minimum_cash"],
-                        comparison_summary["minimum_cash"],
-                    ),
-                },
-                "rows": [
-                    {
-                        "label": left.label,
-                        "cash": right.cash_close,
-                        "net_worth": right.net_worth,
-                        "cash_delta": difference(left.cash_close, right.cash_close),
-                        "net_worth_delta": difference(left.net_worth, right.net_worth),
-                    }
-                    for left, right in zip(primary_result.rows, comparison_result.rows, strict=True)
-                ],
-            },
-        }
+        return projection_comparison_report(
+            self.db,
+            primary,
+            comparison,
+            primary_base=handle is None,
+            comparison_base=compare_handle is None,
+        )
 
     def projection_save(self, payload: dict) -> dict:
         """Persist projection controls explicitly, preserving hidden model fields."""
@@ -2338,13 +2260,13 @@ class Api:
             base_result = save_base_assumptions(self.db, SaveBaseAssumptions(scenario.assumptions))
             if not base_result.ok:
                 raise self._service_resource_error(base_result.errors[0])
-            return self._projection_payload(scenario, base=True)
+            return projection_report(self.db, scenario, base=True)
         result = save_scenario_assumptions(
             self.db, SaveScenarioAssumptions(scenario, existing_handle=handle)
         )
         if not result.ok:
             raise self._service_resource_error(result.errors[0])
-        return self._projection_payload(scenario)
+        return projection_report(self.db, scenario)
 
     # ---------------------------------------------------------------- writing
 
