@@ -380,6 +380,9 @@ sources after changing a parent to see which values a child still inherits.
 Projection advances account state between dated actual, scheduled, estimated, and
 one-off events. Months and years are reports of those transitions, not the engine's
 clock. GTK runs longer projections in the background and allows cancellation.
+In web Projection, open a month to inspect its cash movement, holdings and
+liabilities, dated events, and assumption sources. A calculation from edited draft
+controls remains temporary until you explicitly save those controls.
 
 Schedule and scenario events have a growth policy:
 

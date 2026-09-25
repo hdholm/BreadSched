@@ -33,11 +33,10 @@ work above touches them; do not optimize for line count alone.
 ## Architecture and correctness
 
 - Split oversized modules/functions as part of the service/resource ownership
-  work, especially the remaining seams in `web/server.py`. The read-only Expense
-  Explorer response has its own resource adapter; continue with Plan detail and
-  other workflows when responsibility boundaries are clear.
-  Plan detail, Plan, Dashboard, and scenario-management listing responses now have
-  dedicated read-only resource adapters.
+  work, especially the remaining seams in `web/server.py`. Expense Explorer,
+  Plan detail, Plan, Dashboard, scenario-management listing, and Projection month
+  explanations have dedicated read-only resource adapters. Continue consolidating
+  projection summary and comparison response ownership.
   Fixed baseline and scenario schedule writes now have a typed-request web adapter;
   continue consolidating shared web control parsers where that improves ownership.
   Continue with other workflows when responsibility boundaries

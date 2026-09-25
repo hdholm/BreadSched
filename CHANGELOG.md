@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Projection month explanation web boundary.** Move the read-only monthly
+  projection detail calculation and response projection to a dedicated resource.
+  Preserve cash, holdings, liabilities, event, and assumption-source evidence and
+  leave browser draft controls unsaved. Advance application version to `0.2.0a98`;
+  native schema version 7 is unchanged.
+
 - **Scenario management web response boundary.** Move the Base/saved scenario
   listing and shared scenario response projection to a read-only web adapter.
   Preserve inheritance/source explanations, account-rate choices, and the existing

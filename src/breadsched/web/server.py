@@ -131,6 +131,7 @@ from .dashboard_resource import dashboard_report
 from .expense_resource import expense_report
 from .plan_detail_resource import plan_detail_report
 from .plan_resource import plan_report
+from .projection_resource import projection_month_report
 from .resources import ResourceError
 from .scenario_resource import scenario_payload, scenarios_report
 from .schedule_write_resource import save_fixed_schedule_request, save_scenario_schedule_request
@@ -2251,61 +2252,8 @@ class Api:
     def projection_explain(self, payload: dict) -> dict:
         """Explain one month of the currently applied projection draft."""
         scenario = self._projection_draft(payload.get("handle"))
-        scenario = self._apply_projection_payload(scenario, payload)
-        result = projection.project(self.db, scenario)
-        detail = projection.explain_month(self.db, result, int(payload["month_index"]))
-
-        def account_row(item: projection.ProjectionAccountDetail) -> dict:
-            return {
-                "handle": item.handle,
-                "name": item.name,
-                "opening": item.opening,
-                "movement": item.movement,
-                "accrual": item.accrual,
-                "closing": item.closing,
-                "annual_rate": item.annual_rate,
-                "annual_rate_source": item.annual_rate_source,
-                "activities": dict(item.activities),
-            }
-
-        return {
-            "index": detail.index,
-            "month": detail.month,
-            "label": detail.label,
-            "cash": {
-                "opening": detail.cash_open,
-                "flow": detail.cash_flow,
-                "interest": detail.cash_interest,
-                "closing": detail.cash_close,
-            },
-            "income": detail.income,
-            "expense": detail.expense,
-            "holdings": {
-                "opening": detail.holdings_open,
-                "movement": detail.holding_movements,
-                "contributions": detail.holding_contributions,
-                "withdrawals": detail.holding_withdrawals,
-                "retirement_distributions": detail.retirement_distributions,
-                "investment_income": detail.investment_income,
-                "fees": detail.investment_fees,
-                "rollovers": detail.holding_rollovers,
-                "growth": detail.investment_growth,
-                "closing": detail.holdings_close,
-                "accounts": [account_row(item) for item in detail.holdings],
-            },
-            "liabilities": {
-                "opening": detail.liabilities_open,
-                "movement": detail.liability_movements,
-                "interest": detail.liability_interest,
-                "closing": detail.liabilities_close,
-                "accounts": [account_row(item) for item in detail.liabilities],
-            },
-            "net_worth": detail.net_worth,
-            "assumptions": detail.assumptions.serialize(),
-            "assumption_sources": detail.assumption_sources,
-            "events": [event.as_dict() for event in detail.events],
-            "escrow_explanations": list(detail.escrow_explanations),
-        }
+        self._apply_projection_payload(scenario, payload)
+        return projection_month_report(self.db, scenario, int(payload["month_index"]))
 
     def projection(self, scenario_handle: str | None = None, years: int | None = None) -> dict:
         """Calculate a persisted Base/saved scenario without mutating it."""

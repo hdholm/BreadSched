@@ -62,6 +62,9 @@ the current view without changing saved Dashboard settings.
 The web Scenarios list displays Base and saved scenarios with effective assumptions,
 their inheritance sources, and accounts eligible for account-specific rates. Saving
 a scenario still uses the shared scenario service.
+Web Projection month details use the shared projection calculation and show opening
+and closing cash, account movements, dated events, and effective assumption sources.
+Inspecting a draft month does not save edited projection controls.
 
 ## Install and run for development
 
