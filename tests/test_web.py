@@ -291,6 +291,61 @@ class TestItServes:
         assert "Checking" in by_name
         assert Money(by_name["Checking"]["balance"]) == Money("2400.00")
 
+    def test_accounts_disclose_direct_foreign_currency_quote_and_missing_fallback(self, client):
+        assets = client.database.get_account_by_name("Assets")
+        usd = client.database.get_commodity_by_mnemonic("USD")
+        assert assets is not None and usd is not None
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        account = Account(
+            name="Foreign cash",
+            atype=AccountType.BANK,
+            parent=assets.handle,
+            commodity=euro.handle,
+        )
+        clearing = Account(
+            name="Foreign clearing",
+            atype=AccountType.BANK,
+            parent=assets.handle,
+            commodity=euro.handle,
+        )
+        transaction = Transaction(post_date=date(2026, 1, 2), description="Foreign transfer")
+        transaction.currency = euro.handle
+        transaction.splits = [
+            Split(account.handle, Money(10)),
+            Split(clearing.handle, Money(-10)),
+        ]
+        with client.database.transaction("Foreign cash") as txn:
+            client.database.add_commodity(euro, txn)
+            client.database.add_account(account, txn)
+            client.database.add_account(clearing, txn)
+            client.database.add_transaction(transaction, txn)
+
+        _status, rows = client.get("/api/accounts")
+        missing = next(row for row in rows if row["handle"] == account.handle)
+        parent = next(row for row in rows if row["handle"] == assets.handle)
+        assert missing["missing_quote"] is True
+        assert missing["currency"] == "EUR"
+        assert parent["balance"] is None
+
+        with client.database.transaction("Direct exchange quote") as txn:
+            client.database.add_price(
+                CommodityPrice(
+                    commodity=euro.handle,
+                    currency=usd.handle,
+                    quote_date=date(2026, 2, 1),
+                    value=Money(2),
+                    source="imported-book",
+                ),
+                txn,
+            )
+        _status, rows = client.get("/api/accounts")
+        converted = next(row for row in rows if row["handle"] == account.handle)
+        assert converted["valuation_source"] == "currency"
+        assert converted["price_date"] == "2026-02-01"
+        assert converted["price_source"] == "imported-book"
+        assert converted["missing_quote"] is False
+        assert Money(converted["balance"]) == Money(20)
+
     def test_accounts_disclose_missing_and_imported_security_quote(self, client):
         assets = client.database.get_account_by_name("Assets")
         checking = client.database.get_account_by_name("Assets:Checking")

@@ -31,6 +31,11 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
 
+Foreign-currency account balances use available direct dated exchange quotes;
+account views identify the quote date and source or disclose a missing quote with
+the original ledger currency. A parent rollup with incompatible currencies reads
+"Mixed currencies". Cross-report currency totals remain under development.
+
 Documented alpha releases are published from a tested main commit with wheel,
 source archive, and `SHA256SUMS` assets. GitHub marks alpha versions as
 pre-releases; check the versioned release notes and verify downloaded assets
@@ -64,10 +69,9 @@ quote is missing, they label the ledger-value fallback; see the
 The web Dashboard uses the shared Dashboard calculation for its summary, groups,
 bills, and income. Query-specific liquidity and emergency-fund horizons apply to
 the current view without changing saved Dashboard settings.
-The valuation layer now has an exact as-of direct currency-quote result with
-provenance and explicit missing-quote status. Current reports still retain their
-existing mixed-currency behavior until converted presentation and total rules are
-proved across the interfaces.
+The valuation layer uses exact as-of direct currency quotes for ordinary foreign
+account balances, with provenance and explicit missing-quote status. Cross-report
+missing-price presentation and conversion-path rules remain under development.
 The web Scenarios list displays Base and saved scenarios with effective assumptions,
 their inheritance sources, and accounts eligible for account-specific rates. Saving
 a scenario still uses the shared scenario service.

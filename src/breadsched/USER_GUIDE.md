@@ -10,6 +10,13 @@ you are running.
 BreadSched is under active development. Keep independent backups of any financial
 book and review imported or inferred data before relying on it.
 
+In Accounts, a foreign-currency ledger balance can be shown in the reporting
+currency when a direct dated quote exists. The quote evidence column shows its
+date and source; a missing quote keeps the original ledger amount and names its
+currency. Do not interpret a missing-quote fallback as a converted balance.
+If a parent account includes balances in incompatible currencies, its rollup
+reads **Mixed currencies** until a conversion path is available.
+
 When downloading a packaged alpha, choose the GitHub release marked
 **Pre-release**, read its versioned notes, and compare the downloaded wheel or
 source archive against the release's `SHA256SUMS` before installing it.
@@ -184,7 +191,8 @@ projection settings, and household relationships remain editable.
 The Accounts views show the date and source of a selected security quote. If no
 reporting-currency quote is available, they say so and retain the security holding's
 ledger value. An older quote remains visible by its date; BreadSched does not yet
-apply a stale-price cutoff or automatically convert foreign-currency holdings.
+apply a stale-price cutoff or automatically convert foreign-currency securities.
+Ordinary foreign-currency ledger accounts use available direct dated quotes.
 Review the quote date and source before treating a market-valued total as current.
 Currency totals in the current views still require a compatible reporting-currency
 value; an inverse or intermediate currency quote does not silently supply one.

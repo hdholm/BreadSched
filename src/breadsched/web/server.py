@@ -286,7 +286,18 @@ class Api:
         def walk(parent: str | None, depth: int) -> None:
             for account in self.db.child_accounts(parent):
                 valued = valuation.account_value(self.db, account)
-                recursive = valuation.value_recursive(self.db, account)
+                try:
+                    recursive = valuation.value_recursive(self.db, account)
+                except TypeError as exc:
+                    if "cannot combine unlike commodities" not in str(exc):
+                        raise
+                    recursive = None
+                try:
+                    book_balance = ledger.balance_recursive(self.db, account.handle)
+                except TypeError as exc:
+                    if "cannot combine unlike commodities" not in str(exc):
+                        raise
+                    book_balance = None
                 rows.append(
                     {
                         "handle": account.handle,
@@ -330,7 +341,7 @@ class Api:
                         ],
                         "depth": depth,
                         "balance": recursive,
-                        "book_balance": ledger.balance_recursive(self.db, account.handle),
+                        "book_balance": book_balance,
                         "own_balance": ledger.balance(self.db, account.handle),
                         "valuation_source": valued.source,
                         "quantity": valued.quantity,

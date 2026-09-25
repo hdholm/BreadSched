@@ -1041,6 +1041,14 @@ Required source dates are never synthesized. Missing or malformed posting/start 
 
 ## Money and exact arithmetic
 
+Ordinary foreign-currency account valuation uses the latest direct quote on or
+before the as-of date, retaining the exact converted amount until presentation.
+Its result carries quote date and source; without a direct quote the result keeps
+the original tagged ledger amount and exposes the missing quote. Aggregate reports
+must still reject incompatible tagged amounts until a complete missing-price and
+conversion-path policy is specified. Accounts views render a mixed-currency parent
+rollup as unavailable, rather than replacing it with a scalar zero.
+
 Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. GTK and web user entry therefore pass through the shared amount-input boundary: unambiguous decimal conventions are detected from the text, GTK uses the process numeric locale only as an ambiguity tie-breaker, and the web client sends its browser decimal convention explicitly. User-entered amounts remain text until exact server-side parsing; JavaScript floating-point conversion is not part of financial input. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality. ``Money * Money`` is deliberately rejected. ``Money / Money`` produces an exact ``Fraction`` ratio, while projection assumptions use ``Rate`` so percentages cannot masquerade as ledger amounts.
 
 ## Platform user paths

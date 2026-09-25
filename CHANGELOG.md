@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Direct foreign-currency account valuation.** Convert an ordinary account's
+  foreign transaction-currency balance using a dated direct quote, keeping the
+  amount exact and showing quote date/source in account views. With no quote,
+  retain the tagged ledger amount and disclose its original currency instead of
+  claiming a conversion. Accounts views mark mixed-currency parent rollups as
+  unavailable. Report-wide missing-price and path policy remains open.
+  Advance application version to `0.2.0a101`; native schema stays 7.
+
 - **Alpha release metadata.** Mark PEP 440 alpha versions as GitHub pre-releases
   when publishing tested, documented main commits; a future stable version is
   published without that flag. Application version and native schema are unchanged.

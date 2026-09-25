@@ -879,12 +879,13 @@ async function showAccounts() {
       ? `${money(account.price)} ${account.currency}` : "—"),
     el("td", { class:"muted" }, account.price_date || "—"),
     el("td", { class:"muted" }, account.missing_quote
-      ? "No reporting-currency quote; ledger value"
-      : account.valuation_source === "market"
+      ? `No reporting-currency quote; ledger value${account.currency ? ` (${account.currency})` : ""}`
+      : ["market", "currency"].includes(account.valuation_source)
         ? (account.price_source || "Unknown source") : "—"),
     el("td", {}, el("button", {class:"action", type:"button",
       onclick:()=>openAccountDetails(account)}, "Details…")),
-    el("td", { class: cls(account.balance) }, money(account.balance))));
+    el("td", { class: cls(account.balance) },
+      account.balance === null ? "Mixed currencies" : money(account.balance))));
 
   return el("div", {}, cards,
     el("div", { class:"toolbar" },
