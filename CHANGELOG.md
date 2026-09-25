@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Scenario management web response boundary.** Move the Base/saved scenario
+  listing and shared scenario response projection to a read-only web adapter.
+  Preserve inheritance/source explanations, account-rate choices, and the existing
+  service-backed writes. Advance application version to `0.2.0a97`; native schema
+  version 7 is unchanged.
+
 - **Dashboard web response boundary.** Move the read-only Dashboard response
   projection from the main web API class to a resource adapter. Temporary query
   horizons still leave saved Dashboard settings unchanged. Advance application

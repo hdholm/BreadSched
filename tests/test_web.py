@@ -40,6 +40,7 @@ from breadsched.gen.lib import (
 )
 from breadsched.web.dashboard_resource import dashboard_report
 from breadsched.web.resources import GET_ROUTES, QueryParams
+from breadsched.web.scenario_resource import scenarios_report
 from breadsched.web.server import serve
 
 
@@ -2515,6 +2516,24 @@ class TestScenarioManagementApi:
         }
         values.update(changes)
         return values
+
+    def test_list_resource_preserves_inheritance_and_account_order(self, client):
+        client.post(
+            "/api/scenario/save",
+            {"handle": None, "assumptions": self.assumptions(income_growth="0.041")},
+        )
+        client.post("/api/scenario/duplicate", {"handle": None})
+
+        _status, listing = client.get("/api/scenarios")
+        from breadsched.web.server import Api
+
+        expected = scenarios_report(
+            client.database, Api(client.database)._management_base_scenario()
+        )
+        assert listing == json.loads(json.dumps(expected, default=str))
+        assert listing["scenarios"][1]["assumption_sources"]["income_growth"] == "Base"
+        names = [item["name"].casefold() for item in listing["projection_accounts"]]
+        assert names == sorted(names)
 
     def test_base_assumptions_can_be_saved_and_reloaded(self, client):
         status, payload = client.post(
