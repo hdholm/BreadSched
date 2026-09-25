@@ -265,6 +265,10 @@ liability.
 
 ## Dashboard and near-term cash
 
+In the web Dashboard, a requested liquidity or emergency-fund horizon changes
+the displayed calculation for that request. Reopening the view uses the saved
+Dashboard settings; use the Dashboard settings controls to save a new horizon.
+
 Dashboard keeps expected income and committed bills separate. **Hold now** is the
 portion of current cash reserved for a bill. It accrues on actual income dates in
 proportion to the income received during that bill cycle. If there is no identified

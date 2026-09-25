@@ -5,6 +5,11 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Dashboard web response boundary.** Move the read-only Dashboard response
+  projection from the main web API class to a resource adapter. Temporary query
+  horizons still leave saved Dashboard settings unchanged. Advance application
+  version to `0.2.0a96`; native schema version 7 is unchanged.
+
 - **Security quote evidence in account views.** Carry the selected quote's source
   through valuation and show its date and source in GTK and web accounts. Mark a
   missing reporting-currency security quote explicitly as a ledger-value fallback.

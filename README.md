@@ -56,6 +56,9 @@ scenario's baseline schedules; a rejected request leaves saved overrides unchang
 Account views disclose a security quote's date and source. When a reporting-currency
 quote is missing, they label the ledger-value fallback; see the
 [User Guide](src/breadsched/USER_GUIDE.md#security-prices-and-current-value).
+The web Dashboard uses the shared Dashboard calculation for its summary, groups,
+bills, and income. Query-specific liquidity and emergency-fund horizons apply to
+the current view without changing saved Dashboard settings.
 
 ## Install and run for development
 

@@ -36,7 +36,8 @@ work above touches them; do not optimize for line count alone.
   work, especially the remaining seams in `web/server.py`. The read-only Expense
   Explorer response has its own resource adapter; continue with Plan detail and
   other workflows when responsibility boundaries are clear.
-  Plan detail and the Plan response now have dedicated read-only resource adapters.
+  Plan detail, Plan, and Dashboard responses now have dedicated read-only resource
+  adapters.
   Fixed baseline and scenario schedule writes now have a typed-request web adapter;
   continue consolidating shared web control parsers where that improves ownership.
   Continue with other workflows when responsibility boundaries

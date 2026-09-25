@@ -121,6 +121,10 @@ The adapter requests typed Plan results from the shared service and serializes
 controls, cash bridge, category, mortgage, planning-flow, and comparison views;
 ``Api.plan`` delegates without recalculating those values. Plan settings persistence
 remains presentation metadata rather than a financial mutation.
+Dashboard's read-only response is projected by ``web.dashboard_resource`` from the
+shared dashboard engine. The resource formats summary, group, bill, and income
+values and applies temporary query horizons to an in-memory configuration; saving
+group paths and persistent horizons remains the separate metadata write endpoint.
 Fixed baseline schedule web requests are assembled by ``web.schedule_write_resource``.
 It uses the existing web control parsers and the schedule editability projection,
 then submits a typed ``SaveFixedSchedule`` request to the shared schedule service.
