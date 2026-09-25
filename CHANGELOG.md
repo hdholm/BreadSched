@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Fixed-schedule web write adapter.** Move fixed baseline schedule request
+  construction and result translation from the main API class to a presentation
+  adapter. Keep editability checks, typed service ownership, error messages, and
+  persistence behavior unchanged. Advance application version to `0.2.0a93`;
+  native schema version 7 is unchanged.
+
 - **Plan web report boundary.** Move typed Plan query translation and response
   projection, including scenario comparison and all reported sections, into a
   read-only resource adapter. Preserve the existing route, response, and service

@@ -270,7 +270,6 @@ class TestServiceBoundaries:
                 {"save_fixed_scenario_schedule", "save_formula_scenario_schedule"},
             ),
             ("web/server.py", "Api", "scenario_event_save", {"save_fixed_scenario_schedule"}),
-            ("web/server.py", "Api", "scheduled_save", {"save_fixed_schedule"}),
             ("web/server.py", "Api", "scheduled_formula_save", {"save_formula_schedule"}),
         ),
     )
@@ -279,6 +278,16 @@ class TestServiceBoundaries:
     ):
         calls = calls_in_method(SRC / relative, class_name, method_name)
         assert expected <= calls
+
+    def test_web_fixed_schedule_write_delegates_to_service_backed_resource(self):
+        api_calls = calls_in_method(SRC / "web/server.py", "Api", "scheduled_save")
+        resource_calls = calls_in_function(
+            SRC / "web/schedule_write_resource.py", "save_fixed_schedule_request"
+        )
+
+        assert "save_fixed_schedule_request" in api_calls
+        assert "save_fixed_schedule" not in api_calls
+        assert "save_fixed_schedule" in resource_calls
 
     def test_gui_plan_consumes_the_typed_query_service(self):
         calls = calls_in_method(SRC / "gui/views/plan.py", "PlanView", "refresh")

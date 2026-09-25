@@ -816,6 +816,29 @@ class TestItServes:
         benefit = next(row for row in plan["planning_flows"] if row["kind"] == "benefit_funding")
         assert Money(benefit["planned"][1]) == Money("-110.00")
 
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scheduled/save",
+                {
+                    "handle": handle,
+                    "name": "Changed name",
+                    "category": category["handle"],
+                    "funding": funding["handle"],
+                    "amount": "110.00",
+                    "frequency": "monthly",
+                    "start": "2026-02-15",
+                    "split_amount_changes": [
+                        {"account": category["handle"], "start": "2026-06-15", "amount": "130"},
+                        {"account": category["handle"], "start": "2026-06-15", "amount": "135"},
+                    ],
+                },
+            )
+        assert caught.value.code == 400
+        unchanged = client.database.get_scheduled(handle)
+        assert unchanged is not None
+        assert unchanged.name == "Internet service"
+        assert unchanged.serialize() == restored.serialize()
+
     def test_an_actual_can_seed_a_reviewable_unsaved_schedule(self, client):
         _status, accounts = client.get("/api/accounts")
         checking = next(account for account in accounts if account["name"] == "Checking")

@@ -121,6 +121,11 @@ The adapter requests typed Plan results from the shared service and serializes
 controls, cash bridge, category, mortgage, planning-flow, and comparison views;
 ``Api.plan`` delegates without recalculating those values. Plan settings persistence
 remains presentation metadata rather than a financial mutation.
+Fixed baseline schedule web requests are assembled by ``web.schedule_write_resource``.
+It uses the existing web control parsers and the schedule editability projection,
+then submits a typed ``SaveFixedSchedule`` request to the shared schedule service.
+That service retains financial validation and full transaction ownership; ``Api``
+only delegates and the adapter translates the result into the existing response.
 
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
 not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,

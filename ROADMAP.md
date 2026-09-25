@@ -37,7 +37,10 @@ work above touches them; do not optimize for line count alone.
   Explorer response has its own resource adapter; continue with Plan detail and
   other workflows when responsibility boundaries are clear.
   Plan detail and the Plan response now have dedicated read-only resource adapters.
-  Continue with other workflows when responsibility boundaries are clear. Split large GUI test modules
+  Fixed baseline schedule writes now have a typed-request web adapter; continue
+  consolidating shared web control parsers and scenario schedule writes where that
+  improves ownership. Continue with other workflows when responsibility boundaries
+  are clear. Split large GUI test modules
   only when the resulting fixture ownership and runtime isolation improve; do not
   optimize for a line-count threshold alone.
 

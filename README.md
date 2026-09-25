@@ -49,6 +49,8 @@ response uses the same activity engine as the other Plan views; see the
 The web Plan view uses the same shared Plan service for saved controls and scenario
 comparisons as the GTK view; selecting a comparison displays per-section differences
 without changing either scenario.
+Baseline scheduled transactions created or edited in the web interface use the
+shared schedule service; a rejected edit leaves the stored schedule unchanged.
 
 ## Install and run for development
 
