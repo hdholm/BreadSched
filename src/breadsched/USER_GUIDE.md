@@ -216,6 +216,13 @@ until it balances and is finished again. Reopen later completed statements first
 
 ## Scheduled activity
 
+In the web Scheduled view, enter a name, category, funding account, amount, and
+recurrence to create a fixed schedule. Editing one can also set future amounts,
+one-time exceptions, additional splits, and optional planning classifications.
+Review the result before relying on a projection. If the edit is rejected, the
+existing schedule is retained; complex imported definitions remain protected when
+the simple editor cannot preserve their structure.
+
 Scheduled transactions support recurrence bounds, weekend adjustment, skipped
 occurrences, one-time overrides, future-effective amount changes, multiple splits,
 and bounded formulas.

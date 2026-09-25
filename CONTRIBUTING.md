@@ -45,6 +45,9 @@ messages or pull requests.
 - Keep web route parsing in `web.resources` and read-only response adapters outside
   the main `Api` class. A boundary extraction should preserve the full response,
   saved controls, scenario comparison, and error contract in route-level tests.
+- For web financial writes, presentation adapters may assemble typed service inputs,
+  but the shared service must own financial validation and the entire transaction.
+  Cover a rejected request with a before/after persistence assertion.
 - Preserve exact monetary arithmetic and double-entry invariants. Do not
   introduce binary floating-point calculations for money.
 - Preserve imported or otherwise unsupported data losslessly. If an editor

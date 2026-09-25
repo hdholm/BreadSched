@@ -34,6 +34,9 @@ committing, or submitting work in this repository.
 9. When extracting a read-only web response from `Api`, keep typed query parsing
    in `web.resources`, financial calculations in shared services/engines, and
    preserve the complete response and error contract with route-level tests.
+10. For web financial writes, keep request parsing and response translation in a
+    presentation adapter, and leave validation and the complete database write in
+    the shared service. Test that rejected inputs preserve the stored object.
 
 More-specific `AGENTS.md` files may add instructions for their own subtrees. When
 present, follow both sets; the more-specific file governs only its directory scope.
