@@ -263,7 +263,7 @@ class AccountTreeView(BaseView):
             )
             value.add_css_class("summary-value")
             value.add_css_class("numeric")
-            if amount < 0:
+            if amount is not None and amount < 0:
                 value.add_css_class("negative")
             box.append(caption)
             box.append(value)
