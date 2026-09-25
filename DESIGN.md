@@ -129,6 +129,10 @@ The read-only scenario-management listing and shared scenario response shape liv
 ``web.scenario_resource``. It displays effective assumptions, inheritance sources,
 dated periods, and accounts eligible for account-specific projection rates. Scenario
 saves still pass through the existing typed service and retain its write ownership.
+Projection month explanations use ``web.projection_resource`` to calculate a
+detached scenario draft with the shared projection engine and serialize its cash,
+holdings, liabilities, events, and assumption-source evidence. The API still parses
+draft controls; requesting detail does not save the draft.
 Fixed baseline schedule web requests are assembled by ``web.schedule_write_resource``.
 It uses the existing web control parsers and the schedule editability projection,
 then submits a typed ``SaveFixedSchedule`` request to the shared schedule service.

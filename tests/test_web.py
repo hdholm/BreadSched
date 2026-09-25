@@ -39,6 +39,7 @@ from breadsched.gen.lib import (
     Transaction,
 )
 from breadsched.web.dashboard_resource import dashboard_report
+from breadsched.web.projection_resource import projection_month_report
 from breadsched.web.resources import GET_ROUTES, QueryParams
 from breadsched.web.scenario_resource import scenarios_report
 from breadsched.web.server import serve
@@ -1291,6 +1292,23 @@ class TestItServes:
         assert "accounts" in payload["liabilities"]
         assert payload["assumptions"]["investment_return"] == "0.06"
         assert payload["escrow_explanations"] == []
+
+    def test_month_explanation_resource_matches_route_and_leaves_book_unchanged(self, client):
+        from breadsched.web.server import Api
+
+        api = Api(client.database)
+        scenario = api._projection_draft(years=2)
+        before = scenario.effective_assumptions().serialize()
+        expected = projection_month_report(client.database, scenario, 5)
+        status, actual = client.post(
+            "/api/projection/explain",
+            {"handle": None, "years": 2, "month_index": 5},
+        )
+        assert status == 200
+        assert actual == json.loads(json.dumps(expected, default=str))
+        assert actual["index"] == 5
+        assert actual["cash"]["closing"] is not None
+        assert api._projection_draft(years=2).effective_assumptions().serialize() == before
 
     def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
