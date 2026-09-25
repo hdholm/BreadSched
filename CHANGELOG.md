@@ -5,6 +5,10 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Alpha release metadata.** Mark PEP 440 alpha versions as GitHub pre-releases
+  when publishing tested, documented main commits; a future stable version is
+  published without that flag. Application version and native schema are unchanged.
+
 - **Exact direct currency conversion contract.** Add an internal as-of conversion
   result for known currencies with quote date/source/type, exact unrounded amount,
   and explicit missing-direct-quote state. Reject non-currency units and do not
