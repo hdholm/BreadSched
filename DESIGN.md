@@ -236,6 +236,12 @@ to net and therefore adopts the first material amount's commodity.
 
 ### Security quantities and dated valuation
 
+The account valuation result carries the selected quote date and source for market
+values and explicitly marks a security whose reporting-currency quote is missing.
+Accounts views in GTK and web show that evidence or the ledger-value fallback.
+This does not establish a stale-price threshold or convert foreign-currency ledger
+amounts; quote selection still uses the latest applicable reporting-currency price.
+
 A split has two exact rational dimensions: ``value`` is expressed in the
 transaction currency and balances the double-entry transaction, while ``quantity``
 is expressed in the account commodity. These must not be collapsed. Historical

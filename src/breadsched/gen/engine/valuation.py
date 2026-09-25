@@ -35,6 +35,8 @@ class AccountValuation:
     quantity: Money | None = None
     price: Money | None = None
     price_date: date | None = None
+    price_source: str | None = None
+    missing_quote: bool = False
     commodity: Commodity | None = None
     currency: Commodity | None = None
     total_amount: Amount | None = None
@@ -94,7 +96,9 @@ def account_value(
         return AccountValuation(ledger_total, total_amount=ledger_amount)
     price = latest_price(db, commodity, as_of=as_of)
     if price is None:
-        return AccountValuation(ledger_total, commodity=commodity, total_amount=ledger_amount)
+        return AccountValuation(
+            ledger_total, commodity=commodity, total_amount=ledger_amount, missing_quote=True
+        )
     quantity = quantity_balance(db, obj, as_of=as_of)
     currency = db.get_commodity(price.currency)
     fraction = commodity_fraction(db, price.currency)
@@ -106,6 +110,7 @@ def account_value(
         quantity=quantity,
         price=price.value,
         price_date=price.quote_date,
+        price_source=price.source,
         commodity=commodity,
         currency=currency,
         total_amount=total_amount,

@@ -177,6 +177,12 @@ projection settings, and household relationships remain editable.
 
 ### Security prices and current value
 
+The Accounts views show the date and source of a selected security quote. If no
+reporting-currency quote is available, they say so and retain the security holding's
+ledger value. An older quote remains visible by its date; BreadSched does not yet
+apply a stale-price cutoff or automatically convert foreign-currency holdings.
+Review the quote date and source before treating a market-valued total as current.
+
 For an Investment or Retirement account, use **Security price…** to define a
 security and record an exact dated price. Assign the account's commodity to that
 security. Accounts, Dashboard, and Projection use the latest applicable direct

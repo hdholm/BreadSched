@@ -52,6 +52,9 @@ messages or pull requests.
   including its override list.
 - Preserve exact monetary arithmetic and double-entry invariants. Do not
   introduce binary floating-point calculations for money.
+- Valuation presentation must disclose the selected quote's date and source, or
+  a missing reporting-currency quote and ledger fallback. A quote disclosure is
+  not a currency-conversion rule; never silently add unlike currencies.
 - Preserve imported or otherwise unsupported data losslessly. If an editor
   cannot safely reproduce a structure, expose it read-only rather than silently
   normalizing or discarding it.

@@ -24,6 +24,8 @@ from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
     Account,
     AccountType,
+    Commodity,
+    CommodityPrice,
     InvestmentActivityKind,
     Money,
     PeriodType,
@@ -281,6 +283,53 @@ class TestItServes:
         by_name = {row["name"]: row for row in payload}
         assert "Checking" in by_name
         assert Money(by_name["Checking"]["balance"]) == Money("2400.00")
+
+    def test_accounts_disclose_missing_and_imported_security_quote(self, client):
+        assets = client.database.get_account_by_name("Assets")
+        checking = client.database.get_account_by_name("Assets:Checking")
+        usd = client.database.get_commodity_by_mnemonic("USD")
+        assert assets is not None and checking is not None and usd is not None
+        security = Commodity(namespace="FUND", mnemonic="FUNDX", fullname="Sample fund")
+        holding = Account(
+            name="Sample holding",
+            atype=AccountType.INVESTMENT,
+            parent=assets.handle,
+            commodity=security.handle,
+        )
+        purchase = Transaction(post_date=date(2026, 2, 1), description="Sample purchase")
+        purchase.currency = usd.handle
+        purchase.splits = [
+            Split(holding.handle, Money("100"), quantity=Money("2")),
+            Split(checking.handle, Money("-100")),
+        ]
+        with client.database.transaction("Sample security holding") as txn:
+            client.database.add_commodity(security, txn)
+            client.database.add_account(holding, txn)
+            client.database.add_transaction(purchase, txn)
+
+        _status, rows = client.get("/api/accounts")
+        missing = next(row for row in rows if row["handle"] == holding.handle)
+        assert missing["missing_quote"] is True
+        assert missing["price_source"] is None
+        assert missing["valuation_source"] == "ledger"
+
+        with client.database.transaction("Imported quote") as txn:
+            client.database.add_price(
+                CommodityPrice(
+                    commodity=security.handle,
+                    currency=usd.handle,
+                    quote_date=date(2026, 3, 1),
+                    value=Money("65"),
+                    source="imported-book",
+                ),
+                txn,
+            )
+        _status, rows = client.get("/api/accounts")
+        valued = next(row for row in rows if row["handle"] == holding.handle)
+        assert valued["missing_quote"] is False
+        assert valued["price_source"] == "imported-book"
+        assert valued["price_date"] == "2026-03-01"
+        assert Money(valued["balance"]) == Money("130")
 
     def test_accounts_api_exposes_exact_imported_provenance(self, client):
         _status, payload = client.get("/api/accounts")

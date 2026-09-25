@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Security quote evidence in account views.** Carry the selected quote's source
+  through valuation and show its date and source in GTK and web accounts. Mark a
+  missing reporting-currency security quote explicitly as a ledger-value fallback.
+  Monetary totals and conversion behavior are unchanged. Advance application
+  version to `0.2.0a95`; native schema version 7 is unchanged.
+
 - **Scenario schedule web write adapter.** Move scenario-only and baseline override
   request construction and result translation into the web schedule adapter.
   Preserve existing error, editability, and atomic service behavior. Advance

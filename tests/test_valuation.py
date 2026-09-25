@@ -53,6 +53,7 @@ def test_latest_as_of_price_marks_units_to_market(db, book):
         currency=usd.handle,
         quote_date=date(2026, 2, 1),
         value=Money("120"),
+        source="imported-book",
     )
     current = CommodityPrice(
         commodity=fund.handle,
@@ -74,6 +75,9 @@ def test_latest_as_of_price_marks_units_to_market(db, book):
     assert after.price == Money("125")
     assert after.price_date == date(2026, 3, 1)
     assert after.source == "market"
+    assert before.price_source == "imported-book"
+    assert not before.missing_quote
+    assert after.price_source == "breadsched"
     assert after.quantity_amount == Amount(Money("10"), fund.handle)
     assert after.total_amount == Amount(Money("1250"), usd.handle)
 
@@ -99,6 +103,8 @@ def test_missing_quote_falls_back_to_the_book_value(db, book):
     assert result.total == Money("1000")
     assert result.source == "ledger"
     assert result.commodity == fund
+    assert result.missing_quote
+    assert result.price_source is None
 
 
 def test_dashboard_uses_market_value_and_explains_the_quote(db, book):

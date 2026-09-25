@@ -878,6 +878,10 @@ async function showAccounts() {
     el("td", { class:"num" }, account.valuation_source === "market"
       ? `${money(account.price)} ${account.currency}` : "—"),
     el("td", { class:"muted" }, account.price_date || "—"),
+    el("td", { class:"muted" }, account.missing_quote
+      ? "No reporting-currency quote; ledger value"
+      : account.valuation_source === "market"
+        ? (account.price_source || "Unknown source") : "—"),
     el("td", {}, el("button", {class:"action", type:"button",
       onclick:()=>openAccountDetails(account)}, "Details…")),
     el("td", { class: cls(account.balance) }, money(account.balance))));
@@ -893,7 +897,7 @@ async function showAccounts() {
       + "when one is available; otherwise they retain their ledger value."),
     table(["Account", "Type", "Emergency", "FSA years", "Card payment",
            { label:"Units", num:true },
-           { label:"Price", num:true }, "As of", "Metadata",
+           { label:"Price", num:true }, "As of", "Quote source", "Metadata",
            { label: "Value", num: true }], rows));
 }
 

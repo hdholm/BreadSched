@@ -88,6 +88,9 @@ work above touches them; do not optimize for line count alone.
   amounts and quote metadata; make reporting currency, quote source/date,
   staleness, missing-price behavior, conversion path, and rounding explainable;
   never combine unlike currencies in net worth silently.
+  Account views now disclose the selected security quote's source/date or an
+  explicit missing reporting-currency quote with ledger fallback. Continue with
+  exchange-rate paths, staleness policy, and cross-report conversion semantics.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.

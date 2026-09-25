@@ -1266,6 +1266,7 @@ class TestColumnBehaviour:
             "Type",
             "Description",
             "Balance",
+            "Quote evidence",
         ]
         for column in columns:
             assert column.get_resizable() is True
