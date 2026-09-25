@@ -3,16 +3,13 @@
 This document records the architectural principles and important design decisions
 that explain how BreadSched works. It describes the current intended design; it is
 **not** a list of future work. All pending work belongs in [`ROADMAP.md`](ROADMAP.md).
-Task-oriented user operation belongs in the packaged
-[`USER_GUIDE.md`](src/breadsched/USER_GUIDE.md), while the README remains the
-product and developer entry point.
 
 ## Product boundary
 
 BreadSched is a household-finance application. Its long-term direction is to cover
 the household ledger, planning, scenario, projection, reconciliation, investment,
-and related workflows needed to replace GnuCash for a household without attempting
-to reproduce GnuCash's business-accounting breadth.
+and related workflows needed for household finance without attempting
+to introduce business-accounting breadth.
 
 Until that household feature set is sufficient, GnuCash compatibility is a core
 architectural constraint rather than a one-time migration feature. Imported data
@@ -88,10 +85,9 @@ The service also enforces the hidden-account retention rule, validates investmen
 classifications, and owns the complete write transaction. An optional FSA claim
 attachment is committed inside that same boundary, so an invalid attachment cannot
 leave an otherwise successful ledger posting behind. CLI posting/edit/delete and
-GTK quick posting/deletion use
-the same boundary as the full GTK editor and web. GTK and web translate stable
-service errors through shared presentation-owned wording; service error codes and
-field paths contain no English API prose.
+GTK quick posting/deletion use the same boundary as the full GTK editor and web.
+GTK and web translate stable service errors through shared presentation-owned
+wording; service error codes and field paths contain no English API prose.
 
 Account lifecycle and settings mutations likewise cross one typed service boundary.
 The service validates identity and parent chains, relationships to commodities,
@@ -862,13 +858,17 @@ They may add, alter, suppress, or override planned schedules. Assumptions may be
 dated and account-specific so future behavior can change without hard-coded
 retirement or lifecycle special cases in the engine.
 
-## GnuCash interoperability
+## Interoperability
 
 GnuCash compatibility is transitional infrastructure toward the standalone
 household-finance goal, but it is also a long-lived import/interchange requirement.
 Source GUIDs should remain stable identifiers where appropriate. Imported account,
 transaction, schedule, formula, commodity, and reconciliation semantics should be
-preserved rather than normalized simply because BreadSched exposes a smaller UI.
+preserved rather than normalized simply because BreadSched exposes a smaller UIi,
+but full parity of all imported data should remain a goal. Additionally, while
+the current import design leans heavily on GnuCash, it remains a goal to have
+robust import of QIF/OFX/HBCI among others. The import/export features should
+be built on a plugin model to allow easy expansion.
 
 Compatibility claims are limited to structures demonstrated by fixture-based
 round-trip evidence. BreadSched does not claim complete GnuCash round-trip
@@ -971,6 +971,22 @@ escrow holding; it preserves the reconciled state and emits a warning when an ev
 creates or worsens the shortfall. Exact imported GnuCash ledger facts remain source
 owned, while the locally selected Escrow account type remains BreadSched owned on
 re-import.
+
+### Ambiguous import formats are user-resolvable
+
+Importers should infer date/number conventions from whole-file evidence where possible,
+not guess independently for each record. When evidence is ambiguous, both reference GTK4
+and parity web workflows expose explicit overrides and pass those choices into the same
+importer implementation. Web import currently operates on a local path visible to the
+BreadSched process; transport convenience must not create a second import semantics layer.
+
+### Import date integrity
+
+Required source dates are never synthesized. Missing or malformed posting/start dates are reported against the source record and skipped rather than silently using the current date. Optional dates remain optional.
+
+## Money and exact arithmetic
+
+Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. GTK and web user entry therefore pass through the shared amount-input boundary: unambiguous decimal conventions are detected from the text, GTK uses the process numeric locale only as an ambiguity tie-breaker, and the web client sends its browser decimal convention explicitly. User-entered amounts remain text until exact server-side parsing; JavaScript floating-point conversion is not part of financial input. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality. ``Money * Money`` is deliberately rejected. ``Money / Money`` produces an exact ``Fraction`` ratio, while projection assumptions use ``Rate`` so percentages cannot masquerade as ledger amounts.
 
 ## Platform user paths
 
@@ -1198,19 +1214,3 @@ presents it in a bounded, scrollable native window. The Markdown file remains th
 only content source: the application performs a deliberately conservative
 presentation transform instead of maintaining a second embedded copy or requiring
 a browser, network access, or a Markdown-rendering runtime dependency.
-
-## Money and exact arithmetic
-
-Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. GTK and web user entry therefore pass through the shared amount-input boundary: unambiguous decimal conventions are detected from the text, GTK uses the process numeric locale only as an ambiguity tie-breaker, and the web client sends its browser decimal convention explicitly. User-entered amounts remain text until exact server-side parsing; JavaScript floating-point conversion is not part of financial input. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality. ``Money * Money`` is deliberately rejected. ``Money / Money`` produces an exact ``Fraction`` ratio, while projection assumptions use ``Rate`` so percentages cannot masquerade as ledger amounts.
-
-### Ambiguous import formats are user-resolvable
-
-Importers should infer date/number conventions from whole-file evidence where possible,
-not guess independently for each record. When evidence is ambiguous, both reference GTK4
-and parity web workflows expose explicit overrides and pass those choices into the same
-importer implementation. Web import currently operates on a local path visible to the
-BreadSched process; transport convenience must not create a second import semantics layer.
-
-## Import date integrity
-
-Required source dates are never synthesized. Missing or malformed posting/start dates are reported against the source record and skipped rather than silently using the current date. Optional dates remain optional.
