@@ -147,6 +147,26 @@ def account_value(
     ledger_amount = ledger.balance_amount(db, obj, as_of=as_of)
     ledger_total = ledger_amount.value
     if obj.atype not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
+        reporting = reporting_currency_handle(db)
+        source_currency = db.get_commodity(ledger_amount.commodity)
+        if ledger_amount.commodity != reporting and source_currency is not None:
+            if source_currency.is_currency:
+                converted = convert_currency(db, ledger_amount, as_of=as_of)
+                if converted.amount is None:
+                    return AccountValuation(
+                        ledger_total,
+                        total_amount=ledger_amount,
+                        missing_quote=True,
+                        currency=source_currency,
+                    )
+                return AccountValuation(
+                    converted.amount.value,
+                    source="currency",
+                    total_amount=converted.amount,
+                    price_date=converted.quote_date,
+                    price_source=converted.quote_source,
+                    currency=db.get_commodity(reporting),
+                )
         return AccountValuation(ledger_total, total_amount=ledger_amount)
     commodity = db.get_commodity(obj.commodity) if obj.commodity else None
     if commodity is None or commodity.is_currency:

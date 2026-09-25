@@ -154,7 +154,12 @@ class AccountTreeView(BaseView):
     def _format_balance(self, account) -> str:
         if self.db is None:
             return ""
-        total = valuation.value_recursive(self.db, account.handle)
+        try:
+            total = valuation.value_recursive(self.db, account.handle)
+        except TypeError as exc:
+            if "cannot combine unlike commodities" not in str(exc):
+                raise
+            return "Mixed currencies"
         return total.format(parens_negative=True)
 
     def _quote_evidence(self, account) -> str:
@@ -162,8 +167,9 @@ class AccountTreeView(BaseView):
             return ""
         valued = valuation.account_value(self.db, account)
         if valued.missing_quote:
-            return "No reporting-currency quote; ledger value"
-        if valued.source == "market" and valued.price_date is not None:
+            unit = f" ({valued.currency.mnemonic})" if valued.currency is not None else ""
+            return f"No reporting-currency quote; ledger value{unit}"
+        if valued.source in {"market", "currency"} and valued.price_date is not None:
             return f"{valued.price_date.isoformat()} · {valued.price_source or 'Unknown source'}"
         return ""
 
@@ -197,9 +203,13 @@ class AccountTreeView(BaseView):
     def _has_value(self, account: Account) -> bool:
         if self.db is None:
             return False
-        return bool(valuation.value_recursive(self.db, account.handle)) or bool(
-            self.db.child_accounts(account.handle)
-        )
+        try:
+            has_value = bool(valuation.value_recursive(self.db, account.handle))
+        except TypeError as exc:
+            if "cannot combine unlike commodities" not in str(exc):
+                raise
+            has_value = True
+        return has_value or bool(self.db.child_accounts(account.handle))
 
     def _create_child_model(self, row: Row):
         """Return a child model, or ``None`` for a leaf so no expander is drawn."""
@@ -223,22 +233,37 @@ class AccountTreeView(BaseView):
 
         if self.db is None:
             return
-        totals = valuation.totals_by_class(self.db)
+        try:
+            totals = valuation.totals_by_class(self.db)
+            net_worth = valuation.net_worth(self.db)
+        except TypeError as exc:
+            if "cannot combine unlike commodities" not in str(exc):
+                raise
+            totals = {}
+            net_worth = None
         cards = [
             ("Cash on hand", ledger.cash_on_hand(self.db)),
-            ("Assets", totals.get(AccountClass.ASSET, Money(0))),
-            ("Liabilities", totals.get(AccountClass.LIABILITY, Money(0))),
-            ("Net worth", valuation.net_worth(self.db)),
+            ("Assets", totals.get(AccountClass.ASSET, Money(0)) if net_worth is not None else None),
+            (
+                "Liabilities",
+                totals.get(AccountClass.LIABILITY, Money(0)) if net_worth is not None else None,
+            ),
+            ("Net worth", net_worth),
         ]
         for label, amount in cards:
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
             box.add_css_class("card")
             caption = Gtk.Label(label=label, xalign=0)
             caption.add_css_class("summary-label")
-            value = Gtk.Label(label=amount.format(parens_negative=True), xalign=0)
+            value = Gtk.Label(
+                label=amount.format(parens_negative=True)
+                if amount is not None
+                else "Mixed currencies",
+                xalign=0,
+            )
             value.add_css_class("summary-value")
             value.add_css_class("numeric")
-            if amount < 0:
+            if amount is not None and amount < 0:
                 value.add_css_class("negative")
             box.append(caption)
             box.append(value)

@@ -96,8 +96,9 @@ line count alone.
   explicit missing reporting-currency quote with ledger fallback. Continue with
   exchange-rate paths, staleness policy, and cross-report conversion semantics.
   An internal direct as-of currency conversion result now keeps exact amounts,
-  quote provenance, and explicit missing-quote state. Next prove account and
-  report presentation of converted values, then review inverse/multi-hop path
+  quote provenance, and explicit missing-quote state. Ordinary account balances
+  now use direct quotes where available and disclose a tagged ledger fallback.
+  Next define report-wide presentation with missing quotes, then review inverse/multi-hop path
   policy and rounding across totals before enabling broader conversion.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and

@@ -172,6 +172,44 @@ def test_currency_conversion_requires_a_direct_quote_and_valid_currency_units(db
         valuation.convert_currency(db, Amount(Money(1), euro.handle), currency=fund)
 
 
+def test_foreign_currency_account_value_exposes_direct_quote_or_ledger_fallback(db, book):
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    account = Account(
+        name="Foreign cash", atype=AccountType.BANK, parent=book.assets, commodity=euro.handle
+    )
+    transaction = Transaction(post_date=date(2026, 1, 2), description="Opening cash")
+    transaction.currency = euro.handle
+    transaction.splits = [
+        Split(account.handle, Money(10)),
+        Split(book.opening, Money(-10)),
+    ]
+    quote = CommodityPrice(
+        commodity=euro.handle,
+        currency=usd.handle,
+        quote_date=date(2026, 2, 1),
+        value=Money(4, 3),
+        source="imported-book",
+    )
+    with db.transaction("Foreign balance") as txn:
+        db.add_commodity(euro, txn)
+        db.add_account(account, txn)
+        db.add_transaction(transaction, txn)
+        db.add_price(quote, txn)
+
+    before = valuation.account_value(db, account, as_of=date(2026, 1, 31))
+    after = valuation.account_value(db, account, as_of=date(2026, 2, 2))
+    assert before.missing_quote
+    assert before.total_amount == Amount(Money(10), euro.handle)
+    assert before.total == Money(10) and before.price_date is None
+    assert after.source == "currency" and not after.missing_quote
+    assert after.total_amount == Amount(Money(40, 3), usd.handle)
+    assert after.price_date == date(2026, 2, 1)
+    assert after.price_source == "imported-book"
+    assert ledger.balance_amount(db, account) == Amount(Money(10), euro.handle)
+
+
 def test_missing_quote_falls_back_to_the_book_value(db, book):
     account, fund, _usd = _holding(db, book)
 
