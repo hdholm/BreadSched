@@ -38,6 +38,7 @@ from breadsched.gen.lib import (
     Split,
     Transaction,
 )
+from breadsched.web.dashboard_resource import dashboard_report
 from breadsched.web.resources import GET_ROUTES, QueryParams
 from breadsched.web.server import serve
 
@@ -2273,6 +2274,16 @@ class TestDashboardApi:
         status, payload = client.get("/api/dashboard")
         assert status == 200
         assert set(payload) == {"summary", "config", "groups", "bills", "income"}
+
+    def test_resource_matches_route_and_query_does_not_save_horizons(self, client):
+        _status, original = client.get("/api/dashboard")
+        _status, requested = client.get("/api/dashboard?liquidity_days=45&emergency_months=9")
+        expected = dashboard_report(client.database, 45, 9)
+        assert requested == json.loads(json.dumps(expected, default=str))
+        assert requested["config"]["liquidity_days"] == 45
+        assert requested["config"]["emergency_months"] == 9
+        _status, restored = client.get("/api/dashboard")
+        assert restored["config"] == original["config"]
 
     def test_fsa_information_has_its_own_dashboard_endpoint(self, client):
         status, payload = client.get("/api/fsa/dashboard")
