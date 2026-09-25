@@ -1,6 +1,6 @@
 # Agent instructions
 
-These instructions apply to every automated or interactive coding agent workingi
+These instructions apply to every automated or interactive coding agent working
 in this repository. Read this file completely before changing files.
 
 Repository-wide contributor instructions are maintained in
@@ -26,6 +26,11 @@ committing, or submitting work in this repository.
    acceptance tests are part of the implementation, not deferred cleanup.
 7. Submit work through the pull-request workflow above, link the relevant issue,
    and state any unverified platform/runtime explicitly.
+8. For AI-assisted commits, place the human `Signed-off-by:` and `Assisted-by:`
+   lines adjacent in the terminal trailer block, with no blank line between them.
+   Before reporting a PR as validated, verify that `git interpret-trailers --parse`
+   returns both trailers, confirm the pushed commit message matches, and report
+   every required CI check as successful or explicitly pending/failed.
 
 More-specific `AGENTS.md` files may add instructions for their own subtrees. When
 present, follow both sets; the more-specific file governs only its directory scope.

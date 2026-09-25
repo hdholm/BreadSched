@@ -284,6 +284,13 @@ add the whole-payment row to its components.
 Actual and variance totals stop at the report's as-of date. Future-only actual and
 variance summaries are not applicable rather than zero.
 
+Open a Plan value to inspect its dated planned occurrences and actual transactions,
+including matching status and explanations. Category values show their account
+class; planning-flow values identify the flow kind, and mortgage cash requirements
+show the whole payment. In the web view these details follow the chosen scenario;
+Base uses the book's saved Base assumptions. This is a read-only explanation and
+does not change the selected Plan or ledger.
+
 ### Explore expenses
 
 Apply the Plan horizon, **Group by** period (month, quarter, or year), and scenario

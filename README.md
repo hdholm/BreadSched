@@ -42,6 +42,11 @@ allocated into merchant budgets. Both interfaces can print the applied view. See
 the [User Guide](src/breadsched/USER_GUIDE.md#explore-expenses) for steps and
 interpretation.
 
+Plan value detail in GTK and web explains a selected category, planning flow, or
+mortgage cash requirement with dated planned and actual contributions. The web
+response uses the same activity engine as the other Plan views; see the
+[User Guide](src/breadsched/USER_GUIDE.md#plan) for how to read these values.
+
 ## Install and run for development
 
 ```bash

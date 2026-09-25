@@ -25,6 +25,10 @@ Signed-off-by: A. Contributor <contributor@example.com>
 Assisted-by: OpenAI Codex <codex@openai.com>
 ```
 
+Keep these two lines adjacent in the final trailer block: a blank line between
+them can cause `git interpret-trailers --parse` to omit one. Verify both parsed
+trailers and the pushed commit message before describing a PR as validated.
+
 Use `Assisted-by:`, not `Co-authored-by:`, for an AI tool: the tool does not make the
 DCO certification or take authorship responsibility. Name each materially used tool;
 do not add an `Assisted-by:` trailer for ordinary editor completion or formatting.
@@ -133,7 +137,8 @@ Before opening or updating a pull request:
 8. Preserve a single coherent commit where practical and verify its parent and tree
    before publication.
 9. Verify every commit has the required DCO sign-off and add `Assisted-by:` whenever
-   an AI tool materially contributed.
+   an AI tool materially contributed. Parse both adjacent trailers with
+   `git interpret-trailers --parse` and check the remote commit message.
 10. Push a named feature branch and open a pull request against `main` or the exact
    preceding branch in a documented stack. Record scope, tests, version, related
    issues, and dependency/merge order in the description.
