@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Projection web report and comparison boundary.** Move read-only Projection
+  summary and comparison calculation/response projection to the existing resource.
+  Preserve account and assumption-source evidence, aligned monthly deltas, and
+  explicit-save behavior. Advance application version to `0.2.0a99`; native schema
+  version 7 is unchanged.
+
 - **Projection month explanation web boundary.** Move the read-only monthly
   projection detail calculation and response projection to a dedicated resource.
   Preserve cash, holdings, liabilities, event, and assumption-source evidence and

@@ -383,6 +383,10 @@ clock. GTK runs longer projections in the background and allows cancellation.
 In web Projection, open a month to inspect its cash movement, holdings and
 liabilities, dated events, and assumption sources. A calculation from edited draft
 controls remains temporary until you explicitly save those controls.
+The Projection summary and scenario comparison use the same dated calculation.
+Compare scenarios over the same horizon to read month-by-month cash and net-worth
+differences; calculate or compare freely before choosing **Save** for edited
+assumptions.
 
 Schedule and scenario events have a growth policy:
 

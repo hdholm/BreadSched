@@ -39,7 +39,11 @@ from breadsched.gen.lib import (
     Transaction,
 )
 from breadsched.web.dashboard_resource import dashboard_report
-from breadsched.web.projection_resource import projection_month_report
+from breadsched.web.projection_resource import (
+    projection_comparison_report,
+    projection_month_report,
+    projection_report,
+)
 from breadsched.web.resources import GET_ROUTES, QueryParams
 from breadsched.web.scenario_resource import scenarios_report
 from breadsched.web.server import serve
@@ -1268,6 +1272,35 @@ class TestItServes:
         assert len(payload["rows"]) == 36
         assert payload["scenario"]["name"] == "Base scenario"
         assert payload["scenario"]["years"] == 3
+
+    def test_projection_report_resource_preserves_controls_and_summary(self, client):
+        from breadsched.web.server import Api
+
+        expected = projection_report(
+            client.database, Api(client.database)._projection_draft(years=2), base=True
+        )
+        status, actual = client.get("/api/projection?years=2")
+        assert status == 200
+        assert actual == json.loads(json.dumps(expected, default=str))
+        assert len(actual["rows"]) == 24
+
+    def test_comparison_resource_preserves_accounting_deltas(self, client):
+        from breadsched.web.server import Api
+
+        _status, clone = client.post("/api/scenario/duplicate", {"handle": None})
+        api = Api(client.database)
+        primary = api._projection_draft(years=1)
+        comparison = api._projection_draft(clone["handle"], years=1)
+        expected = projection_comparison_report(
+            client.database, primary, comparison, primary_base=True, comparison_base=False
+        )
+        status, actual = client.post(
+            "/api/projection/compare",
+            {"handle": None, "compare_handle": clone["handle"], "years": 1},
+        )
+        assert status == 200
+        assert actual == json.loads(json.dumps(expected, default=str))
+        assert actual["comparison"]["rows"][-1]["net_worth_delta"] == "0.00"
 
     def test_a_projection_month_can_be_explained(self, client):
         status, payload = client.post(
