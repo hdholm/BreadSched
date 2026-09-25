@@ -126,6 +126,11 @@ It uses the existing web control parsers and the schedule editability projection
 then submits a typed ``SaveFixedSchedule`` request to the shared schedule service.
 That service retains financial validation and full transaction ownership; ``Api``
 only delegates and the adapter translates the result into the existing response.
+Scenario estimate saves use that adapter as well: it resolves the selected saved
+scenario and optional baseline source, translates recurrence and exception controls
+to ``SaveFixedScenarioSchedule``, and then returns the refreshed event list. The
+shared service owns validation and atomic scenario persistence; a rejected request
+does not change the scenario's overrides.
 
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
 not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,

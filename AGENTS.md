@@ -37,6 +37,7 @@ committing, or submitting work in this repository.
 10. For web financial writes, keep request parsing and response translation in a
     presentation adapter, and leave validation and the complete database write in
     the shared service. Test that rejected inputs preserve the stored object.
+    Apply the same check to scenario-only estimates and baseline schedules.
 
 More-specific `AGENTS.md` files may add instructions for their own subtrees. When
 present, follow both sets; the more-specific file governs only its directory scope.

@@ -222,6 +222,10 @@ one-time exceptions, additional splits, and optional planning classifications.
 Review the result before relying on a projection. If the edit is rejected, the
 existing schedule is retained; complex imported definitions remain protected when
 the simple editor cannot preserve their structure.
+For alternate assumptions, add a scenario-only estimate or alter an eligible
+baseline schedule within a saved scenario. The original baseline definition stays
+intact. An invalid exception, such as skipping and overriding the same occurrence,
+is rejected without changing the saved scenario.
 
 Scheduled transactions support recurrence bounds, weekend adjustment, skipped
 occurrences, one-time overrides, future-effective amount changes, multiple splits,

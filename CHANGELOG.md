@@ -5,6 +5,11 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Scenario schedule web write adapter.** Move scenario-only and baseline override
+  request construction and result translation into the web schedule adapter.
+  Preserve existing error, editability, and atomic service behavior. Advance
+  application version to `0.2.0a94`; native schema version 7 is unchanged.
+
 - **Fixed-schedule web write adapter.** Move fixed baseline schedule request
   construction and result translation from the main API class to a presentation
   adapter. Keep editability checks, typed service ownership, error messages, and
