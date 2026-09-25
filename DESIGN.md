@@ -242,6 +242,13 @@ or comparing two amounts requires identical commodity identity; scaling retains 
 tag, and dividing like amounts produces an exact dimensionless ratio. Unlike
 commodities become comparable only after an explicit dated conversion has returned
 a new amount in the reporting currency.
+The internal direct currency-conversion result selects the latest eligible quote
+on or before the requested date for one exact source/target pair. It carries the
+selected quote date, source, and type, or an explicit missing-quote result without
+an amount. Identity conversion needs no quote. The result stays exact so a report
+can aggregate converted amounts before applying the target currency fraction once.
+Inverse and multi-hop routes have no implicit precedence, and a missing direct
+quote never licenses silent netting or an invented reporting-currency value.
 
 Ledger reads preserve that identity internally. Account, recursive, class-total,
 net-worth, cash-on-hand, and register-running arithmetic uses tagged transaction

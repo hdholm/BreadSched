@@ -59,6 +59,10 @@ quote is missing, they label the ledger-value fallback; see the
 The web Dashboard uses the shared Dashboard calculation for its summary, groups,
 bills, and income. Query-specific liquidity and emergency-fund horizons apply to
 the current view without changing saved Dashboard settings.
+The valuation layer now has an exact as-of direct currency-quote result with
+provenance and explicit missing-quote status. Current reports still retain their
+existing mixed-currency behavior until converted presentation and total rules are
+proved across the interfaces.
 The web Scenarios list displays Base and saved scenarios with effective assumptions,
 their inheritance sources, and accounts eligible for account-specific rates. Saving
 a scenario still uses the shared scenario service.

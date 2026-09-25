@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Exact direct currency conversion contract.** Add an internal as-of conversion
+  result for known currencies with quote date/source/type, exact unrounded amount,
+  and explicit missing-direct-quote state. Reject non-currency units and do not
+  infer inverse or multi-hop exchange paths. No report uses this contract yet;
+  existing mixed-currency display behavior is unchanged. Advance application
+  version to `0.2.0a100`; native schema version 7 is unchanged.
+
 - **Projection web report and comparison boundary.** Move read-only Projection
   summary and comparison calculation/response projection to the existing resource.
   Preserve account and assumption-source evidence, aligned monthly deltas, and

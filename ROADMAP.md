@@ -25,9 +25,11 @@ Cross-cutting workflow logic belongs in shared services rather than presentation
 
 ## Immediate priorities
 
-The remaining priority is **Responsibility-based decomposition.** Continue
-reducing the remaining oversized `web/server.py` and related seams as the
-work above touches them; do not optimize for line count alone.
+The next priority is **Cross-cutting multi-currency valuation and import.** Build
+from the exact direct dated conversion contract toward disclosed account values,
+report totals, and imported quotes. Continue responsibility-based decomposition
+as those workflows touch the remaining `web/server.py` seams; do not optimize for
+line count alone.
 
 
 ## Architecture and correctness
@@ -91,6 +93,10 @@ work above touches them; do not optimize for line count alone.
   Account views now disclose the selected security quote's source/date or an
   explicit missing reporting-currency quote with ledger fallback. Continue with
   exchange-rate paths, staleness policy, and cross-report conversion semantics.
+  An internal direct as-of currency conversion result now keeps exact amounts,
+  quote provenance, and explicit missing-quote state. Next prove account and
+  report presentation of converted values, then review inverse/multi-hop path
+  policy and rounding across totals before enabling broader conversion.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.
