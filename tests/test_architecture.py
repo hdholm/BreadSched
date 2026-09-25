@@ -280,17 +280,19 @@ class TestServiceBoundaries:
         calls = calls_in_method(SRC / relative, class_name, method_name)
         assert expected <= calls
 
-    @pytest.mark.parametrize(
-        ("relative", "class_name", "method_name"),
-        (
-            ("gui/views/plan.py", "PlanView", "refresh"),
-            ("web/server.py", "Api", "plan"),
-        ),
-    )
-    def test_plan_adapters_consume_the_typed_query_service(self, relative, class_name, method_name):
-        calls = calls_in_method(SRC / relative, class_name, method_name)
+    def test_gui_plan_consumes_the_typed_query_service(self):
+        calls = calls_in_method(SRC / "gui/views/plan.py", "PlanView", "refresh")
         assert "query_plan" in calls
         assert "build_category_report" not in calls
+
+    def test_web_plan_delegates_to_a_service_backed_resource(self):
+        api_calls = calls_in_method(SRC / "web/server.py", "Api", "plan")
+        resource_calls = calls_in_function(SRC / "web/plan_resource.py", "plan_report")
+
+        assert "plan_report" in api_calls
+        assert "query_plan" not in api_calls
+        assert "query_plan" in resource_calls
+        assert "build_category_report" not in resource_calls
 
     @pytest.mark.parametrize(
         ("relative", "class_name", "method_name"),

@@ -46,6 +46,9 @@ Plan value detail in GTK and web explains a selected category, planning flow, or
 mortgage cash requirement with dated planned and actual contributions. The web
 response uses the same activity engine as the other Plan views; see the
 [User Guide](src/breadsched/USER_GUIDE.md#plan) for how to read these values.
+The web Plan view uses the same shared Plan service for saved controls and scenario
+comparisons as the GTK view; selecting a comparison displays per-section differences
+without changing either scenario.
 
 ## Install and run for development
 

@@ -267,6 +267,11 @@ asset and loan to show equity, loan-to-value, and a bounded repayment date toget
 
 Choose From, Through, Group by, Show, scenario, and comparison values, then apply
 them. These controls are saved with the book and shared between GTK and web.
+To compare assumptions, select a different saved scenario or Base as the comparison
+and apply the controls. The comparison shows amounts for both cases and differences
+for matching categories, cash-bridge entries, mortgage requirements, and planning
+flows; the original scenarios and recorded actuals remain unchanged. Reopen Plan to
+see the saved selection.
 
 The first section is a signed spendable-cash bridge. Income and retirement
 distributions add cash. Ordinary expenses, retirement saving, benefit funding,

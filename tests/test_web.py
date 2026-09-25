@@ -1511,6 +1511,18 @@ class TestPlanApi:
         )
         assert all(Money(value) == Money(0) for value in salary["planned_delta"])
 
+        # A duplicate with no edited assumptions or events must retain the
+        # complete comparison contract across every Plan reporting section.
+        for section in ("categories", "cash_bridge", "mortgage_payments", "planning_flows"):
+            for row in comparison[section]:
+                for measure in ("planned", "actual", "variance"):
+                    assert len(row[measure]) == len(row[f"{measure}_delta"])
+                    assert all(
+                        Money(value) == Money(0)
+                        for value in row[f"{measure}_delta"]
+                        if value is not None
+                    )
+
     def test_saved_plan_can_compare_with_base(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
         query = urllib.parse.urlencode({"scenario": scenario["handle"], "compare": "__base__"})
