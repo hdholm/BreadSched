@@ -48,6 +48,8 @@ messages or pull requests.
 - For web financial writes, presentation adapters may assemble typed service inputs,
   but the shared service must own financial validation and the entire transaction.
   Cover a rejected request with a before/after persistence assertion.
+  Scenario schedule changes require that same assertion against the saved scenario,
+  including its override list.
 - Preserve exact monetary arithmetic and double-entry invariants. Do not
   introduce binary floating-point calculations for money.
 - Preserve imported or otherwise unsupported data losslessly. If an editor

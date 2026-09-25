@@ -51,6 +51,8 @@ comparisons as the GTK view; selecting a comparison displays per-section differe
 without changing either scenario.
 Baseline scheduled transactions created or edited in the web interface use the
 shared schedule service; a rejected edit leaves the stored schedule unchanged.
+The same write boundary applies to scenario-only estimates and changes to a
+scenario's baseline schedules; a rejected request leaves saved overrides unchanged.
 
 ## Install and run for development
 

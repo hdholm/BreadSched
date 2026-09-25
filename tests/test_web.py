@@ -2724,6 +2724,37 @@ class TestScenarioEventWebParity:
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
         return scenario
 
+    def test_rejected_scenario_estimate_preserves_saved_scenario(self, scenario_event_client):
+        scenario = self._saved_scenario(scenario_event_client)
+        _status, events = scenario_event_client.get(
+            "/api/scenario/events?" + urllib.parse.urlencode({"handle": scenario["handle"]})
+        )
+        rent = next(account for account in events["accounts"] if account["name"].endswith("Rent"))
+        bank = next(
+            account for account in events["accounts"] if account["name"].endswith("Checking")
+        )
+        before = scenario_event_client.database.get_scenario(scenario["handle"])
+        assert before is not None
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            scenario_event_client.post(
+                "/api/scenario/event/save",
+                {
+                    "handle": scenario["handle"],
+                    "name": "Alternate rent",
+                    "category": rent["handle"],
+                    "funding": bank["handle"],
+                    "amount": "1500",
+                    "frequency": "monthly",
+                    "start": "2026-03-01",
+                    "skipped": ["2026-04-01"],
+                    "occurrence_adjustments": [{"when": "2026-04-01", "amount": "1700"}],
+                },
+            )
+        assert caught.value.code == 400
+        after = scenario_event_client.database.get_scenario(scenario["handle"])
+        assert after is not None
+        assert after.serialize() == before.serialize()
+
     def test_scenario_only_estimate_is_persisted(self, scenario_event_client):
         scenario = self._saved_scenario(scenario_event_client)
         _status, events = scenario_event_client.get(

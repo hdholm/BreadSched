@@ -75,7 +75,6 @@ from ..gen.services import (
     DeleteSchedule,
     DuplicateScenario,
     DuplicateSchedule,
-    FixedScheduleInput,
     FixedSplitInput,
     FormulaScheduleInput,
     ImportBook,
@@ -87,7 +86,6 @@ from ..gen.services import (
     SaveAssumptionPeriod,
     SaveBaseAssumptions,
     SaveClaim,
-    SaveFixedScenarioSchedule,
     SaveLoan,
     SaveScenarioAssumptions,
     SaveTransaction,
@@ -115,7 +113,6 @@ from ..gen.services import (
     save_assumption_period,
     save_base_assumptions,
     save_claim,
-    save_fixed_scenario_schedule,
     save_formula_schedule,
     save_loan,
     save_scenario_assumptions,
@@ -134,7 +131,7 @@ from .expense_resource import expense_report
 from .plan_detail_resource import plan_detail_report
 from .plan_resource import plan_report
 from .resources import ResourceError
-from .schedule_write_resource import save_fixed_schedule_request
+from .schedule_write_resource import save_fixed_schedule_request, save_scenario_schedule_request
 
 __all__ = ["serve", "build_handler", "api"]
 
@@ -2090,157 +2087,8 @@ class Api:
         return grouped
 
     def scenario_event_save(self, payload: dict) -> dict:
-        scenario = self._scenario_for_events(payload.get("handle"))
-        source_handle = str(payload.get("source_schedule") or "").strip() or None
-        source = self.db.get_scheduled(source_handle) if source_handle else None
-        if source_handle and source is None:
-            raise KeyError(source_handle)
-        if source is not None and self._simple_schedule_parts(source) is None:
-            raise ValueError("complex schedules can only be suppressed for now")
-
-        name = str(payload.get("name", "")).strip()
-        if not name:
-            raise ValueError("give the scenario estimate a name")
-        category_handle = str(payload.get("category", "")).strip()
-        funding_handle = str(payload.get("funding", "")).strip()
-        investment_activity_raw = str(payload.get("investment_activity") or "").strip()
-        try:
-            investment_activity = (
-                InvestmentActivityKind(investment_activity_raw) if investment_activity_raw else None
-            )
-        except ValueError:
-            raise ValueError("choose a valid investment activity") from None
-        category_planning_flow_raw = str(payload.get("category_planning_flow") or "").strip()
-        try:
-            category_planning_flow = (
-                PlanningFlowKind(category_planning_flow_raw) if category_planning_flow_raw else None
-            )
-        except ValueError:
-            raise ValueError("choose a valid category planning purpose") from None
-        try:
-            amount = abs(self._input_money(payload, payload.get("amount", "")))
-        except (ValueError, ArithmeticError):
-            raise ValueError("enter a valid amount") from None
-        frequency = str(payload.get("frequency", "monthly"))
-        if frequency not in self._SCENARIO_FREQUENCIES:
-            raise ValueError("choose a supported frequency")
-        weekend = str(payload.get("weekend", "none"))
-        if weekend not in self._SCENARIO_WEEKENDS:
-            raise ValueError("choose a supported weekend adjustment")
-        try:
-            start = date.fromisoformat(str(payload.get("start", "")))
-        except ValueError:
-            raise ValueError("first occurrence must be YYYY-MM-DD") from None
-        period, interval = self._SCENARIO_FREQUENCIES[frequency]
-        end = None
-        count = None
-        end_text = str(payload.get("end") or "").strip()
-        count_text = str(payload.get("count") or "").strip()
-        if period is not PeriodType.ONCE:
-            if end_text and count_text:
-                raise ValueError("choose either an end date or an occurrence count")
-            if end_text:
-                try:
-                    end = date.fromisoformat(end_text)
-                except ValueError:
-                    raise ValueError("end date must be YYYY-MM-DD") from None
-                if end < start:
-                    raise ValueError("end date cannot be before the first occurrence")
-            elif count_text:
-                try:
-                    count = int(count_text)
-                except ValueError:
-                    raise ValueError("occurrence count must be a whole number") from None
-                if count < 1:
-                    raise ValueError("occurrence count must be at least 1")
-        recurrence = Recurrence(
-            period=period,
-            interval=interval,
-            start=start,
-            end=end,
-            count=count,
-            weekend_adjust=self._SCENARIO_WEEKENDS[weekend],
-        )
-        skipped = self._parse_skipped(payload, recurrence)
-        adjustments = self._parse_occurrence_adjustments(payload, recurrence)
-        if set(skipped) & {item.when for item in adjustments}:
-            raise ValueError("an occurrence cannot be both skipped and overridden")
-        planning_flow_raw = str(payload.get("planning_flow") or "").strip()
-        try:
-            planning_flow = PlanningFlowKind(planning_flow_raw) if planning_flow_raw else None
-        except ValueError:
-            raise ValueError("choose a valid planning purpose") from None
-        additional_splits = self._parse_additional_splits(
-            payload, {category_handle, funding_handle}
-        )
-        existing_change = (
-            next(
-                (
-                    item
-                    for item in scenario.schedule_overrides
-                    if item.source_schedule == source_handle and item.enabled
-                ),
-                None,
-            )
-            if source_handle is not None
-            else None
-        )
-        default_growth_policy = (
-            existing_change.growth_policy
-            if existing_change is not None
-            else source.growth_policy
-            if source is not None
-            else ScheduleGrowthPolicy.AUTO
-        )
-        try:
-            growth_policy = ScheduleGrowthPolicy(
-                str(payload.get("growth_policy") or default_growth_policy.value)
-            )
-        except ValueError:
-            raise ValueError("choose a valid projection growth policy") from None
-        result = save_fixed_scenario_schedule(
-            self.db,
-            SaveFixedScenarioSchedule(
-                scenario_handle=scenario.handle,
-                source_schedule=source_handle,
-                definition=FixedScheduleInput(
-                    name=name,
-                    recurrence=recurrence,
-                    category=category_handle,
-                    funding=funding_handle,
-                    amount=amount,
-                    category_planning_flow=category_planning_flow,
-                    funding_planning_flow=planning_flow,
-                    investment_activity=investment_activity,
-                    additional_splits=additional_splits,
-                    enabled=True,
-                    placeholder=source.placeholder if source is not None else True,
-                    growth_policy=growth_policy,
-                    amount_changes=tuple(self._parse_amount_changes(payload, start)),
-                    seasonal_amounts=tuple(
-                        self._parse_seasonal_amounts(payload)
-                        if "seasonal_amounts" in payload
-                        else source.seasonal_amounts
-                        if source is not None
-                        else ()
-                    ),
-                    skipped=tuple(skipped),
-                    occurrence_adjustments=tuple(adjustments),
-                    estimate_evidence=(
-                        payload.get("estimate_evidence")
-                        if isinstance(payload.get("estimate_evidence"), dict)
-                        else existing_change.estimate_evidence
-                        if existing_change is not None
-                        else source.estimate_evidence
-                        if source is not None
-                        else None
-                    ),
-                ),
-            ),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        return self.scenario_events(scenario.handle)
+        """Save a scenario schedule through the request adapter and shared service."""
+        return save_scenario_schedule_request(self, payload)
 
     def scenario_event_suppress(self, payload: dict) -> dict:
         scenario = self._scenario_for_events(payload.get("handle"))
