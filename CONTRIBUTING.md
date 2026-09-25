@@ -42,6 +42,9 @@ messages or pull requests.
   layers. GTK, web, and CLI code should present shared services rather than
   reimplement financial logic. Apply presentation changes consistently to GTK,
   web, CLI, API, and printable output wherever that behavior is exposed.
+- Keep web route parsing in `web.resources` and read-only response adapters outside
+  the main `Api` class. A boundary extraction should preserve the full response,
+  saved controls, scenario comparison, and error contract in route-level tests.
 - Preserve exact monetary arithmetic and double-entry invariants. Do not
   introduce binary floating-point calculations for money.
 - Preserve imported or otherwise unsupported data losslessly. If an editor

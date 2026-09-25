@@ -36,8 +36,8 @@ work above touches them; do not optimize for line count alone.
   work, especially the remaining seams in `web/server.py`. The read-only Expense
   Explorer response has its own resource adapter; continue with Plan detail and
   other workflows when responsibility boundaries are clear.
-  Plan detail now has a dedicated read-only resource adapter. Continue with other
-  workflows when responsibility boundaries are clear. Split large GUI test modules
+  Plan detail and the Plan response now have dedicated read-only resource adapters.
+  Continue with other workflows when responsibility boundaries are clear. Split large GUI test modules
   only when the resulting fixture ownership and runtime isolation improve; do not
   optimize for a line-count threshold alone.
 

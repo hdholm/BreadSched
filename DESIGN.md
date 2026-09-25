@@ -116,6 +116,11 @@ The read-only Plan detail response is similarly owned by
 activity engine for category, planning-flow, or mortgage explanations, and
 serializes the response. ``Api.plan_detail`` delegates without reproducing that
 logic; route query parsing remains in ``web.resources``.
+The Plan report query and JSON projection also live in ``web.plan_resource``.
+The adapter requests typed Plan results from the shared service and serializes
+controls, cash bridge, category, mortgage, planning-flow, and comparison views;
+``Api.plan`` delegates without recalculating those values. Plan settings persistence
+remains presentation metadata rather than a financial mutation.
 
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
 not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,

@@ -31,6 +31,9 @@ committing, or submitting work in this repository.
    Before reporting a PR as validated, verify that `git interpret-trailers --parse`
    returns both trailers, confirm the pushed commit message matches, and report
    every required CI check as successful or explicitly pending/failed.
+9. When extracting a read-only web response from `Api`, keep typed query parsing
+   in `web.resources`, financial calculations in shared services/engines, and
+   preserve the complete response and error contract with route-level tests.
 
 More-specific `AGENTS.md` files may add instructions for their own subtrees. When
 present, follow both sets; the more-specific file governs only its directory scope.

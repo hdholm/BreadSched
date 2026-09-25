@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Plan web report boundary.** Move typed Plan query translation and response
+  projection, including scenario comparison and all reported sections, into a
+  read-only resource adapter. Preserve the existing route, response, and service
+  error mapping. Advance application version to `0.2.0a92`; native schema version 7
+  is unchanged.
+
 - **Plan detail response boundary and trailer discipline.** Extract the read-only
   category, planning-flow, and mortgage detail response from the web API class to
   a dedicated adapter while preserving the HTTP contract and shared calculation.
