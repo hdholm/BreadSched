@@ -38,6 +38,9 @@ committing, or submitting work in this repository.
     presentation adapter, and leave validation and the complete database write in
     the shared service. Test that rejected inputs preserve the stored object.
     Apply the same check to scenario-only estimates and baseline schedules.
+11. When changing valuation displays, expose the quote date and provenance or
+    explicit missing-quote fallback in both GTK and web. Do not imply that a
+    missing foreign-currency conversion has been performed.
 
 More-specific `AGENTS.md` files may add instructions for their own subtrees. When
 present, follow both sets; the more-specific file governs only its directory scope.

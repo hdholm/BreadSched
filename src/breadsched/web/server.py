@@ -421,6 +421,8 @@ class Api:
                         "quantity": valued.quantity,
                         "price": valued.price,
                         "price_date": valued.price_date,
+                        "price_source": valued.price_source,
+                        "missing_quote": valued.missing_quote,
                         "commodity": (
                             valued.commodity.mnemonic if valued.commodity is not None else None
                         ),

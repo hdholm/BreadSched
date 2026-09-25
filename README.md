@@ -53,6 +53,9 @@ Baseline scheduled transactions created or edited in the web interface use the
 shared schedule service; a rejected edit leaves the stored schedule unchanged.
 The same write boundary applies to scenario-only estimates and changes to a
 scenario's baseline schedules; a rejected request leaves saved overrides unchanged.
+Account views disclose a security quote's date and source. When a reporting-currency
+quote is missing, they label the ledger-value fallback; see the
+[User Guide](src/breadsched/USER_GUIDE.md#security-prices-and-current-value).
 
 ## Install and run for development
 

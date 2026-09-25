@@ -100,6 +100,7 @@ class AccountTreeView(BaseView):
         self.column_view.append_column(column("Type", lambda a: a.atype.value))
         self.column_view.append_column(column("Description", lambda a: a.description, expand=True))
         self.column_view.append_column(column("Balance", self._format_balance, numeric=True))
+        self.column_view.append_column(column("Quote evidence", self._quote_evidence))
         self.column_view.connect("activate", self._on_activated)
 
         self._header.append(
@@ -155,6 +156,16 @@ class AccountTreeView(BaseView):
             return ""
         total = valuation.value_recursive(self.db, account.handle)
         return total.format(parens_negative=True)
+
+    def _quote_evidence(self, account) -> str:
+        if self.db is None:
+            return ""
+        valued = valuation.account_value(self.db, account)
+        if valued.missing_quote:
+            return "No reporting-currency quote; ledger value"
+        if valued.source == "market" and valued.price_date is not None:
+            return f"{valued.price_date.isoformat()} · {valued.price_source or 'Unknown source'}"
+        return ""
 
     # ------------------------------------------------------------------ model
 
