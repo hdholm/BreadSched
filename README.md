@@ -31,6 +31,11 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
 
+Documented alpha releases are published from a tested main commit with wheel,
+source archive, and `SHA256SUMS` assets. GitHub marks alpha versions as
+pre-releases; check the versioned release notes and verify downloaded assets
+against the published checksums before installation.
+
 ## Explore expenses
 
 Apply a Plan horizon, grouping, and scenario, then choose **Explore expenses…** in

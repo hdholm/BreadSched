@@ -10,6 +10,10 @@ you are running.
 BreadSched is under active development. Keep independent backups of any financial
 book and review imported or inferred data before relying on it.
 
+When downloading a packaged alpha, choose the GitHub release marked
+**Pre-release**, read its versioned notes, and compare the downloaded wheel or
+source archive against the release's `SHA256SUMS` before installing it.
+
 ## Getting started
 
 ### Install for development

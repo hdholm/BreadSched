@@ -21,6 +21,12 @@ The web interface is required to maintain functional parity. Other platforms may
 ultimately use GTK packaging or a web-based presentation, but those are delivery
 choices over the same application services and financial engines.
 
+Release publication selects a documented version only after successful main CI
+and a check that the tested commit is still main. It builds and verifies artifacts,
+then publishes an annotated tag and checksums. PEP 440 alpha versions also set
+GitHub's pre-release flag; stable versions omit it. This metadata does not alter
+application or native schema versioning.
+
 ## Layering
 
 The intended dependency direction is:

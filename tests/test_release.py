@@ -1,4 +1,5 @@
 import importlib.util
+import subprocess
 from pathlib import Path
 
 from breadsched import __version__
@@ -64,3 +65,23 @@ def test_release_workflow_sets_an_annotated_tag_identity():
     tag = workflow.index('git tag -a "$TAG"')
     assert name < tag
     assert email < tag
+
+
+def test_release_workflow_marks_only_alpha_versions_as_prereleases():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    command = workflow.split("      - name: Publish release and verified artifacts", 1)[1]
+    assert "VERSION: ${{ steps.release.outputs.version }}" in command
+    script = command.split("        run: |\n", 1)[1]
+    lines = []
+    for line in script.splitlines():
+        if not line.startswith("          "):
+            break
+        lines.append(line[10:])
+    shell = "\n".join(lines).replace("gh release create", "printf '%s\\n' gh release create")
+    for version, prerelease in (("0.2.0a100", True), ("0.2.0", False)):
+        result = subprocess.run(
+            ["bash", "-c", shell],
+            env={"VERSION": version, "TAG": f"v{version}", "NOTES": "notes.md", "GITHUB_REPOSITORY": "test/repo"},
+            text=True, capture_output=True, check=True,
+        )
+        assert ("--prerelease" in result.stdout) is prerelease
