@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Complete account-summary currency totals.** Account chart rollups and cash/net-worth
+  summaries in GTK, web, and CLI require direct reporting-currency valuations for
+  every nonzero component. An absent quote makes the total unavailable and exposes
+  account handles needing quotes in web/CLI responses; exact converted amounts are
+  added without intermediate rounding. Other reports retain their existing currency
+  behavior. Advance application version to `0.2.0a103`; native schema remains 7.
+
 - **Code-scanning remediation and release isolation.** Limit CI tokens to
   read-only access; build and test release artifacts in a read-only job, then
   validate and publish them as data in a separate write-capable job with no

@@ -3,7 +3,7 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a101`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a102`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
@@ -98,8 +98,10 @@ line count alone.
   An internal direct as-of currency conversion result now keeps exact amounts,
   quote provenance, and explicit missing-quote state. Ordinary account balances
   now use direct quotes where available and disclose a tagged ledger fallback.
-  Next define report-wide presentation with missing quotes, then review inverse/multi-hop path
-  policy and rounding across totals before enabling broader conversion.
+  Account chart, cash, and net-worth totals now require complete reporting-currency
+  valuations and disclose missing quote accounts rather than adding fallback values.
+  Extend this contract to Dashboard, Plan, Projection, comparisons, and printable
+  reports, then review inverse/multi-hop path policy and rounding across totals.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.

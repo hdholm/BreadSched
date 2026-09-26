@@ -16,6 +16,8 @@ from .currency import book_currency, commodity_fraction, reporting_currency_hand
 __all__ = [
     "AccountValuation",
     "CurrencyConversion",
+    "ValuationAggregate",
+    "aggregate_value",
     "account_value",
     "book_currency",
     "convert_currency",
@@ -59,6 +61,50 @@ class CurrencyConversion:
     @property
     def missing_quote(self) -> bool:
         return self.amount is None
+
+
+@dataclass(frozen=True, slots=True)
+class ValuationAggregate:
+    """Exact reporting-currency total, or accounts preventing a complete total."""
+
+    amount: Amount | None
+    missing_quotes: tuple[str, ...] = ()
+    incompatible_accounts: tuple[str, ...] = ()
+
+
+def aggregate_value(
+    db: DbSQLite,
+    *,
+    accounts: list[Account] | None = None,
+    as_of: date | None = None,
+    net_worth: bool = False,
+) -> ValuationAggregate:
+    """Sum only complete reporting-currency valuations, without rounding or fallback."""
+    reporting = reporting_currency_handle(db)
+    total = Amount(Money(0), reporting)
+    missing: list[str] = []
+    incompatible: list[str] = []
+    for account in accounts if accounts is not None else db.iter_accounts():
+        if account.is_root or (
+            net_worth and account.account_class not in {AccountClass.ASSET, AccountClass.LIABILITY}
+        ):
+            continue
+        valued = account_value(db, account, as_of=as_of)
+        amount = valued.total_amount
+        if amount is None or not amount:
+            continue
+        if valued.missing_quote:
+            missing.append(account.handle)
+        elif amount.commodity != reporting:
+            incompatible.append(account.handle)
+        else:
+            sign = -1 if net_worth and account.account_class == AccountClass.LIABILITY else 1
+            total += amount * sign
+    return ValuationAggregate(
+        None if missing or incompatible else total,
+        tuple(missing),
+        tuple(incompatible),
+    )
 
 
 def convert_currency(

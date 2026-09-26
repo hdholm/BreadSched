@@ -263,12 +263,22 @@ class Api:
 
     def summary(self) -> dict:
         counts = self.db.summary()
+        net_worth = valuation.aggregate_value(self.db, net_worth=True)
+        cash = valuation.aggregate_value(
+            self.db,
+            accounts=[
+                a for a in self.db.iter_accounts() if a.atype.is_cash_like and not a.placeholder
+            ],
+        )
         return {
             "book": self.db.path,
             "accounts": counts["account"],
             "transactions": counts["txn"],
-            "cash": ledger.cash_on_hand(self.db),
-            "net_worth": valuation.net_worth(self.db),
+            "cash": cash.amount.value if cash.amount is not None else None,
+            "cash_missing_quotes": list(cash.missing_quotes),
+            "net_worth": net_worth.amount.value if net_worth.amount is not None else None,
+            "net_worth_missing_quotes": list(net_worth.missing_quotes),
+            "net_worth_incompatible_accounts": list(net_worth.incompatible_accounts),
             "scenarios": [s.name for s in self.db.iter_scenarios()],
         }
 
@@ -286,12 +296,10 @@ class Api:
         def walk(parent: str | None, depth: int) -> None:
             for account in self.db.child_accounts(parent):
                 valued = valuation.account_value(self.db, account)
-                try:
-                    recursive = valuation.value_recursive(self.db, account)
-                except TypeError as exc:
-                    if "cannot combine unlike commodities" not in str(exc):
-                        raise
-                    recursive = None
+                rollup = valuation.aggregate_value(
+                    self.db, accounts=[account, *self.db.descendants(account.handle)]
+                )
+                recursive = rollup.amount.value if rollup.amount is not None else None
                 try:
                     book_balance = ledger.balance_recursive(self.db, account.handle)
                 except TypeError as exc:
@@ -341,6 +349,7 @@ class Api:
                         ],
                         "depth": depth,
                         "balance": recursive,
+                        "rollup_missing_quotes": list(rollup.missing_quotes),
                         "book_balance": book_balance,
                         "own_balance": ledger.balance(self.db, account.handle),
                         "valuation_source": valued.source,

@@ -11,9 +11,8 @@ would be technically correct and useless.
 
 from __future__ import annotations
 
-from ...gen.engine import ledger, valuation  # noqa: E402
+from ...gen.engine import valuation  # noqa: E402
 from ...gen.lib.account import Account, AccountClass  # noqa: E402
-from ...gen.lib.money import Money  # noqa: E402
 from ..gi_setup import Gio, Gtk
 from ._base import (
     BaseView,
@@ -154,13 +153,14 @@ class AccountTreeView(BaseView):
     def _format_balance(self, account) -> str:
         if self.db is None:
             return ""
-        try:
-            total = valuation.value_recursive(self.db, account.handle)
-        except TypeError as exc:
-            if "cannot combine unlike commodities" not in str(exc):
-                raise
-            return "Mixed currencies"
-        return total.format(parens_negative=True)
+        result = valuation.aggregate_value(
+            self.db, accounts=[account, *self.db.descendants(account.handle)]
+        )
+        if result.amount is None:
+            return (
+                "Missing reporting-currency quote" if result.missing_quotes else "Mixed currencies"
+            )
+        return result.amount.format(parens_negative=True)
 
     def _quote_evidence(self, account) -> str:
         if self.db is None:
@@ -203,12 +203,10 @@ class AccountTreeView(BaseView):
     def _has_value(self, account: Account) -> bool:
         if self.db is None:
             return False
-        try:
-            has_value = bool(valuation.value_recursive(self.db, account.handle))
-        except TypeError as exc:
-            if "cannot combine unlike commodities" not in str(exc):
-                raise
-            has_value = True
+        result = valuation.aggregate_value(
+            self.db, accounts=[account, *self.db.descendants(account.handle)]
+        )
+        has_value = result.amount is None or bool(result.amount)
         return has_value or bool(self.db.child_accounts(account.handle))
 
     def _create_child_model(self, row: Row):
@@ -233,20 +231,24 @@ class AccountTreeView(BaseView):
 
         if self.db is None:
             return
-        try:
-            totals = valuation.totals_by_class(self.db)
-            net_worth = valuation.net_worth(self.db)
-        except TypeError as exc:
-            if "cannot combine unlike commodities" not in str(exc):
-                raise
-            totals = {}
-            net_worth = None
+        accounts = list(self.db.iter_accounts())
+        cash = valuation.aggregate_value(
+            self.db, accounts=[a for a in accounts if a.atype.is_cash_like and not a.placeholder]
+        )
+        assets = valuation.aggregate_value(
+            self.db, accounts=[a for a in accounts if a.account_class == AccountClass.ASSET]
+        )
+        liabilities = valuation.aggregate_value(
+            self.db, accounts=[a for a in accounts if a.account_class == AccountClass.LIABILITY]
+        )
+        net_worth_result = valuation.aggregate_value(self.db, accounts=accounts, net_worth=True)
+        net_worth = net_worth_result.amount.value if net_worth_result.amount is not None else None
         cards = [
-            ("Cash on hand", ledger.cash_on_hand(self.db)),
-            ("Assets", totals.get(AccountClass.ASSET, Money(0)) if net_worth is not None else None),
+            ("Cash on hand", cash.amount.value if cash.amount is not None else None),
+            ("Assets", assets.amount.value if assets.amount is not None else None),
             (
                 "Liabilities",
-                totals.get(AccountClass.LIABILITY, Money(0)) if net_worth is not None else None,
+                liabilities.amount.value if liabilities.amount is not None else None,
             ),
             ("Net worth", net_worth),
         ]
@@ -258,7 +260,7 @@ class AccountTreeView(BaseView):
             value = Gtk.Label(
                 label=amount.format(parens_negative=True)
                 if amount is not None
-                else "Mixed currencies",
+                else "Missing reporting-currency quote",
                 xalign=0,
             )
             value.add_css_class("summary-value")

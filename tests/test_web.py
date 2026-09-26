@@ -327,6 +327,11 @@ class TestItServes:
         assert missing["missing_quote"] is True
         assert missing["currency"] == "EUR"
         assert parent["balance"] is None
+        _status, summary = client.get("/api/summary")
+        assert summary["net_worth"] is None
+        assert summary["cash"] is None
+        assert account.handle in summary["cash_missing_quotes"]
+        assert account.handle in summary["net_worth_missing_quotes"]
 
         with client.database.transaction("Direct exchange quote") as txn:
             client.database.add_price(
@@ -346,6 +351,10 @@ class TestItServes:
         assert converted["price_source"] == "imported-book"
         assert converted["missing_quote"] is False
         assert Money(converted["balance"]) == Money(20)
+        _status, summary = client.get("/api/summary")
+        assert summary["net_worth"] is not None
+        assert summary["cash"] is not None
+        assert summary["net_worth_missing_quotes"] == []
 
     def test_accounts_disclose_missing_and_imported_security_quote(self, client):
         assets = client.database.get_account_by_name("Assets")
