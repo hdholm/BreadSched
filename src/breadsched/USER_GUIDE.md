@@ -478,8 +478,13 @@ caller. Import problems are reported per record when safe recovery is possible.
 
 GTK imports run in the background as one atomic undo step. Leave the open book and
 source file in place until completion or cancellation. A cancelled import writes
-nothing. The web importer currently accepts a path visible to the BreadSched server
-process rather than uploading a browser-local file.
+nothing. In the web import view, select a QIF, OFX/QFX, or GnuCash file from the
+browser (up to 32 MiB), or enter a path visible to the BreadSched server. Uploaded
+files are retained beside the native book in a `<book>.uploads` directory; keep
+that directory with the book if you want to repeat an import from its remembered
+path. Uploading the same filename again refreshes the same source identity;
+different filenames are separate sources. Import options and warning details
+are shared with the path-based workflow.
 
 ## Print, export, and inspect
 

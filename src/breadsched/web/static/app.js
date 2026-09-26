@@ -2960,7 +2960,8 @@ async function showEntry() {
 
 async function showImport() {
   const defaults = await get("/api/import");
-  const path = el("input", { name:"path", required:"required",
+  const file = el("input", { type:"file", accept:".qif,.ofx,.qfx,.gnucash,.xml,.sqlite,.db" });
+  const path = el("input", { name:"path",
     value:defaults.path || "", placeholder:"/path/to/file.qif" });
   const numberFormat = el("select", { name:"number_format" },
     el("option", { value:"auto" }, "Auto-detect number format"),
@@ -2976,17 +2977,32 @@ async function showImport() {
     const data = Object.fromEntries(new FormData(event.target).entries());
     data.include_scheduled = true;
     try {
-      const response = await post("/api/import", data);
+      let response;
+      if (file.files.length) {
+        const query = new URLSearchParams({ filename:file.files[0].name,
+          number_format:data.number_format, date_format:data.date_format });
+        const upload = await fetch(`/api/import/upload?${query}`, {
+          method:"POST", headers:{ ...apiHeaders(), "Content-Type":"application/octet-stream" },
+          body:file.files[0],
+        });
+        const payload = await upload.json();
+        if (!upload.ok) throw new Error(payload.error || upload.statusText);
+        response = payload;
+      } else {
+        if (!data.path.trim()) throw new Error("Choose a file or enter a local path.");
+        response = await post("/api/import", data);
+      }
       result.textContent = `${response.format}\n\n${response.detail}`;
       say("Import finished.");
     } catch (error) { say(error.message, "error"); }
   } },
-    el("label", {}, "Local file path", path),
+    el("label", {}, "Choose a file from this browser", file),
+    el("label", {}, "Or enter a path visible to BreadSched", path),
     el("label", {}, "Number format", numberFormat),
     el("label", {}, "QIF date order", dateFormat),
     el("button", { class:"action primary", type:"submit" }, "Import"));
   return el("div", {},
-    el("p", { class:"note" }, "Import a file visible to the BreadSched process. Auto-detection is recommended; choose an explicit format when the source is ambiguous."),
+    el("p", { class:"note" }, "Choose a QIF, OFX, or GnuCash file (up to 32 MiB), or enter a path visible to the BreadSched process. Uploading the same filename again refreshes that source. Auto-detection is recommended; choose an explicit number or date format when the source is ambiguous."),
     el("p", { class:"note" },
       "Re-importing GnuCash updates source-owned data and removes transactions deleted from the source. Transactions still used by a BreadSched reconciliation or FSA claim are retained and reported for review."),
     el("div", { class:"panel panel-pad-16" }, form, result));

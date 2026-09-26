@@ -134,6 +134,20 @@ def client(book_path):
             with urllib.request.urlopen(request, timeout=10) as response:
                 return response.status, json.loads(response.read())
 
+        def upload(self, filename: str, content: bytes, **options):
+            query = urllib.parse.urlencode({"filename": filename, **options})
+            request = urllib.request.Request(
+                base + "/api/import/upload?" + query,
+                data=content,
+                headers={
+                    "Content-Type": "application/octet-stream",
+                    "X-BreadSched-Token": self.token,
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(request, timeout=20) as response:
+                return response.status, json.loads(response.read())
+
     try:
         yield Client()
     finally:
@@ -2190,6 +2204,67 @@ class TestWriting:
 
 
 class TestImportApi:
+    def test_browser_upload_preserves_source_for_reimport(self, client, book_path):
+        content = (
+            b"!Account\nNUploaded checking\nTBank\n^\n"
+            b"!Type:Bank\nD03/04/2026\nT12,50\nPExample\n^\n"
+        )
+        status, result = client.upload(
+            "statement.qif", content, number_format="comma", date_format="day-first"
+        )
+        assert status == 200
+        assert "QIF" in result["format"]
+        _status, defaults = client.get("/api/import")
+        source = defaults["path"]
+        assert source.startswith(str(book_path) + ".uploads")
+        assert source.endswith(".qif")
+        transactions = len(list(client.database.iter_transactions()))
+        assert (
+            client.upload("statement.qif", content, number_format="comma", date_format="day-first")[
+                0
+            ]
+            == 200
+        )
+        assert client.get("/api/import")[1]["path"] == source
+        assert len(list(client.database.iter_transactions())) == transactions
+        assert len(list((book_path.parent / (book_path.name + ".uploads")).glob("*.qif"))) == 1
+
+    def test_browser_upload_rejects_invalid_filename_and_restores_prior_source(self, client):
+        content = b"!Type:Bank\nD01/01/2026\nT1.00\nPExample\n^\n"
+        client.upload("statement.qif", content)
+        source = client.get("/api/import")[1]["path"]
+        from pathlib import Path
+
+        for filename in ("../statement.qif", "folder\\statement.qif"):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.upload(filename, content)
+            assert caught.value.code == 400
+            assert json.loads(caught.value.read())["code"] == "import.filename.invalid"
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.upload("statement.qif", b"invalid input", number_format="guess-hard")
+        assert caught.value.code == 400
+        assert Path(source).read_bytes() == content
+
+    def test_browser_upload_requires_token_and_bounds_body(self, client):
+        query = "/api/import/upload?filename=statement.qif"
+        status, payload = raw_http(
+            client,
+            (
+                f"POST {query} HTTP/1.0\r\nHost: 127.0.0.1\r\n"
+                "Content-Type: application/octet-stream\r\nContent-Length: 1\r\n\r\nX"
+            ).encode(),
+        )
+        assert (status, payload["code"]) == (403, "request.untrusted")
+        status, payload = raw_http(
+            client,
+            (
+                f"POST {query} HTTP/1.0\r\nHost: 127.0.0.1\r\n"
+                f"X-BreadSched-Token: {client.token}\r\n"
+                "Content-Type: application/octet-stream\r\nContent-Length: 33554433\r\n\r\n"
+            ).encode(),
+        )
+        assert (status, payload["code"]) == (413, "request.body.too_large")
+
     def test_qif_import_accepts_explicit_ambiguous_formats(self, client, tmp_path):
         path = tmp_path / "ambiguous.qif"
         path.write_text(

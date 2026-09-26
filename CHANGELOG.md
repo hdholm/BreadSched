@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Browser-selected web imports.** Import QIF, OFX/QFX, and GnuCash files
+  selected in the browser through a bounded, authenticated upload. Reusing the
+  same filename retains the per-book source path for re-import; the existing
+  importer handles parsing and source ownership. Local server paths remain
+  available. Advance application version to `0.2.0a106`; schema stays 7.
+
 - **Dashboard quote completeness.** A missing reporting-currency quote in a
   configured group suppresses dependent position totals; a missing quote in a
   liquid group or fallback cash balance also suppresses liquid, available, shortfall,

@@ -3,7 +3,7 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a104`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a105`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
@@ -178,8 +178,6 @@ line count alone.
 - Expand duplicate/re-import tests, including cross-file duplicate heuristics.
 
 - Improve import summaries/problem reporting.
-
-- Add browser-native file upload to the web import view
 
 - Cover richer transfer/category mapping and real-world QIF/OFX deviations.
 

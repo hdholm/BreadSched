@@ -19,6 +19,7 @@ from ..gen.lib import Money, Rate
 from ..gen.utils.logs import get_logger
 from .resources import GET_ROUTES, POST_ROUTES, QueryError, QueryParams, ResourceError
 from .server import Api
+from .upload_resource import import_upload
 
 LOG = get_logger(__name__)
 STATIC = Path(__file__).parent / "static"
@@ -28,6 +29,7 @@ STATIC_ASSETS = {
     "app.js": ("app.js", "application/javascript; charset=utf-8"),
 }
 MAX_JSON_BODY = 64 * 1024
+MAX_UPLOAD_BODY = 32 * 1024 * 1024
 
 
 def _encode(value: object) -> object:
@@ -189,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:  # noqa: BLE001 - isolate the threaded server
             self._unexpected()
 
-    def _content_length(self) -> int | None:
+    def _content_length(self, maximum: int = MAX_JSON_BODY) -> int | None:
         if self.headers.get("Transfer-Encoding") is not None:
             self._error(400, "request.transfer_encoding.unsupported", ("Transfer-Encoding",))
             return None
@@ -208,12 +210,15 @@ class Handler(BaseHTTPRequestHandler):
         if length < 0:
             self._error(400, "request.content_length.invalid", ("Content-Length",))
             return None
-        if length > MAX_JSON_BODY:
+        if length > maximum:
             self._error(413, "request.body.too_large", ("body",))
             return None
         return length
 
     def do_POST(self) -> None:  # noqa: N802 - required by the base class
+        if urlparse(self.path).path == "/api/import/upload":
+            self._import_upload()
+            return
         if not self._trusted_api_request(write=True):
             self._error(403, "request.untrusted")
             return
@@ -241,6 +246,47 @@ class Handler(BaseHTTPRequestHandler):
             self._error(exc.status, exc.code, exc.fields, message=exc.message)
         except KeyError:
             self._error(400, "request.reference.not_found")
+        except ValueError as exc:
+            self._error(400, "request.invalid", message=str(exc))
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._unexpected()
+
+    def _import_upload(self) -> None:
+        """Receive one bounded file without JSON encoding or a client filesystem path."""
+        if (
+            not self._trusted_api_request()
+            or self.headers.get_content_type() != "application/octet-stream"
+        ):
+            self._error(403, "request.untrusted")
+            return
+        try:
+            query = QueryParams(urlparse(self.path).query)
+            filename = query.text("filename", required=True)
+            number_format = query.text("number_format") or "auto"
+            date_format = query.text("date_format") or "auto"
+            query.finish()
+            assert filename is not None
+            length = self._content_length(MAX_UPLOAD_BODY)
+            if length is None:
+                return
+            content = self.rfile.read(length)
+            if len(content) != length:
+                self._error(400, "request.body.incomplete", ("file",))
+                return
+            with self.lock:
+                result = import_upload(
+                    self.api_object,
+                    self.writer_db,
+                    filename=filename,
+                    content=content,
+                    number_format=number_format,
+                    date_format=date_format,
+                )
+            self._json(200, result)
+        except QueryError as exc:
+            self._error(400, exc.code, exc.fields)
+        except ResourceError as exc:
+            self._error(exc.status, exc.code, exc.fields, message=exc.message)
         except ValueError as exc:
             self._error(400, "request.invalid", message=str(exc))
         except Exception:  # noqa: BLE001 - isolate the threaded server
