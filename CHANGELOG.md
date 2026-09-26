@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **GnuCash commodity identity on import.** A security ticker shared with a
+  currency or another security namespace no longer attaches accounts or quotes
+  to the first matching mnemonic. Exact namespace/mnemonic matches survive
+  re-import; equivalent currency namespaces can share an existing currency.
+  Bare mnemonic references with multiple matches are rejected for review rather
+  than assigned arbitrarily. Application version `0.2.0a109`; schema remains 7.
+
 - **Currency-aware scheduled occurrence matching.** Planned scheduled events
   expose their expected and actual transaction currency. An actual in another
   currency is not proposed as an amount-based match, and a preexisting link across

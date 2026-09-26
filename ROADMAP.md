@@ -3,7 +3,7 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a107`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a108`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
@@ -177,6 +177,9 @@ line count alone.
 
 - Add reviewed commodity/security mapping where imported identifiers cannot be
   matched safely and extend price import to additional source formats where present.
+  GnuCash re-import now matches namespace and mnemonic together, accepts equivalent
+  currency namespaces, and rejects ambiguous bare mnemonic quote references;
+  broader reviewed mappings remain open.
 
 - Import scheduled transactions from additional formats where represented
   reliably.

@@ -943,6 +943,12 @@ Compatibility claims are limited to structures demonstrated by fixture-based
 round-trip evidence. BreadSched does not claim complete GnuCash round-trip
 compatibility for structures it cannot yet export or reconstruct safely.
 
+Imported commodity identity uses the namespace and mnemonic pair; CURRENCY and
+ISO4217 namespaces may share an existing currency with the same mnemonic. Source
+GUIDs resolve within an import, while an ambiguous bare mnemonic does not resolve
+to an arbitrary commodity for a price. Re-import reuses the matching pair without
+changing the native schema.
+
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
 commodity, code, description, source notes, placeholder/hidden state, and commodity SCU)

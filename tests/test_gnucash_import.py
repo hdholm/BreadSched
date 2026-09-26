@@ -37,9 +37,43 @@ from breadsched.gen.lib import (
     ScheduledSplit,
     ScheduledTransaction,
 )
+from breadsched.gen.lib.commodity import Commodity
 from breadsched.gen.plug import IMPORTER, PluginManager
 from breadsched.gen.utils import OperationCancelled
 from breadsched.plugins.importer import gnucash_common, gnucash_sqlite, gnucash_xml
+
+
+def test_imported_commodity_identity_uses_namespace_and_mnemonic(db):
+    """A security ticker must not reuse a currency or another security namespace."""
+    with db.transaction("Set up colliding commodities") as txn:
+        currency = Commodity(namespace="CURRENCY", mnemonic="XYZ")
+        db.add_commodity(currency, txn)
+        result = gnucash_common.ImportResult(source="synthetic", source_format="sqlite")
+        sink = gnucash_common.ImportSink(db, txn, result)
+        stock = sink.commodity("NYSE", "XYZ", source_guid="stock-guid")
+        fund = sink.commodity("FUND", "XYZ", source_guid="fund-guid")
+        assert len({currency.handle, stock, fund}) == 3
+        assert sink.resolve_commodity("XYZ") is None
+        assert sink.resolve_commodity("stock-guid") == stock
+        quote = sink.price(
+            "quote-guid", "stock-guid", currency.handle, date(2026, 1, 2), Money("12.50")
+        )
+        assert quote is not None and quote.commodity == stock
+        assert (
+            sink.price("ambiguous-guid", "XYZ", currency.handle, date(2026, 1, 2), Money("10"))
+            is None
+        )
+        assert db.get_price("ambiguous-guid") is None
+        assert any("unknown commodity" in warning for warning in result.warnings)
+        assert sink.commodity("ISO4217", "XYZ") == currency.handle
+
+    with db.transaction("Re-import colliding commodities") as txn:
+        sink = gnucash_common.ImportSink(db, txn, result)
+        assert sink.commodity("NYSE", "XYZ", source_guid="stock-guid") == stock
+        assert sink.commodity("FUND", "XYZ", source_guid="fund-guid") == fund
+        assert sink.resolve_commodity("XYZ") is None
+        assert sink.resolve_commodity("stock-guid") == stock
+        assert len([item for item in db.iter_commodities() if item.mnemonic == "XYZ"]) == 3
 
 
 class TestFormatDetection:

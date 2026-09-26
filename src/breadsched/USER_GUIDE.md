@@ -472,6 +472,9 @@ BreadSched imports GnuCash SQLite and compressed XML books and preserves source
 identifiers where possible. It supports accounts, transactions, commodities, dated
 prices, schedules, bounded formulas, reconciliation state, and selected metadata.
 Unsupported source details remain visible instead of being silently simplified.
+Commodities with the same mnemonic in different namespaces remain distinct during
+import and re-import. If a price refers only to an ambiguous mnemonic, inspect its
+import warning and resolve the source identifier before relying on that quote.
 
 Re-import updates source-owned data and removes source transactions that have
 disappeared. A deleted source transaction still referenced by a BreadSched
