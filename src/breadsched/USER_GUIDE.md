@@ -130,7 +130,10 @@ suggestion was produced.
 
 When a real transaction resolves a planned occurrence, BreadSched retains the
 original expected date and amount. Editing a schedule later therefore does not
-rewrite historical variance. In Plan, select a value to inspect its occurrences
+rewrite historical variance. A scheduled occurrence is matched by amount only to
+an actual in the same transaction currency. If an older link connects different
+currencies, its occurrence variance is unavailable; Plan period totals are not yet
+converted across currencies. In Plan, select a value to inspect its occurrences
 and actual splits. Use **Resolve actuals…** when an actual needs to be matched,
 marked unexpected, or reviewed. Correct a posted split's planning purpose in the
 transaction editor; correct a scheduled purpose in the schedule editor.

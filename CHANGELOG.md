@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Currency-aware scheduled occurrence matching.** Planned scheduled events
+  expose their expected and actual transaction currency. An actual in another
+  currency is not proposed as an amount-based match, and a preexisting link across
+  currencies has no numeric occurrence variance. Period and report totals still
+  require cross-currency valuation. Advance application version to `0.2.0a108`;
+  native schema remains 7.
+
 - **Quote age disclosure without an automatic cutoff.** Account valuations now
   carry days since the selected direct, inverse, or security quote relative to
   their valuation date. GTK, web, and CLI account views display the age, and

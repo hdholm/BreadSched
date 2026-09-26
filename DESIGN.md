@@ -354,6 +354,11 @@ both the prior and incoming template.
 ## Event-driven planning
 
 BreadSched's Plan is derived from actual, scheduled, and estimated dated events.
+Scheduled occurrences retain the schedule's transaction currency (or the book's
+reporting currency for legacy untagged schedules). Candidate matching requires
+the actual transaction currency to agree before comparing gross numeric amounts.
+For an already linked actual with a different currency, occurrence variance is
+unavailable; this does not convert Plan period totals or scenario estimates.
 A month is a reporting window, not a stored planning cell. This is important for
 cash flow: an annual insurance premium, weekly groceries, and a twice-monthly pay
 schedule retain their real timing instead of being converted into fictional monthly
