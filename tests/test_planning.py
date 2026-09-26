@@ -9,6 +9,7 @@ from breadsched.gen.lib import (
     Account,
     AccountType,
     Assumptions,
+    Commodity,
     Money,
     PeriodType,
     Recurrence,
@@ -560,6 +561,36 @@ class TestEventDrivenProjection:
 
 
 class TestActualResolutionWorkflow:
+    def test_currency_mismatch_is_not_a_match_or_numeric_variance(self, db, book):
+        foreign = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        bill = ScheduledTransaction(
+            name="Foreign bill",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 5, 7)),
+            splits=[
+                ScheduledSplit(book.utilities, Money("180")),
+                ScheduledSplit(book.checking, Money("-180")),
+            ],
+            currency=foreign.handle,
+        )
+        with db.transaction("plan foreign bill") as txn:
+            db.add_commodity(foreign, txn)
+            db.add_scheduled(bill, txn)
+        actual = Transaction.simple(
+            date(2026, 5, 8), "Local bill", book.utilities, book.checking, "181"
+        )
+        assert planning.match_candidates(db, actual) == []
+
+        # A previously linked actual remains visible, with unlike denominations
+        # disclosed and no misleading subtraction of their numeric amounts.
+        actual.planned_occurrence = bill.occurrence_key(date(2026, 5, 7))
+        with db.transaction("post local bill") as txn:
+            db.add_transaction(actual, txn)
+        event = planning.scheduled_events(db, date(2026, 5, 1), date(2026, 5, 31))[0]
+        assert event.expected_currency == foreign.handle
+        assert event.actual_currency != event.expected_currency
+        assert event.variance is None
+        assert event.as_dict()["variance"] is None
+
     def _bill_and_actual(self, db, book):
         bill = ScheduledTransaction(
             name="Electric",

@@ -25,6 +25,7 @@ from ..lib.transaction import (
     PlanningResolution,
     Transaction,
 )
+from .currency import reporting_currency_handle
 
 __all__ = [
     "EventSource",
@@ -103,6 +104,8 @@ class PlannedEvent:
     actual_date: date | None = None
     actual_splits: tuple[PlannedSplit, ...] = ()
     actual_amount: Money | None = None
+    expected_currency: str | None = None
+    actual_currency: str | None = None
 
     @property
     def status(self) -> EventStatus:
@@ -124,7 +127,11 @@ class PlannedEvent:
 
     @property
     def variance(self) -> Money | None:
-        if self.actual_amount is None:
+        if self.actual_amount is None or (
+            self.expected_currency is not None
+            and self.actual_currency is not None
+            and self.expected_currency != self.actual_currency
+        ):
             return None
         return self.actual_amount - self.expected_amount
 
@@ -139,6 +146,8 @@ class PlannedEvent:
             "status": self.status.value,
             "expected_amount": self.expected_amount,
             "actual_amount": self.actual_amount,
+            "expected_currency": self.expected_currency,
+            "actual_currency": self.actual_currency,
             "variance": self.variance,
             "expected_splits": [split.as_dict() for split in self.expected_splits],
             "actual_splits": [split.as_dict() for split in self.actual_splits],
@@ -214,6 +223,7 @@ def _scheduled_event(
     schedule: ScheduledTransaction,
     when: date,
     actual: Transaction | None,
+    reporting_currency: str,
 ) -> PlannedEvent:
     expected = tuple(
         PlannedSplit(
@@ -240,6 +250,7 @@ def _scheduled_event(
             description=schedule.description,
             expected_splits=expected,
             expected_amount=expected_amount,
+            expected_currency=schedule.currency or reporting_currency,
             placeholder=schedule.placeholder,
         )
 
@@ -260,6 +271,8 @@ def _scheduled_event(
         actual_date=actual.post_date,
         actual_splits=actual_splits,
         actual_amount=actual_amount,
+        expected_currency=schedule.currency or reporting_currency,
+        actual_currency=actual.currency or reporting_currency,
     )
 
 
@@ -293,7 +306,7 @@ def scheduled_events(
                 continue
             key = schedule.occurrence_key(when)
             actual = linked.get(key) if include_actualized else None
-            found.append(_scheduled_event(schedule, when, actual))
+            found.append(_scheduled_event(schedule, when, actual, reporting_currency_handle(db)))
     return sorted(found, key=lambda item: (item.when, item.planned_date, item.key))
 
 
@@ -428,7 +441,7 @@ def event_by_key(db: DbSQLite, key: str) -> PlannedEvent | None:
     if when not in schedule.recurrence.occurrences(when, since=when):
         return None
     actual = _linked_actuals(db).get(key)
-    return _scheduled_event(schedule, when, actual)
+    return _scheduled_event(schedule, when, actual, reporting_currency_handle(db))
 
 
 def unresolved_events(
@@ -540,6 +553,8 @@ def match_candidates(
     """
     if transaction.planning_resolution is PlanningResolution.UNEXPECTED:
         return []
+    reporting_currency = reporting_currency_handle(db)
+    actual_currency = transaction.currency or reporting_currency
     start = transaction.post_date - timedelta(days=window_days)
     end = transaction.post_date + timedelta(days=window_days)
     actual_splits = _transaction_splits(transaction)
@@ -553,6 +568,8 @@ def match_candidates(
         include_actualized=True,
     ):
         if event.status is EventStatus.ACTUALIZED:
+            continue
+        if event.expected_currency != actual_currency:
             continue
         if event.key in transaction.rejected_plan_occurrences:
             continue

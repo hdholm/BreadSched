@@ -102,6 +102,10 @@ line count alone.
   valuations and disclose missing quote accounts rather than adding fallback values.
   Exact inverse pair quotes now supply ordinary account valuation only when no
   eligible direct quote exists, with inversion disclosed in account views.
+  Scheduled Plan occurrences now carry their transaction currency; actual matching
+  excludes unlike currencies and occurrence variance is unavailable when a linked
+  actual uses another currency. Complete currency conversion of Plan period totals,
+  scenario estimates, Projection flows, and comparisons remains to be done.
   Account views now disclose quote age relative to their valuation date; there
   is no automatic age cutoff, so an old quote remains usable and visible.
   Dashboard configured groups and liquidity now suppress dependent figures on
