@@ -24,6 +24,7 @@ __all__ = [
     "latest_price",
     "net_worth",
     "quantity_balance",
+    "quote_age_label",
     "save_security_price",
     "totals_by_class",
     "value_recursive",
@@ -40,6 +41,7 @@ class AccountValuation:
     price: Money | None = None
     price_date: date | None = None
     price_source: str | None = None
+    quote_age_days: int | None = None
     conversion_path: str | None = None
     missing_quote: bool = False
     commodity: Commodity | None = None
@@ -72,6 +74,15 @@ class ValuationAggregate:
     amount: Amount | None
     missing_quotes: tuple[str, ...] = ()
     incompatible_accounts: tuple[str, ...] = ()
+
+
+def quote_age_label(days: int) -> str:
+    """Describe quote age relative to the valuation date without imposing a cutoff."""
+    if days < 0:
+        return f"dated {-days} day{'s' if days != -1 else ''} ahead"
+    if days == 0:
+        return "dated today"
+    return f"{days} day{'s' if days != 1 else ''} old"
 
 
 def aggregate_value(
@@ -225,6 +236,11 @@ def account_value(
                     total_amount=converted.amount,
                     price_date=converted.quote_date,
                     price_source=converted.quote_source,
+                    quote_age_days=(
+                        ((as_of or date.today()) - converted.quote_date).days
+                        if converted.quote_date is not None
+                        else None
+                    ),
                     conversion_path=converted.path,
                     currency=db.get_commodity(reporting),
                 )
@@ -249,6 +265,7 @@ def account_value(
         price=price.value,
         price_date=price.quote_date,
         price_source=price.source,
+        quote_age_days=((as_of or date.today()) - price.quote_date).days,
         commodity=commodity,
         currency=currency,
         total_amount=total_amount,

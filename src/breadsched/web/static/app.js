@@ -878,7 +878,12 @@ async function showAccounts() {
       ? `${account.quantity} ${account.commodity}` : "—"),
     el("td", { class:"num" }, account.valuation_source === "market"
       ? `${money(account.price)} ${account.currency}` : "—"),
-    el("td", { class:"muted" }, account.price_date || "—"),
+    el("td", { class:"muted" }, account.price_date
+      ? `${account.price_date} (${account.quote_age_days === 0 ? "dated today"
+        : account.quote_age_days < 0
+          ? `dated ${-account.quote_age_days} day${account.quote_age_days === -1 ? "" : "s"} ahead`
+          : `${account.quote_age_days} day${account.quote_age_days === 1 ? "" : "s"} old`})`
+      : "—"),
     el("td", { class:"muted" }, account.missing_quote
       ? `No reporting-currency quote; ledger value${account.currency ? ` (${account.currency})` : ""}`
       : ["market", "currency"].includes(account.valuation_source)

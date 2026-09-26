@@ -1058,7 +1058,10 @@ Required source dates are never synthesized. Missing or malformed posting/start 
 Ordinary foreign-currency account valuation uses the latest direct quote on or
 before the as-of date, then the latest eligible reverse pair if no direct applies,
 retaining the exact converted amount until presentation. Its result carries quote
-date, source, and inversion path; without either quote the result keeps the original
+date, source, inversion path, and age relative to the valuation date. GTK, web,
+and CLI account views disclose that age. No automatic age cutoff excludes a quote;
+future-dated quotes selected without an explicit as-of date have a negative age
+and are labeled as dated ahead. Without either quote the result keeps the original
 tagged ledger amount and exposes the missing quote. Aggregate reports
 for the account chart, cash, and net worth now sum exact tagged values only when
 every nonzero component is in the reporting currency with any required pair quote.

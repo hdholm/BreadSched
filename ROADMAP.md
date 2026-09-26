@@ -3,7 +3,7 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a105`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a106`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
@@ -94,7 +94,7 @@ line count alone.
   never combine unlike currencies in net worth silently.
   Account views now disclose the selected security quote's source/date or an
   explicit missing reporting-currency quote with ledger fallback. Continue with
-  exchange-rate paths, staleness policy, and cross-report conversion semantics.
+  exchange-rate paths and cross-report conversion semantics.
   An internal direct as-of currency conversion result now keeps exact amounts,
   quote provenance, and explicit missing-quote state. Ordinary account balances
   now use direct quotes where available and disclose a tagged ledger fallback.
@@ -102,12 +102,14 @@ line count alone.
   valuations and disclose missing quote accounts rather than adding fallback values.
   Exact inverse pair quotes now supply ordinary account valuation only when no
   eligible direct quote exists, with inversion disclosed in account views.
+  Account views now disclose quote age relative to their valuation date; there
+  is no automatic age cutoff, so an old quote remains usable and visible.
   Dashboard configured groups and liquidity now suppress dependent figures on
   missing quotes across GTK, web, CLI, and print, while leaving unrelated bills
   and income visible. Extend complete-total semantics to Plan, Projection,
-  comparisons, and their printable reports; review multi-hop policy, staleness,
-  and rounding across totals. Security prices still require a direct
-  reporting-currency quote.
+  comparisons, and their printable reports; review multi-hop policy, quote-age
+  disclosure on future flows, and rounding across totals. Security prices still
+  require a direct reporting-currency quote.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.
