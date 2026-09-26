@@ -333,6 +333,26 @@ class TestItServes:
         assert account.handle in summary["cash_missing_quotes"]
         assert account.handle in summary["net_worth_missing_quotes"]
 
+        with client.database.transaction("Reverse exchange quote") as txn:
+            client.database.add_price(
+                CommodityPrice(
+                    commodity=usd.handle,
+                    currency=euro.handle,
+                    quote_date=date(2026, 2, 2),
+                    value=Money("0.5"),
+                    source="reverse-book",
+                ),
+                txn,
+            )
+        _status, rows = client.get("/api/accounts")
+        inverse = next(row for row in rows if row["handle"] == account.handle)
+        assert inverse["balance"] == "20.00"
+        assert inverse["conversion_path"] == "inverse"
+        assert inverse["price_date"] == "2026-02-02"
+        assert inverse["price_source"] == "reverse-book"
+        _status, summary = client.get("/api/summary")
+        assert summary["net_worth_missing_quotes"] == []
+
         with client.database.transaction("Direct exchange quote") as txn:
             client.database.add_price(
                 CommodityPrice(
@@ -349,6 +369,7 @@ class TestItServes:
         assert converted["valuation_source"] == "currency"
         assert converted["price_date"] == "2026-02-01"
         assert converted["price_source"] == "imported-book"
+        assert converted["conversion_path"] == "direct"
         assert converted["missing_quote"] is False
         assert Money(converted["balance"]) == Money(20)
         _status, summary = client.get("/api/summary")

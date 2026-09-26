@@ -40,6 +40,7 @@ class AccountValuation:
     price: Money | None = None
     price_date: date | None = None
     price_source: str | None = None
+    conversion_path: str | None = None
     missing_quote: bool = False
     commodity: Commodity | None = None
     currency: Commodity | None = None
@@ -49,7 +50,7 @@ class AccountValuation:
 
 @dataclass(frozen=True, slots=True)
 class CurrencyConversion:
-    """One as-of direct conversion, or explicit evidence of a missing quote."""
+    """One as-of currency conversion, or explicit evidence of a missing quote."""
 
     amount: Amount | None
     source_currency: str
@@ -57,6 +58,7 @@ class CurrencyConversion:
     quote_date: date | None = None
     quote_source: str | None = None
     quote_type: str | None = None
+    path: str | None = None
 
     @property
     def missing_quote(self) -> bool:
@@ -114,7 +116,7 @@ def convert_currency(
     as_of: date | None = None,
     currency: str | Commodity | None = None,
 ) -> CurrencyConversion:
-    """Convert with an applicable direct currency quote, without guessing a path.
+    """Prefer an applicable direct quote, then invert an applicable reverse quote.
 
     Keep the result exact so a caller can sum converted values before rounding
     once for presentation. An absent quote returns no converted amount; callers
@@ -132,10 +134,21 @@ def convert_currency(
     if target is None or not target.is_currency or db.get_commodity(target.handle) is None:
         raise ValueError("target must be a known currency")
     if source.handle == target.handle:
-        return CurrencyConversion(amount, source.handle, target.handle)
+        return CurrencyConversion(amount, source.handle, target.handle, path="identity")
     quote = latest_price(db, source, as_of=as_of, currency=target)
     if quote is None:
-        return CurrencyConversion(None, source.handle, target.handle)
+        reverse = latest_price(db, target, as_of=as_of, currency=source)
+        if reverse is None:
+            return CurrencyConversion(None, source.handle, target.handle)
+        return CurrencyConversion(
+            Amount(amount.value * (Money(1) / reverse.value), target.handle),
+            source.handle,
+            target.handle,
+            quote_date=reverse.quote_date,
+            quote_source=reverse.source,
+            quote_type=reverse.quote_type,
+            path="inverse",
+        )
     return CurrencyConversion(
         quote.convert(amount),
         source.handle,
@@ -143,6 +156,7 @@ def convert_currency(
         quote_date=quote.quote_date,
         quote_source=quote.source,
         quote_type=quote.quote_type,
+        path="direct",
     )
 
 
@@ -211,6 +225,7 @@ def account_value(
                     total_amount=converted.amount,
                     price_date=converted.quote_date,
                     price_source=converted.quote_source,
+                    conversion_path=converted.path,
                     currency=db.get_commodity(reporting),
                 )
         return AccountValuation(ledger_total, total_amount=ledger_amount)

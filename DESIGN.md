@@ -256,13 +256,14 @@ or comparing two amounts requires identical commodity identity; scaling retains 
 tag, and dividing like amounts produces an exact dimensionless ratio. Unlike
 commodities become comparable only after an explicit dated conversion has returned
 a new amount in the reporting currency.
-The internal direct currency-conversion result selects the latest eligible quote
-on or before the requested date for one exact source/target pair. It carries the
-selected quote date, source, and type, or an explicit missing-quote result without
-an amount. Identity conversion needs no quote. The result stays exact so a report
-can aggregate converted amounts before applying the target currency fraction once.
-Inverse and multi-hop routes have no implicit precedence, and a missing direct
-quote never licenses silent netting or an invented reporting-currency value.
+The internal currency-conversion result selects the latest eligible direct quote
+on or before the requested date for one exact source/target pair. If absent, it
+inverts the latest eligible reverse-pair quote with an exact rational factor. A
+direct quote always wins over a reverse quote even if its date is older; path,
+selected quote date, source, and type are carried without inventing a new quote.
+Identity conversion needs no quote. An absent pair returns no amount. The result
+stays exact so a report can aggregate converted amounts before applying the target
+currency fraction once. Multi-hop routes have no implicit precedence.
 
 Ledger reads preserve that identity internally. Account, recursive, class-total,
 net-worth, cash-on-hand, and register-running arithmetic uses tagged transaction
@@ -1050,11 +1051,12 @@ Required source dates are never synthesized. Missing or malformed posting/start 
 ## Money and exact arithmetic
 
 Ordinary foreign-currency account valuation uses the latest direct quote on or
-before the as-of date, retaining the exact converted amount until presentation.
-Its result carries quote date and source; without a direct quote the result keeps
-the original tagged ledger amount and exposes the missing quote. Aggregate reports
+before the as-of date, then the latest eligible reverse pair if no direct applies,
+retaining the exact converted amount until presentation. Its result carries quote
+date, source, and inversion path; without either quote the result keeps the original
+tagged ledger amount and exposes the missing quote. Aggregate reports
 for the account chart, cash, and net worth now sum exact tagged values only when
-every nonzero component is in the reporting currency with any required direct quote.
+every nonzero component is in the reporting currency with any required pair quote.
 The aggregate result carries missing-quote account handles and returns no total
 when incomplete. Presentation does not replace a missing total with zero or add
 ledger fallbacks in another currency. Dashboard, Plan, Projection, and printable

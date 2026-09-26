@@ -11,11 +11,12 @@ BreadSched is under active development. Keep independent backups of any financia
 book and review imported or inferred data before relying on it.
 
 In Accounts, a foreign-currency ledger balance can be shown in the reporting
-currency when a direct dated quote exists. The quote evidence column shows its
-date and source; a missing quote keeps the original ledger amount and names its
+currency when a dated direct quote exists, or by inverting a reverse pair if no
+direct quote applies. The quote evidence column shows its date, source, and any
+inversion; a missing quote keeps the original ledger amount and names its
 currency. Do not interpret a missing-quote fallback as a converted balance.
-Account chart rollups and cash/net-worth summaries require a direct quote for each
-nonzero foreign balance. If one is absent, the total reads **Missing
+Account chart rollups and cash/net-worth summaries require a direct or inverse
+pair quote for each nonzero foreign balance. If one is absent, the total reads **Missing
 reporting-currency quote**; the web and CLI responses list the affected account
 handles. Once quotes exist, exact converted amounts are summed before display.
 Other reports have not yet adopted this complete-total rule.
@@ -198,10 +199,13 @@ The Accounts views show the date and source of a selected security quote. If no
 reporting-currency quote is available, they say so and retain the security holding's
 ledger value. An older quote remains visible by its date; BreadSched does not yet
 apply a stale-price cutoff or automatically convert foreign-currency securities.
-Ordinary foreign-currency ledger accounts use available direct dated quotes.
+Ordinary foreign-currency ledger accounts prefer an eligible direct dated quote;
+if none exists, they invert the latest eligible reverse pair. The direct quote
+wins even when the reverse quote is newer. Account quote evidence says **inverse
+rate** when that path was selected; CLI account output also identifies the path.
 Review the quote date and source before treating a market-valued total as current.
 Currency totals in the current views still require a compatible reporting-currency
-value; an inverse or intermediate currency quote does not silently supply one.
+value; no multi-hop path through an intermediate currency is inferred.
 Do not add values in unlike currencies when estimating net worth.
 
 For an Investment or Retirement account, use **Security price…** to define a

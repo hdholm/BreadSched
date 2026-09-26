@@ -134,7 +134,7 @@ def test_direct_currency_conversion_is_exact_and_as_of_with_quote_evidence(db, b
     assert source == Amount(Money(1), euro.handle)
 
 
-def test_currency_conversion_requires_a_direct_quote_and_valid_currency_units(db, book):
+def test_currency_conversion_inverts_one_reverse_quote_without_multihop(db, book):
     usd = db.get_commodity_by_mnemonic("USD")
     assert usd is not None
     euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
@@ -149,6 +149,8 @@ def test_currency_conversion_requires_a_direct_quote_and_valid_currency_units(db
                 currency=euro.handle,
                 quote_date=date(2026, 1, 1),
                 value=Money("0.8"),
+                source="imported-book",
+                quote_type="last",
             ),
             txn,
         )
@@ -164,12 +166,57 @@ def test_currency_conversion_requires_a_direct_quote_and_valid_currency_units(db
 
     same = valuation.convert_currency(db, Amount(Money("2.50"), usd.handle))
     assert same.amount == Amount(Money("2.50"), usd.handle)
-    assert same.quote_date is None and not same.missing_quote
-    assert valuation.convert_currency(db, Amount(Money(2), euro.handle)).missing_quote
+    assert same.quote_date is None and same.path == "identity"
+    assert valuation.convert_currency(
+        db, Amount(Money(2), euro.handle), as_of=date(2025, 12, 31)
+    ).missing_quote
+    inverse = valuation.convert_currency(db, Amount(Money(2), euro.handle), as_of=date(2026, 1, 1))
+    assert inverse.amount == Amount(Money("2.50"), usd.handle)
+    assert inverse.path == "inverse"
+    assert inverse.quote_date == date(2026, 1, 1)
+    assert inverse.quote_source == "imported-book"
+    assert inverse.quote_type == "last"
+    assert valuation.convert_currency(db, Amount(Money(2), pound.handle)).missing_quote
     with pytest.raises(ValueError, match="source must be a known currency"):
         valuation.convert_currency(db, Amount(Money(1), fund.handle))
     with pytest.raises(ValueError, match="target must be a known currency"):
         valuation.convert_currency(db, Amount(Money(1), euro.handle), currency=fund)
+
+
+def test_direct_quote_takes_precedence_over_a_newer_inverse_quote(db, book):
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    with db.transaction("Opposed rates") as txn:
+        db.add_commodity(euro, txn)
+        db.add_price(
+            CommodityPrice(
+                commodity=euro.handle,
+                currency=usd.handle,
+                quote_date=date(2026, 1, 1),
+                value=Money(4, 3),
+                source="direct-source",
+            ),
+            txn,
+        )
+        db.add_price(
+            CommodityPrice(
+                commodity=usd.handle,
+                currency=euro.handle,
+                quote_date=date(2026, 2, 1),
+                value=Money("0.9"),
+                source="reverse-source",
+            ),
+            txn,
+        )
+
+    converted = valuation.convert_currency(
+        db, Amount(Money(-3), euro.handle), as_of=date(2026, 2, 2)
+    )
+    assert converted.amount == Amount(Money(-4), usd.handle)
+    assert converted.path == "direct"
+    assert converted.quote_date == date(2026, 1, 1)
+    assert converted.quote_source == "direct-source"
 
 
 def test_foreign_currency_account_value_exposes_direct_quote_or_ledger_fallback(db, book):

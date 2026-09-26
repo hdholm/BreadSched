@@ -100,8 +100,11 @@ line count alone.
   now use direct quotes where available and disclose a tagged ledger fallback.
   Account chart, cash, and net-worth totals now require complete reporting-currency
   valuations and disclose missing quote accounts rather than adding fallback values.
-  Extend this contract to Dashboard, Plan, Projection, comparisons, and printable
-  reports, then review inverse/multi-hop path policy and rounding across totals.
+  Exact inverse pair quotes now supply ordinary account valuation only when no
+  eligible direct quote exists, with inversion disclosed in account views.
+  Extend complete-total semantics to Dashboard, Plan, Projection, comparisons,
+  and printable reports; review multi-hop policy, staleness, and rounding across
+  totals. Security prices still require a direct reporting-currency quote.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.
