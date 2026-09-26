@@ -217,8 +217,12 @@ breadsched rate household.breadsched --from EUR --to USD --date 2026-01-02 --val
 The value means target units per one source unit. Use `--json` to obtain the
 exact rational rate, date, source, and quote handle. A repeated manual entry for
 the same pair and date updates that manual quote without replacing imported
-evidence. An ambiguous currency code requires its exact handle. GTK and web do
-not yet offer manual rate entry.
+evidence. An ambiguous currency code requires its exact handle. In the web
+**Accounts** view, choose **Exchange rate…**, select the source and target
+currencies, enter an as-of date and the target units per source unit, then save.
+The account display refreshes its quote date and source or missing-quote warning.
+The web control accepts currencies already in the book; it does not create a new
+currency or alter ledger transactions. GTK does not yet offer manual rate entry.
 Web and CLI data expose the signed number of days since the quote, with negative
 days identifying a future-dated quote when no as-of date was requested.
 Review the quote date and source before treating a market-valued total as current.

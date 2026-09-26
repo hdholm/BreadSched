@@ -955,7 +955,11 @@ quote per pair and date is updated in a database transaction, never by overwriti
 an imported quote. The existing as-of read prefers a same-day manual quote, then
 the imported quote if the manual entry is undone. CLI rate entry resolves an exact
 currency handle or a unique currency mnemonic and reports an exact rational rate;
-ambiguous codes require a handle. GTK and web controls remain to be implemented.
+ambiguous codes require a handle. The web write adapter accepts currency handles,
+textual exact rates, and an ISO date, then delegates validation and the complete
+transaction to the shared valuation operation. The Accounts control refreshes
+existing quote evidence and missing-quote displays after saving. GTK entry remains
+to be implemented.
 
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,

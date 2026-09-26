@@ -575,6 +575,46 @@ async function openSecurityPriceEditor() {
   update();
 }
 
+async function openCurrencyRateEditor() {
+  const data = await get("/api/commodities");
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const choices = () => data.currencies.map((item)=>
+    el("option", { value:item.handle }, `${item.mnemonic} — ${item.fullname}`));
+  const source = el("select", {}, choices());
+  const target = el("select", {}, choices());
+  if (data.currencies.length > 1) target.value = data.currencies[1].handle;
+  const when = el("input", { type:"date", value:new Date().toISOString().slice(0,10) });
+  const rate = el("input", { inputmode:"decimal", placeholder:"1.25" });
+  const save = async () => {
+    const quote = await post("/api/currency/quote", {
+      from:source.value, to:target.value, date:when.value, rate:rate.value,
+    });
+    backdrop.remove();
+    say(`Manual rate saved for ${quote.date} (${quote.source}).`);
+    render();
+  };
+  backdrop.append(el("section", { class:"detail-dialog" },
+    el("h2", {}, "Exchange rate"),
+    el("p", { class:"note" },
+      "Enter target-currency units per one source-currency unit. "
+      + "The dated manual quote leaves imported quotes and ledger amounts intact. "
+      + "Accounts show the selected quote date and source or a missing-quote warning."),
+    el("div", { class:"scenario-fields" },
+      el("label", {}, "From currency", source),
+      el("label", {}, "To currency", target),
+      el("label", {}, "As of", when),
+      el("label", {}, "Target units per source unit", rate)),
+    el("div", { class:"toolbar" },
+      el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Cancel"),
+      el("button", { class:"action primary", type:"button",
+        onclick:()=>save().catch((error)=>say(error.message,"error")) }, "Save rate"))));
+  document.body.append(backdrop);
+}
+
 
 async function openFsaClaimsEditor(initialHandle=null) {
   const data = await get("/api/fsa/claims");
@@ -899,7 +939,10 @@ async function showAccounts() {
     el("div", { class:"toolbar" },
       el("button", { class:"action", type:"button",
         onclick:()=>openSecurityPriceEditor().catch((error)=>say(error.message,"error")) },
-      "Security price…")),
+      "Security price…"),
+      el("button", { class:"action", type:"button",
+        onclick:()=>openCurrencyRateEditor().catch((error)=>say(error.message,"error")) },
+      "Exchange rate…")),
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them. Investment values use the latest dated price "
