@@ -13,6 +13,10 @@ a user might otherwise rely on GnuCash, without reproducing GnuCash's business-
 accounting features. GnuCash compatibility remains a first-class requirement while
 BreadSched's standalone household feature set matures.
 
+GnuCash commodity imports distinguish securities with the same ticker in different
+namespaces and currencies. Ambiguous bare identifiers in imported prices are
+reported for review instead of being assigned to an unrelated holding.
+
 ## Why the name BreadSched?
 
 The application is focused heavily on cash flow, but most obvious names built from

@@ -417,7 +417,10 @@ class ImportSink:
             if source_guid:
                 self._commodity_guids[source_guid] = handle
             return handle
-        existing = self.db.get_commodity_by_mnemonic(mnemonic)
+        candidates = [item for item in self.db.iter_commodities() if item.mnemonic == mnemonic]
+        existing = next((item for item in candidates if item.namespace == namespace), None)
+        if existing is None and namespace.upper() in {"CURRENCY", "ISO4217"}:
+            existing = next((item for item in candidates if item.is_currency), None)
         if existing is not None:
             self._commodities[key] = existing.handle
             if source_guid:
@@ -445,8 +448,8 @@ class ImportSink:
             return mapped
         if self.db.get_commodity(identifier) is not None:
             return identifier
-        existing = self.db.get_commodity_by_mnemonic(identifier)
-        return existing.handle if existing is not None else None
+        matches = [item for item in self.db.iter_commodities() if item.mnemonic == identifier]
+        return matches[0].handle if len(matches) == 1 else None
 
     def price(
         self,
