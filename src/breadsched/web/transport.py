@@ -22,6 +22,11 @@ from .server import Api
 
 LOG = get_logger(__name__)
 STATIC = Path(__file__).parent / "static"
+STATIC_ASSETS = {
+    "index.html": ("index.html", "text/html; charset=utf-8"),
+    "style.css": ("style.css", "text/css; charset=utf-8"),
+    "app.js": ("app.js", "application/javascript; charset=utf-8"),
+}
 MAX_JSON_BODY = 64 * 1024
 
 
@@ -96,15 +101,16 @@ class Handler(BaseHTTPRequestHandler):
         self._json(status, payload)
 
     def _static(self, name: str) -> None:
-        path = (STATIC / name).resolve()
-        if not path.is_file() or STATIC.resolve() not in path.parents:
+        asset = STATIC_ASSETS.get(name)
+        if asset is None:
             self._error(404, "resource.not_found")
             return
-        kind = {
-            ".html": "text/html; charset=utf-8",
-            ".css": "text/css; charset=utf-8",
-            ".js": "application/javascript; charset=utf-8",
-        }.get(path.suffix, "application/octet-stream")
+        filename, kind = asset
+        root = STATIC.resolve()
+        path = (root / filename).resolve()
+        if root not in path.parents or not path.is_file():
+            self._error(404, "resource.not_found")
+            return
         self._send(200, path.read_bytes(), kind)
 
     def _trusted_host(self) -> bool:

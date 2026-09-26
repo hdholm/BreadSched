@@ -40,6 +40,10 @@ Documented alpha releases are published from a tested main commit with wheel,
 source archive, and `SHA256SUMS` assets. GitHub marks alpha versions as
 pre-releases; check the versioned release notes and verify downloaded assets
 against the published checksums before installation.
+Release builds run without repository write access; a separate publisher validates
+the tested main commit and artifacts before tagging. Ordinary CI uses read-only
+repository tokens. The loopback web server serves only its packaged page, script,
+and stylesheet from its static directory.
 
 ## Explore expenses
 

@@ -26,6 +26,11 @@ and a check that the tested commit is still main. It builds and verifies artifac
 then publishes an annotated tag and checksums. PEP 440 alpha versions also set
 GitHub's pre-release flag; stable versions omit it. This metadata does not alter
 application or native schema versioning.
+The workflow that handles completed CI runs checks out and executes the tested
+commit only in a read-only job. A separate job with repository write permission
+validates fixed-name artifacts and their checksums as data, rechecks the exact
+tested main commit, and creates the annotated tag and release without checking out
+or running candidate code. All ordinary CI jobs have read-only repository tokens.
 
 ## Layering
 
@@ -159,6 +164,9 @@ not accept transfer encodings. Browser CSS and JavaScript are packaged static as
 all events are registered from JavaScript, and charts construct SVG through namespaced
 DOM nodes rather than interpolating markup. This permits a directive-specific Content
 Security Policy with no inline-script or inline-style exception.
+The transport serves only the three named packaged static assets. It resolves each
+fixed filename and verifies it remains beneath the static root before checking or
+reading it; arbitrary request paths cannot select a filesystem file.
 
 The server owns exactly one writable database connection and serializes every write
 through it. Each file-backed GET opens a short-lived SQLite read-only connection,
@@ -1101,10 +1109,12 @@ compatibility.
 
 Releases are selected explicitly by a checked-in `docs/releases/vVERSION.md`; an
 alpha increment alone is not a release request. After the full CI push run succeeds,
-the release workflow requires that exact tested commit still be the tip of `main`,
-validates the notes against application and schema constants, builds and installs the
-wheel, verifies SHA-256 checksums, and only then creates the annotated tag and GitHub
-release. Release artifacts and notes are never silently replaced.
+the read-only preparation job requires that exact tested commit still be the tip of
+`main`, validates notes against application and schema constants, builds and installs
+the wheel, and verifies SHA-256 checksums. Its separate write-capable publication job
+checks the tested main identity again, validates transferred asset names and hashes
+without running them, then creates the annotated tag and GitHub release. Existing
+tags must target the same commit, and releases are never silently replaced.
 
 The storage priorities are atomic financial writes, explicit format rejection,
 verified backups and recovery, undo/redo integrity, and realistic performance on

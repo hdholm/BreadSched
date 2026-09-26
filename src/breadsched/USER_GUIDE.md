@@ -20,6 +20,9 @@ reads **Mixed currencies** until a conversion path is available.
 When downloading a packaged alpha, choose the GitHub release marked
 **Pre-release**, read its versioned notes, and compare the downloaded wheel or
 source archive against the release's `SHA256SUMS` before installing it.
+Release artifacts are built from the tested main commit with read-only repository
+access, then published after their names and checksums are verified. The loopback
+web interface serves only its packaged page, script, and stylesheet.
 
 ## Getting started
 
