@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Roadmap and documentation review.** Reprioritized installable Flatpak/Windows
+  builds, first-run Dashboard truthfulness, and event-derived category remaining;
+  specified batch due review, FX completion, payees/CSV, receivables, reporting,
+  interoperability, and documentation follow-ons. Clarified current Dashboard
+  setup and Expense Explorer limits in the entry point and packaged guide.
+  Simplified README implementation detail. No application or schema change.
+
 - **Web manual exchange-rate entry.** The Accounts view accepts a dated,
   directional exact rate between existing book currencies. Its resource adapter
   rejects non-text rates and invalid dates before calling the shared atomic
