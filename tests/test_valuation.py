@@ -421,9 +421,7 @@ def test_manual_currency_quote_keeps_imported_evidence_and_updates_same_day(db, 
     assert db.get_price(imported.handle).value == Money(4, 3)
     assert db.undo()
     assert db.get_price(first.handle) is None
-    fallback = valuation.convert_currency(
-        db, Amount(Money(3), euro.handle), as_of=date(2026, 3, 1)
-    )
+    fallback = valuation.convert_currency(db, Amount(Money(3), euro.handle), as_of=date(2026, 3, 1))
     assert fallback.amount == Amount(Money(4), usd.handle)
     assert fallback.quote_source == "imported-book"
 
