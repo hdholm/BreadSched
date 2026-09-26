@@ -377,6 +377,83 @@ def test_user_entry_updates_same_day_quote_instead_of_duplicating_it(db):
     assert [item.value for item in db.iter_prices()] == [Money("126.50")]
 
 
+def test_manual_currency_quote_keeps_imported_evidence_and_updates_same_day(db, book):
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR")
+    imported = CommodityPrice(
+        commodity=euro.handle,
+        currency=usd.handle,
+        quote_date=date(2026, 3, 1),
+        value=Money(4, 3),
+        source="imported-book",
+    )
+    with db.transaction("Imported currency quote") as txn:
+        db.add_commodity(euro, txn)
+        db.add_price(imported, txn)
+
+    first = valuation.save_currency_quote(
+        db,
+        source_handle=euro.handle,
+        target_handle=usd.handle,
+        quote_date=date(2026, 3, 1),
+        value=Money("1.25"),
+    )
+    updated = valuation.save_currency_quote(
+        db,
+        source_handle=euro.handle,
+        target_handle=usd.handle,
+        quote_date=date(2026, 3, 1),
+        value=Money(13, 10),
+    )
+    assert updated.handle == first.handle
+    assert updated.source == "breadsched"
+    assert db.get_price(imported.handle).value == Money(4, 3)
+    assert len(list(db.iter_prices(commodity=euro.handle, currency=usd.handle))) == 2
+    converted = valuation.convert_currency(
+        db, Amount(Money(3), euro.handle), as_of=date(2026, 3, 1)
+    )
+    assert converted.amount == Amount(Money(39, 10), usd.handle)
+    assert converted.quote_source == "breadsched"
+    assert db.verify_book() == []
+    assert db.undo()
+    assert db.get_price(first.handle).value == Money("1.25")
+    assert db.get_price(imported.handle).value == Money(4, 3)
+    assert db.undo()
+    assert db.get_price(first.handle) is None
+    fallback = valuation.convert_currency(db, Amount(Money(3), euro.handle), as_of=date(2026, 3, 1))
+    assert fallback.amount == Amount(Money(4), usd.handle)
+    assert fallback.quote_source == "imported-book"
+
+
+def test_manual_currency_quote_rejects_invalid_pairs_without_writing(db, book):
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    fund = Commodity(namespace="FUND", mnemonic="INDEX")
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR")
+    with db.transaction("Security") as txn:
+        db.add_commodity(fund, txn)
+        db.add_commodity(euro, txn)
+    original = list(db.iter_prices())
+
+    for source, target, rate, message in (
+        (fund.handle, usd.handle, Money(1), "source"),
+        (usd.handle, fund.handle, Money(1), "target"),
+        (usd.handle, usd.handle, Money(1), "different"),
+        (usd.handle, "unknown", Money(1), "target"),
+        (euro.handle, usd.handle, Money(0), "greater than zero"),
+    ):
+        with pytest.raises(ValueError, match=message):
+            valuation.save_currency_quote(
+                db,
+                source_handle=source,
+                target_handle=target,
+                quote_date=date(2026, 3, 1),
+                value=rate,
+            )
+        assert list(db.iter_prices()) == original
+
+
 def test_projection_starts_from_as_of_market_value(db, book):
     account, fund, usd = _holding(db, book)
     with db.transaction("Price") as txn:

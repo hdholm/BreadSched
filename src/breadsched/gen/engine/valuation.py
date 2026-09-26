@@ -25,6 +25,7 @@ __all__ = [
     "net_worth",
     "quantity_balance",
     "quote_age_label",
+    "save_currency_quote",
     "save_security_price",
     "totals_by_class",
     "value_recursive",
@@ -305,6 +306,57 @@ def net_worth(db: DbSQLite, as_of: date | None = None) -> Money:
     """Market-valued assets less liabilities."""
     totals = totals_by_class(db, as_of=as_of)
     return totals.get(AccountClass.ASSET, Money(0)) - totals.get(AccountClass.LIABILITY, Money(0))
+
+
+def save_currency_quote(
+    db: DbSQLite,
+    *,
+    source_handle: str,
+    target_handle: str,
+    quote_date: date,
+    value: Money,
+) -> CommodityPrice:
+    """Save an exact manual FX quote without changing imported price evidence.
+
+    The pair is directional: ``value`` is target units per one source unit.
+    Repeated entry on the same date updates only the BreadSched-owned quote.
+    """
+    source = db.get_commodity(source_handle)
+    target = db.get_commodity(target_handle)
+    if source is None or not source.is_currency:
+        raise ValueError("source must be a known currency")
+    if target is None or not target.is_currency:
+        raise ValueError("target must be a known currency")
+    if source.handle == target.handle:
+        raise ValueError("choose two different currencies")
+    if value <= 0:
+        raise ValueError("rate must be greater than zero")
+
+    with db.transaction("Save currency quote") as txn:
+        existing = next(
+            (
+                item
+                for item in db.iter_prices(
+                    commodity=source.handle,
+                    currency=target.handle,
+                    through=quote_date,
+                )
+                if item.quote_date == quote_date and item.source == "breadsched"
+            ),
+            None,
+        )
+        quote = CommodityPrice(
+            handle=existing.handle if existing is not None else None,
+            commodity=source.handle,
+            currency=target.handle,
+            quote_date=quote_date,
+            value=value,
+        )
+        if existing is None:
+            db.add_price(quote, txn)
+        else:
+            db.commit_price(quote, txn)
+    return quote
 
 
 def save_security_price(
