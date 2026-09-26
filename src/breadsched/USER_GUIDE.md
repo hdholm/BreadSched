@@ -207,6 +207,9 @@ Ordinary foreign-currency ledger accounts prefer an eligible direct dated quote;
 if none exists, they invert the latest eligible reverse pair. The direct quote
 wins even when the reverse quote is newer. Account quote evidence says **inverse
 rate** when that path was selected; CLI account output also identifies the path.
+Imported exchange quotes remain available offline. To add an exchange rate,
+record it in the GnuCash source and import again; GTK, web, and CLI do not yet
+offer manual rate entry.
 Web and CLI data expose the signed number of days since the quote, with negative
 days identifying a future-dated quote when no as-of date was requested.
 Review the quote date and source before treating a market-valued total as current.

@@ -3,7 +3,7 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a108`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a109`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
@@ -102,6 +102,9 @@ line count alone.
   valuations and disclose missing quote accounts rather than adding fallback values.
   Exact inverse pair quotes now supply ordinary account valuation only when no
   eligible direct quote exists, with inversion disclosed in account views.
+  An exact manual FX quote save contract now validates the currency pair and
+  preserves imported quotes; add GTK/web/CLI rate-entry controls before claiming
+  user-facing manual exchange-rate support.
   Scheduled Plan occurrences now carry their transaction currency; actual matching
   excludes unlike currencies and occurrence variance is unavailable when a linked
   actual uses another currency. Complete currency conversion of Plan period totals,

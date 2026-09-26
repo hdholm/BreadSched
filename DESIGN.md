@@ -949,6 +949,12 @@ GUIDs resolve within an import, while an ambiguous bare mnemonic does not resolv
 to an arbitrary commodity for a price. Re-import reuses the matching pair without
 changing the native schema.
 
+The shared manual FX quote write accepts exact source and target currency handles,
+a date, and a positive target-units-per-source-unit rate. One BreadSched-owned
+quote per pair and date is updated in a database transaction, never by overwriting
+an imported quote. The existing as-of read prefers a same-day manual quote, then
+the imported quote if the manual entry is undone. No rate-entry UI is exposed yet.
+
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
 commodity, code, description, source notes, placeholder/hidden state, and commodity SCU)

@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Exact manual FX quote write contract.** A shared valuation operation saves
+  positive, directional rates between two known currencies. Re-entering a
+  BreadSched-owned quote for the same pair and date updates it atomically while
+  leaving imported quote records intact. Existing as-of conversion can select
+  the manual rate with its date and source. User-facing rate entry remains future
+  work. Application version `0.2.0a110`; native schema remains 7.
+
 - **GnuCash commodity identity on import.** A security ticker shared with a
   currency or another security namespace no longer attaches accounts or quotes
   to the first matching mnemonic. Exact namespace/mnemonic matches survive
