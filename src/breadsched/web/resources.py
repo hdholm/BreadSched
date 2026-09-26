@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
+from .currency_quote_resource import save_currency_quote
+
 if TYPE_CHECKING:
     from .server import Api
 
@@ -223,12 +225,17 @@ def _post_without_body(method: str) -> PostRoute:
     return call
 
 
+def _currency_quote(api: Api, body: Mapping[str, Any]) -> object:
+    return save_currency_quote(api.db, body)
+
+
 POST_ROUTES: dict[str, PostRoute] = {
     "/api/dashboard/config": _post("dashboard_config_save"),
     "/api/account/type": _post("account_type_save"),
     "/api/account/card": _post("account_card_save"),
     "/api/account/emergency-fund": _post("account_emergency_fund_save"),
     "/api/commodity/price": _post("commodity_price_save"),
+    "/api/currency/quote": _currency_quote,
     "/api/plan/settings": _post("plan_settings_save"),
     "/api/account/fsa-years": _post("account_fsa_years_save"),
     "/api/fsa/claim/save": _post("fsa_claim_save"),

@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import sys
 from datetime import date
+from io import StringIO
 
 import pytest
 from gnucash_fixtures import create_book, new_guid, write_transaction
@@ -216,6 +218,16 @@ class TestLogging:
             logs.configure(verbosity=1, path=tmp_path / "y.log", stream=True)
         logger = logging.getLogger("breadsched")
         assert len(logger.handlers) == 2  # one console, one file
+
+    def test_console_logging_survives_closed_capture_stream(self, capsys, monkeypatch):
+        previous = sys.stderr
+        stale = StringIO()
+        monkeypatch.setattr(sys, "stderr", stale)
+        logs.configure(verbosity=0)
+        monkeypatch.setattr(sys, "stderr", previous)
+        stale.close()
+        logging.getLogger("breadsched.test").error("later request failure")
+        assert "later request failure" in capsys.readouterr().err
 
     def test_a_log_file_captures_the_detail(self, db, tmp_path):
         book = create_book(tmp_path / "logged.gnucash", CHART, [HEALTHY])

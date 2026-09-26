@@ -10,6 +10,7 @@ handlers.
 from __future__ import annotations
 
 import logging
+import sys
 from pathlib import Path
 
 __all__ = ["configure", "get_logger", "LEVELS"]
@@ -26,6 +27,16 @@ _FORMAT = "%(asctime)s %(levelname)-7s %(name)s: %(message)s"
 #: Marks a handler as installed by configure(), and therefore ours to replace.
 _OWNED = "_breadsched_managed"
 _TIME = "%H:%M:%S"
+
+
+class _CurrentStderr:
+    """Follow the active stderr instead of retaining a closed capture stream."""
+
+    def write(self, value: str) -> int:
+        return sys.stderr.write(value)
+
+    def flush(self) -> None:
+        sys.stderr.flush()
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -60,7 +71,7 @@ def configure(
     formatter = logging.Formatter(_FORMAT, datefmt=_TIME)
 
     if stream:
-        console = logging.StreamHandler()
+        console = logging.StreamHandler(_CurrentStderr())
         console.setLevel(level)
         console.setFormatter(formatter)
         setattr(console, _OWNED, True)

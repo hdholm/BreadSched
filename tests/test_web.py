@@ -2060,6 +2060,46 @@ class TestThreadSafety:
 
 
 class TestWriting:
+    def test_manual_currency_quote_preserves_import_and_rejected_writes(self, client):
+        _status, commodities = client.get("/api/commodities")
+        usd = next(item for item in commodities["currencies"] if item["mnemonic"] == "USD")
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR")
+        imported = CommodityPrice(
+            commodity=euro.handle,
+            currency=usd["handle"],
+            quote_date=date(2026, 3, 1),
+            value=Money("1.1"),
+            source="sample-import",
+        )
+        with client.database.transaction("Fixture rate") as txn:
+            client.database.add_commodity(euro, txn)
+            client.database.add_price(imported, txn)
+
+        request = {"from": euro.handle, "to": usd["handle"], "date": "2026-03-01"}
+        status, first = client.post("/api/currency/quote", {**request, "rate": "1.234567"})
+        assert status == 200
+        assert first["rate"] == "1234567/1000000"
+        assert first["source"] == "breadsched"
+        status, second = client.post("/api/currency/quote", {**request, "rate": "1.25"})
+        assert status == 200
+        assert second["handle"] == first["handle"]
+        assert second["rate"] == "5/4"
+
+        original = list(client.database.iter_prices(commodity=euro.handle))
+        for rejected in (
+            {**request, "rate": "0"},
+            {**request, "rate": "not a rate"},
+            {**request, "rate": 1.5},
+            {**request, "to": euro.handle, "rate": "1.25"},
+            {**request, "date": "invalid", "rate": "1.25"},
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/currency/quote", rejected)
+            assert caught.value.code == 400
+            assert list(client.database.iter_prices(commodity=euro.handle)) == original
+        assert client.database.get_price(imported.handle) == imported
+        assert len(original) == 2
+
     def test_a_security_and_exact_dated_price_can_be_entered(self, client):
         _status, commodities = client.get("/api/commodities")
         usd = next(item for item in commodities["currencies"] if item["mnemonic"] == "USD")
@@ -2503,6 +2543,25 @@ class TestSafety:
         assert "private failure detail" not in json.dumps(payload)
         assert payload["correlation_id"]
         assert breadsched_logs.containing(payload["correlation_id"])
+
+    def test_unexpected_failure_still_responds_when_logger_is_broken(self, client, monkeypatch):
+        from breadsched.web import transport
+
+        def explode(_api, query):
+            query.finish()
+            raise RuntimeError("private failure detail")
+
+        def broken_log(*_args, **_kwargs):
+            raise ValueError("closed log stream")
+
+        monkeypatch.setitem(GET_ROUTES, "/api/test-broken-log", explode)
+        monkeypatch.setattr(transport.LOG, "exception", broken_log)
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/test-broken-log")
+        payload = json.loads(caught.value.read())
+        assert caught.value.code == 500
+        assert payload["code"] == "internal.error"
+        assert "private failure detail" not in json.dumps(payload)
 
 
 class TestCliIntegration:
