@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Code-scanning remediation and release isolation.** Limit CI tokens to
+  read-only access; build and test release artifacts in a read-only job, then
+  validate and publish them as data in a separate write-capable job with no
+  candidate-code checkout. Serve only named web static assets and reject an
+  asset whose resolved path leaves the packaged static directory. Cover both
+  boundaries with focused regression tests. Advance application version to
+  `0.2.0a102`; native schema remains 7.
+
 - **Direct foreign-currency account valuation.** Convert an ordinary account's
   foreign transaction-currency balance using a dated direct quote, keeping the
   amount exact and showing quote date/source in account views. With no quote,

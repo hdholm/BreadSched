@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import socket
+import sys
 import threading
 import urllib.error
 import urllib.parse
@@ -2196,6 +2197,42 @@ class TestImportApi:
 
 
 class TestSafety:
+    def test_only_named_static_assets_are_served(self, client, tmp_path, monkeypatch):
+        from breadsched.web import transport
+
+        static = tmp_path / "static"
+        static.mkdir()
+        (static / "style.css").write_text("body { color: black; }", encoding="utf-8")
+        (static / "private.txt").write_text("not public", encoding="utf-8")
+        monkeypatch.setattr(transport, "STATIC", static)
+
+        status, body, headers = client.raw("/style.css")
+        assert status == 200
+        assert body == b"body { color: black; }"
+        assert headers.get_content_type() == "text/css"
+        for requested in ("/private.txt", "/../private.txt", "/%2e%2e/private.txt"):
+            status, payload = raw_http(
+                client,
+                f"GET {requested} HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n".encode(),
+            )
+            assert status == 404
+            assert payload["code"] == "resource.not_found"
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows CI cannot create test symlinks")
+    def test_static_symlink_outside_asset_root_is_rejected(self, client, tmp_path, monkeypatch):
+        from breadsched.web import transport
+
+        static = tmp_path / "static"
+        static.mkdir()
+        secret = tmp_path / "private.txt"
+        secret.write_text("not public", encoding="utf-8")
+        (static / "style.css").symlink_to(secret)
+        monkeypatch.setattr(transport, "STATIC", static)
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.raw("/style.css")
+        assert caught.value.code == 404
+
     def test_an_empty_query_is_valid_on_every_supported_python(self):
         QueryParams("").finish()
 
