@@ -190,6 +190,7 @@ class GroupAccountResult:
     total: Money | None
     source: str = "ledger"
     note: str = ""
+    missing_quotes: tuple[str, ...] = ()
 
 
 @dataclass
@@ -213,6 +214,28 @@ class GroupResult:
     liquid: Money = field(default_factory=lambda: Money(0))
     _assets: Money = field(default_factory=lambda: Money(0), repr=False)
     _debts: Money = field(default_factory=lambda: Money(0), repr=False)
+    missing_quotes: tuple[str, ...] = ()
+    liquid_missing_quotes: tuple[str, ...] = ()
+
+    @property
+    def report_total(self) -> Money | None:
+        return None if self.missing_quotes else self.total
+
+    @property
+    def report_value(self) -> Money | None:
+        return None if self.missing_quotes else self.value
+
+    @property
+    def report_debt(self) -> Money | None:
+        return None if self.missing_quotes else self.debt
+
+    @property
+    def report_equity(self) -> Money | None:
+        return None if self.missing_quotes else self.equity
+
+    @property
+    def report_loan_to_value(self) -> Decimal | None:
+        return None if self.missing_quotes else self.loan_to_value
 
     @property
     def equity(self) -> Money | None:
@@ -325,6 +348,30 @@ class Dashboard:
     next_income: date | None = None
     _income_events: list[tuple[date, Money]] = field(default_factory=list, repr=False)
     liquid: Money = field(default_factory=lambda: Money(0))
+    liquid_missing_quotes: tuple[str, ...] = ()
+
+    @property
+    def missing_quotes(self) -> tuple[str, ...]:
+        return tuple(
+            dict.fromkeys(
+                handle
+                for group in self.groups
+                if group.depth == 0
+                for handle in group.missing_quotes
+            )
+        )
+
+    def report_summary(self) -> dict[str, object]:
+        """Suppress monetary conclusions that depend on unavailable quotes."""
+        report: dict[str, object] = dict(self.summary())
+        if self.missing_quotes:
+            for field in ("assets", "debts", "net_worth"):
+                report[field] = None
+        if self.liquid_missing_quotes:
+            for field in ("liquid", "available", "emergency_shortfall", "months_covered"):
+                report[field] = None
+        return report
+
     # -------------------------------------------------------------- aggregates
 
     def group(self, name: str) -> GroupResult | None:
@@ -552,8 +599,22 @@ def build(
 
     if any(group.kind == "liquid" for group in resolved):
         board.liquid = sum((group.liquid for group in board.groups if group.depth == 0), Money(0))
+        board.liquid_missing_quotes = tuple(
+            dict.fromkeys(
+                handle
+                for group in board.groups
+                if group.depth == 0
+                for handle in group.liquid_missing_quotes
+            )
+        )
     else:
-        board.liquid = ledger.cash_on_hand(db, as_of=today)
+        cash = valuation.aggregate_value(
+            db,
+            accounts=[a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder],
+            as_of=today,
+        )
+        board.liquid = cash.amount.value if cash.amount is not None else Money(0)
+        board.liquid_missing_quotes = cash.missing_quotes
     pending, estimates, income_per_month, income_with_estimates, next_income, income_events = (
         _pending_cash_flow(db, today, horizon_days, paid_off, fraction)
     )
@@ -783,7 +844,7 @@ def _build_group_node(
 
     direct_kind = node.groups[0].kind if node.groups else None
     direct_accounts = [handle for group in node.groups for handle in group.accounts]
-    lines, assets, debts, liquid, notes = _direct_group_totals(
+    lines, assets, debts, liquid, notes, missing, liquid_missing = _direct_group_totals(
         db, direct_accounts, direct_kind, today, paid_off
     )
     loan_end = _loan_end_date(db, direct_accounts, paid_off)
@@ -793,6 +854,8 @@ def _build_group_node(
         liquid = liquid + child_result.liquid
         if child_result.note:
             notes.append(child_result.note)
+        missing.extend(child_result.missing_quotes)
+        liquid_missing.extend(child_result.liquid_missing_quotes)
         if child_result.loan_end is not None and (
             loan_end is None or child_result.loan_end > loan_end
         ):
@@ -831,6 +894,8 @@ def _build_group_node(
         liquid=liquid,
         _assets=assets,
         _debts=debts,
+        missing_quotes=tuple(dict.fromkeys(missing)),
+        liquid_missing_quotes=tuple(dict.fromkeys(liquid_missing)),
     )
     return [result, *child_rows]
 
@@ -852,12 +917,14 @@ def _direct_group_totals(
     kind: str | None,
     today: date,
     paid_off: set[str],
-) -> tuple[list[GroupAccountResult], Money, Money, Money, list[str]]:
+) -> tuple[list[GroupAccountResult], Money, Money, Money, list[str], list[str], list[str]]:
     lines: list[GroupAccountResult] = []
     assets = Money(0)
     debts = Money(0)
     liquid = Money(0)
     notes: list[str] = []
+    missing: list[str] = []
+    liquid_missing: list[str] = []
     for handle in handles:
         if handle in paid_off:
             continue
@@ -868,6 +935,9 @@ def _direct_group_totals(
         lines.append(line)
         if line.note:
             notes.append(line.note)
+        missing.extend(line.missing_quotes)
+        if kind == "liquid":
+            liquid_missing.extend(line.missing_quotes)
         amount = line.total if line.total is not None else Money(0)
         if account.account_class is AccountClass.LIABILITY:
             debts = debts + amount
@@ -875,13 +945,15 @@ def _direct_group_totals(
             assets = assets + amount
         if kind == "liquid":
             liquid = liquid + amount
-    return lines, assets, debts, liquid, notes
+    return lines, assets, debts, liquid, notes, missing, liquid_missing
 
 
 def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupAccountResult:
     name = db.full_name(account) or account.name
     if account.atype is not AccountType.FSA:
-        total = valuation.value_recursive(db, account.handle, as_of=today)
+        subtree = [account, *db.descendants(account.handle)]
+        aggregate = valuation.aggregate_value(db, accounts=subtree, as_of=today)
+        total = aggregate.amount.value if aggregate.amount is not None else None
         own = valuation.account_value(db, account, as_of=today)
         note = ""
         source = "ledger"
@@ -897,11 +969,29 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
                 f"{own.quantity.format()} {own.commodity.mnemonic} at "
                 f"{own.price.format()} {currency} as of {own.price_date}"
             )
+        if aggregate.missing_quotes:
+            note = "Missing reporting-currency quote"
+        elif own.source == "currency" and own.price_date is not None:
+            suffix = " · inverse rate" if own.conversion_path == "inverse" else ""
+            note = f"{own.price_date} · {own.price_source or 'Unknown source'}{suffix}"
+        if not aggregate.missing_quotes:
+            child_quotes = []
+            for child in subtree[1:]:
+                valued = valuation.account_value(db, child, as_of=today)
+                if valued.price_date is None or not valued.total:
+                    continue
+                suffix = " · inverse rate" if valued.conversion_path == "inverse" else ""
+                child_quotes.append(
+                    f"{db.full_name(child)}: {valued.price_date} · "
+                    f"{valued.price_source or 'Unknown source'}{suffix}"
+                )
+            note = "; ".join(part for part in (note, *child_quotes) if part)
         return GroupAccountResult(
             name=name,
             total=total,
             source=source,
             note=note,
+            missing_quotes=aggregate.missing_quotes,
         )
     if not account.fsa_years:
         return GroupAccountResult(

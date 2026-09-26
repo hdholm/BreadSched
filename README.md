@@ -78,7 +78,9 @@ the current view without changing saved Dashboard settings.
 The valuation layer uses exact as-of currency quotes for ordinary foreign
 account balances, with provenance and explicit missing-quote status. Account chart
 rollups and cash/net-worth summaries require complete direct or inverse pair quotes.
-Dashboard, Plan, Projection, and other reports still need that policy applied.
+Dashboard now marks position and liquidity figures unavailable when a configured
+group or spendable cash balance lacks a quote; bills and income remain visible.
+Plan, Projection, and their printed reports still need the same policy.
 Multi-hop conversion paths remain under development.
 The web Scenarios list displays Base and saved scenarios with effective assumptions,
 their inheritance sources, and accounts eligible for account-specific rates. Saving

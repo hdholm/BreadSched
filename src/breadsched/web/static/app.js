@@ -3118,22 +3118,24 @@ async function showDashboard() {
   state.liquidityDays = data.config.liquidity_days;
   state.emergencyMonths = data.config.emergency_months;
 
-  const short = Number(s.emergency_shortfall) > 0;
+  const short = s.emergency_shortfall !== null && Number(s.emergency_shortfall) > 0;
+  const dashboardMoney = (value) => value === null ? "Missing reporting-currency quote" : money(value);
   const tile = (label, value, alarm) => el("div", { class: "card" },
     el("div", { class: "label" }, label),
     el("div", { class: alarm ? "value neg" : "value" }, value));
 
   const cards = el("div", { class: "cards" },
-    tile("Net worth", money(s.net_worth)),
-    tile("Liquid", money(s.liquid)),
+    tile("Net worth", dashboardMoney(s.net_worth)),
+    tile("Liquid", dashboardMoney(s.liquid)),
     tile(`Needed in ${data.config.liquidity_days} days`, money(s.required_liquid)),
-    tile("Available", money(s.available), Number(s.available) < 0),
+    tile("Available", dashboardMoney(s.available), s.available !== null && Number(s.available) < 0),
     tile(`Emergency fund (${data.config.emergency_months} mo)`, money(s.emergency_fund)),
     tile("Committed emergency outgoings / mo", money(s.emergency_monthly_outgoings)),
     tile("Including estimates / mo", money(s.emergency_monthly_outgoings_with_estimates)),
-    tile("Months covered", s.months_covered,
-         Number(s.months_covered) < Number(data.config.emergency_months)),
-    short ? tile("Short of the fund", money(s.emergency_shortfall), true) : null);
+    tile("Months covered", s.months_covered === null
+      ? "Missing reporting-currency quote" : s.months_covered,
+         s.months_covered !== null && Number(s.months_covered) < Number(data.config.emergency_months)),
+    short ? tile("Short of the fund", dashboardMoney(s.emergency_shortfall), true) : null);
 
   const controls = el("div", { class: "row" },
     el("label", {}, "Liquid for "),
@@ -3157,7 +3159,7 @@ async function showDashboard() {
     }, el("h3",{},g.name), g.note ? el("p", {class:"note"}, g.note) : null, el("dl",{},
       g.value === null ? null : [el("dt",{},"Value"),el("dd",{},money(g.value))],
       g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
-      el("dt",{},g.equity === null ? "Total" : "Equity"), el("dd",{},money(g.equity === null ? g.total : g.equity)),
+      el("dt",{},g.equity === null ? "Total" : "Equity"), el("dd",{},dashboardMoney(g.equity === null ? g.total : g.equity)),
       g.loan_to_value === null ? null : [el("dt",{},"LTV"),el("dd",{},(g.loan_to_value*100).toFixed(1)+"%")
       ], g.loan_end === null ? null : [el("dt",{},"Loan end"),el("dd",{},g.loan_end)
       ], ...(g.accounts || []).map((account) => [

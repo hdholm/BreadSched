@@ -275,6 +275,7 @@ class DashboardView(BaseView):
         board = self.board
         assert board is not None
         summary = board.summary()
+        missing_fields = {key for key, value in board.report_summary().items() if value is None}
         shortfall = summary["emergency_shortfall"]
 
         cards = [
@@ -299,17 +300,29 @@ class DashboardView(BaseView):
             ),
         ]
         for label, amount, alarm in cards:
-            self.cards.append(_card(label, amount.format(parens_negative=True), alarm))
+            field = {"Net worth": "net_worth", "Liquid": "liquid", "Available": "available"}.get(
+                label
+            )
+            rendered = (
+                "Missing reporting-currency quote"
+                if field in missing_fields
+                else amount.format(parens_negative=True)
+            )
+            self.cards.append(
+                _card(label, rendered, alarm if field not in missing_fields else False)
+            )
 
         months = summary["months_covered"]
         self.cards.append(
             _card(
                 "Months covered",
-                f"{months:g}",
-                months < board.config.emergency_months,
+                f"{months:g}"
+                if "months_covered" not in missing_fields
+                else "Missing reporting-currency quote",
+                months < board.config.emergency_months and "months_covered" not in missing_fields,
             )
         )
-        if shortfall > 0:
+        if shortfall > 0 and "emergency_shortfall" not in missing_fields:
             self.cards.append(_card("Short of the fund", shortfall.format(), True))
 
     def _render_groups(self) -> None:
@@ -334,20 +347,18 @@ class DashboardView(BaseView):
             name.set_ellipsize(Pango.EllipsizeMode.END)
             name.set_tooltip_text(group.path)
             self.groups.attach(name, 0, index, 1, 1)
+            self.groups.attach(_amount(group.report_value), 1, index, 1, 1)
+            self.groups.attach(_amount(group.report_debt), 2, index, 1, 1)
             self.groups.attach(
-                _amount(group.value if group.value is not None else None), 1, index, 1, 1
-            )
-            self.groups.attach(
-                _amount(group.debt if group.debt is not None else None), 2, index, 1, 1
-            )
-            self.groups.attach(
-                _amount(group.equity if group.equity is not None else group.total),
+                _amount(
+                    group.report_equity if group.report_equity is not None else group.report_total
+                ),
                 3,
                 index,
                 1,
                 1,
             )
-            ratio = group.loan_to_value
+            ratio = group.report_loan_to_value
             self.groups.attach(
                 Gtk.Label(label=f"{ratio:.1%}" if ratio is not None else "", xalign=1),
                 4,

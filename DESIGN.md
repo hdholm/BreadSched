@@ -1059,8 +1059,15 @@ for the account chart, cash, and net worth now sum exact tagged values only when
 every nonzero component is in the reporting currency with any required pair quote.
 The aggregate result carries missing-quote account handles and returns no total
 when incomplete. Presentation does not replace a missing total with zero or add
-ledger fallbacks in another currency. Dashboard, Plan, Projection, and printable
+ledger fallbacks in another currency. Plan, Projection, and their printable
 reports need this contract separately before claiming complete currency support.
+Dashboard's configured group valuation uses the same exact aggregate result for
+each selected account subtree. A missing quote is propagated through generated
+group headings; position totals and dependent liquidity outputs are suppressed
+at the report boundary rather than presenting a partial internal calculation.
+Fallback spendable cash uses the same aggregate. The remaining bill and income
+rows are independent of current-balance valuation and stay visible. GTK, web,
+CLI, and print share the missing-account disclosure; no imported quote is edited.
 
 Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. GTK and web user entry therefore pass through the shared amount-input boundary: unambiguous decimal conventions are detected from the text, GTK uses the process numeric locale only as an ambiguity tie-breaker, and the web client sends its browser decimal convention explicitly. User-entered amounts remain text until exact server-side parsing; JavaScript floating-point conversion is not part of financial input. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality. ``Money * Money`` is deliberately rejected. ``Money / Money`` produces an exact ``Fraction`` ratio, while projection assumptions use ``Rate`` so percentages cannot masquerade as ledger amounts.
 

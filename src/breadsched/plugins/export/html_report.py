@@ -181,16 +181,25 @@ def expense_explorer_report(explorer: ExpenseExplorer) -> str:
 def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
     """Render the currently built Dashboard as printable HTML."""
     summary = board.summary()
+    report = board.report_summary()
+
+    def visible(field: str, value: Money) -> str:
+        return "Missing reporting-currency quote" if report[field] is None else _money(value)
+
     cards = _cards(
         [
-            ("Net worth", _money(summary["net_worth"]), False),
-            ("Liquid", _money(summary["liquid"]), False),
+            ("Net worth", visible("net_worth", summary["net_worth"]), False),
+            ("Liquid", visible("liquid", summary["liquid"]), False),
             (
                 f"Needed in {board.config.liquidity_days} days",
                 _money(summary["required_liquid"]),
                 False,
             ),
-            ("Available", _money(summary["available"]), summary["available"] < 0),
+            (
+                "Available",
+                visible("available", summary["available"]),
+                report["available"] is not None and summary["available"] < 0,
+            ),
             (
                 f"Emergency fund ({board.config.emergency_months} mo)",
                 _money(summary["emergency_fund"]),
@@ -208,12 +217,15 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
             ),
             (
                 "Months covered",
-                f"{summary['months_covered']:g}",
-                summary["months_covered"] < board.config.emergency_months,
+                f"{summary['months_covered']:g}"
+                if report["months_covered"] is not None
+                else "Missing reporting-currency quote",
+                report["months_covered"] is not None
+                and summary["months_covered"] < board.config.emergency_months,
             ),
         ]
     )
-    if summary["emergency_shortfall"] > 0:
+    if report["emergency_shortfall"] is not None and summary["emergency_shortfall"] > 0:
         cards = cards.removesuffix("</div>") + (
             '<div class="card"><small>Short of the fund</small>'
             f'<strong class="neg">{escape(_money(summary["emergency_shortfall"]))}</strong>'
@@ -226,12 +238,16 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
         name = f"{'&nbsp;' * (group.depth * 4)}{escape(group.name)}"
         if group.note:
             name += f' <span class="note">— {escape(group.note)}</span>'
-        ratio = f"{group.loan_to_value:.1%}" if group.loan_to_value is not None else ""
+        ratio = (
+            f"{group.report_loan_to_value:.1%}" if group.report_loan_to_value is not None else ""
+        )
         group_rows.append(
             f'<tr class="{css}"><td title="{escape(group.path, quote=True)}">{name}</td>'
-            + _amount(group.value)
-            + _amount(group.debt)
-            + _amount(group.equity if group.equity is not None else group.total)
+            + _amount(group.report_value)
+            + _amount(group.report_debt)
+            + _amount(
+                group.report_equity if group.report_equity is not None else group.report_total
+            )
             + f'<td class="num">{ratio}</td><td>{escape(str(group.loan_end or ""))}</td></tr>'
         )
     groups = (

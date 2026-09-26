@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Dashboard quote completeness.** A missing reporting-currency quote in a
+  configured group suppresses dependent position totals; a missing quote in a
+  liquid group or fallback cash balance also suppresses liquid, available, shortfall,
+  and months-covered figures. GTK, web, CLI, and printed Dashboard reports show
+  unavailable totals while leaving unrelated bills and income visible. Group
+  account rows retain quote date/source or disclose missing quotes. Advance
+  application version to `0.2.0a105`; native schema remains 7.
+
 - **Exact inverse currency quotes.** For ordinary foreign-currency balances,
   select the latest direct quote as of the requested date; if none exists, invert
   the latest dated reverse pair exactly. A direct quote takes precedence even if

@@ -3,7 +3,7 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a102`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a104`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
@@ -102,9 +102,12 @@ line count alone.
   valuations and disclose missing quote accounts rather than adding fallback values.
   Exact inverse pair quotes now supply ordinary account valuation only when no
   eligible direct quote exists, with inversion disclosed in account views.
-  Extend complete-total semantics to Dashboard, Plan, Projection, comparisons,
-  and printable reports; review multi-hop policy, staleness, and rounding across
-  totals. Security prices still require a direct reporting-currency quote.
+  Dashboard configured groups and liquidity now suppress dependent figures on
+  missing quotes across GTK, web, CLI, and print, while leaving unrelated bills
+  and income visible. Extend complete-total semantics to Plan, Projection,
+  comparisons, and their printable reports; review multi-hop policy, staleness,
+  and rounding across totals. Security prices still require a direct
+  reporting-currency quote.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.

@@ -17,15 +17,91 @@ from breadsched.gen.engine import dashboard
 from breadsched.gen.lib import (
     Account,
     AccountType,
+    Commodity,
+    CommodityPrice,
     Money,
     PeriodType,
     Recurrence,
     ScheduledSplit,
     ScheduledTransaction,
+    Split,
     Transaction,
 )
 
 TODAY = date(2026, 9, 9)
+
+
+def test_missing_dashboard_group_quote_suppresses_position_and_liquidity(db, book):
+    from breadsched.plugins.export.html_report import dashboard_report
+
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    account = Account(
+        name="Foreign cash", atype=AccountType.BANK, parent=book.assets, commodity=euro.handle
+    )
+    transaction = Transaction(post_date=date(2026, 1, 2), description="Opening cash")
+    transaction.currency = euro.handle
+    transaction.splits = [Split(account.handle, Money(10)), Split(book.opening, Money(-10))]
+    with db.transaction("Foreign cash") as txn:
+        db.add_commodity(euro, txn)
+        db.add_account(account, txn)
+        db.add_transaction(transaction, txn)
+    config = dashboard.DashboardConfig(
+        groups=[dashboard.GroupConfig("Cash", [account.handle], "liquid")]
+    )
+    missing = dashboard.build(db, config, as_of=TODAY)
+    report = missing.report_summary()
+    assert report["net_worth"] is None
+    assert report["liquid"] is None
+    assert report["available"] is None
+    assert report["months_covered"] is None
+    assert report["required_liquid"] == Money(0)
+    assert missing.groups[0].report_total is None
+    assert missing.groups[0].accounts[0].total is None
+    assert missing.missing_quotes == (account.handle,)
+    assert "Missing reporting-currency quote" in dashboard_report(missing)
+
+    with db.transaction("Reverse currency quote") as txn:
+        db.add_price(
+            CommodityPrice(
+                commodity=usd.handle,
+                currency=euro.handle,
+                quote_date=date(2026, 2, 1),
+                value=Money("0.5"),
+                source="sample-source",
+            ),
+            txn,
+        )
+    converted = dashboard.build(db, config, as_of=TODAY)
+    assert converted.report_summary()["liquid"] == Money(20)
+    assert converted.groups[0].report_total == Money(20)
+    assert "inverse rate" in converted.groups[0].accounts[0].note
+    parent_config = dashboard.DashboardConfig(
+        groups=[dashboard.GroupConfig("Asset subtree", [book.assets], "asset")]
+    )
+    parent = dashboard.build(db, parent_config, as_of=TODAY)
+    assert parent.groups[0].report_total == Money(20)
+    assert "Foreign cash: 2026-02-01 · sample-source · inverse rate" in (
+        parent.groups[0].accounts[0].note
+    )
+
+
+def test_missing_quote_in_fallback_cash_suppresses_liquidity(db, book):
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    account = Account(
+        name="Foreign cash", atype=AccountType.BANK, parent=book.assets, commodity=euro.handle
+    )
+    transaction = Transaction(post_date=date(2026, 1, 2), description="Opening cash")
+    transaction.currency = euro.handle
+    transaction.splits = [Split(account.handle, Money(10)), Split(book.opening, Money(-10))]
+    with db.transaction("Foreign cash") as txn:
+        db.add_commodity(euro, txn)
+        db.add_account(account, txn)
+        db.add_transaction(transaction, txn)
+    board = dashboard.build(db, dashboard.DashboardConfig(), as_of=TODAY)
+    assert board.liquid_missing_quotes == (account.handle,)
+    assert board.report_summary()["available"] is None
 
 
 @pytest.fixture
@@ -681,7 +757,14 @@ class TestCli:
         capsys.readouterr()
         cli(["dashboard", str(path), "--json"])
         payload = json.loads(capsys.readouterr().out)
-        assert set(payload) == {"summary", "groups", "bills", "income"}
+        assert set(payload) == {
+            "summary",
+            "groups",
+            "bills",
+            "income",
+            "missing_quotes",
+            "liquid_missing_quotes",
+        }
 
     def test_the_horizons_can_be_overridden(self, tmp_path, capsys):
         import json
