@@ -170,6 +170,65 @@ def resolve_account(db: DbSQLite, reference: str) -> Account:
     return account
 
 
+def resolve_currency(db: DbSQLite, reference: str) -> str:
+    """Accept an exact handle or an unambiguous currency mnemonic."""
+    direct = db.get_commodity(reference)
+    if direct is not None:
+        if direct.is_currency:
+            return direct.handle
+        raise CommandError(f"{reference!r} is not a currency")
+    matches = [
+        item
+        for item in db.iter_commodities()
+        if item.is_currency and item.mnemonic.upper() == reference.upper()
+    ]
+    if len(matches) != 1:
+        reason = "ambiguous currency" if matches else "no currency matches"
+        raise CommandError(f"{reason} {reference!r}; use an exact currency handle")
+    return matches[0].handle
+
+
+def cmd_rate(args: argparse.Namespace) -> int:
+    """Write a dated directional FX quote through the shared valuation contract."""
+    quote_date = parse_date(args.date)
+    if quote_date is None:
+        raise CommandError("rate date is required")
+    try:
+        value = Money(args.value)
+    except (ValueError, TypeError, ZeroDivisionError) as exc:
+        raise CommandError("rate must be a positive exact number") from exc
+    db = open_book(args.book)
+    try:
+        source = resolve_currency(db, args.source)
+        target = resolve_currency(db, args.target)
+        try:
+            quote = valuation.save_currency_quote(
+                db,
+                source_handle=source,
+                target_handle=target,
+                quote_date=quote_date,
+                value=value,
+            )
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
+    finally:
+        db.close()
+    exact_rate = f"{quote.value.numerator}/{quote.value.denominator}"
+    emit(
+        {
+            "handle": quote.handle,
+            "from": args.source,
+            "to": args.target,
+            "date": quote.quote_date,
+            "rate": exact_rate,
+            "source": quote.source,
+        },
+        args,
+        f"Saved {args.source} → {args.target}: {exact_rate} on {quote_date} ({quote.source})",
+    )
+    return 0
+
+
 # ------------------------------------------------------------------- commands
 
 
@@ -1893,6 +1952,13 @@ def build_parser() -> argparse.ArgumentParser:
     balance.add_argument("--as-of")
     balance.add_argument("--recursive", action="store_true", help="include child accounts")
     balance.set_defaults(func=cmd_balance)
+
+    rate = add("rate", "Save a dated manual exchange rate (target units per source unit)")
+    rate.add_argument("--from", dest="source", required=True, help="source currency code or handle")
+    rate.add_argument("--to", dest="target", required=True, help="target currency code or handle")
+    rate.add_argument("--date", required=True, help="quote date (YYYY-MM-DD)")
+    rate.add_argument("--value", required=True, help="target units per one source unit")
+    rate.set_defaults(func=cmd_rate)
 
     add_txn = add("add", "Post a two-split transaction")
     add_txn.add_argument("--date", default="today")

@@ -12,9 +12,11 @@ import pytest
 
 from breadsched.cli.main import main
 from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.engine import valuation
 from breadsched.gen.lib import (
     Account,
     AccountType,
+    Amount,
     Commodity,
     CommodityPrice,
     Money,
@@ -38,6 +40,100 @@ def run_json(capsys, *argv):
     code, out = run(capsys, *argv, "--json")
     assert code == 0, out
     return json.loads(out)
+
+
+def test_cli_manual_rate_keeps_exact_value_and_imported_quote(capsys, book_path):
+    run(capsys, "init", book_path)
+    db = DbSQLite()
+    db.load(book_path)
+    try:
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR")
+        usd = db.get_commodity_by_mnemonic("USD")
+        assert usd is not None
+        imported = CommodityPrice(
+            commodity=euro.handle,
+            currency=usd.handle,
+            quote_date=date(2026, 1, 2),
+            value=Money("1.1"),
+            source="example-import",
+        )
+        with db.transaction("Fixture quote") as txn:
+            db.add_commodity(euro, txn)
+            db.add_price(imported, txn)
+    finally:
+        db.close()
+
+    command = ("rate", book_path, "--from", "EUR", "--to", "USD", "--date", "2026-01-02")
+    first = run_json(capsys, *command, "--value", "1.234567")
+    assert first["rate"] == "1234567/1000000"
+    assert first["source"] == "breadsched"
+    updated = run_json(capsys, *command, "--value", "1.25")
+    assert updated["handle"] == first["handle"]
+    assert updated["rate"] == "5/4"
+    for invalid in ("0", "-1", "not-a-number"):
+        code = main([*command, "--value", invalid])
+        assert code == 2
+
+    db = DbSQLite()
+    db.load(book_path)
+    try:
+        assert db.get_price(imported.handle) == imported
+        quotes = list(db.iter_prices(commodity=euro.handle, currency=usd.handle))
+        assert len(quotes) == 2
+        assert valuation.convert_currency(
+            db, Amount(Money(4), euro.handle), as_of=date(2026, 1, 2)
+        ).amount == Amount(Money(5), usd.handle)
+    finally:
+        db.close()
+
+
+def test_cli_rate_rejects_unknown_and_ambiguous_currency_without_write(capsys, book_path):
+    run(capsys, "init", book_path)
+    db = DbSQLite()
+    db.load(book_path)
+    try:
+        first_euro = Commodity(namespace="CURRENCY", mnemonic="EUR")
+        with db.transaction("Fixture duplicate code") as txn:
+            db.add_commodity(first_euro, txn)
+            db.add_commodity(Commodity(namespace="ISO4217", mnemonic="EUR"), txn)
+    finally:
+        db.close()
+    for source in ("EUR", "UNKNOWN"):
+        code = main(
+            [
+                "rate",
+                book_path,
+                "--from",
+                source,
+                "--to",
+                "USD",
+                "--date",
+                "2026-01-02",
+                "--value",
+                "1.25",
+            ]
+        )
+        assert code == 2
+    db = DbSQLite()
+    db.load(book_path)
+    try:
+        assert list(db.iter_prices()) == []
+    finally:
+        db.close()
+    saved = run_json(
+        capsys,
+        "rate",
+        book_path,
+        "--from",
+        first_euro.handle,
+        "--to",
+        "USD",
+        "--date",
+        "2026-01-02",
+        "--value",
+        "1.25",
+    )
+    assert saved["rate"] == "5/4"
 
 
 def test_account_summary_cli_discloses_missing_currency_quote(capsys, book_path):

@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **CLI manual currency quote entry.** `breadsched rate` saves a dated directional
+  rate between known book currencies through the shared exact quote contract.
+  Ambiguous codes require a handle; invalid rates do not write. JSON reports the
+  exact rational rate, quote date, source, and handle. Imported quotes remain
+  intact and a repeated same-day manual entry updates its own record. GTK and web
+  entry remain open. Application version `0.2.0a111`; native schema remains 7.
+
 - **Exact manual FX quote write contract.** A shared valuation operation saves
   positive, directional rates between two known currencies. Re-entering a
   BreadSched-owned quote for the same pair and date updates it atomically while

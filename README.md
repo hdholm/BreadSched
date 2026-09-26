@@ -41,9 +41,10 @@ the quote date, source, and any inversion, or disclose a missing quote with
 the original ledger currency. Account chart rollups and cash/net-worth summaries
 with missing reporting-currency quotes read "Missing reporting-currency quote".
 Cross-report currency totals remain under development.
-An internal exact manual currency-rate save contract now preserves imported
-quotes and supports future rate-entry controls; rate entry is not yet available
-through the application interfaces.
+Use `breadsched rate BOOK --from EUR --to USD --date YYYY-MM-DD --value 1.25`
+to enter a directional manual exchange rate for currencies already in the book.
+The CLI saves an exact rate without replacing imported quotes. GTK and web rate
+entry remain future work.
 
 Documented alpha releases are published from a tested main commit with wheel,
 source archive, and `SHA256SUMS` assets. GitHub marks alpha versions as
