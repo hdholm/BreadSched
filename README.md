@@ -47,6 +47,8 @@ The CLI saves an exact rate without replacing imported quotes. The web Accounts
 view also offers **Exchange rate…** for known book currencies and shows quote
 date/source or a missing-quote disclosure in account values. GTK rate entry
 remains future work.
+Unexpected web errors return a correlation ID even if a diagnostic output stream
+has closed; use that ID to correlate an available server log when reporting a problem.
 
 Documented alpha releases are published from a tested main commit with wheel,
 source archive, and `SHA256SUMS` assets. GitHub marks alpha versions as

@@ -2544,6 +2544,25 @@ class TestSafety:
         assert payload["correlation_id"]
         assert breadsched_logs.containing(payload["correlation_id"])
 
+    def test_unexpected_failure_still_responds_when_logger_is_broken(self, client, monkeypatch):
+        from breadsched.web import transport
+
+        def explode(_api, query):
+            query.finish()
+            raise RuntimeError("private failure detail")
+
+        def broken_log(*_args, **_kwargs):
+            raise ValueError("closed log stream")
+
+        monkeypatch.setitem(GET_ROUTES, "/api/test-broken-log", explode)
+        monkeypatch.setattr(transport.LOG, "exception", broken_log)
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/test-broken-log")
+        payload = json.loads(caught.value.read())
+        assert caught.value.code == 500
+        assert payload["code"] == "internal.error"
+        assert "private failure detail" not in json.dumps(payload)
+
 
 class TestCliIntegration:
     def test_the_web_command_exists(self, capsys):

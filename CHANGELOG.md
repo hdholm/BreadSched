@@ -10,7 +10,9 @@ belongs in `ROADMAP.md`.
   rejects non-text rates and invalid dates before calling the shared atomic
   quote save; rejected writes preserve stored quotes. Same-day manual updates
   retain imported evidence. Existing account views disclose selected quote
-  date/source or a missing quote. GTK entry remains open. Application version
+  date/source or a missing quote. Console logging now follows the active stderr
+  stream, and an unexpected web error still returns its correlation ID if logging
+  itself fails. GTK entry remains open. Application version
   `0.2.0a112`; native schema remains 7.
 
 - **CLI manual currency quote entry.** `breadsched rate` saves a dated directional

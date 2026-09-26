@@ -136,7 +136,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def _unexpected(self) -> None:
         correlation_id = secrets.token_hex(8)
-        LOG.exception("request %s failed: %s", correlation_id, self.path)
+        try:
+            LOG.exception("request %s failed: %s", correlation_id, self.path)
+        except Exception:  # noqa: BLE001 - broken logging must not block the HTTP response
+            pass
         self._error(500, "internal.error", correlation_id=correlation_id)
 
     def _open_read_api(self) -> tuple[Api, DbSQLite | None]:

@@ -961,6 +961,10 @@ transaction to the shared valuation operation. The Accounts control refreshes
 existing quote evidence and missing-quote displays after saving. GTK entry remains
 to be implemented.
 
+Console diagnostics resolve stderr when emitted, since a captured stream can
+close while a web request thread remains active. Unexpected web failures send
+their sanitized correlation-ID response even if a logging handler fails.
+
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
 commodity, code, description, source notes, placeholder/hidden state, and commodity SCU)

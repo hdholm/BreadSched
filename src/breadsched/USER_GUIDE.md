@@ -588,3 +588,5 @@ in your installed release.
   dated events, accruals, and closing state. BreadSched refuses to hide that error.
 - Before reporting a problem, run Verify and record `breadsched --version`. Never
   attach an unsanitized financial book to a public issue.
+- If the web interface reports an internal error, include its correlation ID in
+  the report; the server returns that ID even when diagnostic output is unavailable.
