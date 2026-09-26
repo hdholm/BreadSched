@@ -333,7 +333,16 @@ def cmd_accounts(args: argparse.Namespace) -> int:
             for account in db.child_accounts(handle):
                 if account.hidden and not args.all:
                     continue
-                total = valuation.value_recursive(db, account.handle, as_of=as_of)
+                result = valuation.aggregate_value(
+                    db, accounts=[account, *db.descendants(account.handle)], as_of=as_of
+                )
+                total = result.amount.value if result.amount is not None else None
+                try:
+                    book_balance = ledger.balance_recursive(db, account.handle, as_of=as_of)
+                except TypeError as exc:
+                    if "cannot combine unlike commodities" not in str(exc):
+                        raise
+                    book_balance = None
                 payload.append(
                     {
                         "handle": account.handle,
@@ -351,11 +360,20 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                         "source_type": account.source_type or None,
                         "source_fields": [field.serialize() for field in account.source_fields],
                         "balance": total,
-                        "book_balance": ledger.balance_recursive(db, account.handle, as_of=as_of),
+                        "missing_quotes": list(result.missing_quotes),
+                        "book_balance": book_balance,
                     }
                 )
                 label = ("  " * depth) + account.name
-                rows.append([label, account.atype.value, total.format(parens_negative=True)])
+                rows.append(
+                    [
+                        label,
+                        account.atype.value,
+                        total.format(parens_negative=True)
+                        if total is not None
+                        else "Missing reporting-currency quote",
+                    ]
+                )
                 walk(account.handle, depth + 1)
 
         root = db.root_account()
@@ -425,16 +443,35 @@ def cmd_balance(args: argparse.Namespace) -> int:
                 f"{db.full_name(account)}: {amount.format('', parens_negative=True)}",
             )
         else:
+            net_worth = valuation.aggregate_value(db, as_of=as_of, net_worth=True)
+            cash = valuation.aggregate_value(
+                db,
+                accounts=[
+                    a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder
+                ],
+                as_of=as_of,
+            )
             summary = {
-                "cash": ledger.cash_on_hand(db, as_of=as_of),
-                "net_worth": valuation.net_worth(db, as_of=as_of),
+                "cash": cash.amount.value if cash.amount is not None else None,
+                "net_worth": net_worth.amount.value if net_worth.amount is not None else None,
+            }
+            payload = {
+                **summary,
+                "cash_missing_quotes": list(cash.missing_quotes),
+                "net_worth_missing_quotes": list(net_worth.missing_quotes),
+                "net_worth_incompatible_accounts": list(net_worth.incompatible_accounts),
             }
             emit(
-                summary,
+                payload,
                 args,
                 table(
                     [
-                        [k.replace("_", " "), v.format(parens_negative=True)]
+                        [
+                            k.replace("_", " "),
+                            v.format(parens_negative=True)
+                            if v is not None
+                            else "Missing reporting-currency quote",
+                        ]
                         for k, v in summary.items()
                     ],
                     ["measure", "amount"],

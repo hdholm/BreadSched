@@ -5,12 +5,14 @@ what a shell script or a cron job sees.
 """
 
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from breadsched.cli.main import main
 from breadsched.gen.db.sqlite import DbSQLite
+from breadsched.gen.lib import Account, AccountType, Commodity, Money, Split, Transaction
 from breadsched.gen.plug import remembered_import_source
 
 
@@ -28,6 +30,38 @@ def run_json(capsys, *argv):
     code, out = run(capsys, *argv, "--json")
     assert code == 0, out
     return json.loads(out)
+
+
+def test_account_summary_cli_discloses_missing_currency_quote(capsys, book_path):
+    run(capsys, "init", book_path)
+    db = DbSQLite()
+    db.load(book_path)
+    try:
+        assets = db.get_account_by_name("Assets")
+        equity = db.get_account_by_name("Equity")
+        assert assets is not None and equity is not None
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        account = Account(
+            name="Foreign cash", atype=AccountType.BANK, parent=assets.handle, commodity=euro.handle
+        )
+        transaction = Transaction(post_date=date(2026, 1, 2), description="Opening cash")
+        transaction.currency = euro.handle
+        transaction.splits = [Split(account.handle, Money(10)), Split(equity.handle, Money(-10))]
+        with db.transaction("Foreign cash") as txn:
+            db.add_commodity(euro, txn)
+            db.add_account(account, txn)
+            db.add_transaction(transaction, txn)
+    finally:
+        db.close()
+
+    summary = run_json(capsys, "balance", book_path)
+    assert summary["net_worth"] is None
+    assert summary["cash"] is None
+    assert summary["net_worth_missing_quotes"] == [account.handle]
+    rows = run_json(capsys, "accounts", book_path)
+    foreign = next(row for row in rows if row["handle"] == account.handle)
+    assert foreign["balance"] is None
+    assert foreign["missing_quotes"] == [account.handle]
 
 
 class TestInit:

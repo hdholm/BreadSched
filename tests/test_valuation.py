@@ -210,6 +210,41 @@ def test_foreign_currency_account_value_exposes_direct_quote_or_ledger_fallback(
     assert ledger.balance_amount(db, account) == Amount(Money(10), euro.handle)
 
 
+def test_report_net_worth_requires_quotes_even_when_foreign_balances_share_a_currency(db, book):
+    usd = db.get_commodity_by_mnemonic("USD")
+    assert usd is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    account = Account(
+        name="Foreign asset", atype=AccountType.BANK, parent=book.assets, commodity=euro.handle
+    )
+    transaction = Transaction(post_date=date(2026, 1, 2), description="Opening asset")
+    transaction.currency = euro.handle
+    transaction.splits = [Split(account.handle, Money(10)), Split(book.opening, Money(-10))]
+    with db.transaction("Foreign asset") as txn:
+        db.add_commodity(euro, txn)
+        db.add_account(account, txn)
+        db.add_transaction(transaction, txn)
+
+    missing = valuation.aggregate_value(db, as_of=date(2026, 1, 31), net_worth=True)
+    assert missing.amount is None
+    assert missing.missing_quotes == (account.handle,)
+    assert missing.incompatible_accounts == ()
+
+    with db.transaction("Exact direct quote") as txn:
+        db.add_price(
+            CommodityPrice(
+                commodity=euro.handle,
+                currency=usd.handle,
+                quote_date=date(2026, 2, 1),
+                value=Money(4, 3),
+            ),
+            txn,
+        )
+    converted = valuation.aggregate_value(db, as_of=date(2026, 2, 1), net_worth=True)
+    assert converted.amount == Amount(Money(40, 3), usd.handle)
+    assert converted.missing_quotes == ()
+
+
 def test_missing_quote_falls_back_to_the_book_value(db, book):
     account, fund, _usd = _holding(db, book)
 

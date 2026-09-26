@@ -825,7 +825,8 @@ async function showAccounts() {
       .map(([label, value]) => el("div", { class: "card" },
         el("div", { class: "label" }, label),
         el("div", { class: "value" },
-          typeof value === "string" ? money(value) : value))));
+          value === null ? "Missing reporting-currency quote"
+            : typeof value === "string" ? money(value) : value))));
 
   const rows = accounts.map((account) => el("tr", {},
     el("td", { class: depthClass("indent", account.depth) },
@@ -885,7 +886,8 @@ async function showAccounts() {
     el("td", {}, el("button", {class:"action", type:"button",
       onclick:()=>openAccountDetails(account)}, "Details…")),
     el("td", { class: cls(account.balance) },
-      account.balance === null ? "Mixed currencies" : money(account.balance))));
+      account.balance === null ? (account.rollup_missing_quotes?.length
+        ? "Missing reporting-currency quote" : "Mixed currencies") : money(account.balance))));
 
   return el("div", {}, cards,
     el("div", { class:"toolbar" },

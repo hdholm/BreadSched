@@ -14,8 +14,11 @@ In Accounts, a foreign-currency ledger balance can be shown in the reporting
 currency when a direct dated quote exists. The quote evidence column shows its
 date and source; a missing quote keeps the original ledger amount and names its
 currency. Do not interpret a missing-quote fallback as a converted balance.
-If a parent account includes balances in incompatible currencies, its rollup
-reads **Mixed currencies** until a conversion path is available.
+Account chart rollups and cash/net-worth summaries require a direct quote for each
+nonzero foreign balance. If one is absent, the total reads **Missing
+reporting-currency quote**; the web and CLI responses list the affected account
+handles. Once quotes exist, exact converted amounts are summed before display.
+Other reports have not yet adopted this complete-total rule.
 
 When downloading a packaged alpha, choose the GitHub release marked
 **Pre-release**, read its versioned notes, and compare the downloaded wheel or
