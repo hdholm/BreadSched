@@ -2447,7 +2447,45 @@ class TestDashboardApi:
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200
-        assert set(payload) == {"summary", "config", "groups", "bills", "income"}
+        assert set(payload) == {
+            "summary",
+            "config",
+            "groups",
+            "bills",
+            "income",
+            "missing_quotes",
+            "liquid_missing_quotes",
+        }
+
+    def test_missing_group_quote_suppresses_position_and_preserves_bills(self, client):
+        from breadsched.gen.engine import dashboard
+
+        assets = client.database.get_account_by_name("Assets")
+        equity = client.database.get_account_by_name("Equity")
+        assert assets is not None and equity is not None
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        account = Account(
+            name="Foreign cash", atype=AccountType.BANK, parent=assets.handle, commodity=euro.handle
+        )
+        transaction = Transaction(post_date=date(2026, 1, 2), description="Foreign cash")
+        transaction.currency = euro.handle
+        transaction.splits = [Split(account.handle, Money(10)), Split(equity.handle, Money(-10))]
+        with client.database.transaction("Foreign cash") as txn:
+            client.database.add_commodity(euro, txn)
+            client.database.add_account(account, txn)
+            client.database.add_transaction(transaction, txn)
+        dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Cash", [account.handle], "liquid")]
+        ).save(client.database)
+        status, payload = client.get("/api/dashboard")
+        assert status == 200
+        assert payload["summary"]["net_worth"] is None
+        assert payload["summary"]["liquid"] is None
+        assert payload["summary"]["available"] is None
+        assert payload["missing_quotes"] == [account.handle]
+        assert payload["groups"][0]["total"] is None
+        assert payload["groups"][0]["accounts"][0]["balance"] is None
+        assert isinstance(payload["bills"], list)
 
     def test_resource_matches_route_and_query_does_not_save_horizons(self, client):
         _status, original = client.get("/api/dashboard")

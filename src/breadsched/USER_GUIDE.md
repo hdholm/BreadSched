@@ -308,6 +308,13 @@ being counted twice.
 Dashboard groups accept account-style paths such as `Investments:Plan A`. Generated
 headings total their children without double-counting account subtrees. Link an
 asset and loan to show equity, loan-to-value, and a bounded repayment date together.
+When a selected group account needs a reporting-currency quote, Dashboard marks
+that group and dependent net-worth figures unavailable. If a liquid group or a
+cash balance outside the configured groups needs a quote, Liquid, Available,
+emergency shortfall, and Months covered are unavailable too. Account rows identify
+the missing quote; unaffected bills, reserves, and income still appear. GTK, web,
+CLI, and the printed Dashboard share this disclosure. Adding a direct or inverse
+pair quote can restore the totals without changing the ledger.
 
 ## Plan
 

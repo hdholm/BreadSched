@@ -1414,11 +1414,21 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             config.emergency_months = args.emergency_months
         board = dashboard_engine.build(db, config, as_of=parse_date(args.as_of))
         summary = board.summary()
+        report = board.report_summary()
+
+        def shown(field: str, amount: Money) -> str:
+            return (
+                "Missing reporting-currency quote"
+                if report[field] is None
+                else amount.format(parens_negative=True)
+            )
 
         if args.json:
             emit(
                 {
-                    "summary": summary,
+                    "summary": report,
+                    "missing_quotes": list(board.missing_quotes),
+                    "liquid_missing_quotes": list(board.liquid_missing_quotes),
                     "groups": [
                         {
                             "name": g.name,
@@ -1427,11 +1437,12 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                             "heading": g.heading,
                             "note": g.note,
                             "kind": g.kind,
-                            "total": g.total,
-                            "value": g.value,
-                            "debt": g.debt,
-                            "equity": g.equity,
-                            "loan_to_value": g.loan_to_value,
+                            "total": g.report_total,
+                            "value": g.report_value,
+                            "debt": g.report_debt,
+                            "equity": g.report_equity,
+                            "loan_to_value": g.report_loan_to_value,
+                            "missing_quotes": list(g.missing_quotes),
                             "loan_end": g.loan_end,
                             "accounts": [
                                 {
@@ -1482,19 +1493,20 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             group_label = f"{'  ' * group.depth}{group.name}"
             if group.note:
                 group_label = f"{group_label} — {group.note}"
-            loan_to_value = group.loan_to_value
-            equity = group.equity
+            loan_to_value = group.report_loan_to_value
+            equity = group.report_equity
             if (
-                loan_to_value is not None
-                and group.value is not None
-                and group.debt is not None
+                not group.missing_quotes
+                and loan_to_value is not None
+                and group.report_value is not None
+                and group.report_debt is not None
                 and equity is not None
             ):
                 rows.append(
                     [
                         group_label,
-                        group.value.format(),
-                        group.debt.format(),
+                        group.report_value.format(),
+                        group.report_debt.format(),
                         equity.format(parens_negative=True),
                         f"{loan_to_value:.1%}",
                         str(group.loan_end or ""),
@@ -1506,7 +1518,9 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         group_label,
                         "",
                         "",
-                        group.total.format(parens_negative=True),
+                        "Missing reporting-currency quote"
+                        if group.missing_quotes
+                        else group.total.format(parens_negative=True),
                         "",
                         str(group.loan_end or ""),
                     ]
@@ -1521,18 +1535,23 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
 
         print()
         headline = [
-            ["Net worth", summary["net_worth"].format(parens_negative=True)],
-            ["Liquid", summary["liquid"].format()],
+            ["Net worth", shown("net_worth", summary["net_worth"])],
+            ["Liquid", shown("liquid", summary["liquid"])],
             [
                 f"Needed within {config.liquidity_days} days",
                 summary["required_liquid"].format(parens_negative=True),
             ],
-            ["Available", summary["available"].format(parens_negative=True)],
+            ["Available", shown("available", summary["available"])],
             [
                 f"Emergency fund ({config.emergency_months} months)",
                 summary["emergency_fund"].format(),
             ],
-            ["Months covered", f"{summary['months_covered']}"],
+            [
+                "Months covered",
+                "Missing reporting-currency quote"
+                if report["months_covered"] is None
+                else f"{summary['months_covered']}",
+            ],
             ["Committed outgoings, monthly", summary["monthly_outgoings"].format()],
             [
                 "Outgoings including estimates, monthly",

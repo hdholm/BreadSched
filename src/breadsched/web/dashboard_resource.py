@@ -20,7 +20,9 @@ def dashboard_report(
     board = engine.build(db, config)
 
     return {
-        "summary": _plain(board.summary()),
+        "summary": _plain(board.report_summary()),
+        "missing_quotes": list(board.missing_quotes),
+        "liquid_missing_quotes": list(board.liquid_missing_quotes),
         "config": {
             "liquidity_days": config.liquidity_days,
             "emergency_months": config.emergency_months,
@@ -39,13 +41,26 @@ def dashboard_report(
                 "heading": group.heading,
                 "note": group.note,
                 "kind": group.kind,
-                "total": str(group.total.to_decimal()),
-                "value": (str(group.value.to_decimal()) if group.value is not None else None),
-                "debt": str(group.debt.to_decimal()) if group.debt is not None else None,
-                "equity": (str(group.equity.to_decimal()) if group.equity is not None else None),
-                "loan_to_value": (
-                    float(group.loan_to_value) if group.loan_to_value is not None else None
+                "total": (
+                    str(group.report_total.to_decimal()) if group.report_total is not None else None
                 ),
+                "value": (
+                    str(group.report_value.to_decimal()) if group.report_value is not None else None
+                ),
+                "debt": (
+                    str(group.report_debt.to_decimal()) if group.report_debt is not None else None
+                ),
+                "equity": (
+                    str(group.report_equity.to_decimal())
+                    if group.report_equity is not None
+                    else None
+                ),
+                "loan_to_value": (
+                    float(group.report_loan_to_value)
+                    if group.report_loan_to_value is not None
+                    else None
+                ),
+                "missing_quotes": list(group.missing_quotes),
                 "loan_end": group.loan_end.isoformat() if group.loan_end is not None else None,
                 "accounts": [
                     {
