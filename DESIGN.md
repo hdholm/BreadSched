@@ -1041,8 +1041,13 @@ re-import.
 Importers should infer date/number conventions from whole-file evidence where possible,
 not guess independently for each record. When evidence is ambiguous, both reference GTK4
 and parity web workflows expose explicit overrides and pass those choices into the same
-importer implementation. Web import currently operates on a local path visible to the
-BreadSched process; transport convenience must not create a second import semantics layer.
+importer implementation. The web view accepts either a local path visible to the
+BreadSched process or an authenticated, bounded browser upload. Uploaded files use
+a stable per-book path keyed by the browser filename in a sibling `<book>.uploads`
+directory, preserving source ownership on repeated uploads. The transport enforces
+the loopback token, Host, Origin, content type, and body limit; the existing typed
+import service still owns importer selection and parsing. A failed import restores
+the prior uploaded file so its remembered source remains usable.
 
 ### Import date integrity
 
@@ -1267,7 +1272,8 @@ is sufficient.
 
 The local web server therefore uses defense in depth: it binds only to loopback,
 rejects non-loopback ``Host`` values, rejects foreign ``Origin`` values, requires
-``application/json`` for writes, and requires an unguessable token generated for
+``application/json`` for ordinary writes (or bounded ``application/octet-stream``
+for the dedicated import upload), and requires an unguessable token generated for
 each server process on every API request. The launcher supplies that token in the
 fragment of the initial local URL (so it is never sent as part of the HTTP request);
 the page moves it into ``X-BreadSched-Token`` request headers and removes it from the

@@ -69,6 +69,9 @@ Baseline scheduled transactions created or edited in the web interface use the
 shared schedule service; a rejected edit leaves the stored schedule unchanged.
 The same write boundary applies to scenario-only estimates and changes to a
 scenario's baseline schedules; a rejected request leaves saved overrides unchanged.
+The web import view accepts a browser-selected file up to 32 MiB or a path visible
+to the server. Repeated uploads of the same filename use a stable source for
+GnuCash re-import; see the [User Guide](src/breadsched/USER_GUIDE.md#import-and-gnucash-interoperability).
 Account views disclose a security quote's date and source. When a reporting-currency
 quote is missing, they label the ledger-value fallback; see the
 [User Guide](src/breadsched/USER_GUIDE.md#security-prices-and-current-value).
