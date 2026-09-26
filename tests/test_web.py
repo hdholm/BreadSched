@@ -364,6 +364,7 @@ class TestItServes:
         assert inverse["conversion_path"] == "inverse"
         assert inverse["price_date"] == "2026-02-02"
         assert inverse["price_source"] == "reverse-book"
+        assert inverse["quote_age_days"] == (date.today() - date(2026, 2, 2)).days
         _status, summary = client.get("/api/summary")
         assert summary["net_worth_missing_quotes"] == []
 
@@ -383,6 +384,7 @@ class TestItServes:
         assert converted["valuation_source"] == "currency"
         assert converted["price_date"] == "2026-02-01"
         assert converted["price_source"] == "imported-book"
+        assert converted["quote_age_days"] == (date.today() - date(2026, 2, 1)).days
         assert converted["conversion_path"] == "direct"
         assert converted["missing_quote"] is False
         assert Money(converted["balance"]) == Money(20)

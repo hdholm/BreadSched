@@ -195,14 +195,17 @@ projection settings, and household relationships remain editable.
 
 ### Security prices and current value
 
-The Accounts views show the date and source of a selected security quote. If no
-reporting-currency quote is available, they say so and retain the security holding's
-ledger value. An older quote remains visible by its date; BreadSched does not yet
-apply a stale-price cutoff or automatically convert foreign-currency securities.
+The Accounts views show the date, source, and age of a selected security quote
+relative to the valuation date. If no reporting-currency quote is available,
+they say so and retain the security holding's ledger value. An older quote
+remains eligible and visibly dated; BreadSched does not apply an automatic age
+cutoff or convert foreign-currency securities.
 Ordinary foreign-currency ledger accounts prefer an eligible direct dated quote;
 if none exists, they invert the latest eligible reverse pair. The direct quote
 wins even when the reverse quote is newer. Account quote evidence says **inverse
 rate** when that path was selected; CLI account output also identifies the path.
+Web and CLI data expose the signed number of days since the quote, with negative
+days identifying a future-dated quote when no as-of date was requested.
 Review the quote date and source before treating a market-valued total as current.
 Currency totals in the current views still require a compatible reporting-currency
 value; no multi-hop path through an intermediate currency is inferred.

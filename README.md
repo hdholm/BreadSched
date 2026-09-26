@@ -81,6 +81,8 @@ the current view without changing saved Dashboard settings.
 The valuation layer uses exact as-of currency quotes for ordinary foreign
 account balances, with provenance and explicit missing-quote status. Account chart
 rollups and cash/net-worth summaries require complete direct or inverse pair quotes.
+Account views show the quote's age relative to the valuation date; no automatic
+staleness cutoff is applied to an otherwise eligible quote.
 Dashboard now marks position and liquidity figures unavailable when a configured
 group or spendable cash balance lacks a quote; bills and income remain visible.
 Plan, Projection, and their printed reports still need the same policy.

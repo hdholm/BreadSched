@@ -74,6 +74,8 @@ def test_latest_as_of_price_marks_units_to_market(db, book):
     assert after.quantity == Money("10")
     assert after.price == Money("125")
     assert after.price_date == date(2026, 3, 1)
+    assert before.quote_age_days == 14
+    assert after.quote_age_days == 14
     assert after.source == "market"
     assert before.price_source == "imported-book"
     assert not before.missing_quote
@@ -254,6 +256,11 @@ def test_foreign_currency_account_value_exposes_direct_quote_or_ledger_fallback(
     assert after.total_amount == Amount(Money(40, 3), usd.handle)
     assert after.price_date == date(2026, 2, 1)
     assert after.price_source == "imported-book"
+    assert before.quote_age_days is None
+    assert after.quote_age_days == 1
+    assert valuation.quote_age_label(after.quote_age_days) == "1 day old"
+    assert valuation.quote_age_label(0) == "dated today"
+    assert valuation.quote_age_label(-2) == "dated 2 days ahead"
     assert ledger.balance_amount(db, account) == Amount(Money(10), euro.handle)
 
 

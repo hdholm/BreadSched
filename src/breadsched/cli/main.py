@@ -364,6 +364,7 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                         "missing_quotes": list(result.missing_quotes),
                         "quote_date": valued.price_date,
                         "quote_source": valued.price_source,
+                        "quote_age_days": valued.quote_age_days,
                         "conversion_path": valued.conversion_path,
                         "book_balance": book_balance,
                     }
@@ -372,6 +373,11 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                 quote_evidence = (
                     f"{valued.price_date} · {valued.price_source or 'Unknown source'}"
                     + (" · inverse rate" if valued.conversion_path == "inverse" else "")
+                    + (
+                        f" · {valuation.quote_age_label(valued.quote_age_days)}"
+                        if valued.quote_age_days is not None
+                        else ""
+                    )
                     if valued.price_date is not None
                     else ""
                 )

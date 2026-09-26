@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Quote age disclosure without an automatic cutoff.** Account valuations now
+  carry days since the selected direct, inverse, or security quote relative to
+  their valuation date. GTK, web, and CLI account views display the age, and
+  web/CLI data includes it explicitly. Old quotes remain usable with their
+  original source and date; no price is silently excluded by age. Advance
+  application version to `0.2.0a107`; native schema remains 7.
+
 - **Browser-selected web imports.** Import QIF, OFX/QFX, and GnuCash files
   selected in the browser through a bounded, authenticated upload. Reusing the
   same filename retains the per-book source path for re-import; the existing
