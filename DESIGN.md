@@ -953,7 +953,9 @@ The shared manual FX quote write accepts exact source and target currency handle
 a date, and a positive target-units-per-source-unit rate. One BreadSched-owned
 quote per pair and date is updated in a database transaction, never by overwriting
 an imported quote. The existing as-of read prefers a same-day manual quote, then
-the imported quote if the manual entry is undone. No rate-entry UI is exposed yet.
+the imported quote if the manual entry is undone. CLI rate entry resolves an exact
+currency handle or a unique currency mnemonic and reports an exact rational rate;
+ambiguous codes require a handle. GTK and web controls remain to be implemented.
 
 BreadSched-owned planning state must not be destroyed by re-import. On a matching
 GnuCash account GUID, source-owned chart fields (name, source type, parent,
