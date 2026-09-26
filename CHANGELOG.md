@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Exact inverse currency quotes.** For ordinary foreign-currency balances,
+  select the latest direct quote as of the requested date; if none exists, invert
+  the latest dated reverse pair exactly. A direct quote takes precedence even if
+  the reverse quote is newer. Expose the chosen path and original quote date/source
+  in GTK, web, and CLI accounts; preserve missing-quote behavior when neither pair
+  exists. No multi-hop, security quote inversion, or staleness cutoff is inferred.
+  Advance application version to `0.2.0a104`; native schema remains 7.
+
 - **Complete account-summary currency totals.** Account chart rollups and cash/net-worth
   summaries in GTK, web, and CLI require direct reporting-currency valuations for
   every nonzero component. An absent quote makes the total unavailable and exposes

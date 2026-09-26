@@ -336,6 +336,7 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                 result = valuation.aggregate_value(
                     db, accounts=[account, *db.descendants(account.handle)], as_of=as_of
                 )
+                valued = valuation.account_value(db, account, as_of=as_of)
                 total = result.amount.value if result.amount is not None else None
                 try:
                     book_balance = ledger.balance_recursive(db, account.handle, as_of=as_of)
@@ -361,10 +362,19 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                         "source_fields": [field.serialize() for field in account.source_fields],
                         "balance": total,
                         "missing_quotes": list(result.missing_quotes),
+                        "quote_date": valued.price_date,
+                        "quote_source": valued.price_source,
+                        "conversion_path": valued.conversion_path,
                         "book_balance": book_balance,
                     }
                 )
                 label = ("  " * depth) + account.name
+                quote_evidence = (
+                    f"{valued.price_date} · {valued.price_source or 'Unknown source'}"
+                    + (" · inverse rate" if valued.conversion_path == "inverse" else "")
+                    if valued.price_date is not None
+                    else ""
+                )
                 rows.append(
                     [
                         label,
@@ -372,13 +382,14 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                         total.format(parens_negative=True)
                         if total is not None
                         else "Missing reporting-currency quote",
+                        quote_evidence,
                     ]
                 )
                 walk(account.handle, depth + 1)
 
         root = db.root_account()
         walk(root.handle if root else None, 0)
-        emit(payload, args, table(rows, ["account", "type", "balance"], right={2}))
+        emit(payload, args, table(rows, ["account", "type", "balance", "quote"], right={2}))
         return 0
     finally:
         db.close()

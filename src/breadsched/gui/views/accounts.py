@@ -170,7 +170,10 @@ class AccountTreeView(BaseView):
             unit = f" ({valued.currency.mnemonic})" if valued.currency is not None else ""
             return f"No reporting-currency quote; ledger value{unit}"
         if valued.source in {"market", "currency"} and valued.price_date is not None:
-            return f"{valued.price_date.isoformat()} · {valued.price_source or 'Unknown source'}"
+            path = " · inverse rate" if valued.conversion_path == "inverse" else ""
+            return (
+                f"{valued.price_date.isoformat()} · {valued.price_source or 'Unknown source'}{path}"
+            )
         return ""
 
     # ------------------------------------------------------------------ model

@@ -12,7 +12,15 @@ import pytest
 
 from breadsched.cli.main import main
 from breadsched.gen.db.sqlite import DbSQLite
-from breadsched.gen.lib import Account, AccountType, Commodity, Money, Split, Transaction
+from breadsched.gen.lib import (
+    Account,
+    AccountType,
+    Commodity,
+    CommodityPrice,
+    Money,
+    Split,
+    Transaction,
+)
 from breadsched.gen.plug import remembered_import_source
 
 
@@ -62,6 +70,31 @@ def test_account_summary_cli_discloses_missing_currency_quote(capsys, book_path)
     foreign = next(row for row in rows if row["handle"] == account.handle)
     assert foreign["balance"] is None
     assert foreign["missing_quotes"] == [account.handle]
+
+    db = DbSQLite()
+    db.load(book_path)
+    try:
+        usd = db.get_commodity_by_mnemonic("USD")
+        assert usd is not None
+        with db.transaction("Reverse currency quote") as txn:
+            db.add_price(
+                CommodityPrice(
+                    commodity=usd.handle,
+                    currency=euro.handle,
+                    quote_date=date(2026, 1, 3),
+                    value=Money("0.5"),
+                    source="sample-source",
+                ),
+                txn,
+            )
+    finally:
+        db.close()
+    quoted = next(
+        row for row in run_json(capsys, "accounts", book_path) if row["handle"] == account.handle
+    )
+    assert quoted["conversion_path"] == "inverse"
+    assert quoted["quote_source"] == "sample-source"
+    assert quoted["balance"] == "20.00"
 
 
 class TestInit:
