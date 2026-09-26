@@ -3,7 +3,7 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a103`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a104`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
