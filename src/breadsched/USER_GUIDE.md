@@ -555,7 +555,36 @@ decisions are not overwritten by source refreshes.
 
 GnuCash sources are read, not edited, by current import workflows. Write-back of
 simple changes requires a separate reviewed workflow and is future work. CSV
-import, automatic payee/category rules, and AqBanking links are not available yet.
+import, automatic payee/category rules, entry autocomplete from earlier
+transactions, and AqBanking links are not available yet.
+
+### Keep GnuCash and BreadSched side by side
+
+Because import is one-way, choose one application as the ledger of record for
+each period rather than recording the same activity in both.
+
+**While GnuCash remains the ledger of record:**
+
+- Enter, edit, delete, and reconcile transactions in GnuCash, then re-import.
+  For an imported transaction, re-import restores GnuCash's date, description,
+  number, accounts, amounts, memos, and reconcile state. A BreadSched edit to any
+  of those facts, or a BreadSched statement reconciliation of imported splits,
+  does not survive the next re-import. The import summary counts such a
+  transaction as refreshed but does not warn that a local change was replaced.
+- Use BreadSched for planning work: account types and Dashboard groups, Plan
+  matches and rejections, BreadSched notes, split planning/FSA/investment
+  classifications, FSA claims, estimates, scenarios, and schedule planning
+  timelines. These survive re-import.
+- Do not post schedules or add transactions in BreadSched for activity you also
+  record in GnuCash. BreadSched-created transactions are never written to GnuCash
+  and are never removed by re-import, so recording the same activity in both
+  produces duplicates.
+
+**To make BreadSched the ledger of record:** re-import once from the final
+GnuCash book, run `breadsched verify` and `breadsched backup`, and from then on
+record activity only in BreadSched. Keep the GnuCash file as a read-only archive;
+importing a later GnuCash copy would restore GnuCash's values over any imported
+transactions you have since edited.
 
 QIF and OFX/QFX imports infer decimal and date conventions from whole-file evidence.
 When a format is ambiguous, select an explicit override in GTK, web, or an importer

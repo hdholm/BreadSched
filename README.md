@@ -106,6 +106,9 @@ explains them in detail.
 ## Project status
 
 BreadSched is under active development and is not yet a complete GnuCash replacement.
+GnuCash import is one-way. If you keep using GnuCash, follow the User Guide's
+[side-by-side guidance](src/breadsched/USER_GUIDE.md#keep-gnucash-and-breadsched-side-by-side)
+to avoid duplicate or overwritten transactions.
 The current hardening phase prioritizes financial correctness, storage integrity,
 importer preservation, security, and realistic-book performance before another broad
 feature-expansion cycle.

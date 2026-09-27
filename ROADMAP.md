@@ -70,6 +70,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    with date/amount/encoding validation, duplicate and transfer review, source
    identity for re-import, and atomic undo. Keep rule priority and conflicts
    explainable; never silently recategorize previously accepted transactions.
+   Offer entry autocomplete from earlier transactions as a visible, editable
+   proposal that never commits without the user's save.
 7. **P1 — Reimbursable expenses and receivables.** Track an expense and the
    amount owed by an insurer, employer, or other payer as linked but distinct
    facts. Show open, partial, disputed, written-off, and settled receivables,
@@ -109,6 +111,13 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   rules propose category/payee assignments with preview, ordering, conflict
   explanations, and explicit acceptance. Handle transfers and split transactions
   without a guessed category or historical rewrite.
+
+- Add entry autocomplete in GTK and web quick entry and the full editor. Typing a
+  description (later, a payee) proposes the most recent matching transaction's
+  transfer account, splits, and amount from a shared service; the user can accept,
+  edit, or ignore every proposed field before an ordinary balanced save. Do not
+  copy reconcile state, source identifiers, notes, Plan links, or FSA claims.
+  Define matching, ordering, and multi-currency behavior, and cover it in tests.
 
 - Add transaction tags and optional attachments with search/filter/export support.
   Define book-relative storage, size/type limits, backup/restore and archive
@@ -266,6 +275,14 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   amount/sign, account, payee, category, memo, currency, and split/transfer cases.
   Reject ambiguous mappings rather than inventing ledger accounts or balancing
   splits; preserve source rows and stable re-import identity for duplicate review.
+
+- Stop silently replacing local changes to imported transactions. Re-import
+  currently restores GnuCash's ledger facts and split reconcile state over
+  BreadSched edits and over BreadSched reconciliation of imported splits, leaving
+  a completed BreadSched reconciliation that no longer matches its splits. It only
+  counts these transactions as refreshed. As for imported accounts, either
+  refuse edits to source-owned transaction facts or report each replaced local change
+  for review. Decide the reconciliation ownership policy explicitly.
 
 - Define a narrow GnuCash write-back contract for simple supported edits only.
   Begin with an opt-in preview of exact source changes, source version/conflict

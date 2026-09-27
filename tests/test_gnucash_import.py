@@ -36,6 +36,7 @@ from breadsched.gen.lib import (
     Reconciliation,
     ScheduledSplit,
     ScheduledTransaction,
+    Transaction,
 )
 from breadsched.gen.lib.commodity import Commodity
 from breadsched.gen.plug import IMPORTER, PluginManager
@@ -862,6 +863,54 @@ class TestSqliteImport:
         assert annotated_split.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
         assert annotated_split.investment_activity is InvestmentActivityKind.CONTRIBUTION
         assert annotated_split.fsa_year_start == date(2026, 1, 1)
+
+    def test_reimport_restores_source_ledger_facts_and_keeps_native_transactions(
+        self, db, gnucash_sqlite_path
+    ):
+        """The User Guide's coexistence contract for books kept in both apps."""
+        gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        imported = next(
+            item for item in db.iter_transactions() if item.description == "Supermarket"
+        )
+        source_date = imported.post_date
+        source_values = {split.handle: split.value for split in imported.splits}
+        imported.description = "locally edited description"
+        imported.post_date = date(2026, 3, 1)
+        for split in imported.splits:
+            split.value = split.value * 2
+        native = Transaction.simple(
+            date(2026, 2, 3),
+            "component A",
+            gnucash_sqlite_path.ids.food,
+            gnucash_sqlite_path.ids.checking,
+            "12.00",
+        )
+        with db.transaction("Local edits") as txn:
+            db.commit_transaction(imported, txn)
+            db.add_transaction(native, txn)
+
+        refreshed = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        assert refreshed.transactions_refreshed == 1
+        assert refreshed.transactions_removed == 0
+        repeated = gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
+        assert repeated.transactions_unchanged == 3
+        assert repeated.transactions_removed == 0
+
+        restored = db.get_transaction(imported.handle)
+        assert restored is not None
+        assert restored.description == "Supermarket"
+        assert restored.post_date == source_date
+        assert {split.handle: split.value for split in restored.splits} == source_values
+        kept = db.get_transaction(native.handle)
+        assert kept is not None
+        assert kept.description == "component A"
+        with sqlite3.connect(gnucash_sqlite_path.path) as source:
+            assert (
+                source.execute(
+                    "SELECT COUNT(*) FROM transactions WHERE guid=?", (native.handle,)
+                ).fetchone()[0]
+                == 0
+            )
 
     def test_import_is_a_single_undoable_step(self, db, gnucash_sqlite_path):
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
