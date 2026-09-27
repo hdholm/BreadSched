@@ -97,6 +97,13 @@ exclusive ownership of fixed ports, filenames, environment state, or process-glo
 mutable objects. GTK runtime tests remain serial until the roadmap explicitly moves
 them to a parallel-safe stage.
 
+Rendered web views are checked in `tests/test_web_browser.py`, which drives
+headless Chromium through Playwright and skips when Playwright or Chromium is not
+installed. When you change how `app.js` builds a view, install `playwright` in the
+development environment and run that file (set `BREADSCHED_CHROMIUM` to a Chromium
+executable if Playwright cannot find one). Keep a static assertion in `test_web.py`
+for anything the browser test guards, so CI without a browser still catches it.
+
 Randomized/property-based tests should use generic generated data and state the
 invariant they protect. Realistic performance tests belong under the `performance`
 marker and must time only the operation under test, not fixture/book construction.

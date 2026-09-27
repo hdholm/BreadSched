@@ -321,11 +321,17 @@ function schedulePreviewNode() {
 }
 
 function table(headers, rows) {
+  // Rows are <tr> elements or arrays of cell values; an array becomes one row whose
+  // cells follow the header's numeric alignment.
+  const body = rows.map((row) => Array.isArray(row)
+    ? el("tr", {}, ...row.map((cell, index) =>
+      el("td", { class: headers[index]?.num ? "num" : null }, cell)))
+    : row);
   return el("div", { class: "panel" },
     el("table", {},
       el("thead", {}, el("tr", {}, headers.map((h) =>
         el("th", { class: h.num ? "num" : null }, h.label ?? h)))),
-      el("tbody", {}, rows)));
+      el("tbody", {}, body)));
 }
 
 
@@ -3384,7 +3390,9 @@ async function showDashboard() {
     }, el("h3",{},g.name), g.note ? el("p", {class:"note"}, g.note) : null, el("dl",{},
       g.value === null ? null : [el("dt",{},"Value"),el("dd",{},money(g.value))],
       g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
-      el("dt",{},g.equity === null ? "Total" : "Equity"), el("dd",{},dashboardMoney(g.equity === null ? g.total : g.equity)),
+      el("dt",{},g.equity === null ? "Total" : "Equity"),
+      el("dd",{},(g.equity === null ? g.total : g.equity) === null
+        ? "Unavailable" : money(g.equity === null ? g.total : g.equity)),
       g.loan_to_value === null ? null : [el("dt",{},"LTV"),el("dd",{},(g.loan_to_value*100).toFixed(1)+"%")
       ], g.loan_end === null ? null : [el("dt",{},"Loan end"),el("dd",{},g.loan_end)
       ], ...(g.accounts || []).map((account) => [
