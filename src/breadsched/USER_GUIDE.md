@@ -27,9 +27,11 @@ source archive against the release's `SHA256SUMS` before installing it.
 Release artifacts are built from the tested main commit with read-only repository
 access, then published after their names and checksums are verified. The loopback
 web interface serves only its packaged page, script, and stylesheet.
-An initial Flatpak build manifest is available to developers, but no Flatpak
-installer is published yet. Use the verified wheel/source release or a development
-checkout until the sandbox file, recovery, help, and printing workflows are tested.
+An initial Flatpak build manifest is available to developers. CI exercises offline
+CLI creation, import/export, backup, restore, verification, and writer locks inside
+the installed sandbox, but no Flatpak installer is published yet. Use the verified wheel/source
+release or a development checkout until GTK file portals, help, printing,
+and settings are validated in the sandbox.
 
 ## Getting started
 

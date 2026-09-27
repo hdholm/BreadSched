@@ -1280,9 +1280,13 @@ The initial Flatpak manifest builds the Python application into `/app` with the
 GNOME 49 SDK. CI builds it from the source checkout, installs the result from a
 local Flatpak repository, and invokes CLI and GTK launcher commands in the sandbox.
 The manifest grants Documents access for the default book path and network access
-for the loopback web interface;
-file chooser, lock, import/export, backup/restore, help, print, and offline
-workflows still require sandbox acceptance before an installer is published.
+for the loopback web interface. GTK file chooser, help, print, settings, and
+offline desktop workflows still require sandbox acceptance before publication.
+The installed-package CI gate additionally unshares network and uses only Documents
+for a synthetic book and QIF source. It verifies Dashboard, CSV export, backup,
+restore, imported-book integrity, and competing-writer lock behavior in that
+environment; GTK portal behavior and the remaining desktop paths are separate
+acceptance work.
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib

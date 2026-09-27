@@ -165,6 +165,91 @@ jobs:
           flatpak run --user --command=breadsched org.breadsched.BreadSched --version
           flatpak run --user org.breadsched.BreadSched --help
 
+      - name: Exercise offline book and file workflows in sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/Documents"
+          work_dir=$(mktemp -d "$HOME/Documents/breadsched-flatpak.XXXXXX")
+          trap 'rm -rf "$work_dir"' EXIT
+          app=org.breadsched.BreadSched
+          book="$work_dir/sample.breadsched"
+          backup="$work_dir/sample.backup"
+          restored="$work_dir/restored.breadsched"
+          imported="$work_dir/imported.breadsched"
+          source="$work_dir/checking.qif"
+
+          run_offline() {
+            flatpak run --user --unshare=network --command=breadsched "$app" "$@"
+          }
+
+          run_offline sample "$book" --as-of 2026-09-15
+          run_offline verify "$book"
+          run_offline dashboard "$book" --as-of 2026-09-15 --json > "$work_dir/dashboard.json"
+          python3 - "$work_dir/dashboard.json" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as result:
+              board = json.load(result)
+          assert board["summary"]["net_worth"] is not None
+          assert board["bills"]
+          PY
+          run_offline export "$book" "$work_dir/transactions.csv"
+          test -s "$work_dir/transactions.csv"
+          run_offline backup "$book" "$backup"
+          run_offline restore "$backup" "$restored"
+          run_offline verify "$restored"
+
+          marker="$work_dir/writer-ready"
+          flatpak run --user --unshare=network --command=python3 "$app" -c '
+          import sys
+          import time
+          from pathlib import Path
+          from breadsched.gen.db.sqlite import DbSQLite
+
+          db = DbSQLite()
+          db.load(sys.argv[1])
+          try:
+              Path(sys.argv[2]).write_text("ready", encoding="utf-8")
+              time.sleep(12)
+          finally:
+              db.close()
+          ' "$book" "$marker" &
+          holder=$!
+          for _ in {1..60}; do
+            test -f "$marker" && break
+            sleep 0.2
+          done
+          test -f "$marker"
+          if output=$(run_offline add "$book" --description "Second writer" \
+            --from Checking --to Groceries --amount 1 2>&1); then
+            echo "A second sandbox process wrote to a locked book" >&2
+            exit 1
+          fi
+          case "$output" in
+            *"already open for writing"*) ;;
+            *) echo "$output" >&2; exit 1 ;;
+          esac
+          run_offline dashboard "$book" --as-of 2026-09-15 --json > /dev/null
+          wait "$holder"
+
+          cat > "$source" <<'QIF'
+          !Account
+          NChecking
+          TBank
+          ^
+          !Type:Bank
+          D01/15/2026
+          T-12.50
+          PExample shop
+          LGroceries
+          ^
+          QIF
+          run_offline init "$imported"
+          run_offline import "$imported" "$source" --no-infer
+          run_offline verify "$imported"
+
   missing-gtk-runtime:
     name: PyGObject without GTK4 typelib
     runs-on: ubuntu-latest

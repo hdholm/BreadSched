@@ -34,6 +34,10 @@ def test_flatpak_build_input_uses_the_app_id_and_excludes_local_state():
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert "flatpak install --user --noninteractive local-breadsched" in workflow
     assert "flatpak run --user --command=breadsched" in workflow
+    assert "flatpak run --user --unshare=network --command=breadsched" in workflow
+    assert "run_offline backup" in workflow and "run_offline restore" in workflow
+    assert 'test -f "$marker"' in workflow
+    assert '"already open for writing"' in workflow
 
 
 def _notes() -> str:
