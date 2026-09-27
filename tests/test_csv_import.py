@@ -286,3 +286,20 @@ def test_quoted_fields_and_inverted_signs(db, book, tmp_path):
 
     assert row.description == "Hardware, Inc.\nStore 12"
     assert row.amount == Money("-25.00")
+
+
+def test_windows_line_endings_give_the_same_rows_and_identities(db, book, tmp_path):
+    unix = tmp_path / "unix.csv"
+    windows = tmp_path / "windows.csv"
+    text = 'Date,Description,Amount\n2026-09-06,"Hardware, Inc.\nStore 12",-25.00\n'
+    unix.write_bytes(text.encode("utf-8"))
+    windows.write_bytes(text.replace("\n", "\r\n").encode("utf-8"))
+    mapping = CsvMapping(date="Date", description="Description", amount="Amount")
+
+    [left] = preview_csv_import(db, CsvImportRequest(str(unix), book.checking, mapping)).value.rows
+    [right] = preview_csv_import(
+        db, CsvImportRequest(str(windows), book.checking, mapping)
+    ).value.rows
+
+    assert right.description == "Hardware, Inc.\nStore 12"
+    assert right.identity == left.identity

@@ -216,6 +216,10 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         )
     source = Path(path)
     text, encoding = _decode(source.read_bytes(), mapping.encoding)
+    # Windows and classic Mac exports end lines, including those inside quoted
+    # fields, with CR LF or CR; normalize so a row reads (and is identified) the
+    # same whichever platform wrote the file.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     delimiter = _delimiter(text, mapping.delimiter)
     records = [row for row in csv.reader(text.splitlines(keepends=True), delimiter=delimiter)]
     first_line = 1

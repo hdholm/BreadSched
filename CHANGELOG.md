@@ -11,7 +11,7 @@ belongs in `ROADMAP.md`.
   columns, and optional description and memo columns, by header name or position.
   Encoding (UTF-8 or Windows-1252), delimiter, date order, and decimal convention
   are detected from the whole file; an all-ambiguous date order is refused until
-  chosen. `--preview` writes nothing. It classifies each row as new, already
+  chosen. Windows (CR LF) and Unix line endings read identically. `--preview` writes nothing. It classifies each row as new, already
   imported, possible duplicate (same date and amount as a transaction already in
   the account), or invalid, with line numbers and reasons. Import is one undo
   step. Rows keep a deterministic identity, so re-importing the same statement adds

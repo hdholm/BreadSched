@@ -597,7 +597,8 @@ explicit importer format override. Year-first QIF dates remain inherently unambi
 CSV statements (`plugins/importer/csv_import.py`) are read through an explicit
 column mapping. Encoding, delimiter, date order, and decimal convention use the
 same whole-file evidence rule, and an all-ambiguous date column is refused rather
-than assumed. `read_statement` classifies rows without writing: new, already
+than assumed. Line endings are normalized after decoding, so a Windows export and a
+Unix copy of one statement yield the same text and the same row identities. `read_statement` classifies rows without writing: new, already
 imported, possible duplicate, or invalid. `import_rows` writes exactly those
 classified rows in one batch transaction. A row's identity is a UUID5 of the target
 account, date, amount, description, memo, and occurrence number. Re-importing an
