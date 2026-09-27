@@ -716,6 +716,54 @@ class ImportSink:
 
     # ------------------------------------------------------------ transactions
 
+    def keep_local_categories(
+        self, guid: str, source_account: str, splits: list[dict[str, Any]]
+    ) -> list[dict[str, Any]] | None:
+        """Statement formats own their account's side; the categories are the user's.
+
+        OFX and QIF records name a fallback or source category, but after import the
+        user may recategorize or split the counterpart. On re-import, keep the
+        existing counterpart splits (and split identities) and refresh only the
+        statement account's side. A single counterpart follows a corrected amount;
+        several counterparts cannot be re-apportioned safely, so that record is
+        left unchanged (``None``) with a warning.
+        """
+        existing = self.db.get_transaction(guid)
+        if existing is None:
+            return splits
+        source = [item for item in splits if item["account"] == source_account]
+        prior_source = [split for split in existing.splits if split.account == source_account]
+        local = [split for split in existing.splits if split.account != source_account]
+        if not source or not local or len(prior_source) != len(source):
+            return splits
+        amount = Money(0)
+        for item in source:
+            amount = amount + item["value"]
+        local_total = Money(0)
+        for split in local:
+            local_total = local_total + split.value
+        if local_total != -amount and len(local) > 1:
+            self.result.warn(
+                f"{existing.describe()}: the statement amount changed but its categories "
+                f"are split locally; left unchanged for review"
+            )
+            return None
+        kept: list[dict[str, Any]] = []
+        for item, prior in zip(source, prior_source, strict=True):
+            kept.append({**item, "handle": prior.handle})
+        for split in local:
+            kept.append(
+                {
+                    "account": split.account,
+                    "value": -amount if len(local) == 1 else split.value,
+                    "quantity": None if len(local) == 1 else split.quantity,
+                    "memo": split.memo,
+                    "action": split.action,
+                    "handle": split.handle,
+                }
+            )
+        return kept
+
     def transaction(
         self,
         guid: str,

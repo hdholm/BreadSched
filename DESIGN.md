@@ -609,6 +609,14 @@ target account on the same date and value, outside the row's own identity family
 The shared service in `gen/services/csv_import.py` validates the file and account
 before any read.
 
+OFX and QIF statements own only their source account's side of a transaction.
+`ImportSink.keep_local_categories` gives an existing transaction's counterpart
+splits, including their split identities, to the refreshed record, so a
+recategorized or split counterpart survives re-import. A single counterpart takes
+the corrected statement amount. Several counterparts under a changed amount are
+left unchanged with a warning rather than re-apportioned. GnuCash imports keep full
+source ownership of every split.
+
 The formula language is parsed through a restricted evaluator, never Python
 `eval()`. Formula expressions are treated as untrusted imported/user input and must
 have bounded, predictable evaluation behavior. Expression depth, node count, and

@@ -5,6 +5,16 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **OFX and QIF re-import keeps the user's categories (#129).** Re-importing an
+  OFX/QFX or QIF statement rebuilt every transaction from the file. A transaction
+  moved from **Uncategorized OFX** (or an uncategorized QIF record) to a real
+  category was silently put back. Re-import now refreshes only the statement
+  account's side and keeps the existing counterpart splits and their identities.
+  A single category follows a corrected amount; locally split categories under a
+  changed amount are left unchanged with a warning. Unchanged records count as
+  unchanged rather than refreshed. Application version `0.2.0a129`; native
+  schema remains 7.
+
 - **CSV statement import with preview and duplicate review.** `breadsched
   import-csv` imports a bank or card statement exported as CSV into one chosen
   account. You map the date column, one signed amount column or debit/credit

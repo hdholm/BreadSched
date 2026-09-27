@@ -113,3 +113,47 @@ def test_ofx_rejects_conflicting_number_conventions(db, tmp_path):
 
     assert result.transactions == 0
     assert any("conflicting decimal number formats" in warning for warning in result.warnings)
+
+
+def _recategorize(db, transaction, source_account, target):
+    for split in transaction.splits:
+        if split.account != source_account:
+            split.account = target
+    with db.transaction("Categorize") as txn:
+        db.commit_transaction(transaction, txn)
+
+
+def test_ofx_reimport_keeps_a_category_the_user_chose(db, book, tmp_path):
+    """Issue #129: the statement owns the bank side; the category is the user's."""
+    path = tmp_path / "statement.ofx"
+    path.write_text(_SAMPLE)
+    ofx.import_book(db, path)
+    grocery = next(item for item in db.iter_transactions() if item.description == "Grocery Store")
+    bank = next(split.account for split in grocery.splits if split.value == Money("-45.67"))
+    _recategorize(db, grocery, bank, book.groceries)
+
+    result = ofx.import_book(db, path)
+
+    stored = db.get_transaction(grocery.handle)
+    assert {split.account for split in stored.splits} == {bank, book.groceries}
+    assert result.transactions_unchanged == 2
+    assert result.transactions_refreshed == 0
+
+
+def test_ofx_corrected_amount_keeps_the_category(db, book, tmp_path):
+    path = tmp_path / "statement.ofx"
+    path.write_text(_SAMPLE)
+    ofx.import_book(db, path)
+    grocery = next(item for item in db.iter_transactions() if item.description == "Grocery Store")
+    bank = next(split.account for split in grocery.splits if split.value == Money("-45.67"))
+    _recategorize(db, grocery, bank, book.groceries)
+
+    path.write_text(_SAMPLE.replace("-45.67", "-46.00"))
+    result = ofx.import_book(db, path)
+
+    stored = db.get_transaction(grocery.handle)
+    assert {(split.account, split.value) for split in stored.splits} == {
+        (bank, Money("-46.00")),
+        (book.groceries, Money("46.00")),
+    }
+    assert result.transactions_refreshed == 1
