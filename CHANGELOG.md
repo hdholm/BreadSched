@@ -5,6 +5,17 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Projection converts foreign-currency schedules and balances.** Projection
+  added a EUR schedule to USD cash unit for unit, and a foreign-currency account
+  without a quote opened at its raw balance. The converter introduced for Plan
+  moves to `gen/engine/conversion.py`. Projection now converts every event and
+  opening balance with the quote applicable on its opening valuation date (the
+  day before the horizon): direct, else inverted. An amount or balance without
+  a quote is left out and listed. The quote evidence or exclusion list is
+  recorded as Projection warnings, which GTK, web, CLI, and print already show;
+  scenario comparisons difference the converted projections. Application
+  version `0.2.0a126`; native schema remains 7.
+
 - **Plan totals convert foreign currencies instead of adding them as reporting
   currency (#124).** A EUR schedule was added to USD Plan totals unit for unit (500
   EUR plus 1,000 USD showed 1,500.00). The activity report now converts each

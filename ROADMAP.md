@@ -44,8 +44,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    entry through the exact quote contract. Plan totals, category detail, cash
    position, prints, and Expense Explorer Remaining/rollover convert once at the
    as-of quote and disclose quote date, source, and inversion, or list excluded
-   amounts. Apply the same policy to Projection balances and scenario
-   comparisons of projected balances; disclose staleness and rounding. Continue
+   amounts. Projection events, opening balances, and scenario comparisons use
+   the same policy at the opening valuation date. Disclose staleness and
+   rounding. Continue
    imported quote mapping and decide multi-hop policy explicitly before enabling
    it; do not create a second monthly budget ledger.
 3. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity

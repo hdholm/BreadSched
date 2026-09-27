@@ -275,8 +275,12 @@ kept on the report. An event or transaction with no applicable quote is excluded
 from every total and listed as unconverted by period. Categories affected by an
 exclusion stay visible, and Expense Explorer suppresses their Remaining.
 `currency_notes` renders these facts as the same sentences in GTK, web, CLI, and
-print. Projection and scenario comparisons of projected balances do not yet
-convert.
+print. `gen/engine/conversion.py` owns the converter, evidence, and notes, so
+Projection applies the same policy at its opening valuation date (the day before
+the horizon). It converts events before applying them and excludes a
+foreign-currency opening balance whose valuation reports a missing quote. The
+converter's notes are recorded as Projection warnings, which every surface
+already shows. Comparisons difference two converted projections.
 
 Ledger reads preserve that identity internally. Account, recursive, class-total,
 net-worth, cash-on-hand, and register-running arithmetic uses tagged transaction

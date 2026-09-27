@@ -549,6 +549,15 @@ In web Projection, open a month to inspect its cash movement, holdings and
 liabilities, dated events, and assumption sources. A calculation from edited draft
 controls remains temporary until you explicitly save those controls.
 The Projection summary and scenario comparison use the same dated calculation.
+
+Amounts in another currency are converted once with the exchange rate known on the
+day before the projection starts, the same date used for opening balances. This
+applies to schedules, estimates, scenario events, and foreign-currency account
+balances. Projection warnings state the rate, its date and source, and whether it
+was inverted. When no rate applies, the amount or opening balance is left out of
+the projection and listed in the warnings; it is never counted as reporting
+currency. Add an exchange rate in Accounts, then recalculate, to include it.
+Scenario comparisons use each scenario's converted projection.
 Compare scenarios over the same horizon to read month-by-month cash and net-worth
 differences; calculate or compare freely before choosing **Save** for edited
 assumptions.
