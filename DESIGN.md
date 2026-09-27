@@ -606,6 +606,16 @@ existing identity leaves that transaction untouched rather than routing it throu
 the refreshing `ImportSink.transaction` path, so a category chosen after import is
 never reverted. A possible duplicate is another transaction with a split in the
 target account on the same date and value, outside the row's own identity family.
+A possible transfer is a remaining new row whose value equals the placeholder split
+of a two-split, reporting-currency transaction elsewhere: one split in another
+asset or liability account, the other in an import placeholder (`placeholder_handles()`:
+Uncategorized CSV or Uncategorized OFX), dated within `TRANSFER_WINDOW_DAYS` (3).
+Rows and sides are paired one to one, nearest date first. With `link_transfers`,
+`import_rows` replaces that placeholder split with a split in the target account
+whose handle is a UUID5 of the row identity, inside the same batch; preview treats a
+target-account split with that handle as already imported. Without it the row is
+imported as new. Categorized transactions are never candidates, so an accepted
+category is never rewritten. `ImportResult.transactions_linked` counts links.
 The shared service in `gen/services/csv_import.py` validates the file and account
 before any read. `inspect_csv` reports only the detected encoding, delimiter,
 columns, and first rows for choosing a mapping. The web adapter

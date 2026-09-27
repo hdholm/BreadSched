@@ -53,6 +53,8 @@ class CsvImportRequest:
     mapping: CsvMapping
     #: Also import rows matching an existing transaction on date and amount.
     include_duplicates: bool = False
+    #: Complete each offered transfer instead of importing the row as new.
+    link_transfers: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,7 +115,7 @@ def _validate(db: DbSQLite, request: CsvImportRequest) -> ServiceError | Path:
 
 
 def preview_csv_import(db: DbSQLite, request: CsvImportRequest) -> ServiceResult[CsvPreview]:
-    """Classify every row as new, already imported, a possible duplicate, or invalid."""
+    """Classify every row: new, imported, possible duplicate or transfer, or invalid."""
     checked = _validate(db, request)
     if isinstance(checked, ServiceError):
         return ServiceResult.failure(checked)
@@ -129,5 +131,10 @@ def import_csv(db: DbSQLite, request: CsvImportRequest) -> ServiceResult[CsvImpo
     previewed = preview_csv_import(db, request)
     if previewed.value is None:
         return ServiceResult.failure(*previewed.errors)
-    result = import_rows(db, previewed.value, include_duplicates=request.include_duplicates)
+    result = import_rows(
+        db,
+        previewed.value,
+        include_duplicates=request.include_duplicates,
+        link_transfers=request.link_transfers,
+    )
     return ServiceResult.success(CsvImported(previewed.value, result))

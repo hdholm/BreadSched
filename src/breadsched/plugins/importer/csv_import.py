@@ -12,20 +12,32 @@ already in the book leaves that transaction untouched, so a category the user
 chose after the first import is never reverted. A row that matches a different
 transaction in the target account on the same date and amount is held back as a
 possible duplicate unless the caller explicitly includes it.
+
+A transfer between two of the user's accounts appears on both statements. A row
+whose opposite amount was already imported into another asset or liability account
+within a few days, against an uncategorized placeholder, is offered as that
+transfer's other side. Only an explicit link replaces the placeholder with the
+target account; the linked leg carries the row's identity as its split handle, so
+re-importing the row recognizes it. A transaction the user has categorized is never
+offered.
 """
 
 from __future__ import annotations
 
 import csv
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
 
+from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine.currency import reporting_currency_handle
+from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
+from ...gen.lib.transaction import Split
 from ...gen.utils.amount_input import NumberFormat, detect_number_format, parse_decimal_amount
 from ...gen.utils.logs import get_logger
 from .gnucash_common import ImportResult, ImportSink
@@ -41,13 +53,16 @@ __all__ = [
     "CsvRow",
     "import_rows",
     "inspect_statement",
+    "placeholder_handles",
     "read_statement",
 ]
 
 CsvDateFormat = Literal["iso", "month-first", "day-first"]
-RowStatus = Literal["new", "imported", "possible_duplicate", "invalid"]
+RowStatus = Literal["new", "imported", "possible_duplicate", "possible_transfer", "invalid"]
 
 _DELIMITERS = ",;\t|"
+#: How far apart two statements may date the two sides of one transfer.
+TRANSFER_WINDOW_DAYS = 3
 
 
 class CsvMappingError(ValueError):
@@ -89,7 +104,7 @@ class CsvRow:
     status: RowStatus
     reason: str = ""
     identity: str = ""
-    #: The already-imported or possibly duplicated transaction, when there is one.
+    #: The already-imported, possibly duplicated, or transfer-side transaction.
     existing: str | None = None
 
 
@@ -111,6 +126,23 @@ class CsvPreview:
 def _stable_handle(kind: str, *parts: object) -> str:
     text = "|".join(str(part) for part in parts)
     return uuid5(NAMESPACE_URL, f"breadsched:csv:{kind}:{text}").hex
+
+
+def placeholder_handles() -> tuple[tuple[tuple[str, str], str], ...]:
+    """The uncategorized accounts statement imports post to, keyed by (format, type).
+
+    Only a split in one of these is an unreviewed guess that a transfer link may
+    replace; any other account is a category the user or the source chose.
+    """
+    return tuple(
+        ((fmt, atype), uuid5(NAMESPACE_URL, f"breadsched:{fmt}:category:{atype}|{name}").hex)
+        for fmt, name in (("csv", "Uncategorized CSV"), ("ofx", "Uncategorized OFX"))
+        for atype in ("EXPENSE", "INCOME")
+    )
+
+
+def _split_handle(identity: str) -> str:
+    return _stable_handle("split", identity)
 
 
 def _decode(raw: bytes, encoding: str) -> tuple[str, str]:
@@ -344,7 +376,7 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         for occurrence in range(1, count + 1)
     }
 
-    existing_by_key = _existing_in_account(db, account)
+    existing_by_key, linked, candidates = _index_book(db, account)
     occurrences: dict[tuple[object, ...], int] = {}
     rows: list[CsvRow] = []
     for line, row_when, row_amount, description, memo, reason in parsed:
@@ -356,9 +388,11 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         occurrence = occurrences.get(facts, 0) + 1
         occurrences[facts] = occurrence
         identity = _stable_handle("transaction", *facts, occurrence)
-        if db.get_transaction(identity) is not None:
+        imported = identity if db.get_transaction(identity) is not None else None
+        imported = imported or linked.get(_split_handle(identity))
+        if imported is not None:
             rows.append(
-                CsvRow(line, when, amount, description, memo, "imported", "", identity, identity)
+                CsvRow(line, when, amount, description, memo, "imported", "", identity, imported)
             )
             continue
         others = [
@@ -380,6 +414,7 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
             )
             continue
         rows.append(CsvRow(line, when, amount, description, memo, "new", "", identity))
+    rows = _offer_transfers(rows, candidates)
     return CsvPreview(
         str(source),
         account,
@@ -408,15 +443,81 @@ def _row_amount(row, cell, amount_col, debit_col, credit_col, number_format) -> 
     return abs(Money(parse_decimal_amount(credit_text, number_format)))
 
 
-def _existing_in_account(db: DbSQLite, account: str) -> dict[tuple[date, Money], list[str]]:
+@dataclass(frozen=True, slots=True)
+class _TransferSide:
+    transaction: str
+    when: date
+    #: The value a row in the target account must have to complete the transfer.
+    amount: Money
+    account: str
+
+
+def _index_book(
+    db: DbSQLite, account: str
+) -> tuple[dict[tuple[date, Money], list[str]], dict[str, str], list[_TransferSide]]:
+    """One pass: target-account activity, linked legs, and open transfer sides."""
     found: dict[tuple[date, Money], list[str]] = {}
+    linked: dict[str, str] = {}
+    candidates: list[_TransferSide] = []
+    placeholders = {handle for _kind, handle in placeholder_handles()}
+    reporting = reporting_currency_handle(db)
     for transaction in db.iter_transactions():
+        in_target = False
         for split in transaction.splits:
             if split.account == account:
+                in_target = True
+                linked[split.handle] = transaction.handle
                 found.setdefault((transaction.post_date, split.value), []).append(
                     transaction.handle
                 )
-    return found
+        if in_target or len(transaction.splits) != 2:
+            continue
+        if (transaction.currency or reporting) != reporting:
+            continue
+        guess = [split for split in transaction.splits if split.account in placeholders]
+        other = [split for split in transaction.splits if split.account not in placeholders]
+        if len(guess) != 1 or len(other) != 1:
+            continue
+        source = db.get_account(other[0].account)
+        if source is None or source.account_class not in (
+            AccountClass.ASSET,
+            AccountClass.LIABILITY,
+        ):
+            continue
+        candidates.append(
+            _TransferSide(transaction.handle, transaction.post_date, guess[0].value, source.name)
+        )
+    return found, linked, candidates
+
+
+def _offer_transfers(rows: list[CsvRow], candidates: list[_TransferSide]) -> list[CsvRow]:
+    """Pair new rows with open transfer sides, nearest date first, one to one."""
+    pairs = sorted(
+        (abs((row.when - side.when).days), index, side.when, side.transaction, side)
+        for index, row in enumerate(rows)
+        if row.status == "new" and row.when is not None
+        for side in candidates
+        if side.amount == row.amount and abs((row.when - side.when).days) <= TRANSFER_WINDOW_DAYS
+    )
+    taken_rows: set[int] = set()
+    taken_sides: set[str] = set()
+    offered = list(rows)
+    for _distance, index, _when, handle, side in pairs:
+        if index in taken_rows or handle in taken_sides:
+            continue
+        taken_rows.add(index)
+        taken_sides.add(handle)
+        row = rows[index]
+        offered[index] = replace(
+            row,
+            status="possible_transfer",
+            reason=(
+                f"other side of an uncategorized {(-side.amount).format()} in "
+                f"{side.account} on {side.when.isoformat()}"
+            ),
+            existing=handle,
+        )
+    return offered
 
 
 def _counter_account(sink: ImportSink, db: DbSQLite, amount: Money) -> str:
@@ -432,12 +533,20 @@ def import_rows(
     preview: CsvPreview,
     *,
     include_duplicates: bool = False,
+    link_transfers: bool = False,
     message: str | None = None,
 ) -> ImportResult:
-    """Write the preview's new rows (and, if chosen, possible duplicates) in one batch."""
+    """Write the preview's new rows in one batch.
+
+    Possible duplicates are written only when included. A possible transfer is
+    linked to its other side when ``link_transfers`` is set, and otherwise imported
+    as an ordinary new row, leaving the existing transaction untouched.
+    """
     source = Path(preview.source)
     result = ImportResult(source=str(source), source_format="csv")
-    accepted = {"new", "possible_duplicate"} if include_duplicates else {"new"}
+    accepted = {"new", "possible_transfer"}
+    if include_duplicates:
+        accepted.add("possible_duplicate")
     with db.transaction(message or f"Import {source.name}", batch=True) as txn:
         sink = ImportSink(db, txn, result)
         result.scan("transaction")
@@ -460,6 +569,11 @@ def import_rows(
                 )
                 continue
             assert row.when is not None and row.amount is not None
+            if row.status == "possible_transfer" and link_transfers and row.existing:
+                if _link_transfer(db, txn, preview.account, row):
+                    result.observe("transaction", row.identity)
+                    result.transactions_linked += 1
+                    continue
             counter = _counter_account(sink, db, row.amount)
             sink.transaction(
                 row.identity,
@@ -476,3 +590,19 @@ def import_rows(
     db.emit("database-changed", (db,))
     LOG.info("CSV import finished: %s", result.describe())
     return result
+
+
+def _link_transfer(db: DbSQLite, txn: DbTxn, account: str, row: CsvRow) -> bool:
+    """Replace the other side's placeholder split with this row's account."""
+    assert row.existing is not None and row.amount is not None
+    transaction = db.get_transaction(row.existing)
+    if transaction is None:
+        return False
+    placeholders = {handle for _kind, handle in placeholder_handles()}
+    guess = [split for split in transaction.splits if split.account in placeholders]
+    if len(guess) != 1 or guess[0].value != row.amount:
+        return False
+    leg = Split(account, row.amount, memo=row.memo, handle=_split_handle(row.identity))
+    transaction.splits = [leg if split is guess[0] else split for split in transaction.splits]
+    db.commit_transaction(transaction, txn)
+    return True

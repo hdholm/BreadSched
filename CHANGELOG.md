@@ -5,6 +5,20 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Transfer review during CSV import.** A transfer between two of your accounts
+  appears on both statements. When a CSV row has the opposite amount of a
+  transaction already imported into another bank, cash, or card account within
+  three days, and that transaction still sits against **Uncategorized CSV** or
+  **Uncategorized OFX**, the preview marks the row **possible transfer** and names
+  the account and date. **Link possible transfers** (web and GTK) or
+  `--link-transfers` (CLI) replaces that placeholder with the row's account, so the
+  pair becomes one transfer instead of an uncategorized expense and income.
+  Otherwise the row is imported as new and the existing transaction is untouched.
+  A transaction you already categorized is never offered; each existing side
+  pairs with at most one row, nearest date first; re-importing a linked row
+  finds it as already imported; and the import stays one undo step. Application
+  version `0.2.0a133`; native schema remains 7.
+
 - **GTK CSV statement import.** **File → Import CSV Statement…** opens a dialog
   that reads the chosen CSV's columns and first rows, suggests the column mapping
   from its headers, and lets the account, columns, date order, decimal convention,
