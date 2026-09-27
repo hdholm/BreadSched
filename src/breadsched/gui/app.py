@@ -72,6 +72,9 @@ class BreadSchedApplication(Gtk.Application):
             Gtk.StyleContext.add_provider_for_display(
                 display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
             )
+        # The installed desktop entry, AppStream metadata, and icon share the
+        # application id, so windows use the themed icon wherever it is installed.
+        Gtk.Window.set_default_icon_name(APP_ID)
         self._install_actions()
         self.set_menubar(build_menu_model())
 

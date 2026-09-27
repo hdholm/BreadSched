@@ -151,6 +151,9 @@ class TestApplicationIdentity:
         assert second.get_is_registered()
         assert app.get_is_registered()
 
+    def test_windows_use_the_installed_application_icon(self, app):
+        assert Gtk.Window.get_default_icon_name() == APP_ID
+
     def test_the_default_identity_is_unchanged(self):
         application = BreadSchedApplication()
         assert application.get_application_id() == APP_ID

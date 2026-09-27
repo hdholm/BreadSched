@@ -35,9 +35,11 @@ Alpha releases provide a wheel, source archive, and checksums. Native Linux and
 Windows installers are planned. Read the release notes and verify the checksums
 before installing. The [User Guide](src/breadsched/USER_GUIDE.md) covers current
 workflows and their limits, including exchange rates, imports, and recovery.
-The source tree includes a Flatpak manifest and CI checks for installed, offline
-CLI book, file, and writer-lock workflows under Documents access. GTK portal and
-desktop workflows remain to be validated before an installer is published.
+The source tree includes a Flatpak manifest, desktop entry, AppStream metadata, and
+icon, with CI checks for installed, offline CLI book, file, and writer-lock
+workflows and a sandboxed GTK smoke (views, help, icon, settings) under Documents
+access. GTK file portals and printing remain to be validated before an installer
+is published.
 
 ## Explore expenses
 

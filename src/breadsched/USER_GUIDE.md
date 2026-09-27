@@ -29,9 +29,11 @@ access, then published after their names and checksums are verified. The loopbac
 web interface serves only its packaged page, script, and stylesheet.
 An initial Flatpak build manifest is available to developers. CI exercises offline
 CLI creation, import/export, backup, restore, verification, and writer locks inside
-the installed sandbox, but no Flatpak installer is published yet. Use the verified wheel/source
-release or a development checkout until GTK file portals, help, printing,
-and settings are validated in the sandbox.
+the installed sandbox. A locally built Flatpak also installs a desktop menu entry,
+software-centre metadata, and an icon; CI opens a book, every view, and this guide
+in the sandboxed GTK interface and checks that settings persist. No Flatpak
+installer is published yet. Use the verified wheel/source release or a development
+checkout until GTK file portals and printing are validated in the sandbox.
 
 ## Getting started
 

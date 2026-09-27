@@ -149,8 +149,13 @@ jobs:
       - name: Install Flatpak builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          sudo apt-get install -y flatpak flatpak-builder xvfb desktop-file-utils appstream
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Validate desktop entry and AppStream metadata
+        run: |
+          desktop-file-validate data/org.breadsched.BreadSched.desktop
+          appstreamcli validate --no-net data/org.breadsched.BreadSched.metainfo.xml
 
       - name: Build package with GNOME SDK
         run: |
@@ -259,6 +264,42 @@ jobs:
           run_offline init "$imported"
           run_offline import "$imported" "$source" --no-infer
           run_offline verify "$imported"
+
+      - name: Drive the GTK interface offline inside the sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.config" "$HOME/Documents"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          app=org.breadsched.BreadSched
+          exports="$HOME/.local/share/flatpak/exports/share"
+          test -f "$exports/applications/$app.desktop"
+          test -f "$exports/metainfo/$app.metainfo.xml"
+          test -f "$exports/icons/hicolor/scalable/apps/$app.svg"
+          work_dir=$(mktemp -d "$HOME/Documents/breadsched-gtk.XXXXXX")
+          trap 'rm -rf "$work_dir"' EXIT
+          cp scripts/flatpak_gtk_smoke.py "$work_dir/"
+          flatpak run --user --unshare=network --command=breadsched "$app" \
+            sample "$work_dir/gtk.breadsched" --as-of 2026-09-15
+          xvfb-run -a flatpak run --user --unshare=network --env=GSK_RENDERER=cairo \
+            --command=python3 "$app" \
+            "$work_dir/flatpak_gtk_smoke.py" "$work_dir/gtk.breadsched" "$work_dir/report.json"
+          python3 - "$work_dir/report.json" "$app" "$work_dir/gtk.breadsched" <<'PY'
+          import json
+          import os
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as source:
+              report = json.load(source)
+          app, book = sys.argv[2], sys.argv[3]
+          assert report["icon"] is True
+          assert {"dashboard", "register", "plan", "projection"} <= set(report["views"])
+          assert report["guide_characters"] > 1000
+          expected = os.path.expanduser(f"~/.var/app/{app}/config/breadsched/settings.ini")
+          assert report["settings_path"] == expected, report["settings_path"]
+          assert os.path.isfile(expected), expected
+          assert report["last_book_path"] == os.path.realpath(book), report["last_book_path"]
+          PY
 
   missing-gtk-runtime:
     name: PyGObject without GTK4 typelib
