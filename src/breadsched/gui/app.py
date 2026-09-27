@@ -120,6 +120,7 @@ class BreadSchedApplication(Gtk.Application):
             ("new", self.on_new, "<Control>n"),
             ("import", self.on_import, "<Control>i"),
             ("import-new", self.on_import_new, None),
+            ("import-csv", self.on_import_csv, None),
             ("open-default", self.on_open_default, None),
             ("undo", self.on_undo, "<Control>z"),
             ("redo", self.on_redo, "<Control><Shift>z"),
@@ -146,6 +147,7 @@ class BreadSchedApplication(Gtk.Application):
             "undo",
             "redo",
             "import",
+            "import-csv",
             "export",
             "backup",
             "verify",
@@ -173,7 +175,15 @@ class BreadSchedApplication(Gtk.Application):
         # at shutdown: a crash should not cost the setting.
         self.settings.set("general", "last_book_path", str(Path(path).resolve()))
         self.settings.save()
-        for name in ("import", "export", "backup", "verify", "post-scheduled", "new-transaction"):
+        for name in (
+            "import",
+            "import-csv",
+            "export",
+            "backup",
+            "verify",
+            "post-scheduled",
+            "new-transaction",
+        ):
             self.set_action_enabled(name, True)
         for window in self.get_windows():
             if isinstance(window, ViewManager):
@@ -343,6 +353,17 @@ class BreadSchedApplication(Gtk.Application):
 
         ImportDialog(self.props.active_window, self.db).present()
 
+    def on_import_csv(self, *_args):
+        """Open the CSV statement mapping dialog for the current book."""
+        if self.db is None:
+            self._report("Open a book before importing into it.")
+            return None
+        from .dialogs.csv_import_dialog import CsvImportDialog
+
+        dialog = CsvImportDialog(self.props.active_window, self.db)
+        dialog.present()
+        return dialog
+
     def on_undo(self, *_args) -> None:
         if self.db is not None:
             self.db.undo()
@@ -492,6 +513,7 @@ def build_menu_model() -> Gio.Menu:
     transfer = Gio.Menu()
     transfer.append("Import GnuCash Book into _New Book…", "app.import-new")
     transfer.append("Import GnuCash Book into _Current Book…", "app.import")
+    transfer.append("Import CSV _Statement…", "app.import-csv")
     transfer.append("_Export Transactions…", "app.export")
     file_menu.append_section(None, transfer)
     safety = Gio.Menu()

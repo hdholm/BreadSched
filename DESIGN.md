@@ -613,7 +613,9 @@ columns, and first rows for choosing a mapping. The web adapter
 results; `/api/import/csv/inspect`, `/api/import/csv/preview`, and
 `/api/import/csv` never validate or write outside the service. A browser upload of a
 `.csv` file is staged under the book's uploads directory and returns its path
-without importing, because a CSV needs a mapping first.
+without importing, because a CSV needs a mapping first. The GTK
+`CsvImportDialog` (File → Import CSV Statement…) calls the same three service
+functions and suggests columns from header names as the web view does.
 
 The web `table()` helper accepts `<tr>` elements or arrays of cell values; an array
 row becomes one `<tr>` whose cells follow the header's numeric alignment. Views
