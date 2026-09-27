@@ -3328,24 +3328,33 @@ async function showDashboard() {
       switchTo("Register");
     }
   };
-  const billRows = data.bills.map((item) => [
-    el("span", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
-      item.name),
-    item.next_due,
-    item.days_until < 0 ? `${-item.days_until} days overdue`
-      : (item.days_until === 0 ? "today" : `${item.days_until} days`),
-    item.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
+  // Missed occurrences of one schedule arrive grouped: one row with the date
+  // range, count, and total, and the individual dates available on demand.
+  const itemCell = (item) => item.missed
+    ? el("details", {},
+        el("summary", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
+          item.name),
+        el("ul", {}, ...item.occurrences.map((entry) =>
+          el("li", {}, `${entry.date}: ${money(entry.amount)}`))))
+    : el("span", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
+        item.name);
+  const dueCell = (item) => item.missed
+    ? `${item.next_due} to ${item.last_due}` : item.next_due;
+  const dueIn = (item) => {
+    const late = item.days_until < 0 ? `${-item.days_until} days overdue`
+      : (item.days_until === 0 ? "today" : `${item.days_until} days`);
+    return item.missed ? `${item.missed} missed, ${late}` : late;
+  };
+  const bills = data.display_bills || [];
+  const income = data.display_income || [];
+  const billRows = bills.map((item) => [
+    itemCell(item), dueCell(item), dueIn(item), item.frequency,
     money(item.amount), item.generated ? "" : money(item.monthly),
     money(item.hold), item.generated ? "" : money(item.annual),
     item.generated ? "Account payment" : "Committed",
   ]);
-  const incomeRows = data.income.map((item) => [
-    el("span", { ondblclick:()=>activatePending(item), title:"Double-click to view" },
-      item.name),
-    item.next_due,
-    item.days_until < 0 ? `${-item.days_until} days overdue`
-      : (item.days_until === 0 ? "today" : `${item.days_until} days`),
-    item.cycle_months.toFixed(2).replace(/\.?0+$/, "") + " mo",
+  const incomeRows = income.map((item) => [
+    itemCell(item), dueCell(item), dueIn(item), item.frequency,
     money(item.amount), money(item.monthly), money(item.annual),
   ]);
 
@@ -3353,13 +3362,13 @@ async function showDashboard() {
     ...(data.coverage_notes || []).map((note) => el("p", { class: "note" }, note)), controls,
     el("h2", {}, "Balances"),
     groupCards,
-    el("h2", {}, `Pending bills (${data.bills.length})`),
-    table(["Item", "Next due", "Due in", "Cycle",
+    el("h2", {}, `Pending bills (${bills.length})`),
+    table(["Item", "Due", "Due in", "Frequency",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
            { label: "Hold now", num: true }, { label: "Annual", num: true }, "Kind"],
           billRows),
-    el("h2", {}, `Expected income (${data.income.length})`),
-    table(["Item", "Next due", "Due in", "Cycle",
+    el("h2", {}, `Expected income (${income.length})`),
+    table(["Item", "Due", "Due in", "Frequency",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
            { label: "Annual", num: true }], incomeRows));
 }

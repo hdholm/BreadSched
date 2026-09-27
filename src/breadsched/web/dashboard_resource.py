@@ -87,6 +87,7 @@ def dashboard_report(
                 "name": item.name,
                 "next_due": item.next_due.isoformat(),
                 "days_until": item.days_until(board.as_of),
+                "frequency": item.frequency,
                 "cycle_months": float(item.cycle_months),
                 "amount": str(item.amount.to_decimal()),
                 "monthly": None if item.generated else str(item.monthly.to_decimal()),
@@ -105,6 +106,7 @@ def dashboard_report(
                 "name": item.name,
                 "next_due": item.next_due.isoformat(),
                 "days_until": item.days_until(board.as_of),
+                "frequency": item.frequency,
                 "cycle_months": float(item.cycle_months),
                 "amount": str(item.amount.to_decimal()),
                 "monthly": str(item.monthly.to_decimal()),
@@ -113,6 +115,37 @@ def dashboard_report(
             }
             for item in board.incomes
         ],
+        "display_bills": [_display_row(item, board) for item in board.display_bills],
+        "display_income": [_display_row(item, board) for item in board.display_incomes],
+    }
+
+
+def _display_row(item: engine.BillRow | engine.MissedGroup, board: engine.Dashboard) -> dict:
+    """One presented row: a pending occurrence or a schedule's grouped missed dates."""
+    if isinstance(item, engine.MissedGroup):
+        last_due, missed, occurrences, account = item.last_due, item.count, item.occurrences, None
+    else:
+        last_due, missed, account = item.next_due, 0, item.account
+        occurrences = ((item.next_due, item.amount),)
+    return {
+        "name": item.name,
+        "next_due": item.next_due.isoformat(),
+        "last_due": last_due.isoformat(),
+        "days_until": item.days_until(board.as_of),
+        "missed": missed,
+        "occurrences": [
+            {"date": when.isoformat(), "amount": str(amount.to_decimal())}
+            for when, amount in occurrences
+        ],
+        "frequency": item.frequency,
+        "amount": str(item.amount.to_decimal()),
+        "monthly": None if item.generated else str(item.monthly.to_decimal()),
+        "annual": None if item.generated else str(item.annual.to_decimal()),
+        "hold": None if item.income else str(item.held.to_decimal()),
+        "estimate": item.estimate,
+        "generated": item.generated,
+        "schedule": item.schedule.handle if item.schedule is not None else None,
+        "account": account,
     }
 
 

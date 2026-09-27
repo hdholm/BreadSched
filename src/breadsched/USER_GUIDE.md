@@ -372,6 +372,13 @@ portion of current cash reserved for a bill. It accrues on actual income dates i
 proportion to the income received during that bill cycle. If there is no identified
 income before the due date, the full bill is protected.
 
+When a schedule has missed two or more dates, Dashboard shows it once: the missed
+date range and count, the total, and how often it recurs (for example “every
+month”). Its monthly and annual figures describe the schedule once rather than
+repeating per missed date. Expand the row in the web interface, or read the printed
+report or `breadsched dashboard --json` (`missed_bills` and `missed_income`), for
+each missed date and amount; activate the row in GTK to open the schedule.
+
 An overdue bill remains in liquidity until resolved. A paid-in-full card contributes
 its balance on the payment date; a carried card contributes the lesser of its
 balance and usual payment. Scheduled card purchases remain planning expenses but do

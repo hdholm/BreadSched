@@ -15,7 +15,8 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import date
+from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 from gnucash_fixtures import create_book
@@ -2738,6 +2739,40 @@ class TestDashboardApi:
         [note] = board["coverage_notes"]
         assert note.startswith("Card payments not set up: 1 credit card owes a balance")
 
+    def test_missed_occurrences_arrive_grouped_with_details(self, tmp_path):
+        from breadsched.gen.sample_book import create_sample_book
+
+        today = date.today()
+        start = (today.replace(day=1) - timedelta(days=100)).replace(day=15)
+        path = tmp_path / "missed.breadsched"
+        create_sample_book(path, as_of=start)
+        db = DbSQLite()
+        db.load(str(path))
+        httpd = serve(db, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{httpd.server_port}/api/dashboard",
+                headers={"X-BreadSched-Token": httpd.token},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                board = json.loads(response.read())
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            db.close()
+
+        rent = next(item for item in board["display_bills"] if item["name"] == "Sample rent")
+        assert rent["missed"] >= 2
+        assert len(rent["occurrences"]) == rent["missed"]
+        assert rent["next_due"] == rent["occurrences"][0]["date"]
+        assert rent["last_due"] == rent["occurrences"][-1]["date"]
+        total = sum(Decimal(entry["amount"]) for entry in rent["occurrences"])
+        assert Decimal(rent["amount"]) == total
+        assert rent["frequency"] == "every month"
+        assert sum(1 for item in board["bills"] if item["name"] == "Sample rent") == rent["missed"]
+
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200
@@ -2747,6 +2782,8 @@ class TestDashboardApi:
             "groups",
             "bills",
             "income",
+            "display_bills",
+            "display_income",
             "missing_quotes",
             "liquid_missing_quotes",
             "coverage_notes",

@@ -355,6 +355,27 @@ def cmd_import(args: argparse.Namespace) -> int:
     return 0
 
 
+def _due_cell(item: object, as_of: date) -> str:
+    """A due date, or a grouped schedule's missed range and count."""
+    if isinstance(item, dashboard_engine.MissedGroup):
+        return item.missed_label(as_of)
+    assert isinstance(item, dashboard_engine.BillRow)
+    return item.next_due.isoformat()
+
+
+def _missed_json(group: dashboard_engine.MissedGroup) -> dict[str, object]:
+    return {
+        "name": group.name,
+        "schedule": group.schedule.handle if group.schedule is not None else None,
+        "frequency": group.frequency,
+        "missed": group.count,
+        "first_due": group.next_due,
+        "last_due": group.last_due,
+        "total": group.amount,
+        "occurrences": [{"date": when, "amount": amount} for when, amount in group.occurrences],
+    }
+
+
 def cmd_import_review(args: argparse.Namespace) -> int:
     """List or decide GnuCash changes held back from reconciled transactions."""
     db = open_book(args.book)
@@ -1618,6 +1639,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         {
                             "name": item.name,
                             "next_due": item.next_due,
+                            "frequency": item.frequency,
                             "cycle_months": item.cycle_months,
                             "amount": item.amount,
                             "monthly": item.monthly,
@@ -1633,12 +1655,23 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                         {
                             "name": item.name,
                             "next_due": item.next_due,
+                            "frequency": item.frequency,
                             "cycle_months": item.cycle_months,
                             "amount": item.amount,
                             "monthly": item.monthly,
                             "annual": item.annual,
                         }
                         for item in board.incomes
+                    ],
+                    "missed_bills": [
+                        _missed_json(item)
+                        for item in board.display_bills
+                        if isinstance(item, dashboard_engine.MissedGroup)
+                    ],
+                    "missed_income": [
+                        _missed_json(item)
+                        for item in board.display_incomes
+                        if isinstance(item, dashboard_engine.MissedGroup)
                     ],
                 },
                 args,
@@ -1738,26 +1771,27 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         if board.bills:
             print()
             print("Pending bills")
+            display_bills = board.display_bills
             bill_rows = [
                 [
                     item.name[:32],
-                    item.next_due.isoformat(),
-                    f"{item.cycle_months:g}",
+                    _due_cell(item, board.as_of),
+                    item.frequency,
                     item.amount.format(),
                     "" if item.generated else item.monthly.format(),
                     item.held.format(),
                     "" if item.generated else item.annual.format(),
                     "account" if item.generated else "",
                 ]
-                for item in board.bills[: args.limit]
+                for item in display_bills[: args.limit]
             ]
             print(
                 table(
                     bill_rows,
                     [
                         "item",
-                        "next due",
-                        "cycle",
+                        "due",
+                        "frequency",
                         "amount",
                         "monthly",
                         "hold",
@@ -1767,31 +1801,32 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                     right={3, 4, 5, 6},
                 )
             )
-            if len(board.bills) > args.limit:
-                print(f"... and {len(board.bills) - args.limit} more")
+            if len(display_bills) > args.limit:
+                print(f"... and {len(display_bills) - args.limit} more")
         if board.incomes:
             print()
             print("Expected income")
+            display_incomes = board.display_incomes
             income_rows = [
                 [
                     item.name[:32],
-                    item.next_due.isoformat(),
-                    f"{item.cycle_months:g}",
+                    _due_cell(item, board.as_of),
+                    item.frequency,
                     item.amount.format(),
                     item.monthly.format(),
                     item.annual.format(),
                 ]
-                for item in board.incomes[: args.limit]
+                for item in display_incomes[: args.limit]
             ]
             print(
                 table(
                     income_rows,
-                    ["item", "next due", "cycle", "amount", "monthly", "annual"],
+                    ["item", "due", "frequency", "amount", "monthly", "annual"],
                     right={3, 4, 5},
                 )
             )
-            if len(board.incomes) > args.limit:
-                print(f"... and {len(board.incomes) - args.limit} more")
+            if len(display_incomes) > args.limit:
+                print(f"... and {len(display_incomes) - args.limit} more")
         return 0
     finally:
         db.close()

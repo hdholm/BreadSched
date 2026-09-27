@@ -950,6 +950,8 @@ class TestCli:
             "groups",
             "bills",
             "income",
+            "missed_bills",
+            "missed_income",
             "missing_quotes",
             "liquid_missing_quotes",
             "coverage_notes",
@@ -1719,3 +1721,91 @@ class TestPaidOffLoans:
         assert group.value == Money("100")
         assert group.debt == Money("25")
         assert group.equity == Money("75")
+
+
+@pytest.fixture
+def missed_sample(tmp_path):
+    """A synthetic sample book left unattended for six months.
+
+    Its schedules start in March 2026; at 2026-09-27 rent (6th), utilities (20th),
+    and wages (5th) each have six missed monthly occurrences, April to September.
+    """
+    from breadsched.gen.db.sqlite import DbSQLite
+    from breadsched.gen.sample_book import create_sample_book
+
+    path = tmp_path / "missed.breadsched"
+    create_sample_book(path, as_of=date(2026, 3, 15))
+    db = DbSQLite()
+    db.load(str(path))
+    yield db, path
+    db.close()
+
+
+MISSED_AS_OF = date(2026, 9, 27)
+
+
+def test_missed_occurrences_group_by_schedule_without_changing_totals(missed_sample):
+    from breadsched.plugins.export.html_report import dashboard_report
+
+    db, _path = missed_sample
+    board = dashboard.build(db, as_of=MISSED_AS_OF)
+
+    assert len(board.bills) == 12
+    grouped = board.display_bills
+    assert [type(item).__name__ for item in grouped] == ["MissedGroup", "MissedGroup"]
+    rent = next(item for item in grouped if item.name == "Sample rent")
+    assert rent.count == 6
+    assert (rent.next_due, rent.last_due) == (date(2026, 4, 6), date(2026, 9, 6))
+    assert [when for when, _amount in rent.occurrences] == [
+        date(2026, month, 6) for month in range(4, 10)
+    ]
+    assert rent.amount == Money("8700.00")
+    # The schedule's normalised monthly figure is counted once, not per missed row.
+    assert rent.monthly == Money("1450.00")
+    assert rent.frequency == "every month"
+    assert rent.missed_label(MISSED_AS_OF) == (
+        "6 missed, 2026-04-06 to 2026-09-06 (174 days overdue)"
+    )
+    # Grouping is presentation only: liquidity still counts every missed bill.
+    assert board.required_liquid == sum((item.amount for item in board.bills), Money(0))
+    assert board.required_liquid == Money("9780.00")
+    [wages] = board.display_incomes
+    assert (wages.count, wages.amount) == (6, Money("25200.00"))
+
+    html = dashboard_report(board)
+    assert "6 missed, 174 days overdue" in html
+    assert "2026-04-06 1,450.00" in html
+    assert "1.0000" not in html
+
+
+def test_single_overdue_and_current_rows_stay_ungrouped(missed_sample):
+    db, _path = missed_sample
+    board = dashboard.build(db, as_of=date(2026, 4, 10))
+
+    # Rent (6th) and wages (5th) have one missed date each; utilities are current.
+    assert all(isinstance(item, dashboard.BillRow) for item in board.display_bills)
+    assert [item.name for item in board.display_bills] == ["Sample rent", "Sample utilities"]
+
+
+def test_cli_dashboard_groups_missed_rows_and_names_the_frequency(missed_sample, capsys):
+    import json
+
+    from breadsched.cli.main import main as cli
+
+    db, path = missed_sample
+    db.close()
+    assert cli(["dashboard", str(path), "--as-of", MISSED_AS_OF.isoformat()]) == 0
+    text = capsys.readouterr().out
+    assert "6 missed, 2026-04-06 to 2026-09-06 (174 days overdue)" in text
+    assert "every month" in text
+    assert "1.0000" not in text
+    assert text.count("Sample rent") == 1
+
+    assert cli(["dashboard", str(path), "--as-of", MISSED_AS_OF.isoformat(), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    rent = next(item for item in payload["missed_bills"] if item["name"] == "Sample rent")
+    assert rent["missed"] == 6
+    assert rent["total"] == "8700.00"
+    assert rent["occurrences"][0] == {"date": "2026-04-06", "amount": "1450.00"}
+    assert payload["bills"][0]["frequency"] == "every month"
+    assert [item["name"] for item in payload["missed_income"]] == ["Sample wages"]

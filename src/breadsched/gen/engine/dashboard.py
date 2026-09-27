@@ -53,6 +53,8 @@ __all__ = [
     "GroupResult",
     "GroupAccountResult",
     "BillRow",
+    "MissedGroup",
+    "group_missed",
     "build",
     "DAYS_PER_MONTH",
 ]
@@ -310,6 +312,121 @@ class BillRow:
         return self.days_until(today) <= days
 
 
+@dataclass(frozen=True, slots=True)
+class MissedGroup:
+    """Overdue occurrences of one schedule, shown as a single Dashboard row.
+
+    Six missed monthly rent payments are one question for the household ("what
+    happened to rent since April?"), not six identical rows whose monthly and
+    annual figures would each repeat the same schedule. Totals still come from
+    the individual occurrences, which remain available as ``occurrences``.
+    """
+
+    rows: tuple[BillRow, ...]
+
+    @property
+    def first(self) -> BillRow:
+        return self.rows[0]
+
+    @property
+    def name(self) -> str:
+        return self.first.name
+
+    @property
+    def schedule(self) -> ScheduledTransaction | None:
+        return self.first.schedule
+
+    @property
+    def income(self) -> bool:
+        return self.first.income
+
+    @property
+    def generated(self) -> bool:
+        return self.first.generated
+
+    @property
+    def account(self) -> str | None:
+        return self.first.account
+
+    @property
+    def estimate(self) -> bool:
+        return self.first.estimate
+
+    @property
+    def frequency(self) -> str:
+        return self.first.frequency
+
+    @property
+    def cycle_months(self) -> Decimal:
+        return self.first.cycle_months
+
+    @property
+    def next_due(self) -> date:
+        """The oldest missed date, which is what makes the group overdue."""
+        return self.first.next_due
+
+    @property
+    def last_due(self) -> date:
+        return self.rows[-1].next_due
+
+    @property
+    def count(self) -> int:
+        return len(self.rows)
+
+    @property
+    def occurrences(self) -> tuple[tuple[date, Money], ...]:
+        return tuple((row.next_due, row.amount) for row in self.rows)
+
+    @property
+    def amount(self) -> Money:
+        return sum((row.amount for row in self.rows), Money(0))
+
+    @property
+    def held(self) -> Money:
+        return sum((row.held for row in self.rows), Money(0))
+
+    @property
+    def monthly(self) -> Money:
+        """The schedule's normalised monthly figure, counted once."""
+        return self.first.monthly
+
+    @property
+    def annual(self) -> Money:
+        return self.first.annual
+
+    def days_until(self, today: date) -> int:
+        return self.first.days_until(today)
+
+    def missed_label(self, today: date) -> str:
+        return (
+            f"{self.count} missed, {self.next_due.isoformat()} to "
+            f"{self.last_due.isoformat()} ({-self.days_until(today)} days overdue)"
+        )
+
+
+def group_missed(rows: list[BillRow], today: date) -> list[BillRow | MissedGroup]:
+    """Collapse two or more overdue rows of the same schedule into one group."""
+    keyed: dict[tuple[str, str], list[BillRow]] = {}
+    for row in rows:
+        if row.next_due < today:
+            key = ("schedule", row.schedule.handle) if row.schedule else ("name", row.name)
+            keyed.setdefault(key, []).append(row)
+    grouped: list[BillRow | MissedGroup] = []
+    emitted: set[tuple[str, str]] = set()
+    for row in rows:
+        if row.next_due >= today:
+            grouped.append(row)
+            continue
+        key = ("schedule", row.schedule.handle) if row.schedule else ("name", row.name)
+        members = keyed[key]
+        if len(members) == 1:
+            grouped.append(row)
+        elif key not in emitted:
+            emitted.add(key)
+            grouped.append(MissedGroup(tuple(sorted(members, key=lambda item: item.next_due))))
+    return grouped
+
+
 class DashboardSummary(TypedDict):
     as_of: date
     net_worth: Money
@@ -447,6 +564,15 @@ class Dashboard:
     @property
     def incomes(self) -> list[BillRow]:
         return [row for row in self.pending if row.income]
+
+    @property
+    def display_bills(self) -> list[BillRow | MissedGroup]:
+        """Bills for presentation, with each schedule's missed dates grouped."""
+        return group_missed(self.bills, self.as_of)
+
+    @property
+    def display_incomes(self) -> list[BillRow | MissedGroup]:
+        return group_missed(self.incomes, self.as_of)
 
     @property
     def monthly_outgoings(self) -> Money:
