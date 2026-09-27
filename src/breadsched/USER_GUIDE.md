@@ -334,7 +334,8 @@ worth reflects those selected groups, which may cover only part of the book.
 When there are no committed outgoings, Emergency fund and Months covered say
 “No committed outgoings” instead of presenting zero as a measured need or duration.
 Add schedules for known commitments and review Dashboard groups before relying on
-those figures. A synthetic sample book is planned.
+those figures. The synthetic sample book above provides a separate place to
+explore these controls.
 
 In the web Dashboard, a requested liquidity or emergency-fund horizon changes
 the displayed calculation for that request. Reopening the view uses the saved
