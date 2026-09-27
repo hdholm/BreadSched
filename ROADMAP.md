@@ -51,9 +51,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    it; do not create a second monthly budget ledger.
 3. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity
    without rewriting imported descriptions; preview deterministic matching and
-   categorization suggestions before acceptance. Add a user-mapped CSV importer
-   with date/amount/encoding validation, duplicate and transfer review, source
-   identity for re-import, and atomic undo. Keep rule priority and conflicts
+   categorization suggestions before acceptance. The user-mapped CSV importer
+   (shared service and `breadsched import-csv`) now previews rows, validates
+   date/amount/encoding, holds back possible duplicates, keeps a stable source
+   identity for re-import without recategorizing, and imports as one undo step.
+   Next: GTK and web mapping and preview screens, then transfer review. Keep rule priority and conflicts
    explainable; never silently recategorize previously accepted transactions.
    Offer entry autocomplete from earlier transactions as a visible, editable
    proposal that never commits without the user's save.

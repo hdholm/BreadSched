@@ -91,6 +91,7 @@ from ..gen.services import (
     save_transaction,
     transaction_currency,
 )
+from ..gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv, preview_csv_import
 from ..gen.utils import logs
 from ..presentation import service_error_message
 
@@ -469,6 +470,106 @@ def cmd_due_review(args: argparse.Namespace) -> int:
             table(rows, ["schedule", "id", "due", "dates", "frequency", "total"], right={2, 5})
             if rows
             else "Nothing is due.",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_import_csv(args: argparse.Namespace) -> int:
+    """Preview or import a CSV statement into one account through a column mapping."""
+    db = open_book(args.book, "r" if args.preview else "w")
+    try:
+        request = CsvImportRequest(
+            source=args.source,
+            account=resolve_account(db, args.account).handle,
+            mapping=CsvMapping(
+                date=args.date,
+                amount=args.amount,
+                debit=args.debit,
+                credit=args.credit,
+                description=args.description,
+                memo=args.memo,
+                date_format=args.date_format,
+                number_format=args.number_format,
+                encoding=args.encoding,
+                delimiter=args.delimiter,
+                header=not args.no_header,
+                invert=args.invert,
+            ),
+            include_duplicates=args.include_duplicates,
+        )
+        if args.preview:
+            previewed = preview_csv_import(db, request)
+            if previewed.value is None:
+                raise CommandError(service_error_message(previewed.errors[0]))
+            preview = previewed.value
+            rows = [
+                [
+                    row.line,
+                    row.when.isoformat() if row.when else "",
+                    row.amount.format(parens_negative=True) if row.amount is not None else "",
+                    row.description,
+                    row.status.replace("_", " "),
+                    row.reason,
+                ]
+                for row in preview.rows
+            ]
+            text = "\n".join(
+                (
+                    f"{preview.encoding}, delimiter {preview.delimiter!r}, "
+                    f"{preview.date_format} dates, {preview.number_format} decimals",
+                    table(
+                        rows,
+                        ["line", "date", "amount", "description", "status", "reason"],
+                        right={0, 2},
+                    ),
+                )
+            )
+            emit(
+                {
+                    "encoding": preview.encoding,
+                    "delimiter": preview.delimiter,
+                    "date_format": preview.date_format,
+                    "number_format": preview.number_format,
+                    "rows": [
+                        {
+                            "line": row.line,
+                            "date": row.when,
+                            "amount": row.amount,
+                            "description": row.description,
+                            "memo": row.memo,
+                            "status": row.status,
+                            "reason": row.reason,
+                            "existing": row.existing,
+                        }
+                        for row in preview.rows
+                    ],
+                },
+                args,
+                text,
+            )
+            return 0
+        imported = import_csv(db, request)
+        if imported.value is None:
+            raise CommandError(service_error_message(imported.errors[0]))
+        result = imported.value.result
+        preview = imported.value.preview
+        summary = {
+            "transactions_new": result.transactions_new,
+            "transactions_unchanged": result.transactions_unchanged,
+            "possible_duplicates": preview.count("possible_duplicate"),
+            "duplicates_included": args.include_duplicates,
+            "skipped": result.skipped,
+            "skipped_by_reason": result.reasons(),
+        }
+        emit(
+            summary,
+            args,
+            f"Imported {result.transactions_new} new, {result.transactions_unchanged} already "
+            f"imported, {preview.count('possible_duplicate')} possible duplicate(s) "
+            f"{'included' if args.include_duplicates else 'held back'}, "
+            f"{result.skipped} skipped",
         )
         return 0
     finally:
@@ -2155,6 +2256,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="apply confident suggestions rather than only listing them",
     )
     imp.set_defaults(func=cmd_import)
+
+    csv_cmd = add(
+        "import-csv",
+        "Preview or import a CSV statement into one account using a column mapping",
+    )
+    csv_cmd.add_argument("source", help="path to the CSV file")
+    csv_cmd.add_argument("--account", required=True, help="bank, cash, or card account")
+    csv_cmd.add_argument("--date", required=True, help="date column name (or 1-based number)")
+    csv_cmd.add_argument("--amount", help="signed amount column; negative is money out")
+    csv_cmd.add_argument("--debit", help="money-out column, instead of --amount")
+    csv_cmd.add_argument("--credit", help="money-in column, instead of --amount")
+    csv_cmd.add_argument("--description", help="description or payee column")
+    csv_cmd.add_argument("--memo", help="memo column")
+    csv_cmd.add_argument(
+        "--date-format", default="auto", choices=["auto", "iso", "month-first", "day-first"]
+    )
+    csv_cmd.add_argument("--number-format", default="auto", choices=["auto", "dot", "comma"])
+    csv_cmd.add_argument("--encoding", default="auto", help="e.g. utf-8 or cp1252")
+    csv_cmd.add_argument("--delimiter", default="auto", help="one character, e.g. ';'")
+    csv_cmd.add_argument("--no-header", action="store_true", help="the first row is data")
+    csv_cmd.add_argument("--invert", action="store_true", help="money out is shown positive")
+    csv_cmd.add_argument(
+        "--include-duplicates",
+        action="store_true",
+        help="also import rows matching an existing transaction on date and amount",
+    )
+    csv_cmd.add_argument("--preview", action="store_true", help="show rows; write nothing")
+    csv_cmd.set_defaults(func=cmd_import_csv)
 
     due_review = add(
         "due-review",

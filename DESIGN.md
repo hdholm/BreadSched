@@ -594,6 +594,20 @@ likewise inferred once from file-wide evidence (month-first or day-first), never
 record by record. Conflicting conventions are reported, and ambiguous files may use an
 explicit importer format override. Year-first QIF dates remain inherently unambiguous.
 
+CSV statements (`plugins/importer/csv_import.py`) are read through an explicit
+column mapping. Encoding, delimiter, date order, and decimal convention use the
+same whole-file evidence rule, and an all-ambiguous date column is refused rather
+than assumed. `read_statement` classifies rows without writing: new, already
+imported, possible duplicate, or invalid. `import_rows` writes exactly those
+classified rows in one batch transaction. A row's identity is a UUID5 of the target
+account, date, amount, description, memo, and occurrence number. Re-importing an
+existing identity leaves that transaction untouched rather than routing it through
+the refreshing `ImportSink.transaction` path, so a category chosen after import is
+never reverted. A possible duplicate is another transaction with a split in the
+target account on the same date and value, outside the row's own identity family.
+The shared service in `gen/services/csv_import.py` validates the file and account
+before any read.
+
 The formula language is parsed through a restricted evaluator, never Python
 `eval()`. Formula expressions are treated as untrusted imported/user input and must
 have bounded, predictable evaluation behavior. Expression depth, node count, and

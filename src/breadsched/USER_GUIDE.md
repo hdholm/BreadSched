@@ -694,6 +694,44 @@ path. Uploading the same filename again refreshes the same source identity;
 different filenames are separate sources. Import options and warning details
 are shared with the path-based workflow.
 
+### Import a CSV statement
+
+Most banks and card issuers can export a statement as CSV, but every layout
+differs, so BreadSched asks which columns hold which facts rather than guessing.
+Choose the account the statement belongs to, then map the date column and either
+one signed amount column (negative for money out, or for a card charge) or separate
+debit and credit columns. A description and memo column are optional. Refer to a
+column by its header name, or by number (1 for the first) with `--no-header`.
+
+Always preview first:
+
+```bash
+breadsched import-csv household.breadsched statement.csv --account Checking \
+    --date Date --amount Amount --description Description --preview
+```
+
+The preview lists every row with its status:
+
+- **new** rows will be imported;
+- **imported** rows are already in the book from an earlier import of the same
+  rows and are left exactly as they are, including any category you chose since;
+- **possible duplicate** rows match a transaction already in that account on the
+  same date and amount, for example one you typed in or imported from OFX. They
+  are held back unless you add `--include-duplicates`;
+- **invalid** rows give the line number and the reason, such as a date or amount
+  that cannot be read, and are skipped.
+
+The file's encoding (UTF-8 or Windows-1252), delimiter, date order, and decimal
+convention are detected from the whole file and shown in the preview. If every date
+could be read either day-first or month-first, the preview stops and asks for
+`--date-format day-first` or `month-first`. Use `--number-format`, `--encoding`, or
+`--delimiter` to override detection, and `--invert` for exports that show money out
+as a positive number. Run the same command without `--preview` to import; the whole
+import is one undo step. New rows are posted against **Uncategorized CSV** under
+Expenses or Income for you to categorize. Two identical rows on the same day remain
+two transactions. CSV import is available from the command line; GTK and web
+mapping screens, transfer review, payees, and categorization rules come next.
+
 ## Print, export, and inspect
 
 Dashboard, Plan, and Projection can be printed from the GTK toolbar or **File →

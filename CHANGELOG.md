@@ -5,6 +5,21 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **CSV statement import with preview and duplicate review.** `breadsched
+  import-csv` imports a bank or card statement exported as CSV into one chosen
+  account. You map the date column, one signed amount column or debit/credit
+  columns, and optional description and memo columns, by header name or position.
+  Encoding (UTF-8 or Windows-1252), delimiter, date order, and decimal convention
+  are detected from the whole file; an all-ambiguous date order is refused until
+  chosen. `--preview` writes nothing. It classifies each row as new, already
+  imported, possible duplicate (same date and amount as a transaction already in
+  the account), or invalid, with line numbers and reasons. Import is one undo
+  step. Rows keep a deterministic identity, so re-importing the same statement adds
+  nothing and never recategorizes a row the user has since categorized. Possible
+  duplicates are held back unless `--include-duplicates` is given. The shared
+  service (`gen/services/csv_import.py`) is ready for the GTK and web screens that
+  follow. Application version `0.2.0a128`; native schema remains 7.
+
 - **Currency notes disclose quote age and rounding.** Plan and Projection
   currency notes now give the selected quote's age on the
   as-of date ("26 days old", "dated today", or "dated N days ahead"). BreadSched
