@@ -5,9 +5,9 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
-- **Flatpak build baseline.** Add a GNOME-runtime manifest and CI smoke gate for
-  the packaged CLI version and GTK launcher help inside the sandbox. This is a
-  build input, not a released installer or validated file workflow. Application
+- **Flatpak build baseline.** Add a GNOME-runtime manifest and CI smoke gate that
+  installs the package and checks CLI version and GTK launcher help in the sandbox.
+  This is a build input, not a released installer or validated file workflow. Application
   version `0.2.0a118`; native schema remains 7.
 
 - **Imported-book Dashboard acceptance.** Synthetic GnuCash import coverage now

@@ -31,6 +31,9 @@ def test_flatpak_build_input_uses_the_app_id_and_excludes_local_state():
     assert {".git", ".venv", "build", "dist"} <= set(source["skip"])
     assert "--filesystem=host" not in manifest["finish-args"]
     assert "--filesystem=home" not in manifest["finish-args"]
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "flatpak install --user --noninteractive local-breadsched" in workflow
+    assert "flatpak run --user --command=breadsched" in workflow
 
 
 def _notes() -> str:

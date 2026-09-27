@@ -158,12 +158,12 @@ jobs:
             --repo="$RUNNER_TEMP/flatpak-repo" "$RUNNER_TEMP/flatpak-build" \
             org.breadsched.BreadSched.json
 
-      - name: Smoke-test installed commands inside sandbox
+      - name: Install package and smoke-test commands inside sandbox
         run: |
-          flatpak-builder --run "$RUNNER_TEMP/flatpak-build" \
-            org.breadsched.BreadSched.json breadsched --version
-          flatpak-builder --run "$RUNNER_TEMP/flatpak-build" \
-            org.breadsched.BreadSched.json breadsched-gtk --help
+          flatpak remote-add --user --no-gpg-verify local-breadsched "$RUNNER_TEMP/flatpak-repo"
+          flatpak install --user --noninteractive local-breadsched org.breadsched.BreadSched
+          flatpak run --user --command=breadsched org.breadsched.BreadSched --version
+          flatpak run --user org.breadsched.BreadSched --help
 
   missing-gtk-runtime:
     name: PyGObject without GTK4 typelib

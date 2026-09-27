@@ -1277,9 +1277,10 @@ process cannot delete another writer's lock.
 ## GTK test availability
 
 The initial Flatpak manifest builds the Python application into `/app` with the
-GNOME 49 SDK. CI builds it from the source checkout and invokes installed CLI and
-GTK launcher commands inside the sandbox. The manifest grants Documents access
-for the default book path and network access for the loopback web interface;
+GNOME 49 SDK. CI builds it from the source checkout, installs the result from a
+local Flatpak repository, and invokes CLI and GTK launcher commands in the sandbox.
+The manifest grants Documents access for the default book path and network access
+for the loopback web interface;
 file chooser, lock, import/export, backup/restore, help, print, and offline
 workflows still require sandbox acceptance before an installer is published.
 
