@@ -968,6 +968,7 @@ def cmd_activity(args: argparse.Namespace) -> int:
             start,
             end,
             period=activity.ReportingPeriod(args.period),
+            as_of=parse_date(args.as_of),
         )
         rows = [
             [
@@ -998,6 +999,9 @@ def cmd_activity(args: argparse.Namespace) -> int:
             ],
             right={1, 2, 3, 4, 5, 6, 7, 8},
         )
+        notes = activity.currency_notes(db, report)
+        if notes:
+            text = "\n".join((text, "", *notes))
         emit(report.as_dict(), args, text)
         return 0
     finally:
@@ -2281,6 +2285,10 @@ def build_parser() -> argparse.ArgumentParser:
         default="month",
         choices=[period.value for period in activity.ReportingPeriod],
         help="display grouping; does not change event dates",
+    )
+    activity_cmd.add_argument(
+        "--as-of",
+        help="date whose exchange-rate quotes convert foreign amounts (default today)",
     )
     activity_cmd.set_defaults(func=cmd_activity)
 

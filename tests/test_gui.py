@@ -16,7 +16,7 @@ import gc
 import importlib
 import itertools
 import threading
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -2456,6 +2456,56 @@ class TestDerivedPlanView:
             assert dialog.content.get_first_child() is not None
         finally:
             dialog.destroy()
+
+    def test_plan_discloses_foreign_currency_quote_or_exclusion(self, app, window, populated_book):
+        from breadsched.gen.engine import valuation
+        from breadsched.gen.engine.currency import reporting_currency_handle
+        from breadsched.gen.lib import (
+            Commodity,
+            Money,
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
+        )
+        from breadsched.gen.lib.account import AccountClass
+
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        assert not view.currency_note.get_visible()
+        accounts = [item for item in app.db.iter_accounts() if not item.placeholder]
+        expense = next(item for item in accounts if item.account_class is AccountClass.EXPENSE)
+        cash = next(item for item in accounts if item.is_spendable_cash)
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        flat = ScheduledTransaction(
+            name="Flat in Lyon",
+            recurrence=Recurrence(PeriodType.ONCE, start=view._start_date),
+            splits=[
+                ScheduledSplit(expense.handle, Money(500)),
+                ScheduledSplit(cash.handle, Money(-500)),
+            ],
+        )
+        flat.currency = euro.handle
+        with app.db.transaction("EUR schedule") as txn:
+            app.db.add_commodity(euro, txn)
+            app.db.add_scheduled(flat, txn)
+
+        view.refresh()
+        assert view.currency_note.get_visible()
+        assert view.currency_note.get_text().startswith("Not included in totals")
+        assert view.currency_note.has_css_class("negative")
+
+        valuation.save_currency_quote(
+            app.db,
+            source_handle=euro.handle,
+            target_handle=reporting_currency_handle(app.db),
+            quote_date=view._start_date.replace(day=1) - timedelta(days=40),
+            value=Money("1.25"),
+        )
+        view.refresh()
+        assert "EUR amounts are converted to" in view.currency_note.get_text()
+        assert not view.currency_note.has_css_class("negative")
 
     def test_detaching_does_not_try_to_read_book_metadata(self, app, window, populated_book):
         app.open_book(populated_book)

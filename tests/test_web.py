@@ -1632,12 +1632,15 @@ class TestPlanApi:
             "periods",
             "summary",
             "comparison",
+            "currency",
             "categories",
             "mortgage_payments",
             "planning_flows",
             "cash_bridge",
             "column_totals",
         }
+        assert payload["currency"]["notes"] == []
+        assert set(payload["currency"]) == {"as_of", "conversions", "unconverted", "notes"}
         by_name = {row["full_name"]: row for row in payload["categories"]}
         assert "Income:Salary" in by_name
         assert "Expenses:Rent" in by_name

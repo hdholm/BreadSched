@@ -236,8 +236,9 @@ non-positive rate, or an invalid date without saving anything.
 Web and CLI data expose the signed number of days since the quote, with negative
 days identifying a future-dated quote when no as-of date was requested.
 Review the quote date and source before treating a market-valued total as current.
-Currency totals in the current views still require a compatible reporting-currency
-value; no multi-hop path through an intermediate currency is inferred.
+Plan totals and Expense Explorer convert foreign amounts with these rates (see
+Plan). Other views still require a compatible reporting-currency value, and no
+multi-hop path through an intermediate currency is inferred.
 Do not add values in unlike currencies when estimating net worth.
 
 For an Investment or Retirement account, use **Security price…** to define a
@@ -445,6 +446,18 @@ add the whole-payment row to its components.
 Actual and variance totals stop at the report's as-of date. Future-only actual and
 variance summaries are not applicable rather than zero.
 
+Schedules and transactions in another currency are converted to the reporting
+currency before any Plan value is added up. Each currency uses one exchange rate:
+the latest one recorded on or before the as-of date. A direct rate (for example
+EUR→USD) is preferred; otherwise the reverse rate (USD→EUR) is inverted. A note
+under the Plan summary, in the web Plan, in print, and after
+`breadsched activity` states the rate, its date and source, and whether it was
+inverted. When no rate applies, those amounts are **not included in totals**: the
+note lists each one with its currency and date rather than counting euros as dollars.
+Add an exchange rate in Accounts to include them. `breadsched activity --as-of DATE`
+chooses which rates apply; its JSON adds `conversions` and `unconverted`, and the
+web Plan response adds a `currency` object with the same evidence.
+
 Open a Plan value to inspect its dated planned occurrences and actual transactions,
 including matching status and explanations. Category values show their account
 class; planning-flow values identify the flow kind, and mortgage cash requirements
@@ -487,8 +500,9 @@ Remaining answers how much of the selected full-period expense plan is left afte
 actuals posted through the as-of date. A refund increases it; overspending shows a
 negative amount. Actual and Variance still describe the full selected period, so a
 future-dated transaction may appear in Actual before it affects Remaining. A
-future-only period says “Future period,” and an affected foreign-currency category
-says “Currency conversion unavailable” until Plan conversion is implemented.
+future-only period says “Future period.” Foreign-currency amounts use Plan's
+converted values; a category with an amount that no exchange rate converts says
+“Currency conversion unavailable,” and rollover stops there.
 Remaining has no merchant allocation and is a planning comparison, not a bank
 balance. Rollover is off by default.
 Select **Carry prior periods** in Expense Explorer to add a completed period's

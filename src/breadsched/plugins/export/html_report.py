@@ -369,6 +369,7 @@ def plan_report(
         ]
     )
     headers = "".join(f'<th class="num">{escape(period.label)}</th>' for period in activity.periods)
+    currency = "".join(f'<p class="note">{escape(line)}</p>' for line in report.currency_notes)
     summary_rows: list[str] = []
     detail_rows: list[str] = []
 
@@ -489,7 +490,7 @@ def plan_report(
     return _document(
         "Plan",
         subtitle,
-        f"{cards}{summary_table}{detail_table}",
+        f"{cards}{currency}{summary_table}{detail_table}",
         optional_plan_detail=True,
     )
 

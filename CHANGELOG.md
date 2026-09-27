@@ -5,6 +5,20 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Plan totals convert foreign currencies instead of adding them as reporting
+  currency (#124).** A EUR schedule was added to USD Plan totals unit for unit (500
+  EUR plus 1,000 USD showed 1,500.00). The activity report now converts each
+  foreign schedule and transaction once, with the quote applicable on the
+  report's as-of date: a direct quote, or an inverted reverse one. All Plan figures
+  derive from those converted values: period totals, categories, drill-down
+  detail, planning flows, the cash bridge, the projected cash position, and
+  Expense Explorer Remaining and rollover. Activity with no applicable quote is
+  excluded from every total and listed as unconverted. GTK, web, print, and
+  `breadsched activity` show the same notes: rate, quote date, source, and
+  inversion, or each excluded amount. JSON adds `conversions`/`unconverted`; the
+  web Plan adds `currency`. `breadsched activity --as-of` selects the quotes.
+  Application version `0.2.0a125`; native schema remains 7.
+
 - **GTK manual exchange rates.** Accounts has an **Exchange rate…** button that
   opens a dialog for a dated, directional manual quote: choose the source and
   target currencies (the target defaults to the reporting currency), the quote
