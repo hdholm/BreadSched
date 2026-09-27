@@ -91,6 +91,20 @@ def test_release_workflow_sets_an_annotated_tag_identity():
     assert '-f ref="refs/tags/$TAG" -f sha="$tag_object"' in workflow
 
 
+def test_release_selection_skips_a_version_already_tagged_elsewhere():
+    """A later commit keeping a released version must not fail the release run."""
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    preparation, _publication = workflow.split("\n  publish:\n", 1)
+    selection = preparation.split("      - name: Select an explicitly documented release", 1)[1]
+    selection = selection.split("\n      - name:", 1)[0]
+
+    skip = selection.index('git rev-parse -q --verify "refs/tags/${tag}^{commit}"')
+    assert selection.index("git fetch origin main --tags") < skip
+    assert selection.index('if [[ "$tagged" != "$(git rev-parse HEAD)" ]]; then') > skip
+    assert 'echo "selected=false" >> "$GITHUB_OUTPUT"' in selection[skip:]
+    assert skip < selection.index('echo "selected=true" >> "$GITHUB_OUTPUT"')
+
+
 def test_release_write_job_does_not_execute_checked_out_code():
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
     preparation, publication = workflow.split("\n  publish:\n", 1)

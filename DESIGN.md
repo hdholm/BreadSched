@@ -1238,7 +1238,10 @@ the read-only preparation job requires that exact tested commit still be the tip
 the wheel, and verifies SHA-256 checksums. Its separate write-capable publication job
 checks the tested main identity again, validates transferred asset names and hashes
 without running them, then creates the annotated tag and GitHub release. Existing
-tags must target the same commit, and releases are never silently replaced.
+tags must target the same commit, and releases are never silently replaced. When a
+later `main` commit keeps a version whose tag already targets an earlier commit, the
+preparation job selects nothing instead of failing at the tag step, so documentation
+and CI merges without a version bump leave the release run green.
 
 The storage priorities are atomic financial writes, explicit format rejection,
 verified backups and recovery, undo/redo integrity, and realistic performance on

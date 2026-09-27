@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Release runs no longer fail on merges without a version bump.** The release
+  workflow's preparation job now reports a version whose tag already targets an
+  earlier `main` commit as not selected, instead of reaching the tag step and
+  failing because the existing tag names a different commit. Tags are still never
+  moved or duplicated, and a re-run on the tagged commit is still idempotent. The
+  roadmap no longer names a stale released baseline. No application or schema
+  change.
+
 - **First-run Dashboard for imported commitments (P0 complete).** A synthetic
   GnuCash book with a priced security, an unscheduled mortgage, and a credit card
   owing a balance now has acceptance coverage across the shared engine, GTK, web,
