@@ -28,6 +28,7 @@ def dashboard_report(
         },
         "missing_quotes": list(board.missing_quotes),
         "liquid_missing_quotes": list(board.liquid_missing_quotes),
+        "coverage_notes": list(board.coverage_notes),
         "config": {
             "liquidity_days": config.liquidity_days,
             "emergency_months": config.emergency_months,

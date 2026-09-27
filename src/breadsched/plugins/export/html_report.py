@@ -234,6 +234,7 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
             "</div></div>"
         )
 
+    coverage = "".join(f'<p class="note">{escape(note)}</p>' for note in board.coverage_notes)
     group_rows = []
     for group in board.groups:
         css = "heading" if group.heading else ""
@@ -256,7 +257,7 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
         '<table><thead><tr><th>Group</th><th class="num">Value</th>'
         '<th class="num">Owed</th><th class="num">Equity / total</th>'
         '<th class="num">LTV</th><th>Loan end</th></tr></thead>'
-        f"<tbody>{''.join(group_rows)}</tbody></table>"
+        f"<tbody>{''.join(group_rows)}</tbody></table>" + coverage
         if group_rows
         else '<p class="note">No Dashboard groups are configured.</p>'
     )

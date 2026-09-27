@@ -703,6 +703,42 @@ class TestLiquidityAndEmergencyFund:
 
 
 class TestConfiguration:
+    def test_partial_groups_disclose_position_and_liquidity_scope(self, db, book):
+        from breadsched.plugins.export.html_report import dashboard_report
+
+        config = dashboard.DashboardConfig(
+            groups=[dashboard.GroupConfig("Cash", [book.checking], "liquid")]
+        )
+        board = dashboard.build(db, config, as_of=TODAY)
+        assert len(board.coverage_notes) == 2
+        assert "3 asset/liability accounts" in board.coverage_notes[0]
+        assert "1 cash-like account" in board.coverage_notes[1]
+        assert "Partial Dashboard groups" in dashboard_report(board)
+
+        complete = dashboard.build(
+            db,
+            dashboard.DashboardConfig(
+                groups=[
+                    dashboard.GroupConfig("Assets", [book.assets], "liquid"),
+                    dashboard.GroupConfig("Debt", [book.liabilities], "liability"),
+                ]
+            ),
+            as_of=TODAY,
+        )
+        assert complete.coverage_notes == ()
+
+        with db.transaction("Hidden cash") as txn:
+            hidden = Account(
+                name="Old cash", atype=AccountType.BANK, parent=book.assets, hidden=True
+            )
+            db.add_account(hidden, txn)
+            db.add_transaction(
+                Transaction.simple(TODAY, "Prior cash", hidden.handle, book.opening, "25"), txn
+            )
+        hidden_board = dashboard.build(db, config, as_of=TODAY)
+        assert "4 asset/liability accounts" in hidden_board.coverage_notes[0]
+        assert "2 cash-like accounts" in hidden_board.coverage_notes[1]
+
     def test_first_run_uses_ledger_position_and_explains_missing_commitments(self, db, book):
         from breadsched.plugins.export.html_report import dashboard_report
 
@@ -787,6 +823,7 @@ class TestCli:
             "income",
             "missing_quotes",
             "liquid_missing_quotes",
+            "coverage_notes",
             "unavailable_reasons",
         }
 

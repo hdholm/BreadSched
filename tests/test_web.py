@@ -2591,6 +2591,7 @@ class TestDashboardApi:
             "income",
             "missing_quotes",
             "liquid_missing_quotes",
+            "coverage_notes",
             "unavailable_reasons",
         }
         assert payload["unavailable_reasons"]["months_covered"] == "No committed outgoings"

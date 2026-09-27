@@ -333,6 +333,8 @@ class DashboardView(BaseView):
         )
         if shortfall > 0 and "emergency_shortfall" not in missing_fields:
             self.cards.append(_card("Short of the fund", shortfall.format(), True))
+        for note in board.coverage_notes:
+            self.cards.append(_card("Coverage", note, False))
 
     def _render_groups(self) -> None:
         _empty(self.groups)

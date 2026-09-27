@@ -351,6 +351,7 @@ class Dashboard:
     liquid_missing_quotes: tuple[str, ...] = ()
     ledger_position: Money | None = None
     ledger_position_missing_quotes: tuple[str, ...] = ()
+    coverage_notes: tuple[str, ...] = ()
 
     @property
     def missing_quotes(self) -> tuple[str, ...]:
@@ -620,6 +621,57 @@ def build(
     paid_off = _paid_off_loans(db, today)
     resolved = resolve_groups(db, config)
     board.groups = _hierarchical_results(db, resolved, today, paid_off)
+    if board.groups:
+        accounts = {account.handle: account for account in db.iter_accounts()}
+        selected = {handle for group in resolved for handle in group.accounts}
+
+        def covered(account: Account, selected_handles: set[str]) -> bool:
+            handle: str | None = account.handle
+            seen: set[str] = set()
+            while handle and handle not in seen:
+                if handle in selected_handles:
+                    return True
+                seen.add(handle)
+                parent = accounts.get(handle)
+                handle = parent.parent if parent is not None else ""
+            return False
+
+        omitted = [
+            account
+            for account in accounts.values()
+            if account.account_class in (AccountClass.ASSET, AccountClass.LIABILITY)
+            and not account.placeholder
+            and not covered(account, selected)
+        ]
+        notes = []
+        if omitted:
+            unit = "account" if len(omitted) == 1 else "accounts"
+            verb = "is" if len(omitted) == 1 else "are"
+            notes.append(
+                f"Partial Dashboard groups: {len(omitted)} asset/liability {unit} "
+                f"{verb} outside the selected groups; grouped Net worth is not "
+                "whole-book Net worth."
+            )
+        liquid_selected = {
+            handle for group in resolved if group.kind == "liquid" for handle in group.accounts
+        }
+        if liquid_selected:
+            omitted_cash = [
+                account
+                for account in accounts.values()
+                if account.atype.is_cash_like
+                and not account.placeholder
+                and not covered(account, liquid_selected)
+            ]
+            if omitted_cash:
+                unit = "account" if len(omitted_cash) == 1 else "accounts"
+                verb = "is" if len(omitted_cash) == 1 else "are"
+                notes.append(
+                    f"Partial liquid group: {len(omitted_cash)} cash-like {unit} "
+                    f"{verb} outside the selected liquid groups; Liquid and coverage use "
+                    "only selected cash."
+                )
+        board.coverage_notes = tuple(notes)
     if not board.groups:
         position = valuation.aggregate_value(db, as_of=today, net_worth=True)
         board.ledger_position = position.amount.value if position.amount is not None else None

@@ -331,6 +331,11 @@ group setup, Net worth uses all ledger asset and liability accounts, valued in t
 reporting currency as of the Dashboard date; a missing quote makes it unavailable.
 Grouped asset and debt totals remain unconfigured. Once groups are assigned, Net
 worth reflects those selected groups, which may cover only part of the book.
+When configured groups omit asset or liability accounts, a coverage note gives the
+omitted count; grouped Net worth then covers only selected accounts. If a liquid
+group omits cash-like accounts, Liquid and emergency coverage use selected cash and
+show a separate note. Selecting a chart parent includes its descendants.
+
 When there are no committed outgoings, Emergency fund and Months covered say
 “No committed outgoings” instead of presenting zero as a measured need or duration.
 Add schedules for known commitments and review Dashboard groups before relying on

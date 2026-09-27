@@ -727,6 +727,12 @@ cash-counterpart annotations on a retirement distribution count only once.
 
 ## Dashboard aggregation
 
+Grouped Dashboard measures disclose the count of unselected asset/liability accounts.
+When a liquid group is selected, they also disclose omitted cash-like accounts.
+Selected chart parents cover descendants, and disclosures do not silently change
+the selected totals. The shared engine supplies the same scope notes to every
+presentation and print output.
+
 The synthetic learning book is generated on request by `gen.sample_book` into a
 new path; CLI is only its entry point. Its reference date anchors the previous
 month's balanced ledger transactions and next month's recurring Plan examples.
