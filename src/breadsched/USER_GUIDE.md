@@ -295,6 +295,26 @@ Scheduled transactions support recurrence bounds, weekend adjustment, skipped
 occurrences, one-time overrides, future-effective amount changes, multiple splits,
 and bounded formulas.
 
+### Review due and missed transactions
+
+Nothing scheduled is posted until you decide. GTK asks when a book opens (after
+any held GnuCash changes) and from **Review due…** in Scheduled; the web interface
+offers **Review due transactions…** in Scheduled and, when something is due, on
+Dashboard; the command line uses `breadsched due-review BOOK`. Due and missed dates
+are grouped by schedule with a count and total, and each date has its own choice:
+
+- **Post now** writes that date's transaction;
+- **Remind me later**, the default, leaves it due;
+- **Never (mark as done)** skips that one date without posting anything.
+
+A schedule with several dates also offers a choice that sets all of them at once.
+**Apply** re-checks every chosen date first: if one was already posted or skipped
+elsewhere (another window, the browser, or the command line), nothing is written
+and the review says so instead of posting it twice. The whole batch is one undo
+step. Plan-only estimates are never offered for posting. On the command line,
+`--post` and `--skip` take a schedule id prefix or exact name, optionally with
+`@YYYY-MM-DD` for one date; `--post-all` and `--skip-all` decide everything due.
+
 Use **New transaction** for a fixed or formula-driven commitment or estimate. Review
 all split signs and purposes. Fixed multi-split schedules can change individual
 signed legs from an effective date, but every effective set must still balance.

@@ -11,6 +11,7 @@ let state = {
 };
 let historicalEstimateDialog = null;
 let importReviewDialog = null;
+let dueReviewDialog = null;
 
 const el = (tag, attrs = {}, ...kids) => {
   const node = document.createElement(tag);
@@ -1225,14 +1226,8 @@ async function showScheduled() {
         onclick: () => openHistoricalEstimateDialog() }, "Suggest from history…"),
       el("button", {
         class: "action primary",
-        onclick: async () => {
-          try {
-            const result = await post("/api/post-scheduled");
-            say(`Posted ${result.posted} transaction(s).`);
-            render();
-          } catch (error) { say(error.message, "error"); }
-        },
-      }, "Post due transactions")),
+        onclick: () => openDueReviewDialog().catch((error) => say(error.message, "error")),
+      }, "Review due transactions…")),
     el("p", { class: "note" },
       "Estimates shape Plan and Projection but are never posted. Account-linked card payments "
       + "show the current obligation and are edited on the account; they are not automatically posted. "
@@ -1397,6 +1392,81 @@ async function openImportReviewDialog() {
       el("button", { class:"action", type:"button", onclick:()=>setAll("later") },
         "Decide all later")),
     table(["Date", "Transaction", "GnuCash change", "Action"], rows),
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:close }, "Decide later"),
+      el("button", { class:"action primary", type:"button", onclick:apply }, "Apply"))));
+  document.body.append(backdrop);
+}
+
+// Due and missed scheduled occurrences, grouped by schedule. Each date has its own
+// decision (defer by default); a schedule with several dates also has a chooser
+// that sets them all. The shared service rechecks every date before writing, so a
+// date posted elsewhere meanwhile is refused rather than posted twice.
+async function openDueReviewDialog() {
+  if (dueReviewDialog?.isConnected) return;
+  const data = await get("/api/due-review");
+  if (!data.schedules.length) { say("Nothing is due."); return; }
+  const backdrop = el("div", { class:"detail-backdrop" });
+  dueReviewDialog = backdrop;
+  const close = () => {
+    backdrop.remove();
+    if (dueReviewDialog === backdrop) dueReviewDialog = null;
+  };
+  const labels = { post:"Post now", defer:"Remind me later", skip:"Never (mark as done)" };
+  const chooser = (label) => el("select", { "aria-label":label },
+    ...["post", "defer", "skip"].map((value) =>
+      el("option", { value, selected:value === "defer" ? "selected" : null }, labels[value])));
+  const rows = [];
+  const choices = [];
+  for (const review of data.schedules) {
+    const own = review.items.map((item) => {
+      const select = chooser(`${review.name} ${item.date}`);
+      choices.push({ schedule:review.schedule, date:item.date, select });
+      return { item, select };
+    });
+    const heading = [
+      el("strong", {}, review.name),
+      `${review.items.length} due`, review.frequency, money(review.total), "",
+    ];
+    if (review.items.length > 1) {
+      const all = el("select", { "aria-label":`All dates for ${review.name}`,
+        onchange:(event) => {
+          if (event.target.value) own.forEach(({ select }) => { select.value = event.target.value; });
+        } },
+        el("option", { value:"" }, "Choose each date"),
+        el("option", { value:"post" }, "Post all"),
+        el("option", { value:"defer" }, "Remind me later for all"),
+        el("option", { value:"skip" }, "Never, all"));
+      heading[4] = all;
+    }
+    rows.push(el("tr", { class:"heading" }, ...heading.map((cell) => el("td", {}, cell))));
+    for (const { item, select } of own) {
+      rows.push(el("tr", {},
+        el("td", {}, ""),
+        el("td", { class:item.overdue ? "neg" : null },
+          item.overdue ? `${item.date} (overdue)` : item.date),
+        el("td", {}, ""),
+        el("td", { class:"num" }, money(item.amount)),
+        el("td", {}, select)));
+    }
+  }
+  const apply = async () => {
+    const decisions = choices
+      .map(({ schedule, date, select }) => ({ schedule, date, decision:select.value }))
+      .filter((item) => item.decision !== "defer");
+    try {
+      if (decisions.length) {
+        const outcome = await post("/api/due-review", { decisions });
+        say(`Posted ${outcome.posted}, marked ${outcome.skipped} as done.`);
+      }
+      close();
+      render();
+    } catch (error) { say(error.message, "error"); }
+  };
+  backdrop.append(el("section", { class:"detail-dialog wide" },
+    el("div", { class:"detail-heading" }, el("h2", {}, "Scheduled transactions due")),
+    el("p", { class:"note" }, "Choose what to do with each date. Nothing is posted until you apply, and the batch is one undo step."),
+    el("table", {}, el("tbody", {}, ...rows)),
     el("div", { class:"toolbar" },
       el("button", { class:"action", type:"button", onclick:close }, "Decide later"),
       el("button", { class:"action primary", type:"button", onclick:apply }, "Apply"))));
@@ -3363,6 +3433,11 @@ async function showDashboard() {
     el("h2", {}, "Balances"),
     groupCards,
     el("h2", {}, `Pending bills (${bills.length})`),
+    ...(bills.some((item) => item.days_until <= 0) || income.some((item) => item.days_until <= 0)
+      ? [el("div", { class:"toolbar" }, el("button", { class:"action", type:"button",
+          onclick:() => openDueReviewDialog().catch((error) => say(error.message, "error")) },
+          "Review due transactions…"))]
+      : []),
     table(["Item", "Due", "Due in", "Frequency",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
            { label: "Hold now", num: true }, { label: "Annual", num: true }, "Kind"],

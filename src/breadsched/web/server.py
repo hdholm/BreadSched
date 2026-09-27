@@ -72,6 +72,7 @@ from ..gen.services import (
     DeleteClaim,
     DeleteScenario,
     DeleteSchedule,
+    DueDecision,
     DuplicateScenario,
     DuplicateSchedule,
     FixedSplitInput,
@@ -79,6 +80,7 @@ from ..gen.services import (
     HeldImportDecision,
     ImportBook,
     ReconciliationAction,
+    ResolveDue,
     ResolveHeldImports,
     ReviewClaimAttachment,
     ReviewOccurrence,
@@ -108,9 +110,11 @@ from ..gen.services import (
     import_book,
     mark_review_unexpected,
     match_review,
+    pending_due_review,
     pending_import_changes,
     reject_review,
     reopen_reconciliation,
+    resolve_due,
     resolve_import_changes,
     save_account,
     save_assumption_period,
@@ -2651,6 +2655,54 @@ class Api:
     def import_defaults(self) -> dict:
         """Return per-book presentation state without initiating an import."""
         return {"path": remembered_import_source(self.db) or ""}
+
+    def due_review(self) -> dict:
+        """Due and missed scheduled occurrences, grouped by schedule."""
+        return {
+            "schedules": [
+                {
+                    "schedule": review.schedule,
+                    "name": review.name,
+                    "frequency": review.frequency,
+                    "total": str(review.total.to_decimal()),
+                    "items": [
+                        {
+                            "date": item.when.isoformat(),
+                            "amount": str(item.amount.to_decimal()),
+                            "overdue": item.overdue,
+                        }
+                        for item in review.items
+                    ],
+                }
+                for review in pending_due_review(self.db)
+            ]
+        }
+
+    def due_review_resolve(self, payload: dict) -> dict:
+        raw = payload.get("decisions")
+        if not isinstance(raw, list):
+            raise ValueError("decisions must be a list")
+        decisions: list[tuple[str, date, DueDecision]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                raise ValueError("each decision must be an object")
+            decisions.append(
+                (
+                    str(item.get("schedule", "")),
+                    date.fromisoformat(str(item.get("date", ""))),
+                    DueDecision(str(item.get("decision"))),
+                )
+            )
+        result = resolve_due(self.db, ResolveDue(tuple(decisions)))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        outcome = result.value
+        assert outcome is not None
+        return {
+            "posted": outcome.posted,
+            "skipped": outcome.skipped,
+            "deferred": outcome.deferred,
+        }
 
     def post_scheduled(self) -> dict:
         posted = schedule.post_due(self.db, only_auto=False)

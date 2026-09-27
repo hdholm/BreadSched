@@ -107,6 +107,12 @@ _SERVICE_MESSAGES = {
     "import.format.unrecognized": "The file format is not recognised",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
+    "schedule.due.duplicate": "Decide each due occurrence only once",
+    "schedule.due.not_found": "The schedule no longer exists",
+    "schedule.due.not_pending": (
+        "That occurrence is no longer due; it may already have been posted or skipped"
+    ),
+    "schedule.due.unbalanced": "A scheduled transaction does not balance",
     "import.review.duplicate": "Decide each held GnuCash change only once",
     "import.review.not_pending": "That GnuCash change is no longer awaiting review",
     "import.review.missing": "The reconciled transaction no longer exists",

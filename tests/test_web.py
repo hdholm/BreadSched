@@ -2443,6 +2443,77 @@ class TestImportReview:
         assert caught.value.code == 400
 
 
+class TestDueReview:
+    """Reviewed, duplicate-safe batch decisions for due scheduled occurrences."""
+
+    def test_due_review_lists_groups_and_applies_or_refuses_atomically(self, tmp_path):
+        from breadsched.gen.engine import schedule as schedule_engine
+        from breadsched.gen.sample_book import create_sample_book
+
+        today = date.today()
+        start = (today.replace(day=1) - timedelta(days=100)).replace(day=15)
+        path = tmp_path / "due.breadsched"
+        create_sample_book(path, as_of=start)
+        db = DbSQLite()
+        db.load(str(path))
+        httpd = serve(db, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{httpd.server_port}/api/due-review"
+        headers = {"X-BreadSched-Token": httpd.token}
+
+        def call(payload=None):
+            data = None if payload is None else json.dumps(payload).encode("utf-8")
+            request = urllib.request.Request(
+                base,
+                data=data,
+                headers={**headers, "Content-Type": "application/json"},
+                method="GET" if payload is None else "POST",
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                return json.loads(response.read())
+
+        try:
+            listed = call()["schedules"]
+            rent = next(item for item in listed if item["name"] == "Sample rent")
+            assert len(rent["items"]) >= 2
+            assert rent["frequency"] == "every month"
+            first, second = rent["items"][0]["date"], rent["items"][1]["date"]
+
+            # Post the first date elsewhere; a batch naming it is refused whole.
+            occurrence = next(
+                item
+                for item in schedule_engine.due_occurrences(db, horizon_days=0)
+                if item.schedule.handle == rent["schedule"] and item.when.isoformat() == first
+            )
+            schedule_engine.post_occurrences(db, [occurrence])
+            before = db.summary()["txn"]
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                call(
+                    {
+                        "decisions": [
+                            {"schedule": rent["schedule"], "date": first, "decision": "post"},
+                            {"schedule": rent["schedule"], "date": second, "decision": "skip"},
+                        ]
+                    }
+                )
+            assert caught.value.code == 400
+            assert json.loads(caught.value.read())["code"] == "schedule.due.not_pending"
+            assert db.summary()["txn"] == before
+
+            outcome = call(
+                {"decisions": [{"schedule": rent["schedule"], "date": second, "decision": "post"}]}
+            )
+            assert outcome == {"posted": 1, "skipped": 0, "deferred": 0}
+            assert db.summary()["txn"] == before + 1
+            remaining = next(item for item in call()["schedules"] if item["name"] == "Sample rent")
+            assert second not in [item["date"] for item in remaining["items"]]
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            db.close()
+
+
 class TestSafety:
     def test_only_named_static_assets_are_served(self, client, tmp_path, monkeypatch):
         from breadsched.web import transport

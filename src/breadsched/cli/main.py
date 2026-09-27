@@ -58,8 +58,10 @@ from ..gen.services import (
     DeleteScenario,
     DeleteSchedule,
     DeleteTransaction,
+    DueDecision,
     HeldImportDecision,
     ImportBook,
+    ResolveDue,
     ResolveHeldImports,
     ReviewOccurrence,
     ReviewTransaction,
@@ -77,8 +79,10 @@ from ..gen.services import (
     import_book,
     mark_review_unexpected,
     match_review,
+    pending_due_review,
     pending_import_changes,
     reject_review,
+    resolve_due,
     resolve_import_changes,
     save_account,
     save_scenario,
@@ -374,6 +378,101 @@ def _missed_json(group: dashboard_engine.MissedGroup) -> dict[str, object]:
         "total": group.amount,
         "occurrences": [{"date": when, "amount": amount} for when, amount in group.occurrences],
     }
+
+
+def _due_references(reviews, reference: str) -> list[tuple[str, date]]:
+    """Resolve ``SCHEDULE`` or ``SCHEDULE@YYYY-MM-DD`` against what is due."""
+    name, _, raw_date = reference.partition("@")
+    matches = [
+        review
+        for review in reviews
+        if review.schedule == name or review.schedule.startswith(name) or review.name == name
+    ]
+    if not matches:
+        raise CommandError(f"nothing due matches {name!r}")
+    if len({review.schedule for review in matches}) > 1:
+        raise CommandError(f"{name!r} matches more than one schedule; use more characters")
+    review = matches[0]
+    if not raw_date:
+        return [(review.schedule, item.when) for item in review.items]
+    try:
+        when = date.fromisoformat(raw_date)
+    except ValueError as exc:
+        raise CommandError(f"invalid date in {reference!r}") from exc
+    return [(review.schedule, when)]
+
+
+def cmd_due_review(args: argparse.Namespace) -> int:
+    """List or decide due and missed scheduled occurrences, grouped by schedule."""
+    if args.post_all and args.skip_all:
+        raise CommandError("choose either --post-all or --skip-all, not both")
+    as_of = parse_date(args.as_of) or date.today()
+    db = open_book(args.book)
+    try:
+        reviews = pending_due_review(db, as_of)
+        decisions: dict[tuple[str, date], DueDecision] = {}
+        if args.post_all or args.skip_all:
+            chosen = DueDecision.POST if args.post_all else DueDecision.SKIP
+            for review in reviews:
+                decisions.update(((review.schedule, item.when), chosen) for item in review.items)
+        for references, decision in (
+            (args.post, DueDecision.POST),
+            (args.skip, DueDecision.SKIP),
+        ):
+            for reference in references or ():
+                for key in _due_references(reviews, reference):
+                    decisions[key] = decision
+        if decisions:
+            resolved = resolve_due(
+                db,
+                ResolveDue(
+                    tuple((handle, when, choice) for (handle, when), choice in decisions.items()),
+                    as_of=as_of,
+                ),
+            )
+            if not resolved.ok:
+                raise CommandError(service_error_message(resolved.errors[0]))
+            assert resolved.value is not None
+            outcome = resolved.value
+            emit(
+                {"posted": outcome.posted, "skipped": outcome.skipped},
+                args,
+                f"Posted {outcome.posted}; marked {outcome.skipped} as done",
+            )
+            return 0
+        rows = [
+            [
+                review.name[:32],
+                review.schedule[:8],
+                str(len(review.items)),
+                f"{review.items[0].when.isoformat()} to {review.items[-1].when.isoformat()}",
+                review.frequency,
+                review.total.format(),
+            ]
+            for review in reviews
+        ]
+        emit(
+            [
+                {
+                    "schedule": review.schedule,
+                    "name": review.name,
+                    "frequency": review.frequency,
+                    "total": review.total,
+                    "items": [
+                        {"date": item.when, "amount": item.amount, "overdue": item.overdue}
+                        for item in review.items
+                    ],
+                }
+                for review in reviews
+            ],
+            args,
+            table(rows, ["schedule", "id", "due", "dates", "frequency", "total"], right={2, 5})
+            if rows
+            else "Nothing is due.",
+        )
+        return 0
+    finally:
+        db.close()
 
 
 def cmd_import_review(args: argparse.Namespace) -> int:
@@ -2052,6 +2151,29 @@ def build_parser() -> argparse.ArgumentParser:
         help="apply confident suggestions rather than only listing them",
     )
     imp.set_defaults(func=cmd_import)
+
+    due_review = add(
+        "due-review",
+        "List or decide due and missed scheduled transactions, grouped by schedule",
+    )
+    due_review.add_argument("--as-of", help="review date (YYYY-MM-DD, default today)")
+    due_review.add_argument(
+        "--post",
+        action="append",
+        metavar="SCHEDULE[@DATE]",
+        help="post a schedule's due dates, or one date (repeatable; id prefix or exact name)",
+    )
+    due_review.add_argument(
+        "--skip",
+        action="append",
+        metavar="SCHEDULE[@DATE]",
+        help="mark a schedule's due dates, or one date, as done without posting (repeatable)",
+    )
+    due_review.add_argument("--post-all", action="store_true", help="post every due date")
+    due_review.add_argument(
+        "--skip-all", action="store_true", help="mark every due date as done without posting"
+    )
+    due_review.set_defaults(func=cmd_due_review)
 
     held = add(
         "import-review",

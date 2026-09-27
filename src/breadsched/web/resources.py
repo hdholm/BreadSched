@@ -211,6 +211,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/projection": _projection,
     "/api/import": _no_query("import_defaults"),
     "/api/import/review": _no_query("import_review"),
+    "/api/due-review": _no_query("due_review"),
     "/api/verify": _no_query("verify"),
 }
 
@@ -252,6 +253,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/reconciliation/reopen": _post("reconciliation_reopen"),
     "/api/import": _post("import_local"),
     "/api/import/review": _post("import_review_resolve"),
+    "/api/due-review": _post("due_review_resolve"),
     "/api/post-scheduled": _post_without_body("post_scheduled"),
     "/api/scheduled/occurrences": _post("scheduled_occurrence_options"),
     "/api/scheduled/save": _post("scheduled_save"),

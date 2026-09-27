@@ -490,6 +490,19 @@ split into Plan and Projection explanations.
 Imported schedules must be preserved losslessly when BreadSched cannot reproduce
 them safely.
 
+Due and missed occurrences are decided through `gen.services.due_review`. It lists
+`schedule.due_occurrences` through the review date, grouped by schedule, which
+already excludes plan-only estimates, disabled schedules, and unusable imported
+definitions. A decision names only a schedule handle, a date, and post, skip, or
+defer. `resolve_due` recomputes the currently due set immediately before writing
+and refuses a whole batch that names a date no longer due, a missing schedule, or
+the same date twice, so a stale GTK window, browser page, or script cannot post an
+occurrence that another surface already posted or skipped. Accepted posts and skips
+commit in one database transaction and one undo step; defer writes nothing. GTK's
+due dialog, the web review panel, and the `due-review` command are adapters over this
+service; the older unreviewed post-all helpers remain for callers that explicitly
+post automatic schedules.
+
 The representative schedule-fidelity matrix defines the current ownership and
 execution boundary across native books and generated GnuCash SQLite/XML books:
 
