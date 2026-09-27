@@ -823,6 +823,18 @@ Once those purchases post, the later payment obligation incorporates them. This
 keeps expense recognition and cash timing visible without counting both the
 purchase and payment as immediate liquidity requirements.
 
+Missed occurrences are grouped only for presentation. `Dashboard.bills` and
+`Dashboard.incomes` keep one dated row per unresolved occurrence, and liquidity,
+hold, and emergency calculations use those rows unchanged.
+`Dashboard.display_bills` and `display_incomes` pass them through
+`group_missed`, which collapses two or more overdue rows of the same schedule (or
+the same generated account payment) into one `MissedGroup` at the oldest date.
+The group sums amounts and holds, reports the schedule's normalized monthly and
+annual figures once, and keeps every `(date, amount)` pair. A single overdue row and
+current rows stay ungrouped. GTK, web, CLI, and print render these lists and show
+the recurrence's own words (`frequency`) rather than the internal decimal month
+cycle, which printed as `1.0000`.
+
 A bill reserve covers exactly one billing cycle. For the occurrence at the end of
 that cycle, the engine finds all scheduled income events after the preceding bill
 occurrence and through the due date. Each received income event reserves the exact

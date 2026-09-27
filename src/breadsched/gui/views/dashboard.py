@@ -105,13 +105,7 @@ class DashboardView(BaseView):
         self.bills_view.append_column(
             column("Item", lambda b: b.name, expand=True, sort_key=lambda b: b.name)
         )
-        self.bills_view.append_column(
-            column(
-                "Next due",
-                lambda b: b.next_due.isoformat(),
-                sort_key=lambda b: b.next_due,
-            )
-        )
+        self.bills_view.append_column(column("Due", _due_date, sort_key=lambda b: b.next_due))
         self.bills_view.append_column(
             column("Due in", self._due_in, sort_key=lambda b: b.days_until(self._today()))
         )
@@ -176,11 +170,7 @@ class DashboardView(BaseView):
             column("Item", lambda item: item.name, expand=True, sort_key=lambda item: item.name)
         )
         self.income_view.append_column(
-            column(
-                "Next due",
-                lambda item: item.next_due.isoformat(),
-                sort_key=lambda item: item.next_due,
-            )
+            column("Due", _due_date, sort_key=lambda item: item.next_due)
         )
         self.income_view.append_column(
             column(
@@ -224,7 +214,9 @@ class DashboardView(BaseView):
     def _due_in(self, bill) -> str:
         days = bill.days_until(self._today())
         if days < 0:
-            return f"{-days} days overdue"
+            late = f"{-days} days overdue"
+            # A schedule's missed dates are one grouped row; its count leads.
+            return f"{bill.count} missed, {late}" if isinstance(bill, engine.MissedGroup) else late
         return "today" if days == 0 else f"{days} days"
 
     # ------------------------------------------------------------------- model
@@ -245,11 +237,11 @@ class DashboardView(BaseView):
         self._render_groups()
 
         store = Gio.ListStore.new(Row)
-        for item in self.board.bills:
+        for item in self.board.display_bills:
             store.append(Row(item))
         self.bills_view.set_model(Gtk.SingleSelection(model=sorted_model(self.bills_view, store)))
         income_store = Gio.ListStore.new(Row)
-        for item in self.board.incomes:
+        for item in self.board.display_incomes:
             income_store.append(Row(item))
         self.income_view.set_model(
             Gtk.SingleSelection(model=sorted_model(self.income_view, income_store))
@@ -460,3 +452,10 @@ def _card(caption: str, value: str, alarm: bool) -> Gtk.Widget:
     box.append(label)
     box.append(amount)
     return box
+
+
+def _due_date(item) -> str:
+    """A due date, or the missed date range of a grouped schedule."""
+    if isinstance(item, engine.MissedGroup):
+        return f"{item.next_due.isoformat()} to {item.last_due.isoformat()}"
+    return item.next_due.isoformat()

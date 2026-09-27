@@ -62,7 +62,9 @@ their totals. The [User Guide](src/breadsched/USER_GUIDE.md#dashboard-and-near-t
 current behavior, and the [roadmap](ROADMAP.md) tracks these improvements.
 An imported GnuCash book initially uses its posted account balances for ungrouped
 Net worth and keeps supported scheduled bills visible. A card balance without
-payment setup is disclosed rather than silently left out of near-term needs. Missing foreign cash quotes
+payment setup is disclosed rather than silently left out of near-term needs.
+Several missed dates of one schedule appear as a single Dashboard row with their
+range, count, and total. Missing foreign cash quotes
 make dependent Dashboard totals unavailable until a quote is supplied.
 
 ## Install and run for development

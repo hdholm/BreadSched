@@ -40,11 +40,13 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    clean installs, upgrades, launch, and uninstalls on supported Windows CI.
    Publish signed/checksummed artifacts and concise installation instructions
    only after their release gates are proven. Keep wheel/source releases available.
-2. **P1 — Due-since-last-run batch review.** Group missed occurrences by schedule
-   on Dashboard, show dates and resolved amounts (never raw cycle values such as
-   `1.0000`), then allow a reviewed batch of post, skip, or defer decisions.
-   Prevent duplicate posting and preserve occurrence identity, import provenance,
-   undo/redo, and partial failure atomicity; retain individual details on demand.
+2. **P1 — Due-since-last-run batch review.** Dashboard now groups two or more
+   missed occurrences of one schedule into a single row with the date range,
+   count, total, and plain frequency in GTK, web, CLI, and print, keeping each
+   missed date and amount available; liquidity still counts every occurrence. Next,
+   allow a reviewed batch of post, skip, or defer decisions from that grouping.
+   Prevent duplicate posting and never post plan-only estimates; preserve occurrence
+   identity, import provenance, undo/redo, and partial-failure atomicity.
 3. **P1 — Finish currency handling.** Add GTK manual FX entry using the existing
    exact quote contract. Apply one as-of conversion and missing-quote policy to
    Plan/Projection totals, comparisons, and prints; disclose quote date/source,

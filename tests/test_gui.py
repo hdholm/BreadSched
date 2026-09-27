@@ -3415,8 +3415,9 @@ class TestDashboardView:
     def test_bills_and_income_have_separate_lists(self, view):
         bills = view.bills_view.get_model()
         income = view.income_view.get_model()
-        assert bills.get_n_items() == len(view.board.bills)
-        assert income.get_n_items() == len(view.board.incomes)
+        # Rows are the presentation lists, with each schedule's missed dates grouped.
+        assert bills.get_n_items() == len(view.board.display_bills)
+        assert income.get_n_items() == len(view.board.display_incomes)
 
     def test_the_bills_columns_sort_and_resize(self, view):
         columns = view.bills_view.get_columns()
@@ -3490,6 +3491,29 @@ class TestDashboardView:
                     inner = inner.get_next_sibling()
             child = child.get_next_sibling()
         assert note in shown
+
+    def test_missed_occurrences_render_as_one_row_per_schedule(self, app, window, tmp_path):
+        from datetime import timedelta
+
+        from breadsched.gen.engine.dashboard import MissedGroup
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gui.views.dashboard import _due_date
+
+        start = (date.today().replace(day=1) - timedelta(days=100)).replace(day=15)
+        path = tmp_path / "missed.breadsched"
+        create_sample_book(path, as_of=start)
+        app.open_book(str(path))
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        model = view.bills_view.get_model()
+        shown = [model.get_item(index).payload for index in range(model.get_n_items())]
+        groups = [item for item in shown if isinstance(item, MissedGroup)]
+        assert groups, shown
+        rent = next(item for item in groups if item.name == "Sample rent")
+        assert sum(1 for item in shown if item.name == "Sample rent") == 1
+        assert view._due_in(rent).startswith(f"{rent.count} missed, ")
+        assert _due_date(rent) == f"{rent.next_due.isoformat()} to {rent.last_due.isoformat()}"
+        assert rent.frequency == "every month"
 
     def test_imported_first_view_discloses_missing_cash_quote(
         self, app, window, tmp_path, gnucash_sqlite_path

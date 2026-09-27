@@ -11,7 +11,7 @@ from html import escape
 from itertools import zip_longest
 
 from ...gen.engine.activity import CategoryReport, PlanMeasure
-from ...gen.engine.dashboard import Dashboard
+from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
@@ -277,14 +277,26 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
         else '<p class="note">No Dashboard groups are configured.</p>'
     ) + coverage
 
-    bill_rows = []
-    for item in board.bills:
+    def due_cells(item) -> str:
         days = item.days_until(board.as_of)
         due_in = f"{-days} days overdue" if days < 0 else "today" if days == 0 else f"{days} days"
+        if isinstance(item, MissedGroup):
+            # Printed pages cannot expand on demand, so the missed dates are listed.
+            dates = ", ".join(
+                f"{when.isoformat()} {_money(amount)}" for when, amount in item.occurrences
+            )
+            return (
+                f"<td>{item.next_due.isoformat()} to {item.last_due.isoformat()}"
+                f'<br><span class="note">{escape(dates)}</span></td>'
+                f"<td>{item.count} missed, {due_in}</td>"
+            )
+        return f"<td>{item.next_due.isoformat()}</td><td>{due_in}</td>"
+
+    bill_rows = []
+    for item in board.display_bills:
         kind = "Account payment" if item.generated else "Committed"
         bill_rows.append(
-            f"<tr><td>{escape(item.name)}</td>"
-            f"<td>{item.next_due.isoformat()}</td><td>{due_in}</td>"
+            f"<tr><td>{escape(item.name)}</td>{due_cells(item)}"
             f"<td>{escape(item.frequency)}</td>{_amount(item.amount)}"
             f"{_amount(None if item.generated else item.monthly)}"
             f"{_amount(None if item.income else item.held)}"
@@ -292,22 +304,20 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
             f"<td>{kind}</td></tr>"
         )
     bills = (
-        "<table><thead><tr><th>Item</th><th>Next due</th><th>Due in</th>"
+        "<table><thead><tr><th>Item</th><th>Due</th><th>Due in</th>"
         '<th>Frequency</th><th class="num">Amount</th><th class="num">Monthly</th>'
         '<th class="num">Hold now</th><th class="num">Annual</th><th>Kind</th></tr>'
         f"<tbody>{''.join(bill_rows)}</tbody></table>"
     )
     income_rows = []
-    for item in board.incomes:
-        days = item.days_until(board.as_of)
-        due_in = f"{-days} days overdue" if days < 0 else "today" if days == 0 else f"{days} days"
+    for item in board.display_incomes:
         income_rows.append(
-            f"<tr><td>{escape(item.name)}</td><td>{item.next_due.isoformat()}</td>"
-            f"<td>{due_in}</td><td>{escape(item.frequency)}</td>{_amount(item.amount)}"
+            f"<tr><td>{escape(item.name)}</td>{due_cells(item)}"
+            f"<td>{escape(item.frequency)}</td>{_amount(item.amount)}"
             f"{_amount(item.monthly)}{_amount(item.annual)}</tr>"
         )
     income = (
-        "<table><thead><tr><th>Item</th><th>Next due</th><th>Due in</th>"
+        "<table><thead><tr><th>Item</th><th>Due</th><th>Due in</th>"
         '<th>Frequency</th><th class="num">Amount</th><th class="num">Monthly</th>'
         '<th class="num">Annual</th></tr>'
         f"<tbody>{''.join(income_rows)}</tbody></table>"

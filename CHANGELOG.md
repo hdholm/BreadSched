@@ -5,6 +5,19 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Missed schedule dates grouped on Dashboard.** Two or more missed occurrences
+  of one schedule (or generated account payment) now appear as a single bill or
+  income row with the missed date range, count, total, and the recurrence's own
+  frequency, instead of one identical row per missed date with repeated monthly
+  and annual figures. The schedule's monthly and annual values are shown once, and
+  every missed date and amount remains available: expandable on the web, listed
+  in print, and in `missed_bills`/`missed_income` of `breadsched dashboard
+  --json`. GTK, web, CLI, and print share the engine's `display_bills` and
+  `display_incomes`; liquidity, hold, and emergency figures still count every
+  occurrence. The CLI and web no longer show the raw decimal cycle (such as
+  `1.0000`); they show the frequency. Application version `0.2.0a122`; native
+  schema remains 7.
+
 - **Flatpak desktop integration and sandboxed GTK smoke.** The Flatpak now
   installs a desktop entry, AppStream metainfo, and a scalable icon named by the
   application id, and GTK windows use that icon. CI validates the entry and
