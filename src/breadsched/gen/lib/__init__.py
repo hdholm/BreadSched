@@ -19,6 +19,7 @@ from .fsa_claim import (
     FsaClaimSplitLink,
 )
 from .money import ZERO, Money, Rate
+from .payee import Payee
 from .reconciliation import Reconciliation, ReconciliationEvent, ReconciliationStatus
 from .recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
 from .scenario import (
@@ -76,6 +77,7 @@ __all__ = [
     "PlanningResolution",
     "PrimaryObject",
     "ReconcileState",
+    "Payee",
     "Reconciliation",
     "ReconciliationEvent",
     "ReconciliationStatus",

@@ -265,6 +265,8 @@ class Transaction(PrimaryObject):
         self.planning_resolution = PlanningResolution.UNRESOLVED
         #: Occurrence keys the user has explicitly rejected as matches.
         self.rejected_plan_occurrences: list[str] = []
+        #: The accepted payee, owned by BreadSched; the description is never rewritten.
+        self.payee: str | None = None
         self.splits: list[Split] = list(splits or [])
 
     # ------------------------------------------------------------------ splits
@@ -362,6 +364,7 @@ class Transaction(PrimaryObject):
             else [self.planned_amount.numerator, self.planned_amount.denominator],
             "planning_resolution": self.planning_resolution.value,
             "rejected_plan_occurrences": list(self.rejected_plan_occurrences),
+            "payee": self.payee,
             "splits": [s.serialize() for s in self.splits],
         }
 
@@ -388,6 +391,7 @@ class Transaction(PrimaryObject):
             data.get("planning_resolution", default_resolution.value)
         )
         self.rejected_plan_occurrences = list(data.get("rejected_plan_occurrences", []))
+        self.payee = data.get("payee")
         self.splits = [Split.from_dict(s) for s in data.get("splits", [])]
 
     def __repr__(self) -> str:

@@ -527,5 +527,35 @@ def verify_domain(db: DbBase) -> list[BookIssue]:
     issues.extend(_verify_transactions(state))
     issues.extend(_verify_schedules(state))
     issues.extend(_verify_scenarios(state))
+    issues.extend(_verify_payees(state))
 
+    return issues
+
+
+def _verify_payees(state: _VerificationState) -> list[BookIssue]:
+    """Payee references resolve, and no description key identifies two payees."""
+    issues: list[BookIssue] = []
+    payees = {payee.handle: payee for payee in state.db.iter_payees()}
+    owners: dict[str, str] = {}
+    for payee in payees.values():
+        for key in payee.match_keys:
+            previous = owners.setdefault(key, payee.handle)
+            if previous != payee.handle:
+                issues.append(
+                    BookIssue(
+                        "payee.duplicate_match_key",
+                        f"payees {previous} and {payee.handle} both claim description key {key!r}",
+                        payee.handle,
+                    )
+                )
+    for transaction in state.transactions:
+        if transaction.payee is not None and transaction.payee not in payees:
+            issues.append(
+                BookIssue(
+                    "transaction.missing_payee",
+                    f"transaction {transaction.describe()} refers to missing payee "
+                    f"{transaction.payee}",
+                    transaction.handle,
+                )
+            )
     return issues

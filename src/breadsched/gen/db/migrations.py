@@ -42,8 +42,22 @@ def _v6_to_v7(conn: sqlite3.Connection) -> None:
     )
 
 
+def _v7_to_v8(conn: sqlite3.Connection) -> None:
+    """Add payees; transactions gain an optional payee reference in their blob."""
+    conn.execute(
+        """
+        CREATE TABLE payee (
+            handle TEXT PRIMARY KEY,
+            name   TEXT NOT NULL,
+            blob   TEXT NOT NULL
+        )
+        """
+    )
+
+
 MIGRATIONS: dict[int, Migration] = {
     6: Migration(6, 7, "add reconciliation sessions", _v6_to_v7),
+    7: Migration(7, 8, "add payees", _v7_to_v8),
 }
 MIN_SUPPORTED_SCHEMA_VERSION = min(MIGRATIONS)
 

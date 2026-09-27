@@ -143,6 +143,7 @@ class TestLayering:
             "sys",
             "time",
             "typing",
+            "unicodedata",
             "uuid",
             "weakref",
             "xml",

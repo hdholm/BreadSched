@@ -1026,6 +1026,27 @@ Entry has no autocomplete from earlier transactions yet. When added, proposals
 must come from a shared service and remain editable until an ordinary balanced
 save, so GTK and web do not each infer different templates.
 
+## Payees
+
+A `Payee` (`gen/lib/payee.py`, table `payee`) is a named identity with a list of
+normalized description keys. `Transaction.payee` holds the accepted payee's handle
+and is BreadSched-owned: GnuCash, OFX, QIF, and CSV re-import carry it forward
+through `import_review.merge_local_state`, and no import rewrites the description.
+`engine.payees.match_key` casefolds and NFKC-normalizes a description, splits on
+punctuation, and drops every word containing a digit, so store numbers, card
+suffixes, and references do not split one merchant. Matching is exact on that key,
+never fuzzy, so every proposal names the key that produced it. The service
+(`gen/services/payees.py`) keeps names unique (case-insensitively) and gives each key
+to at most one payee, so a proposal is never ambiguous; a conflicting key is
+refused. `preview_payee_proposals` lists transactions without a payee whose key
+matches and writes nothing. `apply_payee_proposals` recomputes the proposals and
+assigns only the requested transactions that still match and still have no payee,
+in one undo step, so a stale preview cannot replace a choice made since.
+`assign_payee` sets or clears one transaction explicitly; `delete_payee` clears the
+payee from its transactions and deletes it in one undo step. Book verification
+reports `transaction.missing_payee` and `payee.duplicate_match_key`. Category
+rules, GTK and web payee screens, and payee-based autocomplete build on this.
+
 ## Statement reconciliation
 
 A reconciliation is a persisted, account-scoped statement session, not transient UI
@@ -1305,21 +1326,21 @@ purposes and never advance in lockstep. The application version reported by
 and release notes and reports the native compatibility window beside it. Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 7. A behavior-only
+native book can be opened or must be migrated; it is currently 8. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The current application writes schema 7 and
-can migrate schema 6 before decoding primary objects. An
+SQLite is the native persistence engine. The current application writes schema 8 and
+can migrate schemas 6 and 7 before decoding primary objects. Schema 8 added the
+`payee` table (7→8); schema 7 added reconciliation sessions (6→7). An
 explicit sequential registry and durable ledger, transactional runner, verified
 pre-migration backup hook, and versioned fixture make that compatibility boundary
 testable. Migration infrastructure is a durable architectural capability even when
 an individual obsolete transformation is allowed to expire.
 
-The next representation change will widen the supported migration window to the two
-immediately preceding data-format versions. If that next format is schema 8, the
-registry will retain both 6→7 and 7→8 and the application will accept schemas 6, 7,
-and 8. The window changes when a real schema migration is needed; there is no no-op
+The supported migration window covers the two immediately preceding data-format
+versions: the registry retains 6→7 and 7→8, and the application accepts schemas 6,
+7, and 8. Versioned fixtures for schemas 6 and 7 prove each step. The window changes when a real schema migration is needed; there is no no-op
 format bump. A migration must run before ordinary decoding, fail atomically, preserve
 a verified backup, and leave enough version evidence to diagnose or retry safely.
 The mechanism and supported migration steps are not removed merely because the

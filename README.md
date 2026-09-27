@@ -116,6 +116,9 @@ GnuCash import is one-way. If you keep using GnuCash, follow the User Guide's
 to avoid duplicate or overwritten transactions. Re-import keeps statements you
 reconcile in BreadSched and holds GnuCash changes to those transactions for a
 batched review.
+When a release changes the native book format, opening a book for writing migrates
+it after writing a verified backup beside it; earlier builds cannot open the
+migrated book, so restore that backup to roll back.
 The current hardening phase prioritizes financial correctness, storage integrity,
 importer preservation, security, and realistic-book performance before another broad
 feature-expansion cycle.

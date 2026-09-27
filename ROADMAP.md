@@ -58,8 +58,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    The web Import view and the GTK Import CSV Statement dialog map, preview, and
    import CSV through the same service. Transfer review offers a row as the other
    side of an uncategorized transaction already imported into another account and
-   links it only on explicit acceptance. Next: stable payees and reviewed
-   categorization rules. Keep rule priority and conflicts
+   links it only on explicit acceptance. Payees (native schema 8) are stable,
+   renameable identities separate from descriptions; exact normalized-description
+   keys propose a payee for unassigned transactions, and nothing is assigned until
+   the user accepts (`breadsched payees`). Next: GTK and web payee review, then
+   reviewed categorization rules. Keep rule priority and conflicts
    explainable; never silently recategorize previously accepted transactions.
    Offer entry autocomplete from earlier transactions as a visible, editable
    proposal that never commits without the user's save.

@@ -42,6 +42,7 @@ from ..gen.lib import (
     Amount,
     Assumptions,
     Money,
+    Payee,
     PeriodType,
     Rate,
     Recurrence,
@@ -92,6 +93,13 @@ from ..gen.services import (
     transaction_currency,
 )
 from ..gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv, preview_csv_import
+from ..gen.services.payees import (
+    SavePayee,
+    apply_payee_proposals,
+    delete_payee,
+    preview_payee_proposals,
+    save_payee,
+)
 from ..gen.utils import logs
 from ..presentation import service_error_message
 
@@ -574,6 +582,123 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             f"{'included' if args.include_duplicates else 'held back'}, "
             f"{result.transactions_linked} transfer(s) linked, "
             f"{result.skipped} skipped",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def _find_payee(db: DbSQLite, reference: str) -> Payee:
+    payee = db.get_payee(reference)
+    if payee is not None:
+        return payee
+    matches = [item for item in db.iter_payees() if item.name.casefold() == reference.casefold()]
+    if not matches:
+        raise CommandError(f"no payee matches {reference!r}")
+    return matches[0]
+
+
+def cmd_payees(args: argparse.Namespace) -> int:
+    """List payees, add or delete one, or preview and accept payee proposals."""
+    read_only = not (args.add or args.delete or args.accept or args.accept_all)
+    db = open_book(args.book, "r" if read_only else "w")
+    try:
+        if args.add:
+            saved = save_payee(db, SavePayee(args.add, tuple(args.match or ())))
+            if saved.value is None:
+                raise CommandError(service_error_message(saved.errors[0]))
+            payee = saved.value
+            emit(
+                {"handle": payee.handle, "name": payee.name, "match_keys": payee.match_keys},
+                args,
+                f"Saved payee {payee.name} matching {', '.join(payee.match_keys) or 'nothing'}",
+            )
+            return 0
+        if args.delete:
+            payee = _find_payee(db, args.delete)
+            deleted = delete_payee(db, payee.handle)
+            if deleted.value is None:
+                raise CommandError(service_error_message(deleted.errors[0]))
+            emit(
+                {"deleted": payee.handle, "cleared": deleted.value},
+                args,
+                f"Deleted payee {payee.name}; cleared it from {deleted.value} transaction(s)",
+            )
+            return 0
+        if args.accept or args.accept_all:
+            chosen = (
+                None
+                if args.accept_all
+                else tuple(_find_transaction(db, reference).handle for reference in args.accept)
+            )
+            applied = apply_payee_proposals(db, chosen)
+            if applied.value is None:
+                raise CommandError(service_error_message(applied.errors[0]))
+            emit(
+                {"assigned": applied.value.assigned, "unchanged": applied.value.unchanged},
+                args,
+                f"Assigned {applied.value.assigned} payee(s); "
+                f"{applied.value.unchanged} left unchanged",
+            )
+            return 0
+        if args.preview:
+            proposals = preview_payee_proposals(db).value or ()
+            emit(
+                [
+                    {
+                        "transaction": item.transaction,
+                        "date": item.when,
+                        "description": item.description,
+                        "payee": item.payee,
+                        "payee_name": item.payee_name,
+                        "key": item.key,
+                    }
+                    for item in proposals
+                ],
+                args,
+                table(
+                    [
+                        [
+                            item.when.isoformat(),
+                            item.transaction[:8],
+                            item.description,
+                            item.payee_name,
+                            item.key,
+                        ]
+                        for item in proposals
+                    ],
+                    ["date", "transaction", "description", "proposed payee", "matched key"],
+                )
+                if proposals
+                else "No transactions without a payee match a payee's description keys.",
+            )
+            return 0
+        counts: dict[str, int] = {}
+        for transaction in db.iter_transactions():
+            if transaction.payee is not None:
+                counts[transaction.payee] = counts.get(transaction.payee, 0) + 1
+        payees = list(db.iter_payees())
+        emit(
+            [
+                {
+                    "handle": payee.handle,
+                    "name": payee.name,
+                    "match_keys": payee.match_keys,
+                    "transactions": counts.get(payee.handle, 0),
+                }
+                for payee in payees
+            ],
+            args,
+            table(
+                [
+                    [payee.name, ", ".join(payee.match_keys), counts.get(payee.handle, 0)]
+                    for payee in payees
+                ],
+                ["payee", "matches", "transactions"],
+                right={2},
+            )
+            if payees
+            else "No payees yet. Add one with --add NAME --match DESCRIPTION.",
         )
         return 0
     finally:
@@ -2338,6 +2463,30 @@ def build_parser() -> argparse.ArgumentParser:
         "--use-gnucash-all", action="store_true", help="apply every held GnuCash version"
     )
     held.set_defaults(func=cmd_import_review)
+
+    payees_cmd = add(
+        "payees",
+        "List payees, add or delete one, or preview and accept payee proposals",
+    )
+    payees_cmd.add_argument("--add", metavar="NAME", help="create a payee with this name")
+    payees_cmd.add_argument(
+        "--match",
+        action="append",
+        metavar="DESCRIPTION",
+        help="a description that identifies the new payee (repeatable)",
+    )
+    payees_cmd.add_argument("--delete", metavar="PAYEE", help="delete a payee (name or handle)")
+    payees_cmd.add_argument(
+        "--preview", action="store_true", help="list proposals for transactions without a payee"
+    )
+    payees_cmd.add_argument(
+        "--accept",
+        action="append",
+        metavar="TRANSACTION",
+        help="accept the proposal for one transaction (repeatable; handle or unique prefix)",
+    )
+    payees_cmd.add_argument("--accept-all", action="store_true", help="accept every proposal")
+    payees_cmd.set_defaults(func=cmd_payees)
 
     backup = add("backup", "Create a consistent backup of a book")
     backup.add_argument("destination", help="path to write the backup")

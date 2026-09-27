@@ -619,9 +619,9 @@ reconciliation or FSA claim is retained and reported for review. Local planning
 decisions are not overwritten by source refreshes.
 
 GnuCash sources are read, not edited, by current import workflows. Write-back of
-simple changes requires a separate reviewed workflow and is future work. CSV
-import, automatic payee/category rules, entry autocomplete from earlier
-transactions, and AqBanking links are not available yet.
+simple changes requires a separate reviewed workflow and is future work. Automatic
+category rules, entry autocomplete from earlier transactions, and AqBanking links
+are not available yet.
 
 ### Keep GnuCash and BreadSched side by side
 
@@ -757,7 +757,33 @@ file; BreadSched reads its columns at once, shows the first rows, and suggests t
 mapping. Adjust the account, columns, and options, choose **Preview**, then
 **Import**. Clearing **First row is a header** rereads the file with numbered
 columns. Both screens offer **Link possible transfers**, which does what
-`--link-transfers` does. Payees and categorization rules come next.
+`--link-transfers` does.
+
+### Payees
+
+A payee records who a transaction was with, separately from its description, so
+"CORNER GROCER #1234" and "Corner Grocer 0987" can both belong to **Corner Grocer**
+while each keeps the text its statement printed. Payees are managed from the
+command line for now:
+
+```sh
+breadsched payees book.breadsched --add "Corner Grocer" --match "CORNER GROCER #1234"
+breadsched payees book.breadsched --preview
+breadsched payees book.breadsched --accept-all       # or --accept TRANSACTION
+breadsched payees book.breadsched                    # list payees and their counts
+breadsched payees book.breadsched --delete "Corner Grocer"
+```
+
+`--match` takes an example description. BreadSched ignores case, punctuation, and
+any word containing a digit, so the example above matches every description that
+reduces to "corner grocer"; the preview shows that matched key for each proposal.
+Matching is exact after that, never a guess, and one description key can belong to
+only one payee. The preview lists transactions that have no payee yet and writes
+nothing. Accepting assigns the payee in one undo step, and a transaction that
+already has a payee is never changed. Deleting a payee clears it from its
+transactions. Re-importing from GnuCash, OFX, QIF, or CSV keeps the payees you
+assigned. Payee screens in the desktop and web interfaces and categorization rules
+come next.
 
 ## Print, export, and inspect
 

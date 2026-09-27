@@ -5,6 +5,18 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Payees.** A payee is a stable, renameable identity kept separate from the
+  transaction description, which is never rewritten. `breadsched payees` adds a
+  payee with example descriptions, previews proposals for transactions without a
+  payee, accepts all or chosen proposals in one undo step, lists payees with their
+  transaction counts, and deletes one (clearing it from its transactions).
+  Matching is exact on a normalized description key that ignores case,
+  punctuation, and words containing digits; one key belongs to at most one payee,
+  and an assigned payee is never replaced by a proposal. Re-imports keep assigned
+  payees, and book verification reports missing payee references. **Native schema
+  8** adds the payee table; schemas 6 and 7 migrate automatically with a verified
+  backup. Application version `0.2.0a134`; supported native schemas 6–8.
+
 - **Transfer review during CSV import.** A transfer between two of your accounts
   appears on both statements. When a CSV row has the opposite amount of a
   transaction already imported into another bank, cash, or card account within
