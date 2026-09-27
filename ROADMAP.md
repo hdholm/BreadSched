@@ -45,9 +45,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    position, prints, and Expense Explorer Remaining/rollover convert once at the
    as-of quote and disclose quote date, source, and inversion, or list excluded
    amounts. Projection events, opening balances, and scenario comparisons use
-   the same policy at the opening valuation date. Disclose staleness and
-   rounding. Continue
-   imported quote mapping and decide multi-hop policy explicitly before enabling
+   the same policy at the opening valuation date. Notes state each quote's age
+   (without imposing a cutoff) and that conversion is not rounded to cents
+   before aggregation. Continue imported quote mapping and decide multi-hop policy explicitly before enabling
    it; do not create a second monthly budget ledger.
 3. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity
    without rewriting imported descriptions; preview deterministic matching and

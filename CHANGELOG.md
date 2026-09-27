@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Currency notes disclose quote age and rounding.** Plan and Projection
+  currency notes now give the selected quote's age on the
+  as-of date ("26 days old", "dated today", or "dated N days ahead"). BreadSched
+  imposes no staleness cutoff. The notes also state that converted amounts are
+  not rounded to cents before they are added up. This completes the disclosure
+  part of the currency P1. Application version `0.2.0a127`; native schema
+  remains 7.
+
 - **Projection converts foreign-currency schedules and balances.** Projection
   added a EUR schedule to USD cash unit for unit, and a foreign-currency account
   without a quote opened at its raw balance. The converter introduced for Plan
