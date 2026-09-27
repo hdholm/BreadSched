@@ -28,6 +28,7 @@ from ..lib.account import Account
 from ..lib.base import PrimaryObject
 from ..lib.commodity import DEFAULT_CURRENCY, Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
+from ..lib.payee import Payee
 from ..lib.reconciliation import Reconciliation
 from ..lib.scenario import Assumptions, Scenario
 from ..lib.scheduled import ScheduledTransaction
@@ -42,7 +43,7 @@ LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite"]
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """
@@ -119,6 +120,11 @@ CREATE TABLE IF NOT EXISTS reconciliation (
 );
 CREATE INDEX IF NOT EXISTS idx_reconciliation_account_date
     ON reconciliation(account, statement_date);
+CREATE TABLE IF NOT EXISTS payee (
+    handle TEXT PRIMARY KEY,
+    name   TEXT NOT NULL,
+    blob   TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS schema_migration (
     version    INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -135,6 +141,7 @@ _TABLES: dict[str, tuple[type, str]] = {
     "scenario": (Scenario, "scenario"),
     "fsa_claim": (FsaClaim, "fsa-claim"),
     "reconciliation": (Reconciliation, "reconciliation"),
+    "payee": (Payee, "payee"),
 }
 
 
@@ -631,6 +638,7 @@ class DbSQLite(DbBase):
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
             "reconciliation": ("account", "statement_date", "status"),
+            "payee": ("name",),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -649,6 +657,7 @@ class DbSQLite(DbBase):
             ("reconciliation", "account"): "",
             ("reconciliation", "statement_date"): "",
             ("reconciliation", "status"): "",
+            ("payee", "name"): "",
         }
         for table, columns in derived_specs.items():
             selected = ", ".join(("handle", *columns, "blob"))
@@ -1241,6 +1250,7 @@ class DbSQLite(DbBase):
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
             "reconciliation": ("account", "statement_date", "status"),
+            "payee": ("name",),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -1259,6 +1269,7 @@ class DbSQLite(DbBase):
             ("reconciliation", "account"): "",
             ("reconciliation", "statement_date"): "",
             ("reconciliation", "status"): "",
+            ("payee", "name"): "",
         }
         columns = columns_by_table[table]
         selected = ", ".join(("handle", *columns))
@@ -1988,6 +1999,27 @@ class DbSQLite(DbBase):
         sql += " ORDER BY statement_date, handle"
         for row in self._require().execute(sql, params):
             obj = self._decode_row("reconciliation", row["handle"], row["blob"], Reconciliation)
+            if obj is not None:
+                yield obj
+
+    # ------------------------------------------------------------------ payees
+
+    def add_payee(self, payee: Payee, txn: DbTxn) -> str:
+        return self._write(payee, txn, "payee")
+
+    def commit_payee(self, payee: Payee, txn: DbTxn) -> None:
+        self._write(payee, txn, "payee")
+
+    def remove_payee(self, handle: str, txn: DbTxn) -> None:
+        self._delete("payee", handle, txn)
+
+    def get_payee(self, handle: str) -> Payee | None:
+        data = self._read("payee", handle)
+        return Payee.from_dict(data) if data else None
+
+    def iter_payees(self) -> Iterator[Payee]:
+        for row in self._require().execute("SELECT handle, blob FROM payee ORDER BY name, handle"):
+            obj = self._decode_row("payee", row["handle"], row["blob"], Payee)
             if obj is not None:
                 yield obj
 

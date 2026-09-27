@@ -107,6 +107,14 @@ _SERVICE_MESSAGES = {
     "import.format.unrecognized": "The file format is not recognised",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
+    "payee.name.required": "Enter a payee name",
+    "payee.name.duplicate": "Another payee already has that name",
+    "payee.match.empty": (
+        "A match must contain at least one word without digits, such as the merchant name"
+    ),
+    "payee.match.conflict": "That description already identifies another payee",
+    "payee.not_found": "That payee no longer exists",
+    "payee.transaction.not_found": "That transaction no longer exists",
     "import.csv.account.invalid": "Choose a bank, cash, card, or other posting asset or liability",
     "import.csv.column.not_found": "A mapped column is not in the CSV file",
     "import.csv.amount.mapping": "Map either one amount column or debit and credit columns",
