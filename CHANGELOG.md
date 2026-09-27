@@ -5,6 +5,17 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **GTK manual exchange rates.** Accounts has an **Exchange rate…** button that
+  opens a dialog for a dated, directional manual quote: choose the source and
+  target currencies (the target defaults to the reporting currency), the quote
+  date, and the target units per one source unit. The dialog shows the latest
+  direct quote for the chosen pair and saves through the same shared valuation
+  contract as the web and `breadsched rate`. Invalid dates, rates, or pairs are
+  refused with nothing written, and imported quotes and ledger amounts are never
+  changed. The desktop now matches the web and CLI for manual FX entry. Plan and
+  Projection conversion remains open (see issue #124). Application version
+  `0.2.0a124`; native schema remains 7.
+
 - **Reviewed, duplicate-safe batch of due scheduled transactions (P1 complete).**
   A shared due-review service lists due and missed occurrences grouped by schedule
   and applies a batch of post, skip, or defer decisions. It re-checks every chosen

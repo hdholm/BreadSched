@@ -40,8 +40,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    clean installs, upgrades, launch, and uninstalls on supported Windows CI.
    Publish signed/checksummed artifacts and concise installation instructions
    only after their release gates are proven. Keep wheel/source releases available.
-2. **P1 — Finish currency handling.** Add GTK manual FX entry using the existing
-   exact quote contract. Apply one as-of conversion and missing-quote policy to
+2. **P1 — Finish currency handling.** GTK, web, and CLI now share manual FX
+   entry through the exact quote contract. Apply one as-of conversion and missing-quote policy to
    Plan/Projection totals, comparisons, and prints; disclose quote date/source,
    inversion, staleness, and rounding. Continue imported quote mapping and decide
    multi-hop policy explicitly before enabling it. Once Plan amounts and quote
@@ -174,7 +174,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   eligible direct quote exists, with inversion disclosed in account views.
   An exact manual FX quote save contract now validates the currency pair and
   preserves imported quotes. CLI and web rate entry accept a dated directional
-  rate for known currencies; add a GTK control with the same contract.
+  rate for known currencies, and the GTK Accounts dialog uses the same contract.
   Scheduled Plan occurrences now carry their transaction currency; actual matching
   excludes unlike currencies and occurrence variance is unavailable when a linked
   actual uses another currency. Complete currency conversion of Plan period totals,
