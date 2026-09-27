@@ -55,6 +55,9 @@ worth; group totals need setup and emergency coverage needs committed outgoings.
 Dashboard discloses when selected groups leave asset, debt, or cash accounts outside
 their totals. The [User Guide](src/breadsched/USER_GUIDE.md#dashboard-and-near-term-cash) explains
 current behavior, and the [roadmap](ROADMAP.md) tracks these improvements.
+An imported GnuCash book initially uses its posted account balances for ungrouped
+Net worth and keeps supported scheduled bills visible. Missing foreign cash quotes
+make dependent Dashboard totals unavailable until a quote is supplied.
 
 ## Install and run for development
 

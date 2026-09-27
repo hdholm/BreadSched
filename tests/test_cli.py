@@ -42,6 +42,51 @@ def run_json(capsys, *argv):
     return json.loads(out)
 
 
+def test_imported_first_dashboard_cli_preserves_setup_and_missing_quote(
+    capsys, book_path, gnucash_sqlite_path
+):
+    run(capsys, "init", book_path)
+    run(capsys, "import", book_path, gnucash_sqlite_path.path)
+    command = ("dashboard", book_path, "--as-of", "2026-01-31")
+    first = run_json(capsys, *command)
+    assert first["summary"]["net_worth"] == "2274.50"
+    assert first["unavailable_reasons"]["assets"] == "Dashboard groups not configured"
+    assert any(item["name"] == "Monthly rent" for item in first["bills"])
+
+    db = DbSQLite()
+    db.load(book_path)
+    try:
+        assets = db.get_account_by_name("Assets")
+        income = db.get_account_by_name("Income")
+        assert assets is not None and income is not None
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        foreign_cash = Account(
+            name="Foreign cash",
+            atype=AccountType.BANK,
+            parent=assets.handle,
+            commodity=euro.handle,
+        )
+        entry = Transaction(post_date=date(2026, 1, 15), description="Foreign opening")
+        entry.currency = euro.handle
+        entry.splits = [Split(foreign_cash.handle, Money(10)), Split(income.handle, Money(-10))]
+        with db.transaction("Foreign cash") as txn:
+            db.add_commodity(euro, txn)
+            db.add_account(foreign_cash, txn)
+            db.add_transaction(entry, txn)
+    finally:
+        db.close()
+
+    missing = run_json(capsys, *command)
+    assert missing["summary"]["net_worth"] is None
+    assert missing["summary"]["liquid"] is None
+    assert missing["missing_quotes"] == [foreign_cash.handle]
+    assert any(item["name"] == "Monthly rent" for item in missing["bills"])
+    code, output = run(capsys, *command)
+    assert code == 0
+    assert "Missing reporting-currency quote" in output
+    assert "Monthly rent" in output
+
+
 def test_cli_manual_rate_keeps_exact_value_and_imported_quote(capsys, book_path):
     run(capsys, "init", book_path)
     db = DbSQLite()

@@ -34,8 +34,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    disclose missing setup or commitments. Partial group and liquidity coverage
    disclose omitted account counts in every presentation. A synthetic, reproducible
    sample generator supplies accounts, dated transactions, schedules, and a Plan
-   example. Continue first-run tests for imported books and explicit missing
-   valuations across GTK/web/CLI/print.
+   example. Imported-book first views and missing cash quotes now have acceptance
+   coverage across the shared engine, GTK, web, CLI, and print. Continue the
+   first-run review with broader imported commodity and commitment cases.
 2. **P0 — Per-category remaining this period.** Expense Explorer now derives the
    full-period plan minus actual spending through as-of, including refunds, negative
    overspending, and parent rollups counted once. Future-only periods and unconverted

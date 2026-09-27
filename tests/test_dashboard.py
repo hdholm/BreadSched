@@ -106,6 +106,60 @@ def test_missing_quote_in_fallback_cash_suppresses_liquidity(db, book):
     assert board.unavailable_reason("net_worth") == "Missing reporting-currency quote"
 
 
+def test_imported_book_first_dashboard_uses_complete_ledger_and_commitments(
+    db, gnucash_sqlite_path
+):
+    from breadsched.plugins.export.html_report import dashboard_report
+    from breadsched.plugins.importer.gnucash_sqlite import import_book
+
+    import_book(db, gnucash_sqlite_path.path)
+    board = dashboard.build(db, as_of=date(2026, 1, 31))
+    report = board.report_summary()
+
+    assert board.groups == []
+    assert report["net_worth"] == Money("2274.50")
+    assert report["assets"] is None
+    assert board.unavailable_reason("assets") == "Dashboard groups not configured"
+    assert report["liquid"] == Money("2350.00")
+    assert report["emergency_fund"] is not None
+    assert board.monthly_outgoings == Money("1800.00")
+    assert any(item.name == "Monthly rent" for item in board.bills)
+    html = dashboard_report(board)
+    assert "2,274.50" in html
+    assert "No Dashboard groups are configured" in html
+    assert "Monthly rent" in html
+
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    foreign_cash = Account(
+        name="Foreign cash",
+        atype=AccountType.BANK,
+        parent=gnucash_sqlite_path.ids.assets,
+        commodity=euro.handle,
+    )
+    foreign_entry = Transaction(post_date=date(2026, 1, 15), description="Foreign opening")
+    foreign_entry.currency = euro.handle
+    foreign_entry.splits = [
+        Split(foreign_cash.handle, Money(10)),
+        Split(gnucash_sqlite_path.ids.income, Money(-10)),
+    ]
+    with db.transaction("Foreign cash") as txn:
+        db.add_commodity(euro, txn)
+        db.add_account(foreign_cash, txn)
+        db.add_transaction(foreign_entry, txn)
+
+    missing = dashboard.build(db, as_of=date(2026, 1, 31))
+    missing_report = missing.report_summary()
+    assert missing_report["net_worth"] is None
+    assert missing_report["liquid"] is None
+    assert missing_report["available"] is None
+    assert missing_report["months_covered"] is None
+    assert missing.missing_quotes == (foreign_cash.handle,)
+    assert missing.liquid_missing_quotes == (foreign_cash.handle,)
+    assert missing.monthly_outgoings == Money("1800.00")
+    assert any(item.name == "Monthly rent" for item in missing.bills)
+    assert "Missing reporting-currency quote" in dashboard_report(missing)
+
+
 @pytest.fixture
 def household(db, book):
     """A book shaped like the spreadsheet: two properties, retirement, bills."""
