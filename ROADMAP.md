@@ -31,11 +31,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P0 — Complete first-run Dashboard and sample book.** Ungrouped Net worth
    now uses complete ledger valuation; group assets/debts and emergency coverage
-   disclose missing setup or commitments. Continue clarifying partial group
-   coverage and liquidity setup in every presentation. A synthetic, reproducible
-   sample generator now supplies accounts, dated transactions, schedules, and a Plan
-   example. Continue first-run tests for imported and configured books across
-   GTK/web/CLI/print, including partial groups and explicit missing valuations.
+   disclose missing setup or commitments. Partial group and liquidity coverage
+   disclose omitted account counts in every presentation. A synthetic, reproducible
+   sample generator supplies accounts, dated transactions, schedules, and a Plan
+   example. Continue first-run tests for imported books and explicit missing
+   valuations across GTK/web/CLI/print.
 2. **P0 — Per-category remaining this period.** Build on dated Plan and actual
    events: for the selected category and period, show planned spending minus
    actual spending through the as-of date, with refunds and parent/child rollups

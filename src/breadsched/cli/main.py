@@ -1517,6 +1517,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                     },
                     "missing_quotes": list(board.missing_quotes),
                     "liquid_missing_quotes": list(board.liquid_missing_quotes),
+                    "coverage_notes": list(board.coverage_notes),
                     "groups": [
                         {
                             "name": g.name,
@@ -1622,6 +1623,10 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         )
 
         print()
+        for note in board.coverage_notes:
+            print(note)
+        if board.coverage_notes:
+            print()
         headline = [
             ["Net worth", shown("net_worth", summary["net_worth"])],
             ["Liquid", shown("liquid", summary["liquid"])],

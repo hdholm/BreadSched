@@ -5,6 +5,11 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Dashboard group coverage.** Grouped position and selected liquid balances
+  disclose omitted asset/liability and cash-like account counts across GTK, web,
+  CLI, and print. Selected figures remain selected figures; no accounts are added
+  implicitly. Application version `0.2.0a115`; native schema remains 7.
+
 - **Synthetic learning book.** `breadsched sample PATH` creates a separate
   clearly labeled household book with balanced dated ledger activity, Dashboard
   groups, recurring commitments, a Plan estimate, and a Base scenario. A supplied

@@ -3265,7 +3265,8 @@ async function showDashboard() {
     money(item.amount), money(item.monthly), money(item.annual),
   ]);
 
-  return el("div", {}, cards, controls,
+  return el("div", {}, cards,
+    ...(data.coverage_notes || []).map((note) => el("p", { class: "note" }, note)), controls,
     el("h2", {}, "Balances"),
     groupCards,
     el("h2", {}, `Pending bills (${data.bills.length})`),
