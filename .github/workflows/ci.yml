@@ -140,6 +140,31 @@ jobs:
           PY
           breadsched --help >/dev/null
 
+  flatpak-smoke:
+    name: Build and smoke-test Flatpak sandbox
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Flatpak builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build package with GNOME SDK
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --force-clean \
+            --repo="$RUNNER_TEMP/flatpak-repo" "$RUNNER_TEMP/flatpak-build" \
+            org.breadsched.BreadSched.json
+
+      - name: Install package and smoke-test commands inside sandbox
+        run: |
+          flatpak remote-add --user --no-gpg-verify local-breadsched "$RUNNER_TEMP/flatpak-repo"
+          flatpak install --user --noninteractive local-breadsched org.breadsched.BreadSched
+          flatpak run --user --command=breadsched org.breadsched.BreadSched --version
+          flatpak run --user org.breadsched.BreadSched --help
+
   missing-gtk-runtime:
     name: PyGObject without GTK4 typelib
     runs-on: ubuntu-latest

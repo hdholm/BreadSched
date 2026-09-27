@@ -5,6 +5,11 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Flatpak build baseline.** Add a GNOME-runtime manifest and CI smoke gate that
+  installs the package and checks CLI version and GTK launcher help in the sandbox.
+  This is a build input, not a released installer or validated file workflow. Application
+  version `0.2.0a118`; native schema remains 7.
+
 - **Imported-book Dashboard acceptance.** Synthetic GnuCash import coverage now
   checks first-view ledger position and recurring rent, plus a missing foreign
   cash quote that suppresses dependent totals while preserving commitments.

@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -7,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from breadsched import __version__
+from breadsched import APP_ID, __version__
 from breadsched.gen.db.migrations import MIN_SUPPORTED_SCHEMA_VERSION
 from breadsched.gen.db.sqlite import SCHEMA_VERSION
 
@@ -17,6 +18,22 @@ assert _SPEC is not None and _SPEC.loader is not None
 _MODULE = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(_MODULE)
 validate_release_notes = _MODULE.validate_release_notes
+
+
+def test_flatpak_build_input_uses_the_app_id_and_excludes_local_state():
+    manifest = json.loads(Path(f"{APP_ID}.json").read_text(encoding="utf-8"))
+    assert manifest["id"] == APP_ID
+    assert manifest["command"] == "breadsched-gtk"
+    assert manifest["runtime"] == "org.gnome.Platform"
+    assert manifest["sdk"] == "org.gnome.Sdk"
+    (source,) = manifest["modules"][-1]["sources"]
+    assert source["type"] == "dir" and source["path"] == "."
+    assert {".git", ".venv", "build", "dist"} <= set(source["skip"])
+    assert "--filesystem=host" not in manifest["finish-args"]
+    assert "--filesystem=home" not in manifest["finish-args"]
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert "flatpak install --user --noninteractive local-breadsched" in workflow
+    assert "flatpak run --user --command=breadsched" in workflow
 
 
 def _notes() -> str:

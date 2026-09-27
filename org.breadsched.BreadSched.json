@@ -1,0 +1,40 @@
+{
+  "id": "org.breadsched.BreadSched",
+  "runtime": "org.gnome.Platform",
+  "runtime-version": "49",
+  "sdk": "org.gnome.Sdk",
+  "command": "breadsched-gtk",
+  "finish-args": [
+    "--share=ipc",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--device=dri",
+    "--filesystem=xdg-documents",
+    "--share=network"
+  ],
+  "modules": [
+    {
+      "name": "breadsched",
+      "buildsystem": "simple",
+      "build-commands": [
+        "python3 -m pip install --prefix=/app --no-deps --no-build-isolation ."
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": ".",
+          "skip": [
+            ".git",
+            ".flatpak-builder",
+            ".venv",
+            "build",
+            "dist",
+            ".mypy_cache",
+            ".pytest_cache",
+            ".ruff_cache"
+          ]
+        }
+      ]
+    }
+  ]
+}

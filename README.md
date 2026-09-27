@@ -35,6 +35,8 @@ Alpha releases provide a wheel, source archive, and checksums. Native Linux and
 Windows installers are planned. Read the release notes and verify the checksums
 before installing. The [User Guide](src/breadsched/USER_GUIDE.md) covers current
 workflows and their limits, including exchange rates, imports, and recovery.
+The source tree now includes an initial Flatpak manifest and CI sandbox command
+smoke test. It is not yet a published or workflow-validated installer.
 
 ## Explore expenses
 
