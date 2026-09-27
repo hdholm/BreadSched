@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Synthetic learning book.** `breadsched sample PATH` creates a separate
+  clearly labeled household book with balanced dated ledger activity, Dashboard
+  groups, recurring commitments, a Plan estimate, and a Base scenario. A supplied
+  reference date reproduces its financial content, including year boundaries;
+  existing files are never replaced. Application version `0.2.0a114`; native
+  schema remains 7.
+
 - **First-run Dashboard position and commitment state.** An ungrouped book
   reports ledger-derived net worth only when every valuation is complete;
   group asset/debt metrics disclose absent setup. A book without committed

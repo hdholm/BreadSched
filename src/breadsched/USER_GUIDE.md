@@ -312,6 +312,20 @@ liability.
 
 ## Dashboard and near-term cash
 
+### Synthetic sample book
+
+Run `breadsched sample sample.breadsched` to create a separate learning book. Every
+account, transaction, amount, and name in it is invented. The command refuses an
+existing path and never adds tutorial entries to an open household book. Use
+`--as-of YYYY-MM-DD` to choose a repeatable reference month; for example,
+`breadsched sample sample.breadsched --as-of 2026-09-15`. The prior month has
+opening balances and dated wages, rent, groceries, and utilities. The following
+month has recurring wages, rent, and utilities plus a groceries Plan estimate.
+Dashboard Cash and Card debt groups and a two-year Base scenario are included.
+Open the resulting file in GTK or web, inspect Dashboard, then select the following
+month in Plan. The sample is for exploration, not financial advice or a template
+whose amounts should be copied into a real book.
+
 Dashboard group totals are based on the accounts assigned to those groups. Before
 group setup, Net worth uses all ledger asset and liability accounts, valued in the
 reporting currency as of the Dashboard date; a missing quote makes it unavailable.
@@ -320,7 +334,8 @@ worth reflects those selected groups, which may cover only part of the book.
 When there are no committed outgoings, Emergency fund and Months covered say
 “No committed outgoings” instead of presenting zero as a measured need or duration.
 Add schedules for known commitments and review Dashboard groups before relying on
-those figures. A synthetic sample book is planned.
+those figures. The synthetic sample book above provides a separate place to
+explore these controls.
 
 In the web Dashboard, a requested liquidity or emergency-fund horizon changes
 the displayed calculation for that request. Reopening the view uses the saved
