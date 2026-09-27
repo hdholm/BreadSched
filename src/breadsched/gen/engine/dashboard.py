@@ -349,9 +349,13 @@ class Dashboard:
     _income_events: list[tuple[date, Money]] = field(default_factory=list, repr=False)
     liquid: Money = field(default_factory=lambda: Money(0))
     liquid_missing_quotes: tuple[str, ...] = ()
+    ledger_position: Money | None = None
+    ledger_position_missing_quotes: tuple[str, ...] = ()
 
     @property
     def missing_quotes(self) -> tuple[str, ...]:
+        if not self.groups:
+            return self.ledger_position_missing_quotes
         return tuple(
             dict.fromkeys(
                 handle
@@ -364,13 +368,33 @@ class Dashboard:
     def report_summary(self) -> dict[str, object]:
         """Suppress monetary conclusions that depend on unavailable quotes."""
         report: dict[str, object] = dict(self.summary())
+        if not self.groups:
+            report["assets"] = None
+            report["debts"] = None
+            report["net_worth"] = self.ledger_position
         if self.missing_quotes:
             for field in ("assets", "debts", "net_worth"):
                 report[field] = None
         if self.liquid_missing_quotes:
             for field in ("liquid", "available", "emergency_shortfall", "months_covered"):
                 report[field] = None
+        if not self._normalised_bills():
+            for field in ("emergency_fund", "emergency_shortfall", "months_covered"):
+                report[field] = None
         return report
+
+    def unavailable_reason(self, field: str) -> str:
+        """Explain an absent report value without conflating setup with FX gaps."""
+        if field in {"assets", "debts"} and not self.groups:
+            return "Dashboard groups not configured"
+        if field == "net_worth" and not self.groups and self.ledger_position is None:
+            return "Missing reporting-currency quote"
+        if (
+            field in {"emergency_fund", "emergency_shortfall", "months_covered"}
+            and not self._normalised_bills()
+        ):
+            return "No committed outgoings"
+        return "Missing reporting-currency quote"
 
     # -------------------------------------------------------------- aggregates
 
@@ -596,6 +620,13 @@ def build(
     paid_off = _paid_off_loans(db, today)
     resolved = resolve_groups(db, config)
     board.groups = _hierarchical_results(db, resolved, today, paid_off)
+    if not board.groups:
+        position = valuation.aggregate_value(db, as_of=today, net_worth=True)
+        board.ledger_position = position.amount.value if position.amount is not None else None
+        board.ledger_position_missing_quotes = (
+            *position.missing_quotes,
+            *position.incompatible_accounts,
+        )
 
     if any(group.kind == "liquid" for group in resolved):
         board.liquid = sum((group.liquid for group in board.groups if group.depth == 0), Money(0))

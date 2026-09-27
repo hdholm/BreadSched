@@ -312,13 +312,15 @@ liability.
 
 ## Dashboard and near-term cash
 
-Dashboard group totals are based on the accounts assigned to those groups. If a
-book has no group setup, a displayed zero for net worth is not a reliable
-whole-book valuation; use Accounts or `breadsched balance BOOK` to inspect the
-ledger. Emergency-fund and months-covered figures likewise depend on recognized
-commitments and the saved Dashboard setup. A first-run setup-state disclosure and
-ledger-derived position summary are planned. Do not treat an unconfigured zero as
-evidence of no assets, debts, or expenses.
+Dashboard group totals are based on the accounts assigned to those groups. Before
+group setup, Net worth uses all ledger asset and liability accounts, valued in the
+reporting currency as of the Dashboard date; a missing quote makes it unavailable.
+Grouped asset and debt totals remain unconfigured. Once groups are assigned, Net
+worth reflects those selected groups, which may cover only part of the book.
+When there are no committed outgoings, Emergency fund and Months covered say
+“No committed outgoings” instead of presenting zero as a measured need or duration.
+Add schedules for known commitments and review Dashboard groups before relying on
+those figures. A synthetic sample book is planned.
 
 In the web Dashboard, a requested liquidity or emergency-fund horizon changes
 the displayed calculation for that request. Reopening the view uses the saved

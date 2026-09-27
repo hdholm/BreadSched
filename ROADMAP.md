@@ -29,12 +29,10 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **P0 — Honest first-run Dashboard and sample book.** Before any group or
-   schedule configuration, show ledger-derived position totals where complete
-   valuations exist, or label configured-group metrics as not configured. Never
-   present a zero net worth, emergency fund, or months covered as a measured result
-   when it only means no Dashboard groups or commitments exist. Distinguish an
-   actual zero, missing quote, and absent setup. Supply a clearly synthetic,
+1. **P0 — Complete first-run Dashboard and sample book.** Ungrouped Net worth
+   now uses complete ledger valuation; group assets/debts and emergency coverage
+   disclose missing setup or commitments. Continue clarifying partial group
+   coverage and liquidity setup in every presentation. Supply a clearly synthetic,
    reproducible sample book with accounts, dated transactions, schedules, and Plan
    examples; no private financial data. Test new, imported, and configured books
    across GTK/web/CLI/print.

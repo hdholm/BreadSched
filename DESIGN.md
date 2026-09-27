@@ -727,14 +727,15 @@ cash-counterpart annotations on a retirement distribution count only once.
 
 ## Dashboard aggregation
 
-Dashboard position aggregation currently uses explicitly configured groups and
-account group assignments; it does not infer a whole-book net-worth group. With no
-selected groups, a zero position can mean missing configuration rather than a
-zero ledger balance. The ledger's account balance calculation has a different
-scope. Future first-run presentation must distinguish absent setup, genuine zero,
-and incomplete FX valuation before labeling a number as whole-book net worth.
-Likewise, emergency sizing depends on recognized scheduled outgoings, so missing
-commitments are not evidence of zero household spending.
+Dashboard position aggregation uses explicitly configured groups and account group
+assignments when present. Without any selected groups, a separate complete as-of
+valuation of ledger asset and liability accounts supplies Net worth; grouped asset
+and debt totals remain unavailable. Missing or incompatible reporting-currency
+valuations suppress this ledger total. The response carries a reason for each
+unavailable field, separating absent group setup and absent committed outgoings
+from missing currency quotes. Without recognized committed outgoings, emergency
+fund, shortfall, and months covered are unavailable rather than measured zeros.
+This does not estimate unscheduled household spending.
 
 Dashboard group names are account-style colon-delimited paths. The engine builds
 the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting

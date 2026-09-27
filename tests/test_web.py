@@ -2591,7 +2591,9 @@ class TestDashboardApi:
             "income",
             "missing_quotes",
             "liquid_missing_quotes",
+            "unavailable_reasons",
         }
+        assert payload["unavailable_reasons"]["months_covered"] == "No committed outgoings"
 
     def test_missing_group_quote_suppresses_position_and_preserves_bills(self, client):
         from breadsched.gen.engine import dashboard
@@ -2723,7 +2725,9 @@ class TestDashboardApi:
         _status, six = client.get("/api/dashboard?emergency_months=6")
         _status, twelve = client.get("/api/dashboard?emergency_months=12")
         assert twelve["config"]["emergency_months"] == 12
-        assert float(twelve["summary"]["emergency_fund"]) >= float(six["summary"]["emergency_fund"])
+        assert twelve["summary"]["emergency_fund"] is None
+        assert six["summary"]["emergency_fund"] is None
+        assert twelve["unavailable_reasons"]["emergency_fund"] == "No committed outgoings"
 
     def test_amounts_are_strings_the_browser_can_parse(self, client):
         _status, payload = client.get("/api/dashboard")

@@ -21,6 +21,11 @@ def dashboard_report(
 
     return {
         "summary": _plain(board.report_summary()),
+        "unavailable_reasons": {
+            key: board.unavailable_reason(key)
+            for key, value in board.report_summary().items()
+            if value is None
+        },
         "missing_quotes": list(board.missing_quotes),
         "liquid_missing_quotes": list(board.liquid_missing_quotes),
         "config": {
