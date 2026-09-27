@@ -22,6 +22,7 @@ from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
 from ..lib.transaction import InvestmentActivityKind
 from . import investment, planning, valuation
+from .conversion import ReportingConverter, UnconvertedActivity, conversion_notes
 from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
 
@@ -906,6 +907,9 @@ def _project_events(
     day_before = start - timedelta(days=1)
     timeline = _AssumptionTimeline(scenario, start, end)
     fraction = reporting_fraction(db)
+    # Foreign values use the quote known on the opening valuation date, once.
+    converter = ReportingConverter(db, day_before)
+    unconverted: list[UnconvertedActivity] = []
 
     cash = Money(0)
     holdings: dict[str, Money] = {}
@@ -917,7 +921,21 @@ def _project_events(
         accounts[account.handle] = account
         opening = scenario.opening_overrides.get(account.handle)
         if opening is None:
-            opening = valuation.account_value(db, account, as_of=day_before).total
+            valued = valuation.account_value(db, account, as_of=day_before)
+            opening = valued.total
+            if valued.missing_quote and valued.currency is not None:
+                # A foreign-currency balance without a quote is not reporting money.
+                unconverted.append(
+                    UnconvertedActivity(
+                        "balance",
+                        day_before,
+                        db.full_name(account),
+                        opening,
+                        valued.currency.handle,
+                        (account.handle,),
+                    )
+                )
+                opening = Money(0)
         if account.is_spendable_cash:
             cash = cash + opening
         elif account.account_class is AccountClass.ASSET:
@@ -958,7 +976,38 @@ def _project_events(
         record_formula_schedule(scenario_schedule)
 
     _report_progress(progress, start, start, end, "Preparing events")
-    all_events = planning.scenario_events(db, scenario, start, end)
+    all_events = []
+    for original in planning.scenario_events(db, scenario, start, end):
+        event = converter.event(original)
+        if event is not None and event.actual_transaction is not None:
+            if not converter.reporting_actual(event):
+                event = None
+        if event is None:
+            unconverted.append(
+                UnconvertedActivity(
+                    "planned",
+                    original.when,
+                    original.description,
+                    original.amount,
+                    (
+                        original.actual_currency
+                        if original.actual_transaction is not None
+                        and converter.factor(original.actual_currency) is None
+                        else original.expected_currency
+                    )
+                    or converter.target,
+                    tuple(split.account for split in original.splits),
+                )
+            )
+            continue
+        all_events.append(event)
+    for note in conversion_notes(
+        db,
+        (converter.used[key] for key in sorted(converter.used)),
+        unconverted,
+        day_before,
+    ):
+        _warn_once(result, note)
     for event in all_events:
         if event.source not in (
             planning.EventSource.SCHEDULED,
