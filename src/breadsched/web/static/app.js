@@ -3190,6 +3190,7 @@ async function csvImportPanel() {
   const header = el("input", { type:"checkbox", checked:"checked" });
   const invert = el("input", { type:"checkbox" });
   const duplicates = el("input", { type:"checkbox" });
+  const transfers = el("input", { type:"checkbox" });
   const layout = el("p", { class:"note" });
   const preview = el("div", {});
   let source = "";
@@ -3197,6 +3198,7 @@ async function csvImportPanel() {
     path: source,
     account: account.value,
     include_duplicates: duplicates.checked,
+    link_transfers: transfers.checked,
     mapping: {
       ...Object.fromEntries(Object.entries(fields).map(([key, select]) => [key, select.value])),
       date_format: dateFormat.value, number_format: numberFormat.value,
@@ -3237,7 +3239,8 @@ async function csvImportPanel() {
   const showPreview = async () => {
     const data = await post("/api/import/csv/preview", request());
     const labels = { new:"New", imported:"Already imported",
-      possible_duplicate:"Possible duplicate", invalid:"Invalid" };
+      possible_duplicate:"Possible duplicate", possible_transfer:"Possible transfer",
+      invalid:"Invalid" };
     layout.textContent = `${data.encoding}, delimiter "${data.delimiter}", `
       + `${data.date_format} dates, ${data.number_format} decimals. `
       + Object.entries(data.counts).map(([key, count]) => `${labels[key]}: ${count}`).join(" · ");
@@ -3255,7 +3258,9 @@ async function csvImportPanel() {
       "Choose the statement and its account, map the columns, and preview. Nothing is "
       + "written until you import. Re-importing the same rows adds nothing and keeps any "
       + "category you chose. A row matching a transaction already in the account on the same "
-      + "date and amount is held back unless you include possible duplicates."),
+      + "date and amount is held back unless you include possible duplicates. A row that "
+      + "looks like the other side of an uncategorized transfer already imported into another "
+      + "account is imported as new unless you link transfers."),
     el("form", { class:"entry", onsubmit:(event) => event.preventDefault() },
       el("label", {}, "Choose a CSV file", file),
       el("label", {}, "Or enter a path visible to BreadSched", path),
@@ -3268,12 +3273,14 @@ async function csvImportPanel() {
       el("label", {}, "Number format", numberFormat),
       el("label", {}, el("span", {}, "Money out is shown positive "), invert),
       el("label", {}, el("span", {}, "Include possible duplicates "), duplicates),
+      el("label", {}, el("span", {}, "Link possible transfers "), transfers),
       el("button", { class:"action", type:"button", onclick:run(showPreview) }, "Preview"),
       el("button", { class:"action primary", type:"button", onclick:run(async () => {
         const result = await post("/api/import/csv", request());
         say(`Imported ${result.new} new; ${result.already_imported} already imported; `
           + `${result.possible_duplicates} possible duplicate(s) `
-          + `${result.duplicates_included ? "included" : "held back"}; ${result.skipped} skipped.`);
+          + `${result.duplicates_included ? "included" : "held back"}; `
+          + `${result.transfers_linked} transfer(s) linked; ${result.skipped} skipped.`);
         await showPreview();
       }) }, "Import")),
     layout, preview);

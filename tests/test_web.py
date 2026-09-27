@@ -4180,6 +4180,7 @@ class TestCsvImport:
             "new": 2,
             "imported": 0,
             "possible_duplicate": 0,
+            "possible_transfer": 0,
             "invalid": 0,
         }
         assert preview["rows"][0] == {
@@ -4217,6 +4218,32 @@ class TestCsvImport:
             "/api/import/csv", self._request(client, path, include_duplicates=True)
         )
         assert included["new"] == 1
+
+    def test_transfer_side_is_linked_only_when_asked(self, client, tmp_path):
+        savings = client.database.get_account_by_name("401(k)")
+        out = tmp_path / "savings.csv"
+        out.write_text("Date,Description,Amount\n2026-02-10,To checking,-250.00\n", "utf-8")
+        payload = self._request(client, out)
+        _status, first = client.post("/api/import/csv", {**payload, "account": savings.handle})
+        assert first["new"] == 1
+        path = tmp_path / "checking.csv"
+        path.write_text("Date,Description,Amount\n2026-02-11,From savings,250.00\n", "utf-8")
+        before = len(list(client.database.iter_transactions()))
+
+        _status, preview = client.post("/api/import/csv/preview", self._request(client, path))
+        assert preview["counts"]["possible_transfer"] == 1
+        assert "401(k)" in preview["rows"][0]["reason"]
+        status, linked = client.post(
+            "/api/import/csv", self._request(client, path, link_transfers=True)
+        )
+        assert status == 200
+        assert (linked["new"], linked["transfers_linked"]) == (0, 1)
+        assert len(list(client.database.iter_transactions())) == before
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/import/csv", self._request(client, path, link_transfers="yes"))
+        assert caught.value.code == 400
+        assert "link_transfers" in json.loads(caught.value.read())["error"]
 
     def test_rejected_requests_leave_the_book_unchanged(self, client, tmp_path):
         path = tmp_path / "ambiguous.csv"

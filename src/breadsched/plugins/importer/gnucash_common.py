@@ -80,6 +80,8 @@ class ImportResult:
     transactions_held: int = 0
     #: Locally reconciled transactions whose unchanged source version the user kept.
     transactions_kept: int = 0
+    #: Existing transfer sides completed by an accepted statement row.
+    transactions_linked: int = 0
     splits_new: int = 0
     splits_refreshed: int = 0
     splits_unchanged: int = 0

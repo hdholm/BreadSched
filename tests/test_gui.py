@@ -4515,6 +4515,26 @@ class TestCsvImportDialog:
         preview = dialog.preview()
         assert preview is not None and preview.rows[0].when.isoformat() == "2026-02-01"
 
+    def test_possible_transfer_is_linked_only_when_checked(self, dialog, tmp_path, app):
+        # Money leaves the first account and arrives in the second a day later.
+        assert len(dialog.accounts) >= 2
+        self._load(dialog, tmp_path, "Date,Description,Amount\n2026-09-10,Transfer out,-75.00\n")
+        dialog.account.set_selected(0)
+        assert dialog.import_rows() is not None
+        self._load(dialog, tmp_path, "Date,Description,Amount\n2026-09-11,Transfer in,75.00\n")
+        dialog.account.set_selected(1)
+        before = len(list(app.db.iter_transactions()))
+
+        preview = dialog.preview()
+        assert preview is not None and preview.rows[0].status == "possible_transfer"
+        assert "Possible transfer: 1" in dialog.layout_label.get_text()
+        dialog.link_transfers.set_active(True)
+        result = dialog.import_rows()
+
+        assert result is not None and result.transactions_linked == 1
+        assert "1 transfer(s) linked" in dialog.status.get_text()
+        assert len(list(app.db.iter_transactions())) == before
+
     def test_app_action_opens_the_dialog(self, app, window, populated_book):
         from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
 

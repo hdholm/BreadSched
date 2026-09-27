@@ -32,6 +32,7 @@ _STATUS_LABELS = {
     "new": "New",
     "imported": "Already imported",
     "possible_duplicate": "Possible duplicate",
+    "possible_transfer": "Possible transfer",
     "invalid": "Invalid",
 }
 _FIELDS = ("date", "amount", "debit", "credit", "description", "memo")
@@ -78,7 +79,9 @@ class CsvImportDialog(Gtk.Window):
                 "preview. Nothing is written until you import. Re-importing the same rows "
                 "adds nothing and keeps any category you chose. A row matching a "
                 "transaction already in the account on the same date and amount is held "
-                "back unless you include possible duplicates."
+                "back unless you include possible duplicates. A row that looks like the "
+                "other side of an uncategorized transfer already imported into another "
+                "account is imported as new unless you link transfers."
             ),
             xalign=0,
             wrap=True,
@@ -139,6 +142,8 @@ class CsvImportDialog(Gtk.Window):
         self.include_duplicates = Gtk.CheckButton(label="Include possible duplicates")
         grid.attach(self.invert, 0, 5, 2, 1)
         grid.attach(self.include_duplicates, 2, 5, 2, 1)
+        self.link_transfers = Gtk.CheckButton(label="Link possible transfers")
+        grid.attach(self.link_transfers, 2, 6, 2, 1)
 
         self.layout_label = Gtk.Label(xalign=0, wrap=True)
         self.layout_label.add_css_class("dim")
@@ -246,6 +251,7 @@ class CsvImportDialog(Gtk.Window):
             account=self.accounts[self.account.get_selected()].handle,
             mapping=self.mapping(),
             include_duplicates=self.include_duplicates.get_active(),
+            link_transfers=self.link_transfers.get_active(),
         )
 
     # ---------------------------------------------------- preview and import
@@ -304,6 +310,7 @@ class CsvImportDialog(Gtk.Window):
             f"Imported {outcome.transactions_new} new; {outcome.transactions_unchanged} "
             f"already imported; {held} possible duplicate(s) "
             f"{'included' if request.include_duplicates else 'held back'}; "
+            f"{outcome.transactions_linked} transfer(s) linked; "
             f"{outcome.skipped} skipped.",
             False,
         )

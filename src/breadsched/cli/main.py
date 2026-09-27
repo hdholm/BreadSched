@@ -498,6 +498,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                 invert=args.invert,
             ),
             include_duplicates=args.include_duplicates,
+            link_transfers=args.link_transfers,
         )
         if args.preview:
             previewed = preview_csv_import(db, request)
@@ -558,8 +559,10 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
         summary = {
             "transactions_new": result.transactions_new,
             "transactions_unchanged": result.transactions_unchanged,
+            "transactions_linked": result.transactions_linked,
             "possible_duplicates": preview.count("possible_duplicate"),
             "duplicates_included": args.include_duplicates,
+            "possible_transfers": preview.count("possible_transfer"),
             "skipped": result.skipped,
             "skipped_by_reason": result.reasons(),
         }
@@ -569,6 +572,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             f"Imported {result.transactions_new} new, {result.transactions_unchanged} already "
             f"imported, {preview.count('possible_duplicate')} possible duplicate(s) "
             f"{'included' if args.include_duplicates else 'held back'}, "
+            f"{result.transactions_linked} transfer(s) linked, "
             f"{result.skipped} skipped",
         )
         return 0
@@ -2281,6 +2285,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--include-duplicates",
         action="store_true",
         help="also import rows matching an existing transaction on date and amount",
+    )
+    csv_cmd.add_argument(
+        "--link-transfers",
+        action="store_true",
+        help="complete each offered transfer instead of importing that row as new",
     )
     csv_cmd.add_argument("--preview", action="store_true", help="show rows; write nothing")
     csv_cmd.set_defaults(func=cmd_import_csv)

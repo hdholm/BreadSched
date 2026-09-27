@@ -56,7 +56,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    date/amount/encoding, holds back possible duplicates, keeps a stable source
    identity for re-import without recategorizing, and imports as one undo step.
    The web Import view and the GTK Import CSV Statement dialog map, preview, and
-   import CSV through the same service. Next: transfer review. Keep rule priority and conflicts
+   import CSV through the same service. Transfer review offers a row as the other
+   side of an uncategorized transaction already imported into another account and
+   links it only on explicit acceptance. Next: stable payees and reviewed
+   categorization rules. Keep rule priority and conflicts
    explainable; never silently recategorize previously accepted transactions.
    Offer entry autocomplete from earlier transactions as a visible, editable
    proposal that never commits without the user's save.

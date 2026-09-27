@@ -723,6 +723,13 @@ The preview lists every row with its status:
 - **possible duplicate** rows match a transaction already in that account on the
   same date and amount, for example one you typed in or imported from OFX. They
   are held back unless you add `--include-duplicates`;
+- **possible transfer** rows look like the other side of a transfer already
+  imported from another account's statement: the opposite amount, within three
+  days, still posted against **Uncategorized CSV** or **Uncategorized OFX**. The
+  reason names that account and date. Add `--link-transfers` to turn each pair into
+  one transfer between the two accounts; without it the row is imported as new and
+  the other transaction is left as it is. A transaction you have categorized is
+  never offered;
 - **invalid** rows give the line number and the reason, such as a date or amount
   that cannot be read, and are skipped.
 
@@ -749,7 +756,8 @@ In the desktop application, choose **File → Import CSV Statement…**. Choose 
 file; BreadSched reads its columns at once, shows the first rows, and suggests the
 mapping. Adjust the account, columns, and options, choose **Preview**, then
 **Import**. Clearing **First row is a header** rereads the file with numbered
-columns. Transfer review, payees, and categorization rules come next.
+columns. Both screens offer **Link possible transfers**, which does what
+`--link-transfers` does. Payees and categorization rules come next.
 
 ## Print, export, and inspect
 

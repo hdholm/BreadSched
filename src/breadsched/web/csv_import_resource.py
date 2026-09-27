@@ -80,6 +80,7 @@ def _request(payload: Mapping[str, Any]) -> CsvImportRequest:
         account=_text(payload, "account"),
         mapping=_mapping(payload),
         include_duplicates=_flag(payload, "include_duplicates", False),
+        link_transfers=_flag(payload, "link_transfers", False),
     )
 
 
@@ -120,6 +121,7 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
             "new": preview.count("new"),
             "imported": preview.count("imported"),
             "possible_duplicate": preview.count("possible_duplicate"),
+            "possible_transfer": preview.count("possible_transfer"),
             "invalid": preview.count("invalid"),
         },
         "rows": [
@@ -148,6 +150,8 @@ def csv_import(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         "already_imported": imported.result.transactions_unchanged,
         "possible_duplicates": imported.preview.count("possible_duplicate"),
         "duplicates_included": request.include_duplicates,
+        "possible_transfers": imported.preview.count("possible_transfer"),
+        "transfers_linked": imported.result.transactions_linked,
         "skipped": imported.result.skipped,
         "detail": imported.result.detail(limit=50),
     }
