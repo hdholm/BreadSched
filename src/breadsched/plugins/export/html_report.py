@@ -184,7 +184,9 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
     report = board.report_summary()
 
     def visible(field: str, value: Money) -> str:
-        return "Missing reporting-currency quote" if report[field] is None else _money(value)
+        if report[field] is None:
+            return board.unavailable_reason(field)
+        return _money(board.ledger_position if field == "net_worth" and not board.groups else value)
 
     cards = _cards(
         [
@@ -202,7 +204,7 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
             ),
             (
                 f"Emergency fund ({board.config.emergency_months} mo)",
-                _money(summary["emergency_fund"]),
+                visible("emergency_fund", summary["emergency_fund"]),
                 False,
             ),
             (
@@ -219,7 +221,7 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
                 "Months covered",
                 f"{summary['months_covered']:g}"
                 if report["months_covered"] is not None
-                else "Missing reporting-currency quote",
+                else board.unavailable_reason("months_covered"),
                 report["months_covered"] is not None
                 and summary["months_covered"] < board.config.emergency_months,
             ),

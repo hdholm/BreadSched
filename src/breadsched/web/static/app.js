@@ -3183,23 +3183,24 @@ async function showDashboard() {
   state.emergencyMonths = data.config.emergency_months;
 
   const short = s.emergency_shortfall !== null && Number(s.emergency_shortfall) > 0;
-  const dashboardMoney = (value) => value === null ? "Missing reporting-currency quote" : money(value);
+  const dashboardMoney = (field) => s[field] === null
+    ? data.unavailable_reasons[field] : money(s[field]);
   const tile = (label, value, alarm) => el("div", { class: "card" },
     el("div", { class: "label" }, label),
     el("div", { class: alarm ? "value neg" : "value" }, value));
 
   const cards = el("div", { class: "cards" },
-    tile("Net worth", dashboardMoney(s.net_worth)),
-    tile("Liquid", dashboardMoney(s.liquid)),
+    tile("Net worth", dashboardMoney("net_worth")),
+    tile("Liquid", dashboardMoney("liquid")),
     tile(`Needed in ${data.config.liquidity_days} days`, money(s.required_liquid)),
-    tile("Available", dashboardMoney(s.available), s.available !== null && Number(s.available) < 0),
-    tile(`Emergency fund (${data.config.emergency_months} mo)`, money(s.emergency_fund)),
+    tile("Available", dashboardMoney("available"), s.available !== null && Number(s.available) < 0),
+    tile(`Emergency fund (${data.config.emergency_months} mo)`, dashboardMoney("emergency_fund")),
     tile("Committed emergency outgoings / mo", money(s.emergency_monthly_outgoings)),
     tile("Including estimates / mo", money(s.emergency_monthly_outgoings_with_estimates)),
     tile("Months covered", s.months_covered === null
-      ? "Missing reporting-currency quote" : s.months_covered,
+      ? data.unavailable_reasons.months_covered : s.months_covered,
          s.months_covered !== null && Number(s.months_covered) < Number(data.config.emergency_months)),
-    short ? tile("Short of the fund", dashboardMoney(s.emergency_shortfall), true) : null);
+    short ? tile("Short of the fund", dashboardMoney("emergency_shortfall"), true) : null);
 
   const controls = el("div", { class: "row" },
     el("label", {}, "Liquid for "),

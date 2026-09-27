@@ -1483,8 +1483,10 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
 
         def shown(field: str, amount: Money) -> str:
             return (
-                "Missing reporting-currency quote"
+                board.unavailable_reason(field)
                 if report[field] is None
+                else board.ledger_position.format(parens_negative=True)
+                if field == "net_worth" and not board.groups and board.ledger_position is not None
                 else amount.format(parens_negative=True)
             )
 
@@ -1492,6 +1494,11 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             emit(
                 {
                     "summary": report,
+                    "unavailable_reasons": {
+                        key: board.unavailable_reason(key)
+                        for key, value in report.items()
+                        if value is None
+                    },
                     "missing_quotes": list(board.missing_quotes),
                     "liquid_missing_quotes": list(board.liquid_missing_quotes),
                     "groups": [
@@ -1609,11 +1616,11 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             ["Available", shown("available", summary["available"])],
             [
                 f"Emergency fund ({config.emergency_months} months)",
-                summary["emergency_fund"].format(),
+                shown("emergency_fund", summary["emergency_fund"]),
             ],
             [
                 "Months covered",
-                "Missing reporting-currency quote"
+                board.unavailable_reason("months_covered")
                 if report["months_covered"] is None
                 else f"{summary['months_covered']}",
             ],

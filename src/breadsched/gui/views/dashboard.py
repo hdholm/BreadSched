@@ -275,7 +275,8 @@ class DashboardView(BaseView):
         board = self.board
         assert board is not None
         summary = board.summary()
-        missing_fields = {key for key, value in board.report_summary().items() if value is None}
+        report = board.report_summary()
+        missing_fields = {key for key, value in report.items() if value is None}
         shortfall = summary["emergency_shortfall"]
 
         cards = [
@@ -304,10 +305,18 @@ class DashboardView(BaseView):
                 label
             )
             rendered = (
-                "Missing reporting-currency quote"
+                board.unavailable_reason(field)
                 if field in missing_fields
-                else amount.format(parens_negative=True)
+                else (
+                    board.ledger_position.format(parens_negative=True)
+                    if field == "net_worth"
+                    and not board.groups
+                    and board.ledger_position is not None
+                    else amount.format(parens_negative=True)
+                )
             )
+            if label.startswith("Emergency fund") and "emergency_fund" in missing_fields:
+                rendered = board.unavailable_reason("emergency_fund")
             self.cards.append(
                 _card(label, rendered, alarm if field not in missing_fields else False)
             )
@@ -318,7 +327,7 @@ class DashboardView(BaseView):
                 "Months covered",
                 f"{months:g}"
                 if "months_covered" not in missing_fields
-                else "Missing reporting-currency quote",
+                else board.unavailable_reason("months_covered"),
                 months < board.config.emergency_months and "months_covered" not in missing_fields,
             )
         )

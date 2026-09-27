@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **First-run Dashboard position and commitment state.** An ungrouped book
+  reports ledger-derived net worth only when every valuation is complete;
+  group asset/debt metrics disclose absent setup. A book without committed
+  outgoings leaves emergency fund, shortfall, and months covered unavailable
+  with an explicit reason across GTK, web, CLI, and print. Application version
+  `0.2.0a113`; native schema remains 7.
+
 - **Roadmap and documentation review.** Reprioritized installable Flatpak/Windows
   builds, first-run Dashboard truthfulness, and event-derived category remaining;
   specified batch due review, FX completion, payees/CSV, receivables, reporting,

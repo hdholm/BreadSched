@@ -102,6 +102,8 @@ def test_missing_quote_in_fallback_cash_suppresses_liquidity(db, book):
     board = dashboard.build(db, dashboard.DashboardConfig(), as_of=TODAY)
     assert board.liquid_missing_quotes == (account.handle,)
     assert board.report_summary()["available"] is None
+    assert board.report_summary()["net_worth"] is None
+    assert board.unavailable_reason("net_worth") == "Missing reporting-currency quote"
 
 
 @pytest.fixture
@@ -701,6 +703,27 @@ class TestLiquidityAndEmergencyFund:
 
 
 class TestConfiguration:
+    def test_first_run_uses_ledger_position_and_explains_missing_commitments(self, db, book):
+        from breadsched.plugins.export.html_report import dashboard_report
+
+        with db.transaction("Opening balance") as txn:
+            db.add_transaction(
+                Transaction.simple(TODAY, "Opening", book.checking, book.opening, "125.00"),
+                txn,
+            )
+        board = dashboard.build(db, as_of=TODAY)
+        report = board.report_summary()
+        assert board.groups == []
+        assert report["net_worth"] == Money(125)
+        assert report["assets"] is None
+        assert report["emergency_fund"] is None
+        assert report["months_covered"] is None
+        assert board.unavailable_reason("assets") == "Dashboard groups not configured"
+        assert board.unavailable_reason("months_covered") == "No committed outgoings"
+        html = dashboard_report(board)
+        assert "125.00" in html
+        assert "No committed outgoings" in html
+
     def test_the_config_round_trips_through_the_book(self, db, household):
         loaded = dashboard.DashboardConfig.load(db)
         assert [g.name for g in loaded.groups] == ["Cash", "Retirement", "Home Easton"]
@@ -764,6 +787,7 @@ class TestCli:
             "income",
             "missing_quotes",
             "liquid_missing_quotes",
+            "unavailable_reasons",
         }
 
     def test_the_horizons_can_be_overridden(self, tmp_path, capsys):
@@ -776,7 +800,8 @@ class TestCli:
         capsys.readouterr()
         cli(["dashboard", str(path), "--emergency-months", "12", "--json"])
         payload = json.loads(capsys.readouterr().out)
-        assert payload["summary"]["emergency_fund"] is not None
+        assert payload["summary"]["emergency_fund"] is None
+        assert payload["unavailable_reasons"]["emergency_fund"] == "No committed outgoings"
 
 
 class TestLoansPairWithTheirAssets:
