@@ -790,8 +790,13 @@ only one payee. The preview lists transactions that have no payee yet and writes
 nothing. Accepting assigns the payee in one undo step, and a transaction that
 already has a payee is never changed. Deleting a payee clears it from its
 transactions. Re-importing from GnuCash, OFX, QIF, or CSV keeps the payees you
-assigned. A payee field in the register and transaction editor, and
-categorization rules, come next.
+assigned.
+
+The register shows each transaction's payee. To set or change one directly, open
+the transaction in the desktop editor and choose it under **Payee** (or **(no
+payee)** to clear it); in the web register, choose it in the row's **Payee** list.
+The register filter in the desktop application also matches payee names.
+Categorization rules come next.
 
 ## Print, export, and inspect
 

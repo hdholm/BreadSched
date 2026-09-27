@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 from ..gen.services.payees import (
     SavePayee,
     apply_payee_proposals,
+    assign_payee,
     delete_payee,
     preview_payee_proposals,
     save_payee,
@@ -102,3 +103,13 @@ def payee_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     if result.value is None:
         raise api._service_resource_error(result.errors[0])
     return {"assigned": result.value.assigned, "unchanged": result.value.unchanged}
+
+
+def transaction_payee(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
+    """Set (or, with ``payee: null``, clear) one transaction's payee."""
+    result = assign_payee(
+        api.db, _text(payload, "transaction") or "", _text(payload, "payee", optional=True)
+    )
+    if result.value is None:
+        raise api._service_resource_error(result.errors[0])
+    return {"transaction": result.value.handle, "payee": result.value.payee}

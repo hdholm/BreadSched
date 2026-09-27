@@ -1050,8 +1050,13 @@ adapters over the same service: `web/payee_resource.py` serves `GET /api/payees`
 (payees with transaction counts, plus current proposals) and `POST /api/payee/save`,
 `/api/payee/delete`, and `/api/payees/accept`, and parses JSON only. Both list
 payees, add, rename, re-key, or delete one, and accept checked proposals in one
-step. Category rules, a payee field in the register and editor, and payee-based
-autocomplete build on this.
+step. `TransactionInput` carries `payee` with an explicit `set_payee` flag: the GTK
+transaction editor and web entry set or clear the payee through `save_transaction`
+(an unknown payee is refused as `payee.not_found`), while any editor that does not
+set the flag keeps the stored payee. The GTK register has a **Payee** column (and
+its filter matches payee names); the web register returns each row's `payee` and
+the book's payees, and its per-row picker calls `POST /api/transaction/payee`
+(`assign_payee`). Category rules and payee-based autocomplete build on this.
 
 ## Statement reconciliation
 

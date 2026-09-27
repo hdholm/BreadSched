@@ -233,6 +233,18 @@ class TransactionDialog(Gtk.Window):
         header.attach(Gtk.Label(label="Number", xalign=0), 0, 2, 1, 1)
         header.attach(self.num_entry, 1, 2, 1, 1)
 
+        # The payee is BreadSched's own reference; the description is never rewritten.
+        self.payees = list(db.iter_payees())
+        self.payee_picker = Gtk.DropDown.new_from_strings(
+            ["(no payee)", *(payee.name for payee in self.payees)]
+        )
+        current = transaction.payee if transaction is not None else None
+        handles = [payee.handle for payee in self.payees]
+        if current in handles:
+            self.payee_picker.set_selected(handles.index(current) + 1)
+        header.attach(Gtk.Label(label="Payee", xalign=0), 2, 2, 1, 1)
+        header.attach(self.payee_picker, 3, 2, 1, 1)
+
         self.notes_view = Gtk.TextView()
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.notes_view.set_size_request(-1, 64)
@@ -486,11 +498,17 @@ class TransactionDialog(Gtk.Window):
                 notes=self.notes_view.get_buffer().get_text(notes_start, notes_end, True).strip(),
                 currency=currency,
                 splits=tuple(splits),
+                payee=self._chosen_payee(),
+                set_payee=True,
             ),
             existing_handle=self.transaction.handle if self.transaction is not None else None,
             claim_attachment=attachment,
             source=self.transaction,
         )
+
+    def _chosen_payee(self) -> str | None:
+        selected = self.payee_picker.get_selected()
+        return self.payees[selected - 1].handle if 0 < selected <= len(self.payees) else None
 
     def build(self) -> Transaction:
         """Return the service-built preview used by editor interactions and tests."""

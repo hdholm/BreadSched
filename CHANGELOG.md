@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Payees in the register and editor.** The desktop register has a **Payee**
+  column and its filter matches payee names; the transaction editor has a **Payee**
+  choice that sets or clears it. The web register shows a payee picker on each row
+  (`POST /api/transaction/payee`), and web entry accepts an optional payee. Saving
+  through an editor that does not offer payees keeps the stored payee, and an
+  unknown payee is refused without writing. Application version `0.2.0a136`;
+  native schema remains 8.
+
 - **Payee screens.** The desktop **Actions → Payees…** dialog and the web **Payees**
   view list payees with their transaction counts, add, rename, re-key, or delete a
   payee, and show the current proposals with the matched key, each checked by

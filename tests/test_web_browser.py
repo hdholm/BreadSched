@@ -129,3 +129,26 @@ def test_payees_view_adds_a_payee_and_accepts_proposals(page, served):
     stored = db.get_transaction(transaction.handle)
     assert stored.payee is not None
     assert stored.description == transaction.description
+
+
+def test_register_payee_picker_sets_the_payee(page, served):
+    from breadsched.gen.services.payees import SavePayee, save_payee
+
+    db, _httpd = served
+    payee = save_payee(db, SavePayee("Known payee")).value
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Register", exact=True).first.click()
+    picker = page.locator("select[aria-label^='Payee for']").first
+    picker.wait_for()
+    label = picker.get_attribute("aria-label")
+    description = label.removeprefix("Payee for ")
+
+    picker.select_option(label="Known payee")
+    page.wait_for_selector("text=Payee saved.")
+
+    [transaction] = [
+        item
+        for item in db.iter_transactions()
+        if item.description == description and item.payee == payee.handle
+    ]
+    assert transaction.description == description

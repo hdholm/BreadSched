@@ -9,7 +9,13 @@ from urllib.parse import parse_qs
 
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
-from .payee_resource import payee_accept, payee_delete, payee_save, payees
+from .payee_resource import (
+    payee_accept,
+    payee_delete,
+    payee_save,
+    payees,
+    transaction_payee,
+)
 
 if TYPE_CHECKING:
     from .server import Api
@@ -262,6 +268,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/payee/save": payee_save,
     "/api/payee/delete": payee_delete,
     "/api/payees/accept": payee_accept,
+    "/api/transaction/payee": transaction_payee,
     "/api/due-review": _post("due_review_resolve"),
     "/api/post-scheduled": _post_without_body("post_scheduled"),
     "/api/scheduled/occurrences": _post("scheduled_occurrence_options"),
