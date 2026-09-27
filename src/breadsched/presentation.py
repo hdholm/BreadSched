@@ -107,6 +107,16 @@ _SERVICE_MESSAGES = {
     "import.format.unrecognized": "The file format is not recognised",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
+    "import.csv.account.invalid": "Choose a bank, cash, card, or other posting asset or liability",
+    "import.csv.column.not_found": "A mapped column is not in the CSV file",
+    "import.csv.amount.mapping": "Map either one amount column or debit and credit columns",
+    "import.csv.date_format.ambiguous": (
+        "Every date could be day-first or month-first; choose the date order"
+    ),
+    "import.csv.date_format.conflict": "The file mixes day-first and month-first dates",
+    "import.csv.number_format.conflict": "The file mixes decimal-point and decimal-comma amounts",
+    "import.csv.encoding.invalid": "The file cannot be read with the chosen encoding",
+    "import.csv.delimiter.invalid": "Use a single-character delimiter",
     "schedule.due.duplicate": "Decide each due occurrence only once",
     "schedule.due.not_found": "The schedule no longer exists",
     "schedule.due.not_pending": (
