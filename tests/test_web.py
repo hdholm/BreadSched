@@ -2590,6 +2590,40 @@ class TestCliIntegration:
 class TestDashboardApi:
     """The dashboard is the primary view; the browser gets the same figures."""
 
+    def test_imported_first_view_and_missing_cash_quote_explain_setup(self, client):
+        status, first = client.get("/api/dashboard")
+        assert status == 200
+        assert first["groups"] == []
+        assert first["summary"]["net_worth"] == "2400.00"
+        assert first["unavailable_reasons"]["assets"] == "Dashboard groups not configured"
+
+        assets = client.database.get_account_by_name("Assets")
+        income = client.database.get_account_by_name("Income")
+        assert assets is not None and income is not None
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        foreign_cash = Account(
+            name="Foreign cash",
+            atype=AccountType.BANK,
+            parent=assets.handle,
+            commodity=euro.handle,
+        )
+        entry = Transaction(post_date=date(2026, 1, 15), description="Foreign opening")
+        entry.currency = euro.handle
+        entry.splits = [Split(foreign_cash.handle, Money(10)), Split(income.handle, Money(-10))]
+        with client.database.transaction("Foreign cash") as txn:
+            client.database.add_commodity(euro, txn)
+            client.database.add_account(foreign_cash, txn)
+            client.database.add_transaction(entry, txn)
+
+        status, missing = client.get("/api/dashboard")
+        assert status == 200
+        for field in ("net_worth", "liquid", "available"):
+            assert missing["summary"][field] is None
+            assert missing["unavailable_reasons"][field] == "Missing reporting-currency quote"
+        assert missing["missing_quotes"] == [foreign_cash.handle]
+        assert missing["liquid_missing_quotes"] == [foreign_cash.handle]
+        assert missing["unavailable_reasons"]["months_covered"] == "No committed outgoings"
+
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200

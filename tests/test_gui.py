@@ -3306,6 +3306,47 @@ class TestDashboardView:
         window.show_category("dashboard")
         assert window.stack.get_visible_child_name() == "dashboard"
 
+    def test_imported_first_view_discloses_missing_cash_quote(
+        self, app, window, tmp_path, gnucash_sqlite_path
+    ):
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.lib import Commodity, Split
+
+        path = tmp_path / "imported.breadsched"
+        assert cli(["init", str(path)]) == 0
+        assert cli(["import", str(path), gnucash_sqlite_path.path]) == 0
+        app.open_book(str(path))
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        assert view.board.groups == []
+        assert view.board.report_summary()["net_worth"] == Money("2274.50")
+        assert any(item.name == "Monthly rent" for item in view.board.bills)
+
+        assets = app.db.get_account_by_name("Assets")
+        income = app.db.get_account_by_name("Income")
+        assert assets is not None and income is not None
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        foreign_cash = Account(
+            name="Foreign cash",
+            atype=AccountType.BANK,
+            parent=assets.handle,
+            commodity=euro.handle,
+        )
+        entry = Transaction(post_date=date(2026, 1, 15), description="Foreign opening")
+        entry.currency = euro.handle
+        entry.splits = [Split(foreign_cash.handle, Money(10)), Split(income.handle, Money(-10))]
+        with app.db.transaction("Foreign cash") as txn:
+            app.db.add_commodity(euro, txn)
+            app.db.add_account(foreign_cash, txn)
+            app.db.add_transaction(entry, txn)
+        view.schedule_refresh()
+        view.flush_refresh()
+        assert view.board.report_summary()["net_worth"] is None
+        assert view.board.report_summary()["liquid"] is None
+        assert view.board.missing_quotes == (foreign_cash.handle,)
+        assert view.board.unavailable_reason("net_worth") == "Missing reporting-currency quote"
+        assert any(item.name == "Monthly rent" for item in view.board.bills)
+
 
 class TestAccountEditor:
     """Accounts are managed in the interface, not only on the command line."""

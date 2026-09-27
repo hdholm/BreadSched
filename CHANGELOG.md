@@ -5,6 +5,12 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Imported-book Dashboard acceptance.** Synthetic GnuCash import coverage now
+  checks first-view ledger position and recurring rent, plus a missing foreign
+  cash quote that suppresses dependent totals while preserving commitments.
+  Shared, GTK, web, CLI, and printable paths are exercised. No runtime, version,
+  or native schema change.
+
 - **Opt-in expense rollover.** Expense Explorer can carry a completed period's
   surplus or deficit into the next selected period. Its visible Carry in, plan,
   actual through as-of, and Remaining form an inspectable bridge. A prior period

@@ -341,6 +341,11 @@ When there are no committed outgoings, Emergency fund and Months covered say
 Add schedules for known commitments and review Dashboard groups before relying on
 those figures. The synthetic sample book above provides a separate place to
 explore these controls.
+After importing a GnuCash book, Dashboard starts without invented groups. Its
+ungrouped Net worth uses imported posted balances, and supported imported schedules
+can appear as pending bills. Review the account groups and reporting-currency
+quotes before relying on liquid or emergency figures; an unvalued foreign cash
+balance makes dependent figures unavailable while the bill list remains visible.
 
 In the web Dashboard, a requested liquidity or emergency-fund horizon changes
 the displayed calculation for that request. Reopening the view uses the saved

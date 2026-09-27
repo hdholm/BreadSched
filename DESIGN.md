@@ -750,6 +750,11 @@ unavailable field, separating absent group setup and absent committed outgoings
 from missing currency quotes. Without recognized committed outgoings, emergency
 fund, shortfall, and months covered are unavailable rather than measured zeros.
 This does not estimate unscheduled household spending.
+The first-view contract is also exercised after synthetic GnuCash import: source
+accounts and posted splits supply ledger position before groups are configured,
+and an imported schedule still supplies the committed bill. A missing foreign
+cash quote then suppresses dependent monetary conclusions without hiding that
+schedule. The GTK, web, CLI, and print presentations consume this same result.
 
 Dashboard group names are account-style colon-delimited paths. The engine builds
 the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting
