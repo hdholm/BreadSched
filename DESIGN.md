@@ -727,6 +727,14 @@ cash-counterpart annotations on a retirement distribution count only once.
 
 ## Dashboard aggregation
 
+The synthetic learning book is generated on request by `gen.sample_book` into a
+new path; CLI is only its entry point. Its reference date anchors the previous
+month's balanced ledger transactions and next month's recurring Plan examples.
+It uses the normal schema, account, schedule, scenario, and Dashboard configuration
+APIs, so it does not require a special database format or contaminate a real book.
+Random object handles do not affect the reproducible account names, dates, amounts,
+or financial results. Existing paths are refused before opening.
+
 Dashboard position aggregation uses explicitly configured groups and account group
 assignments when present. Without any selected groups, a separate complete as-of
 valuation of ledger asset and liability accounts supplies Net worth; grouped asset

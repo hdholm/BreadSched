@@ -52,6 +52,7 @@ from ..gen.lib import (
     Transaction,
 )
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
+from ..gen.sample_book import create_sample_book
 from ..gen.services import (
     DeleteAccount,
     DeleteScenario,
@@ -252,6 +253,21 @@ def cmd_init(args: argparse.Namespace) -> int:
     db.set_metadata("book_name", Path(args.book).stem)
     db.close()
     emit({"book": args.book}, args, f"Created {args.book} with a top-level chart of accounts")
+    return 0
+
+
+def cmd_sample(args: argparse.Namespace) -> int:
+    """Create a clearly labeled, self-contained synthetic household book."""
+    target = Path(args.book)
+    if target.exists():
+        raise CommandError(f"{target} already exists")
+    reference = parse_date(args.as_of) or date.today()
+    create_sample_book(target, as_of=reference)
+    emit(
+        {"book": str(target), "synthetic": True, "reference_date": reference},
+        args,
+        f"Created synthetic sample book {target}; no real financial data",
+    )
     return 0
 
 
@@ -1906,6 +1922,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     init = add("init", "Create a new book with a starter chart of accounts")
     init.set_defaults(func=cmd_init)
+
+    sample = add("sample", "Create a synthetic household book for learning")
+    sample.add_argument("--as-of", help="reference date for sample events (YYYY-MM-DD)")
+    sample.set_defaults(func=cmd_sample)
 
     imp = add("import", "Import a GnuCash book")
     imp.add_argument("source", help="path to the GnuCash file")

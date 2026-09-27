@@ -60,6 +60,7 @@ current behavior, and the [roadmap](ROADMAP.md) tracks these improvements.
 pip install -e ".[gui,dev]"          # PyGObject + GTK 4 runtime are also required
 pytest                               # GUI tests skip when GTK is unavailable
 breadsched --help                    # command line
+breadsched sample sample.breadsched  # separate synthetic learning book
 breadsched-gtk household.breadsched  # GTK4 desktop interface
 breadsched web household.breadsched  # loopback browser interface
 ```
@@ -68,6 +69,11 @@ With no book argument, `breadsched-gtk` opens the start workflow for creating,
 opening, or importing a book. `breadsched gui` and `python -m breadsched.gui` are
 equivalent launcher forms. Do not expose the development web server on an untrusted
 network.
+
+The sample command creates a new book with generic household balances, transactions,
+Dashboard groups, recurring commitments, a Plan estimate, and a Base scenario. It
+refuses to replace an existing file. Use `--as-of YYYY-MM-DD` to reproduce its
+relative dates; see the [User Guide](src/breadsched/USER_GUIDE.md#synthetic-sample-book).
 
 For a pre-submit development check, run:
 
