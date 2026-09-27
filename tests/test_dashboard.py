@@ -727,6 +727,18 @@ class TestConfiguration:
         )
         assert complete.coverage_notes == ()
 
+        with db.transaction("Hidden cash") as txn:
+            hidden = Account(
+                name="Old cash", atype=AccountType.BANK, parent=book.assets, hidden=True
+            )
+            db.add_account(hidden, txn)
+            db.add_transaction(
+                Transaction.simple(TODAY, "Prior cash", hidden.handle, book.opening, "25"), txn
+            )
+        hidden_board = dashboard.build(db, config, as_of=TODAY)
+        assert "4 asset/liability accounts" in hidden_board.coverage_notes[0]
+        assert "2 cash-like accounts" in hidden_board.coverage_notes[1]
+
     def test_first_run_uses_ledger_position_and_explains_missing_commitments(self, db, book):
         from breadsched.plugins.export.html_report import dashboard_report
 

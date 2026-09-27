@@ -641,7 +641,6 @@ def build(
             for account in accounts.values()
             if account.account_class in (AccountClass.ASSET, AccountClass.LIABILITY)
             and not account.placeholder
-            and not account.hidden
             and not covered(account, selected)
         ]
         notes = []
@@ -662,7 +661,6 @@ def build(
                 for account in accounts.values()
                 if account.atype.is_cash_like
                 and not account.placeholder
-                and not account.hidden
                 and not covered(account, liquid_selected)
             ]
             if omitted_cash:
