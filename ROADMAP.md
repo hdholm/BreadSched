@@ -276,13 +276,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   Reject ambiguous mappings rather than inventing ledger accounts or balancing
   splits; preserve source rows and stable re-import identity for duplicate review.
 
-- Stop silently replacing local changes to imported transactions. Re-import
-  currently restores GnuCash's ledger facts and split reconcile state over
-  BreadSched edits and over BreadSched reconciliation of imported splits, leaving
-  a completed BreadSched reconciliation that no longer matches its splits. It only
-  counts these transactions as refreshed. As for imported accounts, either
-  refuse edits to source-owned transaction facts or report each replaced local change
-  for review. Decide the reconciliation ownership policy explicitly.
+- Extend the held-change review for locally reconciled transactions (#117) to
+  GnuCash deletions. A source-deleted transaction is retained only while a
+  BreadSched reconciliation or FSA claim refers to it, so one reconciled only in
+  GnuCash is removed without review. Decide whether such deletions should be held
+  with the same keep/use-GnuCash/decide-later choices.
 
 - Define a narrow GnuCash write-back contract for simple supported edits only.
   Begin with an opt-in preview of exact source changes, source version/conflict

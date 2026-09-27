@@ -2353,6 +2353,95 @@ class TestImportApi:
         assert payload["fields"] == ["number_format"]
 
 
+class TestImportReview:
+    """Issue #117: held GnuCash changes to reconciled transactions over HTTP."""
+
+    def test_held_changes_are_listed_and_resolved_atomically(self, client, tmp_path):
+        import sqlite3
+
+        from breadsched.gen.engine import import_review, ledger
+        from breadsched.gen.engine import reconciliation as reconcile_engine
+
+        db = client.database
+        source = tmp_path / "source.gnucash"
+        bank = db.get_account_by_name("Checking")
+        transactions = list(db.iter_transactions())
+        statement = max(item.post_date for item in transactions)
+        reconciliation = reconcile_engine.start(
+            db, bank.handle, statement, ledger.balance(db, bank.handle, statement)
+        )
+        reconcile_engine.set_selection(
+            db,
+            reconciliation.handle,
+            [s.handle for item in transactions for s in item.splits if s.account == bank.handle],
+        )
+        reconcile_engine.complete(db, reconciliation.handle)
+        rent = next(item for item in transactions if item.description == "Rent")
+        payroll = next(item for item in transactions if item.description == "Payroll")
+        with sqlite3.connect(source) as gnucash:
+            gnucash.execute(
+                "UPDATE transactions SET description='Rent (edited)' WHERE guid=?", (rent.handle,)
+            )
+            gnucash.execute(
+                "UPDATE splits SET value_num=value_num+100, quantity_num=quantity_num+100 "
+                "WHERE tx_guid=? AND value_num>0",
+                (payroll.handle,),
+            )
+            gnucash.execute(
+                "UPDATE splits SET value_num=value_num-100, quantity_num=quantity_num-100 "
+                "WHERE tx_guid=? AND value_num<0",
+                (payroll.handle,),
+            )
+
+        status, imported = client.post("/api/import", {"path": str(source)})
+        assert status == 200 and imported["held"] == 2
+        _status, listed = client.get("/api/import/review")
+        by_handle = {item["transaction"]: item for item in listed["changes"]}
+        assert by_handle[rent.handle]["changes"] == ["Description: Rent -> Rent (edited)"]
+        assert by_handle[rent.handle]["can_use_gnucash"] is True
+        assert by_handle[payroll.handle]["can_use_gnucash"] is False
+        assert by_handle[payroll.handle]["blocked_by"]
+
+        before = (
+            repr(db.get_transaction(rent.handle).serialize()),
+            db.get_metadata(import_review.REVIEW_KEY),
+        )
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/import/review",
+                {
+                    "decisions": [
+                        {"transaction": rent.handle, "decision": "use-source"},
+                        {"transaction": payroll.handle, "decision": "use-source"},
+                    ]
+                },
+            )
+        assert caught.value.code == 400
+        assert json.loads(caught.value.read())["code"] == "import.review.reconciliation_blocks"
+        assert (
+            repr(db.get_transaction(rent.handle).serialize()),
+            db.get_metadata(import_review.REVIEW_KEY),
+        ) == before
+
+        status, outcome = client.post(
+            "/api/import/review",
+            {
+                "decisions": [
+                    {"transaction": rent.handle, "decision": "use-source"},
+                    {"transaction": payroll.handle, "decision": "keep"},
+                ]
+            },
+        )
+        assert status == 200 and outcome == {"kept": 1, "applied": 1, "deferred": 0}
+        assert db.get_transaction(rent.handle).description == "Rent (edited)"
+        assert client.get("/api/import/review")[1] == {"changes": []}
+
+    def test_malformed_decision_is_rejected(self, client):
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/import/review", {"decisions": [{"decision": "guess"}]})
+        assert caught.value.code == 400
+
+
 class TestSafety:
     def test_only_named_static_assets_are_served(self, client, tmp_path, monkeypatch):
         from breadsched.web import transport

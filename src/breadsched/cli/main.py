@@ -58,7 +58,9 @@ from ..gen.services import (
     DeleteScenario,
     DeleteSchedule,
     DeleteTransaction,
+    HeldImportDecision,
     ImportBook,
+    ResolveHeldImports,
     ReviewOccurrence,
     ReviewTransaction,
     SaveAccount,
@@ -75,7 +77,9 @@ from ..gen.services import (
     import_book,
     mark_review_unexpected,
     match_review,
+    pending_import_changes,
     reject_review,
+    resolve_import_changes,
     save_account,
     save_scenario,
     save_scenario_assumptions,
@@ -312,6 +316,8 @@ def cmd_import(args: argparse.Namespace) -> int:
             "transactions_unchanged": result.transactions_unchanged,
             "transactions_removed": result.transactions_removed,
             "transactions_retained": result.transactions_retained,
+            "transactions_held": result.transactions_held,
+            "transactions_kept": result.transactions_kept,
             "splits": result.splits,
             "splits_new": result.splits_new,
             "splits_refreshed": result.splits_refreshed,
@@ -347,6 +353,69 @@ def cmd_import(args: argparse.Namespace) -> int:
         + _inference_note(suggestions, args.infer_apply),
     )
     return 0
+
+
+def cmd_import_review(args: argparse.Namespace) -> int:
+    """List or decide GnuCash changes held back from reconciled transactions."""
+    db = open_book(args.book)
+    try:
+        pending = pending_import_changes(db)
+        decisions: dict[str, HeldImportDecision] = {}
+        if args.keep_all:
+            decisions.update((item.transaction, HeldImportDecision.KEEP_LOCAL) for item in pending)
+        if args.use_gnucash_all:
+            decisions.update((item.transaction, HeldImportDecision.USE_SOURCE) for item in pending)
+        for references, decision in (
+            (args.keep, HeldImportDecision.KEEP_LOCAL),
+            (args.use_gnucash, HeldImportDecision.USE_SOURCE),
+        ):
+            for reference in references or ():
+                decisions[_find_transaction(db, reference).handle] = decision
+        if decisions:
+            resolved = resolve_import_changes(db, ResolveHeldImports(tuple(decisions.items())))
+            if not resolved.ok:
+                raise CommandError(service_error_message(resolved.errors[0]))
+            assert resolved.value is not None
+            outcome = resolved.value
+            emit(
+                {"kept": outcome.kept, "applied": outcome.applied, "deferred": outcome.deferred},
+                args,
+                f"Kept {outcome.kept} BreadSched version(s); "
+                f"applied {outcome.applied} GnuCash version(s)",
+            )
+            return 0
+        rows = [
+            [
+                item.post_date.isoformat(),
+                item.transaction[:8],
+                item.description,
+                "; ".join(item.changes),
+                ", ".join(item.blocked_by) or "-",
+            ]
+            for item in pending
+        ]
+        emit(
+            [
+                {
+                    "transaction": item.transaction,
+                    "date": item.post_date,
+                    "description": item.description,
+                    "source": item.source,
+                    "detected": item.detected,
+                    "changes": list(item.changes),
+                    "blocked_by": list(item.blocked_by),
+                    "can_use_gnucash": item.can_use_source,
+                }
+                for item in pending
+            ],
+            args,
+            table(rows, ["date", "transaction", "description", "GnuCash change", "reopen first"])
+            if rows
+            else "No GnuCash changes are held for reconciled transactions.",
+        )
+        return 0
+    finally:
+        db.close()
 
 
 def cmd_backup(args: argparse.Namespace) -> int:
@@ -1948,6 +2017,28 @@ def build_parser() -> argparse.ArgumentParser:
         help="apply confident suggestions rather than only listing them",
     )
     imp.set_defaults(func=cmd_import)
+
+    held = add(
+        "import-review",
+        "List or decide GnuCash changes held back from reconciled transactions",
+    )
+    held.add_argument(
+        "--keep",
+        action="append",
+        metavar="TRANSACTION",
+        help="keep the BreadSched version (repeatable; handle or unique prefix)",
+    )
+    held.add_argument(
+        "--use-gnucash",
+        action="append",
+        metavar="TRANSACTION",
+        help="apply the held GnuCash version (repeatable; handle or unique prefix)",
+    )
+    held.add_argument("--keep-all", action="store_true", help="keep every BreadSched version")
+    held.add_argument(
+        "--use-gnucash-all", action="store_true", help="apply every held GnuCash version"
+    )
+    held.set_defaults(func=cmd_import_review)
 
     backup = add("backup", "Create a consistent backup of a book")
     backup.add_argument("destination", help="path to write the backup")

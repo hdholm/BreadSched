@@ -272,6 +272,10 @@ Cancel leaves ledger splits unchanged and retains an audit record. The most rece
 completed statement can be reopened for correction; its entries return to Cleared
 until it balances and is finished again. Reopen later completed statements first.
 
+Reconciling imported GnuCash transactions is safe: re-import keeps their
+Reconciled state and holds any GnuCash change to them for review. See
+[Review GnuCash changes to reconciled transactions](#review-gnucash-changes-to-reconciled-transactions).
+
 ## Scheduled activity
 
 In the web Scheduled view, enter a name, category, funding account, amount, and
@@ -565,12 +569,19 @@ each period rather than recording the same activity in both.
 
 **While GnuCash remains the ledger of record:**
 
-- Enter, edit, delete, and reconcile transactions in GnuCash, then re-import.
-  For an imported transaction, re-import restores GnuCash's date, description,
-  number, accounts, amounts, memos, and reconcile state. A BreadSched edit to any
-  of those facts, or a BreadSched statement reconciliation of imported splits,
-  does not survive the next re-import. The import summary counts such a
-  transaction as refreshed but does not warn that a local change was replaced.
+- Enter, edit, and delete transactions in GnuCash, then re-import. For an imported
+  transaction with no split reconciled in BreadSched, re-import restores
+  GnuCash's date, description, number, accounts, amounts, memos, and reconcile
+  state. A BreadSched edit to those facts does not survive; the import summary
+  counts the transaction as refreshed.
+- You may reconcile statements in either application. A split reconciled in
+  BreadSched keeps its Reconciled state and statement date across re-import, even
+  though GnuCash still shows it unreconciled.
+- If GnuCash changes a transaction that has a split reconciled in BreadSched,
+  re-import leaves the transaction unchanged and holds the GnuCash version for
+  review (see below). Changes to its date, description, number, or currency, or
+  to a reconciled split's account, amount, quantity, memo, or action, are held.
+  Changes confined to its other splits apply normally.
 - Use BreadSched for planning work: account types and Dashboard groups, Plan
   matches and rejections, BreadSched notes, split planning/FSA/investment
   classifications, FSA claims, estimates, scenarios, and schedule planning
@@ -584,7 +595,29 @@ each period rather than recording the same activity in both.
 GnuCash book, run `breadsched verify` and `breadsched backup`, and from then on
 record activity only in BreadSched. Keep the GnuCash file as a read-only archive;
 importing a later GnuCash copy would restore GnuCash's values over any imported
-transactions you have since edited.
+unreconciled transactions you have since edited.
+
+### Review GnuCash changes to reconciled transactions
+
+When re-import holds GnuCash changes, the import summary reports how many. GTK
+offers the review after the import and whenever the book opens, before the
+review of due scheduled transactions. The web interface offers it after an
+import, when the page loads, and from **Review held GnuCash changes…** on the
+Import page. Each row lists the transaction and what GnuCash changed:
+
+- **Keep BreadSched version** leaves the transaction as reconciled. That GnuCash
+  version is not raised again; a later, different GnuCash change is.
+- **Use GnuCash version** applies the change, keeping BreadSched notes, Plan
+  links, and classifications. A split in a completed BreadSched statement stays
+  Reconciled when its account and amount are unchanged. If GnuCash would change
+  that split's account or amount, or remove it, the row names the statement
+  instead of offering this choice: reopen that statement first.
+- **Decide later**, the default, asks again next time.
+
+Choose **Apply** to commit all rows as one undo step; nothing is written if any
+row is refused. From the command line, `breadsched import-review BOOK` lists held
+changes, and `--keep`, `--use-gnucash`, `--keep-all`, or `--use-gnucash-all`
+apply decisions.
 
 QIF and OFX/QFX imports infer decimal and date conventions from whole-file evidence.
 When a format is ambiguous, select an explicit override in GTK, web, or an importer

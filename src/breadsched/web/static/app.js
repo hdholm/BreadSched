@@ -10,6 +10,7 @@ let state = {
   projectionComparison: null,
 };
 let historicalEstimateDialog = null;
+let importReviewDialog = null;
 
 const el = (tag, attrs = {}, ...kids) => {
   const node = document.createElement(tag);
@@ -1339,6 +1340,67 @@ async function openHistoricalEstimateDialog() {
     controls, body));
   document.body.append(backdrop);
   await load();
+}
+
+// GnuCash changes held back from transactions reconciled in BreadSched. Each row
+// is decided on its own and the batch is applied atomically by the shared service;
+// "Decide later" is the default, matching the desktop review.
+async function openImportReviewDialog() {
+  if (importReviewDialog?.isConnected) return;
+  const data = await get("/api/import/review");
+  if (!data.changes.length) return;
+  const backdrop = el("div", { class:"detail-backdrop" });
+  importReviewDialog = backdrop;
+  const close = () => {
+    backdrop.remove();
+    if (importReviewDialog === backdrop) importReviewDialog = null;
+  };
+  const labels = { keep:"Keep BreadSched version", "use-source":"Use GnuCash version",
+    later:"Decide later" };
+  const choosers = data.changes.map((item) => el("select", {
+    "aria-label":`Decision for ${item.description}`,
+  }, ...["keep", "use-source", "later"]
+    .filter((value) => value !== "use-source" || item.can_use_gnucash)
+    .map((value) => el("option", { value, selected:value === "later" ? "selected" : null },
+      labels[value]))));
+  const setAll = (value) => choosers.forEach((chooser) => {
+    if ([...chooser.options].some((option) => option.value === value)) chooser.value = value;
+  });
+  const rows = data.changes.map((item, index) => el("tr", {},
+    el("td", {}, item.date),
+    el("td", {}, item.description),
+    el("td", {}, el("ul", {}, ...item.changes.map((line) => el("li", {}, line)),
+      ...(item.blocked_by.length
+        ? [el("li", { class:"neg" }, `Reopen first: ${item.blocked_by.join(", ")}`)] : []))),
+    el("td", {}, choosers[index])));
+  const apply = async () => {
+    const decisions = data.changes
+      .map((item, index) => ({ transaction:item.transaction, decision:choosers[index].value }))
+      .filter((item) => item.decision !== "later");
+    try {
+      if (decisions.length) {
+        const outcome = await post("/api/import/review", { decisions });
+        say(`GnuCash changes: kept ${outcome.kept} BreadSched version(s), applied ${outcome.applied} GnuCash version(s).`);
+      }
+      close();
+      render();
+    } catch (error) { say(error.message, "error"); }
+  };
+  backdrop.append(el("section", { class:"detail-dialog wide" },
+    el("div", { class:"detail-heading" }, el("h2", {}, "GnuCash changes to reconciled transactions")),
+    el("p", { class:"note" }, `GnuCash changed ${data.changes.length} transaction(s) that are reconciled in BreadSched. They were left unchanged. Choose what to do with each.`),
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:()=>setAll("keep") },
+        "Keep all BreadSched versions"),
+      el("button", { class:"action", type:"button", onclick:()=>setAll("use-source") },
+        "Use GnuCash where possible"),
+      el("button", { class:"action", type:"button", onclick:()=>setAll("later") },
+        "Decide all later")),
+    table(["Date", "Transaction", "GnuCash change", "Action"], rows),
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:close }, "Decide later"),
+      el("button", { class:"action primary", type:"button", onclick:apply }, "Apply"))));
+  document.body.append(backdrop);
 }
 
 function openScheduledEditor(data, source) {
@@ -3059,6 +3121,7 @@ async function showImport() {
       }
       result.textContent = `${response.format}\n\n${response.detail}`;
       say("Import finished.");
+      if (response.held) await openImportReviewDialog();
     } catch (error) { say(error.message, "error"); }
   } },
     el("label", {}, "Choose a file from this browser", file),
@@ -3069,7 +3132,11 @@ async function showImport() {
   return el("div", {},
     el("p", { class:"note" }, "Choose a QIF, OFX, or GnuCash file (up to 32 MiB), or enter a path visible to the BreadSched process. Uploading the same filename again refreshes that source. Auto-detection is recommended; choose an explicit number or date format when the source is ambiguous."),
     el("p", { class:"note" },
-      "Re-importing GnuCash updates source-owned data and removes transactions deleted from the source. Transactions still used by a BreadSched reconciliation or FSA claim are retained and reported for review."),
+      "Re-importing GnuCash updates source-owned data and removes transactions deleted from the source. Transactions still used by a BreadSched reconciliation or FSA claim are retained and reported for review. GnuCash changes to a transaction reconciled in BreadSched are held for your decision."),
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button",
+        onclick:()=>openImportReviewDialog().catch((error)=>say(error.message, "error")) },
+        "Review held GnuCash changes…")),
     el("div", { class:"panel panel-pad-16" }, form, result));
 }
 
@@ -3320,3 +3387,5 @@ get("/api/summary").then((s) => {
 }).catch(() => {});
 document.getElementById("print-view").addEventListener("click", () => window.print());
 render();
+// Like the desktop, offer held GnuCash changes once when the book opens.
+openImportReviewDialog().catch(() => {});

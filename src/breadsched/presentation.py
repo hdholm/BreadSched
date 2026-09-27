@@ -107,6 +107,13 @@ _SERVICE_MESSAGES = {
     "import.format.unrecognized": "The file format is not recognised",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
+    "import.review.duplicate": "Decide each held GnuCash change only once",
+    "import.review.not_pending": "That GnuCash change is no longer awaiting review",
+    "import.review.missing": "The reconciled transaction no longer exists",
+    "import.review.reconciliation_blocks": (
+        "Reopen the completed statement before using the GnuCash version"
+    ),
+    "import.review.unbalanced": "The GnuCash version does not balance",
     "review.transaction.not_found": "The transaction no longer exists",
     "review.transaction.not_unresolved": "The transaction is no longer awaiting review",
     "review.occurrence.not_found": "The planned occurrence no longer exists",

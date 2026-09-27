@@ -40,6 +40,14 @@ from .expense_explorer import (
     MerchantGroup,
     query_expense_explorer,
 )
+from .import_review import (
+    HeldImportChange,
+    HeldImportDecision,
+    HeldImportResolution,
+    ResolveHeldImports,
+    pending_import_changes,
+    resolve_import_changes,
+)
 from .imports import ImportBook, ImportedBook, import_book
 from .loans import SavedLoan, SaveLoan, save_loan, validate_loan
 from .plan import (
@@ -150,7 +158,13 @@ __all__ = [
     "FixedSplitInput",
     "FormulaScheduleInput",
     "FormulaScenarioScheduleInput",
+    "HeldImportChange",
+    "HeldImportDecision",
+    "HeldImportResolution",
     "ImportBook",
+    "ResolveHeldImports",
+    "pending_import_changes",
+    "resolve_import_changes",
     "ImportedBook",
     "PlanComparison",
     "PlanQuery",

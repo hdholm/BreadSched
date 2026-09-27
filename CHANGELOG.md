@@ -5,6 +5,24 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Reconciled transactions survive GnuCash re-import (#117).** A split reconciled
+  in BreadSched keeps its Reconciled state and statement date when the book is
+  re-imported, so completed statements stay valid and reopenable. If GnuCash
+  changes a protected fact of a transaction that has a locally reconciled split,
+  the transaction is left unchanged and the GnuCash version is held. Protected
+  facts are the date, description, number, and currency, and the reconciled
+  split's account, amount, quantity, memo, action, or removal. A batched review,
+  like the due-schedule review, offers Keep BreadSched version, Use GnuCash
+  version, or Decide later (the default) for each change, and commits the batch
+  atomically as one undo step. GTK presents it when a book opens and after an
+  import; web adds `/api/import/review` and a review panel; the CLI adds
+  `import-review`. Use GnuCash version keeps BreadSched annotations, and is refused
+  until a completed statement whose split would change is reopened. Kept versions
+  are not raised again unless GnuCash changes the transaction again. Transactions
+  with no locally reconciled split are still overwritten on re-import. Held
+  versions live in book metadata. Application version `0.2.0a119`; native
+  schema remains 7.
+
 - **GnuCash coexistence guidance and entry-autocomplete planning.** The User
   Guide explains how to keep GnuCash and BreadSched side by side: record ledger
   facts in one ledger of record per period, and use BreadSched for planning state

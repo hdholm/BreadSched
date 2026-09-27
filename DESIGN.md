@@ -1041,19 +1041,8 @@ their own read-only field because BreadSched-authored transaction notes,
 plan-resolution/link state, rejected matches, and split planning/FSA classifications
 are retained across re-import. Split-level annotations are retained only when the
 same source split GUID still exists, so a materially replaced source split cannot
-inherit stale BreadSched state.
-
-The same boundary defines coexistence with a live GnuCash book. Transactions
-created in BreadSched have no source GUID. The deletion inventory never lists
-them, and import never writes them to GnuCash, so they persist across refreshes.
-Recording the same activity in both applications therefore duplicates it. Unlike
-imported accounts, imported transactions are not yet protected at edit time: a local
-change to a source-owned fact, including a BreadSched statement reconciliation of
-an imported split, is replaced on the next refresh and counted only as refreshed.
-The User Guide therefore asks users to choose one ledger of record per period.
-Edit-time protection or reporting of replaced changes is roadmap work. The
-coexistence contract has a SQLite acceptance test for restored ledger facts,
-and retained native transactions that never reach the source.
+inherit stale BreadSched state. Transactions with a split reconciled in BreadSched
+follow the narrower rule in *Locally reconciled imported transactions* below.
 
 Import reporting follows that ownership boundary. A successfully read source
 transaction is **new** when its stable identity is absent, **refreshed** when any
@@ -1106,6 +1095,42 @@ escrow holding; it preserves the reconciled state and emits a warning when an ev
 creates or worsens the shortfall. Exact imported GnuCash ledger facts remain source
 owned, while the locally selected Escrow account type remains BreadSched owned on
 re-import.
+
+### Locally reconciled imported transactions
+
+A statement reconciled in BreadSched is a durable local assertion about imported
+ledger facts, so the refresh rule above is narrowed for it. `gen.engine.import_review`
+owns the rule and the importer's shared sink applies it to SQLite and XML books:
+
+- The reconcile state and statement date of a split reconciled locally are
+  BreadSched-owned while its account, value, and quantity are unchanged. An
+  unchanged refresh therefore leaves completed BreadSched statements valid and
+  reopenable, even though GnuCash still reports those splits as unreconciled.
+- A refresh that changes a *protected* fact is withheld. Protected facts are the
+  transaction's date, description, number, and currency, and each locally
+  reconciled split's account, value, quantity, memo, and action, or its removal.
+  Changes confined to splits not reconciled locally, and read-only source notes,
+  apply as before. The withheld version is serialized with a fingerprint of its
+  source facts in the `import.reconciled_review` book metadata key, written inside
+  the import transaction so it is undoable and needs no schema change.
+- `gen.services.import_review` lists pending versions and applies one batch of
+  keep/use-source/later decisions atomically. Keeping records the fingerprint, so
+  the same source version is not raised again. Using the source version merges
+  BreadSched annotations as a normal refresh does. It is refused, before anything
+  is written, while a completed BreadSched statement selected a split whose
+  account, value, or quantity would change or disappear. Reopening that statement
+  first keeps `verify` and statement reopening consistent.
+- GTK presents the batch when a book opens (before the due-schedule review) and
+  after an import that held changes; web and CLI expose the same service.
+
+Transactions with no split reconciled locally keep the general rule: local edits to
+source-owned facts are replaced and counted as refreshed. Transactions created in
+BreadSched have no source GUID, are never listed in the deletion inventory, and are
+never written to GnuCash, so recording the same activity in both applications
+duplicates it. The User Guide therefore asks users to choose one ledger of record
+per period. SQLite acceptance tests cover restored facts for unreconciled
+transactions, native transactions that never reach the source, and the reconciled
+hold/keep/apply/refuse contract.
 
 ### Ambiguous import formats are user-resolvable
 

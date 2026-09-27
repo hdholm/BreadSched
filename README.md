@@ -108,7 +108,9 @@ explains them in detail.
 BreadSched is under active development and is not yet a complete GnuCash replacement.
 GnuCash import is one-way. If you keep using GnuCash, follow the User Guide's
 [side-by-side guidance](src/breadsched/USER_GUIDE.md#keep-gnucash-and-breadsched-side-by-side)
-to avoid duplicate or overwritten transactions.
+to avoid duplicate or overwritten transactions. Re-import keeps statements you
+reconcile in BreadSched and holds GnuCash changes to those transactions for a
+batched review.
 The current hardening phase prioritizes financial correctness, storage integrity,
 importer preservation, security, and realistic-book performance before another broad
 feature-expansion cycle.
