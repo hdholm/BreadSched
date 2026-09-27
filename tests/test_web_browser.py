@@ -31,7 +31,7 @@ def _chromium() -> str | None:
 
 
 @pytest.fixture
-def page(tmp_path):
+def served(tmp_path):
     book = tmp_path / "browser.breadsched"
     create_sample_book(book, as_of=date.today())
     db = DbSQLite()
@@ -39,22 +39,28 @@ def page(tmp_path):
     httpd = serve(db, host="127.0.0.1", port=0)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
-        with sync_api.sync_playwright() as playwright:
-            try:
-                browser = playwright.chromium.launch(executable_path=_chromium())
-            except Exception as exc:  # noqa: BLE001 - no usable browser here
-                pytest.skip(f"Chromium is not available: {exc}")
-            view = browser.new_page()
-            errors: list[str] = []
-            view.on("pageerror", lambda error: errors.append(str(error)))
-            view.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
-            yield view
-            browser.close()
-            assert errors == []
+        yield db, httpd
     finally:
         httpd.shutdown()
         httpd.server_close()
         db.close()
+
+
+@pytest.fixture
+def page(served):
+    _db, httpd = served
+    with sync_api.sync_playwright() as playwright:
+        try:
+            browser = playwright.chromium.launch(executable_path=_chromium())
+        except Exception as exc:  # noqa: BLE001 - no usable browser here
+            pytest.skip(f"Chromium is not available: {exc}")
+        view = browser.new_page(viewport={"width": 1280, "height": 1600})
+        errors: list[str] = []
+        view.on("pageerror", lambda error: errors.append(str(error)))
+        view.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
+        yield view
+        browser.close()
+        assert errors == []
 
 
 def test_dashboard_tables_have_rows_and_group_totals_are_amounts(page):
@@ -75,3 +81,30 @@ def test_dashboard_tables_have_rows_and_group_totals_are_amounts(page):
     totals = page.locator(".balance-group dd").all_inner_texts()
     assert totals and not any("NaN" in value for value in totals)
     assert page.locator("text=NaN").count() == 0
+
+
+def test_csv_statement_maps_previews_and_imports(page, served, tmp_path):
+    db, _httpd = served
+    statement = tmp_path / "statement.csv"
+    statement.write_text(
+        "Date,Description,Amount,Memo\n2026-09-01,Corner Grocer,-42.10,card\n"
+        "2026-09-02,Refund,5.00,\n",
+        encoding="utf-8",
+    )
+    before = len(list(db.iter_transactions()))
+    page.get_by_role("button", name="Import", exact=True).first.click()
+    page.wait_for_selector("text=CSV statement")
+    panel = page.locator("div.panel:has(h2:text('CSV statement'))")
+
+    panel.locator("input[type=file]").set_input_files(str(statement))
+    panel.get_by_role("button", name="Read columns").click()
+    page.wait_for_selector("text=Check the suggested columns")
+    assert panel.locator("tbody tr").count() == 2
+    panel.get_by_role("button", name="Preview").click()
+    page.wait_for_selector("text=New: 2")
+    assert panel.locator("tbody tr").first.locator("td").nth(4).inner_text() == "New"
+    assert len(list(db.iter_transactions())) == before
+
+    panel.locator("button.primary").click()
+    page.wait_for_selector("text=Already imported: 2")
+    assert len(list(db.iter_transactions())) == before + 2

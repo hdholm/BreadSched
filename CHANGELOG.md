@@ -5,6 +5,16 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Web CSV statement import.** The web Import view has a **CSV statement**
+  section: choose or upload the file, **Read columns** to see the detected encoding,
+  delimiter, and first rows with suggested column choices, choose the account and
+  options, **Preview** every row's status, then **Import** as one undo step. A new
+  `inspect_csv` service reads only the layout. A presentation adapter serves
+  `/api/import/csv/inspect`, `/api/import/csv/preview`, and `/api/import/csv`,
+  leaving validation and the write to the shared CSV service. A browser-uploaded
+  `.csv` is kept beside the book and its path returned without importing. Route
+  tests and a headless-browser test cover the flow. Application version `0.2.0a131`; native schema remains 7.
+
 - **Web Dashboard tables and group totals render again (#132).** The web
   **Pending bills** and **Expected income** tables (and the FSA Dashboard's year
   and claim tables) showed their cells as one run of raw text, including

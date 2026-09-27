@@ -734,8 +734,17 @@ could be read either day-first or month-first, the preview stops and asks for
 as a positive number. Run the same command without `--preview` to import; the whole
 import is one undo step. New rows are posted against **Uncategorized CSV** under
 Expenses or Income for you to categorize. Two identical rows on the same day remain
-two transactions. CSV import is available from the command line; GTK and web
-mapping screens, transfer review, payees, and categorization rules come next.
+two transactions.
+
+In the web interface, open **Import** and use the **CSV statement** section. Choose
+the file from the browser (it is kept beside the book in `<book>.uploads`) or enter
+a path, then choose **Read columns**. BreadSched shows the detected encoding and
+delimiter with the first rows and suggests columns from their headers; check each
+suggestion. Choose the account and any date order, decimal, or sign options, then
+**Preview** to see every row's status. **Import** writes the previewed rows as one
+undo step, and the preview refreshes to show them as already imported. The web
+screen uses the same rules as the command line. A GTK screen, transfer review,
+payees, and categorization rules come next.
 
 ## Print, export, and inspect
 

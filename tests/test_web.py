@@ -4138,3 +4138,132 @@ def test_review_ranks_likely_fsa_claim_first(client):
     assert claims[0]["handle"] == close["handle"]
     assert claims[0]["score"] > claims[1]["score"]
     assert "description match" in claims[0]["reason"]
+
+
+class TestCsvImport:
+    """Browser CSV mapping: inspect, preview, and import through the shared service."""
+
+    STATEMENT = "Date,Description,Amount\n2026-02-03,Corner Grocer,-42.10\n2026-02-04,Refund,5.00\n"
+
+    def _request(self, client, path, **extra):
+        checking = client.database.get_account_by_name("Checking")
+        return {
+            "path": str(path),
+            "account": checking.handle,
+            "mapping": {"date": "Date", "amount": "Amount", "description": "Description"},
+            **extra,
+        }
+
+    def test_inspect_preview_and_import(self, client, tmp_path):
+        path = tmp_path / "statement.csv"
+        path.write_text(self.STATEMENT, encoding="utf-8")
+
+        status, inspected = client.post("/api/import/csv/inspect", {"path": str(path)})
+        assert status == 200
+        assert inspected["columns"] == ["Date", "Description", "Amount"]
+        assert inspected["sample"][0] == ["2026-02-03", "Corner Grocer", "-42.10"]
+        assert (inspected["encoding"], inspected["delimiter"]) == ("utf-8", ",")
+
+        before = len(list(client.database.iter_transactions()))
+        status, preview = client.post("/api/import/csv/preview", self._request(client, path))
+        assert status == 200
+        assert set(preview) == {
+            "encoding",
+            "delimiter",
+            "date_format",
+            "number_format",
+            "columns",
+            "counts",
+            "rows",
+        }
+        assert preview["counts"] == {
+            "new": 2,
+            "imported": 0,
+            "possible_duplicate": 0,
+            "invalid": 0,
+        }
+        assert preview["rows"][0] == {
+            "line": 2,
+            "date": "2026-02-03",
+            "amount": "-42.10",
+            "description": "Corner Grocer",
+            "memo": "",
+            "status": "new",
+            "reason": "",
+        }
+        assert len(list(client.database.iter_transactions())) == before
+
+        status, imported = client.post("/api/import/csv", self._request(client, path))
+        assert status == 200
+        assert imported["new"] == 2 and imported["already_imported"] == 0
+        assert len(list(client.database.iter_transactions())) == before + 2
+
+        status, again = client.post("/api/import/csv/preview", self._request(client, path))
+        assert again["counts"]["imported"] == 2
+
+    def test_possible_duplicate_needs_explicit_inclusion(self, client, tmp_path):
+        path = tmp_path / "rent.csv"
+        # The fixture book already has Rent -1800.00 in Checking on 2026-01-02.
+        path.write_text("Date,Description,Amount\n2026-01-02,Rent,-1800.00\n", encoding="utf-8")
+        before = len(list(client.database.iter_transactions()))
+
+        _status, preview = client.post("/api/import/csv/preview", self._request(client, path))
+        assert preview["rows"][0]["status"] == "possible_duplicate"
+        _status, held = client.post("/api/import/csv", self._request(client, path))
+        assert held["new"] == 0 and held["possible_duplicates"] == 1
+        assert len(list(client.database.iter_transactions())) == before
+
+        _status, included = client.post(
+            "/api/import/csv", self._request(client, path, include_duplicates=True)
+        )
+        assert included["new"] == 1
+
+    def test_rejected_requests_leave_the_book_unchanged(self, client, tmp_path):
+        path = tmp_path / "ambiguous.csv"
+        path.write_text("Date,Amount\n01/02/2026,-1.00\n", encoding="utf-8")
+        good = tmp_path / "good.csv"
+        good.write_text(self.STATEMENT, encoding="utf-8")
+        before = sorted(item.handle for item in client.database.iter_transactions())
+        income = client.database.get_account_by_name("Salary")
+
+        rejected = [
+            ({"path": str(path)}, "import.csv.date_format.ambiguous", {"description": None}),
+            ({"path": str(good), "account": income.handle}, "import.csv.account.invalid", {}),
+            ({"path": str(tmp_path / "missing.csv")}, "import.source.not_found", {}),
+            ({"path": str(good)}, "import.csv.column.not_found", {"amount": "Total"}),
+        ]
+        for override, code, mapping in rejected:
+            request = self._request(client, good)
+            request.update(override)
+            request["mapping"] = {
+                key: value
+                for key, value in {**request["mapping"], **mapping}.items()
+                if value is not None
+            }
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/import/csv", request)
+            assert caught.value.code in (400, 404)
+            assert json.loads(caught.value.read())["code"] == code
+
+        for malformed in (
+            {**self._request(client, good), "mapping": "Date"},
+            {**self._request(client, good), "include_duplicates": "yes"},
+            {**self._request(client, good), "mapping": {"date": "Date", "amount": 3}},
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/import/csv", malformed)
+            assert caught.value.code == 400
+        assert sorted(item.handle for item in client.database.iter_transactions()) == before
+
+    def test_uploaded_csv_is_stored_for_mapping_not_imported(self, client):
+        before = len(list(client.database.iter_transactions()))
+
+        status, uploaded = client.upload("bank.csv", self.STATEMENT.encode("utf-8"))
+
+        assert status == 200
+        assert uploaded["format"] == "csv"
+        assert len(list(client.database.iter_transactions())) == before
+        _status, preview = client.post(
+            "/api/import/csv/preview", self._request(client, uploaded["path"])
+        )
+        assert preview["counts"]["new"] == 2
