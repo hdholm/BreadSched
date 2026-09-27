@@ -5,6 +5,17 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Web Dashboard tables and group totals render again (#132).** The web
+  **Pending bills** and **Expected income** tables (and the FSA Dashboard's year
+  and claim tables) showed their cells as one run of raw text, including
+  `[object HTMLSpanElement]`. The shared `table()` helper inserted arrays of
+  values where rows belong; it now builds a row of cells from each array. Balance
+  group **Total** and **Equity** read `NaN` because a formatter for summary field
+  names was given an amount; they now show the amount, or "Unavailable". The JSON
+  API was already correct. A new headless-browser test (skipped without
+  Playwright) and a static guard cover both. Application version `0.2.0a130`;
+  native schema remains 7.
+
 - **OFX and QIF re-import keeps the user's categories (#129).** Re-importing an
   OFX/QFX or QIF statement rebuilt every transaction from the file. A transaction
   moved from **Uncategorized OFX** (or an uncategorized QIF record) to a real

@@ -609,6 +609,12 @@ target account on the same date and value, outside the row's own identity family
 The shared service in `gen/services/csv_import.py` validates the file and account
 before any read.
 
+The web `table()` helper accepts `<tr>` elements or arrays of cell values; an array
+row becomes one `<tr>` whose cells follow the header's numeric alignment. Views
+therefore cannot leak loose text into a `<tbody>`. `tests/test_web_browser.py`
+renders the Dashboard in headless Chromium, where available, to check real rows and
+formatted group totals.
+
 OFX and QIF statements own only their source account's side of a transaction.
 `ImportSink.keep_local_categories` gives an existing transaction's counterpart
 splits, including their split identities, to the refreshed record, so a

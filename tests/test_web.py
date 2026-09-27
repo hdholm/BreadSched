@@ -266,6 +266,14 @@ class TestItServes:
         assert "innerHTML" not in script
         assert 'createElementNS("http://www.w3.org/2000/svg"' in script
 
+    def test_tables_accept_value_rows_and_group_totals_format_amounts(self, client):
+        """Issue #132 guard for runtimes without a browser (see test_web_browser.py)."""
+        _status, body, _headers = client.raw("/app.js")
+        script = body.decode("utf-8")
+
+        assert "Array.isArray(row)" in script
+        assert "dashboardMoney(g.equity === null ? g.total : g.equity)" not in script
+
     def test_accounts_offer_read_only_imported_metadata_details(self, client):
         _status, body, _headers = client.raw("/app.js")
         page = body.decode("utf-8")
