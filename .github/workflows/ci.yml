@@ -169,7 +169,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$HOME/Documents"
+          mkdir -p "$HOME/.config" "$HOME/Documents"
+          printf 'XDG_DOCUMENTS_DIR="$HOME/Documents"\n' > "$HOME/.config/user-dirs.dirs"
+          export XDG_DOCUMENTS_DIR="$HOME/Documents"
           work_dir=$(mktemp -d "$HOME/Documents/breadsched-flatpak.XXXXXX")
           trap 'rm -rf "$work_dir"' EXIT
           app=org.breadsched.BreadSched
@@ -183,6 +185,14 @@ jobs:
             flatpak run --user --unshare=network --command=breadsched "$app" "$@"
           }
 
+          flatpak run --user --unshare=network --command=python3 "$app" -c '
+          import os
+          import sys
+          print("sandbox Documents:", os.environ.get("XDG_DOCUMENTS_DIR"))
+visible = os.path.isdir(sys.argv[1])
+print("workflow directory visible:", visible)
+assert visible, f"Documents directory is not exposed inside Flatpak: {sys.argv[1]}"
+          ' "$work_dir"
           run_offline sample "$book" --as-of 2026-09-15
           run_offline verify "$book"
           run_offline dashboard "$book" --as-of 2026-09-15 --json > "$work_dir/dashboard.json"
