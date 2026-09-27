@@ -607,7 +607,13 @@ the refreshing `ImportSink.transaction` path, so a category chosen after import 
 never reverted. A possible duplicate is another transaction with a split in the
 target account on the same date and value, outside the row's own identity family.
 The shared service in `gen/services/csv_import.py` validates the file and account
-before any read.
+before any read. `inspect_csv` reports only the detected encoding, delimiter,
+columns, and first rows for choosing a mapping. The web adapter
+`web/csv_import_resource.py` parses JSON into a `CsvImportRequest` and translates
+results; `/api/import/csv/inspect`, `/api/import/csv/preview`, and
+`/api/import/csv` never validate or write outside the service. A browser upload of a
+`.csv` file is staged under the book's uploads directory and returns its path
+without importing, because a CSV needs a mapping first.
 
 The web `table()` helper accepts `<tr>` elements or arrays of cell values; an array
 row becomes one `<tr>` whose cells follow the header's numeric alignment. Views

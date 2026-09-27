@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
+from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
 
 if TYPE_CHECKING:
@@ -253,6 +254,9 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/reconciliation/reopen": _post("reconciliation_reopen"),
     "/api/import": _post("import_local"),
     "/api/import/review": _post("import_review_resolve"),
+    "/api/import/csv/inspect": csv_inspect,
+    "/api/import/csv/preview": csv_preview,
+    "/api/import/csv": csv_import,
     "/api/due-review": _post("due_review_resolve"),
     "/api/post-scheduled": _post_without_body("post_scheduled"),
     "/api/scheduled/occurrences": _post("scheduled_occurrence_options"),

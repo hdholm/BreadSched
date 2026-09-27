@@ -38,7 +38,7 @@ def import_upload(
     # Keep the extension for importer detection; the digest prevents filename
     # traversal and keeps a stable identity for the same browser-selected name.
     suffix = Path(filename).suffix.lower()
-    if suffix not in {".qif", ".ofx", ".qfx", ".gnucash", ".xml", ".sqlite", ".db"}:
+    if suffix not in {".qif", ".ofx", ".qfx", ".gnucash", ".xml", ".sqlite", ".db", ".csv"}:
         raise ResourceError(400, "import.format.unrecognized", ("filename",))
     directory = book.parent / f"{book.name}.uploads"
     directory.mkdir(mode=0o700, exist_ok=True)
@@ -54,6 +54,10 @@ def import_upload(
             tmp.write(content)
         os.replace(staged, target)
         staged = None
+        if suffix == ".csv":
+            # A CSV statement needs a column mapping before anything is imported;
+            # keep it and return its path for inspect, preview, and import.
+            return {"format": "csv", "path": str(target)}
         try:
             return api.import_local(
                 {

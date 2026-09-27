@@ -3167,6 +3167,118 @@ async function showEntry() {
 }
 
 
+async function csvImportPanel() {
+  const accounts = (await get("/api/accounts")).filter((item) =>
+    !item.placeholder && (item.class === "asset" || item.class === "liability"));
+  const file = el("input", { type:"file", accept:".csv,text/csv" });
+  const path = el("input", { placeholder:"/path/to/statement.csv" });
+  const account = el("select", {}, ...accounts.map((item) =>
+    el("option", { value:item.handle }, item.full_name)));
+  const columnSelect = () => el("select", {}, el("option", { value:"" }, "(none)"));
+  const fields = {
+    date: columnSelect(), amount: columnSelect(), debit: columnSelect(),
+    credit: columnSelect(), description: columnSelect(), memo: columnSelect(),
+  };
+  const dateFormat = el("select", {},
+    ...[["auto","Detect date order"],["iso","Year first (YYYY-MM-DD)"],
+      ["month-first","Month first (MM/DD/YYYY)"],["day-first","Day first (DD/MM/YYYY)"]]
+      .map(([value, label]) => el("option", { value }, label)));
+  const numberFormat = el("select", {},
+    ...[["auto","Detect decimal separator"],["dot","Period decimal (1,234.56)"],
+      ["comma","Comma decimal (1.234,56)"]]
+      .map(([value, label]) => el("option", { value }, label)));
+  const header = el("input", { type:"checkbox", checked:"checked" });
+  const invert = el("input", { type:"checkbox" });
+  const duplicates = el("input", { type:"checkbox" });
+  const layout = el("p", { class:"note" });
+  const preview = el("div", {});
+  let source = "";
+  const request = () => ({
+    path: source,
+    account: account.value,
+    include_duplicates: duplicates.checked,
+    mapping: {
+      ...Object.fromEntries(Object.entries(fields).map(([key, select]) => [key, select.value])),
+      date_format: dateFormat.value, number_format: numberFormat.value,
+      header: header.checked, invert: invert.checked,
+    },
+  });
+  const guess = (columns, patterns) => columns.find((name) =>
+    patterns.some((pattern) => pattern.test(name))) || "";
+  const inspect = async () => {
+    if (file.files.length) {
+      const query = new URLSearchParams({ filename:file.files[0].name });
+      const upload = await fetch(`/api/import/upload?${query}`, {
+        method:"POST", headers:{ ...apiHeaders(), "Content-Type":"application/octet-stream" },
+        body:file.files[0],
+      });
+      const payload = await upload.json();
+      if (!upload.ok) throw new Error(payload.error || upload.statusText);
+      source = payload.path;
+    } else {
+      source = path.value.trim();
+      if (!source) throw new Error("Choose a CSV file or enter a local path.");
+    }
+    const data = await post("/api/import/csv/inspect", { path:source, header:header.checked });
+    for (const select of Object.values(fields)) {
+      select.replaceChildren(el("option", { value:"" }, "(none)"),
+        ...data.columns.map((name) => el("option", { value:name }, name)));
+    }
+    fields.date.value = guess(data.columns, [/date/i, /datum/i]);
+    fields.amount.value = guess(data.columns, [/^amount$/i, /betrag/i, /amount/i]);
+    fields.debit.value = fields.amount.value ? "" : guess(data.columns, [/debit/i, /withdraw/i]);
+    fields.credit.value = fields.amount.value ? "" : guess(data.columns, [/credit/i, /deposit/i]);
+    fields.description.value = guess(data.columns, [/desc/i, /payee/i, /name/i, /merchant/i]);
+    fields.memo.value = guess(data.columns, [/memo/i, /note/i, /reference/i]);
+    layout.textContent = `Read as ${data.encoding} with delimiter "${data.delimiter}". `
+      + "Check the suggested columns, then preview.";
+    preview.replaceChildren(table(data.columns, data.sample));
+  };
+  const showPreview = async () => {
+    const data = await post("/api/import/csv/preview", request());
+    const labels = { new:"New", imported:"Already imported",
+      possible_duplicate:"Possible duplicate", invalid:"Invalid" };
+    layout.textContent = `${data.encoding}, delimiter "${data.delimiter}", `
+      + `${data.date_format} dates, ${data.number_format} decimals. `
+      + Object.entries(data.counts).map(([key, count]) => `${labels[key]}: ${count}`).join(" · ");
+    preview.replaceChildren(table(["Line", "Date", {label:"Amount",num:true},
+      "Description", "Status", "Reason"], data.rows.map((row) => [
+      String(row.line), row.date || "", row.amount === null ? "" : money(row.amount),
+      row.description, labels[row.status], row.reason])));
+  };
+  const run = (action) => async () => {
+    try { await action(); } catch (error) { say(error.message, "error"); }
+  };
+  return el("div", { class:"panel panel-pad-16" },
+    el("h2", {}, "CSV statement"),
+    el("p", { class:"note" },
+      "Choose the statement and its account, map the columns, and preview. Nothing is "
+      + "written until you import. Re-importing the same rows adds nothing and keeps any "
+      + "category you chose. A row matching a transaction already in the account on the same "
+      + "date and amount is held back unless you include possible duplicates."),
+    el("form", { class:"entry", onsubmit:(event) => event.preventDefault() },
+      el("label", {}, "Choose a CSV file", file),
+      el("label", {}, "Or enter a path visible to BreadSched", path),
+      el("label", {}, el("span", {}, "First row is a header "), header),
+      el("button", { class:"action", type:"button", onclick:run(inspect) }, "Read columns"),
+      el("label", {}, "Account", account),
+      ...Object.entries(fields).map(([key, select]) =>
+        el("label", {}, `${key[0].toUpperCase()}${key.slice(1)} column`, select)),
+      el("label", {}, "Date order", dateFormat),
+      el("label", {}, "Number format", numberFormat),
+      el("label", {}, el("span", {}, "Money out is shown positive "), invert),
+      el("label", {}, el("span", {}, "Include possible duplicates "), duplicates),
+      el("button", { class:"action", type:"button", onclick:run(showPreview) }, "Preview"),
+      el("button", { class:"action primary", type:"button", onclick:run(async () => {
+        const result = await post("/api/import/csv", request());
+        say(`Imported ${result.new} new; ${result.already_imported} already imported; `
+          + `${result.possible_duplicates} possible duplicate(s) `
+          + `${result.duplicates_included ? "included" : "held back"}; ${result.skipped} skipped.`);
+        await showPreview();
+      }) }, "Import")),
+    layout, preview);
+}
+
 async function showImport() {
   const defaults = await get("/api/import");
   const file = el("input", { type:"file", accept:".qif,.ofx,.qfx,.gnucash,.xml,.sqlite,.db" });
@@ -3201,6 +3313,11 @@ async function showImport() {
         if (!data.path.trim()) throw new Error("Choose a file or enter a local path.");
         response = await post("/api/import", data);
       }
+      if (response.format === "csv") {
+        say("CSV statements need a column mapping; use the CSV statement section below.",
+          "error");
+        return;
+      }
       result.textContent = `${response.format}\n\n${response.detail}`;
       say("Import finished.");
       if (response.held) await openImportReviewDialog();
@@ -3219,7 +3336,8 @@ async function showImport() {
       el("button", { class:"action", type:"button",
         onclick:()=>openImportReviewDialog().catch((error)=>say(error.message, "error")) },
         "Review held GnuCash changes…")),
-    el("div", { class:"panel panel-pad-16" }, form, result));
+    el("div", { class:"panel panel-pad-16" }, form, result),
+    await csvImportPanel());
 }
 
 async function showVerify() {

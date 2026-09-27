@@ -34,11 +34,13 @@ LOG = get_logger(__name__)
 
 __all__ = [
     "CsvDateFormat",
+    "CsvInspection",
     "CsvMapping",
     "CsvMappingError",
     "CsvPreview",
     "CsvRow",
     "import_rows",
+    "inspect_statement",
     "read_statement",
 ]
 
@@ -204,6 +206,52 @@ def _parse_date(raw: str, date_format: CsvDateFormat) -> date:
         raise ValueError(f"unrecognised date {raw!r}") from exc
 
 
+def _load_records(source: Path, encoding: str, delimiter: str) -> tuple[list[list[str]], str, str]:
+    text, chosen_encoding = _decode(source.read_bytes(), encoding)
+    # Windows and classic Mac exports end lines, including those inside quoted
+    # fields, with CR LF or CR; normalize so a row reads (and is identified) the
+    # same whichever platform wrote the file.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    chosen_delimiter = _delimiter(text, delimiter)
+    records = list(csv.reader(text.splitlines(keepends=True), delimiter=chosen_delimiter))
+    return records, chosen_encoding, chosen_delimiter
+
+
+@dataclass(frozen=True, slots=True)
+class CsvInspection:
+    """Detected layout and the first rows, for choosing a column mapping."""
+
+    encoding: str
+    delimiter: str
+    columns: tuple[str, ...]
+    sample: tuple[tuple[str, ...], ...]
+
+
+def inspect_statement(
+    path: str | Path,
+    *,
+    encoding: str = "auto",
+    delimiter: str = "auto",
+    header: bool = True,
+    limit: int = 5,
+) -> CsvInspection:
+    """Read only the layout: detected encoding and delimiter, columns, and sample rows."""
+    records, chosen_encoding, chosen_delimiter = _load_records(Path(path), encoding, delimiter)
+    records = [row for row in records if any(value.strip() for value in row)]
+    headers = records[0] if header and records else []
+    body = records[1:] if header else records
+    width = max((len(row) for row in body), default=len(headers))
+    columns = tuple(item.strip() for item in headers) or tuple(
+        str(index) for index in range(1, width + 1)
+    )
+    return CsvInspection(
+        chosen_encoding,
+        chosen_delimiter,
+        columns,
+        tuple(tuple(row) for row in body[:limit]),
+    )
+
+
 def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMapping) -> CsvPreview:
     """Parse and classify every row against the book, without writing anything."""
     if mapping.amount and (mapping.debit or mapping.credit):
@@ -215,13 +263,7 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
             "import.csv.amount.mapping", "map an amount column or debit/credit columns"
         )
     source = Path(path)
-    text, encoding = _decode(source.read_bytes(), mapping.encoding)
-    # Windows and classic Mac exports end lines, including those inside quoted
-    # fields, with CR LF or CR; normalize so a row reads (and is identified) the
-    # same whichever platform wrote the file.
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-    delimiter = _delimiter(text, mapping.delimiter)
-    records = [row for row in csv.reader(text.splitlines(keepends=True), delimiter=delimiter)]
+    records, encoding, delimiter = _load_records(source, mapping.encoding, mapping.delimiter)
     first_line = 1
     headers: list[str] = []
     if mapping.header:

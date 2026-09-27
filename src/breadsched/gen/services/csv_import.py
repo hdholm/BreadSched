@@ -11,10 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from ...plugins.importer.csv_import import (
+    CsvInspection,
     CsvMapping,
     CsvMappingError,
     CsvPreview,
     import_rows,
+    inspect_statement,
     read_statement,
 )
 from ...plugins.importer.gnucash_common import ImportResult
@@ -25,8 +27,11 @@ from .contracts import ServiceError, ServiceResult
 __all__ = [
     "CsvImportRequest",
     "CsvImported",
+    "CsvInspection",
     "CsvMapping",
+    "InspectCsv",
     "import_csv",
+    "inspect_csv",
     "preview_csv_import",
 ]
 
@@ -56,8 +61,16 @@ class CsvImported:
     result: ImportResult
 
 
-def _validate(db: DbSQLite, request: CsvImportRequest) -> ServiceError | Path:
-    raw = request.source.strip()
+@dataclass(frozen=True, slots=True)
+class InspectCsv:
+    source: str
+    encoding: str = "auto"
+    delimiter: str = "auto"
+    header: bool = True
+
+
+def _source(raw_source: str) -> ServiceError | Path:
+    raw = raw_source.strip()
     if not raw:
         return ServiceError("import.source.required", ("source",))
     source = Path(raw).expanduser()
@@ -65,6 +78,30 @@ def _validate(db: DbSQLite, request: CsvImportRequest) -> ServiceError | Path:
         return ServiceError("import.source.not_found", ("source",))
     if not source.is_file():
         return ServiceError("import.source.not_file", ("source",))
+    return source
+
+
+def inspect_csv(request: InspectCsv) -> ServiceResult[CsvInspection]:
+    """Show the detected layout and first rows so the user can map columns."""
+    checked = _source(request.source)
+    if isinstance(checked, ServiceError):
+        return ServiceResult.failure(checked)
+    try:
+        inspection = inspect_statement(
+            checked,
+            encoding=request.encoding,
+            delimiter=request.delimiter,
+            header=request.header,
+        )
+    except CsvMappingError as exc:
+        return ServiceResult.failure(ServiceError(exc.code, _FIELDS.get(exc.code, ())))
+    return ServiceResult.success(inspection)
+
+
+def _validate(db: DbSQLite, request: CsvImportRequest) -> ServiceError | Path:
+    source = _source(request.source)
+    if isinstance(source, ServiceError):
+        return source
     account = db.get_account(request.account)
     if (
         account is None
