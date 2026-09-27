@@ -451,8 +451,9 @@ currency before any Plan value is added up. Each currency uses one exchange rate
 the latest one recorded on or before the as-of date. A direct rate (for example
 EUR→USD) is preferred; otherwise the reverse rate (USD→EUR) is inverted. A note
 under the Plan summary, in the web Plan, in print, and after
-`breadsched activity` states the rate, its date and source, and whether it was
-inverted. When no rate applies, those amounts are **not included in totals**: the
+`breadsched activity` states the rate, its date, source, and age on the as-of
+date, and whether it was inverted. Judge an old rate yourself; BreadSched does not
+reject it. Converted amounts are not rounded to cents before they are added up. When no rate applies, those amounts are **not included in totals**: the
 note lists each one with its currency and date rather than counting euros as dollars.
 Add an exchange rate in Accounts to include them. `breadsched activity --as-of DATE`
 chooses which rates apply; its JSON adds `conversions` and `unconverted`, and the
@@ -553,7 +554,7 @@ The Projection summary and scenario comparison use the same dated calculation.
 Amounts in another currency are converted once with the exchange rate known on the
 day before the projection starts, the same date used for opening balances. This
 applies to schedules, estimates, scenario events, and foreign-currency account
-balances. Projection warnings state the rate, its date and source, and whether it
+balances. Projection warnings state the rate, its date, source, and age, and whether it
 was inverted. When no rate applies, the amount or opening balance is left out of
 the projection and listed in the warnings; it is never counted as reporting
 currency. Add an exchange rate in Accounts, then recalculate, to include it.

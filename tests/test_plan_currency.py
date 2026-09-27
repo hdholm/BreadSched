@@ -182,7 +182,8 @@ def test_currency_notes_disclose_quote_or_exclusion(db, euro_book):
     [note] = currency_notes(db, report)
     assert note.startswith("EUR amounts are converted to USD at ≈0.33333333 USD per EUR")
     assert "the inverse of the USD→EUR quote dated 2026-09-01" in note
-    assert note.endswith("applicable on 2026-09-27.")
+    assert "applicable on 2026-09-27 (quote 26 days old)" in note
+    assert note.endswith("Converted amounts are not rounded to cents before they are added up.")
 
 
 def test_web_plan_and_print_disclose_currency(db, euro_book):

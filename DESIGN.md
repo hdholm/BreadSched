@@ -280,7 +280,11 @@ Projection applies the same policy at its opening valuation date (the day before
 the horizon). It converts events before applying them and excludes a
 foreign-currency opening balance whose valuation reports a missing quote. The
 converter's notes are recorded as Projection warnings, which every surface
-already shows. Comparisons difference two converted projections.
+already shows. Comparisons difference two converted projections. Each note
+states the quote's age on the as-of date through `valuation.quote_age_label`,
+without a staleness cutoff, and states that conversion is not rounded to cents
+before aggregation (Plan stays exact; Projection keeps its internal eight-place
+precision).
 
 Ledger reads preserve that identity internally. Account, recursive, class-total,
 net-worth, cash-on-hand, and register-running arithmetic uses tagged transaction

@@ -198,9 +198,16 @@ def conversion_notes(
         )
         dated = f" dated {evidence.quote_date.isoformat()}" if evidence.quote_date else ""
         origin = evidence.quote_source or "unknown source"
+        # Disclose age without imposing a staleness cutoff; the reader judges it.
+        age = (
+            f" (quote {valuation.quote_age_label((as_of - evidence.quote_date).days)})"
+            if as_of is not None and evidence.quote_date is not None
+            else ""
+        )
         notes.append(
             f"{source} amounts are converted to {target} at {_rate_text(evidence.rate)} "
-            f"{target} per {source}, using {quote}{dated} ({origin}) applicable on {when}."
+            f"{target} per {source}, using {quote}{dated} ({origin}) applicable on "
+            f"{when}{age}. Converted amounts are not rounded to cents before they are added up."
         )
     missing: dict[str, list[UnconvertedActivity]] = {}
     for item in unconverted:
