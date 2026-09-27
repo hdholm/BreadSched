@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Flatpak offline file workflow gate.** CI exercises an installed Flatpak with
+  network unshared, creating and verifying a synthetic book under Documents,
+  reading Dashboard, exporting CSV, importing QIF, backing up and restoring
+  the book, and rejecting a competing writer while allowing a reader. This does
+  not publish an installer or establish GTK portal, print, or settings acceptance.
+  No application or schema change.
+
 - **Flatpak build baseline.** Add a GNOME-runtime manifest and CI smoke gate that
   installs the package and checks CLI version and GTK launcher help in the sandbox.
   This is a build input, not a released installer or validated file workflow. Application

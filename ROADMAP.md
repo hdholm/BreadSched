@@ -46,10 +46,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    propagation. Do not create a second monthly budget ledger. Extend currency
    conversion only when Plan amounts and quote evidence are complete.
 3. **P0 — Installable Linux and Windows builds.** A GNOME-runtime Flatpak manifest
-   and sandbox command smoke gate are in place; no installer is published yet.
-   Ship a tested Flatpak first,
-   validating file portals, book locks, imports/exports, backup/restore, help,
-   printing, settings, and offline use inside its sandbox. Provide a Windows
+   and installed-sandbox offline CLI gate now cover sample creation, verification,
+   Dashboard, CSV export, QIF import, backup, restore, and competing-writer locks
+   under Documents access. No installer is published yet. Validate GTK file portals,
+   help, printing, settings, and offline desktop use inside the sandbox. Provide a Windows
    installer with GTK runtime and the same book/upgrade and file workflows; test
    clean installs, upgrades, launch, and uninstalls on supported Windows CI.
    Publish signed/checksummed artifacts and concise installation instructions
