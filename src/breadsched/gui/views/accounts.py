@@ -74,6 +74,10 @@ class AccountTreeView(BaseView):
         price_button.set_tooltip_text("Create a security or record a dated market price")
         price_button.connect("clicked", self._on_security_price)
         header.append(price_button)
+        rate_button = Gtk.Button(label="Exchange rate…")
+        rate_button.set_tooltip_text("Record a dated manual rate between two currencies")
+        rate_button.connect("clicked", self._on_exchange_rate)
+        header.append(rate_button)
 
         new_button = Gtk.Button(label="New account…", icon_name="list-add-symbolic")
         new_button.connect("clicked", lambda *_: self.edit_account(None))
@@ -318,6 +322,15 @@ class AccountTreeView(BaseView):
         from ..dialogs.security_price_dialog import SecurityPriceDialog
 
         dialog = SecurityPriceDialog(self.get_root(), self.db)
+        dialog.connect("close-request", self.refresh_on_close)
+        dialog.present()
+
+    def _on_exchange_rate(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.exchange_rate_dialog import ExchangeRateDialog
+
+        dialog = ExchangeRateDialog(self.get_root(), self.db)
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 

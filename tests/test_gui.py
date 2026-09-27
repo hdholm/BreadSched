@@ -3939,6 +3939,91 @@ class TestAccountDialogConstruction:
         assert price.value == Money("125.25")
 
 
+class TestExchangeRateDialog:
+    """GTK manual FX entry uses the same exact quote contract as web and CLI."""
+
+    @pytest.fixture
+    def fx_book(self, app, populated_book):
+        from breadsched.gen.lib import Commodity, CommodityPrice
+
+        app.open_book(populated_book)
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        with app.db.transaction("Add euro") as txn:
+            app.db.add_commodity(euro, txn)
+        usd = app.db.get_commodity_by_mnemonic("USD")
+        imported = CommodityPrice(
+            commodity=euro.handle,
+            currency=usd.handle,
+            quote_date=date(2026, 3, 1),
+            value=Money("1.05"),
+            source="user:price-editor",
+        )
+        with app.db.transaction("Imported quote") as txn:
+            app.db.add_price(imported, txn)
+        return app, euro, usd
+
+    def _dialog(self, window, app, euro, usd):
+        from breadsched.gui.dialogs.exchange_rate_dialog import ExchangeRateDialog
+
+        dialog = ExchangeRateDialog(window, app.db)
+        handles = [item.handle for item in dialog.currencies]
+        dialog.source_picker.set_selected(handles.index(euro.handle))
+        dialog.target_picker.set_selected(handles.index(usd.handle))
+        return dialog
+
+    def test_saves_a_directional_manual_quote_and_keeps_imported_evidence(self, fx_book, window):
+        app, euro, usd = fx_book
+        dialog = self._dialog(window, app, euro, usd)
+        assert "Latest EUR→USD: 1.05 on 2026-03-01" in dialog.current.get_text()
+        dialog.date_entry.set_text("2026-03-01")
+        dialog.rate_entry.set_text("1,10")
+
+        saved = dialog.save()
+
+        assert saved is not None
+        prices = list(app.db.iter_prices(commodity=euro.handle, currency=usd.handle))
+        assert sorted((p.source, p.value) for p in prices) == [
+            ("breadsched", Money("1.10")),
+            ("user:price-editor", Money("1.05")),
+        ]
+
+    def test_invalid_rates_are_refused_without_writing(self, fx_book, window):
+        app, euro, usd = fx_book
+        before = len(list(app.db.iter_prices()))
+        dialog = self._dialog(window, app, euro, usd)
+        dialog.rate_entry.set_text("0")
+        assert dialog.save() is None
+        assert "greater than zero" in dialog.status.get_text()
+
+        dialog.target_picker.set_selected(dialog.source_picker.get_selected())
+        dialog.rate_entry.set_text("1.2")
+        assert dialog.save() is None
+        assert "different currencies" in dialog.status.get_text()
+
+        dialog.target_picker.set_selected(
+            [item.handle for item in dialog.currencies].index(usd.handle)
+        )
+        dialog.date_entry.set_text("March 1")
+        assert dialog.save() is None
+        assert "YYYY-MM-DD" in dialog.status.get_text()
+        assert len(list(app.db.iter_prices())) == before
+
+    def test_accounts_view_offers_the_exchange_rate_editor(self, fx_book, window):
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        labels = []
+        stack = [view]
+        while stack:
+            widget = stack.pop()
+            if isinstance(widget, Gtk.Button) and widget.get_label():
+                labels.append(widget.get_label())
+            child = widget.get_first_child()
+            while child is not None:
+                stack.append(child)
+                child = child.get_next_sibling()
+        assert "Exchange rate…" in labels
+
+
 class TestRepaintsAreDeferred:
     def test_database_open_state_is_used_as_a_property(self):
         """Deferred-refresh guards must not call ``DbSQLite.is_open``."""

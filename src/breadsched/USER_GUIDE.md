@@ -229,7 +229,10 @@ evidence. An ambiguous currency code requires its exact handle. In the web
 currencies, enter an as-of date and the target units per source unit, then save.
 The account display refreshes its quote date and source or missing-quote warning.
 The web control accepts currencies already in the book; it does not create a new
-currency or alter ledger transactions. GTK does not yet offer manual rate entry.
+currency or alter ledger transactions. In GTK, choose **Exchange rate…** in
+Accounts: the dialog shows the latest recorded quote for the chosen pair, accepts
+the rate in your usual decimal format, and refuses the same currency twice, a
+non-positive rate, or an invalid date without saving anything.
 Web and CLI data expose the signed number of days since the quote, with negative
 days identifying a future-dated quote when no as-of date was requested.
 Review the quote date and source before treating a market-valued total as current.

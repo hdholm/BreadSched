@@ -1023,8 +1023,11 @@ currency handle or a unique currency mnemonic and reports an exact rational rate
 ambiguous codes require a handle. The web write adapter accepts currency handles,
 textual exact rates, and an ISO date, then delegates validation and the complete
 transaction to the shared valuation operation. The Accounts control refreshes
-existing quote evidence and missing-quote displays after saving. GTK entry remains
-to be implemented.
+existing quote evidence and missing-quote displays after saving. The GTK Accounts
+**Exchange rate…** dialog is a presentation adapter over the same operation: it
+parses the rate with the shared locale-aware amount parser, shows the latest direct
+quote for the selected pair, and surfaces the operation's validation message without
+writing when the pair, rate, or date is invalid.
 
 Console diagnostics resolve stderr when emitted, since a captured stream can
 close while a web request thread remains active. Unexpected web failures send
