@@ -159,8 +159,11 @@ def _expense_explorer(api: Api, query: QueryParams) -> object:
     scenario = query.text("scenario")
     account = query.text("account")
     index = query.integer("index", minimum=0)
+    rollover = query.text("rollover")
+    if rollover not in (None, "0", "1"):
+        raise QueryError("query.invalid", ("rollover",))
     query.finish()
-    return api.expense_explorer(start, through, period, scenario, account, index)
+    return api.expense_explorer(start, through, period, scenario, account, index, rollover == "1")
 
 
 def _projection(api: Api, query: QueryParams) -> object:

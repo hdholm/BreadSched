@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from ..db.sqlite import DbSQLite
@@ -30,6 +30,7 @@ class ExpensePeriod:
     actual: Money
     variance: Money | None
     actual_to_date: Money | None
+    carry_in: Money | None
     remaining: Money | None
     remaining_reason: str | None = None
 
@@ -75,6 +76,7 @@ class ExpenseExplorer:
     categories: tuple[ExpenseCategory, ...]
     totals: tuple[ExpensePeriod, ...]
     drilldown: ExpenseDrilldown | None
+    rollover: bool = False
 
 
 def _merchant_name(description: str) -> str:
@@ -138,9 +140,38 @@ def _expense_period(
         actual,
         variance,
         actual_to_date,
+        None,
         None if reason else planned - (actual_to_date or Money(0)),
         reason,
     )
+
+
+def _apply_rollover(
+    periods: tuple[ExpensePeriod, ...], enabled: bool, as_of: date
+) -> tuple[ExpensePeriod, ...]:
+    """Carry only completed, explainable periods within the selected horizon."""
+    if not enabled:
+        return periods
+    carry: Money | None = Money(0)
+    result = []
+    for period in periods:
+        if period.remaining_reason == "Future period":
+            result.append(period)
+            continue
+        if period.remaining is None:
+            result.append(replace(period, carry_in=carry))
+            carry = None
+            continue
+        if carry is None:
+            result.append(
+                replace(period, remaining=None, remaining_reason="Prior period unavailable")
+            )
+            continue
+        closing = carry + period.remaining
+        result.append(replace(period, carry_in=carry, remaining=closing))
+        if period.end <= as_of:
+            carry = closing
+    return tuple(result)
 
 
 def query_expense_explorer(
@@ -149,6 +180,7 @@ def query_expense_explorer(
     *,
     account: str | None = None,
     period_index: int | None = None,
+    rollover: bool = False,
 ) -> ServiceResult[ExpenseExplorer]:
     """Reuse Plan periods and category values; optionally explain one category cell.
 
@@ -198,18 +230,22 @@ def query_expense_explorer(
             row.name,
             row.full_name,
             row.depth,
-            tuple(
-                _expense_period(
-                    bucket,
-                    planned,
-                    actual,
-                    variance,
-                    to_date(row.account, index, actual),
-                    foreign=row.account in foreign[index],
-                )
-                for index, (bucket, planned, actual, variance) in enumerate(
-                    zip(buckets, row.planned, row.actual, row.variance, strict=True)
-                )
+            _apply_rollover(
+                tuple(
+                    _expense_period(
+                        bucket,
+                        planned,
+                        actual,
+                        variance,
+                        to_date(row.account, index, actual),
+                        foreign=row.account in foreign[index],
+                    )
+                    for index, (bucket, planned, actual, variance) in enumerate(
+                        zip(buckets, row.planned, row.actual, row.variance, strict=True)
+                    )
+                ),
+                rollover,
+                plan.report.as_of,
             ),
         )
         for row in plan.report.expenses
@@ -223,26 +259,32 @@ def query_expense_explorer(
             if candidate is not row
         )
     )
-    totals = tuple(
-        _expense_period(
-            bucket,
-            planned or Money(0),
-            actual or Money(0),
-            variance,
-            None
-            if bucket.start > plan.report.as_of
-            else sum((row.periods[index].actual_to_date or Money(0) for row in roots), Money(0)),
-            foreign=bool(foreign[index]),
-        )
-        for index, (bucket, planned, actual, variance) in enumerate(
-            zip(
-                buckets,
-                plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.PLANNED),
-                plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.ACTUAL),
-                plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.VARIANCE),
-                strict=True,
+    totals = _apply_rollover(
+        tuple(
+            _expense_period(
+                bucket,
+                planned or Money(0),
+                actual or Money(0),
+                variance,
+                None
+                if bucket.start > plan.report.as_of
+                else sum(
+                    (row.periods[index].actual_to_date or Money(0) for row in roots), Money(0)
+                ),
+                foreign=bool(foreign[index]),
             )
-        )
+            for index, (bucket, planned, actual, variance) in enumerate(
+                zip(
+                    buckets,
+                    plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.PLANNED),
+                    plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.ACTUAL),
+                    plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.VARIANCE),
+                    strict=True,
+                )
+            )
+        ),
+        rollover,
+        plan.report.as_of,
     )
     drilldown = None
     if account is not None or period_index is not None:
@@ -291,4 +333,4 @@ def query_expense_explorer(
             detail.actual_transactions,
             merchants,
         )
-    return ServiceResult.success(ExpenseExplorer(plan, categories, totals, drilldown))
+    return ServiceResult.success(ExpenseExplorer(plan, categories, totals, drilldown, rollover))

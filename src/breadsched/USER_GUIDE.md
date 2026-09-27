@@ -438,8 +438,15 @@ negative amount. Actual and Variance still describe the full selected period, so
 future-dated transaction may appear in Actual before it affects Remaining. A
 future-only period says “Future period,” and an affected foreign-currency category
 says “Currency conversion unavailable” until Plan conversion is implemented.
-Remaining has no rollover or merchant allocation and is a planning comparison,
-not a bank balance.
+Remaining has no merchant allocation and is a planning comparison, not a bank
+balance. Rollover is off by default.
+Select **Carry prior periods** in Expense Explorer to add a completed period's
+surplus or deficit to the next selected period. The first period starts with zero
+carry. Read the displayed Carry in, Plan, actual through as-of, and Remaining as a
+period bridge. A prior unavailable currency period blocks later carry with “Prior
+period unavailable”; future periods never provide a carry. Turn the control off
+to return to each period's own remaining amount. This view choice does not change
+transactions, schedules, or saved Plan settings.
 
 To keep a copy, use **Print…** in the GTK Explorer for a self-contained preview of
 the selected category and period with merchant detail, then print or save as PDF
