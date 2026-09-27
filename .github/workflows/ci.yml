@@ -189,9 +189,9 @@ jobs:
           import os
           import sys
           print("sandbox Documents:", os.environ.get("XDG_DOCUMENTS_DIR"))
-visible = os.path.isdir(sys.argv[1])
-print("workflow directory visible:", visible)
-assert visible, f"Documents directory is not exposed inside Flatpak: {sys.argv[1]}"
+          visible = os.path.isdir(sys.argv[1])
+          print("workflow directory visible:", visible)
+          assert visible, f"Documents directory is not exposed inside Flatpak: {sys.argv[1]}"
           ' "$work_dir"
           run_offline sample "$book" --as-of 2026-09-15
           run_offline verify "$book"
