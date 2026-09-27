@@ -380,13 +380,19 @@ def import_book(
             )
             occurrence = identity_counts.get(identity, 0) + 1
             identity_counts[identity] = occurrence
+            handle = _stable_handle("transaction", *identity, occurrence)
+            kept = sink.keep_local_categories(handle, source_account, raw_splits)
+            if kept is None:
+                result.observe("transaction", handle)
+                result.transactions_unchanged += 1
+                continue
             sink.transaction(
-                _stable_handle("transaction", *identity, occurrence),
+                handle,
                 post_date,
                 fields.get("P", "").strip() or fields.get("M", "").strip() or "QIF transaction",
                 None,
                 fields.get("N", ""),
-                raw_splits,
+                kept,
             )
         report("Finishing", done)
         result.finish(db, txn)

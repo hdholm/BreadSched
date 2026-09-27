@@ -239,12 +239,10 @@ def import_book(
                 occurrence = fallback_counts.get(fallback, 0) + 1
                 fallback_counts[fallback] = occurrence
                 identity = _stable_handle("fallback", *fallback, occurrence)
-            sink.transaction(
-                _stable_handle("transaction", account_id, identity),
-                post_date,
-                description,
-                currency_code,
-                _tag(block, "CHECKNUM"),
+            handle = _stable_handle("transaction", account_id, identity)
+            splits = sink.keep_local_categories(
+                handle,
+                source_account,
                 [
                     {
                         "account": source_account,
@@ -253,6 +251,18 @@ def import_book(
                     },
                     {"account": counter, "value": -amount},
                 ],
+            )
+            if splits is None:
+                result.observe("transaction", handle)
+                result.transactions_unchanged += 1
+                continue
+            sink.transaction(
+                handle,
+                post_date,
+                description,
+                currency_code,
+                _tag(block, "CHECKNUM"),
+                splits,
             )
         if progress is not None:
             progress("Finishing", len(transaction_blocks), len(transaction_blocks))

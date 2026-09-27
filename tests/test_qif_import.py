@@ -179,3 +179,25 @@ def test_qif_rejects_conflicting_date_orders(db, tmp_path):
 
     assert result.transactions == 0
     assert result.warnings == ["QIF source contains conflicting date orders"]
+
+
+def test_qif_reimport_keeps_a_category_the_user_chose(db, book, tmp_path):
+    """Issue #129: an uncategorized QIF record keeps the category chosen later."""
+    path = tmp_path / "checking.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\nD01/15/2026\nT-45.67\nPGrocery Store\n^\n"
+    )
+    qif.import_book(db, path)
+    transaction = next(db.iter_transactions())
+    bank = next(split.account for split in transaction.splits if split.value == Money("-45.67"))
+    for split in transaction.splits:
+        if split.account != bank:
+            split.account = book.groceries
+    with db.transaction("Categorize") as txn:
+        db.commit_transaction(transaction, txn)
+
+    result = qif.import_book(db, path)
+
+    stored = db.get_transaction(transaction.handle)
+    assert {split.account for split in stored.splits} == {bank, book.groceries}
+    assert result.transactions_unchanged == 1

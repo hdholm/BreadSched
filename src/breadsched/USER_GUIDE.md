@@ -681,6 +681,11 @@ changes, and `--keep`, `--use-gnucash`, `--keep-all`, or `--use-gnucash-all`
 apply decisions.
 
 QIF and OFX/QFX imports infer decimal and date conventions from whole-file evidence.
+Re-importing a QIF or OFX/QFX statement refreshes only the statement account's side
+of each transaction. A category you chose or split after the first import is kept.
+If the bank corrects an amount, a single category follows the new amount. A
+transaction you split across several categories is left unchanged, with a warning
+to review it.
 When a format is ambiguous, select an explicit override in GTK, web, or an importer
 caller. Import problems are reported per record when safe recovery is possible.
 
