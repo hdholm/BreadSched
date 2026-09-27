@@ -763,8 +763,16 @@ columns. Both screens offer **Link possible transfers**, which does what
 
 A payee records who a transaction was with, separately from its description, so
 "CORNER GROCER #1234" and "Corner Grocer 0987" can both belong to **Corner Grocer**
-while each keeps the text its statement printed. Payees are managed from the
-command line for now:
+while each keeps the text its statement printed.
+
+In the desktop application choose **Actions → Payees…**; in the web interface
+open **Payees**. Enter a name and one or more example descriptions (one per line)
+and choose **Add payee**. The **Proposals** list then shows each transaction
+without a payee whose description matches, with the matched key; every proposal
+starts checked. Clear any you do not want and choose **Accept selected**. **Edit**
+loads a payee into the form so you can rename it or change its descriptions;
+**Delete** removes it and clears it from its transactions (in the desktop
+application, **Edit → Undo** restores it). From the command line:
 
 ```sh
 breadsched payees book.breadsched --add "Corner Grocer" --match "CORNER GROCER #1234"
@@ -782,8 +790,8 @@ only one payee. The preview lists transactions that have no payee yet and writes
 nothing. Accepting assigns the payee in one undo step, and a transaction that
 already has a payee is never changed. Deleting a payee clears it from its
 transactions. Re-importing from GnuCash, OFX, QIF, or CSV keeps the payees you
-assigned. Payee screens in the desktop and web interfaces and categorization rules
-come next.
+assigned. A payee field in the register and transaction editor, and
+categorization rules, come next.
 
 ## Print, export, and inspect
 

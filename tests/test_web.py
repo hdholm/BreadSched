@@ -4294,3 +4294,67 @@ class TestCsvImport:
             "/api/import/csv/preview", self._request(client, uploaded["path"])
         )
         assert preview["counts"]["new"] == 2
+
+
+class TestPayees:
+    """Browser payee management and proposal review through the shared service."""
+
+    def _rent(self, client):
+        return next(txn for txn in client.database.iter_transactions() if txn.description == "Rent")
+
+    def test_add_preview_accept_rename_and_delete(self, client):
+        rent = self._rent(client)
+        status, empty = client.get("/api/payees")
+        assert status == 200 and empty == {"payees": [], "proposals": []}
+
+        status, saved = client.post("/api/payee/save", {"name": "Landlord", "matches": ["RENT"]})
+        assert status == 200 and saved["match_keys"] == ["rent"]
+        _status, listed = client.get("/api/payees")
+        [proposal] = listed["proposals"]
+        assert (proposal["transaction"], proposal["payee_name"], proposal["key"]) == (
+            rent.handle,
+            "Landlord",
+            "rent",
+        )
+        assert client.database.get_transaction(rent.handle).payee is None
+
+        status, accepted = client.post("/api/payees/accept", {"transactions": [rent.handle]})
+        assert status == 200 and accepted == {"assigned": 1, "unchanged": 0}
+        stored = client.database.get_transaction(rent.handle)
+        assert (stored.payee, stored.description) == (saved["handle"], "Rent")
+        _status, after = client.get("/api/payees")
+        assert after["proposals"] == [] and after["payees"][0]["transactions"] == 1
+
+        client.post(
+            "/api/payee/save",
+            {"name": "Property manager", "matches": ["rent"], "handle": saved["handle"]},
+        )
+        assert client.database.get_payee(saved["handle"]).name == "Property manager"
+        status, deleted = client.post("/api/payee/delete", {"handle": saved["handle"]})
+        assert status == 200 and deleted == {"cleared": 1}
+        assert client.database.get_transaction(rent.handle).payee is None
+
+    def test_rejected_requests_leave_payees_unchanged(self, client):
+        client.post("/api/payee/save", {"name": "Landlord", "matches": ["rent"]})
+        before = [(p.handle, p.name, p.match_keys) for p in client.database.iter_payees()]
+
+        for path, body, status, code in [
+            ("/api/payee/save", {"name": "landlord"}, 400, "payee.name.duplicate"),
+            (
+                "/api/payee/save",
+                {"name": "Other", "matches": ["RENT"]},
+                400,
+                "payee.match.conflict",
+            ),
+            ("/api/payee/save", {"name": "Other", "matches": "rent"}, 400, None),
+            ("/api/payee/save", {"name": 5}, 400, None),
+            ("/api/payee/delete", {"handle": "missing"}, 404, "payee.not_found"),
+            ("/api/payees/accept", {"transactions": ["missing"]}, 404, None),
+        ]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(path, body)
+            assert caught.value.code == status
+            if code is not None:
+                assert json.loads(caught.value.read())["code"] == code
+
+        assert [(p.handle, p.name, p.match_keys) for p in client.database.iter_payees()] == before

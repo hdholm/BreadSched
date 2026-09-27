@@ -4545,3 +4545,76 @@ class TestCsvImportDialog:
             assert isinstance(opened, CsvImportDialog)
         finally:
             opened.destroy()
+
+
+class TestPayeesDialog:
+    """Add, edit, delete payees and accept proposals through the shared service."""
+
+    @pytest.fixture
+    def dialog(self, app, window, populated_book):
+        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
+
+        app.open_book(populated_book)
+        dialog = PayeesDialog(window, app.db)
+        yield dialog
+        dialog.destroy()
+
+    @staticmethod
+    def _describe(dialog, description):
+        dialog.edit(None)
+        dialog.name_entry.set_text("Known")
+        dialog.matches_view.get_buffer().set_text(description)
+
+    def test_add_then_accept_selected_proposals(self, dialog, app):
+        transaction = next(iter(app.db.iter_transactions()))
+        self._describe(dialog, transaction.description)
+
+        payee = dialog.save()
+
+        assert payee is not None and dialog.editing is None
+        assert transaction.handle in dialog.proposal_checks
+        assert app.db.get_transaction(transaction.handle).payee is None
+        for handle, check in dialog.proposal_checks.items():
+            check.set_active(handle == transaction.handle)
+        result = dialog.accept_selected()
+        assert result is not None and result.assigned == 1
+        stored = app.db.get_transaction(transaction.handle)
+        assert (stored.payee, stored.description) == (payee.handle, transaction.description)
+        assert transaction.handle not in dialog.proposal_checks
+        assert "Assigned 1 payee(s)" in dialog.status.get_text()
+
+    def test_refused_save_explains_and_writes_nothing(self, dialog, app):
+        dialog.name_entry.set_text("  ")
+        assert dialog.save() is None
+        assert "Enter a payee name" in dialog.status.get_text()
+        assert list(app.db.iter_payees()) == []
+
+    def test_edit_renames_and_delete_clears(self, dialog, app):
+        transaction = next(iter(app.db.iter_transactions()))
+        self._describe(dialog, transaction.description)
+        payee = dialog.save()
+        dialog.accept_selected()
+
+        dialog.edit(payee.handle)
+        assert dialog.save_button.get_label() == "Save changes"
+        dialog.name_entry.set_text("Renamed")
+        assert dialog.save() is not None
+        assert app.db.get_payee(payee.handle).name == "Renamed"
+        assert app.db.get_transaction(transaction.handle).payee == payee.handle
+
+        cleared = dialog.delete(payee.handle)
+        assert cleared is not None and cleared >= 1
+        assert app.db.get_transaction(transaction.handle).payee is None
+        assert "Edit → Undo restores it" in dialog.status.get_text()
+
+    def test_app_action_opens_the_dialog(self, app, window, populated_book):
+        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
+
+        assert app.actions["payees"].get_enabled() is False
+        app.open_book(populated_book)
+        assert app.actions["payees"].get_enabled() is True
+        opened = app.on_payees()
+        try:
+            assert isinstance(opened, PayeesDialog)
+        finally:
+            opened.destroy()

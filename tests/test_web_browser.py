@@ -108,3 +108,24 @@ def test_csv_statement_maps_previews_and_imports(page, served, tmp_path):
     panel.locator("button.primary").click()
     page.wait_for_selector("text=Already imported: 2")
     assert len(list(db.iter_transactions())) == before + 2
+
+
+def test_payees_view_adds_a_payee_and_accepts_proposals(page, served):
+    db, _httpd = served
+    transaction = next(iter(db.iter_transactions()))
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Payees", exact=True).first.click()
+    page.wait_for_selector("text=No payees yet.")
+
+    page.fill("input[name=name]", "Known payee")
+    page.fill("textarea[name=matches]", transaction.description)
+    page.get_by_role("button", name="Add payee").click()
+    # The accept button is always shown; wait for the refreshed payee table instead.
+    page.wait_for_selector("td:has-text('Known payee')")
+    assert db.get_transaction(transaction.handle).payee is None
+
+    page.get_by_role("button", name="Accept selected").click()
+    page.wait_for_selector("text=No transactions without a payee match a payee.")
+    stored = db.get_transaction(transaction.handle)
+    assert stored.payee is not None
+    assert stored.description == transaction.description

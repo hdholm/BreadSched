@@ -1044,8 +1044,14 @@ assigns only the requested transactions that still match and still have no payee
 in one undo step, so a stale preview cannot replace a choice made since.
 `assign_payee` sets or clears one transaction explicitly; `delete_payee` clears the
 payee from its transactions and deletes it in one undo step. Book verification
-reports `transaction.missing_payee` and `payee.duplicate_match_key`. Category
-rules, GTK and web payee screens, and payee-based autocomplete build on this.
+reports `transaction.missing_payee` and `payee.duplicate_match_key`. The GTK
+`PayeesDialog` (Actions → Payees…) and the web **Payees** view are presentation
+adapters over the same service: `web/payee_resource.py` serves `GET /api/payees`
+(payees with transaction counts, plus current proposals) and `POST /api/payee/save`,
+`/api/payee/delete`, and `/api/payees/accept`, and parses JSON only. Both list
+payees, add, rename, re-key, or delete one, and accept checked proposals in one
+step. Category rules, a payee field in the register and editor, and payee-based
+autocomplete build on this.
 
 ## Statement reconciliation
 
