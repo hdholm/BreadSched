@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Payee screens.** The desktop **Actions → Payees…** dialog and the web **Payees**
+  view list payees with their transaction counts, add, rename, re-key, or delete a
+  payee, and show the current proposals with the matched key, each checked by
+  default; **Accept selected** assigns the checked ones in one undo step. Both use
+  the shared payee service (web routes `GET /api/payees`, `POST /api/payee/save`,
+  `/api/payee/delete`, `/api/payees/accept`), so rejected input changes nothing.
+  Application version `0.2.0a135`; native schema remains 8.
+
 - **Payees.** A payee is a stable, renameable identity kept separate from the
   transaction description, which is never rewritten. `breadsched payees` adds a
   payee with example descriptions, previews proposals for transactions without a

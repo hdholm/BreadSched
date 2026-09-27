@@ -61,8 +61,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    links it only on explicit acceptance. Payees (native schema 8) are stable,
    renameable identities separate from descriptions; exact normalized-description
    keys propose a payee for unassigned transactions, and nothing is assigned until
-   the user accepts (`breadsched payees`). Next: GTK and web payee review, then
-   reviewed categorization rules. Keep rule priority and conflicts
+   the user accepts (`breadsched payees`, GTK Actions → Payees…, web Payees view).
+   Next: a payee field in the register and transaction editor, then reviewed
+   categorization rules. Keep rule priority and conflicts
    explainable; never silently recategorize previously accepted transactions.
    Offer entry autocomplete from earlier transactions as a visible, editable
    proposal that never commits without the user's save.

@@ -1,4 +1,4 @@
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Verify"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Verify"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -3347,6 +3347,84 @@ async function showImport() {
     await csvImportPanel());
 }
 
+async function showPayees() {
+  const data = await get("/api/payees");
+  const refresh = async () => { current = "Payees"; await render(); };
+  const run = (action) => async () => {
+    try { await action(); } catch (error) { say(error.message, "error"); }
+  };
+  const name = el("input", { name:"name", placeholder:"Corner Grocer" });
+  const matches = el("textarea", { name:"matches", rows:"3",
+    placeholder:"One example description per line, e.g. CORNER GROCER #1234" });
+  let editing = null;
+  const saveButton = el("button", { class:"action primary", type:"submit" }, "Add payee");
+  const form = el("form", { class:"entry", onsubmit:(event) => {
+    event.preventDefault();
+    run(async () => {
+      const lines = matches.value.split("\n").map((line) => line.trim()).filter(Boolean);
+      const saved = await post("/api/payee/save",
+        { name:name.value, matches:lines, handle:editing });
+      say(`Saved ${saved.name}.`);
+      await refresh();
+    })();
+  } },
+    el("label", {}, "Name", name),
+    el("label", {}, "Matching descriptions", matches),
+    saveButton);
+  const payeeRows = data.payees.map((payee) => el("tr", {},
+    el("td", {}, payee.name),
+    el("td", {}, payee.match_keys.join(", ") || "—"),
+    el("td", { class:"num" }, String(payee.transactions)),
+    el("td", {},
+      el("button", { class:"action", type:"button", onclick:() => {
+        editing = payee.handle;
+        name.value = payee.name;
+        matches.value = payee.match_keys.join("\n");
+        saveButton.textContent = "Save changes";
+        name.focus();
+      } }, "Edit"),
+      el("button", { class:"action", type:"button", onclick:run(async () => {
+        if (!window.confirm(`Delete ${payee.name}? It is cleared from `
+          + `${payee.transactions} transaction(s); descriptions are unchanged.`)) return;
+        const deleted = await post("/api/payee/delete", { handle:payee.handle });
+        say(`Deleted ${payee.name}; cleared from ${deleted.cleared} transaction(s).`);
+        await refresh();
+      }) }, "Delete"))));
+  const chosen = new Set(data.proposals.map((item) => item.transaction));
+  const proposalRows = data.proposals.map((item) => {
+    const box = el("input", { type:"checkbox", checked:"checked",
+      "aria-label":`Accept ${item.payee_name} for ${item.description}` });
+    box.addEventListener("change", () => {
+      if (box.checked) chosen.add(item.transaction); else chosen.delete(item.transaction);
+    });
+    return el("tr", {}, el("td", {}, box), el("td", {}, item.date),
+      el("td", {}, item.description), el("td", {}, item.payee_name), el("td", {}, item.key));
+  });
+  const accept = el("button", { class:"action primary", type:"button",
+    disabled:data.proposals.length ? null : "disabled",
+    onclick:run(async () => {
+      const result = await post("/api/payees/accept", { transactions:[...chosen] });
+      say(`Assigned ${result.assigned} payee(s); ${result.unchanged} left unchanged.`);
+      await refresh();
+    }) }, "Accept selected");
+  return el("div", {},
+    el("p", { class:"note" },
+      "A payee records who a transaction was with; descriptions are never changed. "
+      + "Matching ignores case, punctuation, and words containing digits, and is otherwise "
+      + "exact. Nothing is assigned until you accept, and a transaction that already has "
+      + "a payee is never changed."),
+    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Payees"),
+      data.payees.length
+        ? table(["Payee", "Matches", { label:"Transactions", num:true }, ""], payeeRows)
+        : el("p", { class:"note" }, "No payees yet."),
+      form),
+    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Proposals"),
+      data.proposals.length
+        ? table(["Accept", "Date", "Description", "Payee", "Matched key"], proposalRows)
+        : el("p", { class:"note" }, "No transactions without a payee match a payee."),
+      el("div", { class:"toolbar" }, accept)));
+}
+
 async function showVerify() {
   const data = await get("/api/verify");
   const rerun = el("button", {class:"action", onclick:()=>showVerify()}, "Verify again");
@@ -3369,7 +3447,7 @@ const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
-  Verify: showVerify,
+  Payees: showPayees, Verify: showVerify,
 };
 
 async function showFsaDashboard() {

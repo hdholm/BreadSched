@@ -121,6 +121,7 @@ class BreadSchedApplication(Gtk.Application):
             ("import", self.on_import, "<Control>i"),
             ("import-new", self.on_import_new, None),
             ("import-csv", self.on_import_csv, None),
+            ("payees", self.on_payees, None),
             ("open-default", self.on_open_default, None),
             ("undo", self.on_undo, "<Control>z"),
             ("redo", self.on_redo, "<Control><Shift>z"),
@@ -148,6 +149,7 @@ class BreadSchedApplication(Gtk.Application):
             "redo",
             "import",
             "import-csv",
+            "payees",
             "export",
             "backup",
             "verify",
@@ -178,6 +180,7 @@ class BreadSchedApplication(Gtk.Application):
         for name in (
             "import",
             "import-csv",
+            "payees",
             "export",
             "backup",
             "verify",
@@ -364,6 +367,17 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
+    def on_payees(self, *_args):
+        """Open payee management and proposal review for the current book."""
+        if self.db is None:
+            self._report("Open a book before managing payees.")
+            return None
+        from .dialogs.payee_dialog import PayeesDialog
+
+        dialog = PayeesDialog(self.props.active_window, self.db)
+        dialog.present()
+        return dialog
+
     def on_undo(self, *_args) -> None:
         if self.db is not None:
             self.db.undo()
@@ -540,6 +554,7 @@ def build_menu_model() -> Gio.Menu:
     actions_menu = Gio.Menu()
     actions_menu.append("New _Transaction…", "app.new-transaction")
     actions_menu.append("_Post Scheduled Transactions", "app.post-scheduled")
+    actions_menu.append("Pa_yees…", "app.payees")
     menubar.append_submenu("_Actions", actions_menu)
 
     help_menu = Gio.Menu()
