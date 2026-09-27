@@ -168,7 +168,10 @@ push run to succeed and verifies that the tested commit is still the tip of `mai
 It then builds and installs the distribution, checks the installed application/schema
 report, creates an annotated tag on that exact commit, publishes the human-reviewed
 notes, and attaches the wheel, source distribution, and `SHA256SUMS`. An existing tag
-must resolve to the same commit; an existing release is never overwritten.
+must resolve to the same commit; an existing release is never overwritten. A later
+`main` commit that keeps an already-tagged version, such as a documentation-only or
+CI change, is reported as not selected rather than failing the release run; advance
+the application version to select a new release.
 
 ## Static and style hygiene
 
