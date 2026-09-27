@@ -41,13 +41,13 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    Publish signed/checksummed artifacts and concise installation instructions
    only after their release gates are proven. Keep wheel/source releases available.
 2. **P1 — Finish currency handling.** GTK, web, and CLI now share manual FX
-   entry through the exact quote contract. Apply one as-of conversion and missing-quote policy to
-   Plan/Projection totals, comparisons, and prints; disclose quote date/source,
-   inversion, staleness, and rounding. Continue imported quote mapping and decide
-   multi-hop policy explicitly before enabling it. Once Plan amounts and quote
-   evidence are complete, extend the same conversion to Expense Explorer's
-   category Remaining and rollover, which today suppress unconverted foreign
-   expenses; do not create a second monthly budget ledger.
+   entry through the exact quote contract. Plan totals, category detail, cash
+   position, prints, and Expense Explorer Remaining/rollover convert once at the
+   as-of quote and disclose quote date, source, and inversion, or list excluded
+   amounts. Apply the same policy to Projection balances and scenario
+   comparisons of projected balances; disclose staleness and rounding. Continue
+   imported quote mapping and decide multi-hop policy explicitly before enabling
+   it; do not create a second monthly budget ledger.
 3. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity
    without rewriting imported descriptions; preview deterministic matching and
    categorization suggestions before acceptance. Add a user-mapped CSV importer

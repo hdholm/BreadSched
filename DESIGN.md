@@ -265,6 +265,19 @@ Identity conversion needs no quote. An absent pair returns no amount. The result
 stays exact so a report can aggregate converted amounts before applying the target
 currency fraction once. Multi-hop routes have no implicit precedence.
 
+The activity report applies that conversion once, before aggregation. For each
+currency it selects the one quote applicable on the report as-of date and scales
+event and transaction split values by the exact rate. Every Plan figure is then
+derived from converted splits: period totals, category rows, drill-down detail,
+planning flows, the cash bridge, the projected cash position, and Expense Explorer.
+Evidence for each quote used (rate, date, source, and direct or inverse path) is
+kept on the report. An event or transaction with no applicable quote is excluded
+from every total and listed as unconverted by period. Categories affected by an
+exclusion stay visible, and Expense Explorer suppresses their Remaining.
+`currency_notes` renders these facts as the same sentences in GTK, web, CLI, and
+print. Projection and scenario comparisons of projected balances do not yet
+convert.
+
 Ledger reads preserve that identity internally. Account, recursive, class-total,
 net-worth, cash-on-hand, and register-running arithmetic uses tagged transaction
 values and refuses to combine material values with different currency identifiers.

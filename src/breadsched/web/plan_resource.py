@@ -98,6 +98,7 @@ def plan_report(
             "handle": compare_identity,
             "name": compare_name,
             "assumption_sources": plan.comparison.assumption_sources,
+            "currency_notes": list(compare_report.currency_notes),
             "summary": {
                 "planned_cash": compare_report.activity.planned_cash_change,
                 "actual_cash": compare_report.actual_cash_through_as_of,
@@ -280,6 +281,12 @@ def plan_report(
             "unresolved_actuals": totals.unresolved_actual_count,
         },
         "comparison": comparison,
+        "currency": {
+            "as_of": report.activity.as_of,
+            "conversions": [item.as_dict() for item in report.activity.conversions],
+            "unconverted": [item.as_dict() for item in report.activity.unconverted],
+            "notes": list(report.currency_notes),
+        },
         "cash_bridge": [
             {
                 "kind": row.kind.value,

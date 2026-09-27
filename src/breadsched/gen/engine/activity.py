@@ -9,18 +9,22 @@ changes the underlying plan or projection.
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
+from decimal import Decimal
 from enum import Enum
+from fractions import Fraction
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
+from ..lib.amount import Amount
 from ..lib.money import Money
 from ..lib.recurrence import add_months
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
-from . import ledger
+from . import ledger, valuation
+from .currency import reporting_currency_handle
 from .escrow import recognition as escrow_recognition
 from .planning import (
     EventStatus,
@@ -43,15 +47,18 @@ __all__ = [
     "CashBridgeActivity",
     "CashBridgeKind",
     "CashPosition",
+    "CurrencyEvidence",
     "MortgagePaymentActivity",
     "MortgagePaymentPeriodDetail",
     "PlanningFlowActivity",
     "PeriodActivity",
     "PlanMeasure",
     "PlanSettings",
+    "UnconvertedActivity",
     "ReportingPeriod",
     "build_activity_report",
     "build_category_report",
+    "currency_notes",
     "explain_category_period",
     "explain_mortgage_payment_period",
     "explain_planning_flow_period",
@@ -146,6 +153,142 @@ class PlanSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class CurrencyEvidence:
+    """The one as-of quote used to convert a currency into reporting currency."""
+
+    source_currency: str
+    target_currency: str
+    rate: Money
+    quote_date: date | None
+    quote_source: str | None
+    path: str
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "source_currency": self.source_currency,
+            "target_currency": self.target_currency,
+            "rate": self.rate,
+            "quote_date": self.quote_date,
+            "quote_source": self.quote_source,
+            "path": self.path,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class UnconvertedActivity:
+    """Foreign-currency activity left out of totals because no quote applies."""
+
+    kind: str
+    when: date
+    description: str
+    amount: Money
+    currency: str
+    accounts: tuple[str, ...] = ()
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "kind": self.kind,
+            "date": self.when,
+            "description": self.description,
+            "amount": self.amount,
+            "currency": self.currency,
+            "accounts": list(self.accounts),
+        }
+
+
+class _ReportingConverter:
+    """Convert event and transaction values once, at one as-of quote per currency.
+
+    Amounts stay exact; a currency with neither a direct nor an inverse quote is
+    reported as missing rather than treated as reporting-currency units.
+    """
+
+    def __init__(self, db: DbSQLite, as_of: date) -> None:
+        self.db = db
+        self.as_of = as_of
+        self.target = reporting_currency_handle(db)
+        self._rates: dict[str, CurrencyEvidence | None] = {}
+        self.used: dict[str, CurrencyEvidence] = {}
+
+    def factor(self, currency: str | None) -> Fraction | None:
+        """Reporting units per source unit, or None when no quote applies."""
+        if currency is None or currency == self.target:
+            return Fraction(1)
+        if currency not in self._rates:
+            try:
+                converted = valuation.convert_currency(
+                    self.db,
+                    Amount(Money(1), currency),
+                    as_of=self.as_of,
+                    currency=self.target,
+                )
+            except ValueError:
+                converted = None
+            self._rates[currency] = (
+                None
+                if converted is None or converted.amount is None
+                else CurrencyEvidence(
+                    currency,
+                    self.target,
+                    converted.amount.value,
+                    converted.quote_date,
+                    converted.quote_source,
+                    converted.path or "direct",
+                )
+            )
+        evidence = self._rates[currency]
+        if evidence is None:
+            return None
+        self.used[currency] = evidence
+        return Fraction(evidence.rate.numerator, evidence.rate.denominator)
+
+    @staticmethod
+    def splits(splits: tuple[PlannedSplit, ...], factor: Fraction) -> tuple[PlannedSplit, ...]:
+        if factor == 1:
+            return splits
+        return tuple(replace(split, amount=split.amount * factor) for split in splits)
+
+    def event(self, event: PlannedEvent | None) -> PlannedEvent | None:
+        """Return the event in reporting currency, or None when its plan lacks a quote.
+
+        A resolved actual in a currency without a quote keeps its own currency, so
+        callers comparing it with the converted expectation must check
+        :meth:`reporting_actual` first.
+        """
+        if event is None:
+            return None
+        factor = self.factor(event.expected_currency)
+        if factor is None:
+            return None
+        if factor != 1:
+            event = replace(
+                event,
+                expected_splits=self.splits(event.expected_splits, factor),
+                expected_amount=event.expected_amount * factor,
+                expected_currency=self.target,
+                converted_from=event.expected_currency,
+            )
+        if event.actual_transaction is not None:
+            actual_factor = self.factor(event.actual_currency)
+            if actual_factor is not None and actual_factor != 1:
+                event = replace(
+                    event,
+                    actual_splits=self.splits(event.actual_splits, actual_factor),
+                    actual_amount=(
+                        None if event.actual_amount is None else event.actual_amount * actual_factor
+                    ),
+                    actual_currency=self.target,
+                )
+        return event
+
+    def reporting_actual(self, event: PlannedEvent) -> bool:
+        """True when the event's resolved actual is available in reporting currency."""
+        return event.actual_transaction is not None and (
+            event.actual_currency is None or event.actual_currency == self.target
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ActualActivity:
     """One ledger transaction as it appears in a plan-vs-actual report."""
 
@@ -160,6 +303,8 @@ class ActualActivity:
     planned_for: date | None = None
     planned_amount: Money | None = None
     planning_resolution: PlanningResolution = PlanningResolution.UNRESOLVED
+    splits: tuple[PlannedSplit, ...] = ()
+    converted_from: str | None = None
 
     @property
     def unresolved(self) -> bool:
@@ -198,6 +343,7 @@ class ActualActivity:
             "planning_resolution": self.planning_resolution.value,
             "unresolved": self.unresolved,
             "unexpected": self.unexpected,
+            "converted_from": self.converted_from,
         }
 
 
@@ -218,6 +364,7 @@ class PeriodActivity:
     actual_expense: Money = field(default_factory=lambda: Money(0))
     planned_events: list[PlannedEvent] = field(default_factory=list)
     actual_transactions: list[ActualActivity] = field(default_factory=list)
+    unconverted: list[UnconvertedActivity] = field(default_factory=list)
 
     @property
     def amount_variance(self) -> Money:
@@ -276,6 +423,7 @@ class PeriodActivity:
             "unexpected_count": len(self.unexpected),
             "planned_events": [event.as_dict() for event in self.planned_events],
             "actual_transactions": [item.as_dict() for item in self.actual_transactions],
+            "unconverted": [item.as_dict() for item in self.unconverted],
         }
 
 
@@ -287,6 +435,13 @@ class ActivityReport:
     end: date
     period: ReportingPeriod
     periods: list[PeriodActivity]
+    conversions: tuple[CurrencyEvidence, ...] = ()
+    as_of: date | None = None
+
+    @property
+    def unconverted(self) -> tuple[UnconvertedActivity, ...]:
+        """Foreign activity omitted from every total because no quote applies."""
+        return tuple(item for period in self.periods for item in period.unconverted)
 
     @property
     def planned_amount(self) -> Money:
@@ -338,6 +493,9 @@ class ActivityReport:
             "unresolved_count": self.unresolved_count,
             "unresolved_actual_count": self.unresolved_actual_count,
             "unexpected_count": self.unexpected_count,
+            "currency_as_of": self.as_of,
+            "conversions": [item.as_dict() for item in self.conversions],
+            "unconverted": [item.as_dict() for item in self.unconverted],
             "periods": [period.as_dict() for period in self.periods],
         }
 
@@ -475,6 +633,9 @@ class CashPosition:
     closing: Money
     minimum: Money
     minimum_date: date
+    # Foreign events between the as-of date and the horizon start that no quote
+    # converts; they are left out of the opening position rather than mixed in.
+    unconverted_before: tuple[UnconvertedActivity, ...] = ()
 
 
 @dataclass(slots=True)
@@ -557,6 +718,9 @@ class CategoryReport:
     mortgage_payments: list[MortgagePaymentActivity]
     planning_flows: list[PlanningFlowActivity]
     as_of: date
+    unconverted_accounts: list[frozenset[str]] = field(default_factory=list)
+    """Per period, income/expense categories (with ancestors) missing foreign activity."""
+    currency_notes: tuple[str, ...] = ()
 
     @property
     def cash_variance(self) -> Money:
@@ -730,7 +894,10 @@ def explain_category_period(
             )
         return total
 
-    report = build_activity_report(db, start, end, period=ReportingPeriod.MONTH, scenario=scenario)
+    report = build_activity_report(
+        db, start, end, period=ReportingPeriod.MONTH, scenario=scenario, as_of=as_of
+    )
+    converter = _ReportingConverter(db, as_of or date.today())
     planned_rows: list[CategoryPlannedDetail] = []
     actual_rows: list[CategoryActualDetail] = []
     planned_total = Money(0)
@@ -742,9 +909,7 @@ def explain_category_period(
             if expected == Money(0):
                 continue
             actual_value = (
-                category_amount(event.actual_splits)
-                if event.actual_transaction is not None
-                else None
+                category_amount(event.actual_splits) if converter.reporting_actual(event) else None
             )
             planned_total = planned_total + expected
             planned_rows.append(
@@ -779,18 +944,14 @@ def explain_category_period(
             )
 
         for actual in bucket.actual_transactions:
-            transaction = db.get_transaction(actual.transaction)
-            if transaction is None:
-                continue
-            value = category_amount(
-                PlannedSplit(split.account, split.value) for split in transaction.splits
-            )
+            splits = actual.splits
+            value = category_amount(splits)
             if value == Money(0):
                 continue
             actual_total = actual_total + value
             matched_expected: Money | None = None
             if actual.planned_occurrence:
-                matched_event = event_by_key(db, actual.planned_occurrence)
+                matched_event = converter.event(event_by_key(db, actual.planned_occurrence))
                 if matched_event is not None:
                     matched_expected = category_amount(matched_event.expected_splits)
             actual_rows.append(
@@ -808,21 +969,13 @@ def explain_category_period(
                     explanation=_unique_explanations(
                         _actual_resolution_explanation(actual),
                         _category_explanations(
-                            (
-                                PlannedSplit(
-                                    split.account,
-                                    split.value,
-                                    split.planning_flow,
-                                    split.investment_activity,
-                                )
-                                for split in transaction.splits
-                            ),
+                            splits,
                             included,
                             account.account_class,
                             accounts,
                         ),
                         escrow_recognition(
-                            ((split.account, split.value) for split in transaction.splits),
+                            ((split.account, split.amount) for split in splits),
                             accounts,
                         ).explanations(accounts),
                     ),
@@ -901,7 +1054,10 @@ def explain_planning_flow_period(
                 found.append(explanation)
         return _unique_explanations(found)
 
-    report = build_activity_report(db, start, end, period=ReportingPeriod.MONTH, scenario=scenario)
+    report = build_activity_report(
+        db, start, end, period=ReportingPeriod.MONTH, scenario=scenario, as_of=as_of
+    )
+    converter = _ReportingConverter(db, as_of or date.today())
     planned_rows: list[CategoryPlannedDetail] = []
     actual_rows: list[CategoryActualDetail] = []
     planned_total = Money(0)
@@ -913,7 +1069,7 @@ def explain_planning_flow_period(
             if expected == Money(0):
                 continue
             actual_value = (
-                flow_amount(event.actual_splits) if event.actual_transaction is not None else None
+                flow_amount(event.actual_splits) if converter.reporting_actual(event) else None
             )
             planned_total = planned_total + expected
             planned_rows.append(
@@ -945,20 +1101,14 @@ def explain_planning_flow_period(
             )
 
         for actual in bucket.actual_transactions:
-            transaction = db.get_transaction(actual.transaction)
-            if transaction is None:
-                continue
-            splits = tuple(
-                PlannedSplit(split.account, split.value, split.planning_flow)
-                for split in transaction.splits
-            )
+            splits = actual.splits
             value = flow_amount(splits)
             if value == Money(0):
                 continue
             actual_total = actual_total + value
             matched_expected: Money | None = None
             if actual.planned_occurrence:
-                matched = event_by_key(db, actual.planned_occurrence)
+                matched = converter.event(event_by_key(db, actual.planned_occurrence))
                 if matched is not None:
                     matched_expected = flow_amount(matched.expected_splits)
             actual_rows.append(
@@ -977,7 +1127,7 @@ def explain_planning_flow_period(
                         _actual_resolution_explanation(actual),
                         flow_explanations(splits),
                         escrow_recognition(
-                            ((split.account, split.value) for split in transaction.splits),
+                            ((split.account, split.amount) for split in splits),
                             accounts,
                         ).explanations(accounts),
                     ),
@@ -1024,7 +1174,10 @@ def explain_mortgage_payment_period(
             return Money(0)
         return payment[1]
 
-    report = build_activity_report(db, start, end, period=ReportingPeriod.MONTH, scenario=scenario)
+    report = build_activity_report(
+        db, start, end, period=ReportingPeriod.MONTH, scenario=scenario, as_of=as_of
+    )
+    converter = _ReportingConverter(db, as_of or date.today())
     planned_rows: list[CategoryPlannedDetail] = []
     actual_rows: list[CategoryActualDetail] = []
     planned_total = Money(0)
@@ -1036,9 +1189,7 @@ def explain_mortgage_payment_period(
             if expected == Money(0):
                 continue
             actual_value = (
-                payment_amount(event.actual_splits)
-                if event.actual_transaction is not None
-                else None
+                payment_amount(event.actual_splits) if converter.reporting_actual(event) else None
             )
             planned_total = planned_total + expected
             planned_rows.append(
@@ -1062,25 +1213,14 @@ def explain_mortgage_payment_period(
             )
 
         for actual in bucket.actual_transactions:
-            transaction = db.get_transaction(actual.transaction)
-            if transaction is None:
-                continue
-            splits = tuple(
-                PlannedSplit(
-                    split.account,
-                    split.value,
-                    split.planning_flow,
-                    split.investment_activity,
-                )
-                for split in transaction.splits
-            )
+            splits = actual.splits
             value = payment_amount(splits)
             if value == Money(0):
                 continue
             actual_total = actual_total + value
             matched_expected: Money | None = None
             if actual.planned_occurrence:
-                matched = event_by_key(db, actual.planned_occurrence)
+                matched = converter.event(event_by_key(db, actual.planned_occurrence))
                 if matched is not None:
                     matched_expected = payment_amount(matched.expected_splits)
             actual_rows.append(
@@ -1474,8 +1614,21 @@ def _split_totals(
 def _actual_activity(
     transaction: Transaction,
     accounts: dict[str, Account],
+    factor: Fraction = Fraction(1),
+    converted_from: str | None = None,
 ) -> ActualActivity:
-    splits = tuple(PlannedSplit(split.account, split.value) for split in transaction.splits)
+    splits = _ReportingConverter.splits(
+        tuple(
+            PlannedSplit(
+                split.account,
+                split.value,
+                split.planning_flow,
+                split.investment_activity,
+            )
+            for split in transaction.splits
+        ),
+        factor,
+    )
     cash, income, expense = _split_totals(splits, accounts)
     planned_for = transaction.planned_for
     planned_occurrence = transaction.planned_occurrence
@@ -1497,8 +1650,12 @@ def _actual_activity(
         expense=expense,
         planned_occurrence=planned_occurrence,
         planned_for=planned_for,
-        planned_amount=transaction.planned_amount,
+        planned_amount=(
+            None if transaction.planned_amount is None else transaction.planned_amount * factor
+        ),
         planning_resolution=transaction.planning_resolution,
+        splits=splits,
+        converted_from=converted_from,
     )
 
 
@@ -1590,7 +1747,13 @@ def _planned_cash_position(
     scenario: Scenario | None,
     as_of: date,
 ) -> CashPosition:
-    """Project exact-event spendable cash from the latest known ledger position."""
+    """Project exact-event spendable cash from the latest known ledger position.
+
+    Event values use the same as-of currency conversion as the activity report;
+    an event without an applicable quote does not move the projected position.
+    """
+    converter = _ReportingConverter(db, as_of)
+    skipped: list[UnconvertedActivity] = []
     if start > as_of:
         opening = _spendable_cash_balance(db, accounts, as_of)
         if as_of < start - timedelta(days=1):
@@ -1604,7 +1767,19 @@ def _planned_cash_position(
                     include_actualized=True,
                 )
             )
-            for event in prior_events:
+            for original in prior_events:
+                event = converter.event(original)
+                if event is None:
+                    skipped.append(
+                        UnconvertedActivity(
+                            "planned",
+                            original.planned_date,
+                            original.description,
+                            original.expected_amount,
+                            original.expected_currency or converter.target,
+                        )
+                    )
+                    continue
                 cash, _income, _expense = _split_totals(
                     event.expected_splits,
                     accounts,
@@ -1622,7 +1797,10 @@ def _planned_cash_position(
         if scenario is not None
         else scheduled_events(db, start, end, include_actualized=True)
     )
-    for event in sorted(events, key=lambda item: (item.planned_date, item.key)):
+    for original in sorted(events, key=lambda item: (item.planned_date, item.key)):
+        event = converter.event(original)
+        if event is None:
+            continue  # listed with the horizon's unconverted activity
         cash, _income, _expense = _split_totals(
             event.expected_splits,
             accounts,
@@ -1632,7 +1810,7 @@ def _planned_cash_position(
         if current < minimum:
             minimum = current
             minimum_date = event.planned_date
-    return CashPosition(opening, current, minimum, minimum_date)
+    return CashPosition(opening, current, minimum, minimum_date, tuple(skipped))
 
 
 def build_activity_report(
@@ -1642,6 +1820,7 @@ def build_activity_report(
     *,
     period: ReportingPeriod | str = ReportingPeriod.MONTH,
     scenario: Scenario | None = None,
+    as_of: date | None = None,
 ) -> ActivityReport:
     """Aggregate exact-dated planned and actual activity for display.
 
@@ -1649,12 +1828,20 @@ def build_activity_report(
     ledger transactions are placed in the period containing their posting date.
     Consequently an event planned for 31 January but posted on 1 February produces
     a January expectation and a February actual, faithfully exposing cash timing.
+
+    Foreign-currency values are converted to the reporting currency with the one
+    quote applicable on ``as_of`` (default today) for each currency, recorded in
+    ``conversions``. Values with no applicable quote are excluded from every total
+    and listed in their period's ``unconverted``; they are never added as
+    reporting-currency units.
     """
     if end < start:
         raise ValueError("activity report end date precedes start date")
     grouping = period if isinstance(period, ReportingPeriod) else ReportingPeriod(period)
     periods = _make_periods(start, end, grouping)
     accounts = {account.handle: account for account in db.iter_accounts()}
+    effective_as_of = as_of or date.today()
+    converter = _ReportingConverter(db, effective_as_of)
 
     planned = (
         scenario_events(db, scenario, start, end)
@@ -1665,6 +1852,20 @@ def build_activity_report(
         bucket = _index_for(periods, event.planned_date)
         if bucket is None:
             continue
+        converted = converter.event(event)
+        if converted is None:
+            bucket.unconverted.append(
+                UnconvertedActivity(
+                    "planned",
+                    event.planned_date,
+                    event.description,
+                    event.expected_amount,
+                    event.expected_currency or converter.target,
+                    tuple(split.account for split in event.expected_splits),
+                )
+            )
+            continue
+        event = converted
         cash, income, expense = _split_totals(
             event.expected_splits,
             accounts,
@@ -1680,14 +1881,99 @@ def build_activity_report(
         bucket = _index_for(periods, transaction.post_date)
         if bucket is None:
             continue
-        actual = _actual_activity(transaction, accounts)
+        currency = transaction.currency
+        factor = converter.factor(currency)
+        if factor is None:
+            assert currency is not None
+            bucket.unconverted.append(
+                UnconvertedActivity(
+                    "actual",
+                    transaction.post_date,
+                    transaction.description,
+                    _gross(
+                        tuple(PlannedSplit(item.account, item.value) for item in transaction.splits)
+                    ),
+                    currency,
+                    tuple(item.account for item in transaction.splits),
+                )
+            )
+            continue
+        actual = _actual_activity(
+            transaction,
+            accounts,
+            factor,
+            currency if factor != 1 else None,
+        )
         bucket.actual_transactions.append(actual)
         bucket.actual_amount = bucket.actual_amount + actual.amount
         bucket.actual_cash_change = bucket.actual_cash_change + actual.cash_change
         bucket.actual_income = bucket.actual_income + actual.income
         bucket.actual_expense = bucket.actual_expense + actual.expense
 
-    return ActivityReport(start=start, end=end, period=grouping, periods=periods)
+    return ActivityReport(
+        start=start,
+        end=end,
+        period=grouping,
+        periods=periods,
+        conversions=tuple(converter.used[key] for key in sorted(converter.used)),
+        as_of=effective_as_of,
+    )
+
+
+def _rate_text(rate: Money) -> str:
+    """Show an exact rate without trailing zeros; long repeating rates are rounded."""
+    text = f"{rate.rate().quantize(Decimal('1E-8')).normalize():f}"
+    return text if rate.to_decimal(8).normalize() == rate.rate().normalize() else f"≈{text}"
+
+
+def currency_notes(
+    db: DbSQLite,
+    report: ActivityReport,
+    *,
+    before: Sequence[UnconvertedActivity] = (),
+) -> tuple[str, ...]:
+    """Disclose each quote used and every amount left out for lack of one.
+
+    GTK, web, CLI, and print show these sentences verbatim, so the quote date,
+    source, and inversion, or the explicit exclusion, read the same everywhere.
+    """
+
+    def code(handle: str) -> str:
+        commodity = db.get_commodity(handle)
+        return commodity.mnemonic if commodity is not None else handle
+
+    as_of = report.as_of.isoformat() if report.as_of is not None else "today"
+    notes: list[str] = []
+    for evidence in report.conversions:
+        source, target = code(evidence.source_currency), code(evidence.target_currency)
+        quote = (
+            f"the inverse of the {target}→{source} quote"
+            if evidence.path == "inverse"
+            else f"the {source}→{target} quote"
+        )
+        dated = f" dated {evidence.quote_date.isoformat()}" if evidence.quote_date else ""
+        origin = evidence.quote_source or "unknown source"
+        notes.append(
+            f"{source} amounts are converted to {target} at {_rate_text(evidence.rate)} "
+            f"{target} per {source}, using {quote}{dated} ({origin}) applicable on {as_of}."
+        )
+    missing: dict[str, list[UnconvertedActivity]] = {}
+    for item in (*before, *report.unconverted):
+        missing.setdefault(item.currency, []).append(item)
+    for currency, items in sorted(missing.items()):
+        source = code(currency)
+        target = code(reporting_currency_handle(db))
+        listed = "; ".join(
+            f"{item.description or 'Untitled'} {item.amount.format()} {source} "
+            f"({item.kind} {item.when.isoformat()})"
+            for item in items
+        )
+        notes.append(
+            f"Not included in totals: no {source}→{target} or {target}→{source} quote "
+            f"applies on {as_of}, so these {source} amounts are not converted: {listed}. "
+            "Add an exchange rate to include them."
+        )
+    return tuple(notes)
 
 
 def _period_variances(
@@ -1867,8 +2153,10 @@ def build_category_report(
     transfers therefore affect projection state but never become planning expense.
     Parent category rows are roll-ups of their descendants.
     """
-    activity = build_activity_report(db, start, end, period=period, scenario=scenario)
     effective_as_of = as_of or date.today()
+    activity = build_activity_report(
+        db, start, end, period=period, scenario=scenario, as_of=effective_as_of
+    )
     accounts = {account.handle: account for account in db.iter_accounts()}
     periods = activity.periods
     direct_planned: dict[str, list[Money]] = {}
@@ -1895,7 +2183,26 @@ def build_category_report(
     ) -> list[Money]:
         return store.setdefault(kind, [Money(0) for _ in periods])
 
+    unconverted_accounts: list[frozenset[str]] = []
     for period_index, bucket in enumerate(periods):
+        missing: set[str] = set()
+        for item in bucket.unconverted:
+            for handle in item.accounts:
+                account = accounts.get(handle)
+                if account is None or account.account_class not in (
+                    AccountClass.INCOME,
+                    AccountClass.EXPENSE,
+                ):
+                    continue
+                # Keep the category visible so its incomplete value can be flagged.
+                amounts(direct_planned if item.kind == "planned" else direct_actual, handle)
+                while account is not None and account.handle not in missing:
+                    missing.add(account.handle)
+                    parent = accounts.get(account.parent) if account.parent else None
+                    if parent is None or parent.account_class is not account.account_class:
+                        break
+                    account = parent
+        unconverted_accounts.append(frozenset(missing))
         for event in bucket.planned_events:
             for kind, value in _cash_bridge_contributions(
                 event.expected_splits,
@@ -1946,18 +2253,8 @@ def build_category_report(
                 values = amounts(direct_planned, handle)
                 values[period_index] = values[period_index] + amount
         for actual in bucket.actual_transactions:
-            transaction = db.get_transaction(actual.transaction)
-            if transaction is None:
-                continue
-            actual_planned_splits = tuple(
-                PlannedSplit(
-                    split.account,
-                    split.value,
-                    split.planning_flow,
-                    split.investment_activity,
-                )
-                for split in transaction.splits
-            )
+            # Reporting-currency split values, converted once by the activity report.
+            actual_planned_splits = actual.splits
             for kind, value in _cash_bridge_contributions(
                 actual_planned_splits,
                 accounts,
@@ -1975,20 +2272,13 @@ def build_category_report(
             for handle, value in _escrow_planning_flows(actual_planned_splits, accounts).items():
                 values = flow_amounts(flow_actual, PlanningFlowKind.ESCROW_FUNDING, handle)
                 values[period_index] = values[period_index] + value
-            for actual_split, planned_view in zip(
-                transaction.splits, actual_planned_splits, strict=True
-            ):
-                flow_kind = _inferred_planning_flow(planned_view, actual_planned_splits, accounts)
+            for actual_split in actual_planned_splits:
+                flow_kind = _inferred_planning_flow(actual_split, actual_planned_splits, accounts)
                 if flow_kind is PlanningFlowKind.ESCROW_FUNDING:
                     continue
                 if flow_kind is not None:
                     if _redundant_cash_flow_split(
-                        PlannedSplit(
-                            actual_split.account,
-                            actual_split.value,
-                            actual_split.planning_flow,
-                            actual_split.investment_activity,
-                        ),
+                        actual_split,
                         actual_planned_splits,
                         accounts,
                         flow_kind,
@@ -1996,16 +2286,16 @@ def build_category_report(
                         continue
                     values = flow_amounts(flow_actual, flow_kind, actual_split.account)
                     values[period_index] = values[period_index] + flow_kind.plan_amount(
-                        actual_split.value
+                        actual_split.amount
                     )
                 account = accounts.get(actual_split.account)
                 if account is None:
                     continue
                 values = amounts(direct_actual, account.handle)
                 if account.account_class is AccountClass.INCOME:
-                    values[period_index] = values[period_index] - actual_split.value
+                    values[period_index] = values[period_index] - actual_split.amount
                 elif account.account_class is AccountClass.EXPENSE:
-                    values[period_index] = values[period_index] + actual_split.value
+                    values[period_index] = values[period_index] + actual_split.amount
             for handle, amount in escrow.covered_expenses.items():
                 values = amounts(direct_actual, handle)
                 values[period_index] = values[period_index] - amount
@@ -2021,6 +2311,7 @@ def build_category_report(
         direct_actual,
         effective_as_of,
     )
+    position = _planned_cash_position(db, start, end, accounts, scenario, effective_as_of)
     bridge_rows = _cash_bridge_rows(periods, bridge_planned, bridge_actual, effective_as_of)
     flow_rows = _planning_flow_rows(
         db,
@@ -2042,17 +2333,12 @@ def build_category_report(
         activity=activity,
         categories=rows,
         cash_bridge=bridge_rows,
-        cash_position=_planned_cash_position(
-            db,
-            start,
-            end,
-            accounts,
-            scenario,
-            effective_as_of,
-        ),
+        cash_position=position,
         mortgage_payments=mortgage_rows,
         planning_flows=flow_rows,
         as_of=effective_as_of,
+        unconverted_accounts=unconverted_accounts,
+        currency_notes=currency_notes(db, activity, before=position.unconverted_before),
     )
     for measure in (PlanMeasure.PLANNED, PlanMeasure.ACTUAL):
         if report.cash_bridge_totals(measure) != report.cash_totals(measure):

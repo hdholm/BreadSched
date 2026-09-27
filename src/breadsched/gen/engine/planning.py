@@ -106,6 +106,8 @@ class PlannedEvent:
     actual_amount: Money | None = None
     expected_currency: str | None = None
     actual_currency: str | None = None
+    # Original currency when a report converted the expected values for display.
+    converted_from: str | None = None
 
     @property
     def status(self) -> EventStatus:
@@ -148,6 +150,7 @@ class PlannedEvent:
             "actual_amount": self.actual_amount,
             "expected_currency": self.expected_currency,
             "actual_currency": self.actual_currency,
+            "converted_from": self.converted_from,
             "variance": self.variance,
             "expected_splits": [split.as_dict() for split in self.expected_splits],
             "actual_splits": [split.as_dict() for split in self.actual_splits],

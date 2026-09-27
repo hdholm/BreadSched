@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date
 
@@ -14,7 +13,6 @@ from ..engine.activity import (
     PlanMeasure,
     explain_category_period,
 )
-from ..engine.currency import reporting_currency_handle
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
@@ -81,39 +79,6 @@ class ExpenseExplorer:
 
 def _merchant_name(description: str) -> str:
     return description.strip() or "Unknown merchant"
-
-
-def _foreign_expense_accounts(
-    db: DbSQLite, buckets: Sequence[PeriodActivity], reporting: str, as_of: date
-) -> list[set[str]]:
-    """Find category ancestors touched by expense events needing FX conversion."""
-    accounts = {item.handle: item for item in db.iter_accounts()}
-    affected: list[set[str]] = []
-    for bucket in buckets:
-        handles: set[str] = set()
-        for event in bucket.planned_events:
-            if (event.expected_currency or reporting) != reporting:
-                handles.update(split.account for split in event.expected_splits)
-        for actual in bucket.actual_transactions:
-            if actual.post_date > as_of:
-                continue
-            transaction = db.get_transaction(actual.transaction)
-            if transaction is not None and (transaction.currency or reporting) != reporting:
-                handles.update(split.account for split in transaction.splits)
-        expanded: set[str] = set()
-        for handle in handles:
-            seen: set[str] = set()
-            while handle not in seen:
-                seen.add(handle)
-                account = accounts.get(handle)
-                if account is None or account.account_class is not AccountClass.EXPENSE:
-                    break
-                expanded.add(handle)
-                if account.parent is None:
-                    break
-                handle = account.parent
-        affected.append(expanded)
-    return affected
 
 
 def _expense_period(
@@ -192,9 +157,10 @@ def query_expense_explorer(
         return ServiceResult.failure(*result.errors)
     plan = result.value
     buckets = plan.report.activity.periods
-    foreign = _foreign_expense_accounts(
-        db, buckets, reporting_currency_handle(db), plan.report.as_of
-    )
+    # Converted foreign activity is already in reporting currency; only categories
+    # missing an applicable quote cannot show Remaining.
+    expense_accounts = {row.account for row in plan.report.expenses}
+    foreign = [accounts & expense_accounts for accounts in plan.report.unconverted_accounts]
     scenario = (
         next((item for item in db.iter_scenarios() if item.handle == plan.scenario.handle), None)
         if plan.scenario.handle is not None

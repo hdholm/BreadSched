@@ -196,6 +196,12 @@ class PlanView(BaseView):
         self.summary.set_margin_end(12)
         self.summary.set_margin_bottom(8)
         self.append(self.summary)
+        # Quote used for each foreign currency, or amounts left out for lack of one.
+        self.currency_note = Gtk.Label(xalign=0, wrap=True, visible=False)
+        self.currency_note.set_margin_start(12)
+        self.currency_note.set_margin_end(12)
+        self.currency_note.set_margin_bottom(8)
+        self.append(self.currency_note)
 
         note = Gtk.Label(
             label=(
@@ -587,6 +593,13 @@ class PlanView(BaseView):
             f"{activity.unresolved_count} expected occurrences pending   ·   "
             f"{activity.unresolved_actual_count} actuals to review"
         )
+        notes = self._report.currency_notes
+        self.currency_note.set_text("\n".join(notes))
+        self.currency_note.set_visible(bool(notes))
+        if any(line.startswith("Not included") for line in notes):
+            self.currency_note.add_css_class("negative")
+        else:
+            self.currency_note.remove_css_class("negative")
         self.review_actuals_button.set_sensitive(activity.unresolved_actual_count > 0)
         self._update_scenario_actions()
         self._render()

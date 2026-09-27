@@ -2106,6 +2106,12 @@ async function showPlan() {
   document.body.classList.toggle("include-plan-detail", state.planPrintDetail);
 
   return el("div", {}, controls, cards,
+    ...(data.currency?.notes || []).map((line) => el("p", {
+      class: `note plan-currency-note${line.startsWith("Not included") ? " neg" : ""}`,
+    }, line)),
+    ...(comparison?.currency_notes || [])
+      .filter((line) => !(data.currency?.notes || []).includes(line))
+      .map((line) => el("p", { class: "note plan-currency-note" }, `${comparison.name}: ${line}`)),
     el("p", { class: "note plan-method-note" },
       `Showing ${data.controls.from} through ${data.controls.through}. `
       + "Changes to the controls take effect only when Apply is pressed."),
