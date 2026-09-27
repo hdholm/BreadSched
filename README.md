@@ -48,8 +48,8 @@ the [User Guide](src/breadsched/USER_GUIDE.md#explore-expenses) for steps and
 interpretation.
 
 Plan value detail explains dated planned and actual contributions. The current
-Expense Explorer compares plan and actual, but does not yet calculate per-category
-remaining balances or rollover. An ungrouped Dashboard shows complete ledger net
+Expense Explorer shows per-category remaining this period from planned spending
+minus actuals through the as-of date, without rollover. An ungrouped Dashboard shows complete ledger net
 worth; group totals need setup and emergency coverage needs committed outgoings. The
 Dashboard discloses when selected groups leave asset, debt, or cash accounts outside
 their totals. The [User Guide](src/breadsched/USER_GUIDE.md#dashboard-and-near-term-cash) explains

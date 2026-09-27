@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
@@ -9,9 +10,11 @@ from ..db.sqlite import DbSQLite
 from ..engine.activity import (
     CategoryActualDetail,
     CategoryPlannedDetail,
+    PeriodActivity,
     PlanMeasure,
     explain_category_period,
 )
+from ..engine.currency import reporting_currency_handle
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
@@ -26,6 +29,9 @@ class ExpensePeriod:
     planned: Money
     actual: Money
     variance: Money | None
+    actual_to_date: Money | None
+    remaining: Money | None
+    remaining_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +81,68 @@ def _merchant_name(description: str) -> str:
     return description.strip() or "Unknown merchant"
 
 
+def _foreign_expense_accounts(
+    db: DbSQLite, buckets: Sequence[PeriodActivity], reporting: str, as_of: date
+) -> list[set[str]]:
+    """Find category ancestors touched by expense events needing FX conversion."""
+    accounts = {item.handle: item for item in db.iter_accounts()}
+    affected: list[set[str]] = []
+    for bucket in buckets:
+        handles: set[str] = set()
+        for event in bucket.planned_events:
+            if (event.expected_currency or reporting) != reporting:
+                handles.update(split.account for split in event.expected_splits)
+        for actual in bucket.actual_transactions:
+            if actual.post_date > as_of:
+                continue
+            transaction = db.get_transaction(actual.transaction)
+            if transaction is not None and (transaction.currency or reporting) != reporting:
+                handles.update(split.account for split in transaction.splits)
+        expanded: set[str] = set()
+        for handle in handles:
+            seen: set[str] = set()
+            while handle not in seen:
+                seen.add(handle)
+                account = accounts.get(handle)
+                if account is None or account.account_class is not AccountClass.EXPENSE:
+                    break
+                expanded.add(handle)
+                if account.parent is None:
+                    break
+                handle = account.parent
+        affected.append(expanded)
+    return affected
+
+
+def _expense_period(
+    bucket: PeriodActivity,
+    planned: Money,
+    actual: Money,
+    variance: Money | None,
+    actual_to_date: Money | None,
+    *,
+    foreign: bool,
+) -> ExpensePeriod:
+    reason = (
+        "Future period"
+        if variance is None
+        else "Currency conversion unavailable"
+        if foreign
+        else None
+    )
+    return ExpensePeriod(
+        bucket.start,
+        bucket.end,
+        bucket.label,
+        planned,
+        actual,
+        variance,
+        actual_to_date,
+        None if reason else planned - (actual_to_date or Money(0)),
+        reason,
+    )
+
+
 def query_expense_explorer(
     db: DbSQLite,
     request: PlanQuery,
@@ -92,6 +160,38 @@ def query_expense_explorer(
         return ServiceResult.failure(*result.errors)
     plan = result.value
     buckets = plan.report.activity.periods
+    foreign = _foreign_expense_accounts(
+        db, buckets, reporting_currency_handle(db), plan.report.as_of
+    )
+    scenario = (
+        next((item for item in db.iter_scenarios() if item.handle == plan.scenario.handle), None)
+        if plan.scenario.handle is not None
+        else (request.baseline or _baseline(db, plan.start, plan.end))
+    )
+
+    def to_date(account_handle: str, index: int, actual: Money) -> Money | None:
+        bucket = buckets[index]
+        if bucket.start > plan.report.as_of:
+            return None
+        if bucket.end <= plan.report.as_of:
+            return actual
+        detail = explain_category_period(
+            db,
+            account_handle,
+            bucket.start,
+            bucket.end,
+            scenario=scenario,
+            as_of=plan.report.as_of,
+        )
+        return sum(
+            (
+                item.amount
+                for item in detail.actual_transactions
+                if item.post_date <= plan.report.as_of
+            ),
+            Money(0),
+        )
+
     categories = tuple(
         ExpenseCategory(
             row.account,
@@ -99,29 +199,49 @@ def query_expense_explorer(
             row.full_name,
             row.depth,
             tuple(
-                ExpensePeriod(bucket.start, bucket.end, bucket.label, planned, actual, variance)
-                for bucket, planned, actual, variance in zip(
-                    buckets, row.planned, row.actual, row.variance, strict=True
+                _expense_period(
+                    bucket,
+                    planned,
+                    actual,
+                    variance,
+                    to_date(row.account, index, actual),
+                    foreign=row.account in foreign[index],
+                )
+                for index, (bucket, planned, actual, variance) in enumerate(
+                    zip(buckets, row.planned, row.actual, row.variance, strict=True)
                 )
             ),
         )
         for row in plan.report.expenses
     )
+    roots = tuple(
+        row
+        for row in categories
+        if not any(
+            row.full_name.startswith(f"{candidate.full_name}:")
+            for candidate in categories
+            if candidate is not row
+        )
+    )
     totals = tuple(
-        ExpensePeriod(
-            bucket.start,
-            bucket.end,
-            bucket.label,
+        _expense_period(
+            bucket,
             planned or Money(0),
             actual or Money(0),
             variance,
+            None
+            if bucket.start > plan.report.as_of
+            else sum((row.periods[index].actual_to_date or Money(0) for row in roots), Money(0)),
+            foreign=bool(foreign[index]),
         )
-        for bucket, planned, actual, variance in zip(
-            buckets,
-            plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.PLANNED),
-            plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.ACTUAL),
-            plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.VARIANCE),
-            strict=True,
+        for index, (bucket, planned, actual, variance) in enumerate(
+            zip(
+                buckets,
+                plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.PLANNED),
+                plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.ACTUAL),
+                plan.report.category_totals(AccountClass.EXPENSE, PlanMeasure.VARIANCE),
+                strict=True,
+            )
         )
     )
     drilldown = None
@@ -132,13 +252,6 @@ def query_expense_explorer(
                 ServiceError("expense.selection.invalid", ("account", "period_index"))
             )
         bucket = buckets[period_index]
-        scenario = (
-            next(
-                (item for item in db.iter_scenarios() if item.handle == plan.scenario.handle), None
-            )
-            if plan.scenario.handle is not None
-            else (request.baseline or _baseline(db, plan.start, plan.end))
-        )
         detail = explain_category_period(
             db,
             selected.account,

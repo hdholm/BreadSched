@@ -52,7 +52,10 @@ def expense_report(
             "label": item.label,
             "planned": item.planned,
             "actual": item.actual,
+            "actual_to_date": item.actual_to_date,
             "variance": item.variance,
+            "remaining": item.remaining,
+            "remaining_reason": item.remaining_reason,
         }
 
     detail = explorer.drilldown

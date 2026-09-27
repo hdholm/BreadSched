@@ -406,13 +406,14 @@ does not change the selected Plan or ledger.
 Apply the Plan horizon, **Group by** period (month, quarter, or year), and scenario
 first. Expense Explorer uses those applied Plan choices; changing them changes the
 periods and planned amounts it shows. Actuals are recorded transactions, with the
-same as-of boundary and treatment of refunds and other special flows as Plan.
+same treatment of refunds and other special flows as Plan. Remaining uses only
+actuals posted through the as-of date.
 
 In GTK, choose **Explore expenses…** from Plan. In the web interface, scroll to
 **Expense Explorer** on the Plan page, below the cash outlook. Then:
 
 1. Choose a **Period** for the category comparison. Each category shows a plan bar
-   and an actual bar plus exact Plan, Actual, and Variance values. The web chart
+   and an actual bar plus exact Plan, Actual, Variance, and Remaining values. The web chart
    labels plan in blue and actual in orange. **Sort categories** (GTK) or **Sort by**
    (web) orders the rows by Actual, Plan, Variance, or name/category.
 2. Choose **Category trend** to compare that category's plan and actual across all
@@ -431,8 +432,14 @@ include refunds in the same actual total. A category plan is never split into
 merchant budgets: for example, a plan of 100 and purchases totaling 120 show a
 category variance of 20, even if the purchases appear under several merchants.
 The explorer does not create or save merchant rules or change the ledger.
-Its variance is a comparison, not an available-to-spend balance: per-category
-remaining-this-period and optional rollover are planned.
+Remaining answers how much of the selected full-period expense plan is left after
+actuals posted through the as-of date. A refund increases it; overspending shows a
+negative amount. Actual and Variance still describe the full selected period, so a
+future-dated transaction may appear in Actual before it affects Remaining. A
+future-only period says “Future period,” and an affected foreign-currency category
+says “Currency conversion unavailable” until Plan conversion is implemented.
+Remaining has no rollover or merchant allocation and is a planning comparison,
+not a bank balance.
 
 To keep a copy, use **Print…** in the GTK Explorer for a self-contained preview of
 the selected category and period with merchant detail, then print or save as PDF

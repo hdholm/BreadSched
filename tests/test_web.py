@@ -1599,6 +1599,10 @@ class TestPlanApi:
         assert status == 200
         rent = next(row for row in report["categories"] if row["full_name"] == "Expenses:Rent")
         assert Money(rent["periods"][0]["actual"]) == Money(1800)
+        assert Money(rent["periods"][0]["actual_to_date"]) == Money(1800)
+        assert Money(rent["periods"][0]["remaining"]) == (
+            Money(rent["periods"][0]["planned"]) - Money(1800)
+        )
         assert Money(report["totals"][0]["actual"]) == Money(1800)
         params = urllib.parse.urlencode(
             {"from": "2026-01", "through": "2026-01", "account": rent["account"], "index": "0"}

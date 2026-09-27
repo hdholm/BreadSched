@@ -36,15 +36,13 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    sample generator supplies accounts, dated transactions, schedules, and a Plan
    example. Continue first-run tests for imported books and explicit missing
    valuations across GTK/web/CLI/print.
-2. **P0 — Per-category remaining this period.** Build on dated Plan and actual
-   events: for the selected category and period, show planned spending minus
-   actual spending through the as-of date, with refunds and parent/child rollups
-   counted once. Display overspending as negative and future-only actuals as not
-   applicable. An optional, explicitly enabled rollover carries prior surplus or
-   deficit with an inspectable period bridge; do not turn dated events into a
-   second monthly budget ledger. Respect scenario selection and missing FX quotes.
-   Answer “How much can I still spend in this category this month?” in Plan and
-   Expense Explorer, with consistent GTK/web/print explanations.
+2. **P0 — Per-category remaining this period.** Expense Explorer now derives the
+   full-period plan minus actual spending through as-of, including refunds, negative
+   overspending, and parent rollups counted once. Future-only periods and unconverted
+   foreign expenses suppress Remaining; GTK, web, and print show the same result.
+   Add optional, explicitly enabled rollover with an inspectable prior-period
+   surplus/deficit bridge; do not create a second monthly budget ledger. Extend
+   currency conversion only when Plan amounts and quote evidence are complete.
 3. **P0 — Installable Linux and Windows builds.** Ship a tested Flatpak first,
    validating file portals, book locks, imports/exports, backup/restore, help,
    printing, settings, and offline use inside its sandbox. Provide a Windows

@@ -1360,8 +1360,13 @@ only content source: the application performs a deliberately conservative
 presentation transform instead of maintaining a second embedded copy or requiring
 a browser, network access, or a Markdown-rendering runtime dependency.
 
-The current event-derived category Plan and actual totals are the basis for a
-future remaining-this-period view; rollover must be an explicit, inspectable
-carry between periods, not a mutation of historical events. Reimbursable expense
+Expense Explorer derives Remaining from the full-period category plan and actual
+contributions through the report's as-of date. A partial period retains its
+full-period Actual/Variance display separately. Parent categories use the same
+Plan rollups, while section totals sum only outermost category rows. A foreign
+expense event without Plan currency conversion suppresses Remaining for that
+category and its ancestors, with an explicit reason. Future-only periods are
+unavailable. Rollover remains an explicit, inspectable future carry between
+periods, not a mutation of historical events. Reimbursable expense
 work must link the original balanced expense, collectible receivable, and later
 settlement while keeping the income/expense and cash effects distinct.

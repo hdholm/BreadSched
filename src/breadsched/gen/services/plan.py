@@ -167,7 +167,7 @@ def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResul
         scenario = selected
         scenario_choice = ScenarioChoice(selected.handle, selected.name)
 
-    report = build_category_report(db, start, end, period=period, scenario=scenario)
+    report = build_category_report(db, start, end, period=period, scenario=scenario, as_of=today)
     if (
         request.use_saved
         and compare_handle not in {None, BASE_SCENARIO}
@@ -199,6 +199,7 @@ def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResul
             end,
             period=period,
             scenario=compare_scenario,
+            as_of=today,
         )
         comparison = PlanComparison(
             compare_choice,

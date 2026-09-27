@@ -114,7 +114,12 @@ class ExpenseExplorerDialog(Gtk.Window):
         self.content.append(
             self._label(f"Category comparison — {self._report.totals[index].label}", heading=True)
         )
-        self.content.append(self._label("First bar: plan; second bar: actual."))
+        self.content.append(
+            self._label(
+                "First bar: plan; second bar: full-period actual. "
+                "Remaining uses actual through as-of."
+            )
+        )
         grid = Gtk.Grid(column_spacing=12, row_spacing=5)
         self.content.append(grid)
         for i, row in enumerate(rows):
@@ -125,10 +130,15 @@ class ExpenseExplorerDialog(Gtk.Window):
             bars.append(self._bar(value.actual, scale))
             grid.attach(bars, 1, i, 1, 1)
             variance = value.variance.format() if value.variance is not None else "—"
+            remaining = (
+                value.remaining.format()
+                if value.remaining is not None
+                else value.remaining_reason or "—"
+            )
             grid.attach(
                 self._label(
                     f"Plan {value.planned.format()} · Actual {value.actual.format()} · "
-                    f"Variance {variance}"
+                    f"Variance {variance} · Remaining {remaining}"
                 ),
                 2,
                 i,
@@ -146,13 +156,19 @@ class ExpenseExplorerDialog(Gtk.Window):
         )
         for period in selected.periods:
             line = Gtk.Box(spacing=8)
+            remaining = (
+                period.remaining.format()
+                if period.remaining is not None
+                else period.remaining_reason or "—"
+            )
             line.append(self._label(period.label))
             line.append(self._bar(period.planned, trend_scale))
             line.append(self._bar(period.actual, trend_scale))
             line.append(
                 self._label(
                     f"{period.planned.format()} / {period.actual.format()} / "
-                    f"{period.variance.format() if period.variance is not None else '—'}"
+                    f"{period.variance.format() if period.variance is not None else '—'} · "
+                    f"Remaining {remaining}"
                 )
             )
             self.content.append(line)
