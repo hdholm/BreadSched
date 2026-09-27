@@ -5,6 +5,18 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Flatpak desktop integration and sandboxed GTK smoke.** The Flatpak now
+  installs a desktop entry, AppStream metainfo, and a scalable icon named by the
+  application id, and GTK windows use that icon. CI validates the entry and
+  metadata, checks the installed exports, and drives the GTK interface inside the
+  sandbox under a virtual display with network unshared: a book under Documents
+  opens, every view renders, the packaged User Guide loads, the installed icon
+  resolves, and settings persist in the sandbox configuration directory. File
+  portals and printing remain unvalidated, and no installer is published. The
+  completed per-category remaining priority is retired; its currency extension
+  moves to the currency priority. Application version `0.2.0a121`; native schema
+  remains 7.
+
 - **Release runs no longer fail on merges without a version bump.** The release
   workflow's preparation job now reports a version whose tag already targets an
   earlier `main` commit as not selected, instead of reaching the tag step and

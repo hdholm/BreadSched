@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=BreadSched
+GenericName=Household Finance
+Comment=Track household finances, plan cash flow from dated events, and project scenarios
+Exec=breadsched-gtk %f
+Icon=org.breadsched.BreadSched
+Terminal=false
+StartupNotify=true
+Categories=Office;Finance;
+Keywords=budget;cash flow;planning;projection;GnuCash;ledger;

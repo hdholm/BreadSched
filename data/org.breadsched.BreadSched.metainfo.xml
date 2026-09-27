@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.breadsched.BreadSched</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+  <name>BreadSched</name>
+  <summary>Plan household cash flow from dated financial events</summary>
+  <description>
+    <p>
+      BreadSched is a household-finance application for tracking income and expenses,
+      planning cash flow from dated financial events, and projecting household finances
+      under saved assumptions and alternate scenarios.
+    </p>
+    <ul>
+      <li>Double-entry registers, reconciliation, and scheduled transactions</li>
+      <li>An event-driven Plan with commitments, estimates, and actual-versus-plan review</li>
+      <li>Multi-year projections with inheriting scenarios</li>
+      <li>GnuCash, QIF, and OFX import, with books stored locally in SQLite</li>
+    </ul>
+    <p>BreadSched is alpha software. Keep independent backups of real books.</p>
+  </description>
+  <launchable type="desktop-id">org.breadsched.BreadSched.desktop</launchable>
+  <url type="homepage">https://github.com/hdholm/BreadSched</url>
+  <url type="bugtracker">https://github.com/hdholm/BreadSched/issues</url>
+  <developer id="io.github.hdholm">
+    <name>Howard Holm</name>
+  </developer>
+  <provides>
+    <binary>breadsched-gtk</binary>
+    <binary>breadsched</binary>
+  </provides>
+  <categories>
+    <category>Office</category>
+    <category>Finance</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+</component>

@@ -1338,6 +1338,17 @@ for a synthetic book and QIF source. It verifies Dashboard, CSV export, backup,
 restore, imported-book integrity, and competing-writer lock behavior in that
 environment; GTK portal behavior and the remaining desktop paths are separate
 acceptance work.
+Desktop integration files live under `data/` and are named by the application id:
+a desktop entry launching `breadsched-gtk`, AppStream metainfo whose launchable
+names that entry, and a scalable themed icon. The GTK application sets the same id
+as the default window icon. The manifest installs all three under `/app/share`;
+CI validates them with `desktop-file-validate` and `appstreamcli`, checks that the
+installed Flatpak exports them, and then runs `scripts/flatpak_gtk_smoke.py` in the
+sandbox under a virtual display with network unshared. That smoke opens a book
+under Documents, renders every view, loads the packaged User Guide, resolves the
+installed icon, and requires settings in the sandbox configuration directory
+(`~/.var/app/<id>/config`). File-chooser portals and printing remain unvalidated
+because the CI runner has no desktop portal service.
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
