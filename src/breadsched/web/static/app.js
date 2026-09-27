@@ -1615,7 +1615,7 @@ async function expenseExplorerPanel(currentPlan) {
   const panel = el("section", { class: "expense-explorer" },
     el("h2", {}, "Expense Explorer"),
     el("p", { class: "note" },
-      "Blue: category plan · Orange: actual. Merchant groups use actuals only; the category plan is unallocated."));
+      "Blue: category plan · Orange: full-period actual. Remaining uses actual through today, without rollover. Merchant groups use actuals only."));
   if (!selected) return panel;
   const periodSelect = el("select", { onchange: (event) => {
     state.expenseIndex = Number(event.target.value); render();
@@ -1643,15 +1643,19 @@ async function expenseExplorerPanel(currentPlan) {
       - Number(a.periods[index][state.expenseSort] || 0));
   panel.append(expenseBars(ordered, index),
     table(["Category", {label:"Plan",num:true}, {label:"Actual",num:true},
-      {label:"Variance",num:true}], ordered.map((item) => el("tr", {},
+      {label:"Variance",num:true}, {label:"Remaining",num:true}], ordered.map((item) => el("tr", {},
       el("td", {}, item.full_name),
       ...["planned", "actual", "variance"].map((key) => el("td", {class:"num"},
-        item.periods[index][key] == null ? "—" : String(item.periods[index][key])))))));
+        item.periods[index][key] == null ? "—" : String(item.periods[index][key]))),
+      el("td", {class:"num"}, item.periods[index].remaining == null
+        ? item.periods[index].remaining_reason || "—" : String(item.periods[index].remaining))))));
   panel.append(el("h3", {}, `${selected.full_name} trend`), expenseTrend(selected),
     table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
-      {label:"Variance",num:true}], selected.periods.map((item) => el("tr", {},
+      {label:"Variance",num:true}, {label:"Remaining",num:true}], selected.periods.map((item) => el("tr", {},
       el("td", {}, item.label), ...["planned", "actual", "variance"].map((key) =>
-        el("td", {class:"num"}, item[key] == null ? "—" : String(item[key])))))));
+        el("td", {class:"num"}, item[key] == null ? "—" : String(item[key]))),
+      el("td", {class:"num"}, item.remaining == null
+        ? item.remaining_reason || "—" : String(item.remaining))))));
   const detailParams = new URLSearchParams(params);
   detailParams.set("account", selected.account);
   detailParams.set("index", String(index));
@@ -1662,8 +1666,10 @@ async function expenseExplorerPanel(currentPlan) {
         el("td", {}, group.name), el("td", {class:"num"}, String(group.amount)),
         el("td", {}, group.transactions.map((item) => el("div", {},
           `${item.date} · ${item.description || "Unknown merchant"} · ${item.amount}`)))))),
-    el("p", {class:"note"}, `Category plan ${detail.period.planned}; actual ${detail.period.actual}; `
+    el("p", {class:"note"}, `Category plan ${detail.period.planned}; full-period actual ${detail.period.actual}; `
+      + `actual through today ${detail.period.actual_to_date == null ? "—" : detail.period.actual_to_date}; `
       + `variance ${detail.period.variance == null ? "—" : detail.period.variance}. `
+      + `Remaining ${detail.period.remaining == null ? detail.period.remaining_reason : detail.period.remaining}. `
       + "No merchant budgets are assigned."));
   return panel;
 }

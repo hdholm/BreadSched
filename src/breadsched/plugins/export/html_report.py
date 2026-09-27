@@ -130,28 +130,38 @@ def expense_explorer_report(explorer: ExpenseExplorer) -> str:
     category = next(item for item in explorer.categories if item.account == detail.account)
     selected = detail.period
     comparison_rows = []
+
+    def remaining_cell(item) -> str:
+        value = (
+            _money(item.remaining) if item.remaining is not None else item.remaining_reason or "—"
+        )
+        return f'<td class="num">{escape(value)}</td>'
+
     index = next(i for i, item in enumerate(category.periods) if item.start == selected.start)
     for row in explorer.categories:
         value = row.periods[index]
         comparison_rows.append(
             f"<tr><td>{escape(row.full_name)}</td>{_amount(value.planned)}"
-            f"{_amount(value.actual)}{_amount(value.variance)}</tr>"
+            f"{_amount(value.actual)}{_amount(value.variance)}{remaining_cell(value)}</tr>"
         )
     comparison = (
-        "<h2>Category comparison</h2><table><thead><tr><th>Category</th>"
+        "<h2>Category comparison</h2><p class='note'>Remaining uses actual through "
+        "the as-of date; Actual and Variance show full-period values.</p>"
+        "<table><thead><tr><th>Category</th>"
         '<th class="num">Plan</th><th class="num">Actual</th>'
-        '<th class="num">Variance</th></tr></thead><tbody>'
+        '<th class="num">Variance</th><th class="num">Remaining</th></tr></thead><tbody>'
         f"{''.join(comparison_rows)}</tbody></table>"
     )
     trend_rows = "".join(
         f"<tr><td>{escape(item.label)}</td>{_amount(item.planned)}"
-        f"{_amount(item.actual)}{_amount(item.variance)}</tr>"
+        f"{_amount(item.actual)}{_amount(item.variance)}{remaining_cell(item)}</tr>"
         for item in category.periods
     )
     trend = (
         f"<h2>{escape(category.full_name)} trend</h2><table><thead><tr><th>Period</th>"
         '<th class="num">Plan</th><th class="num">Actual</th>'
-        f'<th class="num">Variance</th></tr></thead><tbody>{trend_rows}</tbody></table>'
+        f'<th class="num">Variance</th><th class="num">Remaining</th></tr></thead>'
+        f"<tbody>{trend_rows}</tbody></table>"
     )
     merchant_rows = []
     for group in detail.merchants:

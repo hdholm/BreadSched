@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Category remaining through as-of.** Expense Explorer shows planned expense
+  minus actual expense posted through the as-of date, with refunds and overspending
+  signed, parent rollups counted once, and unavailable states for future-only or
+  unconverted foreign-currency activity. Actual-to-date is separate from the
+  existing full-period Actual and Variance cells. Explicit PlanQuery dates now
+  reach both primary and comparison reports. GTK, web, and print share the value.
+  No rollover or native schema change. Application version `0.2.0a116`.
+
 - **Dashboard group coverage.** Grouped position and selected liquid balances
   disclose omitted asset/liability and cash-like account counts across GTK, web,
   CLI, and print. Selected figures remain selected figures; no accounts are added
