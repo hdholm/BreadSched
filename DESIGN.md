@@ -727,6 +727,15 @@ cash-counterpart annotations on a retirement distribution count only once.
 
 ## Dashboard aggregation
 
+Dashboard position aggregation currently uses explicitly configured groups and
+account group assignments; it does not infer a whole-book net-worth group. With no
+selected groups, a zero position can mean missing configuration rather than a
+zero ledger balance. The ledger's account balance calculation has a different
+scope. Future first-run presentation must distinguish absent setup, genuine zero,
+and incomplete FX valuation before labeling a number as whole-book net worth.
+Likewise, emergency sizing depends on recognized scheduled outgoings, so missing
+commitments are not evidence of zero household spending.
+
 Dashboard group names are account-style colon-delimited paths. The engine builds
 the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting
 local names, depths, headings, and values. A selected chart parent owns its entire
@@ -1335,3 +1344,9 @@ presents it in a bounded, scrollable native window. The Markdown file remains th
 only content source: the application performs a deliberately conservative
 presentation transform instead of maintaining a second embedded copy or requiring
 a browser, network access, or a Markdown-rendering runtime dependency.
+
+The current event-derived category Plan and actual totals are the basis for a
+future remaining-this-period view; rollover must be an explicit, inspectable
+carry between periods, not a mutation of historical events. Reimbursable expense
+work must link the original balanced expense, collectible receivable, and later
+settlement while keeping the income/expense and cash effects distinct.

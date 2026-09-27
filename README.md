@@ -13,10 +13,6 @@ a user might otherwise rely on GnuCash, without reproducing GnuCash's business-
 accounting features. GnuCash compatibility remains a first-class requirement while
 BreadSched's standalone household feature set matures.
 
-GnuCash commodity imports distinguish securities with the same ticker in different
-namespaces and currencies. Ambiguous bare identifiers in imported prices are
-reported for review instead of being assigned to an unrelated holding.
-
 ## Why the name BreadSched?
 
 The application is focused heavily on cash flow, but most obvious names built from
@@ -35,29 +31,10 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
 
-Foreign-currency account balances use available direct dated exchange quotes or
-invert a dated reverse pair when no direct quote applies. Account views identify
-the quote date, source, and any inversion, or disclose a missing quote with
-the original ledger currency. Account chart rollups and cash/net-worth summaries
-with missing reporting-currency quotes read "Missing reporting-currency quote".
-Cross-report currency totals remain under development.
-Use `breadsched rate BOOK --from EUR --to USD --date YYYY-MM-DD --value 1.25`
-to enter a directional manual exchange rate for currencies already in the book.
-The CLI saves an exact rate without replacing imported quotes. The web Accounts
-view also offers **Exchange rate…** for known book currencies and shows quote
-date/source or a missing-quote disclosure in account values. GTK rate entry
-remains future work.
-Unexpected web errors return a correlation ID even if a diagnostic output stream
-has closed; use that ID to correlate an available server log when reporting a problem.
-
-Documented alpha releases are published from a tested main commit with wheel,
-source archive, and `SHA256SUMS` assets. GitHub marks alpha versions as
-pre-releases; check the versioned release notes and verify downloaded assets
-against the published checksums before installation.
-Release builds run without repository write access; a separate publisher validates
-the tested main commit and artifacts before tagging. Ordinary CI uses read-only
-repository tokens. The loopback web server serves only its packaged page, script,
-and stylesheet from its static directory.
+Alpha releases provide a wheel, source archive, and checksums. Native Linux and
+Windows installers are planned. Read the release notes and verify the checksums
+before installing. The [User Guide](src/breadsched/USER_GUIDE.md) covers current
+workflows and their limits, including exchange rates, imports, and recovery.
 
 ## Explore expenses
 
@@ -70,45 +47,12 @@ allocated into merchant budgets. Both interfaces can print the applied view. See
 the [User Guide](src/breadsched/USER_GUIDE.md#explore-expenses) for steps and
 interpretation.
 
-Plan value detail in GTK and web explains a selected category, planning flow, or
-mortgage cash requirement with dated planned and actual contributions. The web
-response uses the same activity engine as the other Plan views; see the
-[User Guide](src/breadsched/USER_GUIDE.md#plan) for how to read these values.
-Scheduled occurrence matching compares amounts only in the same transaction
-currency; cross-currency Plan totals await a complete valuation policy.
-The web Plan view uses the same shared Plan service for saved controls and scenario
-comparisons as the GTK view; selecting a comparison displays per-section differences
-without changing either scenario.
-Baseline scheduled transactions created or edited in the web interface use the
-shared schedule service; a rejected edit leaves the stored schedule unchanged.
-The same write boundary applies to scenario-only estimates and changes to a
-scenario's baseline schedules; a rejected request leaves saved overrides unchanged.
-The web import view accepts a browser-selected file up to 32 MiB or a path visible
-to the server. Repeated uploads of the same filename use a stable source for
-GnuCash re-import; see the [User Guide](src/breadsched/USER_GUIDE.md#import-and-gnucash-interoperability).
-Account views disclose a security quote's date and source. When a reporting-currency
-quote is missing, they label the ledger-value fallback; see the
-[User Guide](src/breadsched/USER_GUIDE.md#security-prices-and-current-value).
-The web Dashboard uses the shared Dashboard calculation for its summary, groups,
-bills, and income. Query-specific liquidity and emergency-fund horizons apply to
-the current view without changing saved Dashboard settings.
-The valuation layer uses exact as-of currency quotes for ordinary foreign
-account balances, with provenance and explicit missing-quote status. Account chart
-rollups and cash/net-worth summaries require complete direct or inverse pair quotes.
-Account views show the quote's age relative to the valuation date; no automatic
-staleness cutoff is applied to an otherwise eligible quote.
-Dashboard now marks position and liquidity figures unavailable when a configured
-group or spendable cash balance lacks a quote; bills and income remain visible.
-Plan, Projection, and their printed reports still need the same policy.
-Multi-hop conversion paths remain under development.
-The web Scenarios list displays Base and saved scenarios with effective assumptions,
-their inheritance sources, and accounts eligible for account-specific rates. Saving
-a scenario still uses the shared scenario service.
-Web Projection month details use the shared projection calculation and show opening
-and closing cash, account movements, dated events, and effective assumption sources.
-Inspecting a draft month does not save edited projection controls.
-Web Projection summaries and comparisons also use that shared engine. The comparison
-shows aligned monthly and ending-value differences without saving either draft.
+Plan value detail explains dated planned and actual contributions. The current
+Expense Explorer compares plan and actual, but does not yet calculate per-category
+remaining balances or rollover. Dashboard group and emergency figures need setup;
+an unconfigured zero should not be read as a measured household balance. The
+[User Guide](src/breadsched/USER_GUIDE.md#dashboard-and-near-term-cash) explains
+current behavior, and the [roadmap](ROADMAP.md) tracks these improvements.
 
 ## Install and run for development
 

@@ -312,6 +312,14 @@ liability.
 
 ## Dashboard and near-term cash
 
+Dashboard group totals are based on the accounts assigned to those groups. If a
+book has no group setup, a displayed zero for net worth is not a reliable
+whole-book valuation; use Accounts or `breadsched balance BOOK` to inspect the
+ledger. Emergency-fund and months-covered figures likewise depend on recognized
+commitments and the saved Dashboard setup. A first-run setup-state disclosure and
+ledger-derived position summary are planned. Do not treat an unconfigured zero as
+evidence of no assets, debts, or expenses.
+
 In the web Dashboard, a requested liquidity or emergency-fund horizon changes
 the displayed calculation for that request. Reopening the view uses the saved
 Dashboard settings; use the Dashboard settings controls to save a new horizon.
@@ -401,6 +409,8 @@ include refunds in the same actual total. A category plan is never split into
 merchant budgets: for example, a plan of 100 and purchases totaling 120 show a
 category variance of 20, even if the purchases appear under several merchants.
 The explorer does not create or save merchant rules or change the ledger.
+Its variance is a comparison, not an available-to-spend balance: per-category
+remaining-this-period and optional rollover are planned.
 
 To keep a copy, use **Print…** in the GTK Explorer for a self-contained preview of
 the selected category and period with merchant detail, then print or save as PDF
@@ -496,6 +506,10 @@ Re-import updates source-owned data and removes source transactions that have
 disappeared. A deleted source transaction still referenced by a BreadSched
 reconciliation or FSA claim is retained and reported for review. Local planning
 decisions are not overwritten by source refreshes.
+
+GnuCash sources are read, not edited, by current import workflows. Write-back of
+simple changes requires a separate reviewed workflow and is future work. CSV
+import, automatic payee/category rules, and AqBanking links are not available yet.
 
 QIF and OFX/QFX imports infer decimal and date conventions from whole-file evidence.
 When a format is ambiguous, select an explicit override in GTK, web, or an importer

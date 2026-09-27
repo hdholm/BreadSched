@@ -3,21 +3,18 @@
 This file is the **single authoritative source for unfinished BreadSched work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-The current released application baseline is **`v0.2.0a111`**. Subsequent alpha
+The current released application baseline is **`v0.2.0a112`**. Subsequent alpha
 releases should carry GitHub pre-release metadata as well as versioned notes and
 verified artifacts.
 
 
 ## Product direction
 
-BreadSched is intended to become a **general household-finance application**
-over the longer term, not a clone of GNUCash.  Although it is intended to have
-many similar features to GNUcash it is not anticipated to have any of the
-business oriented features, and intends to implement more personal finance
-features than GNUcash. It should cover household
-accounts/registers, reconciliation, scheduled transactions, planning, scenarios,
-projection, investments/retirement, and common imports while leaving business
-accounting features out of scope.
+BreadSched aims to become a **general household-finance application**. It should
+cover accounts and registers, reconciliation, scheduled transactions, planning,
+scenarios, projection, investments and retirement, and common imports. GnuCash
+compatibility matters while these household workflows mature; business accounting
+features remain outside the product scope.
 
 Until that household feature set is sufficiently complete, **GnuCash compatibility
 is a first-class requirement**. GTK4 is the canonical interface and Linux is the
@@ -25,13 +22,66 @@ primary native desktop target; the web interface remains a supported parity surf
 Cross-cutting workflow logic belongs in shared services rather than presentation code.
 
 
-## Immediate priorities
+## Prioritized delivery
 
-The next priority is **Cross-cutting multi-currency valuation and import.** Build
-from the exact direct dated conversion contract toward disclosed account values,
-report totals, and imported quotes. Continue responsibility-based decomposition
-as those workflows touch the remaining `web/server.py` seams; do not optimize for
-line count alone.
+These are the current priorities, subject to review as field evidence changes.
+Each slice should use shared calculations and cover GTK, web, CLI, and printable
+output wherever that behavior is exposed. Preserve GnuCash source ownership and
+round-trip limits, exact money, and explicit missing-currency valuations.
+
+1. **P0 — Honest first-run Dashboard and sample book.** Before any group or
+   schedule configuration, show ledger-derived position totals where complete
+   valuations exist, or label configured-group metrics as not configured. Never
+   present a zero net worth, emergency fund, or months covered as a measured result
+   when it only means no Dashboard groups or commitments exist. Distinguish an
+   actual zero, missing quote, and absent setup. Supply a clearly synthetic,
+   reproducible sample book with accounts, dated transactions, schedules, and Plan
+   examples; no private financial data. Test new, imported, and configured books
+   across GTK/web/CLI/print.
+2. **P0 — Per-category remaining this period.** Build on dated Plan and actual
+   events: for the selected category and period, show planned spending minus
+   actual spending through the as-of date, with refunds and parent/child rollups
+   counted once. Display overspending as negative and future-only actuals as not
+   applicable. An optional, explicitly enabled rollover carries prior surplus or
+   deficit with an inspectable period bridge; do not turn dated events into a
+   second monthly budget ledger. Respect scenario selection and missing FX quotes.
+   Answer “How much can I still spend in this category this month?” in Plan and
+   Expense Explorer, with consistent GTK/web/print explanations.
+3. **P0 — Installable Linux and Windows builds.** Ship a tested Flatpak first,
+   validating file portals, book locks, imports/exports, backup/restore, help,
+   printing, settings, and offline use inside its sandbox. Provide a Windows
+   installer with GTK runtime and the same book/upgrade and file workflows; test
+   clean installs, upgrades, launch, and uninstalls on supported Windows CI.
+   Publish signed/checksummed artifacts and concise installation instructions
+   only after their release gates are proven. Keep wheel/source releases available.
+4. **P1 — Due-since-last-run batch review.** Group missed occurrences by schedule
+   on Dashboard, show dates and resolved amounts (never raw cycle values such as
+   `1.0000`), then allow a reviewed batch of post, skip, or defer decisions.
+   Prevent duplicate posting and preserve occurrence identity, import provenance,
+   undo/redo, and partial failure atomicity; retain individual details on demand.
+5. **P1 — Finish currency handling.** Add GTK manual FX entry using the existing
+   exact quote contract. Apply one as-of conversion and missing-quote policy to
+   Plan/Projection totals, comparisons, and prints; disclose quote date/source,
+   inversion, staleness, and rounding. Continue imported quote mapping and decide
+   multi-hop policy explicitly before enabling it.
+6. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity
+   without rewriting imported descriptions; preview deterministic matching and
+   categorization suggestions before acceptance. Add a user-mapped CSV importer
+   with date/amount/encoding validation, duplicate and transfer review, source
+   identity for re-import, and atomic undo. Keep rule priority and conflicts
+   explainable; never silently recategorize previously accepted transactions.
+7. **P1 — Reimbursable expenses and receivables.** Track an expense and the
+   amount owed by an insurer, employer, or other payer as linked but distinct
+   facts. Show open, partial, disputed, written-off, and settled receivables,
+   their ages and expected cash dates, without counting a reimbursement as new
+   income or erasing the original expense. Reconcile deposits to claims with
+   exact partial amounts, refunds, and currency evidence; coordinate with FSA
+   claims and preserve imported ledger splits.
+8. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
+   simple user edits, broader reporting and spending-over-time charts, then
+   scenario-aware pinned savings targets. Investigate AqBanking as an optional
+   integration, and add transaction tags/attachments with private-data and
+   portability controls. Detailed acceptance contracts follow below.
 
 
 ## Architecture and correctness
@@ -54,14 +104,44 @@ line count alone.
 - Improve register appearance and information density while keeping account-type
   debit/credit terminology clear.
 
+- Add payees as first-class, reviewable transaction metadata; keep imported
+  descriptions and source identifiers intact. Let matching and categorization
+  rules propose category/payee assignments with preview, ordering, conflict
+  explanations, and explicit acceptance. Handle transfers and split transactions
+  without a guessed category or historical rewrite.
+
+- Add transaction tags and optional attachments with search/filter/export support.
+  Define book-relative storage, size/type limits, backup/restore and archive
+  inclusion, privacy-safe diagnostics, and behavior on GnuCash re-import or
+  missing external files. Do not imply GnuCash supports an unproven round trip.
+
 
 ## Plan and planning-flow reporting
 
 - Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
+- Provide per-category remaining amounts and optional rollover through the
+  prioritized event-derived period contract above. A savings goal can later be a
+  pinned, scenario-aware target event with dated contributions and target date;
+  explain progress separately from spendable cash and avoid counting transfers
+  as expenses.
+
+- Add a spending-over-time chart and broader reports with drill-down to the
+  exact dated events, category hierarchy, selected scenario, as-of boundary,
+  currency completeness, and matching printable/exported totals.
+
+- Carry reimbursable expense and receivable status into Plan, Projection, and
+  Dashboard liquidity: distinguish incurred expense, collectible asset, and
+  expected dated cash receipt. A disputed or overdue claim must not be treated as
+  spendable cash. Show gross cost and net household cost without double-counting
+  reimbursements, including scenario changes and write-offs.
+
 
 ## Scheduled transactions and loans
+
+- Add Dashboard due-since-last-run batch review per the prioritized contract,
+  with resolved occurrence amounts and idempotent post/skip/defer decisions.
 
 - Continue widening safe editing only where complete split/recurrence/import
   semantics can be round-tripped without guessing.
@@ -148,6 +228,14 @@ line count alone.
 
 ## FSA / benefit accounts and claims
 
+- Generalize the existing claim linkage where appropriate for non-FSA
+  reimbursements while retaining benefit-year rules only for FSA claims. Model
+  receivable creation/settlement against balanced ledger splits or an explicit
+  planning-only claim, with partial payments, payer identity, evidence, denial,
+  correction, and write-off. Re-import must preserve BreadSched-owned claim links
+  and reconciliation; test direct vendor credits, bank reimbursements, and
+  insurer/employer payments as distinct flows.
+
 - **Funding, direct payment, and indirect reimbursement flows.** Model payroll
   splits funding an FSA separately from benefit availability and medical expense.
   Cover direct FSA-to-medical-expense payments, FSA reimbursements through a bank
@@ -173,6 +261,24 @@ line count alone.
 
 
 ## Import and GnuCash interoperability
+
+- Add reviewed CSV import using explicit column mapping and preview for date,
+  amount/sign, account, payee, category, memo, currency, and split/transfer cases.
+  Reject ambiguous mappings rather than inventing ledger accounts or balancing
+  splits; preserve source rows and stable re-import identity for duplicate review.
+
+- Define a narrow GnuCash write-back contract for simple supported edits only.
+  Begin with an opt-in preview of exact source changes, source version/conflict
+  checks, an independent backup, atomic write and read-back verification. Keep
+  unsupported schedules, splits, reconciliation, and imported metadata read-only
+  until round-trip fixtures prove preservation; never silently write to the
+  source during normal import.
+
+- Investigate AqBanking integration through a small optional adapter: supported
+  platforms, consent and credential ownership, bank connection maintenance,
+  transaction identity, failure/retry, and reconciliation against existing
+  imports. Decide whether its dependency and packaging cost justify implementation
+  before committing to a direct bank-link feature.
 
 - Add OFX investment transactions.
 
@@ -270,6 +376,11 @@ line count alone.
 
 ## In-application help and documentation
 
+- Add a guided, skippable first-run tour for opening/importing a book, reviewing
+  the Dashboard's setup state, due items, category remaining, backup, and Plan.
+  Use the same offline guide content, with contextual GTK/web entry points and
+  no tutorial transactions written into a real book.
+
 - Evolve the packaged Markdown user guide into a versioned `docs/` site if its
   proven information architecture would benefit from generator-backed navigation.
   Keep the guide usable as a standalone document and packaged for offline help; do
@@ -287,10 +398,9 @@ line count alone.
 
 ## Packaging and release quality
 
-- Finish cross-platform packaging/release workflows, Linux first, with Windows/
-  macOS behavior isolated behind small platform-specific layers. Evaluate Flatpak as
-  the primary GTK/Linux artifact and prove portals, file import/export, printing,
-  settings, backups, and offline operation inside the sandbox before selecting it.
+- Deliver Flatpak and Windows installation per the prioritized acceptance contract.
+  Keep macOS behavior isolated behind a small platform layer and evaluate a native
+  macOS artifact after the Linux/Windows paths are reliable.
 
 - Improve crash recovery, diagnostic logging, and privacy-safe error reporting.
 
