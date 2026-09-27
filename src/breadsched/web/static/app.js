@@ -4,6 +4,7 @@ let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view"
 let state = {
   accounts: [], account: launchParams.get("account"), plan: null, review: null,
   planPrintDetail: false, expenseCategory: null, expenseIndex: 0, expenseSort: "actual",
+  expenseRollover: false,
   scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
   projectionData: null, projectionHandle: null, projectionCompareHandle: null,
   projectionComparison: null,
@@ -1608,6 +1609,7 @@ async function expenseExplorerPanel(currentPlan) {
     from: currentPlan.from, through: currentPlan.through, period: currentPlan.period,
   });
   if (currentPlan.scenario) params.set("scenario", currentPlan.scenario);
+  if (state.expenseRollover) params.set("rollover", "1");
   const data = await get(`/api/expense-explorer?${params}`);
   const choices = data.categories;
   const selected = choices.find((item) => item.account === state.expenseCategory) || choices[0];
@@ -1615,7 +1617,7 @@ async function expenseExplorerPanel(currentPlan) {
   const panel = el("section", { class: "expense-explorer" },
     el("h2", {}, "Expense Explorer"),
     el("p", { class: "note" },
-      "Blue: category plan · Orange: full-period actual. Remaining uses actual through today, without rollover. Merchant groups use actuals only."));
+      "Blue: category plan · Orange: full-period actual. Remaining uses actual through today. Merchant groups use actuals only."));
   if (!selected) return panel;
   const periodSelect = el("select", { onchange: (event) => {
     state.expenseIndex = Number(event.target.value); render();
@@ -1636,24 +1638,32 @@ async function expenseExplorerPanel(currentPlan) {
   panel.append(el("div", { class: "toolbar" },
     el("label", {}, "Period ", periodSelect),
     el("label", {}, "Category trend ", categorySelect),
-    el("label", {}, "Sort by ", sortSelect)));
+    el("label", {}, "Sort by ", sortSelect),
+    el("label", {}, el("input", { type:"checkbox", checked:state.expenseRollover,
+      onchange:(event)=>{ state.expenseRollover = event.target.checked; render(); } }),
+      " Carry prior periods")));
   const ordered = [...choices].sort((a, b) => state.expenseSort === "name"
     ? a.full_name.localeCompare(b.full_name)
     : Number(b.periods[index][state.expenseSort] || 0)
       - Number(a.periods[index][state.expenseSort] || 0));
   panel.append(expenseBars(ordered, index),
     table(["Category", {label:"Plan",num:true}, {label:"Actual",num:true},
-      {label:"Variance",num:true}, {label:"Remaining",num:true}], ordered.map((item) => el("tr", {},
+      {label:"Variance",num:true}, {label:"Carry in",num:true},
+      {label:"Remaining",num:true}], ordered.map((item) => el("tr", {},
       el("td", {}, item.full_name),
       ...["planned", "actual", "variance"].map((key) => el("td", {class:"num"},
         item.periods[index][key] == null ? "—" : String(item.periods[index][key]))),
+      el("td", {class:"num"}, item.periods[index].carry_in == null
+        ? "—" : String(item.periods[index].carry_in)),
       el("td", {class:"num"}, item.periods[index].remaining == null
         ? item.periods[index].remaining_reason || "—" : String(item.periods[index].remaining))))));
   panel.append(el("h3", {}, `${selected.full_name} trend`), expenseTrend(selected),
     table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
-      {label:"Variance",num:true}, {label:"Remaining",num:true}], selected.periods.map((item) => el("tr", {},
+      {label:"Variance",num:true}, {label:"Carry in",num:true},
+      {label:"Remaining",num:true}], selected.periods.map((item) => el("tr", {},
       el("td", {}, item.label), ...["planned", "actual", "variance"].map((key) =>
         el("td", {class:"num"}, item[key] == null ? "—" : String(item[key]))),
+      el("td", {class:"num"}, item.carry_in == null ? "—" : String(item.carry_in)),
       el("td", {class:"num"}, item.remaining == null
         ? item.remaining_reason || "—" : String(item.remaining))))));
   const detailParams = new URLSearchParams(params);
@@ -1668,6 +1678,7 @@ async function expenseExplorerPanel(currentPlan) {
           `${item.date} · ${item.description || "Unknown merchant"} · ${item.amount}`)))))),
     el("p", {class:"note"}, `Category plan ${detail.period.planned}; full-period actual ${detail.period.actual}; `
       + `actual through today ${detail.period.actual_to_date == null ? "—" : detail.period.actual_to_date}; `
+      + `carry in ${detail.period.carry_in == null ? "—" : detail.period.carry_in}; `
       + `variance ${detail.period.variance == null ? "—" : detail.period.variance}. `
       + `Remaining ${detail.period.remaining == null ? detail.period.remaining_reason : detail.period.remaining}. `
       + "No merchant budgets are assigned."));

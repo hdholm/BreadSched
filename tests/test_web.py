@@ -1617,6 +1617,12 @@ class TestPlanApi:
             detail["drilldown"]["period"]["actual"]
         )
 
+        status, rolled = client.get("/api/expense-explorer?from=2026-01&through=2026-01&rollover=1")
+        assert status == 200
+        assert rolled["rollover"] is True
+        rent_rolled = next(row for row in rolled["categories"] if row["account"] == rent["account"])
+        assert Money(rent_rolled["periods"][0]["carry_in"]) == Money(0)
+
     def test_the_endpoint_answers_with_derived_categories(self, client):
         status, payload = client.get("/api/plan")
         assert status == 200

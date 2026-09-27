@@ -1366,7 +1366,10 @@ full-period Actual/Variance display separately. Parent categories use the same
 Plan rollups, while section totals sum only outermost category rows. A foreign
 expense event without Plan currency conversion suppresses Remaining for that
 category and its ancestors, with an explicit reason. Future-only periods are
-unavailable. Rollover remains an explicit, inspectable future carry between
-periods, not a mutation of historical events. Reimbursable expense
+unavailable. Optional rollover starts with zero at the selected horizon, carries
+only completed prior periods, and displays Carry in + period plan - actual through
+as-of = Remaining. A period with missing conversion blocks subsequent carry.
+The view toggle does not mutate historical events or persist a second budget
+ledger. Reimbursable expense
 work must link the original balanced expense, collectible receivable, and later
 settlement while keeping the income/expense and cash effects distinct.

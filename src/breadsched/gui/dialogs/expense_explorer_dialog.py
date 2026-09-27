@@ -36,6 +36,9 @@ class ExpenseExplorerDialog(Gtk.Window):
         controls.append(Gtk.Label(label="Sort categories"))
         self.sort = Gtk.DropDown.new_from_strings(["Actual", "Plan", "Variance", "Name"])
         controls.append(self.sort)
+        self.rollover = Gtk.CheckButton(label="Carry prior periods")
+        self.rollover.connect("toggled", self._toggle_rollover)
+        controls.append(self.rollover)
         close = Gtk.Button(label="Close")
         close.connect("clicked", lambda *_: self.close())
         controls.append(close)
@@ -51,6 +54,14 @@ class ExpenseExplorerDialog(Gtk.Window):
         outer.append(scroll)
         self._update()
 
+    def _toggle_rollover(self, _button) -> None:
+        result = query_expense_explorer(
+            self._db, self._request, rollover=self.rollover.get_active()
+        )
+        if result.value is not None:
+            self._report = result.value
+            self._update()
+
     def _print(self, _button) -> None:
         from ...plugins.export.html_report import expense_explorer_report
         from ..printing import open_print_preview
@@ -64,6 +75,7 @@ class ExpenseExplorerDialog(Gtk.Window):
             self._request,
             account=self._report.categories[category_index].account,
             period_index=period_index,
+            rollover=self.rollover.get_active(),
         )
         if result.value is not None:
             open_print_preview(expense_explorer_report(result.value))
@@ -135,10 +147,11 @@ class ExpenseExplorerDialog(Gtk.Window):
                 if value.remaining is not None
                 else value.remaining_reason or "—"
             )
+            carry = value.carry_in.format() if value.carry_in is not None else "—"
             grid.attach(
                 self._label(
                     f"Plan {value.planned.format()} · Actual {value.actual.format()} · "
-                    f"Variance {variance} · Remaining {remaining}"
+                    f"Variance {variance} · Carry {carry} · Remaining {remaining}"
                 ),
                 2,
                 i,
@@ -161,6 +174,7 @@ class ExpenseExplorerDialog(Gtk.Window):
                 if period.remaining is not None
                 else period.remaining_reason or "—"
             )
+            carry = period.carry_in.format() if period.carry_in is not None else "—"
             line.append(self._label(period.label))
             line.append(self._bar(period.planned, trend_scale))
             line.append(self._bar(period.actual, trend_scale))
@@ -168,12 +182,16 @@ class ExpenseExplorerDialog(Gtk.Window):
                 self._label(
                     f"{period.planned.format()} / {period.actual.format()} / "
                     f"{period.variance.format() if period.variance is not None else '—'} · "
-                    f"Remaining {remaining}"
+                    f"Carry {carry} · Remaining {remaining}"
                 )
             )
             self.content.append(line)
         detail = query_expense_explorer(
-            self._db, self._request, account=selected.account, period_index=index
+            self._db,
+            self._request,
+            account=selected.account,
+            period_index=index,
+            rollover=self.rollover.get_active(),
         )
         if detail.value is None or detail.value.drilldown is None:
             return

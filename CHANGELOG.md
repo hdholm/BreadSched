@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Opt-in expense rollover.** Expense Explorer can carry a completed period's
+  surplus or deficit into the next selected period. Its visible Carry in, plan,
+  actual through as-of, and Remaining form an inspectable bridge. A prior period
+  with unavailable currency conversion blocks later carry; future periods remain
+  unavailable. The toggle changes the read-only view, not the ledger or Plan
+  events. GTK, web, API, and print share the contract. Application version
+  `0.2.0a117`; native schema remains 7.
+
 - **Category remaining through as-of.** Expense Explorer shows planned expense
   minus actual expense posted through the as-of date, with refunds and overspending
   signed, parent rollups counted once, and unavailable states for future-only or

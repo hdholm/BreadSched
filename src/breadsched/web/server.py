@@ -2045,6 +2045,7 @@ class Api:
         scenario_handle: str | None = None,
         account_handle: str | None = None,
         period_index: int | None = None,
+        rollover: bool = False,
     ) -> dict:
         """Delegate read-only expense presentation to its resource adapter."""
         return expense_report(
@@ -2055,6 +2056,7 @@ class Api:
             scenario_handle,
             account_handle,
             period_index,
+            rollover,
         )
 
     def plan_detail(

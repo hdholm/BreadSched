@@ -2447,6 +2447,8 @@ class TestDerivedPlanView:
             assert dialog._report.categories
             assert dialog.content.get_first_child() is not None
             assert dialog.period.get_selected() == 0
+            dialog.rollover.set_active(True)
+            assert dialog._report.rollover
             dialog.sort.set_selected(3)
             assert dialog.content.get_first_child() is not None
         finally:

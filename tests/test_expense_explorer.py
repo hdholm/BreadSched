@@ -205,3 +205,65 @@ def test_foreign_expense_suppresses_only_affected_category_remaining(db, book):
     assert rows[book.expenses].remaining is None
     assert result.value.totals[0].remaining is None
     assert rows[book.utilities].remaining == Money(-10)
+
+
+def test_rollover_is_opt_in_and_bridges_completed_periods(db, book):
+    estimate = ScheduledTransaction(
+        name="Monthly food plan",
+        recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 5, 2)),
+        splits=[
+            ScheduledSplit(book.groceries, Money(100)),
+            ScheduledSplit(book.checking, Money(-100)),
+        ],
+    )
+    with db.transaction("Two months") as txn:
+        db.add_scheduled(estimate, txn)
+        for when, amount in ((date(2026, 5, 5), "80"), (date(2026, 6, 5), "130")):
+            db.add_transaction(
+                Transaction.simple(when, "Food", book.groceries, book.checking, amount), txn
+            )
+    request = PlanQuery(start=date(2026, 5, 1), end=date(2026, 6, 30), today=date(2026, 6, 20))
+    plain = query_expense_explorer(db, request).value
+    carried = query_expense_explorer(
+        db, request, account=book.groceries, period_index=1, rollover=True
+    ).value
+    assert plain is not None and carried is not None and carried.drilldown is not None
+    plain_row = next(row for row in plain.categories if row.account == book.groceries)
+    row = next(row for row in carried.categories if row.account == book.groceries)
+    assert [item.carry_in for item in plain_row.periods] == [None, None]
+    assert plain_row.periods[1].remaining == Money(-30)
+    assert [(item.carry_in, item.remaining) for item in row.periods] == [
+        (Money(0), Money(20)),
+        (Money(20), Money(-10)),
+    ]
+    assert carried.drilldown.period == row.periods[1]
+    assert carried.totals[1].carry_in == Money(20)
+    assert carried.totals[1].remaining == Money(-10)
+    html = expense_explorer_report(carried)
+    assert "Carry in" in html
+    assert "(10.00)" in html
+
+
+def test_rollover_stops_when_a_prior_currency_period_is_unavailable(db, book):
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    first = Transaction.simple(
+        date(2026, 5, 5), "Foreign food", book.groceries, book.checking, "20"
+    )
+    first.currency = euro.handle
+    with db.transaction("Foreign prior period") as txn:
+        db.add_commodity(euro, txn)
+        db.add_transaction(first, txn)
+        db.add_transaction(
+            Transaction.simple(date(2026, 6, 5), "Food", book.groceries, book.checking, "10"),
+            txn,
+        )
+    result = query_expense_explorer(
+        db,
+        PlanQuery(start=date(2026, 5, 1), end=date(2026, 6, 30), today=date(2026, 6, 20)),
+        rollover=True,
+    )
+    assert result.value is not None
+    row = next(row for row in result.value.categories if row.account == book.groceries)
+    assert row.periods[0].remaining_reason == "Currency conversion unavailable"
+    assert row.periods[1].remaining is None
+    assert row.periods[1].remaining_reason == "Prior period unavailable"

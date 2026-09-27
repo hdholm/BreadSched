@@ -40,9 +40,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    full-period plan minus actual spending through as-of, including refunds, negative
    overspending, and parent rollups counted once. Future-only periods and unconverted
    foreign expenses suppress Remaining; GTK, web, and print show the same result.
-   Add optional, explicitly enabled rollover with an inspectable prior-period
-   surplus/deficit bridge; do not create a second monthly budget ledger. Extend
-   currency conversion only when Plan amounts and quote evidence are complete.
+   Optional rollover now carries a completed prior period's surplus or deficit
+   only when explicitly enabled, with an inspectable period bridge and unavailable
+   propagation. Do not create a second monthly budget ledger. Extend currency
+   conversion only when Plan amounts and quote evidence are complete.
 3. **P0 — Installable Linux and Windows builds.** Ship a tested Flatpak first,
    validating file portals, book locks, imports/exports, backup/restore, help,
    printing, settings, and offline use inside its sandbox. Provide a Windows

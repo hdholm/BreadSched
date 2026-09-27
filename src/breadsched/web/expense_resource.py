@@ -19,6 +19,7 @@ def expense_report(
     scenario_handle: str | None = None,
     account_handle: str | None = None,
     period_index: int | None = None,
+    rollover: bool = False,
 ) -> dict:
     """Expense categories and optional merchant drilldown from the shared service."""
     start = date.fromisoformat(f"{start_month}-01") if start_month else None
@@ -39,6 +40,7 @@ def expense_report(
         ),
         account=account_handle,
         period_index=period_index,
+        rollover=rollover,
     )
     if result.value is None:
         error = result.errors[0]
@@ -53,6 +55,7 @@ def expense_report(
             "planned": item.planned,
             "actual": item.actual,
             "actual_to_date": item.actual_to_date,
+            "carry_in": item.carry_in,
             "variance": item.variance,
             "remaining": item.remaining,
             "remaining_reason": item.remaining_reason,
@@ -60,6 +63,7 @@ def expense_report(
 
     detail = explorer.drilldown
     return {
+        "rollover": explorer.rollover,
         "scenario": explorer.plan.scenario.name,
         "period": explorer.plan.period.value,
         "categories": [

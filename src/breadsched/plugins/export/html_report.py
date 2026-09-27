@@ -142,25 +142,30 @@ def expense_explorer_report(explorer: ExpenseExplorer) -> str:
         value = row.periods[index]
         comparison_rows.append(
             f"<tr><td>{escape(row.full_name)}</td>{_amount(value.planned)}"
-            f"{_amount(value.actual)}{_amount(value.variance)}{remaining_cell(value)}</tr>"
+            f"{_amount(value.actual)}{_amount(value.variance)}"
+            f"{_amount(value.carry_in)}{remaining_cell(value)}</tr>"
         )
     comparison = (
         "<h2>Category comparison</h2><p class='note'>Remaining uses actual through "
-        "the as-of date; Actual and Variance show full-period values.</p>"
+        "the as-of date; Actual and Variance show full-period values. "
+        "Carry in is shown only when rollover is enabled.</p>"
         "<table><thead><tr><th>Category</th>"
         '<th class="num">Plan</th><th class="num">Actual</th>'
-        '<th class="num">Variance</th><th class="num">Remaining</th></tr></thead><tbody>'
+        '<th class="num">Variance</th><th class="num">Carry in</th>'
+        '<th class="num">Remaining</th></tr></thead><tbody>'
         f"{''.join(comparison_rows)}</tbody></table>"
     )
     trend_rows = "".join(
         f"<tr><td>{escape(item.label)}</td>{_amount(item.planned)}"
-        f"{_amount(item.actual)}{_amount(item.variance)}{remaining_cell(item)}</tr>"
+        f"{_amount(item.actual)}{_amount(item.variance)}"
+        f"{_amount(item.carry_in)}{remaining_cell(item)}</tr>"
         for item in category.periods
     )
     trend = (
         f"<h2>{escape(category.full_name)} trend</h2><table><thead><tr><th>Period</th>"
         '<th class="num">Plan</th><th class="num">Actual</th>'
-        f'<th class="num">Variance</th><th class="num">Remaining</th></tr></thead>'
+        f'<th class="num">Variance</th><th class="num">Carry in</th>'
+        f'<th class="num">Remaining</th></tr></thead>'
         f"<tbody>{trend_rows}</tbody></table>"
     )
     merchant_rows = []
