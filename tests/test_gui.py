@@ -4435,3 +4435,93 @@ class TestImportDialogProgress:
         dialog.set_source(gnucash_xml_path.path)
         assert dialog.progress.get_visible() is False
         assert dialog.progress.get_fraction() == 0.0
+
+
+class TestCsvImportDialog:
+    """Map, preview, and import a CSV statement through the shared service."""
+
+    STATEMENT = (
+        "Date,Description,Amount,Memo\n"
+        "2026-09-01,Corner Grocer,-42.10,card\n"
+        "2026-09-02,Refund,5.00,\n"
+    )
+
+    @pytest.fixture
+    def dialog(self, app, window, populated_book):
+        from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
+
+        app.open_book(populated_book)
+        dialog = CsvImportDialog(window, app.db)
+        yield dialog
+        dialog.destroy()
+
+    def _load(self, dialog, tmp_path, text=None):
+        path = tmp_path / "statement.csv"
+        path.write_text(text or self.STATEMENT, encoding="utf-8")
+        dialog.set_source(str(path))
+        return path
+
+    def test_reading_columns_suggests_a_mapping(self, dialog, tmp_path):
+        self._load(dialog, tmp_path)
+
+        assert dialog.columns == ("Date", "Description", "Amount", "Memo")
+        assert dialog.mapping().date == "Date"
+        assert dialog.mapping().amount == "Amount"
+        assert dialog.mapping().description == "Description"
+        assert dialog.mapping().memo == "Memo"
+        assert dialog.mapping().debit is None
+        assert "utf-8" in dialog.layout_label.get_text()
+
+    def test_preview_lists_rows_without_writing(self, dialog, tmp_path, app):
+        self._load(dialog, tmp_path)
+        before = len(list(app.db.iter_transactions()))
+
+        preview = dialog.preview()
+
+        assert preview is not None
+        assert [row.status for row in preview.rows] == ["new", "new"]
+        assert dialog.rows_box.get_first_child() is not None
+        assert "New: 2" in dialog.layout_label.get_text()
+        assert dialog.import_button.get_sensitive() is True
+        assert len(list(app.db.iter_transactions())) == before
+
+    def test_import_is_one_undo_step_and_reimport_adds_nothing(self, dialog, tmp_path, app):
+        self._load(dialog, tmp_path)
+        before = len(list(app.db.iter_transactions()))
+
+        result = dialog.import_rows()
+
+        assert result is not None and result.transactions_new == 2
+        assert len(list(app.db.iter_transactions())) == before + 2
+        assert "Imported 2 new" in dialog.status.get_text()
+        again = dialog.preview()
+        assert again is not None and [row.status for row in again.rows] == [
+            "imported",
+            "imported",
+        ]
+        assert app.db.undo() is True
+        assert len(list(app.db.iter_transactions())) == before
+
+    def test_refused_mapping_explains_and_writes_nothing(self, dialog, tmp_path, app):
+        self._load(dialog, tmp_path, "Date,Amount\n01/02/2026,-1.00\n")
+        before = len(list(app.db.iter_transactions()))
+
+        assert dialog.preview() is None
+        assert "day-first or month-first" in dialog.status.get_text()
+        assert dialog.import_rows() is None
+        assert len(list(app.db.iter_transactions())) == before
+
+        dialog.date_format.set_selected(dialog.DATE_FORMATS.index("day-first"))
+        preview = dialog.preview()
+        assert preview is not None and preview.rows[0].when.isoformat() == "2026-02-01"
+
+    def test_app_action_opens_the_dialog(self, app, window, populated_book):
+        from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
+
+        app.open_book(populated_book)
+        assert app.actions["import-csv"].get_enabled() is True
+        opened = app.on_import_csv()
+        try:
+            assert isinstance(opened, CsvImportDialog)
+        finally:
+            opened.destroy()

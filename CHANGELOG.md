@@ -5,6 +5,14 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **GTK CSV statement import.** **File → Import CSV Statement…** opens a dialog
+  that reads the chosen CSV's columns and first rows, suggests the column mapping
+  from its headers, and lets the account, columns, date order, decimal convention,
+  sign, and duplicate inclusion be adjusted. **Preview** lists every row's status;
+  **Import** writes the previewed rows as one undo step and refreshes the preview.
+  The dialog uses the shared CSV service, like the web view and `breadsched
+  import-csv`. Application version `0.2.0a132`; native schema remains 7.
+
 - **Web CSV statement import.** The web Import view has a **CSV statement**
   section: choose or upload the file, **Read columns** to see the detected encoding,
   delimiter, and first rows with suggested column choices, choose the account and

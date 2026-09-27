@@ -55,8 +55,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    (shared service and `breadsched import-csv`) now previews rows, validates
    date/amount/encoding, holds back possible duplicates, keeps a stable source
    identity for re-import without recategorizing, and imports as one undo step.
-   The web Import view maps, previews, and imports CSV through the same service.
-   Next: the GTK mapping and preview screen, then transfer review. Keep rule priority and conflicts
+   The web Import view and the GTK Import CSV Statement dialog map, preview, and
+   import CSV through the same service. Next: transfer review. Keep rule priority and conflicts
    explainable; never silently recategorize previously accepted transactions.
    Offer entry autocomplete from earlier transactions as a visible, editable
    proposal that never commits without the user's save.

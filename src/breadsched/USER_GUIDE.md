@@ -743,8 +743,13 @@ delimiter with the first rows and suggests columns from their headers; check eac
 suggestion. Choose the account and any date order, decimal, or sign options, then
 **Preview** to see every row's status. **Import** writes the previewed rows as one
 undo step, and the preview refreshes to show them as already imported. The web
-screen uses the same rules as the command line. A GTK screen, transfer review,
-payees, and categorization rules come next.
+screen uses the same rules as the command line.
+
+In the desktop application, choose **File → Import CSV Statement…**. Choose the
+file; BreadSched reads its columns at once, shows the first rows, and suggests the
+mapping. Adjust the account, columns, and options, choose **Preview**, then
+**Import**. Clearing **First row is a header** rereads the file with numbered
+columns. Transfer review, payees, and categorization rules come next.
 
 ## Print, export, and inspect
 
