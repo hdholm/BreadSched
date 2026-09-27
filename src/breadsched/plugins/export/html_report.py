@@ -272,10 +272,10 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
         '<table><thead><tr><th>Group</th><th class="num">Value</th>'
         '<th class="num">Owed</th><th class="num">Equity / total</th>'
         '<th class="num">LTV</th><th>Loan end</th></tr></thead>'
-        f"<tbody>{''.join(group_rows)}</tbody></table>" + coverage
+        f"<tbody>{''.join(group_rows)}</tbody></table>"
         if group_rows
         else '<p class="note">No Dashboard groups are configured.</p>'
-    )
+    ) + coverage
 
     bill_rows = []
     for item in board.bills:

@@ -59,7 +59,8 @@ Dashboard discloses when selected groups leave asset, debt, or cash accounts out
 their totals. The [User Guide](src/breadsched/USER_GUIDE.md#dashboard-and-near-term-cash) explains
 current behavior, and the [roadmap](ROADMAP.md) tracks these improvements.
 An imported GnuCash book initially uses its posted account balances for ungrouped
-Net worth and keeps supported scheduled bills visible. Missing foreign cash quotes
+Net worth and keeps supported scheduled bills visible. A card balance without
+payment setup is disclosed rather than silently left out of near-term needs. Missing foreign cash quotes
 make dependent Dashboard totals unavailable until a quote is supplied.
 
 ## Install and run for development

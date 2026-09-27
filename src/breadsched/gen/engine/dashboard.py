@@ -395,6 +395,8 @@ class Dashboard:
             and not self._normalised_bills()
         ):
             return "No committed outgoings"
+        if field == "next_income" and not self._income_events:
+            return "No scheduled income"
         return "Missing reporting-currency quote"
 
     # -------------------------------------------------------------- aggregates
@@ -707,6 +709,20 @@ def build(
     board.income_per_month_with_estimates = income_with_estimates
     board.next_income = next_income
     board._income_events = income_events
+    unpaid_cards = schedule.unconfigured_card_balances(db, today)
+    if unpaid_cards:
+        count = len(unpaid_cards)
+        subject, pronoun = (
+            ("1 credit card owes a balance", "it")
+            if count == 1
+            else (f"{count} credit cards owe balances", "them")
+        )
+        board.coverage_notes = (
+            *board.coverage_notes,
+            f"Card payments not set up: {subject} with no payment day or payment "
+            f"schedule, so Needed within 30 days excludes {pronoun}. Set payment "
+            "behavior on the card account.",
+        )
     return board
 
 

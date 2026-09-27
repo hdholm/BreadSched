@@ -355,6 +355,11 @@ ungrouped Net worth uses imported posted balances, and supported imported schedu
 can appear as pending bills. Review the account groups and reporting-currency
 quotes before relying on liquid or emergency figures; an unvalued foreign cash
 balance makes dependent figures unavailable while the bill list remains visible.
+Imported securities use their imported price quotes. When no income is scheduled,
+next income says “No scheduled income”. A credit card that owes a balance but has
+no payment day or payment schedule is not part of Needed within 30 days; the
+Dashboard says so in a “Card payments not set up” note until you configure the
+card's payment behavior (see [Credit-card payments](#credit-card-payments)).
 
 In the web Dashboard, a requested liquidity or emergency-fund horizon changes
 the displayed calculation for that request. Reopening the view uses the saved

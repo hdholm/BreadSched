@@ -29,15 +29,7 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **P0 — Complete first-run Dashboard and sample book.** Ungrouped Net worth
-   now uses complete ledger valuation; group assets/debts and emergency coverage
-   disclose missing setup or commitments. Partial group and liquidity coverage
-   disclose omitted account counts in every presentation. A synthetic, reproducible
-   sample generator supplies accounts, dated transactions, schedules, and a Plan
-   example. Imported-book first views and missing cash quotes now have acceptance
-   coverage across the shared engine, GTK, web, CLI, and print. Continue the
-   first-run review with broader imported commodity and commitment cases.
-2. **P0 — Per-category remaining this period.** Expense Explorer now derives the
+1. **P0 — Per-category remaining this period.** Expense Explorer now derives the
    full-period plan minus actual spending through as-of, including refunds, negative
    overspending, and parent rollups counted once. Future-only periods and unconverted
    foreign expenses suppress Remaining; GTK, web, and print show the same result.
@@ -45,7 +37,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    only when explicitly enabled, with an inspectable period bridge and unavailable
    propagation. Do not create a second monthly budget ledger. Extend currency
    conversion only when Plan amounts and quote evidence are complete.
-3. **P0 — Installable Linux and Windows builds.** A GNOME-runtime Flatpak manifest
+2. **P0 — Installable Linux and Windows builds.** A GNOME-runtime Flatpak manifest
    and installed-sandbox offline CLI gate now cover sample creation, verification,
    Dashboard, CSV export, QIF import, backup, restore, and competing-writer locks
    under Documents access. No installer is published yet. Validate GTK file portals,
@@ -54,17 +46,17 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    clean installs, upgrades, launch, and uninstalls on supported Windows CI.
    Publish signed/checksummed artifacts and concise installation instructions
    only after their release gates are proven. Keep wheel/source releases available.
-4. **P1 — Due-since-last-run batch review.** Group missed occurrences by schedule
+3. **P1 — Due-since-last-run batch review.** Group missed occurrences by schedule
    on Dashboard, show dates and resolved amounts (never raw cycle values such as
    `1.0000`), then allow a reviewed batch of post, skip, or defer decisions.
    Prevent duplicate posting and preserve occurrence identity, import provenance,
    undo/redo, and partial failure atomicity; retain individual details on demand.
-5. **P1 — Finish currency handling.** Add GTK manual FX entry using the existing
+4. **P1 — Finish currency handling.** Add GTK manual FX entry using the existing
    exact quote contract. Apply one as-of conversion and missing-quote policy to
    Plan/Projection totals, comparisons, and prints; disclose quote date/source,
    inversion, staleness, and rounding. Continue imported quote mapping and decide
    multi-hop policy explicitly before enabling it.
-6. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity
+5. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity
    without rewriting imported descriptions; preview deterministic matching and
    categorization suggestions before acceptance. Add a user-mapped CSV importer
    with date/amount/encoding validation, duplicate and transfer review, source
@@ -72,14 +64,14 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    explainable; never silently recategorize previously accepted transactions.
    Offer entry autocomplete from earlier transactions as a visible, editable
    proposal that never commits without the user's save.
-7. **P1 — Reimbursable expenses and receivables.** Track an expense and the
+6. **P1 — Reimbursable expenses and receivables.** Track an expense and the
    amount owed by an insurer, employer, or other payer as linked but distinct
    facts. Show open, partial, disputed, written-off, and settled receivables,
    their ages and expected cash dates, without counting a reimbursement as new
    income or erasing the original expense. Reconcile deposits to claims with
    exact partial amounts, refunds, and currency evidence; coordinate with FSA
    claims and preserve imported ledger splits.
-8. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
+7. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
    simple user edits, broader reporting and spending-over-time charts, then
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and

@@ -42,6 +42,24 @@ def run_json(capsys, *argv):
     return json.loads(out)
 
 
+def test_imported_security_and_unset_card_first_dashboard_cli(
+    capsys, book_path, gnucash_household_path
+):
+    run(capsys, "init", book_path)
+    run(capsys, "import", book_path, gnucash_household_path.path, "--no-infer")
+    board = run_json(capsys, "dashboard", book_path, "--as-of", "2026-02-15")
+    assert board["summary"]["net_worth"] == "109950.00"
+    assert board["summary"]["required_liquid"] == "0.00"
+    assert board["unavailable_reasons"]["next_income"] == "No scheduled income"
+    assert board["unavailable_reasons"]["months_covered"] == "No committed outgoings"
+    [note] = board["coverage_notes"]
+    assert note.startswith("Card payments not set up: 1 credit card owes a balance")
+    code, text = run(capsys, "dashboard", book_path, "--as-of", "2026-02-15")
+    assert code == 0
+    assert "Card payments not set up" in text
+    assert "109,950.00" in text
+
+
 def test_imported_first_dashboard_cli_preserves_setup_and_missing_quote(
     capsys, book_path, gnucash_sqlite_path
 ):
