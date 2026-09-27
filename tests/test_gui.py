@@ -2986,6 +2986,159 @@ class TestDerivedPlanView:
         assert "formula" in dialog.status.get_text().lower()
 
 
+class TestImportReview:
+    """Issue #117: GnuCash changes to reconciled transactions are reviewed in a batch."""
+
+    @pytest.fixture
+    def held_book(self, app, tmp_path, gnucash_sqlite_path):
+        import sqlite3
+
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.engine import ledger
+        from breadsched.gen.engine import reconciliation as reconcile_engine
+
+        source = gnucash_sqlite_path
+        path = tmp_path / "held.breadsched"
+        cli(["init", str(path)])
+        cli(["import", str(path), source.path, "--no-infer"])
+        db = DbSQLite()
+        db.load(str(path))
+        try:
+            checking = [
+                item
+                for item in db.iter_transactions()
+                if any(split.account == source.ids.checking for split in item.splits)
+            ]
+            statement = max(item.post_date for item in checking)
+            reconciliation = reconcile_engine.start(
+                db,
+                source.ids.checking,
+                statement,
+                ledger.balance(db, source.ids.checking, statement),
+            )
+            reconcile_engine.set_selection(
+                db,
+                reconciliation.handle,
+                [
+                    s.handle
+                    for item in checking
+                    for s in item.splits
+                    if s.account == source.ids.checking
+                ],
+            )
+            reconcile_engine.complete(db, reconciliation.handle)
+            handles = {item.description: item.handle for item in checking}
+        finally:
+            db.close()
+        with sqlite3.connect(source.path) as gnucash:
+            gnucash.execute(
+                "UPDATE transactions SET description='Rent (edited)' WHERE guid=?",
+                (handles["Rent"],),
+            )
+            gnucash.execute(
+                "UPDATE splits SET value_num=value_num+100, quantity_num=quantity_num+100 "
+                "WHERE tx_guid=? AND account_guid=?",
+                (handles["Payroll deposit"], source.ids.checking),
+            )
+            gnucash.execute(
+                "UPDATE splits SET value_num=value_num-100, quantity_num=quantity_num-100 "
+                "WHERE tx_guid=? AND account_guid=?",
+                (handles["Payroll deposit"], source.ids.salary),
+            )
+        cli(["import", str(path), source.path, "--no-infer"])
+        app.open_book(str(path))
+        return app, handles
+
+    def _dialog(self, app, window):
+        from breadsched.gen.services import pending_import_changes
+        from breadsched.gui.dialogs.import_review_dialog import ImportReviewDialog
+
+        changes = pending_import_changes(app.db)
+        return ImportReviewDialog(window, app.db, changes), changes
+
+    def test_dialog_is_modal_and_defaults_to_deciding_later(self, held_book, window):
+        from breadsched.gen.services import HeldImportDecision
+
+        app, _handles = held_book
+        dialog, changes = self._dialog(app, window)
+        assert len(changes) == 2
+        assert dialog.get_modal() is True
+        assert dialog.get_transient_for() is window
+        assert dialog.get_destroy_with_parent() is True
+        assert all(dialog.decision(i) is HeldImportDecision.LATER for i in range(2))
+        assert dialog.apply() == (0, 0)
+        assert len(self._dialog(app, window)[1]) == 2
+
+    def test_blocked_change_cannot_use_gnucash_version(self, held_book, window):
+        from breadsched.gen.services import HeldImportDecision
+
+        app, handles = held_book
+        dialog, changes = self._dialog(app, window)
+        dialog.set_all(HeldImportDecision.USE_SOURCE)
+        chosen = {
+            change.transaction: dialog.decision(index) for index, change in enumerate(changes)
+        }
+        assert chosen[handles["Rent"]] is HeldImportDecision.USE_SOURCE
+        assert chosen[handles["Payroll deposit"]] is HeldImportDecision.LATER
+
+        assert dialog.apply() == (0, 1)
+        assert app.db.get_transaction(handles["Rent"]).description == "Rent (edited)"
+        [remaining] = self._dialog(app, window)[1]
+        assert remaining.transaction == handles["Payroll deposit"]
+        assert remaining.blocked_by
+
+    def test_keep_breadsched_version_is_not_asked_again(self, held_book, window):
+        from breadsched.gen.services import HeldImportDecision
+
+        app, handles = held_book
+        dialog, _changes = self._dialog(app, window)
+        dialog.set_all(HeldImportDecision.KEEP_LOCAL)
+        assert dialog.apply() == (2, 0)
+        assert app.db.get_transaction(handles["Rent"]).description == "Rent"
+        assert self._dialog(app, window)[1] == []
+
+    def test_import_dialog_offers_the_review_after_holding_changes(self, held_book, window):
+        from breadsched.gui.dialogs.import_dialog import ImportDialog
+
+        app, _handles = held_book
+        review = ImportDialog(window, app.db).present_held_review()
+        try:
+            assert review is not None
+            assert len(review.changes) == 2
+        finally:
+            review.destroy()
+
+    def test_opening_the_book_presents_the_review_before_due_schedules(
+        self, app, held_book, monkeypatch
+    ):
+        from breadsched.gui.gi_setup import GLib
+
+        calls = []
+        shown = []
+        production_window = ViewManager(app)
+        original = production_window.prompt_for_held_imports
+
+        def held():
+            calls.append("held")
+            shown.append(original())
+            return shown[-1]
+
+        monkeypatch.setattr(production_window, "prompt_for_held_imports", held)
+        monkeypatch.setattr(production_window, "prompt_for_due", lambda: calls.append("due"))
+        try:
+            production_window.book_opened(app.db, app.db.path)
+            context = GLib.MainContext.default()
+            while not calls and context.pending():
+                context.iteration(False)
+            assert calls == ["held"]
+            [review] = shown
+            assert type(review).__name__ == "ImportReviewDialog"
+            review.close()
+            assert calls == ["held", "due"]
+        finally:
+            production_window.destroy()
+
+
 class TestDueReview:
     """Item 6: due occurrences are decided one at a time, not posted for you."""
 

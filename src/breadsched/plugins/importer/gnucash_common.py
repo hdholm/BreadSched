@@ -24,6 +24,7 @@ from typing import Any
 
 from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine import import_review
 from ...gen.lib.account import (
     Account,
     AccountType,
@@ -75,6 +76,10 @@ class ImportResult:
     transactions_unchanged: int = 0
     transactions_removed: int = 0
     transactions_retained: int = 0
+    #: Locally reconciled transactions whose source change awaits review.
+    transactions_held: int = 0
+    #: Locally reconciled transactions whose unchanged source version the user kept.
+    transactions_kept: int = 0
     splits_new: int = 0
     splits_refreshed: int = 0
     splits_unchanged: int = 0
@@ -95,6 +100,10 @@ class ImportResult:
     _seen_records: dict[str, set[str]] = field(default_factory=dict, repr=False)
     _scanned_kinds: set[str] = field(default_factory=set, repr=False)
     _had_skip_history: bool = field(default=False, repr=False)
+    #: Held-review updates keyed by transaction; ``None`` clears a stale entry.
+    _review_updates: dict[str, import_review.HeldChange | None] = field(
+        default_factory=dict, repr=False
+    )
 
     def scan(self, kind: str) -> None:
         """Declare that this import examined all source records of ``kind``."""
@@ -172,6 +181,24 @@ class ImportResult:
         history[source_key] = retained | self._skipped_records
         db.set_metadata(_SKIPPED_HISTORY_KEY, history, txn)
         self._sync_source_transactions(db, txn, source_path)
+        self._store_review_updates(db, txn)
+
+    def _store_review_updates(self, db: DbSQLite, txn: DbTxn) -> None:
+        """Record held source versions and drop entries that no longer apply."""
+        held = import_review.held_changes(db)
+        before = dict(held)
+        for handle, change in self._review_updates.items():
+            if change is None:
+                held.pop(handle, None)
+            else:
+                held[handle] = change
+        held = {
+            handle: change
+            for handle, change in held.items()
+            if db.get_transaction(handle) is not None
+        }
+        if held != before:
+            import_review.store_held_changes(db, held, txn)
 
     def _sync_source_transactions(self, db: DbSQLite, txn: DbTxn, source_path: str) -> None:
         """Mirror transactions deleted after a successful GnuCash baseline.
@@ -245,6 +272,12 @@ class ImportResult:
                 f"{self.transactions_new} new, {self.transactions_refreshed} refreshed, "
                 f"{self.transactions_unchanged} unchanged"
             )
+            if self.transactions_held or self.transactions_kept:
+                lines.append(
+                    "Reconciled in BreadSched: "
+                    f"{self.transactions_held} GnuCash change(s) held for review, "
+                    f"{self.transactions_kept} kept as previously decided"
+                )
             if self.transactions_removed or self.transactions_retained:
                 lines.append(
                     "Source deletions: "
@@ -752,7 +785,7 @@ class ImportSink:
             )
 
         if existing is not None:
-            self._preserve_breadsched_transaction_state(txn_obj, existing)
+            import_review.merge_local_state(txn_obj, existing)
 
         LOG.debug(
             "%s: %d split(s) totalling %s",
@@ -785,6 +818,12 @@ class ImportSink:
                 f"{len(txn_obj.splits) - 1} split(s); posted the difference to "
                 f"Imbalance"
             )
+
+        if existing is not None and import_review.is_protected_change(existing, txn_obj):
+            self._hold_reconciled_change(existing, txn_obj)
+            return existing
+        if existing is not None:
+            self.result._review_updates[guid] = None
 
         try:
             self.db.add_transaction(txn_obj, self.txn)
@@ -840,34 +879,33 @@ class ImportSink:
                 matched_prior.add(matching_index)
         self.result.splits_removed += len(prior_splits) - len(matched_prior)
 
-    @staticmethod
-    def _preserve_breadsched_transaction_state(
-        imported: Transaction, existing: Transaction
-    ) -> None:
-        """Merge BreadSched-owned annotations into a re-imported transaction.
+    def _hold_reconciled_change(self, existing: Transaction, incoming: Transaction) -> None:
+        """Leave a locally reconciled transaction untouched and hold the source version."""
+        fingerprint = import_review.source_fingerprint(incoming)
+        prior = import_review.held_changes(self.db).get(existing.handle)
+        self.result.transactions += 1
+        self.result.splits += len(existing.splits)
+        if prior is not None and prior.fingerprint == fingerprint:
+            if prior.status is import_review.HeldStatus.KEPT:
+                self.result.transactions_kept += 1
+            else:
+                self.result.transactions_held += 1
+            return
+        self.result.transactions_held += 1
 
-        GnuCash remains authoritative for ledger facts such as dates, amounts,
-        accounts, memos, actions, and reconcile state. BreadSched owns the
-        planning/review annotations and FSA classifications added after import.
-        Split annotations are preserved only when the source split GUID still
-        exists, so a materially replaced source split cannot inherit stale state.
-        """
-        imported.notes = existing.notes
-        imported.scheduled_from = existing.scheduled_from
-        imported.planned_occurrence = existing.planned_occurrence
-        imported.planned_for = existing.planned_for
-        imported.planned_amount = existing.planned_amount
-        imported.planning_resolution = existing.planning_resolution
-        imported.rejected_plan_occurrences = list(existing.rejected_plan_occurrences)
+        def account_name(handle: str) -> str:
+            account = self.db.get_account(handle)
+            return account.name if account is not None else handle
 
-        existing_splits = {split.handle: split for split in existing.splits}
-        for split in imported.splits:
-            prior = existing_splits.get(split.handle)
-            if prior is None:
-                continue
-            split.planning_flow = prior.planning_flow
-            split.investment_activity = prior.investment_activity
-            split.fsa_year_start = prior.fsa_year_start
+        self.result._review_updates[existing.handle] = import_review.HeldChange(
+            transaction=existing.handle,
+            status=import_review.HeldStatus.PENDING,
+            fingerprint=fingerprint,
+            source=self.result.source,
+            detected=date.today(),
+            changes=import_review.describe_changes(existing, incoming, account_name),
+            incoming=incoming.serialize(),
+        )
 
     def _imbalance_account(self, currency: str | None) -> str:
         existing = self.db.get_account_by_name("Imbalance")
@@ -988,27 +1026,8 @@ def preserve_breadsched_schedule_state(
         ]
 
 
-def _split_source_facts(split: Split) -> tuple[object, ...]:
-    """Fields for which an imported ledger source remains authoritative."""
-    return (
-        split.account,
-        split.value,
-        split.quantity,
-        split.memo,
-        split.action,
-        split.reconcile,
-    )
-
-
-def _transaction_source_facts(transaction: Transaction) -> tuple[object, ...]:
-    return (
-        transaction.post_date,
-        transaction.description,
-        transaction.currency,
-        transaction.num,
-        transaction.source_notes,
-        tuple(sorted((_split_source_facts(split) for split in transaction.splits), key=repr)),
-    )
+_split_source_facts = import_review.split_source_facts
+_transaction_source_facts = import_review.transaction_source_facts
 
 
 def _reconcile(raw: str | None) -> ReconcileState:

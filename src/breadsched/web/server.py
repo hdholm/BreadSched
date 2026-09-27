@@ -76,8 +76,10 @@ from ..gen.services import (
     DuplicateSchedule,
     FixedSplitInput,
     FormulaScheduleInput,
+    HeldImportDecision,
     ImportBook,
     ReconciliationAction,
+    ResolveHeldImports,
     ReviewClaimAttachment,
     ReviewOccurrence,
     ReviewTransaction,
@@ -106,8 +108,10 @@ from ..gen.services import (
     import_book,
     mark_review_unexpected,
     match_review,
+    pending_import_changes,
     reject_review,
     reopen_reconciliation,
+    resolve_import_changes,
     save_account,
     save_assumption_period,
     save_base_assumptions,
@@ -2602,7 +2606,47 @@ class Api:
             raise self._service_resource_error(result.errors[0])
         imported = result.value
         assert imported is not None
-        return {"format": imported.format_name, "detail": imported.result.detail(limit=50)}
+        return {
+            "format": imported.format_name,
+            "detail": imported.result.detail(limit=50),
+            "held": imported.result.transactions_held,
+        }
+
+    def import_review(self) -> dict:
+        """GnuCash changes held back from transactions reconciled in BreadSched."""
+        return {
+            "changes": [
+                {
+                    "transaction": item.transaction,
+                    "date": item.post_date,
+                    "description": item.description,
+                    "source": item.source,
+                    "detected": item.detected,
+                    "changes": list(item.changes),
+                    "blocked_by": list(item.blocked_by),
+                    "can_use_gnucash": item.can_use_source,
+                }
+                for item in pending_import_changes(self.db)
+            ]
+        }
+
+    def import_review_resolve(self, payload: dict) -> dict:
+        raw = payload.get("decisions")
+        if not isinstance(raw, list):
+            raise ValueError("decisions must be a list")
+        decisions: list[tuple[str, HeldImportDecision]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                raise ValueError("each decision must be an object")
+            decisions.append(
+                (str(item.get("transaction", "")), HeldImportDecision(str(item.get("decision"))))
+            )
+        result = resolve_import_changes(self.db, ResolveHeldImports(tuple(decisions)))
+        if not result.ok:
+            raise self._service_resource_error(result.errors[0])
+        outcome = result.value
+        assert outcome is not None
+        return {"kept": outcome.kept, "applied": outcome.applied, "deferred": outcome.deferred}
 
     def import_defaults(self) -> dict:
         """Return per-book presentation state without initiating an import."""

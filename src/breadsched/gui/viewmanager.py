@@ -277,10 +277,35 @@ class ViewManager(Gtk.ApplicationWindow):
         def present_when_ready() -> bool:
             self._due_prompt_source = None
             if self.db is expected_db and self.db is not None:
-                self.prompt_for_due()
+                held = self.prompt_for_held_imports()
+                if held is None:
+                    self.prompt_for_due()
+                else:
+                    # One modal review at a time: due schedules follow the
+                    # GnuCash review rather than stacking over it.
+                    def due_after_review(*_args) -> bool:
+                        self.prompt_for_due()
+                        return False
+
+                    held.connect("close-request", due_after_review)
             return GLib.SOURCE_REMOVE
 
         self._due_prompt_source = GLib.idle_add(present_when_ready)
+
+    def prompt_for_held_imports(self) -> Gtk.Window | None:
+        """Ask about GnuCash changes held back from reconciled transactions."""
+        if self.db is None:
+            return None
+        from ..gen.services import pending_import_changes
+        from .dialogs.import_review_dialog import ImportReviewDialog
+
+        changes = pending_import_changes(self.db)
+        if not changes:
+            return None
+        dialog = ImportReviewDialog(self, self.db, changes)
+        dialog.connect("close-request", lambda *_: (self._refresh_views(), False)[1])
+        dialog.present()
+        return dialog
 
     def prompt_for_due(self) -> None:
         """Ask about anything due, once, on opening the book."""

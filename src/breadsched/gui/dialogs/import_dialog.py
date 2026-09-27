@@ -310,6 +310,20 @@ class ImportDialog(Gtk.Window):
         )
         self.import_button.set_label("Import again")
         self._finish_import()
+        if result.transactions_held:
+            self.present_held_review()
+
+    def present_held_review(self) -> Gtk.Window | None:
+        """Offer the batched review of GnuCash changes to reconciled transactions."""
+        from ...gen.services import pending_import_changes
+        from .import_review_dialog import ImportReviewDialog
+
+        changes = pending_import_changes(self.db)
+        if not changes:
+            return None
+        dialog = ImportReviewDialog(self, self.db, changes)
+        dialog.present()
+        return dialog
 
     def _import_failed(self, path: str, exc: BaseException, log_path: Path | None) -> None:
         cancelled = isinstance(exc, OperationCancelled)
