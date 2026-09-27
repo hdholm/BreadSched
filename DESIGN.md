@@ -921,6 +921,9 @@ account become exactly two balancing splits and pass through the ordinary atomic
 database transaction. It is not a parallel transaction model. Complex metadata and
 multi-split entry remain in the full editor. Register headings are a shared engine
 mapping so GTK and web describe the same positive and negative ledger directions.
+Entry has no autocomplete from earlier transactions yet. When added, proposals
+must come from a shared service and remain editable until an ordinary balanced
+save, so GTK and web do not each infer different templates.
 
 ## Statement reconciliation
 
@@ -1039,6 +1042,18 @@ plan-resolution/link state, rejected matches, and split planning/FSA classificat
 are retained across re-import. Split-level annotations are retained only when the
 same source split GUID still exists, so a materially replaced source split cannot
 inherit stale BreadSched state.
+
+The same boundary defines coexistence with a live GnuCash book. Transactions
+created in BreadSched have no source GUID. The deletion inventory never lists
+them, and import never writes them to GnuCash, so they persist across refreshes.
+Recording the same activity in both applications therefore duplicates it. Unlike
+imported accounts, imported transactions are not yet protected at edit time: a local
+change to a source-owned fact, including a BreadSched statement reconciliation of
+an imported split, is replaced on the next refresh and counted only as refreshed.
+The User Guide therefore asks users to choose one ledger of record per period.
+Edit-time protection or reporting of replaced changes is roadmap work. The
+coexistence contract has a SQLite acceptance test for restored ledger facts,
+and retained native transactions that never reach the source.
 
 Import reporting follows that ownership boundary. A successfully read source
 transaction is **new** when its stable identity is absent, **refreshed** when any

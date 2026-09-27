@@ -5,6 +5,17 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **GnuCash coexistence guidance and entry-autocomplete planning.** The User
+  Guide explains how to keep GnuCash and BreadSched side by side: record ledger
+  facts in one ledger of record per period, and use BreadSched for planning state
+  that survives re-import. It also describes a one-way cut-over. A SQLite
+  acceptance test covers the contract: re-import restores source-owned facts over
+  local edits and counts them as refreshed, while BreadSched-created transactions
+  persist and never reach the source. The roadmap adds reviewed entry autocomplete
+  and records that local changes to imported transactions, including BreadSched
+  reconciliation of imported splits, are replaced without a specific warning.
+  No application or schema change.
+
 - **Flatpak offline file workflow gate.** CI exercises an installed Flatpak with
   network unshared, creating and verifying a synthetic book under Documents,
   reading Dashboard, exporting CSV, importing QIF, backing up and restoring
