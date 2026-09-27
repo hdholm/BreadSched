@@ -16,12 +16,22 @@ different things:
 
 "Never" applies to that one date, not the schedule: skipping March must not also
 dismiss February or silence April.
+
+Occurrences of one schedule are grouped under a heading with their count and
+total. A schedule with several missed dates also gets a chooser that sets every
+one of its dates at once, while each date keeps its own answer.
+
+Apply goes through the shared due-review service. It rechecks every chosen date
+against the book, so a date posted or skipped elsewhere since this window opened
+is refused rather than posted twice, and the whole batch is one undo step.
 """
 
 from __future__ import annotations
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine import schedule as schedule_engine
+from ...gen.lib.money import Money
+from ...gen.services import DueDecision, ResolveDue, resolve_due
+from ...presentation import service_error_message
 from ..gi_setup import Gtk
 
 __all__ = ["DueDialog"]
@@ -29,6 +39,8 @@ __all__ = ["DueDialog"]
 POST, LATER, NEVER = 0, 1, 2
 
 _CHOICES = ["Post now", "Remind me later", "Never (mark as done)"]
+_DECISIONS = {POST: DueDecision.POST, LATER: DueDecision.DEFER, NEVER: DueDecision.SKIP}
+_GROUP_CHOICES = ["Choose each date", "Post all", "Remind me later for all", "Never, all"]
 
 
 class DueDialog(Gtk.Window):
@@ -38,8 +50,14 @@ class DueDialog(Gtk.Window):
         super().__init__(title="Scheduled transactions due", transient_for=parent, modal=True)
         self.set_destroy_with_parent(True)
         self.db = db
-        self.occurrences = list(occurrences)
+        groups: dict[str, list] = {}
+        for occurrence in occurrences:
+            groups.setdefault(occurrence.schedule.handle, []).append(occurrence)
+        ordered = sorted(groups.values(), key=lambda items: min(o.when for o in items))
+        self.occurrences = [o for items in ordered for o in sorted(items, key=lambda o: o.when)]
         self.choosers: list[Gtk.DropDown] = []
+        #: Per-schedule "set every date" choosers, keyed by schedule handle.
+        self.group_choosers: dict[str, Gtk.DropDown] = {}
         self.set_default_size(700, 460)
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -75,24 +93,52 @@ class DueDialog(Gtk.Window):
             label.add_css_class("summary-label")
             grid.attach(label, position, 0, 1, 1)
 
-        for index, occurrence in enumerate(self.occurrences, start=1):
-            due = Gtk.Label(label=occurrence.when.isoformat(), xalign=0)
-            if occurrence.when < _today():
-                due.add_css_class("negative")
-                due.set_text(f"{occurrence.when.isoformat()}  (overdue)")
-            grid.attach(due, 0, index, 1, 1)
-            grid.attach(Gtk.Label(label=occurrence.name, xalign=0), 1, index, 1, 1)
+        row = 1
+        index = 0
+        for items in ordered:
+            items = sorted(items, key=lambda o: o.when)
+            first = items[0]
+            total = sum((o.amount for o in items), Money(0))
+            heading = Gtk.Label(
+                label=f"{first.name}: {len(items)} due, {total.format()}",
+                xalign=0,
+            )
+            heading.add_css_class("summary-label")
+            grid.attach(heading, 0, row, 3, 1)
+            if len(items) > 1:
+                group = Gtk.DropDown.new_from_strings(_GROUP_CHOICES)
+                group.set_selected(0)
+                size = len(items)
+                group.connect(
+                    "notify::selected",
+                    lambda chooser, _pspec, start=index, count=size: self._set_group(
+                        chooser, start, count
+                    ),
+                )
+                self.group_choosers[first.schedule.handle] = group
+                grid.attach(group, 3, row, 1, 1)
+            row += 1
+            for occurrence in items:
+                due = Gtk.Label(label=occurrence.when.isoformat(), xalign=0)
+                if occurrence.when < _today():
+                    due.add_css_class("negative")
+                    due.set_text(f"{occurrence.when.isoformat()}  (overdue)")
+                due.set_margin_start(18)
+                grid.attach(due, 0, row, 1, 1)
+                grid.attach(Gtk.Label(label=occurrence.name, xalign=0), 1, row, 1, 1)
 
-            amount = Gtk.Label(label=occurrence.amount.format(), xalign=1)
-            amount.add_css_class("numeric")
-            grid.attach(amount, 2, index, 1, 1)
+                amount = Gtk.Label(label=occurrence.amount.format(), xalign=1)
+                amount.add_css_class("numeric")
+                grid.attach(amount, 2, row, 1, 1)
 
-            chooser = Gtk.DropDown.new_from_strings(_CHOICES)
-            # Undecided by default: the safe answer to an unread question is to
-            # ask again, not to write to the ledger.
-            chooser.set_selected(LATER)
-            self.choosers.append(chooser)
-            grid.attach(chooser, 3, index, 1, 1)
+                chooser = Gtk.DropDown.new_from_strings(_CHOICES)
+                # Undecided by default: the safe answer to an unread question is to
+                # ask again, not to write to the ledger.
+                chooser.set_selected(LATER)
+                self.choosers.append(chooser)
+                grid.attach(chooser, 3, row, 1, 1)
+                row += 1
+                index += 1
 
         scroller = Gtk.ScrolledWindow(child=grid)
         scroller.set_vexpand(True)
@@ -118,6 +164,14 @@ class DueDialog(Gtk.Window):
         for chooser in self.choosers:
             chooser.set_selected(choice)
 
+    def _set_group(self, group: Gtk.DropDown, start: int, count: int) -> None:
+        selected = group.get_selected()
+        if selected == 0:
+            return
+        choice = (POST, LATER, NEVER)[selected - 1]
+        for chooser in self.choosers[start : start + count]:
+            chooser.set_selected(choice)
+
     def selection(self, choice: int) -> list:
         return [
             occurrence
@@ -125,18 +179,28 @@ class DueDialog(Gtk.Window):
             if chooser.get_selected() == choice
         ]
 
-    def apply(self) -> tuple[int, int]:
-        """Carry out the decisions. Returns (posted, skipped)."""
-        posted = schedule_engine.post_occurrences(
-            self.db, self.selection(POST), message="Post scheduled transactions"
+    def apply(self) -> tuple[int, int] | None:
+        """Carry out the decisions. Returns (posted, skipped), or None if refused."""
+        decisions = tuple(
+            (occurrence.schedule.handle, occurrence.when, _DECISIONS[chooser.get_selected()])
+            for occurrence, chooser in zip(self.occurrences, self.choosers, strict=True)
+            if chooser.get_selected() != LATER
         )
-        skipped = schedule_engine.skip_occurrences(
-            self.db, self.selection(NEVER), message="Skip scheduled transactions"
-        )
-        return len(posted), skipped
+        if not decisions:
+            return 0, 0
+        result = resolve_due(self.db, ResolveDue(decisions, as_of=_today()))
+        if not result.ok:
+            self.status.set_text(service_error_message(result.errors[0]))
+            self.status.add_css_class("negative")
+            return None
+        assert result.value is not None
+        return result.value.posted, result.value.skipped
 
     def _on_apply(self, _button) -> None:
-        posted, skipped = self.apply()
+        outcome = self.apply()
+        if outcome is None:
+            return
+        posted, skipped = outcome
         self.close()
         if posted or skipped:
             parts = []

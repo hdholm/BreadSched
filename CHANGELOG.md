@@ -5,6 +5,21 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Reviewed, duplicate-safe batch of due scheduled transactions (P1 complete).**
+  A shared due-review service lists due and missed occurrences grouped by schedule
+  and applies a batch of post, skip, or defer decisions. It re-checks every chosen
+  date immediately before writing: a date already posted or skipped elsewhere, a
+  missing schedule, or a repeated date refuses the whole batch with nothing written,
+  so a stale window cannot post an occurrence twice. Posts and skips commit as one
+  undo step; plan-only estimates are never offered. GTK's due dialog groups dates
+  under a schedule heading with count and total, adds a set-all chooser for a
+  schedule with several dates, and applies through the service. The web Scheduled
+  button that posted everything due in one click now opens a review panel, also
+  offered from Dashboard when something is due; `/api/due-review` lists and
+  resolves. The CLI adds `due-review` with `--post`/`--skip` by schedule or
+  `SCHEDULE@DATE` and `--post-all`/`--skip-all`. This completes the due-since-last-
+  run priority. Application version `0.2.0a123`; native schema remains 7.
+
 - **Missed schedule dates grouped on Dashboard.** Two or more missed occurrences
   of one schedule (or generated account payment) now appear as a single bill or
   income row with the missed date range, count, total, and the recurrence's own

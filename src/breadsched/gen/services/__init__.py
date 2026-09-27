@@ -31,6 +31,15 @@ from .claims import (
     save_claim,
 )
 from .contracts import ServiceError, ServiceResult
+from .due_review import (
+    DueDecision,
+    DueItem,
+    DueResolution,
+    DueScheduleReview,
+    ResolveDue,
+    pending_due_review,
+    resolve_due,
+)
 from .expense_explorer import (
     ExpenseCategory,
     ExpenseDrilldown,
@@ -158,12 +167,19 @@ __all__ = [
     "FixedSplitInput",
     "FormulaScheduleInput",
     "FormulaScenarioScheduleInput",
+    "DueDecision",
+    "DueItem",
+    "DueResolution",
+    "DueScheduleReview",
     "HeldImportChange",
     "HeldImportDecision",
     "HeldImportResolution",
     "ImportBook",
+    "ResolveDue",
     "ResolveHeldImports",
+    "pending_due_review",
     "pending_import_changes",
+    "resolve_due",
     "resolve_import_changes",
     "ImportedBook",
     "PlanComparison",

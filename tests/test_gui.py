@@ -3235,6 +3235,28 @@ class TestDueReview:
         sched = next(iter(due_book.db.iter_scheduled()))
         assert due[0].when in sched.skipped
 
+    def test_a_schedules_dates_are_grouped_with_a_set_all_chooser(self, due_book, window):
+        from breadsched.gui.dialogs.due_dialog import NEVER
+
+        dialog, due = self._dialog(due_book, window)
+        [group] = dialog.group_choosers.values()
+        group.set_selected(3)  # "Never, all"
+        assert all(chooser.get_selected() == NEVER for chooser in dialog.choosers)
+        assert dialog.apply() == (0, len(due))
+
+    def test_a_date_posted_elsewhere_is_refused_not_duplicated(self, due_book, window):
+        from breadsched.gen.engine import schedule as engine
+        from breadsched.gui.dialogs.due_dialog import POST
+
+        dialog, due = self._dialog(due_book, window)
+        dialog.choosers[0].set_selected(POST)
+        # The same date is posted from another window after this one opened.
+        engine.post_occurrences(due_book.db, [due[0]])
+
+        assert dialog.apply() is None
+        assert "no longer due" in dialog.status.get_text()
+        assert due_book.db.summary()["txn"] == 1
+
     def test_a_skipped_occurrence_is_not_raised_again(self, due_book, window):
         from breadsched.gen.engine import schedule as engine
         from breadsched.gui.dialogs.due_dialog import NEVER
