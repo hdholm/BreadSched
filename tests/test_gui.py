@@ -3459,6 +3459,35 @@ class TestDashboardView:
         window.show_category("dashboard")
         assert window.stack.get_visible_child_name() == "dashboard"
 
+    def test_imported_security_and_unset_card_first_view(
+        self, app, window, tmp_path, gnucash_household_path
+    ):
+        from breadsched.cli.main import main as cli
+
+        path = tmp_path / "commitments.breadsched"
+        assert cli(["init", str(path)]) == 0
+        assert cli(["import", str(path), gnucash_household_path.path, "--no-infer"]) == 0
+        app.open_book(str(path))
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        assert view.board.report_summary()["net_worth"] == Money("109950.00")
+        [note] = view.board.coverage_notes
+        assert note.startswith("Card payments not set up")
+        shown = []
+        child = view.cards.get_first_child()
+        while child is not None:
+            stack = [child]
+            while stack:
+                widget = stack.pop()
+                if isinstance(widget, Gtk.Label):
+                    shown.append(widget.get_text())
+                inner = widget.get_first_child()
+                while inner is not None:
+                    stack.append(inner)
+                    inner = inner.get_next_sibling()
+            child = child.get_next_sibling()
+        assert note in shown
+
     def test_imported_first_view_discloses_missing_cash_quote(
         self, app, window, tmp_path, gnucash_sqlite_path
     ):

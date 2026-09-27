@@ -5,6 +5,19 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **First-run Dashboard for imported commitments (P0 complete).** A synthetic
+  GnuCash book with a priced security, an unscheduled mortgage, and a credit card
+  owing a balance now has acceptance coverage across the shared engine, GTK, web,
+  CLI, and print. Two first-view errors were fixed. Next income no longer blames a
+  missing reporting-currency quote when simply no income is scheduled; it reports
+  “No scheduled income”. A visible card that owes a balance with no payment day or
+  payment schedule now produces a “Card payments not set up” coverage note instead
+  of silently contributing nothing to Needed within 30 days. Printed Dashboard
+  reports now include coverage notes even when no groups are configured. The
+  first-run Dashboard and sample-book priority is complete; later first-run polish
+  remains under GTK first-run UX. Application version `0.2.0a120`; native schema
+  remains 7.
+
 - **Reconciled transactions survive GnuCash re-import (#117).** A split reconciled
   in BreadSched keeps its Reconciled state and statement date when the book is
   re-imported, so completed statements stay valid and reopenable. If GnuCash

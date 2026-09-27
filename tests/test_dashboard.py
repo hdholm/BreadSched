@@ -160,6 +160,81 @@ def test_imported_book_first_dashboard_uses_complete_ledger_and_commitments(
     assert "Missing reporting-currency quote" in dashboard_report(missing)
 
 
+def test_imported_security_and_commitments_first_dashboard_is_truthful(db, gnucash_household_path):
+    """First view of an imported book with a security, a mortgage, and an unset card."""
+    from breadsched.plugins.export.html_report import dashboard_report
+    from breadsched.plugins.importer.gnucash_sqlite import import_book
+
+    source = gnucash_household_path
+    import_book(db, source.path)
+    board = dashboard.build(db, as_of=date(2026, 2, 15))
+    report = board.report_summary()
+
+    # The security is valued at its imported quote (10 x 120.00), not its 1,000 cost.
+    assert report["net_worth"] == Money("109950.00")
+    assert report["liquid"] == Money("9000.00")
+    assert board.missing_quotes == ()
+    assert board.unavailable_reason("assets") == "Dashboard groups not configured"
+    # No imported schedules: coverage and next income are unavailable for setup
+    # reasons, never attributed to a currency quote.
+    assert report["months_covered"] is None
+    assert board.unavailable_reason("months_covered") == "No committed outgoings"
+    assert report["next_income"] is None
+    assert board.unavailable_reason("next_income") == "No scheduled income"
+    # The owed card balance has no payment setup, so near-term needs exclude it
+    # and the Dashboard says so rather than implying the card needs nothing.
+    assert report["required_liquid"] == Money(0)
+    [note] = board.coverage_notes
+    assert note.startswith("Card payments not set up: 1 credit card owes a balance")
+    html = dashboard_report(board)
+    assert "109,950.00" in html
+    assert "Card payments not set up" in html
+
+    card = db.get_account(source.card)
+    card.payment_day = 20
+    card.pays_in_full = True
+    with db.transaction("Configure card") as txn:
+        db.commit_account(card, txn)
+    configured = dashboard.build(db, as_of=date(2026, 2, 15))
+    assert configured.coverage_notes == ()
+    assert configured.report_summary()["required_liquid"] == Money("250.00")
+    assert configured.report_summary()["available"] == Money("8750.00")
+
+
+def test_unset_card_note_ignores_paid_hidden_and_scheduled_cards(db, book):
+    from breadsched.gen.engine import schedule
+
+    with db.transaction("Cards") as txn:
+        cards = [
+            Account(name=name, atype=AccountType.CREDIT, parent=book.liabilities)
+            for name in ("Card owed", "Card paid off", "Card hidden", "Card scheduled")
+        ]
+        cards[2].hidden = True
+        for card in cards:
+            db.add_account(card, txn)
+        for card in (cards[0], cards[2], cards[3]):
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, 9, 1), "Purchase", book.groceries, card.handle, "40.00"
+                ),
+                txn,
+            )
+        db.add_scheduled(
+            ScheduledTransaction(
+                name="Card payment",
+                recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 9, 25)),
+                splits=[
+                    ScheduledSplit(cards[3].handle, Money("40.00")),
+                    ScheduledSplit(book.checking, Money("-40.00")),
+                ],
+            ),
+            txn,
+        )
+
+    unset = schedule.unconfigured_card_balances(db, TODAY)
+    assert [card.name for card in unset] == ["Card owed"]
+
+
 @pytest.fixture
 def household(db, book):
     """A book shaped like the spreadsheet: two properties, retirement, bills."""

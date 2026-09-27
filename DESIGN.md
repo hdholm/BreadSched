@@ -755,6 +755,14 @@ accounts and posted splits supply ledger position before groups are configured,
 and an imported schedule still supplies the committed bill. A missing foreign
 cash quote then suppresses dependent monetary conclusions without hiding that
 schedule. The GTK, web, CLI, and print presentations consume this same result.
+A second synthetic import covers a priced security, an unscheduled mortgage, and
+a credit card with a balance but no payment setup. The security uses its imported
+quote, next income is unavailable because nothing is scheduled rather than
+because of a quote, and the card receives an explicit coverage note:
+`schedule.unconfigured_card_balances` lists visible cards that owe a balance but
+have neither a payment day nor an explicit payment schedule, so no account-linked
+obligation reaches near-term needs. Coverage notes render in every presentation,
+including printed reports without configured groups.
 
 Dashboard group names are account-style colon-delimited paths. The engine builds
 the hierarchy and aggregate totals; GTK, web, and CLI only render the resulting

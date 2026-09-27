@@ -21,9 +21,11 @@ import pytest
 # works regardless of the working directory pytest was launched from.
 from gnucash_fixtures import (
     GNUCASH_SCHEMA,
+    create_book,
     new_guid,
     write_account,
     write_commodity,
+    write_price,
     write_transaction,
 )
 
@@ -220,6 +222,92 @@ def payday_schedule(db, book):
 
 
 # -------------------------------------------------------------- GnuCash books
+
+
+@pytest.fixture
+def gnucash_household_path(tmp_path):
+    """A synthetic GnuCash book with a priced security, a mortgage, and a card.
+
+    Nothing is configured for BreadSched: no Dashboard groups, loan links, card
+    payment settings, or schedules. At 2026-02-15 the whole-book position is
+    house 400,000 + checking 9,000 + 10 shares at 120.00 (1,200) - mortgage
+    300,000 - card 250 = 109,950.
+    """
+    book = create_book(
+        tmp_path / "household-commitments.gnucash",
+        [
+            ("root", "Root Account", "ROOT", None, 0),
+            ("assets", "Assets", "ASSET", "root", 1),
+            ("bank", "Checking", "BANK", "assets", 0),
+            ("invest", "Brokerage", "ASSET", "assets", 1),
+            ("house", "House", "ASSET", "assets", 0),
+            ("liabilities", "Liabilities", "LIABILITY", "root", 1),
+            ("mortgage", "Mortgage", "LIABILITY", "liabilities", 0),
+            ("card", "Card A", "CREDIT", "liabilities", 0),
+            ("expenses", "Expenses", "EXPENSE", "root", 1),
+            ("groceries", "Groceries", "EXPENSE", "expenses", 0),
+            ("equity", "Equity", "EQUITY", "root", 1),
+            ("opening", "Opening Balances", "EQUITY", "equity", 0),
+        ],
+        [
+            (
+                date(2026, 1, 1),
+                "Opening",
+                [("bank", 1000000, 100, ""), ("opening", -1000000, 100, "")],
+            ),
+            (
+                date(2026, 1, 1),
+                "House",
+                [("house", 40000000, 100, ""), ("opening", -40000000, 100, "")],
+            ),
+            (
+                date(2026, 1, 1),
+                "Mortgage",
+                [("opening", 30000000, 100, ""), ("mortgage", -30000000, 100, "")],
+            ),
+            (
+                date(2026, 1, 10),
+                "Groceries",
+                [("groceries", 25000, 100, ""), ("card", -25000, 100, "")],
+            ),
+        ],
+    )
+    conn = sqlite3.connect(book.path)
+    security = write_commodity(conn, new_guid(), "NASDAQ", "XMPL", "Example Corp", 1000)
+    holding = write_account(conn, new_guid(), "XMPL", "STOCK", book.invest, security)
+    purchase = new_guid()
+    conn.execute(
+        "INSERT INTO transactions VALUES (?,?,?,?,?,?)",
+        (purchase, book.currency, "", "20260105104000", "20260105104000", "Buy XMPL"),
+    )
+    for split in (
+        (holding, "Buy", 100000, 100, 10000, 1000),
+        (book.bank, "", -100000, 100, -100000, 100),
+    ):
+        account, action, value, value_denom, quantity, quantity_denom = split
+        conn.execute(
+            "INSERT INTO splits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                new_guid(),
+                purchase,
+                account,
+                "",
+                action,
+                "n",
+                None,
+                value,
+                value_denom,
+                quantity,
+                quantity_denom,
+                None,
+            ),
+        )
+    write_price(conn, new_guid(), security, book.currency, date(2026, 2, 1), 12000)
+    conn.commit()
+    conn.close()
+    book.holding = holding
+    book.security = security
+    return book
 
 
 @pytest.fixture

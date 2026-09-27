@@ -464,6 +464,34 @@ def _account_payment_definition(
     )
 
 
+def unconfigured_card_balances(
+    db: DbSQLite,
+    as_of: date | None = None,
+    schedules: list[ScheduledTransaction] | None = None,
+) -> list[Account]:
+    """Visible cards that owe a balance but have no payment day or payment schedule.
+
+    Such a balance produces no account-linked payment, so near-term cash needs
+    cannot include it. Presentations disclose these cards instead of implying the
+    card needs nothing.
+    """
+    today = as_of or date.today()
+    saved = list(schedules) if schedules is not None else list(db.iter_scheduled())
+    covered = _card_accounts_covered_by_schedules(db, saved, today)
+    from . import ledger
+
+    return [
+        account
+        for account in db.iter_accounts()
+        if account.atype is AccountType.CREDIT
+        and not account.hidden
+        and not account.placeholder
+        and account.payment_day is None
+        and account.handle not in covered
+        and ledger.balance_recursive(db, account.handle, as_of=today) > 0
+    ]
+
+
 def account_payment_definitions(
     db: DbSQLite,
     as_of: date | None = None,

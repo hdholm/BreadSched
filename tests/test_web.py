@@ -2713,6 +2713,31 @@ class TestDashboardApi:
         assert missing["liquid_missing_quotes"] == [foreign_cash.handle]
         assert missing["unavailable_reasons"]["months_covered"] == "No committed outgoings"
 
+    def test_imported_security_and_unset_card_first_view(self, tmp_path, gnucash_household_path):
+        path = tmp_path / "commitments.breadsched"
+        cli(["init", str(path)])
+        cli(["import", str(path), gnucash_household_path.path, "--no-infer"])
+        db = DbSQLite()
+        db.load(str(path))
+        httpd = serve(db, host="127.0.0.1", port=0)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        try:
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{httpd.server_port}/api/dashboard",
+                headers={"X-BreadSched-Token": httpd.token},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                board = json.loads(response.read())
+        finally:
+            httpd.shutdown()
+            httpd.server_close()
+            db.close()
+        assert board["summary"]["net_worth"] == "109950.00"
+        assert board["unavailable_reasons"]["next_income"] == "No scheduled income"
+        [note] = board["coverage_notes"]
+        assert note.startswith("Card payments not set up: 1 credit card owes a balance")
+
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
         assert status == 200
