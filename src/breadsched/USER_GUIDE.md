@@ -244,7 +244,9 @@ imports too: GnuCash prices, a QIF file's price list, and the security prices in
 an OFX investment statement are recorded for securities already in your book
 (matched by symbol). A price for a security the book doesn't have is listed as
 skipped rather than creating a new security. Imported prices never replace one
-you entered yourself. To save a manual exchange
+you entered yourself. When an OFX card or bank statement shows a foreign-currency
+purchase with its exchange rate, that rate is saved as the day's exchange quote
+and the purchase is posted in the account's currency at that rate. To save a manual exchange
 rate between currencies already in the book, run, for example:
 
 ```bash

@@ -348,6 +348,18 @@ Re-importing therefore updates it in place, and it never replaces a quote entere
 in BreadSched (source `breadsched`). QIF and OFX investment *transactions* are
 still reported and skipped.
 
+An OFX bank or card transaction may carry its own exchange rate. `CURRATE` is the
+number of statement-currency (`CURDEF`) units per unit of `CURSYM`, so it is
+stored as a `CURSYM` quote priced in `CURDEF`, dated `DTPOSTED`, with source `ofx`
+and GnuCash price type `transaction`, exactly like a manual exchange rate. Its
+handle depends on the two currencies and the date, so one rate per currency pair
+and day is kept (the last in the file) and re-import refreshes it. Under
+`CURRENCY` the amounts are in `CURSYM` and are converted to the account currency
+at that rate, rounded to the currency's fraction; under `ORIGCURRENCY` they are
+already in `CURDEF` and only the quote is recorded. A `CURRENCY` transaction
+without a positive rate or currency code is skipped rather than posted as if it
+were in `CURDEF`. The foreign currency commodity is created if the book lacks it.
+
 The reporting currency is explicit book metadata when configured, otherwise USD
 when present, then the first currency commodity. This initial layer intentionally
 requires a direct security-to-reporting-currency quote. Foreign-exchange graphs,

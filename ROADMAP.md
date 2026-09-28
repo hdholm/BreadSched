@@ -54,9 +54,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    installer. Keep wheel/source releases available throughout.
 3. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
    conversion across Plan, Expense Explorer, Projection, comparisons, and prints are
-   delivered, as are GnuCash, QIF, and OFX security prices imported through the
-   same quote contract. Remaining: map OFX per-transaction exchange rates
-   (`CURRENCY`/`CURRATE`) into dated quotes; decide an explicit
+   delivered, as are GnuCash, QIF, and OFX security prices and OFX per-transaction
+   exchange rates imported through the same quote contract. Remaining: decide an
+   explicit
    multi-hop policy before enabling any conversion through a third currency; and
    value securities quoted in a non-reporting currency (a direct reporting-currency
    price is still required). Do not create a second monthly budget ledger.

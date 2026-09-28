@@ -12,6 +12,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 from uuid import NAMESPACE_URL, uuid5
@@ -148,6 +149,29 @@ def _read_text(path: Path) -> str:
         except UnicodeDecodeError:
             continue
     return raw.decode("utf-8", errors="replace")
+
+
+def _transaction_rate(block: str) -> tuple[str, str, bool] | None:
+    """(currency code, rate, amounts-are-foreign) from a transaction's rate aggregate.
+
+    ``CURRENCY`` means the transaction's amounts are in ``CURSYM``; ``ORIGCURRENCY``
+    means they were already converted to the statement currency (``CURDEF``) and
+    ``CURSYM`` names the original. Either way ``CURRATE`` is the number of
+    statement-currency units per unit of ``CURSYM``.
+    """
+    for name, foreign_amounts in (("CURRENCY", True), ("ORIGCURRENCY", False)):
+        found = _blocks(block, name)
+        if found:
+            return _tag(found[0], "CURSYM"), _tag(found[0], "CURRATE"), foreign_amounts
+    return None
+
+
+def _parse_rate(raw: str, number_format: NumberFormat) -> Decimal | None:
+    try:
+        rate = parse_decimal_amount(raw, number_format)
+    except ValueError:
+        return None
+    return rate if rate > 0 else None
 
 
 def _security_quotes(text: str) -> list[tuple[str, str, str, str]]:
@@ -290,6 +314,8 @@ def import_book(
         sink = ImportSink(db, txn, result)
         result.scan("transaction")
         commodity = sink.commodity("CURRENCY", currency_code, currency_code)
+        statement_currency = db.get_commodity(commodity)
+        fraction = statement_currency.fraction if statement_currency is not None else 100
         source_account = _source_account(sink, db, account_id, account_type, institution, commodity)
         fallback_counts: dict[tuple[object, ...], int] = {}
         for index, block in enumerate(transaction_blocks, 1):
@@ -325,6 +351,33 @@ def import_book(
                 fallback_counts[fallback] = occurrence
                 identity = _stable_handle("fallback", *fallback, occurrence)
             handle = _stable_handle("transaction", account_id, identity)
+            rate_info = _transaction_rate(block)
+            if rate_info is not None:
+                code, raw_rate, foreign_amounts = rate_info
+                rate = _parse_rate(raw_rate, detected_format)
+                code = code.strip().upper()
+                if foreign_amounts and code != currency_code.upper() and (rate is None or not code):
+                    result.skip(
+                        "OFX foreign-currency transaction has no usable exchange rate",
+                        description,
+                        identity=handle,
+                        kind="transaction",
+                    )
+                    continue
+                if rate is not None and code and code != currency_code.upper():
+                    # The statement's own rate becomes dated price evidence,
+                    # stored like a manual exchange rate (CURSYM priced in CURDEF).
+                    sink.price(
+                        _stable_handle("rate", code, currency_code, post_date.isoformat()),
+                        sink.commodity("CURRENCY", code, code),
+                        commodity,
+                        post_date,
+                        Money(rate),
+                        source="ofx",
+                        quote_type="transaction",
+                    )
+                    if foreign_amounts:
+                        amount = (amount * rate).quantize(fraction)
             splits = sink.keep_local_categories(
                 handle,
                 source_account,
