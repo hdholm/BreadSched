@@ -19,6 +19,8 @@ from ..gen.services.csv_import import (
     inspect_csv,
     preview_csv_import,
 )
+from ..gen.services.receivables import reimbursement_proposals
+from ..presentation import reimbursement_notice
 
 if TYPE_CHECKING:
     from .server import Api
@@ -154,4 +156,7 @@ def csv_import(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         "transfers_linked": imported.result.transactions_linked,
         "skipped": imported.result.skipped,
         "detail": imported.result.detail(limit=50),
+        "reimbursement_notice": reimbursement_notice(
+            len(reimbursement_proposals(api.db).value or ())
+        ),
     }

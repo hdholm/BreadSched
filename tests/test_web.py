@@ -4872,3 +4872,30 @@ class TestReceivablesRoutes:
         _status, accepted = client.post("/api/receivables/accept", {"links": [link]})
         assert accepted == {"linked": 1, "unchanged": 0}
         assert client.get("/api/receivables")[1]["proposals"] == []
+
+    def test_reconciliation_and_imports_point_at_waiting_proposals(self, client):
+        from breadsched.gen.lib import Transaction
+
+        db = client.database
+        rent_txn, rent, cost = self._rent(client)
+        client.post(
+            "/api/receivable/save",
+            {
+                "payer": "Acme Insurance",
+                "incurred_date": str(rent_txn.post_date),
+                "link_expense": {"transaction": rent_txn.handle, "split": cost.handle},
+            },
+        )
+        checking = db.get_account_by_name("Assets:Checking")
+        _status, before = client.get(f"/api/reconciliation?account={checking.handle}")
+        assert before["reimbursement_notice"] is None
+        refund = Transaction.simple(
+            rent_txn.post_date, "Acme Insurance", checking.handle, rent.handle, Money("75")
+        )
+        with db.transaction("Refund fixture") as txn:
+            db.add_transaction(refund, txn)
+        _status, after = client.get(f"/api/reconciliation?account={checking.handle}")
+        assert after["reimbursement_notice"].startswith("1 credit looks like money back")
+        salary = db.get_account_by_name("Income:Salary")
+        _status, elsewhere = client.get(f"/api/reconciliation?account={salary.handle}")
+        assert elsewhere["reimbursement_notice"] is None

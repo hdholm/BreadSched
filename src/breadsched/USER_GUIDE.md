@@ -950,7 +950,9 @@ these hold:
 
 If a credit could belong to more than one receivable, it is proposed only when
 the payer's name appears in its description. Nothing is linked until you choose
-**Accept selected**.
+**Accept selected**. After an import, and when you reconcile the account a
+deposit landed in, BreadSched tells you how many such credits are waiting for
+review.
 
 On the command line:
 

@@ -1052,7 +1052,9 @@ async function openReconciliation(account) {
           }}, "Finish")));
   }
   const body = el("section", {class:"detail-dialog wide"},
-    el("h2", {}, `Reconcile — ${data.account.name}`), content,
+    el("h2", {}, `Reconcile — ${data.account.name}`),
+    data.reimbursement_notice ? el("p", {class:"note"}, data.reimbursement_notice) : null,
+    content,
     el("div", {class:"toolbar"}, el("span", {class:"spacer"}),
       el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()}, "Close")));
   backdrop.append(body);
@@ -3683,7 +3685,8 @@ async function csvImportPanel() {
         say(`Imported ${result.new} new; ${result.already_imported} already imported; `
           + `${result.possible_duplicates} possible duplicate(s) `
           + `${result.duplicates_included ? "included" : "held back"}; `
-          + `${result.transfers_linked} transfer(s) linked; ${result.skipped} skipped.`);
+          + `${result.transfers_linked} transfer(s) linked; ${result.skipped} skipped.`
+          + (result.reimbursement_notice ? ` ${result.reimbursement_notice}` : ""));
         await showPreview();
       }) }, "Import")),
     layout, preview);
@@ -3728,7 +3731,8 @@ async function showImport() {
           "error");
         return;
       }
-      result.textContent = `${response.format}\n\n${response.detail}`;
+      result.textContent = `${response.format}\n\n${response.detail}`
+        + (response.reimbursement_notice ? `\n\n${response.reimbursement_notice}` : "");
       say("Import finished.");
       if (response.held) await openImportReviewDialog();
     } catch (error) { say(error.message, "error"); }

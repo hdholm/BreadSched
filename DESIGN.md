@@ -1437,8 +1437,15 @@ than a receivable's remaining balance. Acceptance recomputes the proposals and
 links only choices still on offer, through `attach_reimbursement_split`; a stale
 choice counts as unchanged. The GTK dialog and web page list proposals with
 checkboxes and **Accept selected** (`POST /api/receivables/accept`), and the CLI
-has `receivables --proposals` and `--accept-proposals`. Surfacing proposals during
-bank import and statement reconciliation is still planned.
+has `receivables --proposals` and `--accept-proposals`.
+
+Where deposits arrive, BreadSched points at waiting proposals with one shared
+sentence (`presentation.reimbursement_notice`). It appears after a GTK, web, or CLI
+import (GnuCash/OFX/QIF and CSV; CLI and web import responses also carry the
+count or sentence) and at the top of GTK and web statement reconciliation. For
+reconciliation, `reimbursement_proposals(account=...)` keeps only credits whose
+transaction touches the account being reconciled. The notice never links
+anything; review stays in the Reimbursable Expenses screens.
 
 ## Statement reconciliation
 

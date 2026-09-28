@@ -276,10 +276,22 @@ def list_receivables(
 
 
 def reimbursement_proposals(
-    db: DbSQLite, *, as_of: date | None = None
+    db: DbSQLite, *, as_of: date | None = None, account: str | None = None
 ) -> ServiceResult[tuple[ReimbursementProposal, ...]]:
-    """Credits that clearly reimburse one open receivable; writes nothing."""
-    return ServiceResult.success(tuple(propose_reimbursements(db, as_of=as_of)))
+    """Credits that clearly reimburse one open receivable; writes nothing.
+
+    ``account`` keeps only proposals whose transaction touches that account, such
+    as the bank account being reconciled.
+    """
+    proposals = propose_reimbursements(db, as_of=as_of)
+    if account is not None:
+        touching = set()
+        for item in proposals:
+            transaction = db.get_transaction(item.transaction)
+            if transaction is not None and any(s.account == account for s in transaction.splits):
+                touching.add(item.transaction)
+        proposals = [item for item in proposals if item.transaction in touching]
+    return ServiceResult.success(tuple(proposals))
 
 
 @dataclass(frozen=True, slots=True)

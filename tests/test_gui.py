@@ -6324,3 +6324,26 @@ class TestReceivablesDialog:
             assert dialog.proposal_checks == {}
         finally:
             dialog.destroy()
+
+    def test_reconciling_the_deposit_account_points_at_proposals(self, app, window, populated_book):
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+
+        db, rent_txn, rent, cost = self._book(app, populated_book)
+        dialog = ReceivablesDialog(window, db, expense=(rent_txn.handle, cost.handle))
+        dialog.payer_entry.set_text("Acme Insurance")
+        dialog.save()
+        dialog.destroy()
+        checking = db.get_account_by_name("Assets:Checking Account")
+        quiet = ReconciliationDialog(window, db, checking)
+        assert quiet.reimbursement_note is None
+        quiet.destroy()
+
+        self._refund(db, rent)
+        reconcile = ReconciliationDialog(window, db, checking)
+        try:
+            assert reconcile.reimbursement_note.get_text().startswith(
+                "1 credit looks like money back"
+            )
+        finally:
+            reconcile.destroy()

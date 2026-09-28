@@ -517,6 +517,30 @@ def test_cli_lists_and_accepts_reimbursement_proposals(tmp_path, capsys):
     db.close()
     capsys.readouterr()
 
+    # An import while a proposal is waiting says so (the notice counts every
+    # waiting proposal, not only the imported rows).
+    statement = tmp_path / "statement.csv"
+    statement.write_text("Date,Description,Amount\n2026-09-30,Coffee,-3.00\n", encoding="utf-8")
+    assert (
+        main(
+            [
+                "import-csv",
+                str(path),
+                str(statement),
+                "--account",
+                "Checking",
+                "--date",
+                "Date",
+                "--amount",
+                "Amount",
+                "--description",
+                "Description",
+            ]
+        )
+        == 0
+    )
+    assert "1 credit looks like money back" in capsys.readouterr().out
+
     assert main(["receivables", str(path), "--proposals", "--json"]) == 0
     [proposal] = json.loads(capsys.readouterr().out)
     assert (proposal["transaction"], proposal["amount"]) == (refund.handle, "90.00")
@@ -551,3 +575,17 @@ def test_a_credit_in_another_currency_is_never_proposed(db, book):
     with db.transaction("Foreign refund") as txn:
         db.add_transaction(refund, txn)
     assert _proposed(db) == []
+
+
+def test_proposals_can_be_limited_to_one_account_and_named_in_a_notice(db, book):
+    from breadsched.presentation import reimbursement_notice
+
+    receivable = _save(db)
+    attach_expense_split(db, receivable.handle, *_expense(db, book, date(2026, 9, 1), "Clinic"))
+    _reimbursement(db, book, date(2026, 9, 20), "Acme", "40.00")
+    assert len(reimbursement_proposals(db, account=book.checking).value) == 1
+    assert reimbursement_proposals(db, account=book.rent).value == ()
+
+    assert reimbursement_notice(0) is None
+    assert reimbursement_notice(1).startswith("1 credit looks like money back")
+    assert reimbursement_notice(2).startswith("2 credits look like money back")

@@ -22,10 +22,11 @@ from ...gen.plug import (  # noqa: E402
     remembered_import_source,
 )
 from ...gen.services import ImportBook, import_book  # noqa: E402
+from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils import logs  # noqa: E402
 from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
 from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
-from ...presentation import service_error_message  # noqa: E402
+from ...presentation import reimbursement_notice, service_error_message  # noqa: E402
 from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
 
@@ -306,9 +307,14 @@ class ImportDialog(Gtk.Window):
         # Fifty rather than twenty: a book with a hundred oddities is exactly the
         # one whose warnings need reading, and truncating them at twenty hides the
         # pattern in what went wrong.
-        self.result_view.set_text(
+        text = (
             result.detail(limit=WARNING_LIMIT) + "\n\nThis import is a single undo step (Ctrl+Z)."
         )
+        notice = reimbursement_notice(len(reimbursement_proposals(self.db).value or ()))
+        if notice:
+            # Imported deposits may be money back on a reimbursable expense.
+            text += f"\n\n{notice}"
+        self.result_view.set_text(text)
         self.import_button.set_label("Import again")
         self._finish_import()
         if result.transactions_held:

@@ -17,8 +17,9 @@ from ...gen.services import (
     start_reconciliation,
     update_reconciliation,
 )
+from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
+from ...presentation import reimbursement_notice, service_error_message
 from ..gi_setup import Gtk
 
 __all__ = ["ReconciliationDialog"]
@@ -56,6 +57,15 @@ class ReconciliationDialog(Gtk.Window):
 
     def _render(self) -> None:
         self._clear()
+        proposals = reimbursement_proposals(self.db, account=self.account.handle).value or ()
+        notice = reimbursement_notice(len(proposals))
+        #: Points at waiting reimbursement proposals: a deposit on this statement
+        #: may be money back on a reimbursable expense.
+        self.reimbursement_note: Gtk.Label | None = None
+        if notice:
+            self.reimbursement_note = Gtk.Label(label=notice, xalign=0, wrap=True)
+            self.reimbursement_note.add_css_class("dim")
+            self.body.append(self.reimbursement_note)
         current = reconciliation.open_for_account(self.db, self.account.handle)
         if current is None:
             self._render_start()
