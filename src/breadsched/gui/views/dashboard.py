@@ -74,10 +74,7 @@ class DashboardView(BaseView):
         bar.append(self.emergency_spin)
         bar.append(Gtk.Label(label="months"))
 
-        configure = Gtk.Button(label="Accounts…")
-        configure.set_tooltip_text("Choose which accounts each group contains")
-        configure.connect("clicked", self._on_configure)
-        bar.append(configure)
+        # Group configuration is a toolbar icon and Actions menu item (#156).
         self._bar = bar
         self.append(bar)
 

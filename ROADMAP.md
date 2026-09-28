@@ -31,9 +31,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
    PR per issue:
-   - Navigation: per-view actions move from stray buttons into
-     menus and toolbar icons, starting with Accounts and a context-sensitive
-     "Manage FSA claims" icon (#156).
+   - Actions: the remaining in-view command buttons in Register, Scheduled,
+     Upcoming, Plan, and Projection (already also in the Actions menu) move to
+     context-sensitive toolbar icons where that reads better (follow-up to #156).
    - Register: open in date order scrolled to the most recent entry (#157); replace
      quick entry with a GnuCash-style blank entry row at the bottom, designed
      before it is built and delivered as a two-split row, then in-place splits,

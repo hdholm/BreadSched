@@ -174,6 +174,14 @@ you hide are remembered. When you make the window narrower, text columns such as
 descriptions shorten (with "…") so every column, including every amount, stays
 visible.
 
+Each view's own commands are in the **Actions** menu under that view's name, and
+the common ones also appear as toolbar icons while that view is shown: for example
+**New Account**, **Edit Account**, **Security Price**, and **Exchange Rate** in
+Accounts, **Manage FSA Claims** on the FSA Dashboard, and **Configure Dashboard
+Groups** on the Dashboard. **View → Hide Empty Accounts** and **View → Show Hidden
+Accounts** filter the account tree. Buttons that act on a selected row, such as a
+schedule's **View / Edit…**, stay beside their table.
+
 Use **View** to switch work areas. Registers can also open in independent windows;
 their account, filter, selection, and expanded row do not replace the main window's
 register state.
@@ -243,8 +251,8 @@ evidence. An ambiguous currency code requires its exact handle. In the web
 currencies, enter an as-of date and the target units per source unit, then save.
 The account display refreshes its quote date and source or missing-quote warning.
 The web control accepts currencies already in the book; it does not create a new
-currency or alter ledger transactions. In GTK, choose **Exchange rate…** in
-Accounts: the dialog shows the latest recorded quote for the chosen pair, accepts
+currency or alter ledger transactions. In GTK, choose the **Exchange Rate** toolbar
+icon while Accounts is shown (or **Actions → Accounts → Exchange Rate…**): the dialog shows the latest recorded quote for the chosen pair, accepts
 the rate in your usual decimal format, and refuses the same currency twice, a
 non-positive rate, or an invalid date without saving anything.
 The web and CLI JSON data also expose the signed number of days since the quote
@@ -256,7 +264,8 @@ Plan). Other views still require a compatible reporting-currency value, and no
 multi-hop path through an intermediate currency is inferred.
 Do not add values in unlike currencies when estimating net worth.
 
-For an Investment or Retirement account, use **Security price…** to define a
+For an Investment or Retirement account, use **Security Price** (a toolbar icon
+while Accounts is shown, or **Actions → Accounts → Security Price…**) to define a
 security and record an exact dated price. Assign the account's commodity to that
 security. Accounts, Dashboard, and Projection use the latest applicable direct
 quote in the reporting currency; if no usable quote exists, BreadSched explicitly

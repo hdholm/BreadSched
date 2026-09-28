@@ -167,7 +167,7 @@ class TestEmptyWindow:
         assert list(window.view_buttons) == CATEGORY_KEYS
 
     def test_selecting_a_category_without_a_book_does_not_crash(self, window):
-        window.activate_action("show-category", GLib.Variant.new_string("dashboard"))
+        window.lookup_action("show-category").activate(GLib.Variant.new_string("dashboard"))
         assert window.stack.get_visible_child_name() == "empty"
 
 
@@ -4093,19 +4093,15 @@ class TestExchangeRateDialog:
         assert len(list(app.db.iter_prices())) == before
 
     def test_accounts_view_offers_the_exchange_rate_editor(self, fx_book, window):
+        """#156: a toolbar icon while Accounts is shown, and a menu item."""
         window.show_category("accounts")
-        view = window._views["accounts"]
-        labels = []
-        stack = [view]
-        while stack:
-            widget = stack.pop()
-            if isinstance(widget, Gtk.Button) and widget.get_label():
-                labels.append(widget.get_label())
-            child = widget.get_first_child()
-            while child is not None:
-                stack.append(child)
-                child = child.get_next_sibling()
-        assert "Exchange rate…" in labels
+        names = [
+            button.get_action_name()
+            for button in _descendants(window.view_tools)
+            if isinstance(button, Gtk.Button)
+        ]
+        assert "win.accounts-exchange-rate" in names
+        assert window.lookup_action("accounts-exchange-rate").get_enabled()
 
 
 class TestRepaintsAreDeferred:
@@ -5211,3 +5207,88 @@ class TestTablesShrink:
         table = window._views["register"].column_view
         minimum, natural = table.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
         assert minimum < natural
+
+
+class TestViewActions:
+    """#156: view commands live in menus and toolbar icons, not stray buttons."""
+
+    def _labels(self, view):
+        return [
+            widget.get_label()
+            for widget in _descendants(view)
+            if isinstance(widget, Gtk.Button) and widget.get_label()
+        ]
+
+    def test_accounts_and_fsa_have_no_stray_action_buttons(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        assert self._labels(window._views["accounts"]) == []
+        window.show_category("fsa-dashboard")
+        assert "Manage FSA claims…" not in self._labels(window._views["fsa-dashboard"])
+
+    def test_view_icons_follow_the_current_view(self, app, window, populated_book):
+        app.open_book(populated_book)
+
+        def tools():
+            return [
+                button.get_action_name()
+                for button in _descendants(window.view_tools)
+                if isinstance(button, Gtk.Button)
+            ]
+
+        window.show_category("fsa-dashboard")
+        assert tools() == ["win.fsa-dashboard-manage-claims"]
+        window.show_category("register")
+        assert tools() == []
+        window.show_category("dashboard")
+        assert tools() == ["win.dashboard-configure-groups"]
+
+    def test_every_view_action_is_in_a_menu_and_registered(self, app, window):
+        from breadsched.gui.viewmanager import VIEW_ACTIONS, view_action_name
+
+        expected = {
+            f"win.{view_action_name(key, item)}"
+            for key, actions in VIEW_ACTIONS.items()
+            for item in actions
+        }
+        found = set()
+
+        def walk(model):
+            for index in range(model.get_n_items()):
+                action = model.get_item_attribute_value(index, "action", None)
+                if action is not None:
+                    found.add(action.get_string())
+                for link in ("submenu", "section"):
+                    child = model.get_item_link(index, link)
+                    if child is not None:
+                        walk(child)
+
+        walk(app.get_menubar())
+        assert expected <= found
+        for name in expected:
+            assert window.lookup_action(name[4:]) is not None
+
+    def test_view_actions_are_disabled_without_a_book(self, window):
+        assert window.lookup_action("accounts-new-account").get_enabled() is False
+
+    def test_hide_empty_toggle_filters_accounts(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        view = window._views["accounts"]
+        window.lookup_action("accounts-hide-empty").activate(None)
+        assert window.lookup_action("accounts-hide-empty").get_state().get_boolean()
+        assert view._show_zero is False
+        window.lookup_action("accounts-hide-empty").activate(None)
+        assert view._show_zero is True
+
+    def test_manage_claims_action_opens_the_claims_dialog(
+        self, app, window, populated_book, monkeypatch
+    ):
+        app.open_book(populated_book)
+        window.show_category("fsa-dashboard")
+        opened = []
+        monkeypatch.setattr(
+            window._views["fsa-dashboard"], "_open_claim", lambda *a: opened.append(a)
+        )
+        window.lookup_action("fsa-dashboard-manage-claims").activate(None)
+        assert opened == [()]

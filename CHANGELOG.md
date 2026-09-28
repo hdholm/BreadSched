@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a150 - 2026-09-28
+
+- **View commands move into menus and toolbar icons (#156).** Every view's
+  commands are listed under that view in the **Actions** menu, and the common ones
+  appear as toolbar icons while that view is shown. Accounts loses its row of
+  buttons: New Account, Edit Account, Security Price, and Exchange Rate are toolbar
+  icons, and Hide Empty Accounts and Show Hidden Accounts are **View** menu check
+  items. "Manage FSA Claims" is a toolbar icon on the FSA Dashboard, and the
+  Dashboard's "Accounts…" button is now the **Configure Dashboard Groups** icon.
+  Register, Scheduled, Upcoming, Plan, and Projection commands are now also in the
+  menus. Application version `0.2.0a150`; native schema remains 9.
+
 ## 0.2.0a149 - 2026-09-28
 
 - **View icons in the toolbar replace the sidebar (#155).** The desktop window no

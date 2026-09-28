@@ -14,6 +14,9 @@ looked at costs nothing.
 
 from __future__ import annotations
 
+import inspect
+from dataclasses import dataclass
+
 from .. import APP_NAME  # noqa: E402
 from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from .gi_setup import Gio, GLib, Gtk, Pango
@@ -50,6 +53,99 @@ CATEGORIES = [
 ]
 
 
+@dataclass(frozen=True)
+class ViewAction:
+    """One view-level command, exposed as ``win.<view>-<name>`` (#156).
+
+    Every view action appears in the menus; ``toolbar`` ones also appear as icons
+    while their view is current, and ``toggle`` ones are checkable View-menu items
+    whose handler receives the new boolean. The handler is a method of that view.
+    """
+
+    name: str
+    label: str
+    handler: str
+    icon: str | None = None
+    toolbar: bool = False
+    toggle: bool = False
+
+
+#: Commands per view. Buttons that act on a table's selected row (a schedule, a
+#: review candidate) and controls that apply a view's own settings stay beside
+#: that table or setting; everything else lives here, not in stray view buttons.
+VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
+    "dashboard": (
+        ViewAction(
+            "configure-groups",
+            "Configure Dashboard _Groups…",
+            "_on_configure",
+            "emblem-system-symbolic",
+            toolbar=True,
+        ),
+    ),
+    "fsa-dashboard": (
+        ViewAction(
+            "manage-claims",
+            "Manage _FSA Claims…",
+            "_on_fsa_claims",
+            "document-edit-symbolic",
+            toolbar=True,
+        ),
+    ),
+    "accounts": (
+        ViewAction("new-account", "_New Account…", "_on_new_account", "folder-new-symbolic", True),
+        ViewAction(
+            "edit-account",
+            "_Edit Account…",
+            "_on_edit_selected",
+            "document-properties-symbolic",
+            True,
+        ),
+        ViewAction(
+            "security-price",
+            "_Security Price…",
+            "_on_security_price",
+            "accessories-calculator-symbolic",
+            True,
+        ),
+        ViewAction(
+            "exchange-rate",
+            "E_xchange Rate…",
+            "_on_exchange_rate",
+            "mail-send-receive-symbolic",
+            True,
+        ),
+        ViewAction("hide-empty", "_Hide Empty Accounts", "set_hide_empty", toggle=True),
+        ViewAction("show-hidden", "Show Hi_dden Accounts", "set_show_hidden", toggle=True),
+    ),
+    "register": (
+        ViewAction("full-editor", "New Transaction in _Editor…", "_on_add_clicked"),
+        ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),
+        ViewAction("reconcile", "_Reconcile…", "_on_reconcile_clicked"),
+    ),
+    "scheduled": (
+        ViewAction("new-scheduled", "_New Scheduled Transaction…", "_on_new_clicked"),
+        ViewAction("suggest", "_Suggest Estimates from History…", "_on_suggest_clicked"),
+        ViewAction("new-loan", "New _Loan…", "_on_loan_clicked"),
+    ),
+    "upcoming": (ViewAction("review-due", "_Review Due…", "_on_post_clicked"),),
+    "plan": (
+        ViewAction("new-scenario", "_New Scenario…", "_on_new_scenario"),
+        ViewAction("manage-scenarios", "_Manage Scenarios…", "_on_manage_scenarios"),
+        ViewAction("explore-expenses", "_Explore Expenses…", "_open_expense_explorer"),
+    ),
+    "projection": (
+        ViewAction("compare", "_Compare With…", "_on_compare_clicked"),
+        ViewAction("save-scenario", "_Save as Scenario", "_on_save_clicked"),
+        ViewAction("export", "E_xport Projection…", "_on_export_clicked"),
+    ),
+}
+
+
+def view_action_name(key: str, action: ViewAction) -> str:
+    return f"{key}-{action.name}"
+
+
 class ViewManager(Gtk.ApplicationWindow):
     """One window onto one book."""
 
@@ -70,6 +166,12 @@ class ViewManager(Gtk.ApplicationWindow):
         self._build_body()
         self._show_placeholder()
         self.connect("close-request", self._on_close_request)
+        # A window created while a book is already open joins that book rather
+        # than showing the start screen with its view actions disabled.
+        db = getattr(application, "db", None)
+        path = getattr(application, "book_path", None)
+        if db is not None and path:
+            self.book_opened(db, path)
 
     def _install_window_actions(self) -> None:
         """``win.show-category`` takes the category name; its state is the current view.
@@ -88,6 +190,21 @@ class ViewManager(Gtk.ApplicationWindow):
         self.print_action.connect("activate", self._on_print_view)
         self.print_action.set_enabled(False)
         self.add_action(self.print_action)
+        self.view_actions: dict[str, Gio.SimpleAction] = {}
+        for key, actions in VIEW_ACTIONS.items():
+            for item in actions:
+                name = view_action_name(key, item)
+                if item.toggle:
+                    action = Gio.SimpleAction.new_stateful(
+                        name, None, GLib.Variant.new_boolean(False)
+                    )
+                    action.connect("change-state", self._on_view_toggle, key, item)
+                else:
+                    action = Gio.SimpleAction.new(name, None)
+                    action.connect("activate", self._on_view_action, key, item)
+                action.set_enabled(False)
+                self.add_action(action)
+                self.view_actions[name] = action
         application = self.get_application()
         if application is not None:
             application.set_accels_for_action("win.print-view", ["<Control>p"])
@@ -129,6 +246,11 @@ class ViewManager(Gtk.ApplicationWindow):
             button = _view_button(key, label, icon)
             self.view_buttons[key] = button
             self.toolbar.append(button)
+
+        # Icons for the current view's own commands (for example "Manage FSA
+        # claims" on the FSA Dashboard); rebuilt whenever the view changes.
+        self.view_tools = Gtk.Box(spacing=2)
+        self.toolbar.append(self.view_tools)
 
         spacer = Gtk.Box()
         spacer.set_hexpand(True)
@@ -222,6 +344,8 @@ class ViewManager(Gtk.ApplicationWindow):
         self.db = None
         self.print_action.set_enabled(False)
         self.category_action.set_enabled(False)
+        for action in self.view_actions.values():
+            action.set_enabled(False)
 
     def book_closing(self) -> None:
         """Detach from the current book before its database connection is closed."""
@@ -253,6 +377,8 @@ class ViewManager(Gtk.ApplicationWindow):
         self._on_undo_available(False)
         self._on_redo_available(False)
         self.category_action.set_enabled(True)
+        for action in self.view_actions.values():
+            action.set_enabled(True)
         self.show_category(CATEGORIES[0][0])
         if self._prompt_due_on_open:
             self._schedule_due_prompt()
@@ -354,6 +480,54 @@ class ViewManager(Gtk.ApplicationWindow):
             return
         self.show_category(target.get_string())
 
+    def _show_view_tools(self, key: str) -> None:
+        child = self.view_tools.get_first_child()
+        while child is not None:
+            following = child.get_next_sibling()
+            self.view_tools.remove(child)
+            child = following
+        tools = [item for item in VIEW_ACTIONS.get(key, ()) if item.toolbar]
+        if tools:
+            separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+            separator.set_margin_start(6)
+            separator.set_margin_end(6)
+            self.view_tools.append(separator)
+        for item in tools:
+            self.view_tools.append(
+                _tool_button(
+                    item.label.replace("_", "").rstrip("…"),
+                    item.icon or "system-run-symbolic",
+                    f"win.{view_action_name(key, item)}",
+                    item.label.replace("_", ""),
+                )
+            )
+
+    def _view_for_action(self, key: str):
+        self.show_category(key)
+        return self._views.get(key)
+
+    def _on_view_action(self, _action, _parameter, key: str, item: ViewAction) -> None:
+        if self.db is None:
+            return
+        view = self._view_for_action(key)
+        handler = getattr(view, item.handler, None) if view is not None else None
+        if handler is None:
+            return
+        # Most handlers were button callbacks and take the button as an argument.
+        if inspect.signature(handler).parameters:
+            handler(None)
+        else:
+            handler()
+
+    def _on_view_toggle(self, action, value, key: str, item: ViewAction) -> None:
+        if self.db is None:
+            return
+        action.set_state(value)
+        view = self._view_for_action(key)
+        handler = getattr(view, item.handler, None) if view is not None else None
+        if handler is not None:
+            handler(value.get_boolean())
+
     @property
     def current_category(self) -> str:
         """The view the toolbar icons and View menu show as active."""
@@ -373,6 +547,7 @@ class ViewManager(Gtk.ApplicationWindow):
         # The active icon and menu item follow however the view was reached --
         # toolbar, menu, or a jump from another view.
         self.category_action.set_state(GLib.Variant.new_string(key))
+        self._show_view_tools(key)
         view.refresh()
         self.print_action.set_enabled(
             bool(self.db is not None and getattr(view, "PRINTABLE", False))
