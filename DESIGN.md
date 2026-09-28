@@ -1122,9 +1122,10 @@ book connection closes, preventing callbacks from reaching a replaced database.
 Browser windows provide the equivalent independent presentation state and receive
 the per-server token only in the URL fragment.
 
-GTK's blank entry row (below) and web quick entry are deliberately narrow adapters
-to `Transaction.simple`: a positive exact amount, date, description, displayed
-account, and visible transfer account become exactly two balancing splits and pass through the ordinary atomic
+The GTK and web blank entry rows (below) are deliberately narrow adapters to the
+shared transaction service: a positive exact amount, date, description, displayed
+account, and visible transfer account become two balancing splits (or the typed
+split lines) and pass through the ordinary atomic
 database transaction. It is not a parallel transaction model. Complex metadata and
 multi-split entry remain in the full editor. Register headings are a shared engine
 mapping so GTK and web describe the same positive and negative ledger directions.
@@ -1138,11 +1139,9 @@ transaction being edited. The latest by post date, then entry time, then handle
 wins. The proposal carries only accounts, values, and memos, plus the transfer
 account and signed amount in the entry's account for a two-split source; it never
 carries reconcile state, source identifiers, notes, planning purposes or links,
-investment activity, or FSA claims, and it never writes. Web quick entry fills an
-empty amount and the transfer account when the description is left and says where
-the proposal came from; a typed amount is never overwritten, and posting remains the
-user's explicit choice of the Increase or Decrease button. The GTK blank row applies
-the same rule field by field (below). The GTK
+investment activity, or FSA claims, and it never writes. The GTK and web blank rows
+fill only fields the user has not touched when the description is left and say
+where the proposal came from (below); saving remains the user's explicit Enter. The GTK
 transaction editor (`TransactionDialog.propose_from_entry`) asks the same service,
 for new transactions only, when the description is left or a payee is chosen,
 scoped to the register account it was opened from. It acts only while every split's
@@ -1282,8 +1281,25 @@ Each line records the stored split handle it edits.
 Double-clicking (or Enter on) an existing transaction still opens the full editor,
 and activating the blank row does nothing.
 
-**Web.** The web register keeps its quick-entry form until the GTK slices settle;
-the web gets the same interaction as a later, separate change.
+**Web.** The web register has the same blank row, split lines, and in-place
+editing (`registerEntry` in `app.js`). Its table shows the account's two register
+headings instead of one signed Amount column.
+
+- **The route.** Rows post to `POST /api/register/entry`, whose adapter
+  (`web/register_entry_resource.py`) only parses JSON. It carries notes and each
+  split's planning purpose and investment activity from the stored transaction,
+  then calls `save_transaction` with `existing_handle` and `source`.
+- **Register rows.** `GET /api/register` rows carry the row's `split` handle and
+  every split (`handle`, `account`, `account_name`, `value`, `memo`) for editing.
+- **Exact amounts.** The browser keeps amounts as BigInt micro-units, never
+  floats, and posts them as exact `[numerator, denominator]` pairs, so a
+  comma-decimal browser cannot be misread. The imbalance line is computed the same
+  way.
+- **Drafts.** Typed-but-unsaved drafts live in `state.entryDrafts` and survive
+  re-renders. Choosing another account, or Edit on another row, asks
+  `window.confirm` before discarding them (the browser has no three-way prompt).
+- **Growing and focus.** A trailing split line is added in place, so typing keeps
+  focus, and a two-split proposal fills fields in place.
 
 
 ## Payees

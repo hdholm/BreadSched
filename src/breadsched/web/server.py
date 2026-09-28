@@ -815,6 +815,20 @@ class Api:
                     "transfer": row.transfer_label(self.db),
                     "amount": row.amount,
                     "balance": row.running,
+                    # For editing the row in place (#158): this register's split
+                    # and every split of the transaction.
+                    "split": row.split.handle,
+                    "currency": row.transaction.currency,
+                    "splits": [
+                        {
+                            "handle": split.handle,
+                            "account": split.account,
+                            "account_name": self.db.full_name(split.account),
+                            "value": split.value,
+                            "memo": split.memo,
+                        }
+                        for split in row.transaction.splits
+                    ],
                 }
                 for row in rows
             ],

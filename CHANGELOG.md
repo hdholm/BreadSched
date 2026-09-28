@@ -3,6 +3,20 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a158 - 2026-09-28
+
+- **The browser register gets the blank row, split lines, and in-place editing
+  (#158, #148).** The web register now matches the desktop. There is a blank row
+  at the bottom where Enter saves a new entry, and **Split** gives one line per
+  split with a live imbalance line. **Edit** changes any row in place (Enter
+  saves, Escape cancels) and keeps its notes, planning purposes, investment
+  classifications, and split identities. Leaving a half-typed entry asks first.
+  The register shows the account's own two headings, such as Deposit and
+  Withdrawal, instead of one signed Amount column. Amounts travel as exact
+  fractions, so a comma-decimal browser is read correctly. The new
+  `POST /api/register/entry` route replaces quick entry, which is gone.
+  Application version `0.2.0a158`; native schema remains 9.
+
 ## 0.2.0a157 - 2026-09-28
 
 - **Every desktop dialog fits a laptop screen (#148 dialog audit).** Several

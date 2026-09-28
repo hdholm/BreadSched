@@ -181,20 +181,89 @@ def test_rules_view_adds_a_rule_and_accepts_its_proposal(page, served, tmp_path)
     assert stored.description == "City Power"
 
 
-def test_quick_entry_proposes_the_latest_matching_entry(page, served):
-    db, _httpd = served
+def _open_register(page):
     page.wait_for_selector("text=Pending bills")
     page.get_by_role("button", name="Register", exact=True).first.click()
-    page.wait_for_selector("input[name=description]")
-    page.fill("input[name=description]", "Browser Bakery")
-    page.fill("input[name=amount]", "12.34")
-    page.locator("form.toolbar button[type=submit]").nth(1).click()
-    page.wait_for_selector("text=Transaction posted.")
+    page.wait_for_selector("tr.entry-row input[aria-label='New transaction description']")
+
+
+def _blank(page, label):
+    return page.locator(f"tr.entry-row [aria-label='New transaction {label}']").first
+
+
+def test_the_blank_row_posts_on_enter_and_proposes_the_latest_match(page, served):
+    """#158: type into the register's last row; Enter saves; nothing posts by itself."""
+    db, _httpd = served
+    _open_register(page)
+    _blank(page, "description").fill("Browser Bakery")
+    amounts = page.locator("tr.entry-row input.num")
+    amounts.nth(1).fill("12.34")
+    amounts.nth(1).press("Enter")
+    page.wait_for_selector("text=Posted Browser Bakery.")
+    posted = next(t for t in db.iter_transactions() if t.description == "Browser Bakery")
+    assert sorted(str(split.value.to_decimal()) for split in posted.splits) == ["-12.34", "12.34"]
     before = len(list(db.iter_transactions()))
 
-    page.fill("input[name=description]", "BROWSER BAKERY #2")
-    page.locator("input[name=amount]").focus()
+    page.wait_for_selector("tr.entry-row input[aria-label='New transaction description']")
+    _blank(page, "description").fill("BROWSER BAKERY #2")
+    page.locator("tr.entry-row input.num").nth(0).focus()
     page.wait_for_selector("text=Proposed from")
 
-    assert page.input_value("input[name=amount]") == "12.34"
+    assert page.locator("tr.entry-row input.num").nth(1).input_value() == "12.34"
     assert len(list(db.iter_transactions())) == before
+
+
+def test_the_blank_row_enters_balanced_split_lines(page, served):
+    db, _httpd = served
+    _open_register(page)
+    accounts = [a for a in db.iter_accounts() if not a.placeholder and not a.is_root]
+    register = page.locator("select").first.input_value()
+    others = [a.handle for a in accounts if a.handle != register and not a.hidden][:2]
+    _blank(page, "description").fill("Browser split")
+    page.get_by_role("button", name="Split", exact=True).click()
+    page.wait_for_selector("tr.entry-line")
+    page.locator("[aria-label='New split 1 account']").select_option(register)
+    page.locator("tr.entry-line input.num").nth(1).fill("30.00")
+    page.locator("[aria-label='New split 2 account']").select_option(others[0])
+    page.locator("tr.entry-line input.num").nth(2).fill("20.00")
+    page.locator("[aria-label='New split 3 account']").select_option(others[1])
+    page.locator("tr.entry-line input.num").nth(4).fill("10.00")
+    page.wait_for_selector("td:has-text('Balanced')")
+    page.locator("tr.entry-line input.num").nth(4).press("Enter")
+    page.wait_for_selector("text=Posted Browser split.")
+
+    posted = next(t for t in db.iter_transactions() if t.description == "Browser split")
+    assert sorted(str(split.value.to_decimal()) for split in posted.splits) == [
+        "-30.00",
+        "10.00",
+        "20.00",
+    ]
+
+
+def test_a_register_row_is_edited_in_place(page, served):
+    db, _httpd = served
+    _open_register(page)
+    _blank(page, "description").fill("Edit me")
+    page.locator("tr.entry-row input.num").nth(1).fill("7.00")
+    page.locator("tr.entry-row input.num").nth(1).press("Enter")
+    page.wait_for_selector("text=Posted Edit me.")
+    original = next(t for t in db.iter_transactions() if t.description == "Edit me")
+
+    page.locator("tr:has-text('Edit me')").get_by_role("button", name="Edit").click()
+    field = page.locator("[aria-label='Edited transaction description']")
+    field.wait_for()
+    field.fill("Edited in place")
+    field.press("Enter")
+    page.wait_for_selector("text=Saved changes to Edited in place.")
+
+    stored = db.get_transaction(original.handle)
+    assert stored.description == "Edited in place"
+    assert {s.handle for s in stored.splits} == {s.handle for s in original.splits}
+
+    page.locator("tr:has-text('Edited in place')").get_by_role("button", name="Edit").click()
+    field = page.locator("[aria-label='Edited transaction description']")
+    field.wait_for()
+    field.fill("Never saved")
+    field.press("Escape")
+    page.wait_for_selector("tr:has-text('Edited in place')")
+    assert db.get_transaction(original.handle).description == "Edited in place"

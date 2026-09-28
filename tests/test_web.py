@@ -4544,3 +4544,159 @@ class TestEntrySuggestion:
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.get("/api/entry/suggest?description=rent&surprise=1")
         assert caught.value.code == 400
+
+
+class TestRegisterEntry:
+    """#158 on the web: the register's blank row and in-place edits.
+
+    The adapter only parses JSON; validation and the write stay in the shared
+    transaction service, so a rejected request leaves the stored transaction as it
+    was.
+    """
+
+    def _accounts(self, client):
+        db = client.database
+        return db.get_account_by_name("Assets:Checking"), db.get_account_by_name("Expenses:Rent")
+
+    def _rent(self, client):
+        return next(txn for txn in client.database.iter_transactions() if txn.description == "Rent")
+
+    def test_a_new_entry_posts_balanced_splits_from_exact_pairs(self, client):
+        checking, rent = self._accounts(client)
+        status, saved = client.post(
+            "/api/register/entry",
+            {
+                "date": "2026-04-02",
+                "num": "12",
+                "description": "Shared bill",
+                "payee": None,
+                "splits": [
+                    {"account": checking.handle, "value": ["-100000000", "1000000"]},
+                    {"account": rent.handle, "value": ["60000000", "1000000"], "memo": "rent"},
+                    {"account": rent.handle, "value": "40.00", "memo": "more rent"},
+                ],
+            },
+        )
+        assert status == 200
+        stored = client.database.get_transaction(saved["handle"])
+        assert (stored.description, stored.num, str(stored.post_date)) == (
+            "Shared bill",
+            "12",
+            "2026-04-02",
+        )
+        assert sorted(split.value for split in stored.splits) == [
+            Money("-100"),
+            Money("40"),
+            Money("60"),
+        ]
+        assert {split.memo for split in stored.splits} == {"", "rent", "more rent"}
+
+    def test_an_edit_keeps_handles_notes_purposes_and_quantities(self, client):
+        from breadsched.gen.lib.transaction import PlanningFlowKind
+
+        db = client.database
+        rent_txn = self._rent(client)
+        rent_txn.notes = "Lease 12B"
+        _checking, rent = self._accounts(client)
+        for split in rent_txn.splits:
+            if split.account == rent.handle:
+                split.planning_flow = PlanningFlowKind.RETIREMENT_SAVING
+        with db.transaction("Fixture") as txn:
+            db.commit_transaction(rent_txn, txn)
+
+        status, register = client.get(
+            f"/api/register?account={db.get_account_by_name('Assets:Checking').handle}"
+        )
+        row = next(item for item in register["rows"] if item["handle"] == rent_txn.handle)
+        assert row["split"] in {split["handle"] for split in row["splits"]}
+        splits = [
+            {
+                "handle": split["handle"],
+                "account": split["account"],
+                "value": "-1850.00" if split["value"].startswith("-") else "1850.00",
+                "memo": split["memo"],
+            }
+            for split in row["splits"]
+        ]
+        status, _saved = client.post(
+            "/api/register/entry",
+            {
+                "handle": rent_txn.handle,
+                "date": row["date"],
+                "description": "Rent, corrected",
+                "splits": splits,
+            },
+        )
+        assert status == 200
+        stored = db.get_transaction(rent_txn.handle)
+        assert stored.description == "Rent, corrected"
+        assert stored.notes == "Lease 12B"
+        assert {s.handle for s in stored.splits} == {s.handle for s in rent_txn.splits}
+        mine = next(s for s in stored.splits if s.account == rent.handle)
+        assert mine.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert all(s.quantity == s.value for s in stored.splits)
+
+    def test_rejected_entries_leave_the_stored_transaction_unchanged(self, client):
+        db = client.database
+        checking, rent = self._accounts(client)
+        rent_txn = self._rent(client)
+        before = rent_txn.serialize()
+        count = len(list(db.iter_transactions()))
+        good = [
+            {"account": checking.handle, "value": "-5.00", "handle": rent_txn.splits[0].handle},
+            {"account": rent.handle, "value": "5.00", "handle": rent_txn.splits[1].handle},
+        ]
+        for body, status, code in [
+            (
+                {
+                    "handle": rent_txn.handle,
+                    "date": "2026-01-01",
+                    "description": "Unbalanced",
+                    "splits": [dict(good[0], value="-5.00"), dict(good[1], value="4.00")],
+                },
+                400,
+                "transaction.unbalanced",
+            ),
+            (
+                {
+                    "handle": rent_txn.handle,
+                    "date": "not a date",
+                    "description": "x",
+                    "splits": good,
+                },
+                400,
+                None,
+            ),
+            (
+                {
+                    "handle": rent_txn.handle,
+                    "date": "2026-01-01",
+                    "description": "x",
+                    "splits": [dict(good[0], handle="missing"), good[1]],
+                },
+                404,
+                "transaction.split.not_found",
+            ),
+            (
+                {
+                    "date": "2026-01-01",
+                    "description": "x",
+                    "splits": [dict(good[0], value=["1", "0"]), good[1]],
+                },
+                400,
+                None,
+            ),
+            ({"date": "2026-01-01", "description": "x", "splits": "nope"}, 400, None),
+            (
+                {"handle": "missing", "date": "2026-01-01", "description": "x", "splits": good},
+                404,
+                "transaction.not_found",
+            ),
+        ]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/register/entry", body)
+            assert caught.value.code == status, body
+            if code is not None:
+                assert json.loads(caught.value.read())["code"] == code
+        assert db.get_transaction(rent_txn.handle).serialize() == before
+        assert len(list(db.iter_transactions())) == count
