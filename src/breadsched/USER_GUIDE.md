@@ -151,8 +151,10 @@ The GTK sidebar and the web navigation expose the same main work areas:
 
 - **Dashboard** summarizes household position, expected income, pending bills,
   liquidity, emergency-fund information, and linked assets and loans. In the
-  desktop application a long group line (for example, several accounts combined
-  with their quote details) is shortened with "…"; hover over it to read it all.
+  desktop application account groups, pending bills, and expected income are
+  separate sections, each as wide as its own columns; they sit side by side when
+  the window has room and stack when it does not. A long group line is shortened
+  with "…"; hover over it to read it and the accounts it covers.
 - **FSA Dashboard** shows benefit-year availability and open healthcare claims.
 - **Accounts** is the hierarchical chart of accounts with balances and metadata.
 - **Register** shows the transaction history for one account.
@@ -164,6 +166,10 @@ The GTK sidebar and the web navigation expose the same main work areas:
 Payees and categorization rules are managed in the desktop application from
 **Actions → Payees…** and **Actions → Categorization Rules…**, and in the web
 interface from the **Payees** and **Rules** views.
+
+In the desktop application each table has its own column chooser (the "⋯" button
+at the right of that table's heading); its tooltip names the table, and the columns
+you hide are remembered.
 
 Use **View** to switch work areas. Registers can also open in independent windows;
 their account, filter, selection, and expanded row do not replace the main window's

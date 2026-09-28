@@ -20,6 +20,7 @@ __all__ = [
     "column",
     "column_menu",
     "sorted_model",
+    "table_section",
     "toolbar",
     "unwrap",
 ]
@@ -259,8 +260,17 @@ def sorted_model(column_view: Gtk.ColumnView, model):
     return Gtk.SortListModel.new(model, sorter)
 
 
-def column_menu(view_id: str, column_view: Gtk.ColumnView, settings=None) -> Gtk.MenuButton:
-    """A menu at the end of the header row for showing and hiding columns.
+def column_menu(
+    view_id: str,
+    column_view: Gtk.ColumnView,
+    settings=None,
+    table_label: str | None = None,
+) -> Gtk.MenuButton:
+    """A menu for showing and hiding one table's columns.
+
+    It belongs in that table's own header (see :func:`table_section`), never in a
+    view's toolbar, and its tooltip names the table: two identical icons in one
+    toolbar could not be told apart (#153).
 
     Hidden columns are remembered by *title* rather than by position, so adding a
     column in a later release cannot shuffle a saved layout onto the wrong ones —
@@ -313,9 +323,46 @@ def column_menu(view_id: str, column_view: Gtk.ColumnView, settings=None) -> Gtk
         box.append(check)
 
     popover.set_child(box)
-    button = Gtk.MenuButton(icon_name="open-menu-symbolic", popover=popover)
-    button.set_tooltip_text("Show or hide columns")
+    button = Gtk.MenuButton(icon_name="view-more-symbolic", popover=popover)
+    button.set_has_frame(False)
+    button.set_valign(Gtk.Align.CENTER)
+    button.set_tooltip_text(
+        f"Choose {table_label} columns" if table_label else "Show or hide columns"
+    )
+    button.column_view = column_view
     return button
+
+
+def table_section(
+    column_view: Gtk.ColumnView,
+    view_id: str,
+    settings=None,
+    *,
+    title: str = "",
+    table_label: str | None = None,
+) -> Gtk.Box:
+    """A table with its own header: a heading and the table's column chooser.
+
+    Returns a vertical box holding the header row and a ``Gtk.ScrolledWindow``
+    around ``column_view``; ``section.heading``, ``section.chooser``, and
+    ``section.scroller`` expose the parts so a view can size them.
+    """
+    section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    section.add_css_class("table-section")
+    header = Gtk.Box(spacing=8)
+    heading = Gtk.Label(label=title, xalign=0)
+    heading.add_css_class("total-row")
+    heading.set_hexpand(True)
+    header.append(heading)
+    chooser = column_menu(view_id, column_view, settings, table_label or title or None)
+    header.append(chooser)
+    section.append(header)
+    scroller = Gtk.ScrolledWindow(child=column_view)
+    section.append(scroller)
+    section.heading = heading
+    section.chooser = chooser
+    section.scroller = scroller
+    return section
 
 
 def toolbar(*widgets: Gtk.Widget) -> Gtk.Box:

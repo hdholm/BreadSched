@@ -30,7 +30,7 @@ from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
-from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap  # noqa: E402
+from ._base import BaseView, Row, column, sorted_model, table_section, unwrap  # noqa: E402
 
 __all__ = ["RegisterView", "column_headings"]
 
@@ -185,14 +185,6 @@ class RegisterView(BaseView):
             )
         )
 
-        # The menu needs the columns to exist, so the toolbar is added last.
-        bar.append(
-            column_menu(
-                "register",
-                self.column_view,
-                getattr(self.manager.get_application(), "view_settings", None),
-            )
-        )
         self.append(bar)
 
         quick = Gtk.Box(spacing=8)
@@ -235,9 +227,18 @@ class RegisterView(BaseView):
         self.quick_status.set_margin_bottom(4)
         self.append(self.quick_status)
 
-        scroller = Gtk.ScrolledWindow(child=self.column_view)
-        scroller.set_vexpand(True)
-        self.append(scroller)
+        # The column chooser sits in the table's own header, not the toolbar (#153).
+        self.table = table_section(
+            self.column_view,
+            "register",
+            getattr(self.manager.get_application(), "view_settings", None),
+            table_label="register",
+        )
+        for side in ("start", "end"):
+            getattr(self.table, f"set_margin_{side}")(8)
+        self.table.scroller.set_vexpand(True)
+        self.table.set_vexpand(True)
+        self.append(self.table)
 
     # ------------------------------------------------------------------ model
 

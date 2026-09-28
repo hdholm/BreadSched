@@ -3,6 +3,20 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a147 - 2026-09-28
+
+- **Dashboard sections and per-table column choosers (#152, #153).** The desktop
+  Dashboard now shows account groups, pending bills, and expected income as
+  separate cards, each sized to its own columns rather than stretched across the
+  window; they sit side by side when there is room and stack when there is not,
+  and a long table scrolls inside its card instead of widening the window. Every
+  table's column chooser now sits in that table's own heading, with a tooltip
+  naming the table (for example "Choose Pending bills columns"), instead of in the
+  view's toolbar where the Dashboard's two identical buttons could not be told
+  apart. This applies to the Dashboard, register, Accounts, Scheduled, and
+  Upcoming views; saved column choices carry over. Application version
+  `0.2.0a147`; native schema remains 9.
+
 ## 0.2.0a146 - 2026-09-28
 
 - **Quote evidence shows its date without "N days old" (#151).** The Accounts
