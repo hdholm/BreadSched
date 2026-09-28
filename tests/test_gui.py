@@ -6311,6 +6311,13 @@ class TestDialogsFitTheScreen:
             dialog.destroy()
 
 
+def summary_owed(db):
+    from breadsched.gen.services.receivables import list_receivables
+
+    [summary] = list_receivables(db).value
+    return summary.remaining
+
+
 class TestReceivablesDialog:
     """Reimbursable expenses in GTK, entirely through the shared service."""
 
@@ -6360,9 +6367,11 @@ class TestReceivablesDialog:
         finally:
             dialog.destroy()
 
-    def test_link_dispute_write_off_and_unlink_never_touch_the_ledger(
+    def test_link_dispute_write_off_and_unlink_leave_linked_transactions_alone(
         self, app, window, populated_book
     ):
+        from breadsched.gen.engine.ledger import balance
+        from breadsched.gen.engine.receivables import owned_postings
         from breadsched.gen.services.receivables import ReceivableStatus, list_receivables
         from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
 
@@ -6375,6 +6384,12 @@ class TestReceivablesDialog:
             receivable = dialog.save()
             handle = receivable.handle
             assert dialog.editing == handle and dialog.detail.get_visible()
+            # What is owed now sits in the default Receivable account (#170).
+            held = db.get_receivable(handle).account
+            assert dialog._accounts == [None, held]
+            assert dialog.account_picker.get_selected() == 1
+            assert balance(db, held) == summary_owed(db)
+            assert dialog.warning.get_visible() is False
             credit = [c for c in dialog._credits].index((refund.handle, refund.splits[1].handle))
             dialog.credit_picker.set_selected(credit)
             assert dialog.link("reimbursement") is True
@@ -6396,7 +6411,10 @@ class TestReceivablesDialog:
             link = db.get_receivable(handle).reimbursements[0]
             assert dialog.unlink(link) is True
             assert db.get_receivable(handle).reimbursements == []
-            assert [t.serialize() for t in db.iter_transactions()] == ledger_before
+            owned = owned_postings(db)
+            assert [
+                t.serialize() for t in db.iter_transactions() if t.handle not in owned
+            ] == ledger_before
         finally:
             dialog.destroy()
 

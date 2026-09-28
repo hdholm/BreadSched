@@ -4927,6 +4927,11 @@ class TestReceivablesRoutes:
         [item] = listed["receivables"]
         assert item["status"] == "partial" and item["reimbursed"] == "200.00"
         assert item["expenses"][0]["description"] == "Rent"
+        # What is still owed is held in a Receivable account, never in liquidity (#170).
+        assert item["owed"] == "500.00" and item["fsa_claims"] == []
+        assert item["account_name"].endswith("Reimbursements Receivable")
+        assert [account["handle"] for account in listed["accounts"]] == [item["account"]]
+        assert client.get("/api/dashboard")[1]["summary"]["receivables_owed"] == "300.00"
 
         client.post(
             "/api/receivable/dispute",
@@ -4994,6 +4999,17 @@ class TestReceivablesRoutes:
                 {"receivable": saved["handle"], "amount": "0", "written_off_on": "2026-01-03"},
                 400,
                 "receivable.write_off.amount_not_positive",
+            ),
+            (
+                "/api/receivable/save",
+                {
+                    "handle": saved["handle"],
+                    "payer": "Acme",
+                    "incurred_date": "2026-01-02",
+                    "account": rent_txn.splits[0].account,
+                },
+                400,
+                "receivable.account.not_receivable",
             ),
             ("/api/receivable/delete", {"handle": "missing"}, 404, "receivable.not_found"),
         ]:

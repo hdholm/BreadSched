@@ -1,9 +1,11 @@
 """Create, link, and resolve reimbursable expenses for CLI, GTK, and web.
 
 Every write is one undoable database transaction. A receivable never rewrites
-or removes the expense splits it references, and recording a dispute or a
-write-off never posts anything to the ledger by itself -- see
-``lib.receivable`` and ``engine.receivables`` for the underlying model.
+or removes the expense splits it references. Each write also brings the
+receivable's BreadSched-owned reclassification transactions up to date in the
+same database transaction (issue #170), so what is owed always sits in the
+receivable account; a dispute posts nothing. See ``lib.receivable`` and
+``engine.receivables`` for the underlying model.
 """
 
 from __future__ import annotations
@@ -11,18 +13,25 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
+from ..engine.currency import reporting_currency_handle
 from ..engine.receivables import (
+    ReceivableError,
     ReceivableStatus,
     ReceivableSummary,
     ReimbursementProposal,
     iter_receivables,
+    owned_postings,
+    planned_postings,
+    posting_currency,
     propose_reimbursements,
     receivable_summary,
 )
-from ..lib.account import AccountClass
+from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
+from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
@@ -34,7 +43,12 @@ __all__ = [
     "ReceivableSummary",
     "SaveReceivable",
     "attach_expense_split",
+    "default_receivable_account",
+    "receivable_accounts",
+    "sync_all_receivables",
+    "sync_linked_receivables",
     "attach_reimbursement_split",
+    "is_owned_posting",
     "clear_dispute",
     "delete_receivable",
     "detach_split",
@@ -57,6 +71,9 @@ class SaveReceivable:
     expected_cash_date: date | None = None
     #: The receivable to update; ``None`` creates one.
     handle: str | None = None
+    #: The Receivable account holding what is owed; ``None`` keeps the current
+    #: one, or uses the default for the linked splits' currency.
+    account: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +82,158 @@ class RecordWriteOff:
     amount: Money
     written_off_on: date
     reason: str = ""
+
+
+#: Name of the receivable account BreadSched creates when a book has none.
+DEFAULT_ACCOUNT_NAME = "Reimbursements Receivable"
+
+
+def receivable_accounts(db: DbSQLite) -> tuple[Account, ...]:
+    """Every Receivable account a receivable can be held in, by full name."""
+    found = [
+        account
+        for account in db.iter_accounts()
+        if account.atype is AccountType.RECEIVABLE and not account.placeholder
+    ]
+    return tuple(sorted(found, key=lambda account: db.full_name(account) or account.name))
+
+
+def default_receivable_account(db: DbSQLite, currency: str, txn: DbTxn) -> str:
+    """The first visible Receivable account in ``currency``, created when none exists.
+
+    Only BreadSched's own accounts are chosen by default: an imported GnuCash
+    receivable (often business invoices) is used only when picked explicitly. A
+    created account sits under the top-level Assets account when the book has
+    one, else under the root.
+    """
+    book = reporting_currency_handle(db)
+    for account in receivable_accounts(db):
+        native = not account.source_guid
+        if native and not account.hidden and (account.commodity or book) == currency:
+            return account.handle
+    root = db.root_account()
+    assets = next(
+        (
+            account
+            for account in db.child_accounts(root.handle if root is not None else None)
+            if account.account_class is AccountClass.ASSET and account.name == "Assets"
+        ),
+        None,
+    )
+    name = DEFAULT_ACCOUNT_NAME
+    if currency != book:
+        commodity = db.get_commodity(currency)
+        name = f"{name} {commodity.mnemonic if commodity is not None else currency}"
+    parent = assets or root
+    account = Account(
+        name=name,
+        atype=AccountType.RECEIVABLE,
+        parent=parent.handle if parent is not None else None,
+        commodity=currency,
+        description="Money others owe back on reimbursable expenses",
+    )
+    db.add_account(account, txn)
+    return account.handle
+
+
+def _same(planned: Transaction, existing: Transaction) -> bool:
+    """Whether ``planned`` matches the stored posting, apart from write bookkeeping."""
+    planned.enter_date = existing.enter_date
+    planned.change = existing.change
+    return planned.serialize() == existing.serialize()
+
+
+def _sync_postings(db: DbSQLite, receivable: Receivable, txn: DbTxn) -> None:
+    """Bring the receivable's owned reclassification transactions up to date.
+
+    Raises ``ReceivableError`` (leaving the caller to abort the database
+    transaction) when the postings cannot be made.
+    """
+    if receivable.account is None and receivable.expenses:
+        currency = posting_currency(db, receivable)
+        if currency is not None:
+            receivable.account = default_receivable_account(db, currency, txn)
+    planned = planned_postings(db, receivable)
+    wanted = {transaction.handle for transaction in planned}
+    for handle in receivable.postings:
+        if handle not in wanted and db.get_transaction(handle) is not None:
+            db.remove_transaction(handle, txn)
+    for transaction in planned:
+        existing = db.get_transaction(transaction.handle)
+        if existing is None:
+            db.add_transaction(transaction, txn)
+            continue
+        if not _same(transaction, existing):
+            db.commit_transaction(transaction, txn)
+    receivable.postings = [transaction.handle for transaction in planned]
+
+
+def _write(
+    db: DbSQLite, receivable: Receivable, message: str, *, new: bool = False
+) -> ServiceResult[Receivable]:
+    """Store ``receivable`` and its postings as one undoable change."""
+    try:
+        with db.transaction(message) as txn:
+            _sync_postings(db, receivable, txn)
+            if new:
+                db.add_receivable(receivable, txn)
+            else:
+                db.commit_receivable(receivable, txn)
+    except ReceivableError as exc:
+        return ServiceResult.failure(ServiceError(exc.code, exc.fields))
+    return ServiceResult.success(receivable)
+
+
+def sync_linked_receivables(db: DbSQLite, transaction: str, txn: DbTxn) -> None:
+    """Recompute the postings of every receivable linked to ``transaction``.
+
+    Called inside the transaction service's write when a linked expense or
+    reimbursement is edited, so the receivable account follows the ledger.
+    """
+    for receivable in db.iter_receivables():
+        links = (*receivable.expenses, *receivable.reimbursements)
+        if any(link.transaction == transaction for link in links):
+            _sync_postings(db, receivable, txn)
+            db.commit_receivable(receivable, txn)
+
+
+def _stale(db: DbSQLite, receivable: Receivable) -> bool:
+    """Whether the receivable's stored postings differ from what it should own."""
+    try:
+        planned = planned_postings(db, receivable)
+    except ReceivableError:
+        return False  # reported by its summary; nothing is guessed around it
+    if [transaction.handle for transaction in planned] != receivable.postings:
+        return True
+    for transaction in planned:
+        existing = db.get_transaction(transaction.handle)
+        if existing is None:
+            return True
+        if not _same(transaction, existing):
+            return True
+    return False
+
+
+def sync_all_receivables(db: DbSQLite) -> int:
+    """Bring every stale receivable's postings up to date; the number updated.
+
+    Run after an import, which can change a linked expense without going through
+    the transaction service. Writes nothing (and adds no undo step) when every
+    receivable is already current.
+    """
+    stale = [receivable for receivable in db.iter_receivables() if _stale(db, receivable)]
+    if not stale:
+        return 0
+    with db.transaction("Update reimbursable expense reclassifications") as txn:
+        for receivable in stale:
+            _sync_postings(db, receivable, txn)
+            db.commit_receivable(receivable, txn)
+    return len(stale)
+
+
+def is_owned_posting(db: DbSQLite, transaction: str) -> bool:
+    """Whether ``transaction`` is a reclassification a receivable owns."""
+    return transaction in owned_postings(db)
 
 
 def save_receivable(db: DbSQLite, request: SaveReceivable) -> ServiceResult[Receivable]:
@@ -79,18 +248,23 @@ def save_receivable(db: DbSQLite, request: SaveReceivable) -> ServiceResult[Rece
         return ServiceResult.failure(
             ServiceError("receivable.expected_amount.negative", ("expected_amount",))
         )
+    if request.account is not None:
+        account = db.get_account(request.account)
+        if account is None:
+            return ServiceResult.failure(ServiceError("receivable.account.not_found", ("account",)))
+        if account.atype is not AccountType.RECEIVABLE:
+            return ServiceResult.failure(
+                ServiceError("receivable.account.not_receivable", ("account",))
+            )
     receivable = existing or Receivable()
     receivable.incurred_date = request.incurred_date
     receivable.payer = payer
     receivable.description = " ".join(request.description.split())
     receivable.expected_amount = request.expected_amount
     receivable.expected_cash_date = request.expected_cash_date
-    with db.transaction(f"Save receivable {payer}") as txn:
-        if existing is None:
-            db.add_receivable(receivable, txn)
-        else:
-            db.commit_receivable(receivable, txn)
-    return ServiceResult.success(receivable)
+    if request.account is not None:
+        receivable.account = request.account
+    return _write(db, receivable, f"Save receivable {payer}", new=existing is None)
 
 
 def _link_split(
@@ -114,14 +288,14 @@ def _link_split(
         return ServiceResult.failure(ServiceError("receivable.split.not_a_cost", ("split",)))
     if role == "reimbursement" and split.value >= 0:
         return ServiceResult.failure(ServiceError("receivable.split.not_a_credit", ("split",)))
+    if transaction_handle in owned_postings(db):
+        return ServiceResult.failure(ServiceError("receivable.split.owned_posting", ("split",)))
     link = ReceivableSplitLink(transaction_handle, split_handle)
     if link in receivable.expenses or link in receivable.reimbursements:
         return ServiceResult.failure(ServiceError("receivable.split.duplicate", ("split",)))
     links = receivable.expenses if role == "expense" else receivable.reimbursements
     links.append(link)
-    with db.transaction(f"Link {role} to receivable") as txn:
-        db.commit_receivable(receivable, txn)
-    return ServiceResult.success(receivable)
+    return _write(db, receivable, f"Link {role} to receivable")
 
 
 def attach_expense_split(
@@ -152,9 +326,7 @@ def detach_split(
         receivable.reimbursements.remove(link)
     else:
         return ServiceResult.failure(ServiceError("receivable.link.not_found", ("split",)))
-    with db.transaction("Unlink receivable split") as txn:
-        db.commit_receivable(receivable, txn)
-    return ServiceResult.success(receivable)
+    return _write(db, receivable, "Unlink receivable split")
 
 
 def mark_disputed(
@@ -166,9 +338,7 @@ def mark_disputed(
         return ServiceResult.failure(ServiceError("receivable.not_found", ("handle",)))
     receivable.disputed_on = disputed_on
     receivable.dispute_note = " ".join(note.split())
-    with db.transaction("Dispute receivable") as txn:
-        db.commit_receivable(receivable, txn)
-    return ServiceResult.success(receivable)
+    return _write(db, receivable, "Dispute receivable")
 
 
 def clear_dispute(db: DbSQLite, handle: str) -> ServiceResult[Receivable]:
@@ -178,9 +348,7 @@ def clear_dispute(db: DbSQLite, handle: str) -> ServiceResult[Receivable]:
         return ServiceResult.failure(ServiceError("receivable.not_found", ("handle",)))
     receivable.disputed_on = None
     receivable.dispute_note = ""
-    with db.transaction("Clear receivable dispute") as txn:
-        db.commit_receivable(receivable, txn)
-    return ServiceResult.success(receivable)
+    return _write(db, receivable, "Clear receivable dispute")
 
 
 def record_write_off(db: DbSQLite, request: RecordWriteOff) -> ServiceResult[Receivable]:
@@ -195,17 +363,18 @@ def record_write_off(db: DbSQLite, request: RecordWriteOff) -> ServiceResult[Rec
     receivable.write_offs.append(
         ReceivableWriteOff(request.written_off_on, request.amount, " ".join(request.reason.split()))
     )
-    with db.transaction("Write off receivable balance") as txn:
-        db.commit_receivable(receivable, txn)
-    return ServiceResult.success(receivable)
+    return _write(db, receivable, "Write off receivable balance")
 
 
 def delete_receivable(db: DbSQLite, handle: str) -> ServiceResult[str]:
-    """Delete a receivable; the expense and reimbursement transactions are untouched."""
+    """Delete a receivable and its reclassifications; linked transactions are untouched."""
     receivable = db.get_receivable(handle)
     if receivable is None:
         return ServiceResult.failure(ServiceError("receivable.not_found", ("handle",)))
     with db.transaction(f"Delete receivable {receivable.payer}") as txn:
+        for posting in receivable.postings:
+            if db.get_transaction(posting) is not None:
+                db.remove_transaction(posting, txn)
         db.remove_receivable(handle, txn)
     return ServiceResult.success(handle)
 
@@ -244,9 +413,12 @@ def receivable_candidates(
         for account in db.iter_accounts()
         if account.account_class is AccountClass.EXPENSE
     }
+    owned = owned_postings(db)
     costs: list[ReceivableCandidate] = []
     credits: list[ReceivableCandidate] = []
     for transaction in db.iter_transactions():
+        if transaction.handle in owned:
+            continue
         for split in transaction.splits:
             if split.account not in expense_accounts or not split.value:
                 continue

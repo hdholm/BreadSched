@@ -895,7 +895,7 @@ async function showAccounts() {
     }, ([
       ["BANK", "Bank"], ["CASH", "Cash"], ["ASSET", "Asset"],
       ["INVESTMENT", "Investment"], ["RETIREMENT", "Retirement"],
-      ["FSA", "FSA / benefit"], ["ESCROW", "Escrow"],
+      ["FSA", "FSA / benefit"], ["ESCROW", "Escrow"], ["RECEIVABLE", "Receivable"],
       ["CREDIT CARD", "Credit card"], ["LOAN", "Loan"],
       ["LIABILITY", "Liability"], ["INCOME", "Income"],
       ["EXPENSE", "Expense"], ["EQUITY", "Equity"],
@@ -3944,7 +3944,8 @@ async function showPayees() {
 
 async function showReimbursables() {
   // Every rule and write is in the shared receivables service; this page only
-  // gathers input. Nothing here posts to the ledger or changes a transaction.
+  // gathers input. The service keeps the Receivable-account reclassifications
+  // (#170); nothing here changes a linked transaction.
   const data = await get("/api/receivables");
   const refresh = async () => { current = "Reimbursables"; await render(); };
   const run = (action) => async () => {
@@ -3967,13 +3968,17 @@ async function showReimbursables() {
     value:selected?.expected_amount ?? from?.value ?? "", "aria-label":"Expected back" });
   const expectedBy = field("expected_cash_date", { type:"date",
     value:selected?.expected_cash_date || "", "aria-label":"Expected by" });
+  const heldIn = el("select", { name:"account", "aria-label":"Held in" },
+    el("option", { value:"" }, "Default Receivable account"),
+    ...data.accounts.map((account) => el("option", { value:account.handle,
+      selected:selected?.account === account.handle ? "selected" : null }, account.name)));
   const form = el("form", { class:"entry", onsubmit:(event) => {
     event.preventDefault();
     run(async () => {
       const saved = await post("/api/receivable/save", {
         handle:selected?.handle || null, payer:payer.value, description:description.value,
         incurred_date:incurred.value, expected_amount:expected.value.trim() || null,
-        expected_cash_date:expectedBy.value || null,
+        expected_cash_date:expectedBy.value || null, account:heldIn.value || null,
         link_expense: from ? { transaction:from.transaction, split:from.split } : null,
       });
       state.receivableOpen = saved.handle;
@@ -3984,7 +3989,7 @@ async function showReimbursables() {
   } },
     el("label", {}, "Payer", payer), el("label", {}, "Description", description),
     el("label", {}, "Incurred", incurred), el("label", {}, "Expected back", expected),
-    el("label", {}, "Expected by", expectedBy),
+    el("label", {}, "Expected by", expectedBy), el("label", {}, "Held in", heldIn),
     el("div", { class:"toolbar" },
       el("button", { class:"action primary", type:"submit" },
         selected ? "Save changes" : "Add receivable"),
@@ -4079,6 +4084,11 @@ async function showReimbursables() {
       "aria-label":"Write-off reason" });
     detail = el("div", { class:"panel panel-pad-16" },
       el("h2", {}, `${selected.payer} — linked splits`),
+      selected.account_name ? el("p", { class:"note" },
+        `Owed ${money(selected.owed)}, held in ${selected.account_name}.`) : null,
+      selected.fsa_claims.length ? el("p", { class:"note negative" },
+        "An expense linked here is also on an FSA claim. Check that the same cost is not "
+        + "expected back from both.") : null,
       linked.length ? table(["Role", "Date", "Description", "Account",
         { label:"Amount", num:true }, ""], linked)
         : el("p", { class:"note" }, "Nothing linked yet."),
@@ -4106,7 +4116,7 @@ async function showReimbursables() {
           await post("/api/receivable/write-off", { receivable:selected.handle,
             amount:writeOffAmount.value, written_off_on:writeOffDate.value,
             reason:writeOffReason.value });
-          say("Wrote off the amount; nothing was posted to the ledger.");
+          say("Wrote off the amount; it is back in the expense account.");
           await refresh();
         }) }, "Record write-off")),
       el("div", { class:"toolbar" },
@@ -4123,9 +4133,10 @@ async function showReimbursables() {
   return el("div", {},
     el("p", { class:"note" },
       "Track an expense you paid that an insurer, employer, or other payer owes back. "
-      + "A reimbursement is an ordinary credit to the same expense account, never income, "
-      + "and the original expense is never changed. Disputes and write-offs post nothing "
-      + "to the ledger."),
+      + "What is owed moves from the expense into a Receivable account: part of net worth, "
+      + "never of liquidity, because it cannot be spent yet. A reimbursement is an ordinary "
+      + "credit to the same expense account, never income; a write-off returns the balance "
+      + "to the expense, and a dispute posts nothing. The original expense is never changed."),
     unavailable ? el("p", { class:"note negative" },
       "That transaction has no expense to track as reimbursable.") : null,
     from ? el("p", { class:"note" }, `Saving links the ${from.value} expense from `
@@ -4383,7 +4394,14 @@ async function showDashboard() {
     tile("Months covered", s.months_covered === null
       ? data.unavailable_reasons.months_covered : s.months_covered,
          s.months_covered !== null && Number(s.months_covered) < Number(data.config.emergency_months)),
-    short ? tile("Short of the fund", dashboardMoney("emergency_shortfall"), true) : null);
+    short ? tile("Short of the fund", dashboardMoney("emergency_shortfall"), true) : null,
+    // Owed back on reimbursable expenses: net worth, never liquidity (#170).
+    Number(s.receivables_owed) > 0
+      ? tile("Reimbursements due", money(s.receivables_owed)
+          + (Number(s.receivables_attention) > 0
+            ? ` (${money(s.receivables_attention)} disputed or overdue)` : ""),
+        Number(s.receivables_attention) > 0)
+      : null);
 
   const controls = el("div", { class: "row" },
     el("label", {}, "Liquid for "),

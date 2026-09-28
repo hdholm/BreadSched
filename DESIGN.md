@@ -1109,7 +1109,9 @@ not part of the model: it exposed implementation detail, permitted combinations
 with no distinct meaning, and required users to reconcile two classifications.
 
 The visible balance-sheet types are Cash, Bank, Asset, Investment, Retirement,
-FSA/benefit, Escrow, Credit card, Loan, and Liability. Income, Expense, and Equity
+FSA/benefit, Escrow, Receivable, Credit card, Loan, and Liability. Receivable is
+money others owe back (GnuCash `RECEIVABLE` maps to it): an asset for net worth,
+never cash-like, so it is excluded from liquidity and the emergency fund. Income, Expense, and Equity
 retain their ledger meanings. Root is structural and Technical preserves imported
 bookkeeping accounts that should not participate in ordinary household planning.
 Cash and Bank deliberately share a liquid accounting class but remain distinct
@@ -1505,8 +1507,9 @@ dispute or write-off: `written_off > 0` and nothing remains outstanding is
 **written off** (a deliberate, terminal decision to stop collecting, which decides
 the state even over a prior partial reimbursement); otherwise a fully offset expense
 is **settled**; an open dispute with a balance still outstanding is **disputed**; any
-reimbursement short of the full expense is **partial**; and no reimbursement yet is
-**open**. `services/receivables.py` (`save_receivable`, `attach_expense_split`,
+reimbursement short of what is owed is **partial**; and no reimbursement yet is
+**open**. What is owed is the expected amount, or the whole linked expense when none
+is given, never more than the linked expense. `services/receivables.py` (`save_receivable`, `attach_expense_split`,
 `attach_reimbursement_split`, `detach_split`, `mark_disputed`, `clear_dispute`,
 `record_write_off`, `delete_receivable`, `list_receivables`) validates every write:
 a linked split must belong to an expense-class account, an expense link must be a
@@ -1516,6 +1519,46 @@ ledger transactions it referenced. The database refuses to delete a transaction 
 receivable still links to (`receivable.missing_transaction`, matching the same
 protection FSA claims already have), and a GnuCash re-import that would delete such
 a transaction is reported the same way FSA claims are. CLI: `breadsched receivables`.
+
+**Receivable accounts (#170).** What is still owed is held in a Receivable-type
+account (`Receivable.account`), because it is part of net worth but can never be
+spent, so it must never count toward liquidity. BreadSched owns the
+reclassification transactions that put it there (`Receivable.postings`), planned by
+`engine.receivables.planned_postings` from the receivable alone:
+
+| Event | Posting | Date |
+| --- | --- | --- |
+| Tracking | receivable +owed, expense −owed (allocated over the linked expense splits) | incurred date |
+| Reimbursement linked | expense +amount, receivable −amount | the credit's date |
+| Write-off | expense +amount, receivable −amount (the largest expense split's account) | write-off date |
+| Dispute | nothing | — |
+
+Reimbursements and write-offs apply oldest first and never take the receivable
+below zero; money back beyond what was owed stays a refund in the expense account.
+Handles are deterministic (UUID5 of the receivable and event), so every service
+write in `services.receivables` recomputes and diffs the set inside the same
+database transaction (one undo step), and the transaction service does the same when
+a linked expense or reimbursement is edited (`sync_linked_receivables`); after any
+import `sync_all_receivables` catches up receivables whose linked splits changed
+(writing, and adding an undo step, only when something is stale). Editing or
+deleting an owned posting through the transaction service is refused
+(`transaction.receivable_posting`), and owned postings are never offered as link
+candidates or reimbursement proposals. The account must be a Receivable account in
+the linked splits' single currency (no conversion is guessed); by default
+`default_receivable_account` reuses the first visible BreadSched-native Receivable
+account in that currency or creates "Reimbursements Receivable" under Assets. An
+imported GnuCash receivable is used only when chosen. A receivable recorded before
+#170 has no account and posts nothing until its next change. The Dashboard sums
+open reporting-currency balances as `receivables_owed`, with
+`receivables_attention` for disputed or overdue ones; other currencies are named in
+a coverage note, not converted.
+
+FSA claims are the same idea with the FSA as payer, and `engine.split_links` holds
+the link resolution both share. Pending FSA reimbursements need no reclassification:
+the money is already in the FSA asset, which is not cash-like. A receivable whose
+expense split is also an FSA claim payment reports the claim in
+`ReceivableSummary.fsa_claims`; the surfaces warn rather than refuse, because a
+split between payer and FSA can be legitimate.
 
 GTK: **Actions → Reimbursable Expenses…** opens `ReceivablesDialog`
 (`gui/dialogs/receivables_dialog.py`), which only gathers input and calls the
@@ -1529,7 +1572,10 @@ service.
   (positive) for **Link expense**, credits (negative) for **Link reimbursement**.
   Both GTK and web take them from `services.receivables.receivable_candidates`,
   which applies the same sign and account-class rules as `attach_*`.
-- **Dispute and write-off** controls, which post nothing to the ledger.
+- **Held in**, the Receivable account (default: one per currency), and a warning
+  when a linked expense is also on an FSA claim.
+- **Dispute and write-off** controls; a dispute posts nothing, and a write-off's
+  reclassification returns the balance to the expense.
 
 The register action **Track as Reimbursable…**
 (`RegisterView.track_selected_reimbursable`, also in **Actions → Register**) opens
@@ -1544,8 +1590,9 @@ opens it to track that transaction's cost. Its routes are in
 
 - `GET /api/receivables` returns every summary with its resolved links, plus
   `costs` and `credits` candidates.
-- `POST /api/receivable/save` accepts an optional `link_expense` for a new
-  receivable.
+- `POST /api/receivable/save` accepts an optional `account` and, for a new
+  receivable, an optional `link_expense`. `GET /api/receivables` also returns each
+  receivable's `owed`, `account`, and `fsa_claims`, and the Receivable `accounts`.
 - `POST /api/receivable/link`, `unlink`, `dispute` (with `clear`), `write-off`,
   and `delete` call the matching service functions.
 

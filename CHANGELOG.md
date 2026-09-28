@@ -3,6 +3,19 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a176 - 2026-09-28
+
+- **Receivable accounts (#170).** What a payer owes back on a reimbursable expense
+  is now held in a Receivable account: part of net worth, never of liquidity,
+  Available, or the emergency fund. BreadSched keeps the reclassification
+  transactions itself (tracking moves the expected amount, or the whole expense,
+  out of the expense; money back and write-offs move it out of the receivable) and
+  refuses register edits to them. A receivable settles once what is owed, not the
+  whole expense, is back. GnuCash A/Receivable accounts import as the new
+  Receivable type. The Dashboard shows Reimbursements due, and a receivable warns
+  when its expense is also on an FSA claim. GTK and web add **Held in**; the CLI
+  adds `--account`. Application version `0.2.0a176`; native schema remains 9.
+
 ## 0.2.0a175 - 2026-09-28
 
 - **Write changes to GnuCash from the desktop and browser (#174).** GTK's File →

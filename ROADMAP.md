@@ -37,12 +37,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    expected cash date, never counts a reimbursement as new income, never erases
    the original expense, and coordinates with GnuCash re-import the same way FSA
    claims do, the GTK and web screens with their register actions, and reviewed
-   reimbursement proposals pointed at after imports and during reconciliation.
-   Remaining (#170): receivable accounts that hold what is owed, counted in net
-   worth and never in liquidity (as pending FSA reimbursements already are), and
-   coordination with FSA claims when the same expense could be claimed through
-   either (for example, an insurer pays part and the FSA the rest), without
-   counting the expense or the recovery twice.
+   reimbursement proposals pointed at after imports and during reconciliation,
+   and Receivable accounts holding what is owed (net worth, never liquidity) with
+   an FSA-overlap warning. Remaining: split one expense between a payer and an
+   FSA claim (for example, an insurer pays part and the FSA the rest) as one
+   reviewed allocation rather than a warning.
 2. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
    development environment already installs BreadSched easily from source, while
    Windows users have no equivalent path. Provide a Windows installer with the GTK

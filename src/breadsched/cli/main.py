@@ -1000,6 +1000,7 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                         if args.expected_cash_date
                         else None
                     ),
+                    account=resolve_account(db, args.account).handle if args.account else None,
                 ),
             )
             if saved.value is None:
@@ -1096,9 +1097,14 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                     "expense_total": item.expense_total.format(),
                     "reimbursed": item.reimbursed.format(),
                     "written_off": item.written_off.format(),
+                    "owed": item.owed.format(),
                     "remaining": item.remaining.format(),
                     "age_days": item.age_days,
                     "status": item.status.value,
+                    "account": (
+                        db.full_name(item.receivable.account) if item.receivable.account else None
+                    ),
+                    "fsa_claims": list(item.fsa_claims),
                 }
                 for item in summaries
             ],
@@ -1117,6 +1123,12 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                 ],
                 ["incurred", "payer", "description", "remaining", "status", "age (days)"],
                 right={5},
+            )
+            + "".join(
+                f"\nWarning: {item.receivable.payer} {item.receivable.description}".rstrip()
+                + " is also claimed from the FSA; check that it is not expected back twice."
+                for item in summaries
+                if item.fsa_claims
             )
             if summaries
             else "No receivables yet. Add one with --add PAYER --incurred DATE.",
@@ -2564,6 +2576,21 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 summary["required_liquid"].format(parens_negative=True),
             ],
             ["Available", shown("available", summary["available"])],
+            *(
+                [
+                    [
+                        "Reimbursements due",
+                        summary["receivables_owed"].format()
+                        + (
+                            f" ({summary['receivables_attention'].format()} disputed or overdue)"
+                            if summary["receivables_attention"] > 0
+                            else ""
+                        ),
+                    ]
+                ]
+                if summary["receivables_owed"] > 0
+                else []
+            ),
             [
                 f"Emergency fund ({config.emergency_months} months)",
                 shown("emergency_fund", summary["emergency_fund"]),
@@ -3041,6 +3068,11 @@ def build_parser() -> argparse.ArgumentParser:
     receivables_cmd.add_argument("--expected", metavar="AMOUNT", help="amount expected back")
     receivables_cmd.add_argument(
         "--expected-cash-date", metavar="DATE", help="date the reimbursement is expected"
+    )
+    receivables_cmd.add_argument(
+        "--account",
+        metavar="ACCOUNT",
+        help="Receivable account holding what is owed (default: one per currency)",
     )
     receivables_cmd.add_argument(
         "--attach-expense", metavar="RECEIVABLE", help="link the split recording the cost"

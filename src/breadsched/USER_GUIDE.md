@@ -208,6 +208,9 @@ and default household-planning behavior:
 - **FSA / benefit** uses plan-year elections and claims to determine availability.
 - **Escrow** is restricted funding whose later disbursement must not count the same
   expense twice.
+- **Receivable** holds money others owe you back, such as a reimbursable expense.
+  It counts toward net worth but never toward liquidity, because it cannot be spent
+  until it arrives. A GnuCash A/Receivable account imports as this type.
 - **Credit card** is a revolving purchase and payment channel.
 - **Loan** is amortizing debt with principal and interest behavior.
 - **Liability** is an obligation without credit-card or loan assumptions.
@@ -1031,7 +1034,27 @@ receivable with what is reimbursed, written off, and still remaining, its status
 and its age. Choose **Open** on one to change it, link more expense splits, or
 link the split that credits money back (**Link reimbursement**). You can also
 record a dispute or write off part of the balance there. Unlinking, disputes, and
-write-offs never change your transactions.
+write-offs never change your linked transactions.
+
+What the payer still owes is held in a **Receivable** account. When you track an
+expense, BreadSched moves the amount expected back (or the whole expense, if you
+gave no expected amount) out of the expense account and into the receivable
+account. So your spending shows only what you will really bear, and your net worth
+includes what is owed. Liquidity, Available, and the emergency fund never count it,
+because you cannot spend it yet. Money back moves it out of the receivable account
+again; money back beyond what was owed stays a refund in the expense account. A
+write-off returns the unpaid balance to the expense. A dispute posts nothing.
+BreadSched keeps these moving transactions itself and recomputes them whenever the
+receivable or a linked transaction changes, including after an import; they are marked in their notes, and a
+register edit or delete of one is refused (change the receivable instead). **Held
+in** chooses the receivable account; by default BreadSched uses, or creates, a
+"Reimbursements Receivable" account under Assets for the expense's currency. An
+imported GnuCash receivable is used only when you choose it.
+
+The Dashboard shows **Reimbursements due** with the part that is disputed or past
+its expected date. If an expense you track is also on an FSA claim, the receivable
+shows a warning, so the same cost is not expected back twice. Money waiting in an
+FSA is already an FSA asset: net worth, never liquidity.
 
 In the browser interface, choose **Reimbursable…** on a register row to start a
 receivable from that expense, or open the **Reimbursables** page to list, open,
@@ -1057,7 +1080,7 @@ On the command line:
 
 ```sh
 breadsched receivables book.breadsched --add "Acme Insurance" --incurred 2026-09-01 \
-    --description "Doctor visit" --expected 150.00
+    --description "Doctor visit" --expected 150.00 [--account "Assets:Owed to me"]
 breadsched receivables book.breadsched --attach-expense RECEIVABLE \
     --transaction TRANSACTION --split-index 1
 breadsched receivables book.breadsched --attach-reimbursement RECEIVABLE \
@@ -1081,7 +1104,8 @@ from those linked splits plus any dispute or write-off, never stored: open, then
 partially reimbursed once some money is back, disputed while a balance remains and
 a dispute is recorded, written off once you record giving up on the remainder
 (even after a partial reimbursement), or settled once the linked reimbursements
-fully offset the expense. Deleting a receivable or clearing a dispute never
+cover what is owed (the expected amount, or the whole expense). The list also
+shows the receivable account and any FSA-claim overlap. Deleting a receivable or clearing a dispute never
 changes the underlying transactions. A GnuCash re-import that would delete a
 transaction a receivable depends on is refused, the same protection FSA claims
 already have.
