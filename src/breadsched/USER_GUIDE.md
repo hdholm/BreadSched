@@ -621,9 +621,8 @@ reconciliation or FSA claim is retained and reported for review. Local planning
 decisions are not overwritten by source refreshes.
 
 GnuCash sources are read, not edited, by current import workflows. Write-back of
-simple changes requires a separate reviewed workflow and is future work. Automatic
-category rules, entry autocomplete from earlier transactions, and AqBanking links
-are not available yet.
+simple changes requires a separate reviewed workflow and is future work. Entry
+autocomplete from earlier transactions and AqBanking links are not available yet.
 
 ### Keep GnuCash and BreadSched side by side
 
@@ -798,7 +797,31 @@ The register shows each transaction's payee. To set or change one directly, open
 the transaction in the desktop editor and choose it under **Payee** (or **(no
 payee)** to clear it); in the web register, choose it in the row's **Payee** list.
 The register filter in the desktop application also matches payee names.
-Categorization rules come next.
+
+### Categorization rules
+
+Imported transactions start in **Uncategorized CSV** or **Uncategorized OFX**. A
+categorization rule proposes a category for them, matched by payee or by
+description (with the same matching as payees: case, punctuation, and words
+containing digits are ignored). Rules are ordered: the first rule that matches
+decides, and the preview names any later rule that would have chosen differently
+so you can reorder them. Only transactions still on those placeholders are ever
+proposed, so a category you chose yourself is never replaced, and a transaction
+split across several placeholder lines is left for you. Nothing changes until you
+accept, and accepting is one undo step. Rules are managed from the command line
+for now:
+
+```sh
+breadsched rules book.breadsched --add-description "CORNER GROCER #1234" --category "Expenses:Groceries"
+breadsched rules book.breadsched --add-payee "City Power" --category "Expenses:Utilities" --position 1
+breadsched rules book.breadsched                     # list rules in priority order
+breadsched rules book.breadsched --preview           # proposals, deciding rule, conflicts
+breadsched rules book.breadsched --accept-all        # or --accept TRANSACTION
+breadsched rules book.breadsched --move 2 --to 1
+breadsched rules book.breadsched --delete 2
+```
+
+Desktop and web screens for rules come next.
 
 ## Print, export, and inspect
 

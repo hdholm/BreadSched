@@ -1062,6 +1062,24 @@ its filter matches payee names); the web register returns each row's `payee` and
 the book's payees, and its per-row picker calls `POST /api/transaction/payee`
 (`assign_payee`). Category rules and payee-based autocomplete build on this.
 
+## Categorization rules
+
+Rules live in book metadata (`categorization_rules`) as one ordered list of
+`CategoryRule(handle, category, payee | key)`, so they need no schema change and
+older builds ignore them; rule edits are metadata writes inside a database
+transaction and therefore undoable. `engine/categorization.py` owns
+`placeholder_handles()` (the Uncategorized CSV/OFX accounts, also used by CSV
+transfer review) and `propose_categories`, which considers only transactions with
+exactly one split on a placeholder: a category chosen by the user or the source is
+never proposed again, and split transactions are not guessed. A rule matches by
+payee handle or by `payees.match_key` of the description; the first matching rule
+in list order decides and every later rule naming a different category is reported
+as a conflict with its position. `services/categorization.py` validates rules (one
+match kind, a non-empty key, an existing payee, a non-placeholder income or expense
+category, no duplicate match, a valid position) and applies accepted proposals by
+recomputing them and replacing only the placeholder split's account, keeping its
+value, memo, and handle, in one undo step. CLI: `breadsched rules`.
+
 ## Statement reconciliation
 
 A reconciliation is a persisted, account-scoped statement session, not transient UI

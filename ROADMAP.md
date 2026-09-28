@@ -44,12 +44,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    multi-hop policy before enabling any conversion through a third currency; and
    value securities quoted in a non-reporting currency (a direct reporting-currency
    price is still required). Do not create a second monthly budget ledger.
-3. **P1 — Reviewed categorization rules and entry autocomplete.** CSV import,
-   transfer review, and payees are delivered. Next: rules that propose a category
-   for transactions still posted to an import placeholder (Uncategorized CSV/OFX),
-   matched by payee or normalized description, with an explicit priority order,
-   explained conflicts, a preview, and explicit acceptance; never silently
-   recategorize a previously accepted transaction. Then entry autocomplete from
+3. **P1 — Categorization rule screens and entry autocomplete.** Ordered
+   categorization rules with preview and explicit acceptance exist in the shared
+   service and `breadsched rules`. Next: GTK and web screens to add, reorder, and
+   delete rules and to review and accept their proposals, with each proposal's
+   deciding rule and conflicts shown. Then entry autocomplete from
    earlier transactions as a visible, editable proposal that never commits without
    the user's save (see Register workflow).
 4. **P1 — Reimbursable expenses and receivables.** Track an expense and the
@@ -81,11 +80,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Improve register appearance and information density while keeping account-type
   debit/credit terminology clear.
 
-- Add reviewed categorization rules: propose a category for transactions still on
-  an import placeholder, keyed by payee or normalized description, with preview,
-  explicit ordering, conflict explanations, and explicit acceptance. Keep imported
-  descriptions and source identifiers intact, and handle transfers and split
-  transactions without a guessed category or historical rewrite.
+- Add GTK and web screens for categorization rules (add, reorder, delete) and for
+  reviewing their proposals with the deciding rule and any conflicts. Consider
+  whether a rule should also be able to set a payee, and whether split
+  transactions can be supported with explicit per-split rules rather than a guess.
 
 - Add entry autocomplete in GTK and web quick entry and the full editor. Typing a
   description or choosing a payee proposes the most recent matching transaction's

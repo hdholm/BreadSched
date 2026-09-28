@@ -34,6 +34,7 @@ from uuid import NAMESPACE_URL, uuid5
 
 from ...gen.db.base import DbTxn
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine.categorization import placeholder_handles
 from ...gen.engine.currency import reporting_currency_handle
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
@@ -126,19 +127,6 @@ class CsvPreview:
 def _stable_handle(kind: str, *parts: object) -> str:
     text = "|".join(str(part) for part in parts)
     return uuid5(NAMESPACE_URL, f"breadsched:csv:{kind}:{text}").hex
-
-
-def placeholder_handles() -> tuple[tuple[tuple[str, str], str], ...]:
-    """The uncategorized accounts statement imports post to, keyed by (format, type).
-
-    Only a split in one of these is an unreviewed guess that a transfer link may
-    replace; any other account is a category the user or the source chose.
-    """
-    return tuple(
-        ((fmt, atype), uuid5(NAMESPACE_URL, f"breadsched:{fmt}:category:{atype}|{name}").hex)
-        for fmt, name in (("csv", "Uncategorized CSV"), ("ofx", "Uncategorized OFX"))
-        for atype in ("EXPENSE", "INCOME")
-    )
 
 
 def _split_handle(identity: str) -> str:
