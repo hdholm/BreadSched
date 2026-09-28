@@ -267,3 +267,36 @@ def test_a_register_row_is_edited_in_place(page, served):
     field.press("Escape")
     page.wait_for_selector("tr:has-text('Edited in place')")
     assert db.get_transaction(original.handle).description == "Edited in place"
+
+
+def test_a_register_expense_becomes_a_reimbursable(page, served):
+    from breadsched.gen.lib import AccountClass, Money, Transaction
+
+    db, _httpd = served
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Register", exact=True).first.click()
+    page.wait_for_selector("tr.entry-row")
+    account = page.locator("select").first.input_value()
+    expense = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE and not a.placeholder and not a.hidden
+    )
+    visit = Transaction.simple(
+        date.today(), "Browser dentist", expense.handle, account, Money("80")
+    )
+    with db.transaction("Browser fixture") as txn:
+        db.add_transaction(visit, txn)
+    page.get_by_role("button", name="Register", exact=True).first.click()
+    page.locator("tr:has-text('Browser dentist')").get_by_role(
+        "button", name="Reimbursable…"
+    ).click()
+    page.wait_for_selector("text=Saving links the")
+    page.fill("input[aria-label='Payer']", "Dental plan")
+    page.get_by_role("button", name="Add receivable").click()
+    page.wait_for_selector("text=The expense is linked.")
+
+    [receivable] = list(db.iter_receivables())
+    cost = next(s for s in visit.splits if s.account == expense.handle)
+    assert (receivable.payer, receivable.expenses[0].split) == ("Dental plan", cost.handle)
+    page.wait_for_selector("td:has-text('Dental plan')")

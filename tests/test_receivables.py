@@ -29,6 +29,7 @@ from breadsched.gen.services.receivables import (
     detach_split,
     list_receivables,
     mark_disputed,
+    receivable_candidates,
     record_write_off,
     save_receivable,
 )
@@ -391,3 +392,23 @@ def test_gnucash_reimport_refuses_to_delete_a_linked_transaction(db, book):
     stored = db.get_transaction(txn)
     references = _protected_transaction_references(db, stored)
     assert any("receivable" in item for item in references)
+
+
+def test_candidates_offer_unlinked_costs_and_credits_newest_first(db, book):
+    """GTK and web pickers share one rule: expense-account splits, split by sign."""
+    early = _expense(db, book, date(2026, 9, 1), "Clinic", "150.00")
+    late = _expense(db, book, date(2026, 9, 5), "Pharmacy", "40.00")
+    credit = _reimbursement(db, book, date(2026, 9, 20), "Insurer", "100.00")
+    receivable = _save(db)
+    attach_expense_split(db, receivable.handle, *early)
+
+    costs, credits = receivable_candidates(db, receivable.handle).value
+    assert [(item.transaction, item.split) for item in costs][:1] == [late]
+    assert early not in [(item.transaction, item.split) for item in costs]
+    assert [(item.transaction, item.split) for item in credits] == [credit]
+    assert all(item.value > 0 for item in costs) and all(item.value < 0 for item in credits)
+    assert all(item.account == book.groceries for item in (*costs, *credits))
+
+    everything, _ = receivable_candidates(db).value
+    assert early in [(item.transaction, item.split) for item in everything]
+    assert receivable_candidates(db, "missing").errors[0].code == "receivable.not_found"

@@ -921,8 +921,8 @@ breadsched rules book.breadsched --delete 2
 
 A receivable tracks an expense you paid out of pocket and what an insurer,
 employer, or other payer is expected to send back, without ever rewriting the
-expense or counting the reimbursement as new income. The desktop application and
-the command line manage receivables; a browser screen comes in a later release.
+expense or counting the reimbursement as new income. The desktop application, the
+browser interface, and the command line all manage receivables.
 
 In the desktop application, select the transaction in a register and choose
 **Actions → Register → Track as Reimbursable…**. The date, description, and
@@ -933,6 +933,10 @@ and its age. Choose **Open** on one to change it, link more expense splits, or
 link the split that credits money back (**Link reimbursement**). You can also
 record a dispute or write off part of the balance there. Unlinking, disputes, and
 write-offs never change your transactions.
+
+In the browser interface, choose **Reimbursable…** on a register row to start a
+receivable from that expense, or open the **Reimbursables** page to list, open,
+link, dispute, and write off receivables the same way.
 
 On the command line:
 

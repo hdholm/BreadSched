@@ -17,6 +17,15 @@ from .payee_resource import (
     payees,
     transaction_payee,
 )
+from .receivable_resource import (
+    receivable_delete,
+    receivable_dispute,
+    receivable_link,
+    receivable_save,
+    receivable_unlink,
+    receivable_write_off,
+    receivables,
+)
 from .register_entry_resource import register_entry_save
 from .rules_resource import rule_add, rule_delete, rule_move, rules, rules_accept
 
@@ -225,6 +234,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/due-review": _no_query("due_review"),
     "/api/verify": _no_query("verify"),
     "/api/payees": payees,
+    "/api/receivables": receivables,
     "/api/rules": rules,
     "/api/entry/suggest": entry_suggestion,
 }
@@ -275,6 +285,12 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/payees/accept": payee_accept,
     "/api/transaction/payee": transaction_payee,
     "/api/register/entry": register_entry_save,
+    "/api/receivable/save": receivable_save,
+    "/api/receivable/link": receivable_link,
+    "/api/receivable/unlink": receivable_unlink,
+    "/api/receivable/dispute": receivable_dispute,
+    "/api/receivable/write-off": receivable_write_off,
+    "/api/receivable/delete": receivable_delete,
     "/api/rule/add": rule_add,
     "/api/rule/delete": rule_delete,
     "/api/rule/move": rule_move,

@@ -24,6 +24,7 @@ from ..lib.receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
+    "ReceivableCandidate",
     "RecordWriteOff",
     "ReceivableStatus",
     "ReceivableSummary",
@@ -35,6 +36,7 @@ __all__ = [
     "detach_split",
     "list_receivables",
     "mark_disputed",
+    "receivable_candidates",
     "record_write_off",
     "save_receivable",
 ]
@@ -200,6 +202,62 @@ def delete_receivable(db: DbSQLite, handle: str) -> ServiceResult[str]:
     with db.transaction(f"Delete receivable {receivable.payer}") as txn:
         db.remove_receivable(handle, txn)
     return ServiceResult.success(handle)
+
+
+@dataclass(frozen=True, slots=True)
+class ReceivableCandidate:
+    """An expense-account split that could be linked to a receivable."""
+
+    transaction: str
+    split: str
+    when: date
+    description: str
+    account: str
+    value: Money
+
+
+def receivable_candidates(
+    db: DbSQLite, receivable: str | None = None, *, limit: int = 300
+) -> ServiceResult[tuple[tuple[ReceivableCandidate, ...], tuple[ReceivableCandidate, ...]]]:
+    """The most recent linkable splits: (costs, credits), newest first; writes nothing.
+
+    Costs are positive expense-account splits (for an expense link) and credits
+    negative ones (for a reimbursement link), the same rules ``attach_*`` checks.
+    Splits already linked to ``receivable`` are left out.
+    """
+    linked: set[tuple[str, str]] = set()
+    if receivable is not None:
+        existing = db.get_receivable(receivable)
+        if existing is None:
+            return ServiceResult.failure(ServiceError("receivable.not_found", ("receivable",)))
+        linked = {(link.transaction, link.split) for link in existing.expenses} | {
+            (link.transaction, link.split) for link in existing.reimbursements
+        }
+    expense_accounts = {
+        account.handle
+        for account in db.iter_accounts()
+        if account.account_class is AccountClass.EXPENSE
+    }
+    costs: list[ReceivableCandidate] = []
+    credits: list[ReceivableCandidate] = []
+    for transaction in db.iter_transactions():
+        for split in transaction.splits:
+            if split.account not in expense_accounts or not split.value:
+                continue
+            if (transaction.handle, split.handle) in linked:
+                continue
+            candidate = ReceivableCandidate(
+                transaction.handle,
+                split.handle,
+                transaction.post_date,
+                transaction.description,
+                split.account,
+                split.value,
+            )
+            (costs if split.value > 0 else credits).append(candidate)
+    newest = sorted(costs, key=lambda item: item.when, reverse=True)[:limit]
+    newest_credits = sorted(credits, key=lambda item: item.when, reverse=True)[:limit]
+    return ServiceResult.success((tuple(newest), tuple(newest_credits)))
 
 
 def list_receivables(

@@ -1395,13 +1395,29 @@ service.
 - **Links.** For the receivable in the form, its linked splits (with Unlink) and
   two pickers offering the 300 most recent unlinked expense-account splits: costs
   (positive) for **Link expense**, credits (negative) for **Link reimbursement**.
+  Both GTK and web take them from `services.receivables.receivable_candidates`,
+  which applies the same sign and account-class rules as `attach_*`.
 - **Dispute and write-off** controls, which post nothing to the ledger.
 
 The register action **Track as Reimbursable…**
 (`RegisterView.track_selected_reimbursable`, also in **Actions → Register**) opens
 the dialog for the selected transaction's first positive expense-class split. It
 prefills the incurred date, description, and expected amount, and saving the new
-receivable links that split. The web surface is not yet built.
+receivable links that split.
+
+Web: the **Reimbursables** page (`showReimbursables` in `app.js`) offers the same
+list, form, links, dispute, and write-off, and **Reimbursable…** on a register row
+opens it to track that transaction's cost. Its routes are in
+`web/receivable_resource.py`, which only parses JSON:
+
+- `GET /api/receivables` returns every summary with its resolved links, plus
+  `costs` and `credits` candidates.
+- `POST /api/receivable/save` accepts an optional `link_expense` for a new
+  receivable.
+- `POST /api/receivable/link`, `unlink`, `dispute` (with `clear`), `write-off`,
+  and `delete` call the matching service functions.
+
+A rejected request leaves the receivable unchanged (route tests).
 
 ## Statement reconciliation
 
