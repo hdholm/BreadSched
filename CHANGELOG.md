@@ -3,7 +3,7 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
-## Unreleased
+## 0.2.0a137 - 2026-09-28
 
 - **Fixed: the desktop Dashboard grew wider than the screen (#140).** A group that
   combines several accounts carries every account's quote details in its note, and
@@ -11,6 +11,8 @@ belongs in `ROADMAP.md`.
   group label is now capped and shortened with "…" (the full text is in its
   tooltip), and long headline-card text wraps. Application version `0.2.0a137`;
   native schema remains 8.
+
+## 0.2.0a136 - 2026-09-27
 
 - **Payees in the register and editor.** The desktop register has a **Payee**
   column and its filter matches payee names; the transaction editor has a **Payee**
@@ -20,6 +22,8 @@ belongs in `ROADMAP.md`.
   unknown payee is refused without writing. Application version `0.2.0a136`;
   native schema remains 8.
 
+## 0.2.0a135 - 2026-09-27
+
 - **Payee screens.** The desktop **Actions → Payees…** dialog and the web **Payees**
   view list payees with their transaction counts, add, rename, re-key, or delete a
   payee, and show the current proposals with the matched key, each checked by
@@ -27,6 +31,8 @@ belongs in `ROADMAP.md`.
   the shared payee service (web routes `GET /api/payees`, `POST /api/payee/save`,
   `/api/payee/delete`, `/api/payees/accept`), so rejected input changes nothing.
   Application version `0.2.0a135`; native schema remains 8.
+
+## 0.2.0a134 - 2026-09-27
 
 - **Payees.** A payee is a stable, renameable identity kept separate from the
   transaction description, which is never rewritten. `breadsched payees` adds a
@@ -39,6 +45,8 @@ belongs in `ROADMAP.md`.
   payees, and book verification reports missing payee references. **Native schema
   8** adds the payee table; schemas 6 and 7 migrate automatically with a verified
   backup. Application version `0.2.0a134`; supported native schemas 6–8.
+
+## 0.2.0a133 - 2026-09-27
 
 - **Transfer review during CSV import.** A transfer between two of your accounts
   appears on both statements. When a CSV row has the opposite amount of a
@@ -54,6 +62,8 @@ belongs in `ROADMAP.md`.
   finds it as already imported; and the import stays one undo step. Application
   version `0.2.0a133`; native schema remains 7.
 
+## 0.2.0a132 - 2026-09-27
+
 - **GTK CSV statement import.** **File → Import CSV Statement…** opens a dialog
   that reads the chosen CSV's columns and first rows, suggests the column mapping
   from its headers, and lets the account, columns, date order, decimal convention,
@@ -61,6 +71,8 @@ belongs in `ROADMAP.md`.
   **Import** writes the previewed rows as one undo step and refreshes the preview.
   The dialog uses the shared CSV service, like the web view and `breadsched
   import-csv`. Application version `0.2.0a132`; native schema remains 7.
+
+## 0.2.0a131 - 2026-09-27
 
 - **Web CSV statement import.** The web Import view has a **CSV statement**
   section: choose or upload the file, **Read columns** to see the detected encoding,
@@ -71,6 +83,8 @@ belongs in `ROADMAP.md`.
   leaving validation and the write to the shared CSV service. A browser-uploaded
   `.csv` is kept beside the book and its path returned without importing. Route
   tests and a headless-browser test cover the flow. Application version `0.2.0a131`; native schema remains 7.
+
+## 0.2.0a130 - 2026-09-27
 
 - **Web Dashboard tables and group totals render again (#132).** The web
   **Pending bills** and **Expected income** tables (and the FSA Dashboard's year
@@ -83,6 +97,8 @@ belongs in `ROADMAP.md`.
   Playwright) and a static guard cover both. Application version `0.2.0a130`;
   native schema remains 7.
 
+## 0.2.0a129 - 2026-09-27
+
 - **OFX and QIF re-import keeps the user's categories (#129).** Re-importing an
   OFX/QFX or QIF statement rebuilt every transaction from the file. A transaction
   moved from **Uncategorized OFX** (or an uncategorized QIF record) to a real
@@ -92,6 +108,8 @@ belongs in `ROADMAP.md`.
   changed amount are left unchanged with a warning. Unchanged records count as
   unchanged rather than refreshed. Application version `0.2.0a129`; native
   schema remains 7.
+
+## 0.2.0a128 - 2026-09-27
 
 - **CSV statement import with preview and duplicate review.** `breadsched
   import-csv` imports a bank or card statement exported as CSV into one chosen
@@ -108,6 +126,8 @@ belongs in `ROADMAP.md`.
   service (`gen/services/csv_import.py`) is ready for the GTK and web screens that
   follow. Application version `0.2.0a128`; native schema remains 7.
 
+## 0.2.0a127 - 2026-09-27
+
 - **Currency notes disclose quote age and rounding.** Plan and Projection
   currency notes now give the selected quote's age on the
   as-of date ("26 days old", "dated today", or "dated N days ahead"). BreadSched
@@ -115,6 +135,8 @@ belongs in `ROADMAP.md`.
   not rounded to cents before they are added up. This completes the disclosure
   part of the currency P1. Application version `0.2.0a127`; native schema
   remains 7.
+
+## 0.2.0a126 - 2026-09-27
 
 - **Projection converts foreign-currency schedules and balances.** Projection
   added a EUR schedule to USD cash unit for unit, and a foreign-currency account
@@ -126,6 +148,8 @@ belongs in `ROADMAP.md`.
   recorded as Projection warnings, which GTK, web, CLI, and print already show;
   scenario comparisons difference the converted projections. Application
   version `0.2.0a126`; native schema remains 7.
+
+## 0.2.0a125 - 2026-09-27
 
 - **Plan totals convert foreign currencies instead of adding them as reporting
   currency (#124).** A EUR schedule was added to USD Plan totals unit for unit (500
@@ -141,6 +165,8 @@ belongs in `ROADMAP.md`.
   web Plan adds `currency`. `breadsched activity --as-of` selects the quotes.
   Application version `0.2.0a125`; native schema remains 7.
 
+## 0.2.0a124 - 2026-09-27
+
 - **GTK manual exchange rates.** Accounts has an **Exchange rate…** button that
   opens a dialog for a dated, directional manual quote: choose the source and
   target currencies (the target defaults to the reporting currency), the quote
@@ -151,6 +177,8 @@ belongs in `ROADMAP.md`.
   changed. The desktop now matches the web and CLI for manual FX entry. Plan and
   Projection conversion remains open (see issue #124). Application version
   `0.2.0a124`; native schema remains 7.
+
+## 0.2.0a123 - 2026-09-27
 
 - **Reviewed, duplicate-safe batch of due scheduled transactions (P1 complete).**
   A shared due-review service lists due and missed occurrences grouped by schedule
@@ -167,6 +195,8 @@ belongs in `ROADMAP.md`.
   `SCHEDULE@DATE` and `--post-all`/`--skip-all`. This completes the due-since-last-
   run priority. Application version `0.2.0a123`; native schema remains 7.
 
+## 0.2.0a122 - 2026-09-27
+
 - **Missed schedule dates grouped on Dashboard.** Two or more missed occurrences
   of one schedule (or generated account payment) now appear as a single bill or
   income row with the missed date range, count, total, and the recurrence's own
@@ -179,6 +209,8 @@ belongs in `ROADMAP.md`.
   occurrence. The CLI and web no longer show the raw decimal cycle (such as
   `1.0000`); they show the frequency. Application version `0.2.0a122`; native
   schema remains 7.
+
+## 0.2.0a121 - 2026-09-27
 
 - **Flatpak desktop integration and sandboxed GTK smoke.** The Flatpak now
   installs a desktop entry, AppStream metainfo, and a scalable icon named by the
@@ -200,6 +232,8 @@ belongs in `ROADMAP.md`.
   roadmap no longer names a stale released baseline. No application or schema
   change.
 
+## 0.2.0a120 - 2026-09-27
+
 - **First-run Dashboard for imported commitments (P0 complete).** A synthetic
   GnuCash book with a priced security, an unscheduled mortgage, and a credit card
   owing a balance now has acceptance coverage across the shared engine, GTK, web,
@@ -212,6 +246,8 @@ belongs in `ROADMAP.md`.
   first-run Dashboard and sample-book priority is complete; later first-run polish
   remains under GTK first-run UX. Application version `0.2.0a120`; native schema
   remains 7.
+
+## 0.2.0a119 - 2026-09-27
 
 - **Reconciled transactions survive GnuCash re-import (#117).** A split reconciled
   in BreadSched keeps its Reconciled state and statement date when the book is
@@ -249,6 +285,8 @@ belongs in `ROADMAP.md`.
   not publish an installer or establish GTK portal, print, or settings acceptance.
   No application or schema change.
 
+## 0.2.0a118 - 2026-09-27
+
 - **Flatpak build baseline.** Add a GNOME-runtime manifest and CI smoke gate that
   installs the package and checks CLI version and GTK launcher help in the sandbox.
   This is a build input, not a released installer or validated file workflow. Application
@@ -260,6 +298,8 @@ belongs in `ROADMAP.md`.
   Shared, GTK, web, CLI, and printable paths are exercised. No runtime, version,
   or native schema change.
 
+## 0.2.0a117 - 2026-09-27
+
 - **Opt-in expense rollover.** Expense Explorer can carry a completed period's
   surplus or deficit into the next selected period. Its visible Carry in, plan,
   actual through as-of, and Remaining form an inspectable bridge. A prior period
@@ -267,6 +307,8 @@ belongs in `ROADMAP.md`.
   unavailable. The toggle changes the read-only view, not the ledger or Plan
   events. GTK, web, API, and print share the contract. Application version
   `0.2.0a117`; native schema remains 7.
+
+## 0.2.0a116 - 2026-09-27
 
 - **Category remaining through as-of.** Expense Explorer shows planned expense
   minus actual expense posted through the as-of date, with refunds and overspending
@@ -276,10 +318,14 @@ belongs in `ROADMAP.md`.
   reach both primary and comparison reports. GTK, web, and print share the value.
   No rollover or native schema change. Application version `0.2.0a116`.
 
+## 0.2.0a115 - 2026-09-27
+
 - **Dashboard group coverage.** Grouped position and selected liquid balances
   disclose omitted asset/liability and cash-like account counts across GTK, web,
   CLI, and print. Selected figures remain selected figures; no accounts are added
   implicitly. Application version `0.2.0a115`; native schema remains 7.
+
+## 0.2.0a114 - 2026-09-27
 
 - **Synthetic learning book.** `breadsched sample PATH` creates a separate
   clearly labeled household book with balanced dated ledger activity, Dashboard
@@ -287,6 +333,8 @@ belongs in `ROADMAP.md`.
   reference date reproduces its financial content, including year boundaries;
   existing files are never replaced. Application version `0.2.0a114`; native
   schema remains 7.
+
+## 0.2.0a113 - 2026-09-26
 
 - **First-run Dashboard position and commitment state.** An ungrouped book
   reports ledger-derived net worth only when every valuation is complete;
@@ -302,6 +350,8 @@ belongs in `ROADMAP.md`.
   setup and Expense Explorer limits in the entry point and packaged guide.
   Simplified README implementation detail. No application or schema change.
 
+## 0.2.0a112 - 2026-09-26
+
 - **Web manual exchange-rate entry.** The Accounts view accepts a dated,
   directional exact rate between existing book currencies. Its resource adapter
   rejects non-text rates and invalid dates before calling the shared atomic
@@ -312,12 +362,16 @@ belongs in `ROADMAP.md`.
   itself fails. GTK entry remains open. Application version
   `0.2.0a112`; native schema remains 7.
 
+## 0.2.0a111 - 2026-09-26
+
 - **CLI manual currency quote entry.** `breadsched rate` saves a dated directional
   rate between known book currencies through the shared exact quote contract.
   Ambiguous codes require a handle; invalid rates do not write. JSON reports the
   exact rational rate, quote date, source, and handle. Imported quotes remain
   intact and a repeated same-day manual entry updates its own record. GTK and web
   entry remain open. Application version `0.2.0a111`; native schema remains 7.
+
+## 0.2.0a110 - 2026-09-26
 
 - **Exact manual FX quote write contract.** A shared valuation operation saves
   positive, directional rates between two known currencies. Re-entering a
@@ -326,12 +380,16 @@ belongs in `ROADMAP.md`.
   the manual rate with its date and source. User-facing rate entry remains future
   work. Application version `0.2.0a110`; native schema remains 7.
 
+## 0.2.0a109 - 2026-09-26
+
 - **GnuCash commodity identity on import.** A security ticker shared with a
   currency or another security namespace no longer attaches accounts or quotes
   to the first matching mnemonic. Exact namespace/mnemonic matches survive
   re-import; equivalent currency namespaces can share an existing currency.
   Bare mnemonic references with multiple matches are rejected for review rather
   than assigned arbitrarily. Application version `0.2.0a109`; schema remains 7.
+
+## 0.2.0a108 - 2026-09-26
 
 - **Currency-aware scheduled occurrence matching.** Planned scheduled events
   expose their expected and actual transaction currency. An actual in another
@@ -340,6 +398,8 @@ belongs in `ROADMAP.md`.
   require cross-currency valuation. Advance application version to `0.2.0a108`;
   native schema remains 7.
 
+## 0.2.0a107 - 2026-09-26
+
 - **Quote age disclosure without an automatic cutoff.** Account valuations now
   carry days since the selected direct, inverse, or security quote relative to
   their valuation date. GTK, web, and CLI account views display the age, and
@@ -347,11 +407,15 @@ belongs in `ROADMAP.md`.
   original source and date; no price is silently excluded by age. Advance
   application version to `0.2.0a107`; native schema remains 7.
 
+## 0.2.0a106 - 2026-09-26
+
 - **Browser-selected web imports.** Import QIF, OFX/QFX, and GnuCash files
   selected in the browser through a bounded, authenticated upload. Reusing the
   same filename retains the per-book source path for re-import; the existing
   importer handles parsing and source ownership. Local server paths remain
   available. Advance application version to `0.2.0a106`; schema stays 7.
+
+## 0.2.0a105 - 2026-09-26
 
 - **Dashboard quote completeness.** A missing reporting-currency quote in a
   configured group suppresses dependent position totals; a missing quote in a
@@ -361,6 +425,8 @@ belongs in `ROADMAP.md`.
   account rows retain quote date/source or disclose missing quotes. Advance
   application version to `0.2.0a105`; native schema remains 7.
 
+## 0.2.0a104 - 2026-09-26
+
 - **Exact inverse currency quotes.** For ordinary foreign-currency balances,
   select the latest direct quote as of the requested date; if none exists, invert
   the latest dated reverse pair exactly. A direct quote takes precedence even if
@@ -369,12 +435,16 @@ belongs in `ROADMAP.md`.
   exists. No multi-hop, security quote inversion, or staleness cutoff is inferred.
   Advance application version to `0.2.0a104`; native schema remains 7.
 
+## 0.2.0a103 - 2026-09-25
+
 - **Complete account-summary currency totals.** Account chart rollups and cash/net-worth
   summaries in GTK, web, and CLI require direct reporting-currency valuations for
   every nonzero component. An absent quote makes the total unavailable and exposes
   account handles needing quotes in web/CLI responses; exact converted amounts are
   added without intermediate rounding. Other reports retain their existing currency
   behavior. Advance application version to `0.2.0a103`; native schema remains 7.
+
+## 0.2.0a102 - 2026-09-25
 
 - **Code-scanning remediation and release isolation.** Limit CI tokens to
   read-only access; build and test release artifacts in a read-only job, then
@@ -383,6 +453,8 @@ belongs in `ROADMAP.md`.
   asset whose resolved path leaves the packaged static directory. Cover both
   boundaries with focused regression tests. Advance application version to
   `0.2.0a102`; native schema remains 7.
+
+## 0.2.0a101 - 2026-09-25
 
 - **Direct foreign-currency account valuation.** Convert an ordinary account's
   foreign transaction-currency balance using a dated direct quote, keeping the
@@ -396,6 +468,8 @@ belongs in `ROADMAP.md`.
   when publishing tested, documented main commits; a future stable version is
   published without that flag. Application version and native schema are unchanged.
 
+## 0.2.0a100 - 2026-09-25
+
 - **Exact direct currency conversion contract.** Add an internal as-of conversion
   result for known currencies with quote date/source/type, exact unrounded amount,
   and explicit missing-direct-quote state. Reject non-currency units and do not
@@ -403,11 +477,15 @@ belongs in `ROADMAP.md`.
   existing mixed-currency display behavior is unchanged. Advance application
   version to `0.2.0a100`; native schema version 7 is unchanged.
 
+## 0.2.0a99 - 2026-09-25
+
 - **Projection web report and comparison boundary.** Move read-only Projection
   summary and comparison calculation/response projection to the existing resource.
   Preserve account and assumption-source evidence, aligned monthly deltas, and
   explicit-save behavior. Advance application version to `0.2.0a99`; native schema
   version 7 is unchanged.
+
+## 0.2.0a98 - 2026-09-25
 
 - **Projection month explanation web boundary.** Move the read-only monthly
   projection detail calculation and response projection to a dedicated resource.
@@ -415,16 +493,22 @@ belongs in `ROADMAP.md`.
   leave browser draft controls unsaved. Advance application version to `0.2.0a98`;
   native schema version 7 is unchanged.
 
+## 0.2.0a97 - 2026-09-25
+
 - **Scenario management web response boundary.** Move the Base/saved scenario
   listing and shared scenario response projection to a read-only web adapter.
   Preserve inheritance/source explanations, account-rate choices, and the existing
   service-backed writes. Advance application version to `0.2.0a97`; native schema
   version 7 is unchanged.
 
+## 0.2.0a96 - 2026-09-25
+
 - **Dashboard web response boundary.** Move the read-only Dashboard response
   projection from the main web API class to a resource adapter. Temporary query
   horizons still leave saved Dashboard settings unchanged. Advance application
   version to `0.2.0a96`; native schema version 7 is unchanged.
+
+## 0.2.0a95 - 2026-09-24
 
 - **Security quote evidence in account views.** Carry the selected quote's source
   through valuation and show its date and source in GTK and web accounts. Mark a
@@ -432,10 +516,14 @@ belongs in `ROADMAP.md`.
   Monetary totals and conversion behavior are unchanged. Advance application
   version to `0.2.0a95`; native schema version 7 is unchanged.
 
+## 0.2.0a94 - 2026-09-24
+
 - **Scenario schedule web write adapter.** Move scenario-only and baseline override
   request construction and result translation into the web schedule adapter.
   Preserve existing error, editability, and atomic service behavior. Advance
   application version to `0.2.0a94`; native schema version 7 is unchanged.
+
+## 0.2.0a93 - 2026-09-24
 
 - **Fixed-schedule web write adapter.** Move fixed baseline schedule request
   construction and result translation from the main API class to a presentation
@@ -443,11 +531,15 @@ belongs in `ROADMAP.md`.
   persistence behavior unchanged. Advance application version to `0.2.0a93`;
   native schema version 7 is unchanged.
 
+## 0.2.0a92 - 2026-09-24
+
 - **Plan web report boundary.** Move typed Plan query translation and response
   projection, including scenario comparison and all reported sections, into a
   read-only resource adapter. Preserve the existing route, response, and service
   error mapping. Advance application version to `0.2.0a92`; native schema version 7
   is unchanged.
+
+## 0.2.0a91 - 2026-09-24
 
 - **Plan detail response boundary and trailer discipline.** Extract the read-only
   category, planning-flow, and mortgage detail response from the web API class to
@@ -462,6 +554,8 @@ belongs in `ROADMAP.md`.
   regression assertion for the guide's category and merchant example. This
   documentation/test-only change leaves application version `0.2.0a90` and native
   schema version 7 unchanged.
+
+## 0.2.0a90 - 2026-09-24
 
 - **Expense Explorer web responsibility split.** Move read-only query
   translation and response serialization from `web.server.Api` into a focused
@@ -478,6 +572,8 @@ belongs in `ROADMAP.md`.
   and tagged-amount tests. This test-only milestone leaves application version
   `0.2.0a89` and native schema version 7 unchanged.
 
+## 0.2.0a89 - 2026-09-24
+
 - **Expense Explorer GTK, web, and printing.** Expose shared Plan expense values as
   category comparison bars, time-series trends, exact-value tables, and merchant
   drilldown in both interfaces. Web Plan printing includes the applied explorer;
@@ -492,11 +588,15 @@ belongs in `ROADMAP.md`.
   with no merchant budgets. Advance application version to `0.2.0a89`; native
   schema version 7 is unchanged.
 
+## 0.2.0a88 - 2026-09-24
+
 - **Expense Explorer shared contract.** Add a typed read-only query over Plan
   expense categories, periods, section totals, selected-cell occurrences, and
   temporary merchant actual groups. Reconcile the drilldown to its Plan cell,
   without allocating a category budget to merchants or storing group rules.
   Advance application version to `0.2.0a88`; native schema version 7 is unchanged.
+
+## 0.2.0a87 - 2026-09-24
 
 - **Versioned historical-estimation rules.** Consolidate anomaly
   thresholds, confidence weights, cadence/trend/seasonal criteria, variability
@@ -519,7 +619,6 @@ belongs in `ROADMAP.md`.
   planning-flow and mortgage non-additivity, scenario immutability and assumption
   provenance, and monthly stock conservation. This test/documentation milestone
   leaves application version `0.2.0a86` and native schema version 7 unchanged.
-
 ## 0.2.0a86 - 2026-09-21
 
 - **Packaged user guide and in-application help.** Move task-oriented user
