@@ -211,8 +211,7 @@ projection settings, and household relationships remain editable.
 
 ### Security prices and current value
 
-The Accounts views show the date, source, and age of a selected security quote
-relative to the valuation date. If no reporting-currency quote is available,
+The Accounts views show the date and source of a selected security quote. If no reporting-currency quote is available,
 they say so and retain the security holding's ledger value. An older quote
 remains eligible and visibly dated; BreadSched does not apply an automatic age
 cutoff or convert foreign-currency securities.
@@ -239,8 +238,9 @@ currency or alter ledger transactions. In GTK, choose **Exchange rate…** in
 Accounts: the dialog shows the latest recorded quote for the chosen pair, accepts
 the rate in your usual decimal format, and refuses the same currency twice, a
 non-positive rate, or an invalid date without saving anything.
-Web and CLI data expose the signed number of days since the quote, with negative
-days identifying a future-dated quote when no as-of date was requested.
+The web and CLI JSON data also expose the signed number of days since the quote
+(`quote_age_days`), with negative days identifying a future-dated quote when no
+as-of date was requested.
 Review the quote date and source before treating a market-valued total as current.
 Plan totals and Expense Explorer convert foreign amounts with these rates (see
 Plan). Other views still require a compatible reporting-currency value, and no

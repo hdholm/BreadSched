@@ -3,6 +3,14 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a146 - 2026-09-28
+
+- **Quote evidence shows its date without "N days old" (#151).** The Accounts
+  views (GTK, web, and `breadsched accounts`) show a quote as its date and source
+  (plus "inverse rate" when applicable); the relative age is gone because the date
+  already says how current it is. JSON output keeps `quote_age_days`. Application
+  version `0.2.0a146`; native schema remains 9.
+
 ## 0.2.0a145 - 2026-09-28
 
 - **Dashboard group rows no longer list inferred sub-accounts (#150).** A group

@@ -1285,6 +1285,45 @@ class TestColumnBehaviour:
             for index in range(columns.get_n_items()):
                 assert columns.get_item(index).get_resizable() is True
 
+    def test_quote_evidence_shows_date_and_source_without_age(self, app, window, populated_book):
+        """Issue #151: the quote date is enough; no "N days old"."""
+        from breadsched.gen.lib import (
+            Account,
+            AccountType,
+            Commodity,
+            CommodityPrice,
+            Money,
+            Split,
+            Transaction,
+        )
+
+        app.open_book(populated_book)
+        db = app.db
+        usd = db.get_commodity_by_mnemonic("USD")
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        cash = Account(name="Euro cash", atype=AccountType.BANK, commodity=euro.handle)
+        opening = next(a for a in db.iter_accounts() if a.atype is AccountType.EQUITY)
+        entry = Transaction(post_date=date(2026, 1, 2), description="Euro opening")
+        entry.currency = euro.handle
+        entry.splits = [Split(cash.handle, Money(10)), Split(opening.handle, Money(-10))]
+        with db.transaction("Euro cash") as txn:
+            db.add_commodity(euro, txn)
+            db.add_account(cash, txn)
+            db.add_transaction(entry, txn)
+            db.add_price(
+                CommodityPrice(
+                    commodity=euro.handle,
+                    currency=usd.handle,
+                    quote_date=date(2026, 1, 3),
+                    value=Money("1.10"),
+                    source="bank",
+                ),
+                txn,
+            )
+        window.show_category("accounts")
+        evidence = window._views["accounts"]._quote_evidence(db.get_account(cash.handle))
+        assert evidence == "2026-01-03 · bank"
+
     def test_amounts_sort_as_numbers_not_text(self):
         from breadsched.gui.views._base import _numeric
 
