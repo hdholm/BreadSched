@@ -29,7 +29,7 @@ from ...gen.services import (
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
-from ._base import BaseView, Row, column, column_menu, sorted_model, unwrap
+from ._base import BaseView, Row, column, sorted_model, table_section, unwrap
 
 __all__ = ["ScheduledView", "UpcomingView", "ScheduleSplitRow"]
 
@@ -152,24 +152,18 @@ class ScheduledView(BaseView):
 
         self.definitions_view = self._definitions_view()
         self.estimates_view = self._definitions_view()
-        bar.append(column_menu("scheduled-commitments", self.definitions_view, self._settings()))
-        bar.append(column_menu("scheduled-estimates", self.estimates_view, self._settings()))
         self.append(bar)
-        commitments_heading = Gtk.Label(label="Commitments and account payments", xalign=0)
-        commitments_heading.add_css_class("total-row")
-        commitments_heading.set_margin_start(12)
-        self.append(commitments_heading)
-        commitments_scroller = Gtk.ScrolledWindow(child=self.definitions_view)
-        commitments_scroller.set_vexpand(True)
-        self.append(commitments_scroller)
-
-        estimates_heading = Gtk.Label(label="Estimates", xalign=0)
-        estimates_heading.add_css_class("total-row")
-        estimates_heading.set_margin_start(12)
-        self.append(estimates_heading)
-        estimates_scroller = Gtk.ScrolledWindow(child=self.estimates_view)
-        estimates_scroller.set_vexpand(True)
-        self.append(estimates_scroller)
+        # Each table carries its own column chooser in its heading (#153).
+        for view, view_id, title in (
+            (self.definitions_view, "scheduled-commitments", "Commitments and account payments"),
+            (self.estimates_view, "scheduled-estimates", "Estimates"),
+        ):
+            section = table_section(view, view_id, self._settings(), title=title)
+            for side in ("start", "end"):
+                getattr(section, f"set_margin_{side}")(12)
+            section.scroller.set_vexpand(True)
+            section.set_vexpand(True)
+            self.append(section)
 
         self.status = Gtk.Label(xalign=0)
         self.status.add_css_class("dim")
@@ -630,7 +624,6 @@ class UpcomingView(BaseView):
         self.upcoming_view.append_column(
             column("Amount", lambda o: o.amount.format(), numeric=True)
         )
-        bar.append(column_menu("upcoming", self.upcoming_view, self._settings()))
         self.append(bar)
 
         self.status = Gtk.Label(xalign=0)
@@ -639,9 +632,14 @@ class UpcomingView(BaseView):
             getattr(self.status, f"set_margin_{side}")(12)
         self.append(self.status)
 
-        scroller = Gtk.ScrolledWindow(child=self.upcoming_view)
-        scroller.set_vexpand(True)
-        self.append(scroller)
+        self.table = table_section(
+            self.upcoming_view, "upcoming", self._settings(), table_label="upcoming"
+        )
+        for side in ("start", "end"):
+            getattr(self.table, f"set_margin_{side}")(12)
+        self.table.scroller.set_vexpand(True)
+        self.table.set_vexpand(True)
+        self.append(self.table)
 
     def _settings(self):
         return getattr(self.manager.get_application(), "view_settings", None)

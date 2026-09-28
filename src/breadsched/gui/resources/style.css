@@ -19,3 +19,11 @@
 .data-table row:nth-child(even):not(:selected) {
     background: alpha(currentColor, 0.04);
 }
+
+/* Dashboard groups, bills, and income are separate sections, each sized to its
+   own columns (#152). */
+.dashboard-section {
+    background: alpha(currentColor, 0.03);
+    border-radius: 8px;
+    padding: 8px 10px;
+}

@@ -5095,3 +5095,49 @@ class TestChromeCleanup:
 
         walk(bar)
         assert any("full transaction editor" in text for text in found)
+
+
+def _descendants(widget):
+    for child in _children(widget):
+        yield child
+        yield from _descendants(child)
+
+
+class TestTableSections:
+    """#152/#153: each table owns its column chooser; Dashboard sections are sized."""
+
+    VIEWS = ("dashboard", "register", "accounts", "scheduled", "upcoming")
+
+    def test_every_chooser_sits_with_its_own_table(self, app, window, populated_book):
+        app.open_book(populated_book)
+        for key in self.VIEWS:
+            window.show_category(key)
+            view = window._views[key]
+            toolbar = view.get_first_child()
+            choosers = [
+                widget
+                for widget in _descendants(view)
+                if isinstance(widget, Gtk.MenuButton) and hasattr(widget, "column_view")
+            ]
+            assert choosers, key
+            tooltips = [chooser.get_tooltip_text() for chooser in choosers]
+            assert len(set(tooltips)) == len(tooltips), key
+            for chooser in choosers:
+                assert chooser not in set(_descendants(toolbar)), key
+                assert chooser.get_tooltip_text().startswith("Choose "), key
+                section = chooser.get_parent().get_parent()
+                assert chooser.column_view in set(_descendants(section)), key
+
+    def test_dashboard_sections_are_separate_and_not_stretched(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        sections = (view.groups_section, view.bills_section, view.income_section)
+        for section in sections:
+            assert section.get_hexpand() is False
+            assert section.get_halign() == Gtk.Align.START
+        assert view.bills_section.heading.get_text() == "Pending bills"
+        assert view.income_section.heading.get_text() == "Expected income"
+        assert view.bills_view in set(_descendants(view.bills_section))
+        assert view.income_view in set(_descendants(view.income_section))
+        assert view.groups in set(_descendants(view.groups_section))

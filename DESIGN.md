@@ -1041,6 +1041,17 @@ right alignment without that class, now carry it too. None of this is meant to
 reproduce GnuCash's specific appearance; it corrects concrete overlap, spacing,
 and legibility defects while keeping BreadSched's own idiom.
 
+Every table is built with `_base.table_section()`: a heading row carrying the
+table's own column chooser (`column_menu`, whose tooltip names the table), above a
+scrolled window holding the `Gtk.ColumnView`. Column choosers never sit in a view's
+toolbar, where two identical icons could not be told apart (#153); hidden columns
+are still remembered per view id. The Dashboard places its account groups, pending
+bills, and expected income in a `Gtk.FlowBox` of separate `dashboard-section`
+cards (#152). Each section is aligned to the start and sized to its own content:
+table sections propagate their natural width and height up to fixed bounds
+(900 × 420 pixels), beyond which the table scrolls inside its card, so a long row
+still cannot widen the window (#140). The whole Dashboard scrolls vertically.
+
 ## Register presentation and basic entry
 
 Register windows are independent presentation consumers of one open `DbSQLite`

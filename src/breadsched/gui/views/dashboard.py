@@ -18,7 +18,7 @@ from __future__ import annotations
 from ...gen.engine import dashboard as engine
 from ...gen.lib.money import Money
 from ..gi_setup import Gio, Gtk, Pango
-from ._base import BaseView, Row, column, column_menu, sorted_model
+from ._base import BaseView, Row, column, sorted_model, table_section
 
 __all__ = ["DashboardView"]
 
@@ -81,21 +81,37 @@ class DashboardView(BaseView):
         self._bar = bar
         self.append(bar)
 
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        for side in ("start", "end", "bottom"):
+            getattr(content, f"set_margin_{side}")(12)
         self.cards = Gtk.Box(spacing=14)
-        for side in ("start", "end"):
-            getattr(self.cards, f"set_margin_{side}")(12)
-        self.append(self.cards)
+        content.append(self.cards)
+
+        # Groups, bills, and income are separate sections, each sized to its own
+        # columns rather than stretched to the window; they sit side by side when
+        # the window has room and stack when it does not (#152).
+        self.sections = Gtk.FlowBox()
+        self.sections.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.sections.set_homogeneous(False)
+        self.sections.set_max_children_per_line(3)
+        self.sections.set_column_spacing(24)
+        self.sections.set_row_spacing(12)
+        self.sections.set_valign(Gtk.Align.START)
+        content.append(self.sections)
 
         self.groups = Gtk.Grid(column_spacing=18, row_spacing=3)
-        for side in ("start", "end", "top"):
-            getattr(self.groups, f"set_margin_{side}")(12)
-        self.append(self.groups)
+        self.groups_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.groups_section.add_css_class("table-section")
+        groups_heading = Gtk.Label(label="Account groups", xalign=0)
+        groups_heading.add_css_class("total-row")
+        self.groups_section.append(groups_heading)
+        self.groups_section.append(self.groups)
+        self._add_section(self.groups_section)
 
-        heading = Gtk.Label(label="Pending bills", xalign=0)
-        heading.add_css_class("total-row")
-        for side in ("start", "top"):
-            getattr(heading, f"set_margin_{side}")(12)
-        self.append(heading)
+        outer = Gtk.ScrolledWindow(child=content)
+        outer.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        outer.set_vexpand(True)
+        self.append(outer)
 
         self.bills_view = Gtk.ColumnView()
         self.bills_view.add_css_class("data-table")
@@ -153,16 +169,10 @@ class DashboardView(BaseView):
                 lambda b: "Account payment" if b.generated else "Committed",
             )
         )
-        bar.append(column_menu("dashboard", self.bills_view, self._settings()))
-
-        scroller = Gtk.ScrolledWindow(child=self.bills_view)
-        scroller.set_vexpand(True)
-        self.append(scroller)
-
-        income_heading = Gtk.Label(label="Expected income", xalign=0)
-        income_heading.add_css_class("total-row")
-        income_heading.set_margin_start(12)
-        self.append(income_heading)
+        self.bills_section = table_section(
+            self.bills_view, "dashboard", self._settings(), title="Pending bills"
+        )
+        self._add_section(self.bills_section)
 
         self.income_view = Gtk.ColumnView()
         self.income_view.add_css_class("data-table")
@@ -200,10 +210,24 @@ class DashboardView(BaseView):
         self.income_view.append_column(
             column("Annual", lambda item: item.annual.format(), numeric=True)
         )
-        bar.append(column_menu("dashboard-income", self.income_view, self._settings()))
-        income_scroller = Gtk.ScrolledWindow(child=self.income_view)
-        income_scroller.set_vexpand(True)
-        self.append(income_scroller)
+        self.income_section = table_section(
+            self.income_view, "dashboard-income", self._settings(), title="Expected income"
+        )
+        self._add_section(self.income_section)
+
+    def _add_section(self, section: Gtk.Box) -> None:
+        """Size a section to its content, bounded so no row can widen the window."""
+        section.add_css_class("dashboard-section")
+        section.set_halign(Gtk.Align.START)
+        section.set_valign(Gtk.Align.START)
+        section.set_hexpand(False)
+        scroller = getattr(section, "scroller", None)
+        if scroller is not None:
+            scroller.set_propagate_natural_width(True)
+            scroller.set_propagate_natural_height(True)
+            scroller.set_max_content_width(_SECTION_MAX_WIDTH)
+            scroller.set_max_content_height(_SECTION_MAX_HEIGHT)
+        self.sections.append(section)
 
     def _settings(self):
         return getattr(self.manager.get_application(), "view_settings", None)
@@ -328,6 +352,7 @@ class DashboardView(BaseView):
         _empty(self.groups)
         board = self.board
         assert board is not None
+        self.groups_section.set_visible(bool(board.groups))
 
         headings = ("Group", "Value", "Owed", "Equity / total", "LTV", "Loan end")
         for position, heading in enumerate(headings):
@@ -348,7 +373,6 @@ class DashboardView(BaseView):
             # (issue #140) and keep the whole text in the tooltip.
             name.set_ellipsize(Pango.EllipsizeMode.END)
             name.set_max_width_chars(_GROUP_LABEL_CHARS)
-            name.set_hexpand(True)
             # The row names the group and its own valuation note; the tooltip lists
             # every account it covers, one per line (#150).
             tooltip = [group.path if group.path else group.name]
@@ -433,6 +457,10 @@ class DashboardView(BaseView):
 _GROUP_LABEL_CHARS = 60
 #: Widest a headline card's text may ask to be before it wraps.
 _CARD_TEXT_CHARS = 40
+#: Upper bounds for a bills or income section's natural size; beyond them the
+#: table scrolls inside its section instead of widening the window (#140, #152).
+_SECTION_MAX_WIDTH = 900
+_SECTION_MAX_HEIGHT = 420
 
 
 def _empty(container: Gtk.Widget) -> None:

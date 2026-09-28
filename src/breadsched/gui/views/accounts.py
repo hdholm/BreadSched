@@ -19,8 +19,8 @@ from ._base import (
     Row,
     _compare_by,
     column,
-    column_menu,
     sorted_model,
+    table_section,
     unwrap,
 )  # noqa: E402
 
@@ -106,19 +106,21 @@ class AccountTreeView(BaseView):
         self.column_view.append_column(column("Quote evidence", self._quote_evidence))
         self.column_view.connect("activate", self._on_activated)
 
-        self._header.append(
-            column_menu(
-                "accounts",
-                self.column_view,
-                getattr(self.manager.get_application(), "view_settings", None),
-            )
-        )
         self.append(self._header)
         self.append(self.summary)
 
-        scroller = Gtk.ScrolledWindow(child=self.column_view)
-        scroller.set_vexpand(True)
-        self.append(scroller)
+        # The column chooser sits in the table's own header, not the toolbar (#153).
+        self.table = table_section(
+            self.column_view,
+            "accounts",
+            getattr(self.manager.get_application(), "view_settings", None),
+            table_label="account",
+        )
+        for side in ("start", "end"):
+            getattr(self.table, f"set_margin_{side}")(8)
+        self.table.scroller.set_vexpand(True)
+        self.table.set_vexpand(True)
+        self.append(self.table)
 
     # ----------------------------------------------------------------- columns
 
