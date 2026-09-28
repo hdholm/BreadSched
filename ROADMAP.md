@@ -31,8 +31,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
    PR per issue:
-   - Correctness: Accounts quote evidence shows date and source without a
-     relative age (#151).
    - Layout: Dashboard groups, bills, and income become separate sections sized to
      their own columns (#152); every column chooser sits with the table it
      controls (#153); every table keeps all columns visible as the window narrows,

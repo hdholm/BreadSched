@@ -263,7 +263,9 @@ def test_account_summary_cli_discloses_missing_currency_quote(capsys, book_path)
     assert dated["quote_age_days"] == 7
     code, shown = run(capsys, "accounts", book_path, "--as-of", "2026-01-10")
     assert code == 0
-    assert "7 days old" in shown
+    # The quote date is shown; a relative age is not (#151).
+    assert "2026-01-03" in shown
+    assert "days old" not in shown
 
 
 class TestInit:
