@@ -437,6 +437,12 @@ it has none is its latest as-of quote in any other currency used: the market val
 is computed exactly in that quote currency and then converted once with
 `convert_currency` (direct, else inverse) as of the same date. This is one exchange
 hop from the security's own quote currency, never a chain through a third currency.
+
+Currency conversion is **direct rate only**, by the owner's decision (#173): a
+currency converts to another only through that pair's own as-of quote, or the
+inverse of the reverse pair. No bridge or intermediate currency is ever used, even
+when quotes through a third currency would connect the two, so a missing pair
+always remains an explicit missing quote rather than an inferred chain.
 `AccountValuation.exchange` carries that conversion's evidence; when it is missing
 the valuation is flagged `missing_quote`, keeps the market value in the quote
 currency (so Projection reports it as unconverted), and is left out of totals.
