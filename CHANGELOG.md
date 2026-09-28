@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a170 - 2026-09-28
+
+- **CSV category, payee, and currency columns.** A CSV statement can now map an
+  optional category column (an existing account by full name, or by a name no
+  other account shares), a payee column (a payee you already have), and a currency
+  column (which must match the account's currency) in GTK, the browser, and
+  `breadsched import-csv --category/--payee/--currency`. An unknown or ambiguous
+  category, or another currency, makes the row invalid with the reason; an unknown
+  payee is noted and the row imports without one. Nothing is created from these
+  columns, and re-import never re-categorizes an accepted row. Application version
+  `0.2.0a170`; native schema remains 9.
+
 ## 0.2.0a169 - 2026-09-28
 
 - **A QIF transfer listed in both accounts is imported once (#176).** A

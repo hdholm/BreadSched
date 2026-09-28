@@ -4221,6 +4221,37 @@ class TestCsvImport:
             **extra,
         }
 
+    def test_category_column_maps_to_an_account_or_refuses_the_row(self, client, tmp_path):
+        path = tmp_path / "categorized.csv"
+        path.write_text(
+            "Date,Description,Amount,Category\n"
+            "2026-02-03,Corner Grocer,-42.10,Expenses:Rent\n"
+            "2026-02-04,Mystery,-5.00,Nowhere\n",
+            encoding="utf-8",
+        )
+        mapping = {"date": "Date", "amount": "Amount", "description": "Description"}
+        request = self._request(client, path, mapping={**mapping, "category": "Category"})
+        status, preview = client.post("/api/import/csv/preview", request)
+        assert status == 200
+        first, second = preview["rows"]
+        assert first["category"] == "Expenses:Rent"
+        assert (second["status"], second["reason"]) == (
+            "invalid",
+            "category 'Nowhere' is not an account in the book",
+        )
+        before = len(list(client.database.iter_transactions()))
+        status, imported = client.post("/api/import/csv", request)
+        assert status == 200
+        assert imported["new"] == 1
+        rent = client.database.get_account_by_name("Expenses:Rent")
+        added = [
+            item
+            for item in client.database.iter_transactions()
+            if item.description == "Corner Grocer" and item.post_date.isoformat() == "2026-02-03"
+        ]
+        assert len(list(client.database.iter_transactions())) == before + 1
+        assert rent.handle in {split.account for split in added[0].splits}
+
     def test_inspect_preview_and_import(self, client, tmp_path):
         path = tmp_path / "statement.csv"
         path.write_text(self.STATEMENT, encoding="utf-8")
@@ -4258,6 +4289,9 @@ class TestCsvImport:
             "memo": "",
             "status": "new",
             "reason": "",
+            "category": None,
+            "payee": None,
+            "note": "",
         }
         assert len(list(client.database.iter_transactions())) == before
 

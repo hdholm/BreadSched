@@ -84,6 +84,12 @@ class CsvMapping:
     credit: str | None = None
     description: str | None = None
     memo: str | None = None
+    #: An account for the other side, by full name or unique account name.
+    category: str | None = None
+    #: A payee already in the book, by name or description key.
+    payee: str | None = None
+    #: A currency code that must match the target account's currency.
+    currency: str | None = None
     date_format: CsvDateFormat | Literal["auto"] = "auto"
     number_format: NumberFormat | Literal["auto"] = "auto"
     encoding: str = "auto"
@@ -107,6 +113,12 @@ class CsvRow:
     identity: str = ""
     #: The already-imported, possibly duplicated, or transfer-side transaction.
     existing: str | None = None
+    #: The mapped category account; ``None`` posts to Uncategorized CSV.
+    category: str | None = None
+    #: The mapped payee.
+    payee: str | None = None
+    #: A note that does not stop the row, such as an unknown payee.
+    note: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -298,7 +310,11 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
     credit_col = _column(mapping.credit, labels, mapping.header, "credit")
     description_col = _column(mapping.description, labels, mapping.header, "description")
     memo_col = _column(mapping.memo, labels, mapping.header, "memo")
+    category_col = _column(mapping.category, labels, mapping.header, "category")
+    payee_col = _column(mapping.payee, labels, mapping.header, "payee")
+    currency_col = _column(mapping.currency, labels, mapping.header, "currency")
     assert date_col is not None
+    resolve = _Resolver(db, account)
 
     def cell(row: Sequence[str], index: int | None) -> str:
         return row[index].strip() if index is not None and index < len(row) else ""
@@ -364,6 +380,7 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         for occurrence in range(1, count + 1)
     }
 
+    rows_by_line = dict(numbered)
     existing_by_key, linked, candidates = _index_book(db, account)
     occurrences: dict[tuple[object, ...], int] = {}
     rows: list[CsvRow] = []
@@ -383,6 +400,14 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
                 CsvRow(line, when, amount, description, memo, "imported", "", identity, imported)
             )
             continue
+        source_row = rows_by_line[line]
+        problem = resolve.currency(cell(source_row, currency_col))
+        category, category_problem = resolve.category(cell(source_row, category_col))
+        problem = problem or category_problem
+        if problem:
+            rows.append(CsvRow(line, when, amount, description, memo, "invalid", problem))
+            continue
+        payee, note = resolve.payee(cell(source_row, payee_col))
         others = [
             handle for handle in existing_by_key.get((when, amount), []) if handle not in family
         ]
@@ -398,10 +423,27 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
                     "same date and amount as a transaction already in this account",
                     identity,
                     others[0],
+                    category=category,
+                    payee=payee,
+                    note=note,
                 )
             )
             continue
-        rows.append(CsvRow(line, when, amount, description, memo, "new", "", identity))
+        rows.append(
+            CsvRow(
+                line,
+                when,
+                amount,
+                description,
+                memo,
+                "new",
+                "",
+                identity,
+                category=category,
+                payee=payee,
+                note=note,
+            )
+        )
     rows = _offer_transfers(rows, candidates)
     return CsvPreview(
         str(source),
@@ -413,6 +455,62 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         tuple(labels),
         tuple(rows),
     )
+
+
+class _Resolver:
+    """Map optional category, payee, and currency cells to what the book has.
+
+    Nothing is invented: a category must name one existing account (its full name,
+    or a name no other account shares), and a currency must be the target
+    account's. Those problems stop the row. An unknown payee only leaves the row
+    without one.
+    """
+
+    def __init__(self, db: DbSQLite, account: str) -> None:
+        from ...gen.engine.payees import match_key, payee_index
+
+        self._match_key = match_key
+        self._by_full: dict[str, str] = {}
+        self._by_name: dict[str, list[str]] = {}
+        for item in db.iter_accounts():
+            if item.is_root or item.placeholder or item.handle == account:
+                continue
+            self._by_full[db.full_name(item).casefold()] = item.handle
+            self._by_name.setdefault(item.name.casefold(), []).append(item.handle)
+        payees = list(db.iter_payees())
+        self._payee_names = {payee.name.casefold(): payee.handle for payee in payees}
+        self._payee_keys = {key: payee.handle for key, payee in payee_index(payees).items()}
+        target = db.get_account(account)
+        commodity = db.get_commodity(target.commodity) if target and target.commodity else None
+        if commodity is None or not commodity.is_currency:
+            commodity = db.get_commodity(reporting_currency_handle(db))
+        self._currency = commodity.mnemonic if commodity is not None else ""
+
+    def currency(self, text: str) -> str:
+        if text and self._currency and text.strip().upper() != self._currency.upper():
+            return f"the row is in {text.strip()}, but the account is in {self._currency}"
+        return ""
+
+    def category(self, text: str) -> tuple[str | None, str]:
+        if not text:
+            return None, ""
+        wanted = text.strip().casefold()
+        if wanted in self._by_full:
+            return self._by_full[wanted], ""
+        matches = self._by_name.get(wanted, [])
+        if len(matches) == 1:
+            return matches[0], ""
+        if matches:
+            return None, f"category {text!r} matches several accounts; use its full name"
+        return None, f"category {text!r} is not an account in the book"
+
+    def payee(self, text: str) -> tuple[str | None, str]:
+        if not text:
+            return None, ""
+        found = self._payee_names.get(text.strip().casefold()) or self._payee_keys.get(
+            self._match_key(text)
+        )
+        return (found, "") if found else (None, f"payee {text!r} is not in the book")
 
 
 def _row_amount(row, cell, amount_col, debit_col, credit_col, number_format) -> Money:
@@ -483,7 +581,8 @@ def _offer_transfers(rows: list[CsvRow], candidates: list[_TransferSide]) -> lis
     pairs = sorted(
         (abs((row.when - side.when).days), index, side.when, side.transaction, side)
         for index, row in enumerate(rows)
-        if row.status == "new" and row.when is not None
+        # A row with a mapped category already says where its money went.
+        if row.status == "new" and row.when is not None and row.category is None
         for side in candidates
         if side.amount == row.amount and abs((row.when - side.when).days) <= TRANSFER_WINDOW_DAYS
     )
@@ -562,7 +661,7 @@ def import_rows(
                     result.observe("transaction", row.identity)
                     result.transactions_linked += 1
                     continue
-            counter = _counter_account(sink, db, row.amount)
+            counter = row.category or _counter_account(sink, db, row.amount)
             sink.transaction(
                 row.identity,
                 row.when,
@@ -573,6 +672,7 @@ def import_rows(
                     {"account": preview.account, "value": row.amount, "memo": row.memo},
                     {"account": counter, "value": -row.amount},
                 ],
+                payee=row.payee,
             )
         result.finish(db, txn)
     db.emit("database-changed", (db,))

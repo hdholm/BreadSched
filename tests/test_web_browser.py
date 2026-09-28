@@ -102,7 +102,7 @@ def test_csv_statement_maps_previews_and_imports(page, served, tmp_path):
     assert panel.locator("tbody tr").count() == 2
     panel.get_by_role("button", name="Preview").click()
     page.wait_for_selector("text=New: 2")
-    assert panel.locator("tbody tr").first.locator("td").nth(4).inner_text() == "New"
+    assert panel.locator("tbody tr").first.locator("td").nth(6).inner_text() == "New"
     assert len(list(db.iter_transactions())) == before
 
     panel.locator("button.primary").click()

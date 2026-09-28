@@ -531,6 +531,9 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                 credit=args.credit,
                 description=args.description,
                 memo=args.memo,
+                category=args.category,
+                payee=args.payee,
+                currency=args.currency,
                 date_format=args.date_format,
                 number_format=args.number_format,
                 encoding=args.encoding,
@@ -553,7 +556,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
                     row.status.replace("_", " "),
-                    row.reason,
+                    row.reason or row.note,
                 ]
                 for row in preview.rows
             ]
@@ -584,6 +587,9 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                             "status": row.status,
                             "reason": row.reason,
                             "existing": row.existing,
+                            "category": db.full_name(row.category) if row.category else None,
+                            "payee": row.payee,
+                            "note": row.note,
                         }
                         for row in preview.rows
                     ],
@@ -2796,6 +2802,12 @@ def build_parser() -> argparse.ArgumentParser:
     csv_cmd.add_argument("--credit", help="money-in column, instead of --amount")
     csv_cmd.add_argument("--description", help="description or payee column")
     csv_cmd.add_argument("--memo", help="memo column")
+    csv_cmd.add_argument(
+        "--category",
+        help="category column: an existing account's full name or unique name",
+    )
+    csv_cmd.add_argument("--payee", help="payee column: a payee already in the book")
+    csv_cmd.add_argument("--currency", help="currency column; rows in another currency are refused")
     csv_cmd.add_argument(
         "--date-format", default="auto", choices=["auto", "iso", "month-first", "day-first"]
     )

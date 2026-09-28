@@ -25,7 +25,17 @@ from ..presentation import reimbursement_notice
 if TYPE_CHECKING:
     from .server import Api
 
-_TEXT_FIELDS = ("date", "amount", "debit", "credit", "description", "memo")
+_TEXT_FIELDS = (
+    "date",
+    "amount",
+    "debit",
+    "credit",
+    "description",
+    "memo",
+    "category",
+    "payee",
+    "currency",
+)
 _CHOICES = {
     "date_format": ("auto", "iso", "month-first", "day-first"),
     "number_format": ("auto", "dot", "comma"),
@@ -67,6 +77,9 @@ def _mapping(payload: Mapping[str, Any]) -> CsvMapping:
         credit=columns["credit"],
         description=columns["description"],
         memo=columns["memo"],
+        category=columns["category"],
+        payee=columns["payee"],
+        currency=columns["currency"],
         date_format=cast(Any, _choice(raw, "date_format")),
         number_format=cast(Any, _choice(raw, "number_format")),
         encoding=_text(raw, "encoding", "auto") or "auto",
@@ -113,6 +126,7 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     if result.value is None:
         raise api._service_resource_error(result.errors[0])
     preview = result.value
+    payee_names = {payee.handle: payee.name for payee in api.db.iter_payees()}
     return {
         "encoding": preview.encoding,
         "delimiter": preview.delimiter,
@@ -135,6 +149,9 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
                 "memo": row.memo,
                 "status": row.status,
                 "reason": row.reason,
+                "category": api.db.full_name(row.category) if row.category else None,
+                "payee": payee_names.get(row.payee) if row.payee else None,
+                "note": row.note,
             }
             for row in preview.rows
         ],

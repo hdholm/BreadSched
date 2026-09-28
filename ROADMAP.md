@@ -204,9 +204,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Import and GnuCash interoperability
 
-- Extend CSV import mapping to optional payee, category, currency, and split
-  columns. Reject ambiguous mappings rather than inventing ledger accounts or
-  balancing splits.
+- Extend CSV import mapping to split columns (several category/amount pairs per
+  row). Reject ambiguous mappings rather than inventing ledger accounts or
+  balancing splits, as the category, payee, and currency columns already do.
 
 - Extend the held-change review for locally reconciled transactions (#117) to
   GnuCash deletions. A source-deleted transaction is retained only while a

@@ -303,3 +303,116 @@ def test_windows_line_endings_give_the_same_rows_and_identities(db, book, tmp_pa
 
     assert right.description == "Hardware, Inc.\nStore 12"
     assert right.identity == left.identity
+
+
+MAPPED = """Date,Description,Amount,Category,Payee,Currency
+2026-09-01,CORNER GROCER #12,-42.10,Groceries,Corner Grocer,USD
+2026-09-02,Salary,1500.00,Income:Salary,,usd
+2026-09-03,Mystery,-5.00,Nowhere,,USD
+2026-09-04,Abroad,-9.00,,,EUR
+2026-09-05,Unknown shop,-7.00,,Someone New,
+"""
+
+
+def test_category_payee_and_currency_columns_map_to_the_book(db, book, tmp_path):
+    from breadsched.gen.services.payees import SavePayee, save_payee
+
+    grocer = save_payee(db, SavePayee(name="Corner Grocer", matches=("corner grocer",)))
+    assert grocer.value is not None
+    path = tmp_path / "mapped.csv"
+    path.write_text(MAPPED, encoding="utf-8")
+    request = _request(
+        path,
+        book.checking,
+        memo=None,
+        category="Category",
+        payee="Payee",
+        currency="Currency",
+    )
+
+    preview = preview_csv_import(db, request).value
+    assert preview is not None
+    rows = {row.description: row for row in preview.rows}
+    assert rows["CORNER GROCER #12"].category == book.groceries
+    assert rows["CORNER GROCER #12"].payee == grocer.value.handle
+    assert rows["Salary"].category == book.salary
+    assert (rows["Mystery"].status, rows["Mystery"].reason) == (
+        "invalid",
+        "category 'Nowhere' is not an account in the book",
+    )
+    assert rows["Abroad"].status == "invalid"
+    assert rows["Abroad"].reason == "the row is in EUR, but the account is in USD"
+    assert rows["Unknown shop"].status == "new"
+    assert rows["Unknown shop"].payee is None
+    assert rows["Unknown shop"].note == "payee 'Someone New' is not in the book"
+
+    imported = import_csv(db, request).value
+    assert imported is not None
+    assert imported.result.transactions_new == 3
+    by_description = {item.description: item for item in db.iter_transactions()}
+    grocery = by_description["CORNER GROCER #12"]
+    assert grocery.payee == grocer.value.handle
+    assert {split.account for split in grocery.splits} == {book.checking, book.groceries}
+    salary = by_description["Salary"]
+    assert {split.account for split in salary.splits} == {book.checking, book.salary}
+    assert "Mystery" not in by_description and "Abroad" not in by_description
+    assert all(item.name != "Nowhere" for item in db.iter_accounts())
+
+
+def test_a_category_shared_by_two_accounts_needs_its_full_name(db, book, tmp_path):
+    from breadsched.gen.lib import Account, AccountType
+
+    with db.transaction("Second groceries") as txn:
+        db.add_account(
+            Account(name="Groceries", atype=AccountType.EXPENSE, parent=book.utilities), txn
+        )
+    path = tmp_path / "shared.csv"
+    path.write_text(
+        "Date,Amount,Category\n2026-09-01,-1.00,Groceries\n2026-09-02,-2.00,Expenses:Groceries\n",
+        encoding="utf-8",
+    )
+    preview = preview_csv_import(
+        db, _request(path, book.checking, description=None, memo=None, category="Category")
+    ).value
+    assert preview is not None
+    first, second = preview.rows
+    assert first.status == "invalid"
+    assert "matches several accounts" in first.reason
+    assert second.category == book.groceries
+
+
+def test_cli_maps_the_category_column(tmp_path, capsys):
+    import json
+
+    from breadsched.cli.main import main
+    from breadsched.gen.sample_book import create_sample_book
+
+    book_path = tmp_path / "cli.breadsched"
+    create_sample_book(book_path, as_of=date(2026, 8, 15))
+    path = tmp_path / "categorized.csv"
+    path.write_text(
+        "Date,Description,Amount,Category\n2026-09-01,Food,-18.00,Expenses:Groceries\n"
+        "2026-09-02,Mystery,-1.00,Nowhere\n",
+        encoding="utf-8",
+    )
+    command = [
+        "import-csv",
+        str(book_path),
+        str(path),
+        "--account",
+        "Checking",
+        "--date",
+        "Date",
+        "--amount",
+        "Amount",
+        "--description",
+        "Description",
+        "--category",
+        "Category",
+    ]
+
+    assert main([*command, "--preview", "--json"]) == 0
+    rows = json.loads(capsys.readouterr().out)["rows"]
+    assert rows[0]["category"] == "Expenses:Groceries"
+    assert rows[1]["status"] == "invalid"
+    assert "Nowhere" in rows[1]["reason"]
