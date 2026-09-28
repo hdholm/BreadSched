@@ -280,19 +280,40 @@ Headings use account-appropriate household language such as Deposit/Withdrawal o
 descriptions, numbers, notes, split memos, and account names without changing the
 full-ledger running balance.
 
-Quick entry creates an ordinary two-split transaction:
+The last row of every desktop register is a blank transaction. Type a new entry
+straight into it:
 
-1. Choose the other visible account.
-2. Enter a positive amount and the transaction details.
-3. Choose the button whose label describes the effect on the displayed account.
+1. Enter the date (it starts as the date you last entered, or today), an optional
+   number, and a description. Choose a payee if you use one.
+2. Choose the other visible account under **Transfer**.
+3. Type a positive amount under the heading that describes the effect on this
+   account, such as **Deposit** or **Withdrawal**. Typing in one clears the other.
+4. Press **Enter** to save it. The row empties for the next entry, keeping the
+   date.
 
-When you leave the description, quick entry looks for the latest earlier
+**Tab** and **Shift+Tab** move between the row's fields, and **Escape** clears
+the row. If something is missing or wrong, the line under the register says
+what. Your typing stays in place, and the cursor moves to that field. The row is
+greyed out, with the reason shown in its Description cell, for a hidden or
+placeholder account.
+
+When you leave the description, BreadSched looks for the latest earlier
 transaction in this account whose description matches (ignoring case,
-punctuation, and words containing digits, such as store numbers). If it finds one
-and you have not typed an amount, it fills in that transaction's other account and
-amount and says where they came from, and which button would repeat it. Change
-anything you like; nothing is posted until you choose a button. Notes,
-reconciliation, planning links, and FSA claims are never copied.
+punctuation, and words containing digits, such as store numbers). It fills only
+what you have not yet typed or chosen: the transfer account, the amount under the
+same heading, and the payee. The line under the register says where they came
+from. Nothing is saved until you press Enter. Notes, reconciliation, planning
+links, and FSA claims are never copied.
+
+For more than two splits, choose **Split…** at the end of the row. It opens the
+full transaction editor filled in with what you typed. Saving there empties the
+row, and cancelling leaves it as it was. If you switch accounts, open another
+transaction, or close a register window while the row holds typing, BreadSched
+asks whether to save it, discard it, or stay.
+
+The browser interface keeps its quick-entry form for now. It creates the same
+kind of two-split transaction, and you post it with the button whose label
+describes the effect on the account.
 
 Use the full transaction editor for additional splits, notes, reconciliation
 metadata, FSA links, or investment classifications. A transaction cannot be saved

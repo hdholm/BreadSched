@@ -616,7 +616,7 @@ class TestServiceBoundaries:
     @pytest.mark.parametrize(
         ("relative", "class_name", "method_name", "service_call"),
         (
-            ("gui/views/register.py", "RegisterView", "_post_quick", "save_transaction"),
+            ("gui/views/blank_entry.py", "BlankEntryRow", "commit", "save_transaction"),
             (
                 "gui/dialogs/transaction_dialog.py",
                 "TransactionDialog",

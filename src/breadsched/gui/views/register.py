@@ -17,26 +17,23 @@ from datetime import date
 
 from ...gen.engine import ledger  # noqa: E402
 from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
-from ...gen.lib.amount import Amount
-from ...gen.lib.money import Money
-from ...gen.services import (
-    SaveTransaction,
-    TransactionInput,
-    TransactionSplitInput,
-    save_transaction,
-    transaction_currency,
-)
-from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
-from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
 from ..gi_setup import Gio, GLib, Gtk, Pango
-from ._base import BaseView, Row, column, sorted_model, table_section, unwrap  # noqa: E402
+from ._base import (  # noqa: E402
+    BaseView,
+    Row,
+    column,
+    host_widget,
+    sorted_model,
+    table_section,
+    unwrap,
+)
+from .blank_entry import BLANK, BlankEntry, BlankEntryRow
 
 __all__ = ["RegisterView", "column_headings"]
 
 
 def _is_parent(payload) -> bool:
-    return not isinstance(payload, SplitRow)
+    return not isinstance(payload, (SplitRow, BlankEntry))
 
 
 class SplitRow:
@@ -96,7 +93,6 @@ class RegisterView(BaseView):
         self.account_handle: str | None = None
         self._rows: list = []
         self._pickable: list = []
-        self._quick_pickable: list = []
         # Repopulating the picker resets its selection, which fires
         # notify::selected and would otherwise overwrite the account the caller
         # just asked for.
@@ -126,8 +122,8 @@ class RegisterView(BaseView):
         bar.append(self.balance_label)
 
         add_button = Gtk.Button(icon_name="list-add-symbolic")
-        # Quick entry below handles an ordinary two-split transaction without a
-        # dialog; this opens the full editor for anything quick entry cannot do.
+        # The blank row at the bottom takes an ordinary two-split transaction
+        # directly (#158); this opens the full editor for anything it cannot do.
         add_button.set_tooltip_text(
             "Open the full transaction editor (extra splits, notes, reconciliation)"
         )
@@ -144,6 +140,11 @@ class RegisterView(BaseView):
         self.reconcile_button.connect("clicked", self._on_reconcile_clicked)
         bar.append(self.reconcile_button)
 
+        # The blank entry row's widgets live as long as the view, so typing in
+        # them survives the register repainting around them (#158).
+        self.blank = BlankEntryRow(self)
+        cell = self._blank_cell
+
         self.column_view = Gtk.ColumnView()
         self.column_view.add_css_class("data-table")
         self.column_view.set_show_row_separators(True)
@@ -153,29 +154,41 @@ class RegisterView(BaseView):
                 "Date",
                 lambda r: r.post_date.isoformat() if _is_parent(r) else "",
                 sort_key=lambda r: r.transaction.post_date,
+                cell=cell("Date"),
             )
         )
         self.column_view.append_column(
-            column("Num", lambda r: r.transaction.num if _is_parent(r) else "")
+            column("Num", lambda r: r.transaction.num if _is_parent(r) else "", cell=cell("Num"))
         )
         # The description carries the expander, so splits appear indented directly
         # beneath the transaction they belong to.
         self.column_view.append_column(self._description_column())
         self.column_view.append_column(
-            column("Payee", lambda r: self._payee_name(r.transaction) if _is_parent(r) else "")
+            column(
+                "Payee",
+                lambda r: self._payee_name(r.transaction) if _is_parent(r) else "",
+                cell=cell("Payee"),
+            )
         )
         self.column_view.append_column(
             column(
                 "Transfer",
                 lambda r: r.transfer_label(self.db) if _is_parent(r) else r.account_name,
                 expand=True,
+                cell=cell("Transfer"),
             )
         )
         self.debit_column = column(
-            "Increase", lambda r: r.debit.format() if r.debit else "", numeric=True
+            "Increase",
+            lambda r: r.debit.format() if r.debit else "",
+            numeric=True,
+            cell=cell("Increase"),
         )
         self.credit_column = column(
-            "Decrease", lambda r: r.credit.format() if r.credit else "", numeric=True
+            "Decrease",
+            lambda r: r.credit.format() if r.credit else "",
+            numeric=True,
+            cell=cell("Decrease"),
         )
         self.column_view.append_column(self.debit_column)
         self.column_view.append_column(self.credit_column)
@@ -184,50 +197,11 @@ class RegisterView(BaseView):
                 "Balance",
                 lambda r: r.running.format(parens_negative=True) if _is_parent(r) else "",
                 numeric=True,
+                cell=cell("Balance"),
             )
         )
 
         self.append(bar)
-
-        quick = Gtk.Box(spacing=8)
-        for side in ("bottom", "start", "end"):
-            getattr(quick, f"set_margin_{side}")(8)
-        quick.append(Gtk.Label(label="Quick entry"))
-        self.quick_date = Gtk.Entry(text=date.today().isoformat())
-        self.quick_date.set_size_request(110, -1)
-        self.quick_date.set_placeholder_text("YYYY-MM-DD")
-        quick.append(self.quick_date)
-        self.quick_description = Gtk.Entry(placeholder_text="Description")
-        self.quick_description.set_hexpand(True)
-        # Leaving the description proposes the latest matching entry's transfer
-        # account and amount; the user edits or ignores it before posting.
-        self.quick_description.connect("activate", lambda *_: self.propose_from_description())
-        leave = Gtk.EventControllerFocus()
-        leave.connect("leave", lambda *_: self.propose_from_description())
-        self.quick_description.add_controller(leave)
-        quick.append(self.quick_description)
-        self.quick_transfer = Gtk.DropDown()
-        self.quick_transfer.set_size_request(220, -1)
-        self.quick_transfer.set_tooltip_text("Other side of this two-split transaction")
-        quick.append(self.quick_transfer)
-        self.quick_amount = Gtk.Entry(placeholder_text="0.00", xalign=1)
-        self.quick_amount.set_size_request(110, -1)
-        self.quick_amount.add_css_class("numeric")
-        quick.append(self.quick_amount)
-        self.quick_debit_button = Gtk.Button(label="Increase")
-        self.quick_debit_button.connect("clicked", lambda *_: self._post_quick(True))
-        quick.append(self.quick_debit_button)
-        self.quick_credit_button = Gtk.Button(label="Decrease")
-        self.quick_credit_button.connect("clicked", lambda *_: self._post_quick(False))
-        quick.append(self.quick_credit_button)
-        self.append(quick)
-
-        self.quick_status = Gtk.Label(xalign=0, wrap=True)
-        self.quick_status.add_css_class("dim")
-        self.quick_status.set_margin_start(8)
-        self.quick_status.set_margin_end(8)
-        self.quick_status.set_margin_bottom(4)
-        self.append(self.quick_status)
 
         # The column chooser sits in the table's own header, not the toolbar (#153).
         self.table = table_section(
@@ -241,6 +215,32 @@ class RegisterView(BaseView):
         self.table.scroller.set_vexpand(True)
         self.table.set_vexpand(True)
         self.append(self.table)
+
+        # One line under the register reports what the blank row did or why not.
+        self.entry_status = Gtk.Label(xalign=0, wrap=True)
+        self.entry_status.add_css_class("dim")
+        for side in ("start", "end"):
+            getattr(self.entry_status, f"set_margin_{side}")(8)
+        self.entry_status.set_margin_bottom(4)
+        self.append(self.entry_status)
+
+    def _blank_cell(self, title: str):
+        """A cell hook that shows the blank row's widget for ``title`` (#158)."""
+        widget = self.blank.cells[title]
+        return lambda payload: widget if payload is BLANK else None
+
+    def set_entry_status(self, text: str, *, error: bool = False) -> None:
+        self.entry_status.set_text(text)
+        if error:
+            self.entry_status.add_css_class("negative")
+        else:
+            self.entry_status.remove_css_class("negative")
+
+    def scroll_to_end_on_refresh(self) -> None:
+        self._scroll_to_end = True
+
+    def cancel_scroll_to_end(self) -> None:
+        self._scroll_to_end = False
 
     # ------------------------------------------------------------------ model
 
@@ -265,18 +265,16 @@ class RegisterView(BaseView):
         debit, credit = column_headings(account.atype)
         self.debit_column.set_title(debit)
         self.credit_column.set_title(credit)
-        self.quick_debit_button.set_label(debit)
-        self.quick_credit_button.set_label(credit)
-        self._populate_quick_picker()
-        quick_enabled = (
-            not account.hidden and not account.placeholder and bool(self._quick_pickable)
-        )
-        self.quick_debit_button.set_sensitive(quick_enabled)
-        self.quick_credit_button.set_sensitive(quick_enabled)
+        self.blank.set_headings(debit, credit)
+        self.blank.populate(self.db, account.handle)
         if account.hidden:
-            self.quick_status.set_text(
-                "Hidden accounts remain readable but cannot be used for a new transaction."
-            )
+            self.blank.set_enabled(False, "Hidden accounts take no new transactions")
+        elif account.placeholder:
+            self.blank.set_enabled(False, "Placeholder accounts take no transactions")
+        elif not self.blank.transfers:
+            self.blank.set_enabled(False, "No other visible account to transfer to")
+        else:
+            self.blank.set_enabled(True)
 
         self._payee_names = {payee.handle: payee.name for payee in self.db.iter_payees()}
         self._rows = ledger.register(self.db, self.account_handle)
@@ -286,7 +284,13 @@ class RegisterView(BaseView):
                 continue
             store.append(Row(row))
         tree = Gtk.TreeListModel.new(store, False, False, self._children_of)
-        selection = Gtk.SingleSelection(model=sorted_model(self.column_view, tree))
+        # The blank row joins after sorting and filtering, so it stays last (#158).
+        blank = Gio.ListStore.new(Row)
+        blank.append(Row(BLANK))
+        parts = Gio.ListStore.new(Gio.ListModel)
+        parts.append(sorted_model(self.column_view, tree))
+        parts.append(blank)
+        selection = Gtk.SingleSelection(model=Gtk.FlattenListModel.new(parts))
         selection.set_autoselect(False)
         selection.set_selected(Gtk.INVALID_LIST_POSITION)
         selection.connect("notify::selected", self._on_selection_changed)
@@ -362,55 +366,31 @@ class RegisterView(BaseView):
                 self.account_picker.set_selected(index)
                 break
 
-    def _populate_quick_picker(self) -> None:
-        """Rebuild the other-account picker without offering hidden accounts."""
-        if self.db is None or self.account_handle is None:
-            return
-        selected = None
-        index = self.quick_transfer.get_selected()
-        if 0 <= index < len(self._quick_pickable):
-            selected = self._quick_pickable[index].handle
-        self._quick_pickable = sorted(
-            (
-                account
-                for account in self.db.iter_accounts()
-                if account.handle != self.account_handle
-                and not account.is_root
-                and not account.placeholder
-                and not account.hidden
-            ),
-            key=self.db.full_name,
-        )
-        model = Gtk.StringList()
-        for account in self._quick_pickable:
-            model.append(self.db.full_name(account))
-        self.quick_transfer.set_model(model)
-        target = next(
-            (
-                position
-                for position, account in enumerate(self._quick_pickable)
-                if account.handle == selected
-            ),
-            0,
-        )
-        if self._quick_pickable:
-            self.quick_transfer.set_selected(target)
-
     def _description_column(self) -> Gtk.ColumnViewColumn:
         factory = Gtk.SignalListItemFactory()
 
         def on_setup(_factory, item) -> None:
             expander = Gtk.TreeExpander()
+            expander.set_hexpand(True)
             label = Gtk.Label(xalign=0)
             label.set_ellipsize(Pango.EllipsizeMode.END)
             expander.set_child(label)
-            item.set_child(expander)
+            host = Gtk.Box()
+            host.label = expander
+            host.append(expander)
+            item.set_child(host)
 
         def on_bind(_factory, item) -> None:
             tree_row = item.get_item()
-            expander = item.get_child()
-            expander.set_list_row(tree_row)
+            host = item.get_child()
+            expander = host.label
             payload = unwrap(tree_row)
+            if payload is BLANK:
+                expander.set_list_row(None)
+                host_widget(host, self.blank.description)
+                return
+            host_widget(host, None)
+            expander.set_list_row(tree_row)
             label = expander.get_child()
             label.set_text(payload.description or "(no description)")
             if _is_parent(payload):
@@ -448,14 +428,23 @@ class RegisterView(BaseView):
         model = selection.get_model()
         for index in range(model.get_n_items()):
             tree_row = model.get_item(index)
-            if tree_row is None or tree_row.get_depth() != 0:
+            if not isinstance(tree_row, Gtk.TreeListRow) or tree_row.get_depth() != 0:
                 continue
             tree_row.set_expanded(index == position)
 
     def show_account(self, handle: str) -> None:
-        self.account_handle = handle
-        self._scroll_to_end = True
-        self.refresh()
+        if handle == self.account_handle:
+            self._scroll_to_end = True
+            self.refresh()
+            return
+
+        def switch() -> None:
+            self.account_handle = handle
+            self._scroll_to_end = True
+            self.set_entry_status("")
+            self.refresh()
+
+        self.blank.confirm_leave(switch)
 
     # ---------------------------------------------------------------- actions
 
@@ -466,11 +455,19 @@ class RegisterView(BaseView):
         if 0 <= index < len(self._pickable):
             handle = self._pickable[index].handle
             if handle != self.account_handle:
-                self.account_handle = handle
-                self._scroll_to_end = True
-                self.quick_status.set_text("")
-                self.quick_status.remove_css_class("negative")
-                self.refresh()
+                # Until the user answers, the picker keeps showing this account.
+                self._select_in_picker(self.account_handle)
+                self.show_account(handle)
+
+    def _select_in_picker(self, handle: str | None) -> None:
+        self._updating = True
+        try:
+            for index, account in enumerate(self._pickable):
+                if account.handle == handle:
+                    self.account_picker.set_selected(index)
+                    break
+        finally:
+            self._updating = False
 
     def _on_activated(self, _view, position: int) -> None:
         """Double-clicking a row opens that transaction for editing.
@@ -484,9 +481,16 @@ class RegisterView(BaseView):
         if tree_row is None:
             return
         payload = unwrap(tree_row)
+        if payload is BLANK:
+            return
         self.edit_transaction(payload.transaction)
 
     def edit_transaction(self, transaction) -> None:
+        if self.db is None:
+            return
+        self.blank.confirm_leave(lambda: self._open_editor(transaction))
+
+    def _open_editor(self, transaction) -> None:
         if self.db is None:
             return
         from ..dialogs.transaction_dialog import TransactionDialog
@@ -520,105 +524,6 @@ class RegisterView(BaseView):
         opener = getattr(self.manager, "open_register_window", None)
         if callable(opener):
             opener(self.account_handle)
-
-    def propose_from_description(self) -> EntrySuggestion | None:
-        """Fill an empty amount from the latest matching entry in this account."""
-        if self.db is None or self.account_handle is None:
-            return None
-        if self.quick_amount.get_text().strip():
-            return None  # never overwrite what the user typed
-        result = suggest_entry(
-            self.db,
-            SuggestEntry(
-                description=self.quick_description.get_text(), account=self.account_handle
-            ),
-        )
-        suggestion = result.value.suggestion if result.value is not None else None
-        if suggestion is None or suggestion.amount is None or suggestion.transfer_account is None:
-            return None
-        handles = [account.handle for account in self._quick_pickable]
-        if suggestion.transfer_account not in handles:
-            return None
-        self.quick_transfer.set_selected(handles.index(suggestion.transfer_account))
-        amount = suggestion.amount
-        self.quick_amount.set_text(abs(amount).format())
-        button = self.quick_debit_button if amount > 0 else self.quick_credit_button
-        self.quick_status.remove_css_class("negative")
-        self.quick_status.set_text(
-            f"Proposed from {suggestion.when.isoformat()} “{suggestion.description}”: "
-            f"{self.db.full_name(suggestion.transfer_account)}, {abs(amount).format()}. "
-            f"Edit if needed, then choose {button.get_label()}."
-        )
-        return suggestion
-
-    def _post_quick(self, debit: bool) -> None:
-        """Post one ordinary balanced two-split entry through the domain model."""
-        if self.db is None or self.account_handle is None:
-            return
-        current = self.db.get_account(self.account_handle)
-        transfer_index = self.quick_transfer.get_selected()
-        transfer = (
-            self._quick_pickable[transfer_index]
-            if 0 <= transfer_index < len(self._quick_pickable)
-            else None
-        )
-        if current is None or current.hidden or transfer is None:
-            self.quick_status.set_text("Choose two visible accounts.")
-            self.quick_status.add_css_class("negative")
-            return
-        try:
-            when = date.fromisoformat(self.quick_date.get_text().strip())
-        except ValueError:
-            self.quick_status.set_text("Enter the date as YYYY-MM-DD.")
-            self.quick_status.add_css_class("negative")
-            return
-        description = self.quick_description.get_text().strip()
-        if not description:
-            self.quick_status.set_text("Enter a description.")
-            self.quick_status.add_css_class("negative")
-            return
-        try:
-            amount = Money(parse_user_amount(self.quick_amount.get_text().strip()))
-        except (ValueError, ArithmeticError):
-            self.quick_status.set_text("Enter a valid amount.")
-            self.quick_status.add_css_class("negative")
-            return
-        if amount <= 0:
-            self.quick_status.set_text("Amount must be greater than zero.")
-            self.quick_status.add_css_class("negative")
-            return
-
-        debit_account = current.handle if debit else transfer.handle
-        credit_account = transfer.handle if debit else current.handle
-        currency = transaction_currency(self.db)
-        # The new entry's repaint scrolls to the end, where it now is (#157).
-        self._scroll_to_end = True
-        result = save_transaction(
-            self.db,
-            SaveTransaction(
-                TransactionInput(
-                    post_date=when,
-                    description=description,
-                    currency=currency,
-                    splits=(
-                        TransactionSplitInput(debit_account, Amount(amount, currency)),
-                        TransactionSplitInput(credit_account, Amount(-amount, currency)),
-                    ),
-                )
-            ),
-        )
-        if not result.ok:
-            self._scroll_to_end = False
-            self.quick_status.set_text(service_error_message(result.errors[0]))
-            self.quick_status.add_css_class("negative")
-            return
-        self.quick_description.set_text("")
-        self.quick_amount.set_text("")
-        self.quick_status.remove_css_class("negative")
-        direction_label = (
-            self.quick_debit_button.get_label() if debit else self.quick_credit_button.get_label()
-        )
-        self.quick_status.set_text(f"Posted {description}: {amount.format()} {direction_label}.")
 
     def _on_reconcile_clicked(self, _button) -> None:
         if self.db is None or self.account_handle is None:

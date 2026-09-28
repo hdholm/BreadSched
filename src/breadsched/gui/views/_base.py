@@ -19,6 +19,7 @@ __all__ = [
     "money_label",
     "column",
     "column_menu",
+    "host_widget",
     "sorted_model",
     "table_section",
     "toolbar",
@@ -172,10 +173,14 @@ def column(
     expand: bool = False,
     numeric: bool = False,
     sort_key=None,
+    cell=None,
 ):
     """Build a ``Gtk.ColumnViewColumn`` whose cells are labels.
 
-    ``bind`` receives the row's payload and returns the display string.
+    ``bind`` receives the row's payload and returns the display string. ``cell``,
+    when given, receives the payload first and may return a widget to show in
+    place of the label (the register's blank entry row, #158); ``bind`` is then
+    not called for that row.
     """
     factory = Gtk.SignalListItemFactory()
 
@@ -187,11 +192,22 @@ def column(
             label.add_css_class("numeric")
         else:
             label.set_ellipsize(Pango.EllipsizeMode.END)
-        item.set_child(label)
+        if cell is None:
+            item.set_child(label)
+            return
+        host = Gtk.Box()
+        host.label = label
+        host.append(label)
+        item.set_child(host)
 
     def on_bind(_factory, item) -> None:
         payload = unwrap(item.get_item())
         label = item.get_child()
+        if cell is not None:
+            host = label
+            label = host.label
+            if host_widget(host, cell(payload)):
+                return
         value = bind(payload)
         label.set_text(str(value))
         if numeric:
@@ -211,6 +227,32 @@ def column(
     col.set_resizable(True)
     col.set_sorter(Gtk.CustomSorter.new(_compare_by(bind, sort_key, numeric)))
     return col
+
+
+def host_widget(host: Gtk.Box, widget: Gtk.Widget | None) -> bool:
+    """Show ``widget`` in a cell's host box instead of its label; True if shown.
+
+    The hosted widget is persistent and may still sit in the cell that showed it
+    last, so it is moved rather than recreated: that keeps what was typed in it
+    when the list repaints. Passing None puts the label back.
+    """
+    label = host.label
+    child = host.get_first_child()
+    while child is not None:
+        following = child.get_next_sibling()
+        if child is not label and child is not widget:
+            host.remove(child)
+        child = following
+    if widget is None:
+        label.set_visible(True)
+        return False
+    parent = widget.get_parent()
+    if parent is not host:
+        if parent is not None:
+            parent.remove(widget)
+        host.append(widget)
+    label.set_visible(False)
+    return True
 
 
 def _compare_by(bind, sort_key, numeric: bool):

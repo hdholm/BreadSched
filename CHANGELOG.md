@@ -3,6 +3,20 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a152 - 2026-09-28
+
+- **Type new entries in the register's blank row (#158).** The desktop register's
+  last row is now a blank transaction, as in GnuCash. Type the date, number,
+  description, payee, transfer account, and an amount under Deposit or Withdrawal
+  (or the account's own headings), then press Enter to save. Tab and Shift+Tab move
+  between fields, and Escape clears the row. An error keeps what you typed and
+  says what to fix. Leaving the description fills only fields you have not
+  touched, from the latest matching entry. **Split…** opens the full editor
+  prefilled, and leaving a half-typed row asks whether to save it. This replaces
+  the desktop quick-entry bar. The browser keeps quick entry for now, and the
+  approved design (DESIGN.md) lists in-place splits and in-place editing as the
+  next slices. Application version `0.2.0a152`; native schema remains 9.
+
 ## 0.2.0a151 - 2026-09-28
 
 - **The register opens at its most recent entry (#157).** Like a check register,

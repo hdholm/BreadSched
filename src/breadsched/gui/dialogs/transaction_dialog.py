@@ -195,6 +195,9 @@ class TransactionDialog(Gtk.Window):
         self.transaction = transaction
         self.editing = editing
         self.default_account = default_account
+        #: True once Save has written the transaction, so openers can tell a
+        #: saved close from a cancelled one.
+        self.saved = False
         self.set_default_size(640, 460)
 
         referenced = {split.account for split in transaction.splits} if transaction else set()
@@ -402,6 +405,39 @@ class TransactionDialog(Gtk.Window):
         dialog = ScheduleDialog(self, self.db, source=draft, creating=True)
         dialog.present()
 
+    def prefill(
+        self,
+        *,
+        description: str = "",
+        num: str = "",
+        payee: str | None = None,
+        transfer: str | None = None,
+        amount: Money | None = None,
+    ) -> None:
+        """Start a new transaction from a register's blank entry row (#158).
+
+        ``amount`` is signed as it moves the register account; the transfer split
+        balances it. With no amount the splits stay blank, so the ordinary
+        proposal from the description can still fill them.
+        """
+        if self.transaction is not None:
+            return
+        self.description_entry.set_text(description)
+        self.num_entry.set_text(num)
+        handles = [item.handle for item in self.payees]
+        if payee in handles:
+            self.payee_picker.set_selected(handles.index(payee) + 1)
+        accounts = [account.handle for account in self.accounts]
+        other, here = self.splits[0], self.splits[1]
+        if transfer in accounts:
+            other.account.set_selected(accounts.index(transfer))
+        if amount is not None:
+            here.amount.set_text(str(amount.to_decimal()))
+            other.amount.set_text(str((-amount).to_decimal()))
+        elif description or payee is not None:
+            self.propose_from_entry()
+        self.revalidate()
+
     # ---------------------------------------------------------------- proposal
 
     def propose_from_entry(self) -> EntrySuggestion | None:
@@ -592,6 +628,7 @@ class TransactionDialog(Gtk.Window):
             self.status.set_text(service_error_message(result.errors[0]))
             self.status.add_css_class("negative")
             return
+        self.saved = True
         self.close()
 
     def _on_delete(self, _button) -> None:

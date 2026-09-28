@@ -644,8 +644,20 @@ class ViewManager(Gtk.ApplicationWindow):
                 self._register_windows.remove(pair)
             return False
 
+        def close_requested(*_args) -> bool:
+            # Closing with a half-typed blank row asks first (#158).
+            if register.blank.has_input() and not getattr(window, "leave_confirmed", False):
+
+                def proceed() -> None:
+                    window.leave_confirmed = True
+                    window.close()
+
+                register.blank.confirm_leave(proceed)
+                return True
+            return detach()
+
         register.account_picker.connect("notify::selected", update_title)
-        window.connect("close-request", detach)
+        window.connect("close-request", close_requested)
         register.set_db(self.db)
         register.show_account(account_handle)
         update_title()

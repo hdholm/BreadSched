@@ -34,9 +34,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    - Actions: the remaining in-view command buttons in Register, Scheduled,
      Upcoming, Plan, and Projection (already also in the Actions menu) move to
      context-sensitive toolbar icons where that reads better (follow-up to #156).
-   - Register: replace quick entry with a GnuCash-style blank entry row at the bottom, designed
-     before it is built and delivered as a two-split row, then in-place splits,
-     then in-place editing (#158).
+   - Register blank entry row (#158): slice 2, in-place split entry, then slice 3,
+     in-place editing of existing rows (DESIGN.md, "Blank entry row"). The web
+     register gets the same interaction afterward.
    Also audit every dialog for unbounded growth like #140. GTK4 is canonical;
    carry a web change only where the same problem exists there. Matching
    GnuCash's appearance is not a goal; its blank register row is the one explicit
