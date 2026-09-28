@@ -1030,8 +1030,21 @@ stateful `win.show-category` action, whose state is the current view:
 so the matching icon and menu item show as active however the view was reached
 (icon, menu, or a jump from another view). The action is disabled while no book
 is open. The toolbar scrolls horizontally rather than setting the window's
-minimum width. The toolbar icon set is expected to become partly
-view-sensitive (#156).
+minimum width.
+
+View commands are declared once in `viewmanager.VIEW_ACTIONS` (#156). Each
+`ViewAction` becomes a `win.<view>-<name>` action, is listed under that view's
+submenu of **Actions** (checkable toggles go in **View**), and, when marked
+`toolbar`, appears as an icon in the toolbar's view-tools area only while its view
+is current. Activating one shows its view and calls the named view method, so menu,
+icon, and view never disagree; all are disabled while no book is open. Accounts
+(New/Edit account, Security price, Exchange rate, Hide empty, Show hidden), the
+FSA Dashboard (Manage FSA claims), and the Dashboard (Configure groups) no longer
+carry their own buttons. Register, Scheduled, Upcoming, Plan, and Projection
+commands are also in the menus; their in-view buttons remain for now, as do
+buttons that act on a table's selected row (Scheduled edit/duplicate/delete,
+Review match/reject) and controls that apply a view's own settings. A window
+created while a book is already open attaches to it at construction.
 
 Every `Gtk.ColumnView` presenting book data (register, accounts, dashboard,
 scheduled, upcoming) carries the shared `data-table` CSS class from

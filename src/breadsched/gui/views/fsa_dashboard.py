@@ -34,9 +34,7 @@ class FsaDashboardView(BaseView):
         title.add_css_class("category-title")
         title.set_hexpand(True)
         bar.append(title)
-        claims = Gtk.Button(label="Manage FSA claims…")
-        claims.connect("clicked", self._on_fsa_claims)
-        bar.append(claims)
+        # "Manage FSA claims" is a toolbar icon while this view is shown (#156).
         self.append(bar)
 
         self.fsa_heading = self._heading("FSA benefit years")

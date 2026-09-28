@@ -19,7 +19,7 @@ from ..gen.utils.settings import Settings  # noqa: E402
 from .gi_setup import Gdk, Gio, GLib, Gtk
 from .user_guide import UserGuideWindow
 from .viewmanager import CATEGORIES as MENU_CATEGORIES  # noqa: E402
-from .viewmanager import ViewManager  # noqa: E402
+from .viewmanager import VIEW_ACTIONS, ViewManager, view_action_name  # noqa: E402
 
 __all__ = ["BreadSchedApplication", "main"]
 
@@ -560,16 +560,38 @@ def build_menu_model() -> Gio.Menu:
     edit_menu.append("_Redo", "app.redo")
     menubar.append_submenu("_Edit", edit_menu)
 
+    labels = {key: label for key, label, _icon in MENU_CATEGORIES}
     view_menu = Gio.Menu()
+    views = Gio.Menu()
     for key, label, _icon in MENU_CATEGORIES:
-        view_menu.append(label, f"win.show-category::{key}")
+        views.append(label, f"win.show-category::{key}")
+    view_menu.append_section(None, views)
+    toggles = Gio.Menu()
+    for key, actions in VIEW_ACTIONS.items():
+        for item in actions:
+            if item.toggle:
+                toggles.append(item.label, f"win.{view_action_name(key, item)}")
+    view_menu.append_section(None, toggles)
     menubar.append_submenu("_View", view_menu)
 
     actions_menu = Gio.Menu()
-    actions_menu.append("New _Transaction…", "app.new-transaction")
-    actions_menu.append("_Post Scheduled Transactions", "app.post-scheduled")
-    actions_menu.append("Pa_yees…", "app.payees")
-    actions_menu.append("Categorization _Rules…", "app.rules")
+    general = Gio.Menu()
+    general.append("New _Transaction…", "app.new-transaction")
+    general.append("_Post Scheduled Transactions", "app.post-scheduled")
+    general.append("Pa_yees…", "app.payees")
+    general.append("Categorization _Rules…", "app.rules")
+    actions_menu.append_section(None, general)
+    # Every view-level command also has a menu item, grouped by view (#156).
+    per_view = Gio.Menu()
+    for key, actions in VIEW_ACTIONS.items():
+        commands = [item for item in actions if not item.toggle]
+        if not commands:
+            continue
+        submenu = Gio.Menu()
+        for item in commands:
+            submenu.append(item.label, f"win.{view_action_name(key, item)}")
+        per_view.append_submenu(labels[key], submenu)
+    actions_menu.append_section(None, per_view)
     menubar.append_submenu("_Actions", actions_menu)
 
     help_menu = Gio.Menu()

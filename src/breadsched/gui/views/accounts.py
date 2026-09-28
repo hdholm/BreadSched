@@ -62,34 +62,10 @@ class AccountTreeView(BaseView):
         title.set_hexpand(True)
         header.append(title)
 
-        zero_toggle = Gtk.ToggleButton(label="Hide empty")
-        zero_toggle.connect("toggled", self._on_zero_toggled)
-        header.append(zero_toggle)
-
-        hidden_toggle = Gtk.ToggleButton(label="Show hidden")
-        hidden_toggle.connect("toggled", self._on_hidden_toggled)
-        header.append(hidden_toggle)
-
-        price_button = Gtk.Button(label="Security price…")
-        price_button.set_tooltip_text("Create a security or record a dated market price")
-        price_button.connect("clicked", self._on_security_price)
-        header.append(price_button)
-        rate_button = Gtk.Button(label="Exchange rate…")
-        rate_button.set_tooltip_text("Record a dated manual rate between two currencies")
-        rate_button.connect("clicked", self._on_exchange_rate)
-        header.append(rate_button)
-
-        new_button = Gtk.Button(label="New account…", icon_name="list-add-symbolic")
-        new_button.connect("clicked", lambda *_: self.edit_account(None))
-        header.append(new_button)
-
-        # Double-clicking opens the register, as GnuCash does, so editing gets the
-        # explicit control. One gesture cannot mean both, and the register is the
-        # thing people open dozens of times a day.
-        edit_button = Gtk.Button(label="Edit account…")
-        edit_button.set_tooltip_text("Change the selected account's settings")
-        edit_button.connect("clicked", self._on_edit_selected)
-        header.append(edit_button)
+        # New/Edit account, Security price, and Exchange rate are toolbar icons and
+        # Actions → Accounts menu items; Hide empty and Show hidden are View menu
+        # check items (#156). Double-clicking opens the register, as GnuCash
+        # does, so editing is the explicit Edit Account command.
         self._header = header
 
         self.summary = Gtk.Box(spacing=24)
@@ -348,10 +324,13 @@ class AccountTreeView(BaseView):
             return
         self.manager.open_register(account.handle)
 
-    def _on_zero_toggled(self, button: Gtk.ToggleButton) -> None:
-        self._show_zero = not button.get_active()
+    def _on_new_account(self) -> None:
+        self.edit_account(None)
+
+    def set_hide_empty(self, hide: bool) -> None:
+        self._show_zero = not hide
         self.refresh()
 
-    def _on_hidden_toggled(self, button: Gtk.ToggleButton) -> None:
-        self._show_hidden = button.get_active()
+    def set_show_hidden(self, show: bool) -> None:
+        self._show_hidden = show
         self.refresh()
