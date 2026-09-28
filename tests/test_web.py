@@ -4511,3 +4511,36 @@ class TestRules:
 
         _status, after = client.get("/api/rules")
         assert after["rules"] == before["rules"]
+
+
+class TestEntrySuggestion:
+    """Entry autocomplete proposals through the shared service; nothing is written."""
+
+    def test_the_latest_matching_entry_is_proposed(self, client):
+        checking = client.database.get_account_by_name("Checking")
+        before = len(list(client.database.iter_transactions()))
+
+        status, data = client.get(
+            f"/api/entry/suggest?account={checking.handle}&description=RENT%20%2312"
+        )
+
+        assert status == 200
+        suggestion = data["suggestion"]
+        assert suggestion["description"] == "Rent"
+        assert suggestion["amount"] == "-1800.00"
+        assert suggestion["transfer_name"] == "Expenses:Rent"
+        assert len(list(client.database.iter_transactions())) == before
+
+    def test_no_match_and_bad_queries(self, client):
+        checking = client.database.get_account_by_name("Checking")
+        status, data = client.get(
+            f"/api/entry/suggest?account={checking.handle}&description=Nothing%20like%20it"
+        )
+        assert status == 200 and data == {"suggestion": None}
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/entry/suggest?account=missing&description=rent")
+        assert caught.value.code == 404
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.get("/api/entry/suggest?description=rent&surprise=1")
+        assert caught.value.code == 400

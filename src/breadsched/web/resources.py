@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
+from .autocomplete_resource import entry_suggestion
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
 from .payee_resource import (
@@ -224,6 +225,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/verify": _no_query("verify"),
     "/api/payees": payees,
     "/api/rules": rules,
+    "/api/entry/suggest": entry_suggestion,
 }
 
 

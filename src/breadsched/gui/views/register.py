@@ -26,6 +26,7 @@ from ...gen.services import (
     save_transaction,
     transaction_currency,
 )
+from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
@@ -199,6 +200,12 @@ class RegisterView(BaseView):
         quick.append(self.quick_date)
         self.quick_description = Gtk.Entry(placeholder_text="Description")
         self.quick_description.set_hexpand(True)
+        # Leaving the description proposes the latest matching entry's transfer
+        # account and amount; the user edits or ignores it before posting.
+        self.quick_description.connect("activate", lambda *_: self.propose_from_description())
+        leave = Gtk.EventControllerFocus()
+        leave.connect("leave", lambda *_: self.propose_from_description())
+        self.quick_description.add_controller(leave)
         quick.append(self.quick_description)
         self.quick_transfer = Gtk.DropDown()
         self.quick_transfer.set_size_request(220, -1)
@@ -483,6 +490,36 @@ class RegisterView(BaseView):
         opener = getattr(self.manager, "open_register_window", None)
         if callable(opener):
             opener(self.account_handle)
+
+    def propose_from_description(self) -> EntrySuggestion | None:
+        """Fill an empty amount from the latest matching entry in this account."""
+        if self.db is None or self.account_handle is None:
+            return None
+        if self.quick_amount.get_text().strip():
+            return None  # never overwrite what the user typed
+        result = suggest_entry(
+            self.db,
+            SuggestEntry(
+                description=self.quick_description.get_text(), account=self.account_handle
+            ),
+        )
+        suggestion = result.value.suggestion if result.value is not None else None
+        if suggestion is None or suggestion.amount is None or suggestion.transfer_account is None:
+            return None
+        handles = [account.handle for account in self._quick_pickable]
+        if suggestion.transfer_account not in handles:
+            return None
+        self.quick_transfer.set_selected(handles.index(suggestion.transfer_account))
+        amount = suggestion.amount
+        self.quick_amount.set_text(abs(amount).format())
+        button = self.quick_debit_button if amount > 0 else self.quick_credit_button
+        self.quick_status.remove_css_class("negative")
+        self.quick_status.set_text(
+            f"Proposed from {suggestion.when.isoformat()} “{suggestion.description}”: "
+            f"{self.db.full_name(suggestion.transfer_account)}, {abs(amount).format()}. "
+            f"Edit if needed, then choose {button.get_label()}."
+        )
+        return suggestion
 
     def _post_quick(self, debit: bool) -> None:
         """Post one ordinary balanced two-split entry through the domain model."""

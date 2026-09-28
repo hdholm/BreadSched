@@ -1026,9 +1026,21 @@ account become exactly two balancing splits and pass through the ordinary atomic
 database transaction. It is not a parallel transaction model. Complex metadata and
 multi-split entry remain in the full editor. Register headings are a shared engine
 mapping so GTK and web describe the same positive and negative ledger directions.
-Entry has no autocomplete from earlier transactions yet. When added, proposals
-must come from a shared service and remain editable until an ordinary balanced
-save, so GTK and web do not each infer different templates.
+Entry autocomplete comes from one shared service, `services/autocomplete.py`
+(`suggest_entry`), so GTK and web never infer different templates. A description
+matches on its normalized key (`payees.match_key`, the same comparison payees and
+categorization rules use) or a chosen payee matches exactly. Candidates must have a
+split in the entry's account when one is given, be in the entry's currency (the
+reporting currency by default), use only visible, postable accounts, and not be the
+transaction being edited. The latest by post date, then entry time, then handle
+wins. The proposal carries only accounts, values, and memos, plus the transfer
+account and signed amount in the entry's account for a two-split source; it never
+carries reconcile state, source identifiers, notes, planning purposes or links,
+investment activity, or FSA claims, and it never writes. GTK and web quick entry
+fill an empty amount and the transfer account when the description is left and say
+where the proposal came from; a typed amount is never overwritten, and posting
+remains the user's explicit choice of the Increase or Decrease button. The web
+route is `GET /api/entry/suggest` (`web/autocomplete_resource.py`).
 
 ## Payees
 
@@ -1060,7 +1072,8 @@ transaction editor and web entry set or clear the payee through `save_transactio
 set the flag keeps the stored payee. The GTK register has a **Payee** column (and
 its filter matches payee names); the web register returns each row's `payee` and
 the book's payees, and its per-row picker calls `POST /api/transaction/payee`
-(`assign_payee`). Category rules and payee-based autocomplete build on this.
+(`assign_payee`). Categorization rules and entry autocomplete can
+match on the payee.
 
 ## Categorization rules
 

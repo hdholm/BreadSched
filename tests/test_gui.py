@@ -4798,3 +4798,52 @@ class TestRulesDialog:
             assert isinstance(opened, RulesDialog)
         finally:
             opened.destroy()
+
+
+class TestQuickEntryAutocomplete:
+    """Leaving the description proposes the latest matching entry; nothing posts."""
+
+    def _register(self, app, window, populated_book):
+        app.open_book(populated_book)
+        handle = app.db.get_account_by_name("Assets:Checking Account").handle
+        window.open_register(handle)
+        return window._views["register"]
+
+    def test_a_matching_description_fills_transfer_and_amount(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        view.quick_description.set_text("Corner Grocer #12")
+        view.quick_transfer.set_selected(1)
+        view.quick_amount.set_text("42.10")
+        view._post_quick(False)
+        expected = view._quick_pickable[1].handle
+        view.quick_transfer.set_selected(0)
+        before = len(list(app.db.iter_transactions()))
+
+        view.quick_description.set_text("CORNER GROCER #99")
+        suggestion = view.propose_from_description()
+
+        assert suggestion is not None
+        assert view._quick_pickable[view.quick_transfer.get_selected()].handle == expected
+        assert view.quick_amount.get_text() == "42.10"
+        assert "Proposed from" in view.quick_status.get_text()
+        assert view.quick_credit_button.get_label() in view.quick_status.get_text()
+        assert len(list(app.db.iter_transactions())) == before
+
+    def test_typed_amounts_are_never_overwritten(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        view.quick_description.set_text("Corner Grocer")
+        view.quick_amount.set_text("42.10")
+        view._post_quick(False)
+
+        view.quick_description.set_text("Corner Grocer")
+        view.quick_amount.set_text("7.00")
+
+        assert view.propose_from_description() is None
+        assert view.quick_amount.get_text() == "7.00"
+
+    def test_no_match_leaves_the_form_alone(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        view.quick_description.set_text("Something never entered before")
+
+        assert view.propose_from_description() is None
+        assert view.quick_amount.get_text() == ""
