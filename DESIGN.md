@@ -1782,12 +1782,49 @@ owns the rule and the importer's shared sink applies it to SQLite and XML books:
 
 Transactions with no split reconciled locally keep the general rule: local edits to
 source-owned facts are replaced and counted as refreshed. Transactions created in
-BreadSched have no source GUID, are never listed in the deletion inventory, and are
-never written to GnuCash, so recording the same activity in both applications
-duplicates it. The User Guide therefore asks users to choose one ledger of record
+BreadSched have no source GUID and are never listed in the deletion inventory;
+they reach GnuCash only through an explicit write-back (below), so recording the
+same activity in both applications without one duplicates it. The User Guide therefore asks users to choose one ledger of record
 per period. SQLite acceptance tests cover restored facts for unreconciled
 transactions, native transactions that never reach the source, and the reconciled
 hold/keep/apply/refuse contract.
+
+### GnuCash write-back (#174)
+
+Write-back is explicit, previewed, and SQLite-only
+(`plugins/export/gnucash_writeback.py`, `services/gnucash_writeback.py`, CLI
+`breadsched gnucash-writeback`). Each GnuCash SQLite import records the book's
+resolved path, the SHA-256 of the exact bytes read, and its book GUID in the
+`gnucash.writeback.source` metadata, inside the import's undoable transaction.
+Preview and apply both refuse when that record is missing, the file is gone or is
+another book, its bytes changed since the import (import again first), or GnuCash
+holds its `gnclock`. Because the source is proven unchanged, every difference is a
+local edit, and only three kinds are written:
+
+- **new** transactions not from GnuCash (not in the import inventory) with two
+  splits in GnuCash accounts (`Account.source_guid`), one GnuCash currency, and
+  quantity equal to value; the BreadSched transaction and split handles become the
+  GnuCash GUIDs, so re-import recognizes them;
+- **edits** to date, description, number, and split memos of an imported
+  transaction that GnuCash has not reconciled; and
+- **reconcile state** `n`/`c`/`y` with its date.
+
+Changed amounts, accounts, quantities, added or removed splits, a source-deleted
+transaction BreadSched kept, and anything else are listed as unsupported with a
+reason and never written. Dates use the book's own post-date style (14-digit or
+`YYYY-MM-DD HH:MM:SS`) at GnuCash's neutral 10:59:00. Applying recomputes the
+preview, copies the book to `<book>-gnucash-backups/<source>.<timestamp>.bak`,
+runs every chosen INSERT/UPDATE in one `BEGIN IMMEDIATE` transaction with each
+UPDATE guarded by the value the preview saw (a row count other than one aborts),
+re-reads every written row, and then proves the round trip: each written
+transaction, read back with the importer's date, amount, and account mapping,
+must equal BreadSched's date, description, number, and split facts, or the backup
+is restored (`writeback.roundtrip.mismatch`). It deliberately does not re-import,
+because an import would restore GnuCash's values over local edits that were not
+chosen for this write. Instead it records the new fingerprint and adds written new
+transactions to the import inventory, so GnuCash owns them from then on. Backups
+beyond `gnucash.writeback.keep_backups` (default 10, 1-1000) are removed oldest
+first after a successful write.
 
 ### Ambiguous import formats are user-resolvable
 

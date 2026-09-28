@@ -3,6 +3,19 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a174 - 2026-09-28
+
+- **Write simple changes back to GnuCash (#174).** `breadsched gnucash-writeback`
+  previews, then writes, BreadSched-entered two-split transactions, date,
+  description, number, and memo edits to imported transactions GnuCash has not
+  reconciled, and reconcile marks, to the GnuCash SQLite book last imported.
+  Anything else is listed and never written. It refuses a book GnuCash has open or
+  that changed since the import, backs the book up first (keeping a configurable
+  number of backups, 10 by default), writes in one transaction, reads the rows
+  back and proves they round-trip, and restores the backup on any failure;
+  changes not chosen stay local and are offered again. GnuCash SQLite imports now record the book's fingerprint for this check.
+  Application version `0.2.0a174`; native schema remains 9.
+
 ## 0.2.0a173 - 2026-09-28
 
 - **Direct exchange rates only (#173).** Currency conversion is settled as direct

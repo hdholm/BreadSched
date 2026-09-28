@@ -762,9 +762,38 @@ each period rather than recording the same activity in both.
   classifications, FSA claims, estimates, scenarios, and schedule planning
   timelines. These survive re-import.
 - Do not post schedules or add transactions in BreadSched for activity you also
-  record in GnuCash. BreadSched-created transactions are never written to GnuCash
-  and are never removed by re-import, so recording the same activity in both
-  produces duplicates.
+  record in GnuCash, unless you write them back (next section). BreadSched-created
+  transactions are otherwise never written to GnuCash and are never removed by
+  re-import, so recording the same activity in both produces duplicates.
+
+### Write changes back to a GnuCash SQLite book
+
+For a GnuCash book saved in SQLite format, BreadSched can write simple changes
+back to it. Close the book in GnuCash, then preview:
+
+```bash
+breadsched gnucash-writeback household.breadsched
+```
+
+The preview lists, for each transaction, exactly what would be written:
+transactions you entered in BreadSched with two splits in accounts that exist in
+GnuCash, date, description, number, and memo edits to imported transactions that
+GnuCash has not reconciled, and reconcile marks you set in BreadSched. Anything
+else (changed amounts or accounts, added or removed splits, other currencies) is
+listed as not written, with the reason. Nothing is written until you choose:
+
+```bash
+breadsched gnucash-writeback household.breadsched --apply 1a2b3c4d
+breadsched gnucash-writeback household.breadsched --all
+```
+
+BreadSched refuses if GnuCash has the book open or if the book changed since you
+last imported it; import it again first. Before writing it copies the book to a
+backup folder next to your BreadSched book, writes everything in one step, reads
+it back to confirm GnuCash will see exactly what you have, and restores the copy
+if anything fails. Changes you did not choose stay as they are in BreadSched and
+are offered again next time. Choose how many backups to keep with
+`--keep-backups N` (10 by default).
 
 **To make BreadSched the ledger of record:** re-import once from the final
 GnuCash book, run `breadsched verify` and `breadsched backup`, and from then on

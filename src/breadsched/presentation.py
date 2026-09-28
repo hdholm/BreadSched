@@ -110,6 +110,26 @@ _SERVICE_MESSAGES = {
     "import.format.unrecognized": "The file format is not recognised",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
+    "writeback.source.unknown": (
+        "Import the GnuCash SQLite book into BreadSched before writing changes back to it"
+    ),
+    "writeback.source.missing": "The GnuCash book is no longer at the path it was imported from",
+    "writeback.source.other_book": "The file at that path is a different GnuCash book",
+    "writeback.source.changed": (
+        "The GnuCash book changed since it was last imported; import it again first"
+    ),
+    "writeback.source.locked": "GnuCash has the book open; close it in GnuCash first",
+    "writeback.source.conflict": (
+        "The GnuCash book no longer matches the preview; nothing was written"
+    ),
+    "writeback.verify.failed": (
+        "Reading the written rows back did not match; the GnuCash book was restored"
+    ),
+    "writeback.selection.invalid": "Choose one or more changes from the preview",
+    "writeback.roundtrip.mismatch": (
+        "GnuCash would not read the change back exactly as written; the book was restored"
+    ),
+    "writeback.keep_backups.invalid": "Keep between 1 and 1000 backups",
     "rule.match.required": "Match a rule on either a payee or a description, not both",
     "rule.match.empty": (
         "A description match must contain at least one word without digits, such as the "
