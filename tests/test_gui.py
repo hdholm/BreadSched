@@ -6115,6 +6115,7 @@ class TestDialogsFitTheScreen:
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),
         ("payee_dialog", "PayeesDialog", None),
+        ("receivables_dialog", "ReceivablesDialog", None),
         ("reconciliation_dialog", "ReconciliationDialog", "checking"),
         ("rules_dialog", "RulesDialog", None),
         ("scenario_dialog", "SaveScenarioDialog", "scenario"),
@@ -6166,3 +6167,132 @@ class TestDialogsFitTheScreen:
             assert any(isinstance(w, Gtk.Button) for w in _descendants(footer))
         finally:
             dialog.destroy()
+
+
+class TestReceivablesDialog:
+    """Reimbursable expenses in GTK, entirely through the shared service."""
+
+    def _book(self, app, populated_book):
+        app.open_book(populated_book)
+        db = app.db
+        rent_txn = next(t for t in db.iter_transactions() if t.description == "Rent")
+        rent = db.get_account_by_name("Expenses:Rent")
+        cost = next(s for s in rent_txn.splits if s.account == rent.handle)
+        return db, rent_txn, rent, cost
+
+    def _refund(self, db, rent, amount="300"):
+        from breadsched.gen.lib import Transaction
+
+        checking = db.get_account_by_name("Assets:Checking Account")
+        refund = Transaction.simple(
+            date(2026, 2, 10), "Insurer refund", checking.handle, rent.handle, Money(amount)
+        )
+        with db.transaction("Refund fixture") as txn:
+            db.add_transaction(refund, txn)
+        return refund
+
+    def test_tracking_a_register_transaction_links_its_expense(self, app, window, populated_book):
+        from breadsched.gui.views._base import unwrap
+
+        db, rent_txn, _rent, cost = self._book(app, populated_book)
+        window.open_register(db.get_account_by_name("Assets:Checking Account").handle)
+        view = window._views["register"]
+        selection = view.column_view.get_model()
+        for index in range(selection.get_n_items()):
+            item = selection.get_item(index)
+            if isinstance(item, Gtk.TreeListRow) and item.get_depth() == 0:
+                if unwrap(item).transaction.description == "Rent":
+                    selection.set_selected(index)
+        dialog = view.track_selected_reimbursable()
+        try:
+            assert dialog.description_entry.get_text() == "Rent"
+            assert dialog.incurred_entry.get_text() == rent_txn.post_date.isoformat()
+            dialog.payer_entry.set_text("Employer relocation")
+            receivable = dialog.save()
+            assert receivable is not None
+            stored = db.get_receivable(receivable.handle)
+            assert [(link.transaction, link.split) for link in stored.expenses] == [
+                (rent_txn.handle, cost.handle)
+            ]
+            assert "expense is linked" in dialog.status.get_text()
+        finally:
+            dialog.destroy()
+
+    def test_link_dispute_write_off_and_unlink_never_touch_the_ledger(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.services.receivables import ReceivableStatus, list_receivables
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+
+        db, rent_txn, rent, cost = self._book(app, populated_book)
+        refund = self._refund(db, rent)
+        ledger_before = [t.serialize() for t in db.iter_transactions()]
+        dialog = ReceivablesDialog(window, db, expense=(rent_txn.handle, cost.handle))
+        try:
+            dialog.payer_entry.set_text("Acme Insurance")
+            receivable = dialog.save()
+            handle = receivable.handle
+            assert dialog.editing == handle and dialog.detail.get_visible()
+            credit = [c for c in dialog._credits].index((refund.handle, refund.splits[1].handle))
+            dialog.credit_picker.set_selected(credit)
+            assert dialog.link("reimbursement") is True
+            [summary] = list_receivables(db).value
+            assert summary.reimbursed == Money("300")
+            assert summary.status is ReceivableStatus.PARTIAL
+
+            dialog.dispute_date.set_text("2026-03-01")
+            dialog.dispute_note.set_text("Payer says out of network")
+            assert dialog.dispute() is True
+            assert list_receivables(db).value[0].status is ReceivableStatus.DISPUTED
+            assert dialog.clear_dispute() is True
+
+            dialog.write_off_amount.set_text("100")
+            dialog.write_off_reason.set_text("Deductible")
+            assert dialog.write_off() is True
+            assert list_receivables(db).value[0].written_off == Money("100")
+
+            link = db.get_receivable(handle).reimbursements[0]
+            assert dialog.unlink(link) is True
+            assert db.get_receivable(handle).reimbursements == []
+            assert [t.serialize() for t in db.iter_transactions()] == ledger_before
+        finally:
+            dialog.destroy()
+
+    def test_rejected_input_saves_nothing_and_says_why(self, app, window, populated_book):
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+
+        db, *_ = self._book(app, populated_book)
+        dialog = ReceivablesDialog(window, db)
+        try:
+            assert dialog.detail.get_visible() is False
+            assert dialog.save() is None
+            assert "who owes" in dialog.status.get_text()
+            dialog.payer_entry.set_text("Acme")
+            dialog.incurred_entry.set_text("yesterday")
+            assert dialog.save() is None
+            assert "YYYY-MM-DD" in dialog.status.get_text()
+            dialog.incurred_entry.set_text("2026-01-02")
+            dialog.expected_entry.set_text("-5")
+            assert dialog.save() is None
+            assert list(db.iter_receivables()) == []
+        finally:
+            dialog.destroy()
+
+    def test_deleting_keeps_the_transactions(self, app, window, populated_book):
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+
+        db, rent_txn, _rent, cost = self._book(app, populated_book)
+        dialog = ReceivablesDialog(window, db, expense=(rent_txn.handle, cost.handle))
+        try:
+            dialog.payer_entry.set_text("Acme")
+            dialog.save()
+            assert dialog.delete() is True
+            assert list(db.iter_receivables()) == []
+            assert db.get_transaction(rent_txn.handle) is not None
+        finally:
+            dialog.destroy()
+
+    def test_the_menu_and_register_actions_exist(self, app, window, populated_book):
+        app.open_book(populated_book)
+        assert app.lookup_action("receivables").get_enabled() is True
+        assert window.lookup_action("register-track-reimbursable") is not None

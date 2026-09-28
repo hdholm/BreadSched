@@ -303,6 +303,37 @@ class RegisterView(BaseView):
         self.start_editing(transaction, split.handle)
         return True
 
+    def track_selected_reimbursable(self, *_args):
+        """Open reimbursable expenses to track the selected transaction's cost."""
+        selection = self.column_view.get_model()
+        item = selection.get_selected_item() if selection is not None else None
+        payload = unwrap(item) if item is not None else None
+        if self.db is None or payload is None or isinstance(payload, BLANK_PAYLOADS):
+            self.set_entry_status("Select a transaction to track as reimbursable.", error=True)
+            return None
+        transaction = self.db.get_transaction(payload.transaction.handle)
+        accounts = {account.handle: account for account in self.db.iter_accounts()}
+        cost = next(
+            (
+                split
+                for split in (transaction.splits if transaction is not None else ())
+                if split.value > 0
+                and accounts.get(split.account) is not None
+                and accounts[split.account].account_class is AccountClass.EXPENSE
+            ),
+            None,
+        )
+        if transaction is None or cost is None:
+            self.set_entry_status(
+                "Only a transaction with an expense can be tracked as reimbursable.", error=True
+            )
+            return None
+        application = self.manager.get_application() if self.manager is not None else None
+        opener = getattr(application, "on_receivables", None)
+        if opener is None:
+            return None
+        return opener(expense=(transaction.handle, cost.handle))
+
     def start_editing(self, transaction, split_handle: str) -> None:
         """Turn one transaction's row into editable cells, after any pending edit."""
 

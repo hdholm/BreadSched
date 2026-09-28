@@ -123,6 +123,7 @@ class BreadSchedApplication(Gtk.Application):
             ("import-csv", self.on_import_csv, None),
             ("payees", self.on_payees, None),
             ("rules", self.on_rules, None),
+            ("receivables", self.on_receivables, None),
             ("open-default", self.on_open_default, None),
             ("undo", self.on_undo, "<Control>z"),
             ("redo", self.on_redo, "<Control><Shift>z"),
@@ -152,6 +153,7 @@ class BreadSchedApplication(Gtk.Application):
             "import-csv",
             "payees",
             "rules",
+            "receivables",
             "export",
             "backup",
             "verify",
@@ -184,6 +186,7 @@ class BreadSchedApplication(Gtk.Application):
             "import-csv",
             "payees",
             "rules",
+            "receivables",
             "export",
             "backup",
             "verify",
@@ -392,6 +395,17 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
+    def on_receivables(self, *_args, expense: tuple[str, str] | None = None):
+        """Open reimbursable expenses, optionally to track one expense split."""
+        if self.db is None:
+            self._report("Open a book before tracking reimbursable expenses.")
+            return None
+        from .dialogs.receivables_dialog import ReceivablesDialog
+
+        dialog = ReceivablesDialog(self.props.active_window, self.db, expense=expense)
+        dialog.present()
+        return dialog
+
     def on_undo(self, *_args) -> None:
         if self.db is not None:
             self.db.undo()
@@ -580,6 +594,7 @@ def build_menu_model() -> Gio.Menu:
     general.append("_Post Scheduled Transactions", "app.post-scheduled")
     general.append("Pa_yees…", "app.payees")
     general.append("Categorization _Rules…", "app.rules")
+    general.append("Rei_mbursable Expenses…", "app.receivables")
     actions_menu.append_section(None, general)
     # Every view-level command also has a menu item, grouped by view (#156).
     per_view = Gio.Menu()
