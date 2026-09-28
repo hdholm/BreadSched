@@ -1052,6 +1052,15 @@ table sections propagate their natural width and height up to fixed bounds
 (900 × 420 pixels), beyond which the table scrolls inside its card, so a long row
 still cannot widen the window (#140). The whole Dashboard scrolls vertically.
 
+Tables never scroll sideways (#154): `table_section` sets the scrolled window's
+horizontal policy to `NEVER`, so a narrowing window allocates each column between
+its minimum and natural width instead of hiding the right-hand columns. Text cells
+(and the account tree's name cells) ellipsize, so their minimum is small; amount
+cells from `column(..., numeric=True)` do not ellipsize, so a figure is never
+truncated and text columns give up width first. The sum of the column minimums is
+the window's minimum width. Dialog tables are grids and list boxes, not
+`ColumnView`s, and are unaffected; the Plan grid scrolls in both directions.
+
 ## Register presentation and basic entry
 
 Register windows are independent presentation consumers of one open `DbSQLite`

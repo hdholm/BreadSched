@@ -31,8 +31,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
    PR per issue:
-   - Layout: every table keeps all columns visible as the window narrows, text
-     columns yielding first (#154).
    - Navigation: view icons in the toolbar replace the left sidebar, with the View
      menu listing every view (#155); per-view actions move from stray buttons into
      menus and toolbar icons, starting with Accounts and a context-sensitive
