@@ -15,7 +15,9 @@ from ..db.sqlite import DbSQLite
 from ..engine.receivables import (
     ReceivableStatus,
     ReceivableSummary,
+    ReimbursementProposal,
     iter_receivables,
+    propose_reimbursements,
     receivable_summary,
 )
 from ..lib.account import AccountClass
@@ -24,7 +26,9 @@ from ..lib.receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
+    "AcceptedReimbursements",
     "ReceivableCandidate",
+    "ReimbursementProposal",
     "RecordWriteOff",
     "ReceivableStatus",
     "ReceivableSummary",
@@ -36,8 +40,10 @@ __all__ = [
     "detach_split",
     "list_receivables",
     "mark_disputed",
+    "accept_reimbursements",
     "receivable_candidates",
     "record_write_off",
+    "reimbursement_proposals",
     "save_receivable",
 ]
 
@@ -267,3 +273,38 @@ def list_receivables(
     return ServiceResult.success(
         tuple(receivable_summary(db, item, as_of=as_of) for item in iter_receivables(db))
     )
+
+
+def reimbursement_proposals(
+    db: DbSQLite, *, as_of: date | None = None
+) -> ServiceResult[tuple[ReimbursementProposal, ...]]:
+    """Credits that clearly reimburse one open receivable; writes nothing."""
+    return ServiceResult.success(tuple(propose_reimbursements(db, as_of=as_of)))
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptedReimbursements:
+    linked: int
+    #: Chosen links that are no longer proposed (already linked, or changed).
+    unchanged: int
+
+
+def accept_reimbursements(
+    db: DbSQLite, chosen: tuple[tuple[str, str, str], ...]
+) -> ServiceResult[AcceptedReimbursements]:
+    """Link the chosen (receivable, transaction, split) proposals still on offer.
+
+    Proposals are recomputed first, so a stale choice is skipped rather than
+    linked on outdated evidence. Each link uses ``attach_reimbursement_split``,
+    whose checks still apply.
+    """
+    current = {
+        (item.receivable, item.transaction, item.split) for item in propose_reimbursements(db)
+    }
+    linked = 0
+    for receivable, transaction, split in chosen:
+        if (receivable, transaction, split) not in current:
+            continue
+        if attach_reimbursement_split(db, receivable, transaction, split).value is not None:
+            linked += 1
+    return ServiceResult.success(AcceptedReimbursements(linked, len(chosen) - linked))

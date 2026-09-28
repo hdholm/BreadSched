@@ -113,6 +113,7 @@ from ..gen.services.payees import (
 from ..gen.services.receivables import (
     RecordWriteOff,
     SaveReceivable,
+    accept_reimbursements,
     attach_expense_split,
     attach_reimbursement_split,
     clear_dispute,
@@ -121,6 +122,7 @@ from ..gen.services.receivables import (
     list_receivables,
     mark_disputed,
     record_write_off,
+    reimbursement_proposals,
     save_receivable,
 )
 from ..gen.utils import logs
@@ -907,9 +909,59 @@ def cmd_receivables(args: argparse.Namespace) -> int:
         or args.clear_dispute
         or args.write_off
         or args.delete
+        or args.accept_proposals
     )
     db = open_book(args.book, "r" if read_only else "w")
     try:
+        if args.proposals or args.accept_proposals:
+            proposals = reimbursement_proposals(db).value or ()
+            if args.accept_proposals:
+                accepted = accept_reimbursements(
+                    db, tuple((p.receivable, p.transaction, p.split) for p in proposals)
+                ).value
+                assert accepted is not None
+                emit(
+                    {"linked": accepted.linked, "unchanged": accepted.unchanged},
+                    args,
+                    f"Linked {accepted.linked} reimbursement(s); "
+                    f"{accepted.unchanged} left unchanged",
+                )
+                return 0
+            emit(
+                [
+                    {
+                        "receivable": item.receivable,
+                        "payer": item.payer,
+                        "transaction": item.transaction,
+                        "split": item.split,
+                        "date": item.when,
+                        "description": item.description,
+                        "amount": item.amount.format(),
+                        "remaining_after": item.remaining_after.format(),
+                        "reason": item.reason,
+                    }
+                    for item in proposals
+                ],
+                args,
+                table(
+                    [
+                        [
+                            item.when.isoformat(),
+                            item.description,
+                            item.payer,
+                            item.amount.format(),
+                            item.remaining_after.format(parens_negative=True),
+                            item.reason,
+                        ]
+                        for item in proposals
+                    ],
+                    ["date", "description", "payer", "amount", "remaining after", "why"],
+                    right={3, 4},
+                )
+                if proposals
+                else "No unlinked credits clearly reimburse an open receivable.",
+            )
+            return 0
         if args.add:
             if not args.incurred:
                 raise CommandError("--incurred DATE is required with --add")
@@ -2898,6 +2950,16 @@ def build_parser() -> argparse.ArgumentParser:
     receivables_cmd.add_argument("--amount", help="write-off amount")
     receivables_cmd.add_argument("--on", metavar="DATE", help="date of the dispute or write-off")
     receivables_cmd.add_argument("--reason", help="write-off reason")
+    receivables_cmd.add_argument(
+        "--proposals",
+        action="store_true",
+        help="list unlinked credits that clearly reimburse one open receivable",
+    )
+    receivables_cmd.add_argument(
+        "--accept-proposals",
+        action="store_true",
+        help="link every current reimbursement proposal",
+    )
     receivables_cmd.add_argument("--delete", metavar="RECEIVABLE", help="delete a receivable")
     receivables_cmd.set_defaults(func=cmd_receivables)
 

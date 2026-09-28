@@ -1419,6 +1419,27 @@ opens it to track that transaction's cost. Its routes are in
 
 A rejected request leaves the receivable unchanged (route tests).
 
+Reimbursement proposals (`engine.receivables.propose_reimbursements`, served by
+`services.receivables.reimbursement_proposals` and `accept_reimbursements`) match
+an unlinked credit to a receivable that is still owed something. They are
+deterministic and conservative. A credit qualifies when:
+
+- it posts to an expense account one of the receivable's expense splits used;
+- it is dated on or after the incurred date;
+- it is in the same transaction currency as that expense (a missing currency
+  counts as the book's reporting currency);
+- it is no larger than what remains.
+
+A credit that fits several receivables is proposed only when exactly one payer's
+name (`payees.match_key`, whole words) appears in its description. Otherwise it is
+left alone. Credits are allocated oldest first, so proposals never promise more
+than a receivable's remaining balance. Acceptance recomputes the proposals and
+links only choices still on offer, through `attach_reimbursement_split`; a stale
+choice counts as unchanged. The GTK dialog and web page list proposals with
+checkboxes and **Accept selected** (`POST /api/receivables/accept`), and the CLI
+has `receivables --proposals` and `--accept-proposals`. Surfacing proposals during
+bank import and statement reconciliation is still planned.
+
 ## Statement reconciliation
 
 A reconciliation is a persisted, account-scoped statement session, not transient UI

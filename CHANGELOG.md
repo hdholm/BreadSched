@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a161 - 2026-09-28
+
+- **Proposed reimbursements.** BreadSched now proposes linking a credit to a
+  receivable when it clearly is money back on it. The credit must be in the same
+  expense account and currency as the expense, dated on or after it, and no more
+  than what is still owed. When several receivables fit, the payer must be named
+  in the description. Proposals never promise more than a receivable's remaining
+  balance, and nothing links until you accept. Review them on the desktop
+  Reimbursable Expenses dialog, the browser Reimbursables page, or with
+  `breadsched receivables --proposals` and `--accept-proposals`. Application
+  version `0.2.0a161`; native schema remains 9.
+
 ## 0.2.0a160 - 2026-09-28
 
 - **Track reimbursable expenses in the browser.** A new **Reimbursables** page

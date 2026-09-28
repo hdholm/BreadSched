@@ -22,6 +22,7 @@ from breadsched.gen.lib import Money, Transaction
 from breadsched.gen.services.receivables import (
     RecordWriteOff,
     SaveReceivable,
+    accept_reimbursements,
     attach_expense_split,
     attach_reimbursement_split,
     clear_dispute,
@@ -31,6 +32,7 @@ from breadsched.gen.services.receivables import (
     mark_disputed,
     receivable_candidates,
     record_write_off,
+    reimbursement_proposals,
     save_receivable,
 )
 
@@ -412,3 +414,140 @@ def test_candidates_offer_unlinked_costs_and_credits_newest_first(db, book):
     everything, _ = receivable_candidates(db).value
     assert early in [(item.transaction, item.split) for item in everything]
     assert receivable_candidates(db, "missing").errors[0].code == "receivable.not_found"
+
+
+def _proposed(db):
+    return [
+        (item.receivable, item.transaction, item.split)
+        for item in reimbursement_proposals(db).value
+    ]
+
+
+def test_a_matching_credit_is_proposed_and_accepted_as_a_partial_reimbursement(db, book):
+    receivable = _save(db)
+    attach_expense_split(db, receivable.handle, *_expense(db, book, date(2026, 9, 1), "Clinic"))
+    credit = _reimbursement(db, book, date(2026, 9, 20), "ACME INSURANCE PMT 0042", "100.00")
+
+    [proposal] = reimbursement_proposals(db).value
+    assert (proposal.receivable, proposal.transaction, proposal.split) == (
+        receivable.handle,
+        *credit,
+    )
+    assert proposal.amount == Money("100.00")
+    assert proposal.remaining_after == Money("50.00")
+    assert "payer named" in proposal.reason
+
+    result = accept_reimbursements(db, tuple(_proposed(db))).value
+    assert (result.linked, result.unchanged) == (1, 0)
+    summary = receivable_summary(db, db.get_receivable(receivable.handle))
+    assert summary.status is ReceivableStatus.PARTIAL
+    assert _proposed(db) == []
+
+
+def test_credits_that_do_not_fit_are_never_proposed(db, book):
+    receivable = _save(db, incurred=date(2026, 9, 10))
+    attach_expense_split(db, receivable.handle, *_expense(db, book, date(2026, 9, 10), "Clinic"))
+    _reimbursement(db, book, date(2026, 9, 1), "Before the expense", "10.00")
+    _reimbursement(db, book, date(2026, 9, 20), "Too large", "500.00")
+    assert _proposed(db) == []
+
+
+def test_an_ambiguous_credit_needs_the_payer_named(db, book):
+    acme = _save(db, payer="Acme Insurance")
+    attach_expense_split(db, acme.handle, *_expense(db, book, date(2026, 9, 1), "Clinic"))
+    other = _save(db, payer="Employer Wellness")
+    attach_expense_split(db, other.handle, *_expense(db, book, date(2026, 9, 2), "Gym"))
+    _reimbursement(db, book, date(2026, 9, 20), "Deposit", "50.00")
+    assert _proposed(db) == []
+
+    named = _reimbursement(db, book, date(2026, 9, 21), "Employer Wellness credit", "60.00")
+    assert _proposed(db) == [(other.handle, *named)]
+
+
+def test_proposals_never_promise_more_than_remains(db, book):
+    receivable = _save(db)
+    attach_expense_split(db, receivable.handle, *_expense(db, book, date(2026, 9, 1), "Clinic"))
+    first = _reimbursement(db, book, date(2026, 9, 10), "Acme 1", "100.00")
+    _reimbursement(db, book, date(2026, 9, 11), "Acme 2", "100.00")
+    assert _proposed(db) == [(receivable.handle, *first)]
+
+
+def test_stale_choices_and_closed_receivables_are_skipped(db, book):
+    receivable = _save(db)
+    attach_expense_split(db, receivable.handle, *_expense(db, book, date(2026, 9, 1), "Clinic"))
+    credit = _reimbursement(db, book, date(2026, 9, 10), "Acme", "40.00")
+    record_write_off(db, RecordWriteOff(receivable.handle, Money("150.00"), date(2026, 9, 5)))
+    assert _proposed(db) == []
+
+    result = accept_reimbursements(db, ((receivable.handle, *credit),)).value
+    assert (result.linked, result.unchanged) == (0, 1)
+    assert db.get_receivable(receivable.handle).reimbursements == []
+
+
+def test_cli_lists_and_accepts_reimbursement_proposals(tmp_path, capsys):
+    import json
+
+    from breadsched.cli.main import main
+    from breadsched.gen.db.sqlite import DbSQLite as _Db
+    from breadsched.gen.lib import Account, AccountType
+
+    path = tmp_path / "proposals.breadsched"
+    assert main(["init", str(path)]) == 0
+    db = _Db()
+    db.load(str(path))
+    with db.transaction("Setup") as txn:
+        checking = Account(name="Checking", atype=AccountType.BANK)
+        db.add_account(checking, txn)
+        medical = Account(name="Medical", atype=AccountType.EXPENSE)
+        db.add_account(medical, txn)
+    expense = Transaction.simple(
+        date(2026, 9, 1), "Doctor visit", medical.handle, checking.handle, "150.00"
+    )
+    refund = Transaction.simple(
+        date(2026, 9, 15), "Acme Insurance EOB", checking.handle, medical.handle, "90.00"
+    )
+    with db.transaction("Spend and refund") as txn:
+        db.add_transaction(expense, txn)
+        db.add_transaction(refund, txn)
+    receivable = save_receivable(
+        db, SaveReceivable(incurred_date=date(2026, 9, 1), payer="Acme Insurance")
+    ).value
+    cost = next(s for s in expense.splits if s.account == medical.handle)
+    attach_expense_split(db, receivable.handle, expense.handle, cost.handle)
+    db.close()
+    capsys.readouterr()
+
+    assert main(["receivables", str(path), "--proposals", "--json"]) == 0
+    [proposal] = json.loads(capsys.readouterr().out)
+    assert (proposal["transaction"], proposal["amount"]) == (refund.handle, "90.00")
+    assert proposal["remaining_after"] == "60.00"
+
+    assert main(["receivables", str(path), "--accept-proposals"]) == 0
+    assert "Linked 1 reimbursement(s)" in capsys.readouterr().out
+    assert main(["receivables", str(path), "--json"]) == 0
+    [listed] = json.loads(capsys.readouterr().out)
+    assert (listed["status"], listed["remaining"]) == ("partial", "60.00")
+    assert main(["receivables", str(path), "--proposals"]) == 0
+    assert "No unlinked credits" in capsys.readouterr().out
+
+
+def test_a_credit_in_another_currency_is_never_proposed(db, book):
+    """Currency evidence: an amount in another currency is not comparable."""
+    from breadsched.gen.lib import Commodity
+
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro", fraction=100)
+    with db.transaction("Currency fixture") as txn:
+        db.add_commodity(euro, txn)
+    receivable = _save(db)
+    attach_expense_split(db, receivable.handle, *_expense(db, book, date(2026, 9, 1), "Clinic"))
+    refund = Transaction.simple(
+        date(2026, 9, 20),
+        "Acme Insurance",
+        book.checking,
+        book.groceries,
+        "50.00",
+        currency=euro.handle,
+    )
+    with db.transaction("Foreign refund") as txn:
+        db.add_transaction(refund, txn)
+    assert _proposed(db) == []

@@ -4832,3 +4832,43 @@ class TestReceivablesRoutes:
                 assert json.loads(caught.value.read())["code"] == code
         assert client.database.get_receivable(saved["handle"]).serialize() == before
         assert len(list(client.database.iter_receivables())) == 1
+
+    def test_proposals_are_listed_and_accepted_only_when_chosen(self, client):
+        from breadsched.gen.lib import Transaction
+
+        db = client.database
+        rent_txn, rent, cost = self._rent(client)
+        _status, saved = client.post(
+            "/api/receivable/save",
+            {
+                "payer": "Acme Insurance",
+                "incurred_date": str(rent_txn.post_date),
+                "link_expense": {"transaction": rent_txn.handle, "split": cost.handle},
+            },
+        )
+        checking = db.get_account_by_name("Assets:Checking")
+        refund = Transaction.simple(
+            rent_txn.post_date, "Acme Insurance", checking.handle, rent.handle, Money("75")
+        )
+        with db.transaction("Refund fixture") as txn:
+            db.add_transaction(refund, txn)
+        credit = next(s for s in refund.splits if s.account == rent.handle)
+
+        _status, listed = client.get("/api/receivables")
+        [proposal] = listed["proposals"]
+        assert (proposal["receivable"], proposal["split"], proposal["amount"]) == (
+            saved["handle"],
+            credit.handle,
+            "75.00",
+        )
+        _status, none = client.post("/api/receivables/accept", {"links": []})
+        assert none == {"linked": 0, "unchanged": 0}
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/receivables/accept", {"links": "all"})
+        assert caught.value.code == 400
+        assert db.get_receivable(saved["handle"]).reimbursements == []
+
+        link = [saved["handle"], refund.handle, credit.handle]
+        _status, accepted = client.post("/api/receivables/accept", {"links": [link]})
+        assert accepted == {"linked": 1, "unchanged": 0}
+        assert client.get("/api/receivables")[1]["proposals"] == []
