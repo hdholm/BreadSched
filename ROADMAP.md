@@ -62,8 +62,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    renameable identities separate from descriptions; exact normalized-description
    keys propose a payee for unassigned transactions, and nothing is assigned until
    the user accepts (`breadsched payees`, GTK Actions → Payees…, web Payees view).
-   Next: a payee field in the register and transaction editor, then reviewed
-   categorization rules. Keep rule priority and conflicts
+   The register shows each transaction's payee and the GTK editor, web register,
+   and web entry set or clear it. Next: reviewed categorization rules. Keep rule priority and conflicts
    explainable; never silently recategorize previously accepted transactions.
    Offer entry autocomplete from earlier transactions as a visible, editable
    proposal that never commits without the user's save.

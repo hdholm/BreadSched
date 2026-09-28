@@ -1087,6 +1087,21 @@ async function showRegister() {
       openScheduledEditor(schedules, draft);
     } catch (error) { say(error.message, "error"); }
   };
+  const payeePicker = (row) => {
+    // The payee is BreadSched's own reference; the description is never rewritten.
+    const select = el("select", { "aria-label":`Payee for ${row.description}`,
+      onchange: async (event) => {
+        try {
+          await post("/api/transaction/payee",
+            { transaction:row.handle, payee:event.target.value || null });
+          say("Payee saved.");
+        } catch (error) { say(error.message, "error"); render(); }
+      } },
+      el("option", { value:"" }, "(no payee)"),
+      ...data.payees.map((payee) => el("option", { value:payee.handle,
+        selected: payee.handle === row.payee ? "selected" : null }, payee.name)));
+    return select;
+  };
   const rows = data.rows.map((row) => el("tr", {},
     el("td", {}, row.date),
     el("td", { class: "muted" }, row.num),
@@ -1094,6 +1109,7 @@ async function showRegister() {
       el("div", {}, row.description),
       row.notes ? el("div", {class:"muted"}, `BreadSched: ${row.notes}`) : null,
       row.source_notes ? el("div", {class:"muted"}, `Imported: ${row.source_notes}`) : null),
+    el("td", {}, payeePicker(row)),
     el("td", { class: "muted" }, row.transfer),
     el("td", { class: cls(row.amount) }, money(row.amount)),
     el("td", { class: cls(row.balance) }, money(row.balance)),
@@ -1149,7 +1165,7 @@ async function showRegister() {
       }}, "Reconcile…"),
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
     quickEntry,
-    table(["Date", "Num", "Description", "Transfer",
+    table(["Date", "Num", "Description", "Payee", "Transfer",
            { label: "Amount", num: true }, { label: "Balance", num: true }, ""], rows));
 }
 

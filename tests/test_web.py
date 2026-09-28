@@ -4358,3 +4358,48 @@ class TestPayees:
                 assert json.loads(caught.value.read())["code"] == code
 
         assert [(p.handle, p.name, p.match_keys) for p in client.database.iter_payees()] == before
+
+    def test_register_shows_and_sets_a_payee(self, client):
+        rent = self._rent(client)
+        checking = client.database.get_account_by_name("Checking")
+        _status, saved = client.post("/api/payee/save", {"name": "Landlord"})
+
+        _status, register = client.get(f"/api/register?account={checking.handle}")
+        assert register["payees"] == [{"handle": saved["handle"], "name": "Landlord"}]
+        row = next(item for item in register["rows"] if item["handle"] == rent.handle)
+        assert row["payee"] is None
+
+        status, set_ = client.post(
+            "/api/transaction/payee", {"transaction": rent.handle, "payee": saved["handle"]}
+        )
+        assert status == 200 and set_ == {"transaction": rent.handle, "payee": saved["handle"]}
+        _status, register = client.get(f"/api/register?account={checking.handle}")
+        row = next(item for item in register["rows"] if item["handle"] == rent.handle)
+        assert row["payee"] == saved["handle"]
+        assert client.database.get_transaction(rent.handle).description == "Rent"
+
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/transaction/payee", {"transaction": rent.handle, "payee": "gone"})
+        assert caught.value.code == 404
+        assert client.database.get_transaction(rent.handle).payee == saved["handle"]
+
+        status, cleared = client.post(
+            "/api/transaction/payee", {"transaction": rent.handle, "payee": None}
+        )
+        assert status == 200 and cleared["payee"] is None
+
+    def test_web_entry_records_a_chosen_payee(self, client):
+        _status, saved = client.post("/api/payee/save", {"name": "Landlord"})
+        status, posted = client.post(
+            "/api/transaction",
+            {
+                "date": "2026-02-01",
+                "description": "Rent",
+                "amount": "10.00",
+                "from": "Checking",
+                "to": "Expenses:Rent",
+                "payee": saved["handle"],
+            },
+        )
+        assert status == 200
+        assert client.database.get_transaction(posted["handle"]).payee == saved["handle"]

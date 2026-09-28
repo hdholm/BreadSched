@@ -44,6 +44,10 @@ class TransactionInput:
     notes: str = ""
     currency: str | None = None
     investment_activity: InvestmentActivityKind | None = None
+    #: With ``set_payee``, the payee to record (``None`` clears it). Without it an
+    #: edit keeps the stored payee, so editors that do not show payees never drop one.
+    payee: str | None = None
+    set_payee: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +107,12 @@ def build_transaction(
         errors.append(ServiceError("transaction.splits.too_few", ("splits",)))
     if len({split.account for split in definition.splits}) < 2:
         errors.append(ServiceError("transaction.accounts.same", ("splits",)))
+    if (
+        definition.set_payee
+        and definition.payee is not None
+        and db.get_payee(definition.payee) is None
+    ):
+        errors.append(ServiceError("payee.not_found", ("payee",)))
 
     preferred_currency = definition.currency or (
         existing.currency if existing is not None else None
@@ -192,6 +202,8 @@ def build_transaction(
     candidate.notes = definition.notes.strip()
     candidate.currency = currency
     candidate.splits = candidate_splits
+    if definition.set_payee:
+        candidate.payee = definition.payee
 
     if investment.activity_problems(db, candidate.splits):
         return ServiceResult.failure(ServiceError("transaction.investment.invalid", ("splits",)))

@@ -217,3 +217,59 @@ def test_cli_adds_previews_and_accepts(tmp_path, capsys):
     assert listed["transactions"] == len(proposals)
     assert main(["payees", str(path), "--add", "known"]) == 2
     assert "Another payee already has that name" in capsys.readouterr().err
+
+
+def _save(db, book, payee=None, set_payee=False, existing=None, description="Grocer"):
+    from breadsched.gen.lib import Money
+    from breadsched.gen.lib.amount import Amount
+    from breadsched.gen.services.transactions import (
+        SaveTransaction,
+        TransactionInput,
+        TransactionSplitInput,
+        save_transaction,
+        transaction_currency,
+    )
+
+    currency = transaction_currency(db)
+    return save_transaction(
+        db,
+        SaveTransaction(
+            TransactionInput(
+                post_date=date(2026, 9, 1),
+                description=description,
+                currency=currency,
+                splits=(
+                    TransactionSplitInput(book.groceries, Amount(Money("12.00"), currency)),
+                    TransactionSplitInput(book.checking, Amount(Money("-12.00"), currency)),
+                ),
+                payee=payee,
+                set_payee=set_payee,
+            ),
+            existing_handle=existing,
+        ),
+    )
+
+
+def test_the_editor_sets_keeps_and_clears_a_payee(db, book):
+    grocer = save_payee(db, SavePayee("Corner Grocer")).value
+
+    added = _save(db, book, grocer.handle, set_payee=True)
+    assert added.ok, added.errors
+    handle = added.value.handle
+    assert db.get_transaction(handle).payee == grocer.handle
+
+    # An editor that does not show payees keeps the stored one.
+    assert _save(db, book, existing=handle, description="Grocer (edited)").ok
+    assert db.get_transaction(handle).payee == grocer.handle
+
+    assert _save(db, book, None, set_payee=True, existing=handle).ok
+    assert db.get_transaction(handle).payee is None
+
+
+def test_the_editor_refuses_a_missing_payee(db, book):
+    before = len(list(db.iter_transactions()))
+
+    result = _save(db, book, "missing", set_payee=True)
+
+    assert [error.code for error in result.errors] == ["payee.not_found"]
+    assert len(list(db.iter_transactions())) == before

@@ -4618,3 +4618,55 @@ class TestPayeesDialog:
             assert isinstance(opened, PayeesDialog)
         finally:
             opened.destroy()
+
+
+class TestPayeeInRegisterAndEditor:
+    """The register shows the accepted payee; the editor sets, keeps, or clears it."""
+
+    def _payee(self, app, name="Landlord"):
+        from breadsched.gen.services.payees import SavePayee, save_payee
+
+        return save_payee(app.db, SavePayee(name)).value
+
+    def test_register_column_shows_the_payee_name(self, app, window, populated_book):
+        from breadsched.gen.services.payees import assign_payee
+
+        app.open_book(populated_book)
+        window.show_category("register")
+        view = window._views["register"]
+        columns = view.column_view.get_columns()
+        titles = [columns.get_item(i).get_title() for i in range(columns.get_n_items())]
+        assert titles.index("Payee") == titles.index("Description") + 1
+        payee = self._payee(app)
+        row = view._rows[0]
+        assert view._payee_name(row.transaction) == ""
+        assert assign_payee(app.db, row.transaction.handle, payee.handle).ok
+        view.refresh()
+        assert view._payee_name(app.db.get_transaction(row.transaction.handle)) == "Landlord"
+
+    def test_editor_picker_sets_keeps_and_clears(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        payee = self._payee(app)
+        existing = next(iter(app.db.iter_transactions()))
+        description = existing.description
+
+        dialog = TransactionDialog(window, app.db, transaction=existing)
+        assert dialog.payee_picker.get_selected() == 0
+        dialog.payee_picker.set_selected(1)
+        dialog._on_save(None)
+        stored = app.db.get_transaction(existing.handle)
+        assert (stored.payee, stored.description) == (payee.handle, description)
+
+        reopened = TransactionDialog(window, app.db, transaction=stored)
+        assert reopened.payee_picker.get_selected() == 1
+        reopened._on_save(None)
+        assert app.db.get_transaction(existing.handle).payee == payee.handle
+
+        cleared = TransactionDialog(
+            window, app.db, transaction=app.db.get_transaction(existing.handle)
+        )
+        cleared.payee_picker.set_selected(0)
+        cleared._on_save(None)
+        assert app.db.get_transaction(existing.handle).payee is None
