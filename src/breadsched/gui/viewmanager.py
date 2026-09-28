@@ -60,6 +60,7 @@ class ViewAction:
     Every view action appears in the menus; ``toolbar`` ones also appear as icons
     while their view is current, and ``toggle`` ones are checkable View-menu items
     whose handler receives the new boolean. The handler is a method of that view.
+    ``caption`` is the toolbar icon's short caption; it defaults to the label.
     """
 
     name: str
@@ -68,6 +69,7 @@ class ViewAction:
     icon: str | None = None
     toolbar: bool = False
     toggle: bool = False
+    caption: str | None = None
 
 
 #: Commands per view. Buttons that act on a table's selected row (a schedule, a
@@ -123,21 +125,80 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),
         ViewAction("reconcile", "_Reconcile…", "_on_reconcile_clicked"),
     ),
+    # A command whose button changes with the view's state (Review due,
+    # Reconcile, Save as scenario) stays in its view; the register keeps its own
+    # buttons because a separate register window has no toolbar.
     "scheduled": (
-        ViewAction("new-scheduled", "_New Scheduled Transaction…", "_on_new_clicked"),
-        ViewAction("suggest", "_Suggest Estimates from History…", "_on_suggest_clicked"),
-        ViewAction("new-loan", "New _Loan…", "_on_loan_clicked"),
+        ViewAction(
+            "new-scheduled",
+            "_New Scheduled Transaction…",
+            "_on_new_clicked",
+            "document-new-symbolic",
+            True,
+            caption="New Scheduled",
+        ),
+        ViewAction(
+            "suggest",
+            "_Suggest Estimates from History…",
+            "_on_suggest_clicked",
+            "edit-find-symbolic",
+            True,
+            caption="Suggest",
+        ),
+        ViewAction(
+            "new-loan",
+            "New _Loan…",
+            "_on_loan_clicked",
+            "accessories-calculator-symbolic",
+            True,
+            caption="New Loan",
+        ),
     ),
     "upcoming": (ViewAction("review-due", "_Review Due…", "_on_post_clicked"),),
     "plan": (
-        ViewAction("new-scenario", "_New Scenario…", "_on_new_scenario"),
-        ViewAction("manage-scenarios", "_Manage Scenarios…", "_on_manage_scenarios"),
-        ViewAction("explore-expenses", "_Explore Expenses…", "_open_expense_explorer"),
+        ViewAction(
+            "new-scenario",
+            "_New Scenario…",
+            "_on_new_scenario",
+            "document-new-symbolic",
+            True,
+            caption="New Scenario",
+        ),
+        ViewAction(
+            "manage-scenarios",
+            "_Manage Scenarios…",
+            "_on_manage_scenarios",
+            "view-list-symbolic",
+            True,
+            caption="Scenarios",
+        ),
+        ViewAction(
+            "explore-expenses",
+            "_Explore Expenses…",
+            "_open_expense_explorer",
+            "edit-find-symbolic",
+            True,
+            caption="Explore",
+        ),
     ),
     "projection": (
-        ViewAction("compare", "_Compare With…", "_on_compare_clicked"),
+        ViewAction(
+            "compare",
+            "_Compare With…",
+            "_on_compare_clicked",
+            "view-dual-symbolic",
+            True,
+            caption="Compare",
+        ),
         ViewAction("save-scenario", "_Save as Scenario", "_on_save_clicked"),
-        ViewAction("export", "E_xport Projection…", "_on_export_clicked"),
+        ViewAction(
+            "export",
+            "E_xport Projection…",
+            "_on_export_clicked",
+            "document-save-symbolic",
+            True,
+            caption="Export",
+        ),
     ),
 }
 
@@ -495,7 +556,7 @@ class ViewManager(Gtk.ApplicationWindow):
         for item in tools:
             self.view_tools.append(
                 _tool_button(
-                    item.label.replace("_", "").rstrip("…"),
+                    item.caption or item.label.replace("_", "").rstrip("…"),
                     item.icon or "system-run-symbolic",
                     f"win.{view_action_name(key, item)}",
                     item.label.replace("_", ""),

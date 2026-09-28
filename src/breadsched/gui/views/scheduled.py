@@ -114,18 +114,6 @@ class ScheduledView(BaseView):
         title.set_hexpand(True)
         bar.append(title)
 
-        new_button = Gtk.Button(label="New scheduled…")
-        new_button.set_tooltip_text("Create a scheduled transaction or an estimate")
-        new_button.connect("clicked", self._on_new_clicked)
-        bar.append(new_button)
-
-        suggest_button = Gtk.Button(label="Suggest from history…")
-        suggest_button.set_tooltip_text(
-            "Propose planning estimates from completed category history"
-        )
-        suggest_button.connect("clicked", self._on_suggest_clicked)
-        bar.append(suggest_button)
-
         self.edit_button = Gtk.Button(label="View / Edit…")
         self.edit_button.set_tooltip_text(
             "View the selected schedule; edit it when BreadSched can preserve it safely"
@@ -145,10 +133,7 @@ class ScheduledView(BaseView):
         self.delete_button.connect("clicked", self._on_delete_clicked)
         bar.append(self.delete_button)
 
-        loan_button = Gtk.Button(label="New loan…")
-        loan_button.set_tooltip_text("Set up a loan with calculated interest")
-        loan_button.connect("clicked", self._on_loan_clicked)
-        bar.append(loan_button)
+        # New scheduled, Suggest, and New loan are toolbar icons (#156 follow-up).
 
         self.definitions_view = self._definitions_view()
         self.estimates_view = self._definitions_view()
