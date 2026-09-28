@@ -317,13 +317,17 @@ class TestServiceBoundaries:
         ("relative", "class_name", "method_name"),
         (
             ("gui/dialogs/transaction_dialog.py", "TransactionDialog", "_on_save"),
-            ("web/server.py", "Api", "add_transaction"),
+            ("web/register_resource.py", None, "transaction_add"),
         ),
     )
     def test_transaction_adapters_do_not_construct_or_persist_domain_objects(
         self, relative, class_name, method_name
     ):
-        calls = calls_in_method(SRC / relative, class_name, method_name)
+        calls = (
+            calls_in_function(SRC / relative, method_name)
+            if class_name is None
+            else calls_in_method(SRC / relative, class_name, method_name)
+        )
         forbidden = {
             "Transaction",
             "Split",

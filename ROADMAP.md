@@ -70,9 +70,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 ## Architecture and correctness
 
 - Split oversized modules/functions as part of the service/resource ownership
-  work, especially the remaining seams in `web/server.py` (for example transaction
-  entry and register handlers still parse JSON inline; reconciliation moved to
-  `web/reconciliation_resource.py`). Continue
+  work, especially the remaining seams in `web/server.py`: the scheduled, loan,
+  scenario, FSA claim, review, and import handlers still parse JSON inline on
+  `Api` (register, entry, and reconciliation now have resource adapters). Continue
   consolidating web control parsers where ownership is clear. Split large GUI test modules
   only when the resulting fixture ownership and runtime isolation improve; do not
   optimize for a line-count threshold alone.

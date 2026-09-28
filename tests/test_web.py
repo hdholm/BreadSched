@@ -674,6 +674,34 @@ class TestItServes:
         assert status == 200
         assert reopened["status"] == "open"
 
+    def test_register_query_and_rejected_entries_keep_their_contract(self, client):
+        def refused(call, *args) -> tuple[int, dict]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                call(*args)
+            return caught.value.code, json.loads(caught.value.read())
+
+        assert refused(client.get, "/api/register")[0] == 400
+        assert refused(client.get, "/api/register?account=nope")[0] == 404
+        query = urllib.parse.urlencode({"account": "x", "limit": "0"})
+        assert refused(client.get, f"/api/register?{query}")[0] == 400
+        _status, accounts = client.get("/api/accounts")
+        checking = next(a for a in accounts if a["name"] == "Checking")
+        _status, register = client.get(
+            "/api/register?" + urllib.parse.urlencode({"account": checking["handle"], "limit": 1})
+        )
+        assert len(register["rows"]) == 1
+
+        before = sorted(item.handle for item in client.database.iter_transactions())
+        for payload, code in (
+            ({"from": "Checking", "to": "Expenses:Rent", "amount": "-5"}, 400),
+            ({"from": "Checking", "to": "Nowhere", "amount": "5"}, 400),
+            ({"description": "missing accounts"}, 400),
+            ({"from": "Checking", "to": "Expenses:Rent", "amount": "5", "date": "x"}, 400),
+        ):
+            status, _error = refused(client.post, "/api/transaction", payload)
+            assert status == code, payload
+        assert sorted(item.handle for item in client.database.iter_transactions()) == before
+
     def test_rejected_reconciliation_requests_leave_the_statement_unchanged(self, client):
         def refused(call, *args) -> int:
             with pytest.raises(urllib.error.HTTPError) as caught:
