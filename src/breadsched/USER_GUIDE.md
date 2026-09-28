@@ -327,6 +327,11 @@ The browser interface keeps its quick-entry form for now. It creates the same
 kind of two-split transaction, and you post it with the button whose label
 describes the effect on the account.
 
+Changing an amount in an existing transaction updates both of the numbers
+BreadSched keeps for each split. A split in an account held in another currency
+or commodity is the exception: BreadSched refuses to change its amount without
+its converted quantity, rather than keep a quantity that no longer matches.
+
 Use the full transaction editor for additional splits, notes, reconciliation
 metadata, FSA links, or investment classifications. A transaction cannot be saved
 unless its exact splits balance.

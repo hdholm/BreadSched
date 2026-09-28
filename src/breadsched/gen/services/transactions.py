@@ -159,9 +159,22 @@ def build_transaction(
         ):
             errors.append(ServiceError("transaction.account.hidden", (f"{path}.account",)))
 
+        same_commodity = account_commodity is None or account_commodity == currency
+        value_changed = (
+            source is not None
+            and source.account == item.account
+            and item.quantity is None
+            and source.value != item.value.value
+        )
+        if value_changed and not same_commodity:
+            # A foreign-commodity split cannot guess its new quantity (#166).
+            errors.append(ServiceError("transaction.quantity.conversion", (f"{path}.quantity",)))
+
         if source is not None:
             split = Split.from_dict(source.serialize())
-            if split.account != item.account:
+            if split.account != item.account or (value_changed and same_commodity):
+                # In the transaction currency a new value is also the new quantity,
+                # which also repairs a quantity an earlier edit left behind (#166).
                 split.quantity = (
                     item.quantity.value if item.quantity is not None else item.value.value
                 )

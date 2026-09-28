@@ -84,6 +84,9 @@ _SERVICE_MESSAGES = {
     "transaction.value.commodity": "Every split value must use the transaction currency",
     "transaction.quantity.commodity": "A split quantity must use its account commodity",
     "transaction.quantity.required": "Enter the account-commodity quantity for this split",
+    "transaction.quantity.conversion": (
+        "This split converts at its own rate; its amount cannot change without its quantity"
+    ),
     "transaction.unbalanced": "The transaction is out of balance",
     "transaction.investment.invalid": "Check the investment activity classification",
     "transaction.claim.not_found": "The selected FSA claim no longer exists",
