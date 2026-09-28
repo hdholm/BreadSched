@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a145 - 2026-09-28
+
+- **Dashboard group rows no longer list inferred sub-accounts (#150).** A group
+  configured on a parent account used to append every descendant's quote details
+  to the row's label as one long "; "-joined string. The row now shows the group and
+  the selected account's own valuation note only; every included account appears
+  one per line, with its quote date and source (or an explicit missing-quote line),
+  in the GTK row tooltip and the web group card's title. CLI and web JSON expose the
+  new `members` list; a path heading no longer repeats its children's notes.
+  Application version `0.2.0a145`; native schema remains 9.
+
 ## 0.2.0a144 - 2026-09-28
 
 - **Dashboard totals always cover the whole book (#149).** Net worth, Assets, and

@@ -816,10 +816,14 @@ and is disclosed. Groups never change those totals, near-term needs, or the pend
 bill and income lists, so no group-scope disclosure is needed; a group's
 kind (including "liquid") only labels its rows. Selected chart parents cover
 descendants within a group row. The shared engine supplies the remaining notes
-(card payment setup) to every presentation and print output. A combined group's note joins every account's quote
-details, so the GTK group label caps its natural width (60 characters) and
-ellipsizes, with the full text in its tooltip, and headline card text wraps at 40
-characters; an ellipsized GTK label otherwise still requests its full width and
+(card payment setup) to every presentation and print output. A group row's `note`
+carries only its directly selected accounts' own valuation notes; descendants
+included by inference are `members` (one line each, with any quote date and source
+or an explicit missing-quote line), never part of the row label (#150). GTK shows
+the path, note, and members one per line in the row's tooltip, the web card uses
+them as its title, and CLI/web JSON expose `members`. The GTK group label still
+caps its natural width (60 characters) and ellipsizes, and headline card text wraps
+at 40 characters; an ellipsized GTK label otherwise still requests its full width and
 widens the window (#140). The web Dashboard shows notes as wrapping paragraphs.
 
 The synthetic learning book is generated on request by `gen.sample_book` into a

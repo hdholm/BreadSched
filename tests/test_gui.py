@@ -4702,6 +4702,33 @@ class TestDashboardWidth:
         )
         assert combined in (name.get_tooltip_text() or "")
 
+    def test_inferred_members_are_in_the_tooltip_one_per_line(self, app, window, populated_book):
+        """Issue #150: the row names the group; the tooltip lists its accounts."""
+        from breadsched.gen.engine.dashboard import GroupResult
+        from breadsched.gen.lib import Money
+
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        members = ("Assets", "  Assets:Checking", "  Assets:Savings: 2026-09-01 · Manual")
+        view.board.groups.append(
+            GroupResult(
+                name="Everything",
+                path="Everything",
+                kind="asset",
+                total=Money(0),
+                members=members,
+            )
+        )
+        view._render_groups()
+        name = next(
+            child
+            for child in _children(view.groups)
+            if isinstance(child, Gtk.Label) and child.get_text().startswith("Everything")
+        )
+        assert name.get_text() == "Everything"
+        assert name.get_tooltip_text().split("\n") == ["Everything", *members]
+
 
 def _children(widget):
     child = widget.get_first_child()
