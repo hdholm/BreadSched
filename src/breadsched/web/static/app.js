@@ -1,4 +1,4 @@
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Verify"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Verify"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -3441,6 +3441,103 @@ async function showPayees() {
       el("div", { class:"toolbar" }, accept)));
 }
 
+async function showRules() {
+  const data = await get("/api/rules");
+  const refresh = async () => { current = "Rules"; await render(); };
+  const run = (action) => async () => {
+    try { await action(); } catch (error) { say(error.message, "error"); }
+  };
+  const kind = el("select", { name:"kind" },
+    el("option", { value:"description" }, "Description"),
+    el("option", { value:"payee" }, "Payee"));
+  const description = el("input", { name:"description",
+    placeholder:"Example description, e.g. CORNER GROCER #1234" });
+  const payee = el("select", { name:"payee" },
+    ...data.payees.map((item) => el("option", { value:item.handle }, item.name)));
+  const category = el("select", { name:"category" },
+    ...data.categories.map((item) => el("option", { value:item.handle }, item.name)));
+  const syncKind = () => {
+    description.hidden = kind.value !== "description";
+    payee.hidden = kind.value !== "payee";
+  };
+  kind.addEventListener("change", syncKind);
+  syncKind();
+  const form = el("form", { class:"entry", onsubmit:(event) => {
+    event.preventDefault();
+    run(async () => {
+      const body = { category:category.value };
+      if (kind.value === "payee") body.payee = payee.value || null;
+      else body.description = description.value;
+      await post("/api/rule/add", body);
+      say("Rule added.");
+      await refresh();
+    })();
+  } },
+    el("label", {}, "Match", kind),
+    el("label", {}, "Matching", description, payee),
+    el("label", {}, "Category", category),
+    el("button", { class:"action primary", type:"submit" }, "Add rule"));
+  const last = data.rules.length;
+  const ruleRows = data.rules.map((rule) => el("tr", {},
+    el("td", { class:"num" }, String(rule.position)),
+    el("td", {}, rule.payee ? `Payee ${rule.payee_name || rule.payee}` : `Description ${rule.key}`),
+    el("td", {}, rule.category_name),
+    el("td", {},
+      el("button", { class:"action", type:"button", disabled:rule.position === 1 ? "disabled" : null,
+        onclick:run(async () => {
+          await post("/api/rule/move", { handle:rule.handle, position:rule.position - 1 });
+          await refresh();
+        }) }, "Up"),
+      el("button", { class:"action", type:"button", disabled:rule.position === last ? "disabled" : null,
+        onclick:run(async () => {
+          await post("/api/rule/move", { handle:rule.handle, position:rule.position + 1 });
+          await refresh();
+        }) }, "Down"),
+      el("button", { class:"action", type:"button", onclick:run(async () => {
+        await post("/api/rule/delete", { handle:rule.handle });
+        say(`Deleted rule ${rule.position}.`);
+        await refresh();
+      }) }, "Delete"))));
+  const chosen = new Set(data.proposals.map((item) => item.transaction));
+  const proposalRows = data.proposals.map((item) => {
+    const box = el("input", { type:"checkbox", checked:"checked",
+      "aria-label":`Accept ${item.category_name} for ${item.description}` });
+    box.addEventListener("change", () => {
+      if (box.checked) chosen.add(item.transaction); else chosen.delete(item.transaction);
+    });
+    const conflicts = item.conflicts.map((c) => `rule ${c.rule_position}: ${c.category_name}`)
+      .join("; ");
+    return el("tr", {}, el("td", {}, box), el("td", {}, item.date),
+      el("td", {}, item.description), el("td", { class:"num" }, money(item.amount)),
+      el("td", {}, item.category_name), el("td", { class:"num" }, String(item.rule_position)),
+      el("td", {}, conflicts || "—"));
+  });
+  const accept = el("button", { class:"action primary", type:"button",
+    disabled:data.proposals.length ? null : "disabled",
+    onclick:run(async () => {
+      const result = await post("/api/rules/accept", { transactions:[...chosen] });
+      say(`Categorized ${result.assigned} transaction(s); ${result.unchanged} left unchanged.`);
+      await refresh();
+    }) }, "Accept selected");
+  return el("div", {},
+    el("p", { class:"note" },
+      "Rules propose a category for imported transactions still in Uncategorized CSV or "
+      + "Uncategorized OFX. The first matching rule decides; a later rule that would choose "
+      + "differently is listed as a conflict. A category you chose is never replaced, and "
+      + "nothing changes until you accept."),
+    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Rules"),
+      data.rules.length
+        ? table([{ label:"Rule", num:true }, "Matches", "Category", ""], ruleRows)
+        : el("p", { class:"note" }, "No rules yet."),
+      form),
+    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Proposals"),
+      data.proposals.length
+        ? table(["Accept", "Date", "Description", { label:"Amount", num:true }, "Category",
+          { label:"Rule", num:true }, "Also matched"], proposalRows)
+        : el("p", { class:"note" }, "No uncategorized imported transactions match a rule."),
+      el("div", { class:"toolbar" }, accept)));
+}
+
 async function showVerify() {
   const data = await get("/api/verify");
   const rerun = el("button", {class:"action", onclick:()=>showVerify()}, "Verify again");
@@ -3463,7 +3560,7 @@ const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
-  Payees: showPayees, Verify: showVerify,
+  Payees: showPayees, Rules: showRules, Verify: showVerify,
 };
 
 async function showFsaDashboard() {

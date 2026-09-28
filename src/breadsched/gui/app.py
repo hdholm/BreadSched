@@ -122,6 +122,7 @@ class BreadSchedApplication(Gtk.Application):
             ("import-new", self.on_import_new, None),
             ("import-csv", self.on_import_csv, None),
             ("payees", self.on_payees, None),
+            ("rules", self.on_rules, None),
             ("open-default", self.on_open_default, None),
             ("undo", self.on_undo, "<Control>z"),
             ("redo", self.on_redo, "<Control><Shift>z"),
@@ -150,6 +151,7 @@ class BreadSchedApplication(Gtk.Application):
             "import",
             "import-csv",
             "payees",
+            "rules",
             "export",
             "backup",
             "verify",
@@ -181,6 +183,7 @@ class BreadSchedApplication(Gtk.Application):
             "import",
             "import-csv",
             "payees",
+            "rules",
             "export",
             "backup",
             "verify",
@@ -378,6 +381,17 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
+    def on_rules(self, *_args):
+        """Open categorization rules and their proposals for the current book."""
+        if self.db is None:
+            self._report("Open a book before managing categorization rules.")
+            return None
+        from .dialogs.rules_dialog import RulesDialog
+
+        dialog = RulesDialog(self.props.active_window, self.db)
+        dialog.present()
+        return dialog
+
     def on_undo(self, *_args) -> None:
         if self.db is not None:
             self.db.undo()
@@ -555,6 +569,7 @@ def build_menu_model() -> Gio.Menu:
     actions_menu.append("New _Transaction…", "app.new-transaction")
     actions_menu.append("_Post Scheduled Transactions", "app.post-scheduled")
     actions_menu.append("Pa_yees…", "app.payees")
+    actions_menu.append("Categorization _Rules…", "app.rules")
     menubar.append_submenu("_Actions", actions_menu)
 
     help_menu = Gio.Menu()

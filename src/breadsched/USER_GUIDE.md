@@ -161,6 +161,10 @@ The GTK sidebar and the web navigation expose the same main work areas:
 - **Review** resolves actual activity and supports related review queues.
 - **Projection** calculates future state under Base or saved scenarios.
 
+Payees and categorization rules are managed in the desktop application from
+**Actions → Payees…** and **Actions → Categorization Rules…**, and in the web
+interface from the **Payees** and **Rules** views.
+
 Use **View** to switch work areas. Registers can also open in independent windows;
 their account, filter, selection, and expanded row do not replace the main window's
 register state.
@@ -808,8 +812,16 @@ decides, and the preview names any later rule that would have chosen differently
 so you can reorder them. Only transactions still on those placeholders are ever
 proposed, so a category you chose yourself is never replaced, and a transaction
 split across several placeholder lines is left for you. Nothing changes until you
-accept, and accepting is one undo step. Rules are managed from the command line
-for now:
+accept, and accepting is one undo step.
+
+In the desktop application choose **Actions → Categorization Rules…**; in the web
+interface open **Rules**. Choose whether a rule matches a description (enter an
+example) or a payee, choose the category, and choose **Add rule**. **Up** and
+**Down** change a rule's priority and **Delete** removes it (in the desktop
+application, **Edit → Undo** restores it). The **Proposals** list shows each
+transaction's proposed category, the deciding rule, and any later rule that would
+have chosen differently; every proposal starts checked. Clear any you do not want
+and choose **Accept selected**. From the command line:
 
 ```sh
 breadsched rules book.breadsched --add-description "CORNER GROCER #1234" --category "Expenses:Groceries"
@@ -820,8 +832,6 @@ breadsched rules book.breadsched --accept-all        # or --accept TRANSACTION
 breadsched rules book.breadsched --move 2 --to 1
 breadsched rules book.breadsched --delete 2
 ```
-
-Desktop and web screens for rules come next.
 
 ## Print, export, and inspect
 

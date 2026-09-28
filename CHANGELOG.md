@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a139 - 2026-09-28
+
+- **Categorization rule screens.** The desktop **Actions → Categorization Rules…**
+  dialog and the web **Rules** view list rules in priority order, add a rule
+  matching a description or a payee, move a rule up or down, and delete one. They
+  show each proposal with its deciding rule and any conflicting later rule, each
+  checked by default; **Accept selected** categorizes the checked ones in one undo
+  step. Both use the shared categorization service (web routes `GET /api/rules`,
+  `POST /api/rule/add`, `/api/rule/move`, `/api/rule/delete`, `/api/rules/accept`),
+  so rejected input changes nothing. Application version `0.2.0a139`; native
+  schema remains 8.
+
 ## 0.2.0a138 - 2026-09-28
 
 - **Reviewed categorization rules.** `breadsched rules` keeps an ordered list of
