@@ -3,6 +3,14 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a171 - 2026-09-28
+
+- **Reconciliation routes move to their own web adapter.** The browser's statement
+  reconciliation endpoints are served by `web/reconciliation_resource.py` instead of
+  methods on the web `Api`; their requests and responses are unchanged, and a new
+  route test proves a rejected start, selection, balance, or completion leaves the
+  statement as it was. Application version `0.2.0a171`; native schema remains 9.
+
 ## 0.2.0a170 - 2026-09-28
 
 - **CSV category, payee, and currency columns.** A CSV statement can now map an
