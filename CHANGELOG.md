@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a154 - 2026-09-28
+
+- **Enter split transactions in the register's blank row (#158).** Choose
+  **Split** at the end of the desktop register's blank row to enter one line per
+  split, each with a memo, account, and amount. An imbalance line shows how far
+  they are from balancing, and Enter saves only a balanced transaction with a split
+  in this account. A matching earlier multi-split entry fills the lines. Two lines
+  fold back into the ordinary row. The pencil icon opens the full editor with every
+  line. Application version `0.2.0a154`; native schema remains 9.
+
 ## 0.2.0a153 - 2026-09-28
 
 - **More view commands become toolbar icons (#156 follow-up).** Scheduled's New

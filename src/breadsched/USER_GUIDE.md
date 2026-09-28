@@ -307,9 +307,19 @@ same heading, and the payee. The line under the register says where they came
 from. Nothing is saved until you press Enter. Notes, reconciliation, planning
 links, and FSA claims are never copied.
 
-For more than two splits, choose **Split…** at the end of the row. It opens the
-full transaction editor filled in with what you typed. Saving there empties the
-row, and cancelling leaves it as it was. If you switch accounts, open another
+For more than two splits, choose **Split** at the end of the row. The row opens
+into one line per split, each with a memo, an account, and an amount under the
+account's own Increase or Decrease heading. What you had typed carries into the
+first two lines, and an empty line waits at the bottom for the next split. An
+**Imbalance** line shows how far the splits are from balancing. Enter saves the
+transaction only once it reads **Balanced** and one split is in this register's
+account. Choose **Split** again to fold two lines back into a single row. If the
+latest matching entry had several splits, leaving the description fills in its
+lines.
+
+The pencil icon beside **Split** opens the full transaction editor filled in with
+what you typed, including every split line. Saving there empties the row, and
+cancelling leaves it as it was. If you switch accounts, open another
 transaction, or close a register window while the row holds typing, BreadSched
 asks whether to save it, discard it, or stay.
 

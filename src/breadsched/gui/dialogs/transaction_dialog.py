@@ -413,12 +413,14 @@ class TransactionDialog(Gtk.Window):
         payee: str | None = None,
         transfer: str | None = None,
         amount: Money | None = None,
+        splits: list[tuple[str | None, Money | None, str]] | None = None,
     ) -> None:
         """Start a new transaction from a register's blank entry row (#158).
 
         ``amount`` is signed as it moves the register account; the transfer split
-        balances it. With no amount the splits stay blank, so the ordinary
-        proposal from the description can still fill them.
+        balances it. With no amount the splits stay blank, so the ordinary proposal
+        from the description can still fill them. ``splits`` instead gives
+        (account, value, memo) for each split.
         """
         if self.transaction is not None:
             return
@@ -428,6 +430,17 @@ class TransactionDialog(Gtk.Window):
         if payee in handles:
             self.payee_picker.set_selected(handles.index(payee) + 1)
         accounts = [account.handle for account in self.accounts]
+        if splits:
+            # In-place split lines (#158 slice 2) carry over one editor row each.
+            while len(self.splits) < len(splits):
+                self.add_split()
+            for editor, (account, value, memo) in zip(self.splits, splits, strict=False):
+                if account in accounts:
+                    editor.account.set_selected(accounts.index(account))
+                editor.memo.set_text(memo)
+                editor.amount.set_text("" if value is None else str(value.to_decimal()))
+            self.revalidate()
+            return
         other, here = self.splits[0], self.splits[1]
         if transfer in accounts:
             other.account.set_selected(accounts.index(transfer))

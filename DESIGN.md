@@ -1135,21 +1135,25 @@ route is `GET /api/entry/suggest` (`web/autocomplete_resource.py`).
 The GTK register takes new entries in a blank transaction row at the bottom. Its
 interaction design was written and approved before any code, as #148 requires.
 GnuCash's blank transaction row is the model for the interaction, not for the
-appearance. Slice 1, the two-split row, is implemented; slices 2 and 3 below are
-planned.
+appearance. Slices 1 (the two-split row) and 2 (in-place splits) are
+implemented; slice 3 below is planned.
 
 **Placement and model.** The last row of every register is a sentinel `BLANK`
 payload (`gui/views/blank_entry.py`), not a database object. `refresh` wraps the
-sorted transaction model in a `Gtk.FlattenListModel` together with a one-item
-store, so the blank row stays last under any column sort or text filter and never
-enters balances or exports. The register still opens scrolled to the end (#157),
+sorted transaction model in a `Gtk.FlattenListModel` together with the view's
+`blank_store`, which holds `BlankEntryRow.rows()`: the sentinel alone, or in split
+mode the sentinel, its `SplitLine`s, and an `ImbalanceLine`. The blank rows
+therefore stay last under any column sort or text filter and never enter balances
+or exports. `update_blank_rows` splices that store when lines come and go, without
+rebuilding the register. The register still opens scrolled to the end (#157),
 so the blank row is in view when a register opens. The former quick-entry bar and
 its Increase/Decrease buttons are gone from GTK.
 
 **Cells.** `BlankEntryRow` owns one persistent set of entry widgets per register.
 Each column's factory takes a `cell` hook (`_base.column(..., cell=...)`); for the
-sentinel it returns the widget, and `_base.host_widget` moves that widget into the
-cell's host box in place of the label. Because the widget is moved, not recreated,
+sentinel (or a split line's `blank_cells`) it returns the widget, and
+`_base.host_widget` moves that widget into the cell's host box in place of the
+label. A column a line does not use shows its empty label. Because the widget is moved, not recreated,
 typed values survive the list repainting around them. The Description column's
 own factory does the same around its tree expander.
 
@@ -1161,7 +1165,7 @@ own factory does the same around its tree expander.
 | Payee | drop-down | Optional; saved with `set_payee`. |
 | Transfer | drop-down | Visible, postable accounts other than the register's account. |
 | Increase / Decrease | entries | Titled with the account's register headings; typing in one clears the other. |
-| Balance | "Split…" button | Opens the full editor (below); saved rows show the running balance. |
+| Balance | "Split" toggle and editor icon | Expands into split lines, or opens the full editor (below); saved rows show the running balance. |
 
 Each field has an accessible label, such as "New transaction date"; the amount
 labels follow the account's headings. Plain cells use `Gtk.Entry`, not
@@ -1170,9 +1174,9 @@ labels follow the account's headings. Plain cells use `Gtk.Entry`, not
 **Keyboard.** Each field carries a capture-phase key controller, so the behavior is
 the same on every supported GTK version:
 
-- Tab and Shift+Tab move between the fields in column order, skipping hidden
-  columns and wrapping around.
-- Enter commits; on "Split…" it presses the button.
+- Tab and Shift+Tab move between the fields in column order, line by line in
+  split mode, skipping hidden columns and wrapping around.
+- Enter commits; on the Split toggle or the editor icon it presses the button.
 - Escape resets the row to its defaults.
 - Typing in the row never changes the selection or expands a transaction.
 
@@ -1181,12 +1185,15 @@ the same on every supported GTK version:
 their defaults: the amount (under the matching heading) while both amounts are
 empty, the transfer while the user has not chosen one, and the payee while none is
 chosen. The status line under the register names the source transaction. A source
-with more than two splits is only announced, and "Split…" is the way to start from
-it.
+with more than two splits, or any source while in split mode, fills the split
+lines instead, but only while no amount, line, or transfer has been touched.
 
 **Commit.** `BlankEntryRow.commit` builds two balancing
 `TransactionSplitInput`s with a positive exact amount, the direction taken from
-the cell it was typed in. It saves them through `save_transaction` as one atomic
+the cell it was typed in. In split mode it builds one per line with an account and
+amount, carrying each memo. It refuses fewer than two splits, a nonzero imbalance,
+a line missing its account or amount, and a set of splits with none in the
+register's account. It saves them through `save_transaction` as one atomic
 change, and therefore one undo step. Nothing is written before commit.
 
 - On success the row resets, keeping the date for a run of same-day entries.
@@ -1208,9 +1215,21 @@ silently.
 transfer account is postable, the row is insensitive. The Description cell's
 placeholder text gives the reason.
 
-**Split….** The button opens `TransactionDialog.prefill`: the row's amount becomes
-the register-account split, and the transfer becomes the balancing split. With no
-amount, the dialog's own proposal runs instead. The dialog's `saved` flag tells a
+**Split lines.** The Split toggle expands the row into `SplitLine`s. Each line has a
+memo (Description column), an account drop-down of every visible postable account
+(Transfer column), and Increase/Decrease entries in that account's own direction.
+Expanding carries the row's amount and transfer into the first two lines, and a
+trailing empty line is always present: typing in it adds another. The
+`ImbalanceLine` shows the running residual, or "Balanced", in the Balance column.
+The row's own Transfer and amount cells are hidden while lines are shown.
+Collapsing turns two lines back into the transfer and amount. It is refused, with
+the toggle left on, while more than two lines hold a split, or when no line is in
+the register's account. Escape and a successful commit leave split mode.
+
+**Full editor.** The editor icon opens `TransactionDialog.prefill`. The row's
+amount becomes the register-account split, and the transfer becomes the balancing
+split. In split mode, each line becomes one editor split. With no amount, the
+dialog's own proposal runs instead. The dialog's `saved` flag tells a
 save from a cancel. Saving clears the row, and cancelling leaves it untouched.
 
 **Existing rows.** Double-clicking an existing transaction still opens the editor.
@@ -1219,12 +1238,8 @@ Activating the blank row does nothing.
 **Web.** The web register keeps its quick-entry form until the GTK slices settle;
 the web gets the same interaction as a later, separate change.
 
-**Remaining slices (planned).** Each will be one PR with GTK tests driving the
-row by keyboard:
+**Remaining slice (planned).** One PR with GTK tests driving the row by keyboard:
 
-2. In-place split entry. "Split" expands the blank row into one editable line per
-   split beneath it, with an imbalance line that must reach zero before commit, as
-   in the editor.
 3. In-place editing of existing rows, using the same cells. Double-click remains
    the full editor for fields the row does not show: notes, planning purpose,
    investment activity, FSA, and links.
