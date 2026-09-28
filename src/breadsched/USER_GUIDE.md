@@ -169,7 +169,9 @@ interface from the **Payees** and **Rules** views.
 
 In the desktop application each table has its own column chooser (the "⋯" button
 at the right of that table's heading); its tooltip names the table, and the columns
-you hide are remembered.
+you hide are remembered. When you make the window narrower, text columns such as
+descriptions shorten (with "…") so every column, including every amount, stays
+visible.
 
 Use **View** to switch work areas. Registers can also open in independent windows;
 their account, filter, selection, and expanded row do not replace the main window's

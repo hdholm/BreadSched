@@ -181,9 +181,12 @@ def column(
 
     def on_setup(_factory, item) -> None:
         label = Gtk.Label(xalign=1 if numeric else 0)
-        label.set_ellipsize(Pango.EllipsizeMode.END)
         if numeric:
+            # An amount is never truncated: its minimum width is its full text, so
+            # text columns give up width first when the window narrows (#154).
             label.add_css_class("numeric")
+        else:
+            label.set_ellipsize(Pango.EllipsizeMode.END)
         item.set_child(label)
 
     def on_bind(_factory, item) -> None:
@@ -358,6 +361,11 @@ def table_section(
     header.append(chooser)
     section.append(header)
     scroller = Gtk.ScrolledWindow(child=column_view)
+    # No horizontal scrolling: when the window narrows, the table's columns
+    # shrink toward their minimums (text ellipsizes, amounts stay whole) so every
+    # visible column stays on screen (#154). Below the sum of those minimums the
+    # window itself stops shrinking.
+    scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
     section.append(scroller)
     section.heading = heading
     section.chooser = chooser

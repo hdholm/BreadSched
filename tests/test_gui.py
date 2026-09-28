@@ -5141,3 +5141,44 @@ class TestTableSections:
         assert view.bills_view in set(_descendants(view.bills_section))
         assert view.income_view in set(_descendants(view.income_section))
         assert view.groups in set(_descendants(view.groups_section))
+
+
+class TestTablesShrink:
+    """#154: tables keep every column on screen as the window narrows."""
+
+    def test_tables_shrink_instead_of_scrolling_sideways(self, app, window, populated_book):
+        app.open_book(populated_book)
+        tables = []
+        for key in ("dashboard", "register", "accounts", "scheduled", "upcoming"):
+            window.show_category(key)
+            view = window._views[key]
+            tables.extend(
+                widget for widget in _descendants(view) if isinstance(widget, Gtk.ColumnView)
+            )
+        assert len(tables) >= 6
+        for table in tables:
+            scroller = table.get_parent()
+            while not isinstance(scroller, Gtk.ScrolledWindow):
+                scroller = scroller.get_parent()
+            assert scroller.get_policy()[0] == Gtk.PolicyType.NEVER
+
+    def test_text_cells_ellipsize_and_amount_cells_stay_whole(self):
+        from breadsched.gui.gi_setup import Pango
+        from breadsched.gui.views._base import column
+
+        for numeric, expected in (
+            (False, Pango.EllipsizeMode.END),
+            (True, Pango.EllipsizeMode.NONE),
+        ):
+            factory = column("Heading", lambda row: row, numeric=numeric).get_factory()
+            item = Gtk.ListItem()
+            factory.emit("setup", item)
+            assert item.get_child().get_ellipsize() == expected
+
+    def test_register_minimum_width_is_below_its_natural_width(self, app, window, populated_book):
+        app.open_book(populated_book)
+        handle = app.db.get_account_by_name("Assets:Checking Account").handle
+        window.open_register(handle)
+        table = window._views["register"].column_view
+        minimum, natural = table.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
+        assert minimum < natural

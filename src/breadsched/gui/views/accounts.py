@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from ...gen.engine import valuation  # noqa: E402
 from ...gen.lib.account import Account, AccountClass  # noqa: E402
-from ..gi_setup import Gio, Gtk
+from ..gi_setup import Gio, Gtk, Pango
 from ._base import (
     BaseView,
     Row,
@@ -131,6 +131,7 @@ class AccountTreeView(BaseView):
         def on_setup(_factory, item) -> None:
             expander = Gtk.TreeExpander()
             label = Gtk.Label(xalign=0)
+            label.set_ellipsize(Pango.EllipsizeMode.END)
             expander.set_child(label)
             item.set_child(expander)
 

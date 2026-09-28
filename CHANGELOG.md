@@ -3,6 +3,14 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a148 - 2026-09-28
+
+- **Tables keep every column visible as the window narrows (#154).** Desktop
+  tables (register, Accounts, Dashboard bills and income, Scheduled, Upcoming) no
+  longer scroll sideways and hide the amount and balance columns when the window is
+  made narrower. Text columns shorten with "…" first; amounts are never truncated.
+  Application version `0.2.0a148`; native schema remains 9.
+
 ## 0.2.0a147 - 2026-09-28
 
 - **Dashboard sections and per-table column choosers (#152, #153).** The desktop
