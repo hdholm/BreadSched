@@ -34,8 +34,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    - Web register: bring the GTK blank entry row, in-place splits, and in-place
      editing (#158, DESIGN.md "Blank entry row") to the web register, replacing its
      quick-entry form.
-   Also audit every dialog for unbounded growth like #140. GTK4 is canonical;
-   carry a web change only where the same problem exists there. Matching
+   GTK4 is canonical; carry a web change only where the same problem exists
+   there. Matching
    GnuCash's appearance is not a goal; its blank register row is the one explicit
    model.
 2. **P1 — Reimbursable expenses and receivables.** The domain model, engine,

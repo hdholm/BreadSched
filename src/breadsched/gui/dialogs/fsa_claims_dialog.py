@@ -27,6 +27,7 @@ from ...gen.services import (
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import GLib, Gtk
+from ..widgets.bounded import scroll_body
 
 __all__ = ["FsaClaimsDialog"]
 
@@ -234,6 +235,8 @@ class FsaClaimsDialog(Gtk.Window):
         close.connect("clicked", lambda *_: self.close())
         actions.append(close)
         outer.append(actions)
+        # The form scrolls; its buttons stay on screen (dialog audit, #148).
+        scroll_body(self)
         selected = 0
         if claim_handle is not None:
             selected = next(

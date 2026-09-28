@@ -43,6 +43,7 @@ from ...gen.services import (
 )
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
+from ..widgets.bounded import scroll_body
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
@@ -338,6 +339,8 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.save_button.connect("clicked", self._on_save)
         buttons.append(self.save_button)
         box.append(buttons)
+        # The form scrolls; its buttons stay on screen (dialog audit, #148).
+        scroll_body(self)
 
         if initial is not None:
             self._load_source(initial)

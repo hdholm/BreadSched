@@ -7,6 +7,7 @@ from ...gen.lib import Scenario  # noqa: E402
 from ...gen.services import SaveScenario, save_scenario  # noqa: E402
 from ...presentation import service_error_message  # noqa: E402
 from ..gi_setup import Gtk
+from ..widgets.bounded import scroll_body
 
 __all__ = ["SaveScenarioDialog"]
 
@@ -65,6 +66,8 @@ class SaveScenarioDialog(Gtk.Window):
         save.connect("clicked", self._on_save)
         buttons.append(save)
         box.append(buttons)
+        # The form scrolls; its buttons stay on screen (dialog audit, #148).
+        scroll_body(self)
 
     def _on_save(self, _button) -> None:
         name = self.name_entry.get_text().strip()

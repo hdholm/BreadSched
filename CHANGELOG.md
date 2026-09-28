@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a157 - 2026-09-28
+
+- **Every desktop dialog fits a laptop screen (#148 dialog audit).** Several
+  dialogs needed more height than a 1366×768 screen shows: the scenario schedule
+  dialog needed almost 1,000 pixels, and Save and Cancel ended up below the bottom
+  edge. The Account, FSA claims, Save scenario, Manage scenarios, and scenario
+  schedule dialogs now scroll their forms and keep their buttons in view. The
+  Payees and Import dialogs ask less height for their lists. A test holds every
+  dialog within 800 × 600 pixels at minimum, even with very long names and many
+  entries. Application version `0.2.0a157`; native schema remains 9.
+
 ## 0.2.0a156 - 2026-09-28
 
 - **Edit transactions in place in the register (#158).** Select a transaction in

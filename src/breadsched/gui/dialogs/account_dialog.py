@@ -28,6 +28,7 @@ from ...gen.services import DeleteAccount, SaveAccount, delete_account, save_acc
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import scroll_body
 
 __all__ = ["AccountDialog"]
 
@@ -283,6 +284,8 @@ class AccountDialog(Gtk.Window):
 
         box.append(self.status)
         self._build_actions(box, account)
+        # The form scrolls; its buttons stay on screen (dialog audit, #148).
+        scroll_body(self)
 
         self._ready = True
         self._on_type_changed()

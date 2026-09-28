@@ -1095,6 +1095,17 @@ truncated and text columns give up width first. The sum of the column minimums i
 the window's minimum width. Dialog tables are grids and list boxes, not
 `ColumnView`s, and are unaffected; the Plan grid scrolls in both directions.
 
+Dialogs stay within a 1366×768 laptop screen (dialog audit, #148). A dialog's
+minimum width stays at or below 800 px and its minimum height at or below 600 px,
+even with very long names, descriptions, and memos, 150 payees, and a 40-split
+transaction (`TestDialogsFitTheScreen`). Long forms call
+`widgets.bounded.scroll_body` once their button row is added. It moves every
+child but the last into a vertical scroller that asks for its natural height, and
+keeps the button row and the original margins outside it. The Account, FSA claims,
+Save scenario, Manage scenarios, and scenario schedule dialogs use it. Dialogs
+whose height comes from a growable list lower that list's minimum instead of
+nesting scrollers (Payees, Import).
+
 ## Register presentation and basic entry
 
 The register lists `ledger.register` rows in date order and opens like a check

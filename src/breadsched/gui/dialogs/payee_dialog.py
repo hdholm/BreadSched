@@ -53,7 +53,9 @@ class PayeesDialog(Gtk.Window):
             )
         )
 
-        payee_scroller = Gtk.ScrolledWindow(min_content_height=150, vexpand=True)
+        # Both lists grow with the window; their minimums keep it on a laptop
+        # screen (#148 dialog audit).
+        payee_scroller = Gtk.ScrolledWindow(min_content_height=110, vexpand=True)
         self.payee_rows = Gtk.Grid(column_spacing=14, row_spacing=4)
         payee_scroller.set_child(self.payee_rows)
         box.append(payee_scroller)
@@ -78,7 +80,7 @@ class PayeesDialog(Gtk.Window):
         box.append(form)
 
         box.append(Gtk.Label(label="Proposals", xalign=0, css_classes=["heading"]))
-        proposal_scroller = Gtk.ScrolledWindow(min_content_height=180, vexpand=True)
+        proposal_scroller = Gtk.ScrolledWindow(min_content_height=110, vexpand=True)
         self.proposal_rows = Gtk.Grid(column_spacing=14, row_spacing=4)
         proposal_scroller.set_child(self.proposal_rows)
         box.append(proposal_scroller)
