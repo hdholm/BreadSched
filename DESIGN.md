@@ -1166,10 +1166,16 @@ Transfers that carry no household planning meaning should remain neutral.
 ## GTK application chrome
 
 The main window has no sidebar (#155): a category sidebar duplicated the View
-menu and took width from every view. The icon toolbar holds the actions
-(`viewmanager.TOOLBAR`: open/import a book, undo/redo, new transaction, print),
-then, after a separator, one toggle icon per view (`viewmanager.CATEGORIES`, each
-with a distinct icon). The View menu lists the same views. Both target the
+menu and took width from every view. The icon toolbar is arranged around the
+current view (#182). It holds the actions that work anywhere (`viewmanager.TOOLBAR`:
+open/import a book, undo/redo, new transaction, print), then the current view's
+name (`view_heading`/`view_title`) and its own command icons (`view_tools`), then,
+after a separator, one toggle icon per other view (`viewmanager.CATEGORIES`, each
+with a distinct icon), and last the book summary (`status`): the account and
+transaction counts stacked on two short lines directly after the view icons, so
+they take one narrow column instead of a long run of text at the far end. The
+current view's icon is hidden, because choosing it would do nothing; it still
+carries the active state. The View menu lists every view. Both target the
 stateful `win.show-category` action, whose state is the current view:
 `show_category()` remains the single navigation entry point and sets that state,
 so the matching icon and menu item show as active however the view was reached
@@ -1178,10 +1184,13 @@ is open. The toolbar scrolls horizontally rather than setting the window's
 minimum width.
 
 View commands are declared once in `viewmanager.VIEW_ACTIONS` (#156). Each
-`ViewAction` becomes a `win.<view>-<name>` action, is listed under that view's
-submenu of **Actions** (checkable toggles go in **View**), and, when marked
-`toolbar`, appears as an icon in the toolbar's view-tools area only while its view
-is current. Activating one shows its view and calls the named view method, so menu,
+`ViewAction` becomes a `win.<view>-<name>` action, is listed in **Actions**
+(checkable toggles go in **View**), and, when marked `toolbar`, appears as an icon
+in the toolbar's view-tools area only while its view is current. **Actions** is
+modal (#182): `app.ActionsMenu` rebuilds its model in place whenever the focused
+main window changes view, putting that view's commands first in a section named for
+the view, the commands that work anywhere next, and every other view's commands in
+per-view submenus under **Other Views**, so each command keeps exactly one item. Activating one shows its view and calls the named view method, so menu,
 icon, and view never disagree; all are disabled while no book is open. Accounts
 (New/Edit account, Security price, Exchange rate, Hide empty, Show hidden), the
 FSA Dashboard (Manage FSA claims), and the Dashboard (Configure groups) no longer
@@ -1387,7 +1396,7 @@ split. In split mode, each line becomes one editor split. With no amount, the
 dialog's own proposal runs instead. The dialog's `saved` flag tells a
 save from a cancel. Saving clears the row, and cancelling leaves it untouched.
 
-**Editing existing rows.** F2, or **Actions → Register → Edit Transaction in
+**Editing existing rows.** F2, or **Actions → Edit Transaction in
 Place**, loads the selected transaction into a second `BlankEntryRow` in edit mode
 (`RegisterView.editor`), created with `editing=` the stored transaction and
 `split=` its split in this register. That row's cells host the editor's widgets
@@ -1578,7 +1587,8 @@ service.
   reclassification returns the balance to the expense.
 
 The register action **Track as Reimbursable…**
-(`RegisterView.track_selected_reimbursable`, also in **Actions → Register**) opens
+(`RegisterView.track_selected_reimbursable`, also in **Actions** while the register
+is shown) opens
 the dialog for the selected transaction's first positive expense-class split. It
 prefills the incurred date, description, and expected amount, and saving the new
 receivable links that split.

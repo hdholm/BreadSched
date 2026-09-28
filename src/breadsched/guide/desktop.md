@@ -28,11 +28,16 @@ another part opens it.
 
 ## Find your way around
 
-The toolbar has one icon per work area (the current one stays pressed), and the
-**View** menu lists the same areas. Each view's own commands are in the **Actions**
-menu under that view's name, and the common ones also appear as toolbar icons while
-that view is shown: for example **New Account**, **Edit Account**, **Security
-Price**, and **Exchange Rate** in Accounts, **Manage FSA Claims** on the FSA
+The toolbar starts with the commands that work anywhere (open, import, undo, redo,
+new transaction, and print). Next come the name of the view you are in and that
+view's own command icons, then one icon for each other work area; the view you are
+in has no icon, since you are already there. After those icons, two short lines
+count the book's accounts and transactions. The **View** menu lists every area.
+The **Actions** menu follows the view too: the current view's commands come first,
+under its name, then the commands that work anywhere, and every other view's
+commands under **Actions → Other Views**. The toolbar command icons are, for
+example, **New Account**, **Edit Account**, **Security Price**, and **Exchange
+Rate** in Accounts, **Manage FSA Claims** on the FSA
 Dashboard, **Configure Dashboard Groups** on the Dashboard, **New Scheduled**,
 **Suggest**, and **New Loan** in Scheduled, **New Scenario**, **Scenarios**, and
 **Explore** in Plan, and **Compare** and **Export** in Projection. **View → Hide
@@ -61,14 +66,14 @@ and expanded row do not replace the main window's register state.
 
 ## Exchange rates and security prices
 
-Choose the **Exchange Rate** toolbar icon while Accounts is shown (or **Actions →
-Accounts → Exchange Rate…**). The dialog shows the latest recorded quote for the
+In Accounts, choose the **Exchange Rate** toolbar icon (or **Actions → Exchange
+Rate…**). The dialog shows the latest recorded quote for the
 chosen pair, accepts the rate in your usual decimal format, and refuses the same
 currency twice, a non-positive rate, or an invalid date without saving anything.
 
-For an Investment or Retirement account, use **Security Price** (a toolbar icon
-while Accounts is shown, or **Actions → Accounts → Security Price…**) to define a
-security and record an exact dated price. See
+For an Investment or Retirement account, use **Security Price** (a toolbar icon in
+Accounts, or **Actions → Security Price…** there) to define a security and record an
+exact dated price. See
 [Security prices and current value](../USER_GUIDE.md#security-prices-and-current-value).
 
 ## Enter transactions in a register
@@ -111,7 +116,7 @@ transaction, or close a register window while the row holds typing, BreadSched
 asks whether to save it, discard it, or stay.
 
 To change an existing transaction without opening a window, select it and press
-**F2** (or choose **Actions → Register → Edit Transaction in Place**). Its row
+**F2** (or choose **Actions → Edit Transaction in Place**). Its row
 turns into the same fields as the blank row, and a transaction with more than two
 splits opens its split lines underneath. Edit anything, then press **Enter** to
 save, or **Escape** to put the row back as it was. The pencil icon opens the same
@@ -170,7 +175,7 @@ comparison period, use **Sort categories** to order the category rows, and choos
 
 ## Reimbursable expenses
 
-Select the transaction in a register and choose **Actions → Register → Track as
+Select the transaction in a register and choose **Actions → Track as
 Reimbursable…**. The date, description, and expense amount are filled in; enter who
 owes you and choose **Add receivable**, and the expense is linked.
 

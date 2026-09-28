@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a178 - 2026-09-28
+
+- **Desktop chrome follows the current view (#182).** The toolbar names the view
+  you are in and puts its commands right after the commands that work anywhere,
+  ahead of the other views' icons; the current view's own icon is hidden, and the
+  account and transaction counts follow the icons stacked on two lines. The
+  **Actions** menu lists the current view's commands first, under its name, and
+  moves every other view's commands under **Actions → Other Views**. Application
+  version `0.2.0a178`; native schema remains 9.
+
 ## 0.2.0a177 - 2026-09-28
 
 - **User guide by interface (#181).** The packaged guide is now an

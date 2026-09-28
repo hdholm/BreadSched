@@ -212,8 +212,12 @@ class TestOpeningABook:
 
     def test_the_header_reports_the_contents(self, app, window, populated_book):
         app.open_book(populated_book)
-        assert "transactions" in window.status.get_text()
-        assert "No book open" not in window.status.get_text()
+        accounts, transactions = window.status.get_text().split("\n")
+        assert accounts.endswith(" accounts") and transactions.endswith(" transactions")
+        # Stacked right after the view icons, not pushed to the far end.
+        last_view = window.view_buttons[CATEGORIES[-1][0]]
+        assert last_view.get_next_sibling() is window.status
+        assert window.status.get_hexpand() is False
 
     def test_the_title_names_the_file(self, app, window, populated_book):
         app.open_book(populated_book)
@@ -6531,3 +6535,73 @@ class TestReceivablesDialog:
             )
         finally:
             reconcile.destroy()
+
+
+class TestViewSpecificChrome:
+    """#182: the toolbar and Actions menu are arranged around the current view."""
+
+    def _visible_icons(self, window):
+        return [key for key, button in window.view_buttons.items() if button.get_visible()]
+
+    def test_the_current_view_has_no_icon_and_is_named_beside_its_commands(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.viewmanager import CATEGORIES
+
+        app.open_book(populated_book)
+        keys = [key for key, _label, _icon in CATEGORIES]
+        for key, label, _icon in CATEGORIES:
+            window.show_category(key)
+            assert self._visible_icons(window) == [k for k in keys if k != key]
+            assert window.view_title.get_label() == label
+            assert window.view_heading.get_visible()
+
+    def test_the_view_commands_come_before_the_other_view_icons(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        order = []
+        child = window.toolbar.get_first_child()
+        while child is not None:
+            order.append(child)
+            child = child.get_next_sibling()
+        assert order.index(window.view_tools) < order.index(window.view_buttons["dashboard"])
+        assert order.index(window.view_heading) < order.index(window.view_tools)
+
+    def _sections(self, app):
+        menubar = app.get_menubar()
+        actions = next(
+            menubar.get_item_link(index, "submenu")
+            for index in range(menubar.get_n_items())
+            if menubar.get_item_attribute_value(index, "label", None).get_string() == "_Actions"
+        )
+        sections = []
+        for index in range(actions.get_n_items()):
+            label = actions.get_item_attribute_value(index, "label", None)
+            sections.append(
+                (label.get_string() if label else None, actions.get_item_link(index, "section"))
+            )
+        return sections
+
+    def test_the_actions_menu_lists_the_current_views_commands_first(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.viewmanager import VIEW_ACTIONS, view_action_name
+
+        app.open_book(populated_book)
+        window.show_category("scheduled")
+        sections = self._sections(app)
+        label, first = sections[0]
+        assert label == "Scheduled"
+        assert _menu_actions(first) == [
+            f"win.{view_action_name('scheduled', item)}"
+            for item in VIEW_ACTIONS["scheduled"]
+            if not item.toggle
+        ]
+        others = _menu_actions(sections[-1][1])
+        assert not any(action.startswith("win.scheduled-") for action in others)
+        assert "win.plan-new-scenario" in others
+
+        window.show_category("plan")
+        label, first = self._sections(app)[0]
+        assert label == "Plan" and "win.plan-new-scenario" in _menu_actions(first)
+        assert "win.scheduled-new-scheduled" in _menu_actions(self._sections(app)[-1][1])

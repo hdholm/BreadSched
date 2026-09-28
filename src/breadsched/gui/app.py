@@ -76,7 +76,13 @@ class BreadSchedApplication(Gtk.Application):
         # application id, so windows use the themed icon wherever it is installed.
         Gtk.Window.set_default_icon_name(APP_ID)
         self._install_actions()
-        self.set_menubar(build_menu_model())
+        #: The Actions menu follows the active window's current view (#182).
+        self.actions_menu = ActionsMenu()
+        self.set_menubar(build_menu_model(self.actions_menu))
+
+    def show_view_actions(self, key: str | None) -> None:
+        """Put ``key``'s commands first in the Actions menu, other views' after."""
+        self.actions_menu.show_view(key)
 
     def do_activate(self) -> None:
         window = self.props.active_window or ViewManager(self)
@@ -552,7 +558,54 @@ class BreadSchedApplication(Gtk.Application):
         alert.show(window)
 
 
-def build_menu_model() -> Gio.Menu:
+class ActionsMenu:
+    """The Actions menu, arranged around the current view (#182).
+
+    The current view's commands come first, under that view's name. Commands that
+    work anywhere follow, and every other view's commands sit under **Other
+    Views**, so each command still has exactly one menu item. The menu model is
+    rebuilt in place, so the menu bar that shows it never changes.
+    """
+
+    def __init__(self) -> None:
+        self.menu = Gio.Menu()
+        self.current: str | None = None
+        self.show_view(None)
+
+    def show_view(self, key: str | None) -> None:
+        self.current = key
+        labels = {item_key: label for item_key, label, _icon in MENU_CATEGORIES}
+        self.menu.remove_all()
+
+        def commands(view: str) -> list:
+            return [item for item in VIEW_ACTIONS.get(view, ()) if not item.toggle]
+
+        if key is not None and commands(key):
+            here = Gio.Menu()
+            for item in commands(key):
+                here.append(item.label, f"win.{view_action_name(key, item)}")
+            self.menu.append_section(labels.get(key, key), here)
+        general = Gio.Menu()
+        general.append("New _Transaction…", "app.new-transaction")
+        general.append("_Post Scheduled Transactions", "app.post-scheduled")
+        general.append("Pa_yees…", "app.payees")
+        general.append("Categorization _Rules…", "app.rules")
+        general.append("Rei_mbursable Expenses…", "app.receivables")
+        self.menu.append_section(None, general)
+        others = Gio.Menu()
+        for view in VIEW_ACTIONS:
+            if view == key or not commands(view):
+                continue
+            submenu = Gio.Menu()
+            for item in commands(view):
+                submenu.append(item.label, f"win.{view_action_name(view, item)}")
+            others.append_submenu(labels[view], submenu)
+        section = Gio.Menu()
+        section.append_submenu("Other _Views", others)
+        self.menu.append_section(None, section)
+
+
+def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     """The application menu bar: File, Edit, View, Actions, Help.
 
     A conventional menu bar rather than a hamburger, because this is an accounting
@@ -589,7 +642,6 @@ def build_menu_model() -> Gio.Menu:
     edit_menu.append("_Redo", "app.redo")
     menubar.append_submenu("_Edit", edit_menu)
 
-    labels = {key: label for key, label, _icon in MENU_CATEGORIES}
     view_menu = Gio.Menu()
     views = Gio.Menu()
     for key, label, _icon in MENU_CATEGORIES:
@@ -603,26 +655,9 @@ def build_menu_model() -> Gio.Menu:
     view_menu.append_section(None, toggles)
     menubar.append_submenu("_View", view_menu)
 
-    actions_menu = Gio.Menu()
-    general = Gio.Menu()
-    general.append("New _Transaction…", "app.new-transaction")
-    general.append("_Post Scheduled Transactions", "app.post-scheduled")
-    general.append("Pa_yees…", "app.payees")
-    general.append("Categorization _Rules…", "app.rules")
-    general.append("Rei_mbursable Expenses…", "app.receivables")
-    actions_menu.append_section(None, general)
-    # Every view-level command also has a menu item, grouped by view (#156).
-    per_view = Gio.Menu()
-    for key, actions in VIEW_ACTIONS.items():
-        commands = [item for item in actions if not item.toggle]
-        if not commands:
-            continue
-        submenu = Gio.Menu()
-        for item in commands:
-            submenu.append(item.label, f"win.{view_action_name(key, item)}")
-        per_view.append_submenu(labels[key], submenu)
-    actions_menu.append_section(None, per_view)
-    menubar.append_submenu("_Actions", actions_menu)
+    # Every view-level command also has a menu item (#156), the current view's
+    # first (#182).
+    menubar.append_submenu("_Actions", (actions_menu or ActionsMenu()).menu)
 
     help_menu = Gio.Menu()
     help_menu.append("_User Guide", "app.user-guide")
