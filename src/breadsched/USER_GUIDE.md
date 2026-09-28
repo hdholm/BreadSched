@@ -917,12 +917,24 @@ breadsched rules book.breadsched --move 2 --to 1
 breadsched rules book.breadsched --delete 2
 ```
 
-### Reimbursable expenses (command line only)
+### Reimbursable expenses
 
 A receivable tracks an expense you paid out of pocket and what an insurer,
 employer, or other payer is expected to send back, without ever rewriting the
-expense or counting the reimbursement as new income. This is a command-line-only
-workflow for now; desktop and web screens come in a later release.
+expense or counting the reimbursement as new income. The desktop application and
+the command line manage receivables; a browser screen comes in a later release.
+
+In the desktop application, select the transaction in a register and choose
+**Actions → Register → Track as Reimbursable…**. The date, description, and
+expense amount are filled in; enter who owes you and choose **Add receivable**,
+and the expense is linked. **Actions → Reimbursable Expenses…** lists every
+receivable with what is reimbursed, written off, and still remaining, its status,
+and its age. Choose **Open** on one to change it, link more expense splits, or
+link the split that credits money back (**Link reimbursement**). You can also
+record a dispute or write off part of the balance there. Unlinking, disputes, and
+write-offs never change your transactions.
+
+On the command line:
 
 ```sh
 breadsched receivables book.breadsched --add "Acme Insurance" --incurred 2026-09-01 \

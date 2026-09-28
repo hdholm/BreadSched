@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a159 - 2026-09-28
+
+- **Track reimbursable expenses on the desktop.** **Actions → Reimbursable
+  Expenses…** lists each receivable with its reimbursed, written-off, and
+  remaining amounts, status, and age. You can add or change one, link expense and
+  reimbursement splits, record a dispute, or write off part of the balance, all
+  through the shared receivables service and without changing any transaction. In
+  a register, **Actions → Register → Track as Reimbursable…** starts a receivable
+  from the selected expense and links it. Application version `0.2.0a159`; native
+  schema remains 9.
+
 ## 0.2.0a158 - 2026-09-28
 
 - **The browser register gets the blank row, split lines, and in-place editing

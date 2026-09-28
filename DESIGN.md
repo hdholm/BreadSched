@@ -1384,7 +1384,24 @@ ledger transactions it referenced. The database refuses to delete a transaction 
 receivable still links to (`receivable.missing_transaction`, matching the same
 protection FSA claims already have), and a GnuCash re-import that would delete such
 a transaction is reported the same way FSA claims are. CLI: `breadsched receivables`.
-GTK and web surfaces are not yet built.
+
+GTK: **Actions → Reimbursable Expenses…** opens `ReceivablesDialog`
+(`gui/dialogs/receivables_dialog.py`), which only gathers input and calls the
+service.
+
+- **List.** Each receivable's recomputed expense, reimbursed, written-off, and
+  remaining totals, with status, age, and expected date.
+- **Form.** Payer, description, incurred date, expected amount, and expected date.
+- **Links.** For the receivable in the form, its linked splits (with Unlink) and
+  two pickers offering the 300 most recent unlinked expense-account splits: costs
+  (positive) for **Link expense**, credits (negative) for **Link reimbursement**.
+- **Dispute and write-off** controls, which post nothing to the ledger.
+
+The register action **Track as Reimbursable…**
+(`RegisterView.track_selected_reimbursable`, also in **Actions → Register**) opens
+the dialog for the selected transaction's first positive expense-class split. It
+prefills the incurred date, description, and expected amount, and saving the new
+receivable links that split. The web surface is not yet built.
 
 ## Statement reconciliation
 
