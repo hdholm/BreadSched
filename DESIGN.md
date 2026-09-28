@@ -305,6 +305,17 @@ A split has two exact rational dimensions: ``value`` is expressed in the
 transaction currency and balances the double-entry transaction, while ``quantity``
 is expressed in the account commodity. These must not be collapsed. Historical
 ledger value remains an accounting fact even when a security's market price changes.
+When `save_transaction` changes an existing split's value without being given a
+quantity (#166), the result depends on the account's commodity:
+
+- In the transaction currency (or with no commodity), the new value is also the
+  new quantity. That also repairs a quantity an earlier edit left behind.
+- In another commodity, the change is refused with
+  `transaction.quantity.conversion` rather than stored with a mismatched
+  quantity.
+
+An unchanged value keeps its stored quantity, so imported GnuCash detail
+survives an edit that does not touch the amount.
 
 A commodity price is a first-class dated object identifying the security, quote
 currency, exact positive price, source, and quote type. As-of valuation selects the

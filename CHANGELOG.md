@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a155 - 2026-09-28
+
+- **Editing an amount keeps each split consistent (#166).** Changing a split's
+  amount in an existing transaction left its stored account quantity at the old
+  amount, although displayed totals, which read the value, were right. Now a
+  split in the transaction's currency takes its new amount as its quantity, which
+  also repairs splits edited before. A split in an account held in another
+  commodity is refused with a clear message instead of keeping a mismatched
+  quantity. Application version `0.2.0a155`; native schema remains 9.
+
 ## 0.2.0a154 - 2026-09-28
 
 - **Enter split transactions in the register's blank row (#158).** Choose

@@ -486,6 +486,86 @@ def test_transaction_service_preserves_hidden_accounts_and_source_metadata_on_ed
     assert stored.splits[0].quantity == Money("2.5")
 
 
+def _edit_amounts(db, source, amounts):
+    currency = transaction_currency(db)
+    return save_transaction(
+        db,
+        SaveTransaction(
+            TransactionInput(
+                post_date=source.post_date,
+                description=source.description,
+                splits=tuple(
+                    TransactionSplitInput(
+                        split.account, Amount(amounts[split.account], currency), handle=split.handle
+                    )
+                    for split in source.splits
+                ),
+            ),
+            existing_handle=source.handle,
+            source=source,
+        ),
+    )
+
+
+def test_editing_an_amount_keeps_same_currency_quantity_equal_to_value(db, book):
+    """#166: the editor sends no quantity; a same-currency split must not go stale."""
+    source = Transaction.simple(
+        date(2026, 1, 1), "Groceries", book.rent, book.checking, Money("10")
+    )
+    with db.transaction("Fixture") as txn:
+        db.add_transaction(source, txn)
+
+    result = _edit_amounts(db, source, {book.rent: Money("25"), book.checking: Money("-25")})
+
+    assert result.ok
+    stored = db.get_transaction(source.handle)
+    for split in stored.splits:
+        assert split.quantity == split.value
+    assert {split.value for split in stored.splits} == {Money("25"), Money("-25")}
+
+
+def test_editing_repairs_a_quantity_an_earlier_edit_left_behind(db, book):
+    """#166: splits edited before the fix carry a stale same-currency quantity."""
+    source = Transaction.simple(
+        date(2026, 1, 1), "Edited before", book.rent, book.checking, Money("25")
+    )
+    for split in source.splits:
+        split.quantity = Money("10") if split.value > 0 else Money("-10")
+    with db.transaction("Fixture") as txn:
+        db.add_transaction(source, txn)
+
+    result = _edit_amounts(db, source, {book.rent: Money("30"), book.checking: Money("-30")})
+
+    assert result.ok
+    for split in db.get_transaction(source.handle).splits:
+        assert split.quantity == split.value
+
+
+def test_editing_a_foreign_commodity_split_amount_requires_its_quantity(db, book):
+    """#166: a split in another commodity cannot infer its new quantity."""
+    from breadsched.gen.lib import Commodity
+
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro", fraction=100)
+    savings = Account(name="Euro savings", atype=AccountType.BANK, parent=book.assets)
+    savings.commodity = euro.handle
+    source = Transaction.simple(
+        date(2026, 1, 1), "Converted", savings.handle, book.checking, Money("20")
+    )
+    source.splits[0].quantity = Money("18")
+    with db.transaction("Fixture") as txn:
+        db.add_commodity(euro, txn)
+        db.add_account(savings, txn)
+        db.add_transaction(source, txn)
+
+    result = _edit_amounts(db, source, {savings.handle: Money("30"), book.checking: Money("-30")})
+
+    assert not result.ok
+    assert result.errors[0].code == "transaction.quantity.conversion"
+    stored = db.get_transaction(source.handle)
+    assert stored.splits[0].value == Money("20")
+    assert stored.splits[0].quantity == Money("18")
+
+
 def test_transaction_service_rejects_unbalanced_and_unknown_accounts(db, book):
     currency = transaction_currency(db)
     request = _transaction_request(

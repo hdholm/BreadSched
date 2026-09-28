@@ -5875,3 +5875,25 @@ class TestBlankRowSplits:
             assert view.blank.imbalance.amount.get_ancestor(Gtk.ColumnView) is view.column_view
         finally:
             window.set_visible(False)
+
+
+class TestEditorKeepsQuantity:
+    """#166: changing an amount in the editor keeps quantity equal to value."""
+
+    def test_an_edited_amount_updates_same_currency_quantities(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        rent = next(t for t in app.db.iter_transactions() if t.description == "Rent")
+        dialog = TransactionDialog(window, app.db, transaction=rent)
+        try:
+            for editor in dialog.splits:
+                value = editor.value()
+                editor.amount.set_text("-1900.00" if value < 0 else "1900.00")
+            dialog._on_save(None)
+        finally:
+            dialog.destroy()
+        stored = app.db.get_transaction(rent.handle)
+        assert {split.value for split in stored.splits} == {Money("1900"), Money("-1900")}
+        for split in stored.splits:
+            assert split.quantity == split.value
