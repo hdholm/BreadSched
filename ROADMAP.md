@@ -29,44 +29,29 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **P0 — Installable Linux and Windows builds.** A GNOME-runtime Flatpak manifest
-   and installed-sandbox offline CLI gate now cover sample creation, verification,
-   Dashboard, CSV export, QIF import, backup, restore, and competing-writer locks
-   under Documents access. The Flatpak now installs a validated desktop entry,
-   AppStream metadata, and icon, and a sandboxed GTK smoke covers offline views,
-   help, icon resolution, and settings persistence. No installer is published yet.
-   Validate GTK file-chooser portals and printing inside the sandbox. Provide a Windows
+1. **P0 — Installable Linux and Windows builds.** The Flatpak manifest, its
+   installed-sandbox CLI gate, desktop entry, AppStream metadata, icon, and sandboxed
+   GTK smoke already run in CI, but no installer is published yet. Remaining:
+   validate GTK file-chooser portals and printing inside the sandbox. Provide a Windows
    installer with GTK runtime and the same book/upgrade and file workflows; test
    clean installs, upgrades, launch, and uninstalls on supported Windows CI.
    Publish signed/checksummed artifacts and concise installation instructions
    only after their release gates are proven. Keep wheel/source releases available.
-2. **P1 — Finish currency handling.** GTK, web, and CLI now share manual FX
-   entry through the exact quote contract. Plan totals, category detail, cash
-   position, prints, and Expense Explorer Remaining/rollover convert once at the
-   as-of quote and disclose quote date, source, and inversion, or list excluded
-   amounts. Projection events, opening balances, and scenario comparisons use
-   the same policy at the opening valuation date. Notes state each quote's age
-   (without imposing a cutoff) and that conversion is not rounded to cents
-   before aggregation. Continue imported quote mapping and decide multi-hop policy explicitly before enabling
-   it; do not create a second monthly budget ledger.
-3. **P1 — Payees, reviewed rules, and CSV import.** Introduce stable payee identity
-   without rewriting imported descriptions; preview deterministic matching and
-   categorization suggestions before acceptance. The user-mapped CSV importer
-   (shared service and `breadsched import-csv`) now previews rows, validates
-   date/amount/encoding, holds back possible duplicates, keeps a stable source
-   identity for re-import without recategorizing, and imports as one undo step.
-   The web Import view and the GTK Import CSV Statement dialog map, preview, and
-   import CSV through the same service. Transfer review offers a row as the other
-   side of an uncategorized transaction already imported into another account and
-   links it only on explicit acceptance. Payees (native schema 8) are stable,
-   renameable identities separate from descriptions; exact normalized-description
-   keys propose a payee for unassigned transactions, and nothing is assigned until
-   the user accepts (`breadsched payees`, GTK Actions → Payees…, web Payees view).
-   The register shows each transaction's payee and the GTK editor, web register,
-   and web entry set or clear it. Next: reviewed categorization rules. Keep rule priority and conflicts
-   explainable; never silently recategorize previously accepted transactions.
-   Offer entry autocomplete from earlier transactions as a visible, editable
-   proposal that never commits without the user's save.
+2. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
+   conversion across Plan, Expense Explorer, Projection, comparisons, and prints are
+   delivered. Remaining: map imported exchange-rate and security-price quotes
+   (GnuCash, OFX, QIF) through the same reviewed quote contract; decide an explicit
+   multi-hop policy before enabling any conversion through a third currency; and
+   value securities quoted in a non-reporting currency (a direct reporting-currency
+   price is still required). Do not create a second monthly budget ledger.
+3. **P1 — Reviewed categorization rules and entry autocomplete.** CSV import,
+   transfer review, and payees are delivered. Next: rules that propose a category
+   for transactions still posted to an import placeholder (Uncategorized CSV/OFX),
+   matched by payee or normalized description, with an explicit priority order,
+   explained conflicts, a preview, and explicit acceptance; never silently
+   recategorize a previously accepted transaction. Then entry autocomplete from
+   earlier transactions as a visible, editable proposal that never commits without
+   the user's save (see Register workflow).
 4. **P1 — Reimbursable expenses and receivables.** Track an expense and the
    amount owed by an insurer, employer, or other payer as linked but distinct
    facts. Show open, partial, disputed, written-off, and settled receivables,
@@ -84,14 +69,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 ## Architecture and correctness
 
 - Split oversized modules/functions as part of the service/resource ownership
-  work, especially the remaining seams in `web/server.py`. Expense Explorer,
-  Plan detail, Plan, Dashboard, scenario-management listing, and Projection month,
-  summary, and comparison responses have dedicated read-only resource adapters.
-  Continue consolidating the remaining web control parsers where ownership is clear.
-  Fixed baseline and scenario schedule writes now have a typed-request web adapter;
-  continue consolidating shared web control parsers where that improves ownership.
-  Continue with other workflows when responsibility boundaries
-  are clear. Split large GUI test modules
+  work, especially the remaining seams in `web/server.py` (for example transaction
+  entry, register, and reconciliation handlers still parse JSON inline). Continue
+  consolidating web control parsers where ownership is clear. Split large GUI test modules
   only when the resulting fixture ownership and runtime isolation improve; do not
   optimize for a line-count threshold alone.
 
@@ -101,14 +81,14 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Improve register appearance and information density while keeping account-type
   debit/credit terminology clear.
 
-- Add payees as first-class, reviewable transaction metadata; keep imported
-  descriptions and source identifiers intact. Let matching and categorization
-  rules propose category/payee assignments with preview, ordering, conflict
-  explanations, and explicit acceptance. Handle transfers and split transactions
-  without a guessed category or historical rewrite.
+- Add reviewed categorization rules: propose a category for transactions still on
+  an import placeholder, keyed by payee or normalized description, with preview,
+  explicit ordering, conflict explanations, and explicit acceptance. Keep imported
+  descriptions and source identifiers intact, and handle transfers and split
+  transactions without a guessed category or historical rewrite.
 
 - Add entry autocomplete in GTK and web quick entry and the full editor. Typing a
-  description (later, a payee) proposes the most recent matching transaction's
+  description or choosing a payee proposes the most recent matching transaction's
   transfer account, splits, and amount from a shared service; the user can accept,
   edit, or ignore every proposed field before an ordinary balanced save. Do not
   copy reconcile state, source identifiers, notes, Plan links, or FSA claims.
@@ -125,11 +105,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
-- Per-category remaining amounts and optional rollover are delivered through the
-  event-derived Expense Explorer period contract. A savings goal can later be a
-  pinned, scenario-aware target event with dated contributions and target date;
-  explain progress separately from spendable cash and avoid counting transfers
-  as expenses.
+- Add savings goals as pinned, scenario-aware target events with dated
+  contributions and a target date; explain progress separately from spendable cash
+  and avoid counting transfers as expenses.
 
 - Add a spending-over-time chart and broader reports with drill-down to the
   exact dated events, category hierarchy, selected scenario, as-of boundary,
@@ -167,37 +145,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Add investment lots and cost basis.
 
-- **Cross-cutting multi-currency valuation and import.** Add automatic/manual
-  exchange-rate and security-price handling across imported commodities, ledger
-  valuation, Projection, Plan/reporting, and comparisons. Preserve exact source
-  amounts and quote metadata; make reporting currency, quote source/date,
-  staleness, missing-price behavior, conversion path, and rounding explainable;
-  never combine unlike currencies in net worth silently.
-  Account views now disclose the selected security quote's source/date or an
-  explicit missing reporting-currency quote with ledger fallback. Continue with
-  exchange-rate paths and cross-report conversion semantics.
-  An internal direct as-of currency conversion result now keeps exact amounts,
-  quote provenance, and explicit missing-quote state. Ordinary account balances
-  now use direct quotes where available and disclose a tagged ledger fallback.
-  Account chart, cash, and net-worth totals now require complete reporting-currency
-  valuations and disclose missing quote accounts rather than adding fallback values.
-  Exact inverse pair quotes now supply ordinary account valuation only when no
-  eligible direct quote exists, with inversion disclosed in account views.
-  An exact manual FX quote save contract now validates the currency pair and
-  preserves imported quotes. CLI and web rate entry accept a dated directional
-  rate for known currencies, and the GTK Accounts dialog uses the same contract.
-  Scheduled Plan occurrences now carry their transaction currency; actual matching
-  excludes unlike currencies and occurrence variance is unavailable when a linked
-  actual uses another currency. Complete currency conversion of Plan period totals,
-  scenario estimates, Projection flows, and comparisons remains to be done.
-  Account views now disclose quote age relative to their valuation date; there
-  is no automatic age cutoff, so an old quote remains usable and visible.
-  Dashboard configured groups and liquidity now suppress dependent figures on
-  missing quotes across GTK, web, CLI, and print, while leaving unrelated bills
-  and income visible. Extend complete-total semantics to Plan, Projection,
-  comparisons, and their printable reports; review multi-hop policy, quote-age
-  disclosure on future flows, and rounding across totals. Security prices still
-  require a direct reporting-currency quote.
+- **Cross-cutting multi-currency valuation and import.** Preserve exact source
+  amounts and quote metadata, and never combine unlike currencies silently. The
+  remaining work is listed under P1 item 2: reviewed import of exchange-rate and
+  security-price quotes, an explicit multi-hop conversion policy, and securities
+  quoted in a non-reporting currency.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.
@@ -263,10 +215,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Import and GnuCash interoperability
 
-- Add reviewed CSV import using explicit column mapping and preview for date,
-  amount/sign, account, payee, category, memo, currency, and split/transfer cases.
-  Reject ambiguous mappings rather than inventing ledger accounts or balancing
-  splits; preserve source rows and stable re-import identity for duplicate review.
+- Extend CSV import mapping to optional payee, category, currency, and split
+  columns. Reject ambiguous mappings rather than inventing ledger accounts or
+  balancing splits.
 
 - Extend the held-change review for locally reconciled transactions (#117) to
   GnuCash deletions. A source-deleted transaction is retained only while a
@@ -322,15 +273,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Storage, integrity, and recovery
 
-- **Expand the migration window with the next data-format change.** When schema 8
-  or the next schema is introduced, retain sequential migrations from the two
-  immediately preceding data-format versions (for schema 8, both 6→7 and 7→8), so
-  the current application accepts current-format books plus those two predecessor
-  formats. Keep versioned fixtures for every supported starting format and prove
-  direct open, sequential migration, one pre-migration backup, rollback, ledger
-  evidence, and rejection outside the advertised window. Do not create a no-op
-  schema bump merely to enact this policy.
-
 - **Evaluate normalized transaction/split source-of-truth storage without a
   big-bang rewrite.** Record an ADR and prototype the migration/query/round-trip
   consequences before changing the current blob-plus-derived-index design. The
@@ -368,7 +310,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   reliable and keep a short manual GTK checklist; accessibility remains required
   for release quality but is intentionally below the current financial workflows.
 
-- Audit GTK views and dialogs for bounded natural sizes. Large content must scroll
+- Audit the remaining GTK views and dialogs for bounded natural sizes (the Dashboard
+  group and card text were bounded for #140). Large content must scroll
   inside the current monitor work area, primary actions/window controls must remain
   reachable, and switching away from a large view must allow the main window to
   shrink again. Cover long notes, complex split editors, tables, and small-screen GTK

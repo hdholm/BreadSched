@@ -62,7 +62,13 @@ messages or pull requests.
 - Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog.
   Every pull request must update the roadmap to reflect its effect on pending
   work and move completed outcomes and acceptance contracts to
-  [`CHANGELOG.md`](CHANGELOG.md).
+  [`CHANGELOG.md`](CHANGELOG.md). Remove a roadmap bullet once its outcome is
+  delivered rather than appending status to it; the roadmap lists only work that
+  remains.
+- Record each changelog entry under a `## VERSION - YYYY-MM-DD` heading for the
+  application version that ships it, newest first. A pull request that advances
+  the version adds that heading; one that does not adds its entry to the next
+  version's section, creating the heading with the version it will ship in.
 - Keep documentation roles distinct:
   - `README.md` is the product/developer entry point;
   - `src/breadsched/USER_GUIDE.md` is the packaged task-oriented user guide;

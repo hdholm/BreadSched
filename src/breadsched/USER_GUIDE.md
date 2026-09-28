@@ -139,8 +139,8 @@ When a real transaction resolves a planned occurrence, BreadSched retains the
 original expected date and amount. Editing a schedule later therefore does not
 rewrite historical variance. A scheduled occurrence is matched by amount only to
 an actual in the same transaction currency. If an older link connects different
-currencies, its occurrence variance is unavailable; Plan period totals are not yet
-converted across currencies. In Plan, select a value to inspect its occurrences
+currencies, its occurrence variance is unavailable. Plan totals convert other
+currencies as described under **Plan**. In Plan, select a value to inspect its occurrences
 and actual splits. Use **Resolve actuals…** when an actual needs to be matched,
 marked unexpected, or reviewed. Correct a posted split's planning purpose in the
 transaction editor; correct a scheduled purpose in the schedule editor.
@@ -150,7 +150,9 @@ transaction editor; correct a scheduled purpose in the schedule editor.
 The GTK sidebar and the web navigation expose the same main work areas:
 
 - **Dashboard** summarizes household position, expected income, pending bills,
-  liquidity, emergency-fund information, and linked assets and loans.
+  liquidity, emergency-fund information, and linked assets and loans. In the
+  desktop application a long group line (for example, several accounts combined
+  with their quote details) is shortened with "…"; hover over it to read it all.
 - **FSA Dashboard** shows benefit-year availability and open healthcare claims.
 - **Accounts** is the hierarchical chart of accounts with balances and metadata.
 - **Register** shows the transaction history for one account.
