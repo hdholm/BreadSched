@@ -68,7 +68,8 @@ def test_imported_first_dashboard_cli_preserves_setup_and_missing_quote(
     command = ("dashboard", book_path, "--as-of", "2026-01-31")
     first = run_json(capsys, *command)
     assert first["summary"]["net_worth"] == "2274.50"
-    assert first["unavailable_reasons"]["assets"] == "Dashboard groups not configured"
+    assert "assets" not in first["unavailable_reasons"]
+    assert first["summary"]["assets"] is not None
     assert any(item["name"] == "Monthly rent" for item in first["bills"])
 
     db = DbSQLite()

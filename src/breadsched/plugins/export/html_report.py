@@ -201,7 +201,7 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
     def visible(field: str, value: Money) -> str:
         if report[field] is None:
             return board.unavailable_reason(field)
-        return _money(board.ledger_position if field == "net_worth" and not board.groups else value)
+        return _money(value)
 
     cards = _cards(
         [

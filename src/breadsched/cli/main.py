@@ -2270,8 +2270,6 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             return (
                 board.unavailable_reason(field)
                 if report[field] is None
-                else board.ledger_position.format(parens_negative=True)
-                if field == "net_worth" and not board.groups and board.ledger_position is not None
                 else amount.format(parens_negative=True)
             )
 
