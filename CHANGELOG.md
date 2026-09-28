@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a163 - 2026-09-28
+
+- **QIF and OFX imports bring security prices.** A QIF file's price list
+  (`!Type:Prices`) and the security prices in an OFX investment statement are now
+  recorded for securities already in the book, matched by symbol, through the
+  same checks as a price you enter. An OFX investment statement with no bank
+  account now imports its prices instead of stopping. A price for an unknown
+  security or currency is reported as skipped. Re-importing updates a price
+  rather than duplicating it, and an imported price never replaces one entered in
+  BreadSched. Application version `0.2.0a163`; native schema remains 9.
+
 ## 0.2.0a162 - 2026-09-28
 
 - **Imports and reconciliation point at waiting reimbursements.** After a GnuCash,

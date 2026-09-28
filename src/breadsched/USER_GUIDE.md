@@ -239,7 +239,12 @@ Ordinary foreign-currency ledger accounts prefer an eligible direct dated quote;
 if none exists, they invert the latest eligible reverse pair. The direct quote
 wins even when the reverse quote is newer. Account quote evidence says **inverse
 rate** when that path was selected; CLI account output also identifies the path.
-Imported exchange quotes remain available offline. To save a manual exchange
+Imported exchange quotes remain available offline. Security prices come in with
+imports too: GnuCash prices, a QIF file's price list, and the security prices in
+an OFX investment statement are recorded for securities already in your book
+(matched by symbol). A price for a security the book doesn't have is listed as
+skipped rather than creating a new security. Imported prices never replace one
+you entered yourself. To save a manual exchange
 rate between currencies already in the book, run, for example:
 
 ```bash

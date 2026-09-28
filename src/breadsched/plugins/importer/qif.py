@@ -8,6 +8,7 @@ same objects as far as the source format permits.
 
 from __future__ import annotations
 
+import csv
 from collections.abc import Callable
 from datetime import date
 from pathlib import Path
@@ -23,6 +24,7 @@ from ...gen.utils.amount_input import (
 )
 from ...gen.utils.logs import get_logger
 from .gnucash_common import ImportResult, ImportSink
+from .quotes import record_security_quote
 
 LOG = get_logger(__name__)
 
@@ -233,6 +235,48 @@ def _transaction_fields(record: list[str]) -> tuple[dict[str, str], list[dict[st
     return fields, split_rows
 
 
+def _import_prices(
+    sink: ImportSink,
+    db: DbSQLite,
+    record: list[str],
+    number_format: NumberFormat,
+    date_format: QifDateFormat,
+) -> None:
+    """Read ``"SYMBOL",price,"date"`` lines from a ``!Type:Prices`` section.
+
+    QIF names no currency, so a quote is taken to be in the book's reporting
+    currency; everything else goes through the shared quote contract.
+    """
+    from ...gen.engine.currency import reporting_currency_handle
+
+    currency = reporting_currency_handle(db)
+    for row in csv.reader(record, skipinitialspace=True):
+        if len(row) < 3:
+            sink.result.skip("QIF price line is incomplete", ",".join(row), kind="price")
+            continue
+        symbol, raw_price, raw_date = (item.strip() for item in row[:3])
+        try:
+            value = _parse_amount(raw_price, number_format)
+            quote_date = _parse_date(raw_date, date_format)
+        except ValueError:
+            sink.result.skip(
+                "QIF price has an unreadable amount or date",
+                symbol or "(no symbol)",
+                identity=f"qif:{symbol}:{raw_date}",
+                kind="price",
+            )
+            continue
+        record_security_quote(
+            sink,
+            db,
+            source="qif",
+            symbol=symbol,
+            quote_date=quote_date,
+            value=value,
+            currency=currency,
+        )
+
+
 def import_book(
     db: DbSQLite,
     path: str | Path,
@@ -309,6 +353,9 @@ def import_book(
                 continue
             done += 1
             report("Reading QIF transactions", done)
+            if section_type.casefold() == "prices":
+                _import_prices(sink, db, record, detected_format, detected_date_format)
+                continue
             if section_type.casefold() == "invst":
                 result.skip(
                     "QIF investment transaction support is not implemented",
