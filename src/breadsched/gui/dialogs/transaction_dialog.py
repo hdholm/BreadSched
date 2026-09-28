@@ -11,6 +11,12 @@ Save stays disabled until the splits sum to zero, so an impossible transaction
 cannot be recorded and repaired later. And when exactly one amount is blank, it is
 filled with whatever balances the rest — which is what makes the ordinary case
 "pick two accounts, type one number".
+
+A new transaction whose splits are still untouched is proposed from the latest
+earlier entry with the same description or payee (``services.autocomplete``) when
+the description is left or a payee is chosen. The proposal only fills the form,
+with a visible note; nothing is saved until the user chooses Save, typed splits
+are never replaced, and a transaction being edited is never rewritten.
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ from ...gen.services import (
     save_transaction,
     transaction_currency,
 )
+from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
@@ -187,6 +194,7 @@ class TransactionDialog(Gtk.Window):
         self.db = db
         self.transaction = transaction
         self.editing = editing
+        self.default_account = default_account
         self.set_default_size(640, 460)
 
         referenced = {split.account for split in transaction.splits} if transaction else set()
@@ -226,6 +234,12 @@ class TransactionDialog(Gtk.Window):
             self.description_entry.set_text(transaction.description)
         header.attach(Gtk.Label(label="Description", xalign=0), 0, 1, 1, 1)
         header.attach(self.description_entry, 1, 1, 1, 1)
+        if transaction is None:
+            # Leaving the description proposes the latest matching entry's splits.
+            self.description_entry.connect("activate", lambda *_: self.propose_from_entry())
+            leave = Gtk.EventControllerFocus()
+            leave.connect("leave", lambda *_: self.propose_from_entry())
+            self.description_entry.add_controller(leave)
 
         self.num_entry = Gtk.Entry(placeholder_text="Cheque or reference")
         if transaction is not None:
@@ -244,6 +258,8 @@ class TransactionDialog(Gtk.Window):
             self.payee_picker.set_selected(handles.index(current) + 1)
         header.attach(Gtk.Label(label="Payee", xalign=0), 2, 2, 1, 1)
         header.attach(self.payee_picker, 3, 2, 1, 1)
+        if transaction is None:
+            self.payee_picker.connect("notify::selected", lambda *_: self.propose_from_entry())
 
         self.notes_view = Gtk.TextView()
         self.notes_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
@@ -294,6 +310,10 @@ class TransactionDialog(Gtk.Window):
         add_button.connect("clicked", lambda *_: self.add_split())
         caption.append(add_button)
         box.append(caption)
+
+        self.proposal_note = Gtk.Label(xalign=0, wrap=True, visible=False)
+        self.proposal_note.add_css_class("dim")
+        box.append(self.proposal_note)
 
         self.split_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         scroller = Gtk.ScrolledWindow(child=self.split_box)
@@ -381,6 +401,50 @@ class TransactionDialog(Gtk.Window):
         draft = schedule.from_transaction(self.transaction)
         dialog = ScheduleDialog(self, self.db, source=draft, creating=True)
         dialog.present()
+
+    # ---------------------------------------------------------------- proposal
+
+    def propose_from_entry(self) -> EntrySuggestion | None:
+        """Fill untouched splits of a new transaction from the latest matching entry."""
+        if self.transaction is not None:
+            return None  # an existing transaction is never rewritten
+        if any(e.amount.get_text().strip() or e.memo.get_text().strip() for e in self.splits):
+            return None  # never overwrite what the user typed
+        payee = self._chosen_payee()
+        result = suggest_entry(
+            self.db,
+            SuggestEntry(
+                description=self.description_entry.get_text(),
+                payee=payee,
+                account=self.default_account,
+                currency=transaction_currency(self.db),
+            ),
+        )
+        suggestion = result.value.suggestion if result.value is not None else None
+        if suggestion is None or len(suggestion.splits) < 2:
+            return None
+        handles = [account.handle for account in self.accounts]
+        if any(split.account not in handles for split in suggestion.splits):
+            return None
+        while len(self.splits) > len(suggestion.splits):
+            self.split_box.remove(self.splits.pop().box)
+        while len(self.splits) < len(suggestion.splits):
+            self.add_split()
+        for editor, split in zip(self.splits, suggestion.splits, strict=True):
+            editor.account.set_selected(handles.index(split.account))
+            editor.memo.set_text(split.memo)
+            editor.amount.set_text(str(split.value.to_decimal()))
+        if payee is None and suggestion.payee is not None:
+            payees = [item.handle for item in self.payees]
+            if suggestion.payee in payees:
+                self.payee_picker.set_selected(payees.index(suggestion.payee) + 1)
+        self.proposal_note.set_text(
+            f"Proposed from {suggestion.when.isoformat()} “{suggestion.description}”. "
+            "Edit anything before saving."
+        )
+        self.proposal_note.set_visible(True)
+        self.revalidate()
+        return suggestion
 
     # ------------------------------------------------------------------ splits
 

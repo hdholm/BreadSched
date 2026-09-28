@@ -1039,7 +1039,14 @@ carries reconcile state, source identifiers, notes, planning purposes or links,
 investment activity, or FSA claims, and it never writes. GTK and web quick entry
 fill an empty amount and the transfer account when the description is left and say
 where the proposal came from; a typed amount is never overwritten, and posting
-remains the user's explicit choice of the Increase or Decrease button. The web
+remains the user's explicit choice of the Increase or Decrease button. The GTK
+transaction editor (`TransactionDialog.propose_from_entry`) asks the same service,
+for new transactions only, when the description is left or a payee is chosen,
+scoped to the register account it was opened from. It acts only while every split's
+amount and memo are blank, replaces the split rows with the proposal's accounts,
+values, and memos, selects the proposal's payee if none is chosen, and shows a
+separate note naming the source; saving remains the ordinary `save_transaction`
+call. A transaction being edited is never proposed over. The web
 route is `GET /api/entry/suggest` (`web/autocomplete_resource.py`).
 
 ## Payees

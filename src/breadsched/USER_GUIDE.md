@@ -278,6 +278,13 @@ Use the full transaction editor for additional splits, notes, reconciliation
 metadata, FSA links, or investment classifications. A transaction cannot be saved
 unless its exact splits balance.
 
+In the desktop editor, a new transaction is proposed the same way: when you leave
+the description or choose a payee, and no split has an amount or memo yet, every
+split of the latest matching transaction (with its accounts, amounts, and memos) is
+filled in, along with its payee if you have not chosen one, and a note says where
+it came from. Edit anything before choosing **Save**. Editing an existing
+transaction never proposes anything.
+
 ### Reconcile a statement
 
 Bank, Cash, Asset, Investment, Retirement, FSA, Escrow, Credit card, Loan,

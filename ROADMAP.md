@@ -44,18 +44,14 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    multi-hop policy before enabling any conversion through a third currency; and
    value securities quoted in a non-reporting currency (a direct reporting-currency
    price is still required). Do not create a second monthly budget ledger.
-3. **P1 — Entry autocomplete in the full editor.** Quick-entry autocomplete is
-   delivered in GTK and web. Next: offer the same proposal (all splits, from a
-   description or a chosen payee) in the GTK transaction editor for new
-   transactions, editable before an ordinary save (see Register workflow).
-4. **P1 — Reimbursable expenses and receivables.** Track an expense and the
+3. **P1 — Reimbursable expenses and receivables.** Track an expense and the
    amount owed by an insurer, employer, or other payer as linked but distinct
    facts. Show open, partial, disputed, written-off, and settled receivables,
    their ages and expected cash dates, without counting a reimbursement as new
    income or erasing the original expense. Reconcile deposits to claims with
    exact partial amounts, refunds, and currency evidence; coordinate with FSA
    claims and preserve imported ledger splits.
-5. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
+4. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
    simple user edits, broader reporting and spending-over-time charts, then
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
@@ -80,11 +76,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Consider whether a categorization rule should also be able to set a payee, and
   whether split transactions can be supported with explicit per-split rules
   rather than a guess.
-
-- Offer entry autocomplete in the GTK transaction editor for new transactions:
-  a description or chosen payee proposes every split of the latest matching
-  transaction through the shared `suggest_entry` service, which the user can edit
-  or ignore before an ordinary balanced save.
 
 - Add transaction tags and optional attachments with search/filter/export support.
   Define book-relative storage, size/type limits, backup/restore and archive

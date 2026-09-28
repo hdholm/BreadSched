@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a141 - 2026-09-28
+
+- **Entry autocomplete in the desktop transaction editor.** For a new
+  transaction, leaving the description or choosing a payee proposes every split
+  of the latest matching transaction (accounts, amounts, and memos) through the
+  shared `suggest_entry` service, scoped to the register account the editor was
+  opened from, and selects its payee when none is chosen. A note names the source;
+  nothing is saved until **Save**. It acts only while every split's amount and memo
+  are blank, and editing an existing transaction never proposes anything.
+  Application version `0.2.0a141`; native schema remains 8.
+
 ## 0.2.0a140 - 2026-09-28
 
 - **Entry autocomplete in quick entry.** Leaving the description in the desktop or

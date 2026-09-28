@@ -4847,3 +4847,108 @@ class TestQuickEntryAutocomplete:
 
         assert view.propose_from_description() is None
         assert view.quick_amount.get_text() == ""
+
+
+class TestEditorAutocomplete:
+    """A new transaction's untouched splits are proposed from the latest match."""
+
+    def _grocer(self, app, amount="42.10"):
+        from breadsched.gen.lib import Transaction
+
+        checking = app.db.get_account_by_name("Assets:Checking Account").handle
+        other = next(
+            account.handle
+            for account in app.db.iter_accounts()
+            if not account.is_root
+            and not account.placeholder
+            and not account.hidden
+            and account.handle != checking
+        )
+        transaction = Transaction.simple(
+            date(2026, 9, 1), "Corner Grocer #12", other, checking, amount
+        )
+        transaction.splits[0].memo = "weekly"
+        with app.db.transaction("Grocer") as txn:
+            app.db.add_transaction(transaction, txn)
+        return checking, transaction
+
+    def test_leaving_the_description_fills_every_split(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        checking, source = self._grocer(app)
+        before = len(list(app.db.iter_transactions()))
+        dialog = TransactionDialog(window, app.db, default_account=checking)
+        dialog.description_entry.set_text("CORNER GROCER #99")
+
+        suggestion = dialog.propose_from_entry()
+
+        assert suggestion is not None and suggestion.source == source.handle
+        filled = [(e.account_handle, e.value(), e.memo.get_text()) for e in dialog.splits]
+        assert filled == [(s.account, s.value, s.memo) for s in source.splits]
+        assert "Proposed from 2026-09-01" in dialog.proposal_note.get_text()
+        assert dialog.proposal_note.get_visible() is True
+        assert dialog.save_button.get_sensitive() is True
+        assert len(list(app.db.iter_transactions())) == before
+
+    def test_choosing_a_payee_proposes_and_a_proposed_payee_is_selected(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.services.payees import SavePayee, assign_payee, save_payee
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        checking, source = self._grocer(app)
+        payee = save_payee(app.db, SavePayee("Corner Grocer")).value
+        assert assign_payee(app.db, source.handle, payee.handle).ok
+
+        by_payee = TransactionDialog(window, app.db, default_account=checking)
+        by_payee.payee_picker.set_selected(1)
+        assert [e.value() for e in by_payee.splits] == [s.value for s in source.splits]
+
+        by_description = TransactionDialog(window, app.db, default_account=checking)
+        by_description.description_entry.set_text("Corner Grocer")
+        assert by_description.propose_from_entry() is not None
+        assert by_description.payee_picker.get_selected() == 1
+
+    def test_typed_splits_are_never_overwritten(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        checking, _source = self._grocer(app)
+        dialog = TransactionDialog(window, app.db, default_account=checking)
+        dialog.splits[0].amount.set_text("7.00")
+        dialog.description_entry.set_text("Corner Grocer")
+
+        assert dialog.propose_from_entry() is None
+        assert dialog.splits[0].amount.get_text() == "7.00"
+        assert dialog.proposal_note.get_visible() is False
+
+        memo_only = TransactionDialog(window, app.db, default_account=checking)
+        memo_only.splits[1].memo.set_text("typed")
+        memo_only.description_entry.set_text("Corner Grocer")
+        assert memo_only.propose_from_entry() is None
+
+    def test_an_existing_transaction_is_never_rewritten(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        checking, _source = self._grocer(app, "42.10")
+        _checking, older = self._grocer(app, "5.00")
+        dialog = TransactionDialog(window, app.db, transaction=older)
+        values = [e.value() for e in dialog.splits]
+
+        assert dialog.propose_from_entry() is None
+        assert [e.value() for e in dialog.splits] == values
+
+    def test_no_match_leaves_the_form_alone(self, app, window, populated_book):
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        dialog = TransactionDialog(window, app.db)
+        accounts = [e.account_handle for e in dialog.splits]
+        dialog.description_entry.set_text("Something never entered before")
+
+        assert dialog.propose_from_entry() is None
+        assert [e.account_handle for e in dialog.splits] == accounts
+        assert all(e.is_blank for e in dialog.splits)
