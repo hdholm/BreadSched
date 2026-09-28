@@ -245,6 +245,56 @@ def _record_quotes(
         )
 
 
+def _import_investment(
+    db: DbSQLite,
+    source: Path,
+    text: str,
+    result: ImportResult,
+    currency_code: str,
+    institution: str,
+    message: str | None,
+    number_format: NumberFormat | Literal["auto"],
+    notify: bool,
+) -> ImportResult:
+    """An investment statement: brokerage transactions, then security prices."""
+    from .ofx_investment import import_investment_statement
+
+    if number_format == "auto":
+        amounts = re.findall(
+            r"<(?:TOTAL|UNITS|UNITPRICE|TRNAMT|COMMISSION|FEES)>\s*([^<\r\n]+)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        try:
+            detected = detect_number_format(amounts)
+        except ValueError as exc:
+            result.warn(str(exc))
+            return result
+        chosen: NumberFormat = detected or "dot"
+    else:
+        chosen = number_format
+    with db.transaction(message or f"Import {source.name}", batch=True, notify=notify) as txn:
+        sink = ImportSink(db, txn, result)
+        commodity = sink.commodity("CURRENCY", currency_code, currency_code)
+        import_investment_statement(
+            sink,
+            db,
+            text,
+            tag=_tag,
+            blocks=_blocks,
+            parse_date=_parse_date,
+            number_format=chosen,
+            currency=commodity,
+            broker=institution,
+        )
+        _record_quotes(sink, db, _security_quotes(text), currency_code, chosen)
+        result.finish(db, txn)
+    if notify:
+        db.emit("database-changed", (db,))
+    LOG.info("OFX investment import finished: %s", result.describe())
+    return result
+
+
 def import_book(
     db: DbSQLite,
     path: str | Path,
@@ -259,11 +309,13 @@ def import_book(
     source = Path(path)
     text = _read_text(source)
     result = ImportResult(source=str(source), source_format="ofx")
-    if "<INVSTMTRS" in text.upper() or "<INVSTMTTRNRS" in text.upper():
-        result.warn("OFX investment transactions are not imported yet")
 
     currency_code = _tag(text, "CURDEF", "USD") or "USD"
     institution = _tag(text, "ORG") or _tag(text, "FI")
+    if _blocks(text, "INVACCTFROM"):
+        return _import_investment(
+            db, source, text, result, currency_code, institution, message, number_format, notify
+        )
     account_block = ""
     account_type = ""
     bank_blocks = _blocks(text, "BANKACCTFROM")

@@ -227,7 +227,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   imports. Decide whether its dependency and packaging cost justify implementation
   before committing to a direct bank-link feature.
 
-- Add OFX investment transactions.
+- Extend OFX investment import to options, share transfers, stock splits,
+  journal entries, return of capital, and margin interest (reported as skipped
+  today), and consider cost basis once investment lots exist.
 
 - Add useful QIF investment/security records.
 
