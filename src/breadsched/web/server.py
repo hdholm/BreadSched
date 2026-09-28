@@ -369,6 +369,7 @@ class Api:
                         "quote_age_days": valued.quote_age_days,
                         "conversion_path": valued.conversion_path,
                         "missing_quote": valued.missing_quote,
+                        "quote_evidence": valuation.quote_evidence(self.db, valued),
                         "commodity": (
                             valued.commodity.mnemonic if valued.commodity is not None else None
                         ),

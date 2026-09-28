@@ -55,11 +55,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 3. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
    conversion across Plan, Expense Explorer, Projection, comparisons, and prints are
    delivered, as are GnuCash, QIF, and OFX security prices and OFX per-transaction
-   exchange rates imported through the same quote contract. Remaining: decide an
-   explicit
-   multi-hop policy before enabling any conversion through a third currency; and
-   value securities quoted in a non-reporting currency (a direct reporting-currency
-   price is still required). Do not create a second monthly budget ledger.
+   exchange rates imported through the same quote contract, and securities quoted
+   only in another currency are valued through one as-of exchange quote.
+   Remaining: decide an explicit multi-hop policy before enabling any conversion
+   between currencies through a third currency. Do not create a second monthly
+   budget ledger.
 4. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
    simple user edits, broader reporting and spending-over-time charts, then
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
@@ -136,9 +136,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - **Cross-cutting multi-currency valuation and import.** Preserve exact source
   amounts and quote metadata, and never combine unlike currencies silently. The
-  remaining work is listed under P1 item 2: reviewed import of exchange-rate and
-  security-price quotes, an explicit multi-hop conversion policy, and securities
-  quoted in a non-reporting currency.
+  remaining work, an explicit multi-hop conversion policy, is listed under P1
+  item 3.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.

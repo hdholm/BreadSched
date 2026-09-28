@@ -471,3 +471,73 @@ def test_projection_starts_from_as_of_market_value(db, book):
     result = projection.project(db, scenario)
 
     assert result.rows[0].ledger.opening_holdings[account.handle] == Money("1250")
+
+
+def test_security_quoted_in_another_currency_converts_once_with_its_evidence(db, book):
+    account, fund, usd = _holding(db, book)
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    with db.transaction("Euro-quoted fund") as txn:
+        db.add_commodity(euro, txn)
+        db.add_price(
+            CommodityPrice(
+                commodity=fund.handle,
+                currency=euro.handle,
+                quote_date=date(2026, 3, 1),
+                value=Money("110"),
+                source="ofx",
+            ),
+            txn,
+        )
+
+    # Without a EUR->USD rate the value stays in euros and is never summed.
+    missing = valuation.account_value(db, account, as_of=date(2026, 3, 15))
+    assert missing.missing_quote
+    assert missing.total_amount == Amount(Money("1100"), euro.handle)
+    assert missing.currency == euro
+    assert missing.exchange is not None and missing.exchange.amount is None
+    assert valuation.aggregate_value(db, accounts=[account]).missing_quotes == (account.handle,)
+    assert valuation.quote_evidence(db, missing) == (
+        "2026-03-01 · ofx in EUR; no EUR→USD rate, value shown in EUR"
+    )
+    # Projection leaves the euro value out of its opening and discloses it.
+    opened = projection.project(db, Scenario(name="Base", start=date(2026, 4, 1), years=1))
+    assert opened.rows[0].ledger.opening_holdings[account.handle] == Money(0)
+    assert any("EUR" in warning for warning in opened.warnings)
+
+    with db.transaction("Rate") as txn:
+        db.add_price(
+            CommodityPrice(
+                commodity=usd.handle,
+                currency=euro.handle,
+                quote_date=date(2026, 3, 10),
+                value=Money("0.8"),
+                source="breadsched",
+            ),
+            txn,
+        )
+    valued = valuation.account_value(db, account, as_of=date(2026, 3, 15))
+    assert not valued.missing_quote
+    assert valued.source == "market"
+    assert valued.price == Money("110") and valued.currency == euro
+    assert valued.total_amount == Amount(Money("1375"), usd.handle)
+    assert valued.exchange is not None and valued.exchange.path == "inverse"
+    assert valuation.quote_evidence(db, valued) == (
+        "2026-03-01 · ofx; EUR→USD 2026-03-10 · breadsched · inverse rate"
+    )
+    assert valuation.aggregate_value(db, accounts=[account]).amount == Amount(
+        Money("1375"), usd.handle
+    )
+
+    # A direct reporting-currency quote still wins, even when older.
+    with db.transaction("USD quote") as txn:
+        db.add_price(
+            CommodityPrice(
+                commodity=fund.handle,
+                currency=usd.handle,
+                quote_date=date(2026, 2, 1),
+                value=Money("120"),
+            ),
+            txn,
+        )
+    direct = valuation.account_value(db, account, as_of=date(2026, 3, 15))
+    assert direct.total == Money("1200") and direct.exchange is None

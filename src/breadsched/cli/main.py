@@ -1268,16 +1268,12 @@ def cmd_accounts(args: argparse.Namespace) -> int:
                         "quote_source": valued.price_source,
                         "quote_age_days": valued.quote_age_days,
                         "conversion_path": valued.conversion_path,
+                        "quote_evidence": valuation.quote_evidence(db, valued),
                         "book_balance": book_balance,
                     }
                 )
                 label = ("  " * depth) + account.name
-                quote_evidence = (
-                    f"{valued.price_date} · {valued.price_source or 'Unknown source'}"
-                    + (" · inverse rate" if valued.conversion_path == "inverse" else "")
-                    if valued.price_date is not None
-                    else ""
-                )
+                quote_evidence = valuation.quote_evidence(db, valued)
                 rows.append(
                     [
                         label,

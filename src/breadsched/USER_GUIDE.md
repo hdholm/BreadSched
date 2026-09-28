@@ -234,7 +234,12 @@ projection settings, and household relationships remain editable.
 The Accounts views show the date and source of a selected security quote. If no reporting-currency quote is available,
 they say so and retain the security holding's ledger value. An older quote
 remains eligible and visibly dated; BreadSched does not apply an automatic age
-cutoff or convert foreign-currency securities.
+cutoff. A security priced only in another currency (for example a fund quoted in
+euros) is valued in that currency and converted with the exchange rate in effect on
+the same date; the evidence then shows both, such as
+`2026-03-01 · ofx; EUR→USD 2026-03-02 · bank`. Without that exchange rate the
+account says so, shows its value in the quote currency, and is left out of
+reporting-currency totals until you enter the rate.
 Ordinary foreign-currency ledger accounts prefer an eligible direct dated quote;
 if none exists, they invert the latest eligible reverse pair. The direct quote
 wins even when the reverse quote is newer. Account quote evidence says **inverse
