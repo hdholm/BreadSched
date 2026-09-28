@@ -121,6 +121,7 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ViewAction("show-hidden", "Show Hi_dden Accounts", "set_show_hidden", toggle=True),
     ),
     "register": (
+        ViewAction("edit-in-place", "Edit Transaction in _Place", "edit_selected_in_place"),
         ViewAction("full-editor", "New Transaction in _Editor…", "_on_add_clicked"),
         ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),
         ViewAction("reconcile", "_Reconcile…", "_on_reconcile_clicked"),
@@ -707,13 +708,13 @@ class ViewManager(Gtk.ApplicationWindow):
 
         def close_requested(*_args) -> bool:
             # Closing with a half-typed blank row asks first (#158).
-            if register.blank.has_input() and not getattr(window, "leave_confirmed", False):
+            if register.has_unsaved() and not getattr(window, "leave_confirmed", False):
 
                 def proceed() -> None:
                     window.leave_confirmed = True
                     window.close()
 
-                register.blank.confirm_leave(proceed)
+                register.confirm_leave(proceed)
                 return True
             return detach()
 

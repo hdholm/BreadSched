@@ -1146,8 +1146,8 @@ route is `GET /api/entry/suggest` (`web/autocomplete_resource.py`).
 The GTK register takes new entries in a blank transaction row at the bottom. Its
 interaction design was written and approved before any code, as #148 requires.
 GnuCash's blank transaction row is the model for the interaction, not for the
-appearance. Slices 1 (the two-split row) and 2 (in-place splits) are
-implemented; slice 3 below is planned.
+appearance. All three slices are implemented: the two-split row, in-place splits,
+and in-place editing of existing rows.
 
 **Placement and model.** The last row of every register is a sentinel `BLANK`
 payload (`gui/views/blank_entry.py`), not a database object. `refresh` wraps the
@@ -1243,17 +1243,37 @@ split. In split mode, each line becomes one editor split. With no amount, the
 dialog's own proposal runs instead. The dialog's `saved` flag tells a
 save from a cancel. Saving clears the row, and cancelling leaves it untouched.
 
-**Existing rows.** Double-clicking an existing transaction still opens the editor.
-Activating the blank row does nothing.
+**Editing existing rows.** F2, or **Actions → Register → Edit Transaction in
+Place**, loads the selected transaction into a second `BlankEntryRow` in edit mode
+(`RegisterView.editor`), created with `editing=` the stored transaction and
+`split=` its split in this register. That row's cells host the editor's widgets
+through the same `cell` hook. A transaction with exactly two splits in different
+accounts edits as one row. Any other shape starts in split mode: its lines are the
+row's children, from `RegisterView._edit_children`, and the row is kept expanded.
+Each line records the stored split handle it edits.
+
+- **Saving.** Enter calls `save_transaction` with `existing_handle` and `source`.
+  Each split input keeps its stored handle, planning purpose, and investment
+  activity, and the transaction keeps its notes, none of which the row shows.
+  Memos are shown on split lines and kept on a two-split row. The payee is
+  explicit (`set_payee`), so choosing "(no payee)" clears it. A split whose line
+  is emptied is removed, and a new line becomes a new split.
+- **Ending an edit.** Escape ends it without saving; so do a successful save and a
+  discard. Changes are measured against a snapshot taken at load, so an untouched
+  edit ends silently.
+- **Leaving.** Switching accounts, opening a transaction, or closing a register
+  window asks about the edit first, then about the blank row
+  (`RegisterView.confirm_leave`).
+- **The pencil** hands the edit to the full editor for the same transaction.
+- **Protections.** Autocomplete never runs over a stored transaction. Hidden
+  accounts the transaction already uses stay selectable, as in the editor.
+
+Double-clicking (or Enter on) an existing transaction still opens the full editor,
+and activating the blank row does nothing.
 
 **Web.** The web register keeps its quick-entry form until the GTK slices settle;
 the web gets the same interaction as a later, separate change.
 
-**Remaining slice (planned).** One PR with GTK tests driving the row by keyboard:
-
-3. In-place editing of existing rows, using the same cells. Double-click remains
-   the full editor for fields the row does not show: notes, planning purpose,
-   investment activity, FSA, and links.
 
 ## Payees
 

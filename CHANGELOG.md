@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a156 - 2026-09-28
+
+- **Edit transactions in place in the register (#158).** Select a transaction in
+  the desktop register and press F2, or choose **Actions → Register → Edit
+  Transaction in Place**. Its row becomes editable, with split lines underneath
+  for a transaction with more than two splits. Enter saves and Escape cancels.
+  Notes, planning purposes, investment classifications, and other details the row
+  does not show are kept, and each split keeps its identity. Leaving a changed
+  edit asks first. This completes the approved blank-row design for the desktop.
+  Application version `0.2.0a156`; native schema remains 9.
+
 ## 0.2.0a155 - 2026-09-28
 
 - **Editing an amount keeps each split consistent (#166).** Changing a split's

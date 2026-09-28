@@ -17,7 +17,7 @@ from datetime import date
 
 from ...gen.engine import ledger  # noqa: E402
 from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
-from ..gi_setup import Gio, GLib, Gtk, Pango
+from ..gi_setup import Gdk, Gio, GLib, Gtk, Pango
 from ._base import (  # noqa: E402
     BaseView,
     Row,
@@ -143,12 +143,21 @@ class RegisterView(BaseView):
         # The blank entry row's widgets live as long as the view, so typing in
         # them survives the register repainting around them (#158).
         self.blank = BlankEntryRow(self)
+        #: The stored transaction being edited in place (#158 slice 3), if any, and
+        #: the child store holding its split lines.
+        self.editor: BlankEntryRow | None = None
+        self._edit_children = Gio.ListStore.new(Row)
         cell = self._blank_cell
 
         self.column_view = Gtk.ColumnView()
         self.column_view.add_css_class("data-table")
         self.column_view.set_show_row_separators(True)
         self.column_view.connect("activate", self._on_activated)
+        # F2 edits the selected transaction in place; double-click and Enter keep
+        # opening the full editor.
+        keys = Gtk.EventControllerKey()
+        keys.connect("key-pressed", self._on_register_key)
+        self.column_view.add_controller(keys)
         self.column_view.append_column(
             column(
                 "Date",
@@ -229,21 +238,121 @@ class RegisterView(BaseView):
         return lambda payload: self._blank_widget(payload, title)
 
     def _blank_widget(self, payload, title: str):
-        """The blank row's, or one of its split lines', widget for a column."""
+        """The blank row's, or one of its split lines', widget for a column.
+
+        The row of a transaction being edited in place hosts the editor's
+        widgets the same way.
+        """
         if payload is BLANK:
             return self.blank.cells.get(title)
+        if self._is_edited(payload):
+            assert self.editor is not None
+            return self.editor.cells.get(title)
         if isinstance(payload, (SplitLine, ImbalanceLine)):
             # A column a split line does not use shows its (empty) label.
             return payload.blank_cells.get(title)
         return None
 
-    def update_blank_rows(self) -> None:
-        """Show the blank row's current lines without rebuilding the register."""
+    def _is_edited(self, payload) -> bool:
+        editor = self.editor
+        return (
+            editor is not None
+            and isinstance(payload, ledger.RegisterRow)
+            and payload.split.handle == editor.edit_split
+        )
+
+    def update_blank_rows(self, row: BlankEntryRow | None = None) -> None:
+        """Show a blank or edited row's current lines without rebuilding the register."""
+        if row is not None and row is self.editor:
+            lines = [Row(payload) for payload in row.rows()[1:]]
+            self._edit_children.splice(0, self._edit_children.get_n_items(), lines)
+            return
         store = getattr(self, "blank_store", None)
         if store is None:
             return
         rows = [Row(payload) for payload in self.blank.rows()]
         store.splice(0, store.get_n_items(), rows)
+
+    # ------------------------------------------------------ in-place editing
+
+    def _on_register_key(self, _controller, keyval: int, _keycode: int, _state) -> bool:
+        if keyval == Gdk.KEY_F2:
+            self.edit_selected_in_place()
+            return True
+        return False
+
+    def edit_selected_in_place(self, *_args) -> bool:
+        """Edit the selected transaction in its own row (#158 slice 3)."""
+        selection = self.column_view.get_model()
+        if selection is None or self.db is None:
+            return False
+        payload = unwrap(selection.get_selected_item()) if selection.get_selected_item() else None
+        if payload is None or isinstance(payload, BLANK_PAYLOADS):
+            return False
+        transaction = self.db.get_transaction(payload.transaction.handle)
+        if transaction is None:
+            return False
+        split = payload.split if isinstance(payload, ledger.RegisterRow) else None
+        if split is None:
+            split = next(
+                (item for item in transaction.splits if item.account == self.account_handle),
+                None,
+            )
+        if split is None:
+            return False
+        self.start_editing(transaction, split.handle)
+        return True
+
+    def start_editing(self, transaction, split_handle: str) -> None:
+        """Turn one transaction's row into editable cells, after any pending edit."""
+
+        def begin() -> None:
+            if self.db is None or self.account_handle is None:
+                return
+            editor = BlankEntryRow(self, editing=transaction, split=split_handle)
+            account = self.db.get_account(self.account_handle)
+            if account is not None:
+                editor.set_headings(*column_headings(account.atype))
+            editor.populate(self.db, self.account_handle)
+            self.editor = editor
+            editor.load()
+            self.set_entry_status(
+                "Editing in place: Enter saves, Escape cancels; the pencil opens the editor."
+            )
+            self.refresh()
+            GLib.idle_add(lambda: editor.description.grab_focus() and GLib.SOURCE_REMOVE)
+
+        if self.editor is not None:
+            self.editor.confirm_leave(begin)
+        else:
+            begin()
+
+    def stop_editing(self) -> None:
+        """End an in-place edit without saving; the row shows its stored values."""
+        if self.editor is None:
+            return
+        self.editor = None
+        self._edit_children.splice(0, self._edit_children.get_n_items(), [])
+        self.schedule_refresh()
+
+    def has_unsaved(self) -> bool:
+        return self.blank.has_input() or (self.editor is not None and self.editor.has_input())
+
+    def confirm_leave(self, proceed) -> None:
+        """Ask about an unsaved in-place edit, then the blank row, then proceed."""
+        editor = self.editor
+
+        def then_blank() -> None:
+            self.blank.confirm_leave(proceed)
+
+        def after_edit() -> None:
+            self.stop_editing()
+            then_blank()
+
+        if editor is not None:
+            editor.confirm_leave(after_edit)
+        else:
+            then_blank()
 
     def set_entry_status(self, text: str, *, error: bool = False) -> None:
         self.entry_status.set_text(text)
@@ -292,6 +401,16 @@ class RegisterView(BaseView):
         else:
             self.blank.set_enabled(True)
 
+        if self.editor is not None:
+            fresh = self.db.get_transaction(self.editor.editing.handle)
+            if fresh is None or self.editor.edit_split not in {s.handle for s in fresh.splits}:
+                self.editor = None
+                self._edit_children.splice(0, self._edit_children.get_n_items(), [])
+            else:
+                self.editor.set_headings(debit, credit)
+                self.editor.populate(self.db, account.handle)
+                self.update_blank_rows(self.editor)
+
         self._payee_names = {payee.handle: payee.name for payee in self.db.iter_payees()}
         self._rows = ledger.register(self.db, self.account_handle)
         store = Gio.ListStore.new(Row)
@@ -314,6 +433,7 @@ class RegisterView(BaseView):
         adjustment = self.table.scroller.get_vadjustment()
         previous = adjustment.get_value()
         self.column_view.set_model(selection)
+        self._expand_edited(selection)
         # Like a check register, a newly shown account opens on its most recent
         # entry at the bottom; any other repaint keeps the reader's place (#157).
         if self._scroll_to_end:
@@ -423,11 +543,26 @@ class RegisterView(BaseView):
         col.set_resizable(True)
         return col
 
+    def _expand_edited(self, selection) -> None:
+        """Keep the row being edited open, so its split lines stay in view."""
+        if self.editor is None:
+            return
+        for index in range(selection.get_n_items()):
+            tree_row = selection.get_item(index)
+            if isinstance(tree_row, Gtk.TreeListRow) and self._is_edited(unwrap(tree_row)):
+                tree_row.set_expanded(True)
+                return
+
     def _children_of(self, item):
-        """The splits of a transaction row, or None for a split row itself."""
+        """The splits of a transaction row, or None for a split row itself.
+
+        A transaction being edited in place shows its editable split lines instead.
+        """
         payload = item.payload if isinstance(item, Row) else item
         if not isinstance(payload, ledger.RegisterRow) or self.db is None:
             return None
+        if self._is_edited(payload):
+            return self._edit_children
         txn = payload.transaction
         store = Gio.ListStore.new(Row)
         for split in txn.splits:
@@ -448,6 +583,8 @@ class RegisterView(BaseView):
             tree_row = model.get_item(index)
             if not isinstance(tree_row, Gtk.TreeListRow) or tree_row.get_depth() != 0:
                 continue
+            if self._is_edited(unwrap(tree_row)):
+                continue  # the row being edited keeps its lines open
             tree_row.set_expanded(index == position)
 
     def show_account(self, handle: str) -> None:
@@ -462,7 +599,7 @@ class RegisterView(BaseView):
             self.set_entry_status("")
             self.refresh()
 
-        self.blank.confirm_leave(switch)
+        self.confirm_leave(switch)
 
     # ---------------------------------------------------------------- actions
 
@@ -506,7 +643,7 @@ class RegisterView(BaseView):
     def edit_transaction(self, transaction) -> None:
         if self.db is None:
             return
-        self.blank.confirm_leave(lambda: self._open_editor(transaction))
+        self.confirm_leave(lambda: self._open_editor(transaction))
 
     def _open_editor(self, transaction) -> None:
         if self.db is None:
