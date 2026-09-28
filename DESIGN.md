@@ -361,8 +361,20 @@ without a positive rate or currency code is skipped rather than posted as if it
 were in `CURDEF`. The foreign currency commodity is created if the book lacks it.
 
 The reporting currency is explicit book metadata when configured, otherwise USD
-when present, then the first currency commodity. This initial layer intentionally
-requires a direct security-to-reporting-currency quote. Foreign-exchange graphs,
+when present, then the first currency commodity.
+
+A security is valued with its latest as-of quote in the reporting currency. Only if
+it has none is its latest as-of quote in any other currency used: the market value
+is computed exactly in that quote currency and then converted once with
+`convert_currency` (direct, else inverse) as of the same date. This is one exchange
+hop from the security's own quote currency, never a chain through a third currency.
+`AccountValuation.exchange` carries that conversion's evidence; when it is missing
+the valuation is flagged `missing_quote`, keeps the market value in the quote
+currency (so Projection reports it as unconverted), and is left out of totals.
+`valuation.quote_evidence` produces the one evidence line (security quote date and
+source, then the exchange quote's date, source, and inverse path, or the missing
+rate) shared by the GTK and web Accounts views, CLI `accounts`, and Dashboard group
+members, so no surface implies a conversion that was not performed. Foreign-exchange graphs,
 automatic quote retrieval, lot/cost-basis accounting, and projected market prices
 are separate concerns and must not be approximated by treating monetary amounts as
 prices or quantities.

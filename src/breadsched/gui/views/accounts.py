@@ -148,17 +148,8 @@ class AccountTreeView(BaseView):
     def _quote_evidence(self, account) -> str:
         if self.db is None:
             return ""
-        valued = valuation.account_value(self.db, account)
-        if valued.missing_quote:
-            unit = f" ({valued.currency.mnemonic})" if valued.currency is not None else ""
-            return f"No reporting-currency quote; ledger value{unit}"
-        if valued.source in {"market", "currency"} and valued.price_date is not None:
-            # The quote date already says how current it is (#151).
-            path = " · inverse rate" if valued.conversion_path == "inverse" else ""
-            return (
-                f"{valued.price_date.isoformat()} · {valued.price_source or 'Unknown source'}{path}"
-            )
-        return ""
+        # The quote date already says how current it is (#151).
+        return valuation.quote_evidence(self.db, valuation.account_value(self.db, account))
 
     # ------------------------------------------------------------------ model
 

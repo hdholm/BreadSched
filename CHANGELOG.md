@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a165 - 2026-09-28
+
+- **Securities quoted in another currency are valued.** A security with no
+  reporting-currency price but a price in another currency is now valued there and
+  converted with the one exchange rate in effect on the same date (direct, else
+  inverse), instead of falling back to its ledger value. Accounts in GTK and the
+  browser, CLI `accounts` (new `quote_evidence` field), and Dashboard group members
+  show both quotes' dates and sources. Without that rate the value stays in the
+  quote currency, is marked as missing a reporting-currency quote, and stays out of
+  totals and the Projection opening. A reporting-currency price still wins.
+  Application version `0.2.0a165`; native schema remains 9.
+
 ## 0.2.0a164 - 2026-09-28
 
 - **OFX foreign-currency transactions carry their exchange rate.** When an OFX

@@ -1134,6 +1134,10 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
                 f"{own.quantity.format()} {own.commodity.mnemonic} at "
                 f"{own.price.format()} {currency} as of {own.price_date}"
             )
+            if own.exchange is not None and own.exchange.quote_date is not None:
+                reporting = db.get_commodity(own.exchange.target_currency)
+                target = reporting.mnemonic if reporting is not None else "reporting currency"
+                note += f"; {currency}→{target} rate as of {own.exchange.quote_date}"
         if aggregate.missing_quotes:
             note = "Missing reporting-currency quote"
         elif own.source == "currency" and own.price_date is not None:
@@ -1146,8 +1150,7 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
             if valued.missing_quote:
                 line += ": missing reporting-currency quote"
             elif valued.price_date is not None and valued.total:
-                suffix = " · inverse rate" if valued.conversion_path == "inverse" else ""
-                line += f": {valued.price_date} · {valued.price_source or 'Unknown source'}{suffix}"
+                line += f": {valuation.quote_evidence(db, valued)}"
             members.append(line)
         return GroupAccountResult(
             name=name,

@@ -449,6 +449,67 @@ class TestItServes:
         assert valued["price_date"] == "2026-03-01"
         assert Money(valued["balance"]) == Money("130")
 
+    def test_accounts_disclose_a_security_quoted_in_another_currency(self, client):
+        assets = client.database.get_account_by_name("Assets")
+        checking = client.database.get_account_by_name("Assets:Checking")
+        usd = client.database.get_commodity_by_mnemonic("USD")
+        assert assets is not None and checking is not None and usd is not None
+        euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+        security = Commodity(namespace="FUND", mnemonic="EUFND", fullname="Euro fund")
+        holding = Account(
+            name="Euro holding",
+            atype=AccountType.INVESTMENT,
+            parent=assets.handle,
+            commodity=security.handle,
+        )
+        purchase = Transaction(post_date=date(2026, 2, 1), description="Euro purchase")
+        purchase.currency = usd.handle
+        purchase.splits = [
+            Split(holding.handle, Money("100"), quantity=Money("2")),
+            Split(checking.handle, Money("-100")),
+        ]
+        with client.database.transaction("Euro-quoted holding") as txn:
+            client.database.add_commodity(euro, txn)
+            client.database.add_commodity(security, txn)
+            client.database.add_account(holding, txn)
+            client.database.add_transaction(purchase, txn)
+            client.database.add_price(
+                CommodityPrice(
+                    commodity=security.handle,
+                    currency=euro.handle,
+                    quote_date=date(2026, 3, 1),
+                    value=Money("60"),
+                    source="ofx",
+                ),
+                txn,
+            )
+
+        _status, rows = client.get("/api/accounts")
+        missing = next(row for row in rows if row["handle"] == holding.handle)
+        assert missing["missing_quote"] is True
+        assert missing["balance"] is None
+        assert missing["quote_evidence"] == (
+            "2026-03-01 · ofx in EUR; no EUR→USD rate, value shown in EUR"
+        )
+
+        with client.database.transaction("Rate") as txn:
+            client.database.add_price(
+                CommodityPrice(
+                    commodity=euro.handle,
+                    currency=usd.handle,
+                    quote_date=date(2026, 3, 2),
+                    value=Money("1.25"),
+                    source="bank",
+                ),
+                txn,
+            )
+        _status, rows = client.get("/api/accounts")
+        valued = next(row for row in rows if row["handle"] == holding.handle)
+        assert valued["missing_quote"] is False
+        assert valued["currency"] == "EUR"
+        assert Money(valued["balance"]) == Money("150")
+        assert valued["quote_evidence"] == "2026-03-01 · ofx; EUR→USD 2026-03-02 · bank"
+
     def test_accounts_api_exposes_exact_imported_provenance(self, client):
         _status, payload = client.get("/api/accounts")
         checking = next(row for row in payload if row["name"] == "Checking")

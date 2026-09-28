@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 from ..db.sqlite import DbSQLite
@@ -25,6 +25,7 @@ __all__ = [
     "net_worth",
     "quantity_balance",
     "quote_age_label",
+    "quote_evidence",
     "save_currency_quote",
     "save_security_price",
     "totals_by_class",
@@ -49,6 +50,9 @@ class AccountValuation:
     currency: Commodity | None = None
     total_amount: Amount | None = None
     quantity_amount: Amount | None = None
+    # A security quoted in another currency: the one as-of exchange quote that
+    # converted its market value (or, when missing_quote, the one that is absent).
+    exchange: CurrencyConversion | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,6 +255,8 @@ def account_value(
         return AccountValuation(ledger_total, total_amount=ledger_amount)
     price = latest_price(db, commodity, as_of=as_of)
     if price is None:
+        price = _any_currency_price(db, commodity, as_of=as_of)
+    if price is None:
         return AccountValuation(
             ledger_total, commodity=commodity, total_amount=ledger_amount, missing_quote=True
         )
@@ -258,9 +264,9 @@ def account_value(
     currency = db.get_commodity(price.currency)
     fraction = commodity_fraction(db, price.currency)
     quantity_amount = Amount(quantity, commodity.handle)
-    total_amount = price.convert(quantity_amount, fraction=fraction)
-    return AccountValuation(
-        total=total_amount.value,
+    market_amount = price.convert(quantity_amount, fraction=fraction)
+    market = AccountValuation(
+        total=market_amount.value,
         source="market",
         quantity=quantity,
         price=price.value,
@@ -269,9 +275,62 @@ def account_value(
         quote_age_days=((as_of or date.today()) - price.quote_date).days,
         commodity=commodity,
         currency=currency,
-        total_amount=total_amount,
+        total_amount=market_amount,
         quantity_amount=quantity_amount,
     )
+    if price.currency == reporting_currency_handle(db):
+        return market
+    # Quoted only in another currency: value it there, then convert once with
+    # the one as-of exchange quote (direct, else inverse). No third currency.
+    exchange = convert_currency(db, market_amount, as_of=as_of)
+    if exchange.amount is None:
+        return replace(market, missing_quote=True, exchange=exchange)
+    return replace(
+        market, total=exchange.amount.value, total_amount=exchange.amount, exchange=exchange
+    )
+
+
+def _any_currency_price(
+    db: DbSQLite, commodity: Commodity, *, as_of: date | None
+) -> CommodityPrice | None:
+    """The latest quote for ``commodity`` in any currency, on or before ``as_of``."""
+    for price in db.iter_prices(commodity=commodity.handle, through=as_of):
+        quote_currency = db.get_commodity(price.currency)
+        if quote_currency is not None and quote_currency.is_currency:
+            return price
+    return None
+
+
+def quote_evidence(db: DbSQLite, valued: AccountValuation) -> str:
+    """One line naming the quotes behind a valuation, or why it is incomplete.
+
+    Shared by GTK, web, CLI, and Dashboard so a missing conversion is never
+    presented as performed.
+    """
+    reporting = db.get_commodity(reporting_currency_handle(db))
+    reporting_code = reporting.mnemonic if reporting is not None else "reporting currency"
+    quote_code = valued.currency.mnemonic if valued.currency is not None else ""
+    if valued.missing_quote:
+        if valued.source == "market" and valued.price_date is not None:
+            return (
+                f"{valued.price_date.isoformat()} · {valued.price_source or 'Unknown source'}"
+                f" in {quote_code}; no {quote_code}→{reporting_code} rate, "
+                f"value shown in {quote_code}"
+            )
+        unit = f" ({quote_code})" if quote_code else ""
+        return f"No reporting-currency quote; ledger value{unit}"
+    if valued.source not in {"market", "currency"} or valued.price_date is None:
+        return ""
+    path = " · inverse rate" if valued.conversion_path == "inverse" else ""
+    text = f"{valued.price_date.isoformat()} · {valued.price_source or 'Unknown source'}{path}"
+    fx = valued.exchange
+    if fx is not None and fx.quote_date is not None:
+        inverse = " · inverse rate" if fx.path == "inverse" else ""
+        text += (
+            f"; {quote_code}→{reporting_code} {fx.quote_date.isoformat()} · "
+            f"{fx.quote_source or 'Unknown source'}{inverse}"
+        )
+    return text
 
 
 def value_recursive(db: DbSQLite, account: str | Account, as_of: date | None = None) -> Money:

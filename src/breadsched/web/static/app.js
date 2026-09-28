@@ -928,11 +928,7 @@ async function showAccounts() {
     el("td", { class:"num" }, account.valuation_source === "market"
       ? `${money(account.price)} ${account.currency}` : "—"),
     el("td", { class:"muted" }, account.price_date || "—"),
-    el("td", { class:"muted" }, account.missing_quote
-      ? `No reporting-currency quote; ledger value${account.currency ? ` (${account.currency})` : ""}`
-      : ["market", "currency"].includes(account.valuation_source)
-        ? `${account.price_source || "Unknown source"}${account.conversion_path === "inverse"
-          ? " · inverse rate" : ""}` : "—"),
+    el("td", { class:"muted" }, account.quote_evidence || "—"),
     el("td", {}, el("button", {class:"action", type:"button",
       onclick:()=>openAccountDetails(account)}, "Details…")),
     el("td", { class: cls(account.balance) },

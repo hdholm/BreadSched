@@ -1322,6 +1322,37 @@ class TestColumnBehaviour:
         evidence = window._views["accounts"]._quote_evidence(db.get_account(cash.handle))
         assert evidence == "2026-01-03 · bank"
 
+        # A security quoted only in euros names both quotes it was valued with.
+        fund = Commodity(namespace="FUND", mnemonic="EUFND", fullname="Euro fund")
+        holding = Account(name="Euro fund", atype=AccountType.INVESTMENT, commodity=fund.handle)
+        dollars = next(
+            item
+            for item in db.iter_accounts()
+            if item.atype is AccountType.BANK and item.commodity == usd.handle
+        )
+        purchase = Transaction(post_date=date(2026, 1, 2), description="Fund purchase")
+        purchase.currency = usd.handle
+        purchase.splits = [
+            Split(holding.handle, Money(100), quantity=Money(2)),
+            Split(dollars.handle, Money(-100)),
+        ]
+        with db.transaction("Euro fund") as txn:
+            db.add_commodity(fund, txn)
+            db.add_account(holding, txn)
+            db.add_transaction(purchase, txn)
+            db.add_price(
+                CommodityPrice(
+                    commodity=fund.handle,
+                    currency=euro.handle,
+                    quote_date=date(2026, 1, 4),
+                    value=Money(60),
+                    source="ofx",
+                ),
+                txn,
+            )
+        evidence = window._views["accounts"]._quote_evidence(db.get_account(holding.handle))
+        assert evidence == "2026-01-04 · ofx; EUR→USD 2026-01-03 · bank"
+
     def test_amounts_sort_as_numbers_not_text(self):
         from breadsched.gui.views._base import _numeric
 
