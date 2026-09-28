@@ -179,6 +179,7 @@ class ScheduledView(BaseView):
 
     def _definitions_view(self):
         view = Gtk.ColumnView()
+        view.add_css_class("data-table")
         view.set_show_row_separators(True)
         view.append_column(self._name_column())
         view.append_column(column("Kind", _kind_of, sort_key=_kind_of))
@@ -617,6 +618,7 @@ class UpcomingView(BaseView):
         bar.append(self.post_button)
 
         self.upcoming_view = Gtk.ColumnView()
+        self.upcoming_view.add_css_class("data-table")
         self.upcoming_view.set_show_row_separators(True)
         self.upcoming_view.connect("activate", self._on_activated)
         self.upcoming_view.append_column(column("Due", self._due_text, sort_key=lambda o: o.when))

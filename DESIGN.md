@@ -1010,6 +1010,29 @@ Inference precedence is:
 
 Transfers that carry no household planning meaning should remain neutral.
 
+## GTK application chrome
+
+Category navigation lives in exactly one place: the sidebar (`viewmanager.CATEGORIES`).
+The icon toolbar (`viewmanager.TOOLBAR`) never repeats a sidebar category as a
+button; it holds only actions that are not also a category (open/import a book,
+undo/redo, start a new transaction, print the current report). A toolbar button
+that switched to a category the sidebar already listed was a real duplication of
+function, not a shortcut, and it cost the sidebar's `Gtk.Paned` a wider default
+than the navigation itself needed; removing the duplicates let the default
+narrow, giving the view more of the window.
+
+Every `Gtk.ColumnView` presenting book data (register, accounts, dashboard,
+scheduled, upcoming) carries the shared `data-table` CSS class from
+`resources/style.css`, which gives every other row a faint background so rows are
+distinguishable at rest, not only while hovered or selected; the selected row
+keeps the theme's own selection color untouched. Every numeric value carries
+`numeric` (already used for tabular-figure alignment) and that class now also
+gives it a small right padding, so a value never sits flush against a column's or
+pane's edge — the Plan grid's period, total, and per-cell amounts, which used
+right alignment without that class, now carry it too. None of this is meant to
+reproduce GnuCash's specific appearance; it corrects concrete overlap, spacing,
+and legibility defects while keeping BreadSched's own idiom.
+
 ## Register presentation and basic entry
 
 Register windows are independent presentation consumers of one open `DbSQLite`

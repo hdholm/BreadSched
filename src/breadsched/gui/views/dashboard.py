@@ -98,6 +98,7 @@ class DashboardView(BaseView):
         self.append(heading)
 
         self.bills_view = Gtk.ColumnView()
+        self.bills_view.add_css_class("data-table")
         self.bills_view.set_show_row_separators(True)
         # A bill is a scheduled transaction seen from another angle; activating a
         # row goes to the thing itself rather than making the user find it.
@@ -164,6 +165,7 @@ class DashboardView(BaseView):
         self.append(income_heading)
 
         self.income_view = Gtk.ColumnView()
+        self.income_view.add_css_class("data-table")
         self.income_view.set_show_row_separators(True)
         self.income_view.connect("activate", self._on_bill_activated)
         self.income_view.append_column(
