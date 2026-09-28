@@ -4670,3 +4670,47 @@ class TestPayeeInRegisterAndEditor:
         cleared.payee_picker.set_selected(0)
         cleared._on_save(None)
         assert app.db.get_transaction(existing.handle).payee is None
+
+
+class TestDashboardWidth:
+    """Issue #140: a combined group's long note must not widen the window."""
+
+    def test_long_group_and_coverage_notes_do_not_widen_the_dashboard(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.engine.dashboard import GroupResult
+        from breadsched.gen.lib import Money
+
+        app.open_book(populated_book)
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        view._render_groups()
+        _minimum, baseline = view.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
+
+        combined = "; ".join(
+            f"Assets:Investments:Brokerage account {index}: 2026-09-01 · Manual quote"
+            for index in range(30)
+        )
+        view.board.groups.append(
+            GroupResult(name="Everything", kind="asset", total=Money(0), note=combined)
+        )
+        view.board.coverage_notes = (*view.board.coverage_notes, combined)
+        view._render_groups()
+        view._render_cards()
+        _minimum, natural = view.measure(Gtk.Orientation.HORIZONTAL, -1)[:2]
+
+        # Before the fix the 30-account note alone asked for ~29,000 pixels.
+        assert natural - baseline < 1000
+        name = next(
+            child
+            for child in _children(view.groups)
+            if isinstance(child, Gtk.Label) and child.get_text().startswith("Everything")
+        )
+        assert combined in (name.get_tooltip_text() or "")
+
+
+def _children(widget):
+    child = widget.get_first_child()
+    while child is not None:
+        yield child
+        child = child.get_next_sibling()

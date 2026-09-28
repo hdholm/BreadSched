@@ -5,6 +5,13 @@ belongs in `ROADMAP.md`.
 
 ## Unreleased
 
+- **Fixed: the desktop Dashboard grew wider than the screen (#140).** A group that
+  combines several accounts carries every account's quote details in its note, and
+  the ellipsized label still asked for its full width, stretching the window. The
+  group label is now capped and shortened with "…" (the full text is in its
+  tooltip), and long headline-card text wraps. Application version `0.2.0a137`;
+  native schema remains 8.
+
 - **Payees in the register and editor.** The desktop register has a **Payee**
   column and its filter matches payee names; the transaction editor has a **Payee**
   choice that sets or clears it. The web register shows a payee picker on each row

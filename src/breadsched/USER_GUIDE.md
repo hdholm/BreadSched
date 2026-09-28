@@ -150,7 +150,9 @@ transaction editor; correct a scheduled purpose in the schedule editor.
 The GTK sidebar and the web navigation expose the same main work areas:
 
 - **Dashboard** summarizes household position, expected income, pending bills,
-  liquidity, emergency-fund information, and linked assets and loans.
+  liquidity, emergency-fund information, and linked assets and loans. In the
+  desktop application a long group line (for example, several accounts combined
+  with their quote details) is shortened with "…"; hover over it to read it all.
 - **FSA Dashboard** shows benefit-year availability and open healthcare claims.
 - **Accounts** is the hierarchical chart of accounts with balances and metadata.
 - **Register** shows the transaction history for one account.

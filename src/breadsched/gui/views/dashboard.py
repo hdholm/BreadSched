@@ -347,8 +347,13 @@ class DashboardView(BaseView):
             name.set_margin_start(group.depth * 18)
             if group.heading:
                 name.add_css_class("total-row")
+            # A combined group's note joins every account's quote details. An
+            # ellipsized label still asks for its full natural width, so cap it
+            # (issue #140) and keep the whole text in the tooltip.
             name.set_ellipsize(Pango.EllipsizeMode.END)
-            name.set_tooltip_text(group.path)
+            name.set_max_width_chars(_GROUP_LABEL_CHARS)
+            name.set_hexpand(True)
+            name.set_tooltip_text(label if label == group.path else f"{group.path}\n{label}")
             self.groups.attach(name, 0, index, 1, 1)
             self.groups.attach(_amount(group.report_value), 1, index, 1, 1)
             self.groups.attach(_amount(group.report_debt), 2, index, 1, 1)
@@ -422,6 +427,12 @@ class DashboardView(BaseView):
         dialog.present()
 
 
+#: Widest a group name (with its note) may ask to be before it ellipsizes.
+_GROUP_LABEL_CHARS = 60
+#: Widest a headline card's text may ask to be before it wraps.
+_CARD_TEXT_CHARS = 40
+
+
 def _empty(container: Gtk.Widget) -> None:
     child = container.get_first_child()
     while child is not None:
@@ -445,6 +456,9 @@ def _card(caption: str, value: str, alarm: bool) -> Gtk.Widget:
     label = Gtk.Label(label=caption, xalign=0)
     label.add_css_class("summary-label")
     amount = Gtk.Label(label=value, xalign=0)
+    # Coverage notes can be long; wrap them instead of widening the window (#140).
+    amount.set_wrap(True)
+    amount.set_max_width_chars(_CARD_TEXT_CHARS)
     amount.add_css_class("summary-value")
     amount.add_css_class("numeric")
     if alarm or value.startswith(("(", "-")):

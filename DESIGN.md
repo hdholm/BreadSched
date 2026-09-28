@@ -812,7 +812,11 @@ Grouped Dashboard measures disclose the count of unselected asset/liability acco
 When a liquid group is selected, they also disclose omitted cash-like accounts.
 Selected chart parents cover descendants, and disclosures do not silently change
 the selected totals. The shared engine supplies the same scope notes to every
-presentation and print output.
+presentation and print output. A combined group's note joins every account's quote
+details, so the GTK group label caps its natural width (60 characters) and
+ellipsizes, with the full text in its tooltip, and headline card text wraps at 40
+characters; an ellipsized GTK label otherwise still requests its full width and
+widens the window (#140). The web Dashboard shows notes as wrapping paragraphs.
 
 The synthetic learning book is generated on request by `gen.sample_book` into a
 new path; CLI is only its entry point. Its reference date anchors the previous
