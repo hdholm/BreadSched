@@ -1,6 +1,6 @@
 # BreadSched changelog
 
-This file records completed BreadSched milestones Current and proposed work
+This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
 ## Unreleased
