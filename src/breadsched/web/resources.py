@@ -16,6 +16,7 @@ from .payee_resource import (
     payees,
     transaction_payee,
 )
+from .rules_resource import rule_add, rule_delete, rule_move, rules, rules_accept
 
 if TYPE_CHECKING:
     from .server import Api
@@ -222,6 +223,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/due-review": _no_query("due_review"),
     "/api/verify": _no_query("verify"),
     "/api/payees": payees,
+    "/api/rules": rules,
 }
 
 
@@ -269,6 +271,10 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/payee/delete": payee_delete,
     "/api/payees/accept": payee_accept,
     "/api/transaction/payee": transaction_payee,
+    "/api/rule/add": rule_add,
+    "/api/rule/delete": rule_delete,
+    "/api/rule/move": rule_move,
+    "/api/rules/accept": rules_accept,
     "/api/due-review": _post("due_review_resolve"),
     "/api/post-scheduled": _post_without_body("post_scheduled"),
     "/api/scheduled/occurrences": _post("scheduled_occurrence_options"),

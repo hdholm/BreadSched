@@ -152,3 +152,30 @@ def test_register_payee_picker_sets_the_payee(page, served):
         if item.description == description and item.payee == payee.handle
     ]
     assert transaction.description == description
+
+
+def test_rules_view_adds_a_rule_and_accepts_its_proposal(page, served, tmp_path):
+    from breadsched.gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv
+
+    db, _httpd = served
+    checking = next(item for item in db.iter_accounts() if item.name == "Checking")
+    path = tmp_path / "statement.csv"
+    path.write_text("Date,Description,Amount\n2026-09-02,City Power,-60.00\n", encoding="utf-8")
+    mapping = CsvMapping(date="Date", description="Description", amount="Amount")
+    imported = import_csv(db, CsvImportRequest(str(path), checking.handle, mapping))
+    [row] = imported.value.preview.rows
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Rules", exact=True).first.click()
+    page.wait_for_selector("text=No rules yet.")
+
+    page.fill("input[name=description]", "City Power")
+    category = page.locator("select[name=category] option").first.inner_text()
+    page.get_by_role("button", name="Add rule").click()
+    page.wait_for_selector("td:has-text('Description city power')")
+    page.get_by_role("button", name="Accept selected").click()
+    page.wait_for_selector("text=No uncategorized imported transactions match a rule.")
+
+    stored = db.get_transaction(row.identity)
+    names = {db.full_name(split.account) for split in stored.splits}
+    assert category in names
+    assert stored.description == "City Power"

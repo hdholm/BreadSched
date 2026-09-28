@@ -4403,3 +4403,111 @@ class TestPayees:
         )
         assert status == 200
         assert client.database.get_transaction(posted["handle"]).payee == saved["handle"]
+
+
+class TestRules:
+    """Browser categorization rules and proposal review through the shared service."""
+
+    def _import(self, client, tmp_path):
+        path = tmp_path / "statement.csv"
+        path.write_text(
+            "Date,Description,Amount\n2026-02-03,CORNER GROCER #1,-42.10\n"
+            "2026-02-04,City Power,-60.00\n",
+            encoding="utf-8",
+        )
+        checking = client.database.get_account_by_name("Checking")
+        status, imported = client.post(
+            "/api/import/csv",
+            {
+                "path": str(path),
+                "account": checking.handle,
+                "mapping": {"date": "Date", "amount": "Amount", "description": "Description"},
+            },
+        )
+        assert status == 200 and imported["new"] == 2
+        return {
+            txn.description: txn.handle
+            for txn in client.database.iter_transactions()
+            if txn.description in {"CORNER GROCER #1", "City Power"}
+        }
+
+    def test_add_preview_accept_move_and_delete(self, client, tmp_path):
+        handles = self._import(client, tmp_path)
+        rent = client.database.get_account_by_name("Expenses:Rent")
+        status, empty = client.get("/api/rules")
+        assert status == 200 and empty["rules"] == [] and empty["proposals"] == []
+        assert rent.handle in {item["handle"] for item in empty["categories"]}
+
+        status, added = client.post(
+            "/api/rule/add", {"category": rent.handle, "description": "city power"}
+        )
+        assert status == 200 and added["key"] == "city power"
+        client.post("/api/rule/add", {"category": rent.handle, "description": "corner grocer"})
+        _status, listed = client.get("/api/rules")
+        assert [rule["position"] for rule in listed["rules"]] == [1, 2]
+        assert {item["transaction"] for item in listed["proposals"]} == set(handles.values())
+        [power] = [item for item in listed["proposals"] if item["description"] == "City Power"]
+        assert (power["rule_position"], power["amount"]) == (1, "60.00")
+
+        status, accepted = client.post(
+            "/api/rules/accept", {"transactions": [handles["City Power"]]}
+        )
+        assert status == 200 and accepted == {"assigned": 1, "unchanged": 0}
+        stored = client.database.get_transaction(handles["City Power"])
+        assert rent.handle in {split.account for split in stored.splits}
+        assert stored.description == "City Power"
+
+        second = listed["rules"][1]["handle"]
+        status, _moved = client.post("/api/rule/move", {"handle": second, "position": 1})
+        assert status == 200
+        _status, moved = client.get("/api/rules")
+        assert moved["rules"][0]["handle"] == second
+        status, _deleted = client.post("/api/rule/delete", {"handle": second})
+        assert status == 200
+        _status, after = client.get("/api/rules")
+        assert [rule["handle"] for rule in after["rules"]] == [added["handle"]]
+
+    def test_rejected_requests_leave_rules_unchanged(self, client, tmp_path):
+        rent = client.database.get_account_by_name("Expenses:Rent")
+        checking = client.database.get_account_by_name("Checking")
+        client.post("/api/rule/add", {"category": rent.handle, "description": "rent"})
+        _status, before = client.get("/api/rules")
+
+        for path, body, status, code in [
+            ("/api/rule/add", {"category": rent.handle}, 400, "rule.match.required"),
+            (
+                "/api/rule/add",
+                {"category": checking.handle, "description": "x"},
+                400,
+                "rule.category.invalid",
+            ),
+            (
+                "/api/rule/add",
+                {"category": rent.handle, "description": "RENT"},
+                400,
+                "rule.match.duplicate",
+            ),
+            ("/api/rule/add", {"category": rent.handle, "description": 5}, 400, None),
+            (
+                "/api/rule/move",
+                {"handle": before["rules"][0]["handle"], "position": 7},
+                400,
+                "rule.position.invalid",
+            ),
+            (
+                "/api/rule/move",
+                {"handle": before["rules"][0]["handle"], "position": "1"},
+                400,
+                None,
+            ),
+            ("/api/rule/delete", {"handle": "missing"}, 404, "rule.not_found"),
+            ("/api/rules/accept", {"transactions": ["missing"]}, 404, None),
+        ]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(path, body)
+            assert caught.value.code == status
+            if code is not None:
+                assert json.loads(caught.value.read())["code"] == code
+
+        _status, after = client.get("/api/rules")
+        assert after["rules"] == before["rules"]

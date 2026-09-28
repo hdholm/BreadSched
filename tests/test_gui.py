@@ -4714,3 +4714,87 @@ def _children(widget):
     while child is not None:
         yield child
         child = child.get_next_sibling()
+
+
+class TestRulesDialog:
+    """Add, reorder, and delete rules and accept their proposals in GTK."""
+
+    @pytest.fixture
+    def dialog(self, app, window, populated_book, tmp_path):
+        from breadsched.gen.lib.account import AccountClass
+        from breadsched.gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+
+        app.open_book(populated_book)
+        bank = next(
+            account
+            for account in app.db.iter_accounts()
+            if not account.placeholder and account.account_class is AccountClass.ASSET
+        )
+        path = tmp_path / "statement.csv"
+        path.write_text(
+            "Date,Description,Amount\n2026-09-01,CORNER GROCER #1,-42.10\n"
+            "2026-09-02,City Power,-60.00\n",
+            encoding="utf-8",
+        )
+        mapping = CsvMapping(date="Date", description="Description", amount="Amount")
+        assert import_csv(app.db, CsvImportRequest(str(path), bank.handle, mapping)).ok
+        dialog = RulesDialog(window, app.db)
+        yield dialog
+        dialog.destroy()
+
+    def _add(self, dialog, description, category=0):
+        dialog.kind_picker.set_selected(0)
+        dialog.description_entry.set_text(description)
+        dialog.category_picker.set_selected(category)
+        return dialog.add_rule()
+
+    def test_add_rule_then_accept_selected(self, dialog, app):
+        rule = self._add(dialog, "city power")
+        assert rule is not None and rule.category == dialog.categories[0].handle
+        [handle] = list(dialog.proposal_checks)
+        assert app.db.get_transaction(handle).description == "City Power"
+
+        result = dialog.accept_selected()
+
+        assert result is not None and result.assigned == 1
+        stored = app.db.get_transaction(handle)
+        assert rule.category in {split.account for split in stored.splits}
+        assert dialog.proposal_checks == {}
+        assert "Categorized 1 transaction(s)" in dialog.status.get_text()
+
+    def test_reorder_changes_the_deciding_rule_and_delete_works(self, dialog, app):
+        from breadsched.gen.services.categorization import list_rules
+
+        assert len(dialog.categories) >= 2
+        first = self._add(dialog, "city power", 0)
+        second = self._add(dialog, "city power 2", 1)
+        assert second is None  # same key as the first rule: a duplicate match
+        assert "already matches" in dialog.status.get_text()
+        second = self._add(dialog, "corner grocer", 1)
+        assert [rule.handle for rule in list_rules(app.db)] == [first.handle, second.handle]
+
+        assert dialog.move(second.handle, 1)
+        assert [rule.handle for rule in list_rules(app.db)] == [second.handle, first.handle]
+        assert dialog.delete(first.handle)
+        assert [rule.handle for rule in list_rules(app.db)] == [second.handle]
+        assert "Edit → Undo restores it" in dialog.status.get_text()
+
+    def test_refused_rule_explains_and_writes_nothing(self, dialog, app):
+        from breadsched.gen.services.categorization import list_rules
+
+        assert self._add(dialog, "#1234") is None
+        assert "at least one word without digits" in dialog.status.get_text()
+        assert list_rules(app.db) == []
+
+    def test_app_action_opens_the_dialog(self, app, window, populated_book):
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+
+        assert app.actions["rules"].get_enabled() is False
+        app.open_book(populated_book)
+        assert app.actions["rules"].get_enabled() is True
+        opened = app.on_rules()
+        try:
+            assert isinstance(opened, RulesDialog)
+        finally:
+            opened.destroy()

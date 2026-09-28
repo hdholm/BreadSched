@@ -1078,7 +1078,12 @@ as a conflict with its position. `services/categorization.py` validates rules (o
 match kind, a non-empty key, an existing payee, a non-placeholder income or expense
 category, no duplicate match, a valid position) and applies accepted proposals by
 recomputing them and replacing only the placeholder split's account, keeping its
-value, memo, and handle, in one undo step. CLI: `breadsched rules`.
+value, memo, and handle, in one undo step. CLI: `breadsched rules`. The GTK
+`RulesDialog` (Actions → Categorization Rules…) and the web **Rules** view are
+presentation adapters over the same service: `web/rules_resource.py` serves
+`GET /api/rules` (rules in order, proposals with deciding rule and conflicts, and
+the category and payee choices) and `POST /api/rule/add`, `/api/rule/move`,
+`/api/rule/delete`, and `/api/rules/accept`, and parses JSON only.
 
 ## Statement reconciliation
 
