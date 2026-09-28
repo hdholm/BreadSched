@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a166 - 2026-09-28
+
+- **Spending over time in Expense Explorer.** GTK and the browser now open
+  Expense Explorer with a chart of total planned and actual spending for every
+  period in the applied Plan range, and a table splitting each period's actual
+  across top-level expense categories (subcategories of a lone Expenses account).
+  Periods containing the as-of date, future periods, and periods with an
+  unconverted foreign amount are labeled, and a dashed line marks the as-of
+  boundary. Clicking a period (or choosing it on the web) selects it for the
+  category comparison and merchant drill-down. The printout includes the same
+  table. Application version `0.2.0a166`; native schema remains 9.
+
 ## 0.2.0a165 - 2026-09-28
 
 - **Securities quoted in another currency are valued.** A security with no

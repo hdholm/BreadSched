@@ -7,6 +7,7 @@ from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseExplorer, query_expense_explorer
 from ...gen.services.plan import PlanQuery
 from ..gi_setup import Gtk
+from ..widgets.chart import LineChart, Series
 
 
 class ExpenseExplorerDialog(Gtk.Window):
@@ -95,6 +96,75 @@ class ExpenseExplorerDialog(Gtk.Window):
         bar.set_hexpand(True)
         return bar
 
+    def _append_spending(self, index: int) -> None:
+        """Total plan and actual by period; clicking a period selects it."""
+        points = self._report.spending
+        self.content.append(self._label("Spending over time", heading=True))
+        self.content.append(
+            self._label(
+                f"Total plan and actual. Actual is posted through "
+                f"{self._report.plan.report.as_of.isoformat()}; the dashed line marks the "
+                "first future period. Click a period to compare its categories."
+            )
+        )
+        chart = LineChart()
+        chart.set_content_height(180)
+        chart.set_vexpand(False)
+        chart.empty_message = "A trend needs at least two periods"
+        chart.set_data(
+            [
+                Series("Plan", [float(point.planned.to_decimal()) for point in points]),
+                Series("Actual", [float(point.actual.to_decimal()) for point in points]),
+            ],
+            [point.label for point in points],
+        )
+        chart.marker_index = next((i for i, point in enumerate(points) if point.future), None)
+        chart.selected_index = index
+        click = Gtk.GestureClick()
+
+        def pressed(_gesture, _count, x, _y) -> None:
+            chosen = chart.index_at(x)
+            if chosen is not None:
+                self.period.set_selected(chosen)
+
+        click.connect("pressed", pressed)
+        chart.add_controller(click)
+        self.spending_chart = chart
+        self.content.append(chart)
+        names = {row.account: row.full_name for row in self._report.categories}
+        grid = Gtk.Grid(column_spacing=12, row_spacing=3)
+        headings = ["Period", "Plan", "Actual"]
+        if points:
+            headings += [names.get(handle, handle) for handle, _amount in points[0].categories]
+        headings.append("Note")
+        for column, heading in enumerate(headings):
+            grid.attach(self._label(heading, heading=True), column, 0, 1, 1)
+        for row, point in enumerate(points, 1):
+            notes = [
+                text
+                for flag, text in (
+                    (point.partial, "to date"),
+                    (point.future, "future"),
+                    (point.currency_incomplete, "missing quote"),
+                )
+                if flag
+            ]
+            cells = [
+                f"{'▸ ' if row - 1 == index else ''}{point.label}",
+                point.planned.format(),
+                point.actual.format(),
+                *(amount.format() for _handle, amount in point.categories),
+                ", ".join(notes) or "—",
+            ]
+            for column, text in enumerate(cells):
+                label = self._label(text)
+                if 0 < column < len(cells) - 1:
+                    label.set_xalign(1)
+                    label.add_css_class("numeric")
+                grid.attach(label, column, row, 1, 1)
+        self.spending_table = grid
+        self.content.append(grid)
+
     def _update(self, *_args) -> None:
         while child := self.content.get_first_child():
             self.content.remove(child)
@@ -123,6 +193,7 @@ class ExpenseExplorerDialog(Gtk.Window):
                 for value in (row.periods[index].planned, row.periods[index].actual)
             ),
         )
+        self._append_spending(index)
         self.content.append(
             self._label(f"Category comparison — {self._report.totals[index].label}", heading=True)
         )

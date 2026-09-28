@@ -186,11 +186,39 @@ def expense_explorer_report(explorer: ExpenseExplorer) -> str:
         '<th class="num">Actual</th><th>Transactions</th></tr></thead><tbody>'
         f"{''.join(merchant_rows)}</tbody></table>"
     )
+    names = {row.account: row.full_name for row in explorer.categories}
+    parts = explorer.spending[0].categories if explorer.spending else ()
+    spending_rows = []
+    for point in explorer.spending:
+        notes = [
+            text
+            for flag, text in (
+                (point.partial, "to date"),
+                (point.future, "future"),
+                (point.currency_incomplete, "missing quote"),
+            )
+            if flag
+        ]
+        spending_rows.append(
+            f"<tr><td>{escape(point.label)}</td>{_amount(point.planned)}{_amount(point.actual)}"
+            + "".join(_amount(amount) for _handle, amount in point.categories)
+            + f"<td>{escape(', '.join(notes) or '—')}</td></tr>"
+        )
+    spending = (
+        "<h2>Spending over time</h2><p class='note'>Total plan and actual by period, "
+        "with actual split by top-level category. Actual is posted through "
+        f"{explorer.plan.report.as_of.isoformat()}.</p><table><thead><tr><th>Period</th>"
+        '<th class="num">Plan</th><th class="num">Actual</th>'
+        + "".join(
+            f'<th class="num">{escape(names.get(handle, handle))}</th>' for handle, _ in parts
+        )
+        + f"<th>Note</th></tr></thead><tbody>{''.join(spending_rows)}</tbody></table>"
+    )
     subtitle = (
         f"{explorer.plan.scenario.name} · {explorer.plan.start.isoformat()} through "
         f"{explorer.plan.end.isoformat()} · {escape(selected.label)}"
     )
-    return _document("Expense Explorer", subtitle, comparison + trend + merchants)
+    return _document("Expense Explorer", subtitle, spending + comparison + trend + merchants)
 
 
 def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:

@@ -336,3 +336,17 @@ def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
     page.get_by_role("button", name="Accept selected").click()
     page.wait_for_selector("text=Linked 1 reimbursement(s)")
     assert len(db.get_receivable(receivable.handle).reimbursements) == 1
+
+
+def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Plan", exact=True).first.click()
+    page.wait_for_selector("h3:has-text('Spending over time')")
+    periods = page.locator(".spending-over-time tbody tr")
+    assert periods.count() >= 2
+    assert page.locator("svg.spending-chart path").count() == 2
+    label = periods.nth(1).locator("button").inner_text()
+    periods.nth(1).locator("button").click()
+    page.wait_for_selector(f".spending-over-time tbody tr.selected:has-text('{label}')")
+    selected = page.locator(".expense-explorer select").first.evaluate("(node) => node.value")
+    assert selected == "1"

@@ -62,6 +62,7 @@ def expense_report(
         }
 
     detail = explorer.drilldown
+    names = {row.account: row.full_name for row in explorer.categories}
     return {
         "rollover": explorer.rollover,
         "scenario": explorer.plan.scenario.name,
@@ -77,6 +78,24 @@ def expense_report(
             for row in explorer.categories
         ],
         "totals": [period_value(item) for item in explorer.totals],
+        "as_of": explorer.plan.report.as_of,
+        "spending": [
+            {
+                "start": point.start,
+                "end": point.end,
+                "label": point.label,
+                "planned": point.planned,
+                "actual": point.actual,
+                "future": point.future,
+                "partial": point.partial,
+                "currency_incomplete": point.currency_incomplete,
+                "categories": [
+                    {"account": handle, "name": names.get(handle, handle), "actual": amount}
+                    for handle, amount in point.categories
+                ],
+            }
+            for point in explorer.spending
+        ],
         "drilldown": None
         if detail is None
         else {

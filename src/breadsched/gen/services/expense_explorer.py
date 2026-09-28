@@ -69,12 +69,35 @@ class ExpenseDrilldown:
 
 
 @dataclass(frozen=True, slots=True)
+class SpendingPoint:
+    """One period of total spending over time, split by top-level category.
+
+    ``categories`` pairs each top-level expense category's handle with its actual
+    for the period; together they equal ``actual`` exactly. ``future`` periods
+    start after the as-of date (their actual is only what is already posted), and
+    ``partial`` periods contain it. ``currency_incomplete`` marks a period with
+    foreign activity that has no applicable quote and is therefore left out.
+    """
+
+    start: date
+    end: date
+    label: str
+    planned: Money
+    actual: Money
+    future: bool
+    partial: bool
+    currency_incomplete: bool
+    categories: tuple[tuple[str, Money], ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ExpenseExplorer:
     plan: PlanQueryResult
     categories: tuple[ExpenseCategory, ...]
     totals: tuple[ExpensePeriod, ...]
     drilldown: ExpenseDrilldown | None
     rollover: bool = False
+    spending: tuple[SpendingPoint, ...] = ()
 
 
 def _merchant_name(description: str) -> str:
@@ -109,6 +132,44 @@ def _expense_period(
         None if reason else planned - (actual_to_date or Money(0)),
         reason,
     )
+
+
+def _spending_composition(
+    categories: tuple[ExpenseCategory, ...], roots: tuple[ExpenseCategory, ...]
+) -> tuple[tuple[str, tuple[Money, ...]], ...]:
+    """Top-level expense categories and their actual per period.
+
+    A lone root (usually the book's own "Expenses" account) is replaced by its
+    immediate child categories so the split is informative. Anything posted to
+    that root itself stays as its own entry under the root's handle, so the
+    entries always sum to the total exactly.
+    """
+    level = list(roots)
+    residual: list[tuple[str, tuple[Money, ...]]] = []
+    while len(level) == 1:
+        parent = level[0]
+        prefix = f"{parent.full_name}:"
+        below = [row for row in categories if row.full_name.startswith(prefix)]
+        children = [
+            row
+            for row in below
+            if not any(
+                row.full_name.startswith(f"{other.full_name}:")
+                for other in below
+                if other is not row
+            )
+        ]
+        if not children:
+            break
+        own = tuple(
+            period.actual - sum((child.periods[i].actual for child in children), Money(0))
+            for i, period in enumerate(parent.periods)
+        )
+        if any(own):
+            residual.append((parent.account, own))
+        level = children
+    entries = [(row.account, tuple(period.actual for period in row.periods)) for row in level]
+    return tuple(entries + residual)
 
 
 def _apply_rollover(
@@ -252,6 +313,25 @@ def query_expense_explorer(
         rollover,
         plan.report.as_of,
     )
+    as_of = plan.report.as_of
+    composition = _spending_composition(categories, roots)
+    spending = tuple(
+        SpendingPoint(
+            bucket.start,
+            bucket.end,
+            bucket.label,
+            total.planned,
+            total.actual,
+            future=bucket.start > as_of,
+            partial=bucket.start <= as_of < bucket.end,
+            currency_incomplete=bool(foreign[index]),
+            categories=tuple((handle, amounts[index]) for handle, amounts in composition),
+        )
+        for index, (bucket, total) in enumerate(zip(buckets, totals, strict=True))
+    )
+    for point in spending:
+        if sum((amount for _account, amount in point.categories), Money(0)) != point.actual:
+            raise AssertionError("top-level expense categories do not reconcile to Plan")
     drilldown = None
     if account is not None or period_index is not None:
         selected = next((item for item in categories if item.account == account), None)
@@ -299,4 +379,6 @@ def query_expense_explorer(
             detail.actual_transactions,
             merchants,
         )
-    return ServiceResult.success(ExpenseExplorer(plan, categories, totals, drilldown, rollover))
+    return ServiceResult.success(
+        ExpenseExplorer(plan, categories, totals, drilldown, rollover, spending)
+    )

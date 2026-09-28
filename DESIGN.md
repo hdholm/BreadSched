@@ -2010,6 +2010,19 @@ category and its ancestors, with an explicit reason. Future-only periods are
 unavailable. Optional rollover starts with zero at the selected horizon, carries
 only completed prior periods, and displays Carry in + period plan - actual through
 as-of = Remaining. A period with missing conversion blocks subsequent carry.
+
+Spending over time (`ExpenseExplorer.spending`) is one `SpendingPoint` per Plan
+period: the section's total plan and actual, `future` (starts after as-of),
+`partial` (contains as-of), `currency_incomplete` (a category in the period has
+unconverted foreign activity), and the actual split across top-level categories.
+A lone root category, normally the book's `Expenses` account, is replaced by its
+immediate children, with anything posted to the root itself kept under the root's
+handle; the service asserts that the split sums exactly to the period actual. GTK
+draws it with the shared `LineChart` (a dashed as-of marker, the selected period
+shaded, `index_at` mapping a click to a period), the web page with an SVG whose
+period hit areas are keyboard-focusable buttons, and the printable report as a
+table. Selecting a period drives the existing comparison and merchant drill-down,
+so every drill-down stays on the shared Plan values.
 The view toggle does not mutate historical events or persist a second budget
 ledger. Reimbursable expense
 work must link the original balanced expense, collectible receivable, and later

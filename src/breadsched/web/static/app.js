@@ -2143,6 +2143,59 @@ function expenseTrend(category) {
   return svg;
 }
 
+function spendingOverTime(data, periodIndex) {
+  // Total plan and actual per period; each period is a button that selects it.
+  const points = data.spending || [];
+  const values = points.flatMap((item) => [Number(item.planned), Number(item.actual)]);
+  const low = Math.min(0, ...values);
+  const high = Math.max(1, ...values);
+  const width = 600, top = 10, bottom = 120;
+  const step = 560 / Math.max(1, points.length - 1);
+  const x = (index) => 20 + index * step;
+  const y = (value) => bottom - (bottom - top) * (Number(value) - low) / (high - low);
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} 150`, role: "img", class: "spending-chart",
+    "aria-label": "Total expense plan and actual by period" });
+  const asOf = points.findIndex((item) => item.future);
+  if (asOf > 0) {
+    svg.append(svgEl("line", { x1: x(asOf) - step / 2, x2: x(asOf) - step / 2, y1: top,
+      y2: bottom, stroke: "#888", "stroke-dasharray": "4 3" }));
+  }
+  for (const [key, color] of [["planned", "#2563a4"], ["actual", "#bd5824"]]) {
+    svg.append(svgEl("path", { fill: "none", stroke: color, "stroke-width": "3",
+      d: points.map((item, i) => `${i ? "L" : "M"}${x(i)},${y(item[key])}`).join(" ") }));
+  }
+  points.forEach((item, i) => {
+    const hit = svgEl("rect", { x: x(i) - step / 2, y: 0, width: step, height: 150,
+      fill: i === periodIndex ? "rgba(37,99,164,0.10)" : "transparent",
+      class: "spending-period", tabindex: "0", role: "button",
+      "aria-label": `${item.label}: plan ${item.planned}, actual ${item.actual}` });
+    const choose = () => { state.expenseIndex = i; render(); };
+    hit.addEventListener("click", choose);
+    hit.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") { event.preventDefault(); choose(); }
+    });
+    svg.append(hit);
+  });
+  const categories = points.length ? points[0].categories : [];
+  const note = (item) => [item.partial ? "to date" : "", item.future ? "future" : "",
+    item.currency_incomplete ? "missing quote" : ""].filter(Boolean).join(", ");
+  return el("div", { class: "spending-over-time" },
+    el("h3", {}, "Spending over time"),
+    el("p", { class: "note" }, `Blue: total plan · Orange: total actual. Actual is posted `
+      + `through ${data.as_of}; the dashed line marks the first future period. `
+      + "Select a period to compare its categories and merchants."),
+    svg,
+    table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
+      ...categories.map((item) => ({label:item.name, num:true})), "Note"],
+      points.map((item, i) => el("tr", { class: i === periodIndex ? "selected" : null },
+        el("td", {}, el("button", { class: "action", type: "button",
+          onclick: () => { state.expenseIndex = i; render(); } }, item.label)),
+        el("td", {class:"num"}, String(item.planned)),
+        el("td", {class:"num"}, String(item.actual)),
+        ...item.categories.map((part) => el("td", {class:"num"}, String(part.actual))),
+        el("td", {class:"muted"}, note(item) || "—")))));
+}
+
 async function expenseExplorerPanel(currentPlan) {
   const params = new URLSearchParams({
     from: currentPlan.from, through: currentPlan.through, period: currentPlan.period,
@@ -2181,6 +2234,7 @@ async function expenseExplorerPanel(currentPlan) {
     el("label", {}, el("input", { type:"checkbox", checked:state.expenseRollover,
       onchange:(event)=>{ state.expenseRollover = event.target.checked; render(); } }),
       " Carry prior periods")));
+  panel.append(spendingOverTime(data, index));
   const ordered = [...choices].sort((a, b) => state.expenseSort === "name"
     ? a.full_name.localeCompare(b.full_name)
     : Number(b.periods[index][state.expenseSort] || 0)
