@@ -848,6 +848,42 @@ breadsched rules book.breadsched --move 2 --to 1
 breadsched rules book.breadsched --delete 2
 ```
 
+### Reimbursable expenses (command line only)
+
+A receivable tracks an expense you paid out of pocket and what an insurer,
+employer, or other payer is expected to send back, without ever rewriting the
+expense or counting the reimbursement as new income. This is a command-line-only
+workflow for now; desktop and web screens come in a later release.
+
+```sh
+breadsched receivables book.breadsched --add "Acme Insurance" --incurred 2026-09-01 \
+    --description "Doctor visit" --expected 150.00
+breadsched receivables book.breadsched --attach-expense RECEIVABLE \
+    --transaction TRANSACTION --split-index 1
+breadsched receivables book.breadsched --attach-reimbursement RECEIVABLE \
+    --transaction TRANSACTION --split-index 2
+breadsched receivables book.breadsched --dispute RECEIVABLE --on 2026-09-20 \
+    --note "Insurer denied the claim"
+breadsched receivables book.breadsched --clear-dispute RECEIVABLE
+breadsched receivables book.breadsched --write-off RECEIVABLE --amount 25.00 \
+    --on 2026-10-01 --reason "Deductible"
+breadsched receivables book.breadsched                # list with status and age
+breadsched receivables book.breadsched --delete RECEIVABLE
+```
+
+Link the split that records the cost with `--attach-expense`, and the split that
+credits money back (a deposit's other split posted to the same expense account,
+exactly like an ordinary refund) with `--attach-reimbursement`; `--split-index` is
+the split's 1-based position within `--transaction`. Status is always recomputed
+from those linked splits plus any dispute or write-off, never stored: open, then
+partially reimbursed once some money is back, disputed while a balance remains and
+a dispute is recorded, written off once you record giving up on the remainder
+(even after a partial reimbursement), or settled once the linked reimbursements
+fully offset the expense. Deleting a receivable or clearing a dispute never
+changes the underlying transactions. A GnuCash re-import that would delete a
+transaction a receivable depends on is refused, the same protection FSA claims
+already have.
+
 ## Print, export, and inspect
 
 Dashboard, Plan, and Projection can be printed from the GTK toolbar or **File →

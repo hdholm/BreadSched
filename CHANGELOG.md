@@ -3,6 +3,25 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a143 - 2026-09-28
+
+- **Reimbursable expenses and receivables (engine, service, CLI).** A `Receivable`
+  tracks an expense and what an insurer, employer, or other payer is expected to
+  reimburse, as linked but distinct facts: it never rewrites or removes the expense
+  split it references, and a reimbursement is never counted as new income (it is
+  an ordinary expense-class split crediting the same account, exactly like a
+  refund). Status -- open, partial, disputed, written off, or settled -- is always
+  recomputed from the linked splits plus any recorded dispute or write-off, never
+  stored, so it can never drift from the ledger. `breadsched receivables` adds a
+  receivable, links or unlinks expense and reimbursement splits, records a dispute
+  or a write-off, deletes a receivable, and lists every receivable with its age,
+  expected cash date, and current standing. A GnuCash re-import is refused the same
+  protection FSA claims already have when it would delete a linked transaction, and
+  the database itself refuses any write that would leave a receivable pointing at a
+  missing transaction or split. GTK and web presentation come in a later slice.
+  Application version `0.2.0a143`; native schema `9` adds the `receivable` table;
+  schemas 6, 7, and 8 still migrate automatically with a verified backup.
+
 ## 0.2.0a142 - 2026-09-28
 
 - **GTK chrome cleanup: navigation, spacing, color, and numeric margins.** A

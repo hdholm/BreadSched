@@ -51,13 +51,18 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    same width/margin discipline. GTK4 is the canonical interface, so this work is
    GTK-first; carry a matching web adjustment only where the same confusion exists
    there.
-2. **P1 — Reimbursable expenses and receivables.** Track an expense and the
-   amount owed by an insurer, employer, or other payer as linked but distinct
-   facts. Show open, partial, disputed, written-off, and settled receivables,
-   their ages and expected cash dates, without counting a reimbursement as new
-   income or erasing the original expense. Reconcile deposits to claims with
-   exact partial amounts, refunds, and currency evidence; coordinate with FSA
-   claims and preserve imported ledger splits.
+2. **P1 — Reimbursable expenses and receivables.** The domain model, engine,
+   service, native schema (9), and CLI (`breadsched receivables`) are delivered:
+   a receivable tracks an expense and what an insurer, employer, or other payer
+   owes as linked but distinct facts, shows open, partial, disputed, written-off,
+   and settled status (always recomputed, never stored) with age and an optional
+   expected cash date, never counts a reimbursement as new income, never erases
+   the original expense, and coordinates with GnuCash re-import the same way FSA
+   claims do. Remaining: GTK and web presentation surfaces (a dialog and register
+   integration mirroring payees/rules), reconciling a reimbursement deposit to a
+   receivable with exact partial amounts and currency evidence during bank
+   import/reconciliation, and explicit coordination with FSA claims when the same
+   expense could be claimed through either.
 3. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
    development environment already installs BreadSched easily from source, while
    Windows users have no equivalent path. Provide a Windows installer with the GTK

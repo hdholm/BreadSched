@@ -407,6 +407,14 @@ def _protected_transaction_references(db: DbSQLite, transaction: Transaction) ->
             link.transaction == transaction.handle or link.split in split_handles for link in links
         ):
             claim_count += 1
+    receivable_count = 0
+    for receivable in db.iter_receivables():
+        receivable_links = [*receivable.expenses, *receivable.reimbursements]
+        if any(
+            link.transaction == transaction.handle or link.split in split_handles
+            for link in receivable_links
+        ):
+            receivable_count += 1
 
     references: list[str] = []
     if reconciliation_count:
@@ -415,6 +423,8 @@ def _protected_transaction_references(db: DbSQLite, transaction: Transaction) ->
         )
     if claim_count:
         references.append(f"{claim_count} FSA claim{'s' if claim_count != 1 else ''}")
+    if receivable_count:
+        references.append(f"{receivable_count} receivable{'s' if receivable_count != 1 else ''}")
     return references
 
 

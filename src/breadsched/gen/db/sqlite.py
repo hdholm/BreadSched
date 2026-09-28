@@ -29,6 +29,7 @@ from ..lib.base import PrimaryObject
 from ..lib.commodity import DEFAULT_CURRENCY, Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
 from ..lib.payee import Payee
+from ..lib.receivable import Receivable
 from ..lib.reconciliation import Reconciliation
 from ..lib.scenario import Assumptions, Scenario
 from ..lib.scheduled import ScheduledTransaction
@@ -43,7 +44,7 @@ LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite"]
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """
@@ -125,6 +126,13 @@ CREATE TABLE IF NOT EXISTS payee (
     name   TEXT NOT NULL,
     blob   TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS receivable (
+    handle        TEXT PRIMARY KEY,
+    incurred_date TEXT NOT NULL,
+    payer         TEXT NOT NULL,
+    blob          TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_receivable_incurred_date ON receivable(incurred_date);
 CREATE TABLE IF NOT EXISTS schema_migration (
     version    INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -142,6 +150,7 @@ _TABLES: dict[str, tuple[type, str]] = {
     "fsa_claim": (FsaClaim, "fsa-claim"),
     "reconciliation": (Reconciliation, "reconciliation"),
     "payee": (Payee, "payee"),
+    "receivable": (Receivable, "receivable"),
 }
 
 
@@ -637,6 +646,7 @@ class DbSQLite(DbBase):
             "scheduled": ("name",),
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
+            "receivable": ("incurred_date", "payer"),
             "reconciliation": ("account", "statement_date", "status"),
             "payee": ("name",),
         }
@@ -653,7 +663,9 @@ class DbSQLite(DbBase):
             ("scheduled", "name"): "",
             ("scenario", "name"): "",
             ("fsa_claim", "service_date"): "",
+            ("receivable", "incurred_date"): "",
             ("fsa_claim", "provider"): "",
+            ("receivable", "payer"): "",
             ("reconciliation", "account"): "",
             ("reconciliation", "statement_date"): "",
             ("reconciliation", "status"): "",
@@ -877,6 +889,12 @@ class DbSQLite(DbBase):
                 "INSERT OR REPLACE INTO fsa_claim(handle,service_date,provider,blob) "
                 "VALUES (?,?,?,?)",
                 (handle, data.get("service_date", ""), data.get("provider", ""), blob),
+            )
+        elif table == "receivable":
+            conn.execute(
+                "INSERT OR REPLACE INTO receivable(handle,incurred_date,payer,blob) "
+                "VALUES (?,?,?,?)",
+                (handle, data.get("incurred_date", ""), data.get("payer", ""), blob),
             )
         elif table == "reconciliation":
             conn.execute(
@@ -1162,6 +1180,9 @@ class DbSQLite(DbBase):
         elif table == "fsa_claim":
             issues.extend(self._verify_fsa_claim_references(FsaClaim.from_dict(data)))
 
+        elif table == "receivable":
+            issues.extend(self._verify_receivable_references(Receivable.from_dict(data)))
+
         elif table == "reconciliation":
             issues.extend(self._verify_reconciliation_references(Reconciliation.from_dict(data)))
 
@@ -1240,6 +1261,29 @@ class DbSQLite(DbBase):
                 )
         return issues
 
+    def _verify_receivable_references(self, receivable: Receivable) -> list[BookIssue]:
+        issues: list[BookIssue] = []
+        for link in [*receivable.expenses, *receivable.reimbursements]:
+            transaction = self.get_transaction(link.transaction)
+            if transaction is None:
+                issues.append(
+                    BookIssue(
+                        "receivable.missing_transaction",
+                        f"receivable {receivable.handle} refers to missing transaction "
+                        f"{link.transaction}",
+                        receivable.handle,
+                    )
+                )
+            elif not any(split.handle == link.split for split in transaction.splits):
+                issues.append(
+                    BookIssue(
+                        "receivable.missing_split",
+                        f"receivable {receivable.handle} refers to missing split {link.split}",
+                        receivable.handle,
+                    )
+                )
+        return issues
+
     def _verify_derived_row(self, table: str, handle: str, data: dict[str, Any]) -> list[BookIssue]:
         columns_by_table: dict[str, tuple[str, ...]] = {
             "commodity": ("mnemonic",),
@@ -1249,6 +1293,7 @@ class DbSQLite(DbBase):
             "scheduled": ("name",),
             "scenario": ("name",),
             "fsa_claim": ("service_date", "provider"),
+            "receivable": ("incurred_date", "payer"),
             "reconciliation": ("account", "statement_date", "status"),
             "payee": ("name",),
         }
@@ -1265,7 +1310,9 @@ class DbSQLite(DbBase):
             ("scheduled", "name"): "",
             ("scenario", "name"): "",
             ("fsa_claim", "service_date"): "",
+            ("receivable", "incurred_date"): "",
             ("fsa_claim", "provider"): "",
+            ("receivable", "payer"): "",
             ("reconciliation", "account"): "",
             ("reconciliation", "statement_date"): "",
             ("reconciliation", "status"): "",
@@ -1477,6 +1524,17 @@ class DbSQLite(DbBase):
                             "fsa_claim.missing_transaction",
                             f"FSA claim {claim.handle} refers to missing transaction {handle}",
                             claim.handle,
+                        )
+                    )
+            for receivable in self.iter_receivables():
+                receivable_links = [*receivable.expenses, *receivable.reimbursements]
+                if any(link.transaction == handle for link in receivable_links):
+                    issues.append(
+                        BookIssue(
+                            "receivable.missing_transaction",
+                            f"receivable {receivable.handle} refers to missing transaction "
+                            f"{handle}",
+                            receivable.handle,
                         )
                     )
 
@@ -2020,6 +2078,29 @@ class DbSQLite(DbBase):
     def iter_payees(self) -> Iterator[Payee]:
         for row in self._require().execute("SELECT handle, blob FROM payee ORDER BY name, handle"):
             obj = self._decode_row("payee", row["handle"], row["blob"], Payee)
+            if obj is not None:
+                yield obj
+
+    # ------------------------------------------------------------- receivables
+
+    def add_receivable(self, receivable: Receivable, txn: DbTxn) -> str:
+        return self._write(receivable, txn, "receivable")
+
+    def commit_receivable(self, receivable: Receivable, txn: DbTxn) -> None:
+        self._write(receivable, txn, "receivable")
+
+    def remove_receivable(self, handle: str, txn: DbTxn) -> None:
+        self._delete("receivable", handle, txn)
+
+    def get_receivable(self, handle: str) -> Receivable | None:
+        data = self._read("receivable", handle)
+        return Receivable.from_dict(data) if data else None
+
+    def iter_receivables(self) -> Iterator[Receivable]:
+        for row in self._require().execute(
+            "SELECT handle, blob FROM receivable ORDER BY incurred_date, handle"
+        ):
+            obj = self._decode_row("receivable", row["handle"], row["blob"], Receivable)
             if obj is not None:
                 yield obj
 

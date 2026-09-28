@@ -24,6 +24,7 @@ from ..lib.account import Account
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.fsa_claim import FsaClaim
 from ..lib.payee import Payee
+from ..lib.receivable import Receivable
 from ..lib.reconciliation import Reconciliation
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
@@ -323,6 +324,23 @@ class DbBase(Callback, ABC):
 
     @abstractmethod
     def iter_payees(self) -> Iterator[Payee]: ...
+
+    # ------------------------------------------------------------- receivables
+
+    @abstractmethod
+    def add_receivable(self, receivable: Receivable, txn: DbTxn) -> str: ...
+
+    @abstractmethod
+    def commit_receivable(self, receivable: Receivable, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def remove_receivable(self, handle: str, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def get_receivable(self, handle: str) -> Receivable | None: ...
+
+    @abstractmethod
+    def iter_receivables(self) -> Iterator[Receivable]: ...
 
     # ---------------------------------------------------------------- metadata
 
