@@ -29,7 +29,7 @@ from ...gen.services import (
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
-from ..gi_setup import Gio, Gtk, Pango
+from ..gi_setup import Gio, GLib, Gtk, Pango
 from ._base import BaseView, Row, column, sorted_model, table_section, unwrap  # noqa: E402
 
 __all__ = ["RegisterView", "column_headings"]
@@ -101,6 +101,8 @@ class RegisterView(BaseView):
         # notify::selected and would otherwise overwrite the account the caller
         # just asked for.
         self._updating = False
+        #: Set when the register should open on its most recent entry (#157).
+        self._scroll_to_end = False
         self._build()
 
     def _build(self) -> None:
@@ -285,8 +287,28 @@ class RegisterView(BaseView):
             store.append(Row(row))
         tree = Gtk.TreeListModel.new(store, False, False, self._children_of)
         selection = Gtk.SingleSelection(model=sorted_model(self.column_view, tree))
+        selection.set_autoselect(False)
+        selection.set_selected(Gtk.INVALID_LIST_POSITION)
         selection.connect("notify::selected", self._on_selection_changed)
+        adjustment = self.table.scroller.get_vadjustment()
+        previous = adjustment.get_value()
         self.column_view.set_model(selection)
+        # Like a check register, a newly shown account opens on its most recent
+        # entry at the bottom; any other repaint keeps the reader's place (#157).
+        if self._scroll_to_end:
+            self._scroll_to_end = False
+            count = selection.get_n_items()
+            if count and hasattr(self.column_view, "scroll_to"):  # GTK 4.12+
+                self.column_view.scroll_to(count - 1, None, Gtk.ListScrollFlags.NONE, None)
+            elif count:
+
+                def to_end() -> bool:
+                    adjustment.set_value(adjustment.get_upper() - adjustment.get_page_size())
+                    return GLib.SOURCE_REMOVE
+
+                GLib.idle_add(to_end)
+        else:
+            GLib.idle_add(lambda: adjustment.set_value(previous) or GLib.SOURCE_REMOVE)
 
         closing = self._rows[-1].running if self._rows else None
         self.balance_label.set_text(closing.format(parens_negative=True) if closing else "0.00")
@@ -432,6 +454,7 @@ class RegisterView(BaseView):
 
     def show_account(self, handle: str) -> None:
         self.account_handle = handle
+        self._scroll_to_end = True
         self.refresh()
 
     # ---------------------------------------------------------------- actions
@@ -444,6 +467,7 @@ class RegisterView(BaseView):
             handle = self._pickable[index].handle
             if handle != self.account_handle:
                 self.account_handle = handle
+                self._scroll_to_end = True
                 self.quick_status.set_text("")
                 self.quick_status.remove_css_class("negative")
                 self.refresh()
@@ -567,6 +591,8 @@ class RegisterView(BaseView):
         debit_account = current.handle if debit else transfer.handle
         credit_account = transfer.handle if debit else current.handle
         currency = transaction_currency(self.db)
+        # The new entry's repaint scrolls to the end, where it now is (#157).
+        self._scroll_to_end = True
         result = save_transaction(
             self.db,
             SaveTransaction(
@@ -582,6 +608,7 @@ class RegisterView(BaseView):
             ),
         )
         if not result.ok:
+            self._scroll_to_end = False
             self.quick_status.set_text(service_error_message(result.errors[0]))
             self.quick_status.add_css_class("negative")
             return

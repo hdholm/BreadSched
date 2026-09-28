@@ -3,6 +3,15 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a151 - 2026-09-28
+
+- **The register opens at its most recent entry (#157).** Like a check register,
+  the desktop register still lists entries oldest first but now opens scrolled to
+  the bottom, so the latest entry is in view; posting a quick entry keeps it there,
+  and a repaint caused by a change elsewhere keeps your place. No transaction is
+  selected (and expanded) on open. Application version `0.2.0a151`; native schema
+  remains 9.
+
 ## 0.2.0a150 - 2026-09-28
 
 - **View commands move into menus and toolbar icons (#156).** Every view's

@@ -1080,6 +1080,12 @@ the window's minimum width. Dialog tables are grids and list boxes, not
 
 ## Register presentation and basic entry
 
+The register lists `ledger.register` rows in date order and opens like a check
+register (#157): showing an account (from any path) or posting a quick entry sets
+`_scroll_to_end`, and the next repaint scrolls the `ColumnView` to its last row
+without selecting it; any other repaint restores the previous scroll position.
+No row is auto-selected, so no transaction's splits are expanded on open.
+
 Register windows are independent presentation consumers of one open `DbSQLite`
 connection. Each owns its account navigation, text filter, selection, and expansion
 state while database signals refresh all consumers after a committed change. The

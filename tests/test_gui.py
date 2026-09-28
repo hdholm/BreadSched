@@ -5292,3 +5292,56 @@ class TestViewActions:
         )
         window.lookup_action("fsa-dashboard-manage-claims").activate(None)
         assert opened == [()]
+
+
+class TestRegisterOpensAtTheEnd:
+    """#157: like a check register, open on the most recent entry."""
+
+    def _register(self, app, window, populated_book, monkeypatch):
+        app.open_book(populated_book)
+        window.show_category("register")
+        view = window._views["register"]
+        calls = []
+        original = view.column_view.scroll_to
+
+        def record(position, *args):
+            calls.append(position)
+            return original(position, *args)
+
+        monkeypatch.setattr(view.column_view, "scroll_to", record)
+        return view, calls
+
+    def test_showing_an_account_scrolls_to_its_last_entry(
+        self, app, window, populated_book, monkeypatch
+    ):
+        view, calls = self._register(app, window, populated_book, monkeypatch)
+        handle = app.db.get_account_by_name("Assets:Checking Account").handle
+        view.show_account(handle)
+        count = view.column_view.get_model().get_n_items()
+        assert count > 1
+        assert calls == [count - 1]
+        # Rows stay in date order, oldest first.
+        dates = [row.transaction.post_date for row in view._rows]
+        assert dates == sorted(dates)
+
+    def test_an_unrelated_repaint_keeps_the_readers_place(
+        self, app, window, populated_book, monkeypatch
+    ):
+        view, calls = self._register(app, window, populated_book, monkeypatch)
+        handle = app.db.get_account_by_name("Assets:Checking Account").handle
+        view.show_account(handle)
+        calls.clear()
+        view.refresh()
+        assert calls == []
+
+    def test_a_quick_entry_scrolls_to_the_new_end(self, app, window, populated_book, monkeypatch):
+        view, calls = self._register(app, window, populated_book, monkeypatch)
+        handle = app.db.get_account_by_name("Assets:Checking Account").handle
+        view.show_account(handle)
+        calls.clear()
+        view.quick_description.set_text("New entry")
+        view.quick_transfer.set_selected(1)
+        view.quick_amount.set_text("5.00")
+        view._post_quick(False)
+        view.flush_refresh()
+        assert calls == [view.column_view.get_model().get_n_items() - 1]
