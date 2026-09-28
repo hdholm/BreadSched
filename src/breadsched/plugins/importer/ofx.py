@@ -25,6 +25,7 @@ from ...gen.utils.amount_input import (
 )
 from ...gen.utils.logs import get_logger
 from .gnucash_common import ImportResult, ImportSink
+from .quotes import record_security_quote
 
 LOG = get_logger(__name__)
 
@@ -149,6 +150,77 @@ def _read_text(path: Path) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
+def _security_quotes(text: str) -> list[tuple[str, str, str, str]]:
+    """(ticker, price, date, currency) from SECLIST ``SECINFO`` and ``INVPOS``.
+
+    A position's price is dated by ``DTPRICEASOF``; a security list entry by
+    ``DTASOF``. Positions name their security only by ``UNIQUEID``, which the
+    security list maps to a ticker.
+    """
+    tickers: dict[str, str] = {}
+    quotes: list[tuple[str, str, str, str]] = []
+    for block in _blocks(text, "SECINFO"):
+        unique = _tag(block, "UNIQUEID")
+        ticker = _tag(block, "TICKER") or unique
+        if unique:
+            tickers[unique] = ticker
+        price = _tag(block, "UNITPRICE")
+        if price:
+            quotes.append((ticker, price, _tag(block, "DTASOF"), _tag(block, "CURSYM")))
+    for block in _blocks(text, "INVPOS"):
+        unique = _tag(block, "UNIQUEID")
+        price = _tag(block, "UNITPRICE")
+        if price:
+            quotes.append(
+                (
+                    tickers.get(unique, unique),
+                    price,
+                    _tag(block, "DTPRICEASOF"),
+                    _tag(block, "CURSYM"),
+                )
+            )
+    return quotes
+
+
+def _record_quotes(
+    sink: ImportSink,
+    db: DbSQLite,
+    quotes: list[tuple[str, str, str, str]],
+    default_currency: str,
+    number_format: NumberFormat | Literal["auto"],
+) -> None:
+    """Store each quote through the shared contract (``importer.quotes``)."""
+    if number_format == "auto":
+        try:
+            detected = detect_number_format(price for _ticker, price, _when, _cur in quotes)
+        except ValueError:
+            detected = None
+        chosen: NumberFormat = detected or "dot"
+    else:
+        chosen = number_format
+    for ticker, raw_price, raw_date, currency_code in quotes:
+        try:
+            value = _parse_amount(raw_price, chosen)
+            quote_date = _parse_date(raw_date)
+        except ValueError:
+            sink.result.skip(
+                "OFX price has an unreadable amount or date",
+                ticker or "(no symbol)",
+                identity=f"ofx:{ticker}:{raw_date}",
+                kind="price",
+            )
+            continue
+        record_security_quote(
+            sink,
+            db,
+            source="ofx",
+            symbol=ticker,
+            quote_date=quote_date,
+            value=value,
+            currency_code=currency_code or default_currency,
+        )
+
+
 def import_book(
     db: DbSQLite,
     path: str | Path,
@@ -179,6 +251,19 @@ def import_book(
         account_block = card_blocks[0]
         account_type = "CREDITCARD"
     else:
+        quotes = _security_quotes(text)
+        if quotes:
+            # An investment statement with no bank account can still carry
+            # security prices; they are imported on their own.
+            with db.transaction(
+                message or f"Import prices from {source.name}", batch=True, notify=notify
+            ) as txn:
+                sink = ImportSink(db, txn, result)
+                _record_quotes(sink, db, quotes, currency_code, number_format)
+                result.finish(db, txn)
+            if notify:
+                db.emit("database-changed", (db,))
+            return result
         result.warn("No bank or credit-card account information was found")
         return result
     account_id = _tag(account_block, "ACCTID")
@@ -264,6 +349,7 @@ def import_book(
                 _tag(block, "CHECKNUM"),
                 splits,
             )
+        _record_quotes(sink, db, _security_quotes(text), currency_code, number_format)
         if progress is not None:
             progress("Finishing", len(transaction_blocks), len(transaction_blocks))
         result.finish(db, txn)

@@ -329,6 +329,25 @@ silently revalued. Projection uses the as-of market value as its opening state, 
 applies its explicit dated flows and return assumptions; a quote is not itself a
 future return assumption.
 
+Imported quotes pass the same contract as manual ones (`plugins/importer/quotes.py`).
+
+- **GnuCash** prices are imported as before.
+- **QIF** `!Type:Prices` lines (`"SYMBOL",price,"date"`) are in the reporting
+  currency, since QIF names none.
+- **OFX** takes security-list `SECINFO` prices (dated `DTASOF`) and position
+  `INVPOS` prices (dated `DTPRICEASOF`). A position's `UNIQUEID` is mapped to a
+  ticker through the security list, and the quote currency is `CURSYM` or the
+  statement's `CURDEF`. An investment statement without a bank account still
+  imports its prices.
+
+A quote must name a security already in the book by its unique symbol (the
+importer never invents a security), be in a currency the book knows, and be
+positive; anything else is reported as a skipped price. It is stored with source
+`qif` or `ofx` under a handle derived from source, security, currency, and date.
+Re-importing therefore updates it in place, and it never replaces a quote entered
+in BreadSched (source `breadsched`). QIF and OFX investment *transactions* are
+still reported and skipped.
+
 The reporting currency is explicit book metadata when configured, otherwise USD
 when present, then the first currency commodity. This initial layer intentionally
 requires a direct security-to-reporting-currency quote. Foreign-exchange graphs,
