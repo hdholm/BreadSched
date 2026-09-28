@@ -5897,3 +5897,168 @@ class TestEditorKeepsQuantity:
         assert {split.value for split in stored.splits} == {Money("1900"), Money("-1900")}
         for split in stored.splits:
             assert split.quantity == split.value
+
+
+class TestEditInPlace:
+    """#158 slice 3: edit an existing transaction in its own register row."""
+
+    def _register(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
+        return window._views["register"]
+
+    @staticmethod
+    def _select(view, description):
+        from breadsched.gui.views._base import unwrap
+
+        selection = view.column_view.get_model()
+        for index in range(selection.get_n_items()):
+            item = selection.get_item(index)
+            if isinstance(item, Gtk.TreeListRow) and item.get_depth() == 0:
+                if unwrap(item).transaction.description == description:
+                    selection.set_selected(index)
+                    return unwrap(item)
+        raise AssertionError(description)
+
+    def _edit(self, view, description):
+        row = self._select(view, description)
+        assert view.edit_selected_in_place() is True
+        return row
+
+    def test_f2_loads_a_two_split_transaction_into_its_row(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        row = self._edit(view, "Rent")
+        editor = view.editor
+        assert editor is not None and editor.split_mode is False
+        assert editor.description.get_text() == "Rent"
+        assert editor.date.get_text() == row.transaction.post_date.isoformat()
+        assert editor.decrease.get_text() == "1,800.00" or editor.decrease.get_text() == "1800.00"
+        assert editor.transfer_handle() == app.db.get_account_by_name("Expenses:Rent").handle
+        assert view._blank_widget(row, "Description") is editor.description
+        assert editor.has_input() is False  # nothing changed yet
+
+    def test_saving_keeps_handles_notes_memos_and_purposes(self, app, window, populated_book):
+        from breadsched.gen.lib.transaction import PlanningFlowKind
+
+        app.open_book(populated_book)
+        rent = next(t for t in app.db.iter_transactions() if t.description == "Rent")
+        rent.notes = "Lease 12B"
+        expense = app.db.get_account_by_name("Expenses:Rent").handle
+        for split in rent.splits:
+            split.memo = "kept memo" if split.account == expense else split.memo
+            if split.account == expense:
+                split.planning_flow = PlanningFlowKind.RETIREMENT_SAVING
+        with app.db.transaction("Fixture") as txn:
+            app.db.commit_transaction(rent, txn)
+        view = self._register(app, window, populated_book)
+        self._edit(view, "Rent")
+        editor = view.editor
+        editor.description.set_text("Rent, corrected")
+        editor.decrease.set_text("1850.00")
+
+        assert editor.commit() is True
+
+        stored = app.db.get_transaction(rent.handle)
+        assert stored.description == "Rent, corrected"
+        assert stored.notes == "Lease 12B"
+        assert {s.handle for s in stored.splits} == {s.handle for s in rent.splits}
+        mine = next(s for s in stored.splits if s.account == expense)
+        assert mine.value == Money("1850")
+        assert mine.quantity == Money("1850")
+        assert mine.memo == "kept memo"
+        assert mine.planning_flow is PlanningFlowKind.RETIREMENT_SAVING
+        assert view.editor is None
+        assert "Saved changes" in view.entry_status.get_text()
+
+    def test_escape_cancels_without_writing(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        row = self._edit(view, "Rent")
+        editor = view.editor
+        editor.description.set_text("Never saved")
+        assert editor.handle_key(editor.description, Gdk.KEY_Escape) is True
+        assert view.editor is None
+        assert app.db.get_transaction(row.transaction.handle).description == "Rent"
+
+    def test_a_split_transaction_edits_as_lines_and_keeps_split_handles(
+        self, app, window, populated_book
+    ):
+        view = self._register(app, window, populated_book)
+        row = self._edit(view, "Supermarket")
+        editor = view.editor
+        assert editor.split_mode is True
+        stored = app.db.get_transaction(row.transaction.handle)
+        filled = [line for line in editor.lines if line.handle is not None]
+        assert {line.handle for line in filled} == {s.handle for s in stored.splits}
+        assert filled[0].handle == row.split.handle  # this register's split first
+        view.flush_refresh()
+        assert list(view._edit_children)  # the lines sit under the row
+        # Move 5.00 from one expense line to the other.
+        others = filled[1:]
+        first, second = others[0], others[1]
+        first_value = editor.line_value(first)
+        second_value = editor.line_value(second)
+        target = first.increase if first_value > 0 else first.decrease
+        target.set_text(abs(first_value + Money("5")).format())
+        target = second.increase if second_value > 0 else second.decrease
+        target.set_text(abs(second_value - Money("5")).format())
+        assert editor.imbalance.amount.get_text() == "Balanced"
+
+        assert editor.commit() is True
+
+        after = app.db.get_transaction(row.transaction.handle)
+        assert {s.handle for s in after.splits} == {s.handle for s in stored.splits}
+        values = {s.handle: s.value for s in after.splits}
+        assert values[first.handle] == first_value + Money("5")
+        assert values[second.handle] == second_value - Money("5")
+
+    def test_switching_accounts_with_an_unsaved_edit_asks_first(
+        self, app, window, populated_book, monkeypatch
+    ):
+        from breadsched.gui.views import blank_entry
+
+        view = self._register(app, window, populated_book)
+        self._edit(view, "Rent")
+        editor = view.editor
+        editor.description.set_text("Changed")
+        asked = []
+        monkeypatch.setattr(
+            editor, "ask_unsaved", lambda done: (asked.append(1), done(blank_entry.CANCEL))
+        )
+        start = view.account_handle
+        view.show_account(app.db.get_account_by_name("Expenses:Rent").handle)
+        assert asked == [1]
+        assert view.account_handle == start
+        assert view.editor is editor
+
+    def test_the_pencil_hands_the_edit_to_the_full_editor(
+        self, app, window, populated_book, monkeypatch
+    ):
+        view = self._register(app, window, populated_book)
+        row = self._edit(view, "Rent")
+        opened = []
+        monkeypatch.setattr(view, "_open_editor", lambda transaction: opened.append(transaction))
+        view.editor.open_split_editor()
+        assert [t.handle for t in opened] == [row.transaction.handle]
+        assert view.editor is None
+
+    def test_edit_in_place_is_a_register_action(self, app, window, populated_book):
+        app.open_book(populated_book)
+        assert window.lookup_action("register-edit-in-place") is not None
+
+    def test_a_shown_edit_hosts_its_widgets_in_the_row(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        window.set_default_size(1200, 700)
+        window.present()
+        context = GLib.MainContext.default()
+        try:
+            self._edit(view, "Supermarket")
+            for _ in range(300):
+                context.iteration(False)
+            editor = view.editor
+            assert editor.description.get_ancestor(Gtk.ColumnView) is view.column_view
+            for line in editor.lines:
+                assert line.memo.get_ancestor(Gtk.ColumnView) is view.column_view
+            # The blank row is still its own, separate row.
+            assert view.blank.description.get_ancestor(Gtk.ColumnView) is view.column_view
+        finally:
+            window.set_visible(False)

@@ -327,6 +327,15 @@ The browser interface keeps its quick-entry form for now. It creates the same
 kind of two-split transaction, and you post it with the button whose label
 describes the effect on the account.
 
+To change an existing transaction without opening a window, select it and press
+**F2** (or choose **Actions → Register → Edit Transaction in Place**). Its row
+turns into the same fields as the blank row, and a transaction with more than two
+splits opens its split lines underneath. Edit anything, then press **Enter** to
+save, or **Escape** to put the row back as it was. Notes, planning purposes,
+investment classifications, reconciliation, and FSA links, which the row does not
+show, are kept. The pencil icon opens the same transaction in the full editor.
+Double-clicking a transaction still opens the full editor.
+
 Changing an amount in an existing transaction updates both of the numbers
 BreadSched keeps for each split. A split in an account held in another currency
 or commodity is the exception: BreadSched refuses to change its amount without

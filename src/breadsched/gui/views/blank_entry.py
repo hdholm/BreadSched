@@ -62,6 +62,8 @@ class SplitLine:
     account_name = ""
 
     def __init__(self, row: BlankEntryRow) -> None:
+        #: The stored split this line edits, or None for a new split.
+        self.handle: str | None = None
         self.memo = Gtk.Entry(placeholder_text="Memo")
         self.memo.set_hexpand(True)
         self.account = Gtk.DropDown()
@@ -124,8 +126,17 @@ def _label(widget: Gtk.Widget, text: str) -> None:
 class BlankEntryRow:
     """The widgets and behavior of one register's blank entry row."""
 
-    def __init__(self, view) -> None:
+    def __init__(self, view, editing=None, split: str | None = None) -> None:
         self.view = view
+        #: The stored transaction being edited in place (#158 slice 3), or None for
+        #: the blank row that enters new ones; ``edit_split`` is its split shown in
+        #: this register.
+        self.editing = editing
+        self.edit_split = split
+        #: Split handles behind the (register, transfer) sides of a two-split edit.
+        self._simple_handles: tuple[str | None, str | None] = (split, None)
+        self._snapshot: tuple | None = None
+        self._noun = "Edited transaction" if editing is not None else "New transaction"
         #: The date to offer next: the last one entered in this register, else today.
         self.last_date: date | None = None
         self.transfers: list = []
@@ -174,7 +185,7 @@ class BlankEntryRow:
             (self.split_toggle, "split in place"),
             (self.editor_button, "full editor"),
         ):
-            _label(widget, f"New transaction {name}")
+            _label(widget, f"{self._noun} {name}")
         for widget in (
             self.date,
             self.num,
@@ -283,8 +294,15 @@ class BlankEntryRow:
     def line_account(self, line: SplitLine) -> str | None:
         return self._line_handle(self, line)
 
-    def _new_line(self, account: str | None = None, value: Money | None = None, memo: str = ""):
+    def _new_line(
+        self,
+        account: str | None = None,
+        value: Money | None = None,
+        memo: str = "",
+        handle: str | None = None,
+    ):
         line = SplitLine(self)
+        line.handle = handle
         self.lines.append(line)
         with self._quiet():
             if account is not None:
@@ -303,7 +321,7 @@ class BlankEntryRow:
             self.lines[-1].has_input() or self.line_account(self.lines[-1]) is not None
         ):
             self._new_line()
-            self.view.update_blank_rows()
+            self.view.update_blank_rows(self)
         self.update_imbalance()
 
     def line_value(self, line: SplitLine) -> Money | None:
@@ -355,11 +373,20 @@ class BlankEntryRow:
                     amount = self.signed_amount()
                 except ValueError:
                     amount = None
-                lines = [(view.account_handle, amount, ""), (self.transfer_handle(), None, "")]
-                if amount is not None:
-                    lines[1] = (self.transfer_handle(), -amount, "")
-            for account, value, memo in lines:
-                self._new_line(account, value, memo)
+                mine_handle, other_handle = (
+                    self._simple_handles if self.editing is not None else (None, None)
+                )
+                lines = [
+                    (view.account_handle, amount, self._memo_of(mine_handle), mine_handle),
+                    (
+                        self.transfer_handle(),
+                        -amount if amount is not None else None,
+                        self._memo_of(other_handle),
+                        other_handle,
+                    ),
+                ]
+            for account, value, memo, *handle in lines:
+                self._new_line(account, value, memo, handle[0] if handle else None)
             self._new_line()
         else:
             filled = [
@@ -398,6 +425,10 @@ class BlankEntryRow:
                 if amount:
                     target = self.increase if amount > 0 else self.decrease
                     target.set_text(abs(amount).format())
+            self._simple_handles = (
+                mine.handle if mine is not None else None,
+                other.handle if other is not None else None,
+            )
             other_account = self.line_account(other) if other is not None else None
             if other_account is not None:
                 self.select_transfer(other_account)
@@ -408,7 +439,7 @@ class BlankEntryRow:
         for widget in (self.transfer, self.increase, self.decrease):
             widget.set_visible(not split)
         self.update_imbalance()
-        view.update_blank_rows()
+        view.update_blank_rows(self)
         return True
 
     def _set_toggle(self, active: bool) -> None:
@@ -428,6 +459,8 @@ class BlankEntryRow:
 
     def has_input(self) -> bool:
         """Whether anything was typed that leaving would lose."""
+        if self.editing is not None:
+            return self._state() != self._snapshot
         typed = (self.num, self.description, self.increase, self.decrease)
         return (
             any(entry.get_text().strip() for entry in typed)
@@ -436,7 +469,13 @@ class BlankEntryRow:
         )
 
     def clear(self) -> None:
-        """Reset every field to its default, keeping the date last entered."""
+        """Reset every field to its default, keeping the date last entered.
+
+        An in-place edit has no defaults to return to: clearing it ends the edit.
+        """
+        if self.editing is not None:
+            self.view.stop_editing()
+            return
         if self.split_mode:
             self.lines = []
             self.set_split_mode(False)
@@ -450,8 +489,8 @@ class BlankEntryRow:
         self._transfer_touched = False
 
     def set_headings(self, increase: str, decrease: str) -> None:
-        _label(self.increase, f"New transaction {increase.lower()}")
-        _label(self.decrease, f"New transaction {decrease.lower()}")
+        _label(self.increase, f"{self._noun} {increase.lower()}")
+        _label(self.decrease, f"{self._noun} {decrease.lower()}")
 
     def set_enabled(self, enabled: bool, reason: str = "") -> None:
         """Make the row insensitive, saying why in the description cell."""
@@ -476,7 +515,7 @@ class BlankEntryRow:
                     if account.handle != account_handle
                     and not account.is_root
                     and not account.placeholder
-                    and not account.hidden
+                    and (not account.hidden or account.handle in self.referenced)
                 ),
                 key=db.full_name,
             )
@@ -489,7 +528,9 @@ class BlankEntryRow:
                 (
                     account
                     for account in db.iter_accounts()
-                    if not account.is_root and not account.placeholder and not account.hidden
+                    if not account.is_root
+                    and not account.placeholder
+                    and (not account.hidden or account.handle in self.referenced)
                 ),
                 key=db.full_name,
             )
@@ -512,6 +553,83 @@ class BlankEntryRow:
             )
         if chosen_transfer not in [account.handle for account in self.transfers]:
             self._transfer_touched = False
+
+    @property
+    def referenced(self) -> set[str]:
+        """Accounts the edited transaction already uses, offered even if hidden."""
+        if self.editing is None:
+            return set()
+        return {split.account for split in self.editing.splits}
+
+    def _source_split(self, handle: str | None):
+        if self.editing is None or handle is None:
+            return None
+        return next((split for split in self.editing.splits if split.handle == handle), None)
+
+    def _memo_of(self, handle: str | None) -> str:
+        split = self._source_split(handle)
+        return split.memo if split is not None else ""
+
+    def _state(self) -> tuple:
+        return (
+            self.date.get_text().strip(),
+            self.num.get_text().strip(),
+            self.description.get_text().strip(),
+            self.payee_handle(),
+            self.split_mode,
+            None if self.split_mode else self.transfer_handle(),
+            None if self.split_mode else self.increase.get_text().strip(),
+            None if self.split_mode else self.decrease.get_text().strip(),
+            tuple(
+                (
+                    line.handle,
+                    self.line_account(line),
+                    line.memo.get_text().strip(),
+                    line.increase.get_text().strip(),
+                    line.decrease.get_text().strip(),
+                )
+                for line in self.lines
+                if line.has_input() or self.line_account(line) is not None
+            ),
+        )
+
+    def load(self) -> None:
+        """Fill the fields from the transaction being edited in place."""
+        transaction = self.editing
+        if transaction is None:
+            return
+        mine = self._source_split(self.edit_split)
+        others = [split for split in transaction.splits if split is not mine]
+        with self._quiet():
+            self.date.set_text(transaction.post_date.isoformat())
+            self.num.set_text(transaction.num)
+            self.description.set_text(transaction.description)
+            handles = [payee.handle for payee in self.payees]
+            self.payee.set_selected(
+                handles.index(transaction.payee) + 1 if transaction.payee in handles else 0
+            )
+            simple = (
+                mine is not None
+                and len(others) == 1
+                and others[0].account != mine.account
+                and self.select_transfer(others[0].account)
+            )
+            if simple:
+                assert mine is not None
+                self._simple_handles = (mine.handle, others[0].handle)
+                target = self.increase if mine.value > 0 else self.decrease
+                target.set_text(abs(mine.value).format())
+                self._transfer_touched = True
+            else:
+                ordered = ([mine] if mine is not None else []) + others
+                self.set_split_mode(
+                    True,
+                    lines=[
+                        (split.account, split.value, split.memo, split.handle) for split in ordered
+                    ],
+                )
+        self.update_imbalance()
+        self._snapshot = self._state()
 
     def transfer_handle(self) -> str | None:
         index = self.transfer.get_selected()
@@ -593,6 +711,8 @@ class BlankEntryRow:
         view = self.view
         if view.db is None or view.account_handle is None or not self._enabled:
             return None
+        if self.editing is not None:
+            return None  # a stored transaction is never proposed over
         description = self.description.get_text()
         payee = self.payee_handle()
         if not description.strip() and payee is None:
@@ -678,7 +798,7 @@ class BlankEntryRow:
         if view.db is None or view.account_handle is None or not self._enabled:
             return False
         current = view.db.get_account(view.account_handle)
-        if current is None or current.hidden:
+        if current is None or (current.hidden and self.editing is None):
             return False
         try:
             when = date.fromisoformat(self.date.get_text().strip())
@@ -689,7 +809,9 @@ class BlankEntryRow:
         if not description:
             self._fail("Enter a description.", self.description)
             return False
-        currency = transaction_currency(view.db)
+        currency = transaction_currency(
+            view.db, self.editing.currency if self.editing is not None else None
+        )
         if self.split_mode:
             splits = self._line_splits(currency)
             if splits is None:
@@ -728,9 +850,7 @@ class BlankEntryRow:
                 self._fail("Enter an amount for this split.", line.increase)
                 return None
             splits.append(
-                TransactionSplitInput(
-                    account, Amount(value, currency), memo=line.memo.get_text().strip()
-                )
+                self._split_input(account, value, currency, line.handle, line.memo.get_text())
             )
         if len(splits) < 2:
             self._fail("A transaction needs at least two splits.", self.lines[0].account)
@@ -770,16 +890,33 @@ class BlankEntryRow:
             self._fail("Amount must be greater than zero.", typed)
             return None
         amount = value if typed is self.increase else -value
+        mine, other = self._simple_handles if self.editing is not None else (None, None)
         return (
-            TransactionSplitInput(handle, Amount(amount, currency)),
-            TransactionSplitInput(transfer, Amount(-amount, currency)),
+            self._split_input(handle, amount, currency, mine, self._memo_of(mine)),
+            self._split_input(transfer, -amount, currency, other, self._memo_of(other)),
         ), amount
+
+    def _split_input(
+        self, account: str, value: Money, currency: str, handle: str | None, memo: str
+    ) -> TransactionSplitInput:
+        """One split input, keeping what the row does not show from its stored split."""
+        source = self._source_split(handle)
+        return TransactionSplitInput(
+            account,
+            Amount(value, currency),
+            handle=handle if source is not None else None,
+            memo=memo.strip(),
+            planning_flow=source.planning_flow if source is not None else None,
+            investment_activity=source.investment_activity if source is not None else None,
+        )
 
     def _save(self, when: date, description: str, currency: str, splits, amount: Money) -> bool:
         view = self.view
         payee = self.payee_handle()
-        # The new entry's repaint scrolls to the end, where the blank row is (#157).
-        view.scroll_to_end_on_refresh()
+        editing = self.editing
+        if editing is None:
+            # The new entry's repaint scrolls to the end, where the blank row is (#157).
+            view.scroll_to_end_on_refresh()
         result = save_transaction(
             view.db,
             SaveTransaction(
@@ -787,17 +924,26 @@ class BlankEntryRow:
                     post_date=when,
                     description=description,
                     num=self.num.get_text().strip(),
+                    # Notes are not shown in the row, so an edit keeps them.
+                    notes=editing.notes if editing is not None else "",
                     currency=currency,
                     payee=payee,
-                    set_payee=payee is not None,
+                    # An edit shows the payee, so choosing none clears it.
+                    set_payee=payee is not None or editing is not None,
                     splits=tuple(splits),
-                )
+                ),
+                existing_handle=editing.handle if editing is not None else None,
+                source=editing,
             ),
         )
         if not result.ok:
             view.cancel_scroll_to_end()
             view.set_entry_status(service_error_message(result.errors[0]), error=True)
             return False
+        if editing is not None:
+            view.set_entry_status(f"Saved changes to {description}.")
+            view.stop_editing()
+            return True
         self.last_date = when
         heading = view.debit_column.get_title() if amount > 0 else view.credit_column.get_title()
         self.clear()
@@ -818,6 +964,11 @@ class BlankEntryRow:
         """Open the full editor prefilled with whatever the row holds."""
         view = self.view
         if view.db is None or view.account_handle is None:
+            return None
+        if self.editing is not None:
+            # An in-place edit hands over to the full editor for the same transaction.
+            transaction = self.editing
+            self.confirm_leave(lambda: view.edit_transaction(transaction))
             return None
         from ..dialogs.transaction_dialog import TransactionDialog
 
@@ -888,9 +1039,18 @@ class BlankEntryRow:
         self.ask_unsaved(answered)
 
     def ask_unsaved(self, answered: Callable[[int], None]) -> None:
+        editing = self.editing is not None
         alert = Gtk.AlertDialog(
-            message="Save the transaction you were entering?",
-            detail="The blank register row has input that has not been saved.",
+            message=(
+                "Save your changes to this transaction?"
+                if editing
+                else "Save the transaction you were entering?"
+            ),
+            detail=(
+                "The transaction being edited in the register has unsaved changes."
+                if editing
+                else "The blank register row has input that has not been saved."
+            ),
             buttons=["Cancel", "Discard", "Save"],
             cancel_button=CANCEL,
             default_button=SAVE,
