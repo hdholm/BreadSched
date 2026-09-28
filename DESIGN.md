@@ -1081,7 +1081,7 @@ the window's minimum width. Dialog tables are grids and list boxes, not
 ## Register presentation and basic entry
 
 The register lists `ledger.register` rows in date order and opens like a check
-register (#157): showing an account (from any path) or posting a quick entry sets
+register (#157): showing an account (from any path) or posting a new entry sets
 `_scroll_to_end`, and the next repaint scrolls the `ColumnView` to its last row
 without selecting it; any other repaint restores the previous scroll position.
 No row is auto-selected, so no transaction's splits are expanded on open.
@@ -1094,9 +1094,9 @@ book connection closes, preventing callbacks from reaching a replaced database.
 Browser windows provide the equivalent independent presentation state and receive
 the per-server token only in the URL fragment.
 
-Inline quick entry is deliberately a narrow adapter to `Transaction.simple`: a
-positive exact amount, date, description, displayed account, and visible transfer
-account become exactly two balancing splits and pass through the ordinary atomic
+GTK's blank entry row (below) and web quick entry are deliberately narrow adapters
+to `Transaction.simple`: a positive exact amount, date, description, displayed
+account, and visible transfer account become exactly two balancing splits and pass through the ordinary atomic
 database transaction. It is not a parallel transaction model. Complex metadata and
 multi-split entry remain in the full editor. Register headings are a shared engine
 mapping so GTK and web describe the same positive and negative ledger directions.
@@ -1110,10 +1110,11 @@ transaction being edited. The latest by post date, then entry time, then handle
 wins. The proposal carries only accounts, values, and memos, plus the transfer
 account and signed amount in the entry's account for a two-split source; it never
 carries reconcile state, source identifiers, notes, planning purposes or links,
-investment activity, or FSA claims, and it never writes. GTK and web quick entry
-fill an empty amount and the transfer account when the description is left and say
-where the proposal came from; a typed amount is never overwritten, and posting
-remains the user's explicit choice of the Increase or Decrease button. The GTK
+investment activity, or FSA claims, and it never writes. Web quick entry fills an
+empty amount and the transfer account when the description is left and says where
+the proposal came from; a typed amount is never overwritten, and posting remains the
+user's explicit choice of the Increase or Decrease button. The GTK blank row applies
+the same rule field by field (below). The GTK
 transaction editor (`TransactionDialog.propose_from_entry`) asks the same service,
 for new transactions only, when the description is left or a payee is chosen,
 scoped to the register account it was opened from. It acts only while every split's
@@ -1122,6 +1123,105 @@ values, and memos, selects the proposal's payee if none is chosen, and shows a
 separate note naming the source; saving remains the ordinary `save_transaction`
 call. A transaction being edited is never proposed over. The web
 route is `GET /api/entry/suggest` (`web/autocomplete_resource.py`).
+
+### Blank entry row (#158)
+
+The GTK register takes new entries in a blank transaction row at the bottom. Its
+interaction design was written and approved before any code, as #148 requires.
+GnuCash's blank transaction row is the model for the interaction, not for the
+appearance. Slice 1, the two-split row, is implemented; slices 2 and 3 below are
+planned.
+
+**Placement and model.** The last row of every register is a sentinel `BLANK`
+payload (`gui/views/blank_entry.py`), not a database object. `refresh` wraps the
+sorted transaction model in a `Gtk.FlattenListModel` together with a one-item
+store, so the blank row stays last under any column sort or text filter and never
+enters balances or exports. The register still opens scrolled to the end (#157),
+so the blank row is in view when a register opens. The former quick-entry bar and
+its Increase/Decrease buttons are gone from GTK.
+
+**Cells.** `BlankEntryRow` owns one persistent set of entry widgets per register.
+Each column's factory takes a `cell` hook (`_base.column(..., cell=...)`); for the
+sentinel it returns the widget, and `_base.host_widget` moves that widget into the
+cell's host box in place of the label. Because the widget is moved, not recreated,
+typed values survive the list repainting around them. The Description column's
+own factory does the same around its tree expander.
+
+| Column | Widget | Behavior |
+| --- | --- | --- |
+| Date | entry | Defaults to the date last entered in this register, else today. ISO dates. |
+| Num | entry | Optional; stored as `Transaction.num`. |
+| Description | entry | Leaving it runs `suggest_entry` (below). |
+| Payee | drop-down | Optional; saved with `set_payee`. |
+| Transfer | drop-down | Visible, postable accounts other than the register's account. |
+| Increase / Decrease | entries | Titled with the account's register headings; typing in one clears the other. |
+| Balance | "Split…" button | Opens the full editor (below); saved rows show the running balance. |
+
+Each field has an accessible label, such as "New transaction date"; the amount
+labels follow the account's headings. Plain cells use `Gtk.Entry`, not
+`Gtk.EditableLabel`, so it is visible that they take input.
+
+**Keyboard.** Each field carries a capture-phase key controller, so the behavior is
+the same on every supported GTK version:
+
+- Tab and Shift+Tab move between the fields in column order, skipping hidden
+  columns and wrapping around.
+- Enter commits; on "Split…" it presses the button.
+- Escape resets the row to its defaults.
+- Typing in the row never changes the selection or expands a transaction.
+
+**Autocomplete.** Leaving Description (by focus or Tab), or choosing a payee, asks
+`suggest_entry`, scoped to the register account. It fills only fields still at
+their defaults: the amount (under the matching heading) while both amounts are
+empty, the transfer while the user has not chosen one, and the payee while none is
+chosen. The status line under the register names the source transaction. A source
+with more than two splits is only announced, and "Split…" is the way to start from
+it.
+
+**Commit.** `BlankEntryRow.commit` builds two balancing
+`TransactionSplitInput`s with a positive exact amount, the direction taken from
+the cell it was typed in. It saves them through `save_transaction` as one atomic
+change, and therefore one undo step. Nothing is written before commit.
+
+- On success the row resets, keeping the date for a run of same-day entries.
+  Focus returns to Date, and the repaint scrolls to the end.
+- On a validation or service error, every typed value stays in place. The status
+  line shows the error, and focus moves to the offending field.
+
+**Leaving with unsaved input.** `BlankEntryRow.confirm_leave` asks Save / Discard /
+Cancel, through `Gtk.AlertDialog`, before these would lose typed input:
+
+- switching accounts (from the picker or `show_account`);
+- opening another transaction for editing;
+- closing a secondary register window.
+
+Cancel restores the account picker. A row still at its defaults is discarded
+silently.
+
+**Where the row is unavailable.** For hidden or placeholder accounts, or when no
+transfer account is postable, the row is insensitive. The Description cell's
+placeholder text gives the reason.
+
+**Split….** The button opens `TransactionDialog.prefill`: the row's amount becomes
+the register-account split, and the transfer becomes the balancing split. With no
+amount, the dialog's own proposal runs instead. The dialog's `saved` flag tells a
+save from a cancel. Saving clears the row, and cancelling leaves it untouched.
+
+**Existing rows.** Double-clicking an existing transaction still opens the editor.
+Activating the blank row does nothing.
+
+**Web.** The web register keeps its quick-entry form until the GTK slices settle;
+the web gets the same interaction as a later, separate change.
+
+**Remaining slices (planned).** Each will be one PR with GTK tests driving the
+row by keyboard:
+
+2. In-place split entry. "Split" expands the blank row into one editable line per
+   split beneath it, with an imbalance line that must reach zero before commit, as
+   in the editor.
+3. In-place editing of existing rows, using the same cells. Double-click remains
+   the full editor for fields the row does not show: notes, planning purpose,
+   investment activity, FSA, and links.
 
 ## Payees
 
