@@ -29,28 +29,29 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **P1 — GTK chrome and layout cleanup.** A field report identified overlapping
-   navigation, cramped layout, no color to distinguish rows, numeric values sitting
-   against a pane's edge, and register entry that looked dialog-only. Delivered: the
-   toolbar no longer duplicates sidebar categories (Plan/Accounts/Projection were
-   both a toolbar button and a sidebar row; the sidebar is now the only place
-   category navigation lives), the sidebar starts narrower now that it carries no
-   duplicated actions, every ColumnView-based table (register, accounts, dashboard,
-   scheduled, upcoming) carries a shared `.data-table` class with subtle
-   at-rest row banding so rows are distinguishable without hovering or a second
-   read, every numeric value keeps clear space from its column or pane edge, the
-   Plan grid's numbers now share that same spacing, and the register's dialog
-   button is now labeled to make clear it is for extra splits/notes/reconciliation
-   -- an ordinary two-split entry already posts directly from the register's quick
-   entry with no dialog (delivered in 0.2.0a140). Remaining: audit every dialog for
-   unbounded growth the way issue #140 found on the Dashboard (a dialog whose
-   content is driven by book data should never grow past a sane bound); consider
-   further color to distinguish transaction/account states (reconciled, scheduled
-   vs. posted, over/under budget) without duplicating GnuCash's specific look,
-   which is not a goal; and review whether other dialogs would benefit from the
-   same width/margin discipline. GTK4 is the canonical interface, so this work is
-   GTK-first; carry a matching web adjustment only where the same confusion exists
-   there.
+1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
+   PR per issue:
+   - Correctness: Dashboard Net worth, Assets, Debts, and Liquid always come from
+     the whole book and never from groups, which are presentation only and never
+     change pending bills or income (#149); group rows stop listing inferred
+     sub-accounts and the tooltip lists members one per line (#150); Accounts
+     quote evidence shows date and source without a relative age (#151).
+   - Layout: Dashboard groups, bills, and income become separate sections sized to
+     their own columns (#152); every column chooser sits with the table it
+     controls (#153); every table keeps all columns visible as the window narrows,
+     text columns yielding first (#154).
+   - Navigation: view icons in the toolbar replace the left sidebar, with the View
+     menu listing every view (#155); per-view actions move from stray buttons into
+     menus and toolbar icons, starting with Accounts and a context-sensitive
+     "Manage FSA claims" icon (#156).
+   - Register: open in date order scrolled to the most recent entry (#157); replace
+     quick entry with a GnuCash-style blank entry row at the bottom, designed
+     before it is built and delivered as a two-split row, then in-place splits,
+     then in-place editing (#158).
+   Also audit every dialog for unbounded growth like #140. GTK4 is canonical;
+   carry a web change only where the same problem exists there. Matching
+   GnuCash's appearance is not a goal; its blank register row is the one explicit
+   model.
 2. **P1 — Reimbursable expenses and receivables.** The domain model, engine,
    service, native schema (9), and CLI (`breadsched receivables`) are delivered:
    a receivable tracks an expense and what an insurer, employer, or other payer
@@ -99,9 +100,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 
 ## Register workflow
-
-- Improve register appearance and information density while keeping account-type
-  debit/credit terminology clear.
 
 - Consider whether a categorization rule should also be able to set a payee, and
   whether split transactions can be supported with explicit per-split rules

@@ -3,6 +3,13 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a144 - 2026-09-28
+
+- **Documentation.** The README no longer repeats the Expense Explorer and
+  Dashboard walkthrough; the User Guide already covers both, and CONTRIBUTING.md
+  now says feature walkthroughs belong in the User Guide and DESIGN.md. ROADMAP
+  item 1 now lays out the GTK look-and-feel plan tracked in #148 (#149–#158).
+
 ## 0.2.0a143 - 2026-09-28
 
 - **Reimbursable expenses and receivables (engine, service, CLI).** A `Receivable`
