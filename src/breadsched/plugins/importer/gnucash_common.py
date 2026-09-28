@@ -793,8 +793,11 @@ class ImportSink:
         num: str,
         splits: list[dict[str, Any]],
         source_notes: str = "",
+        payee: str | None = None,
     ) -> Transaction | None:
         """Build and store one transaction.
+
+        ``payee`` is set only on a new transaction; an existing one keeps its own.
 
         A single malformed record must never cost the user the rest of the book, so
         everything here either repairs the transaction or skips that one record.
@@ -854,6 +857,8 @@ class ImportSink:
 
         if existing is not None:
             import_review.merge_local_state(txn_obj, existing)
+        elif payee is not None:
+            txn_obj.payee = payee
 
         LOG.debug(
             "%s: %d split(s) totalling %s",

@@ -36,7 +36,17 @@ _STATUS_LABELS = {
     "possible_transfer": "Possible transfer",
     "invalid": "Invalid",
 }
-_FIELDS = ("date", "amount", "debit", "credit", "description", "memo")
+_FIELDS = (
+    "date",
+    "amount",
+    "debit",
+    "credit",
+    "description",
+    "memo",
+    "category",
+    "payee",
+    "currency",
+)
 _GUESSES = {
     "date": (r"date", r"datum"),
     "amount": (r"^amount$", r"betrag", r"amount"),
@@ -44,6 +54,10 @@ _GUESSES = {
     "credit": (r"credit", r"deposit"),
     "description": (r"desc", r"payee", r"name", r"merchant"),
     "memo": (r"memo", r"note", r"reference"),
+    # Optional columns are suggested only on an exact header match.
+    "category": (r"^category$",),
+    "payee": (r"^payee$",),
+    "currency": (r"^currency$",),
 }
 
 
@@ -237,6 +251,9 @@ class CsvImportDialog(Gtk.Window):
             credit=self._selected("credit"),
             description=self._selected("description"),
             memo=self._selected("memo"),
+            category=self._selected("category"),
+            payee=self._selected("payee"),
+            currency=self._selected("currency"),
             date_format=self.DATE_FORMATS[self.date_format.get_selected()],  # type: ignore[arg-type]
             number_format=self.NUMBER_FORMATS[self.number_format.get_selected()],  # type: ignore[arg-type]
             header=self.header.get_active(),
@@ -276,16 +293,19 @@ class CsvImportDialog(Gtk.Window):
             f"{preview.encoding}, delimiter {preview.delimiter!r}, {preview.date_format} "
             f"dates, {preview.number_format} decimals. {counts}"
         )
+        payees = {payee.handle: payee.name for payee in self.db.iter_payees()}
         self._show_rows(
-            ["Line", "Date", "Amount", "Description", "Status", "Reason"],
+            ["Line", "Date", "Amount", "Description", "Category", "Payee", "Status", "Reason"],
             [
                 [
                     str(row.line),
                     row.when.isoformat() if row.when else "",
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
+                    self.db.full_name(row.category) if row.category else "",
+                    payees.get(row.payee, "") if row.payee else "",
                     _STATUS_LABELS[row.status],
-                    row.reason,
+                    row.reason or row.note,
                 ]
                 for row in preview.rows
             ],

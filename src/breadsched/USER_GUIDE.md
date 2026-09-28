@@ -881,6 +881,19 @@ import is one undo step. New rows are posted against **Uncategorized CSV** under
 Expenses or Income for you to categorize. Two identical rows on the same day remain
 two transactions.
 
+Three more columns are optional. A **category** column (`--category`) posts each
+row to an account you already have, named by its full name such as
+`Expenses:Groceries`, or by its own name when no other account shares it; a row
+whose category names no account, or several, is invalid and says so, and an empty
+cell uses **Uncategorized CSV**. A row with a category is not offered as a possible
+transfer. A **payee** column (`--payee`) sets the payee when it matches one you
+already have, by name or by the same description matching the Payees screen uses;
+an unknown payee is noted in the preview and the row imports without one. A
+**currency** column (`--currency`) must match the account's currency; a row in
+another currency is invalid rather than imported at the wrong value. BreadSched
+never creates accounts, payees, or currencies from these columns. Re-importing a
+row already imported leaves it untouched even if its category cell has changed.
+
 In the web interface, open **Import** and use the **CSV statement** section. Choose
 the file from the browser (it is kept beside the book in `<book>.uploads`) or enter
 a path, then choose **Read columns**. BreadSched shows the detected encoding and

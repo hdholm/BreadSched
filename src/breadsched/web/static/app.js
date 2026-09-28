@@ -3633,6 +3633,7 @@ async function csvImportPanel() {
   const fields = {
     date: columnSelect(), amount: columnSelect(), debit: columnSelect(),
     credit: columnSelect(), description: columnSelect(), memo: columnSelect(),
+    category: columnSelect(), payee: columnSelect(), currency: columnSelect(),
   };
   const dateFormat = el("select", {},
     ...[["auto","Detect date order"],["iso","Year first (YYYY-MM-DD)"],
@@ -3687,6 +3688,10 @@ async function csvImportPanel() {
     fields.credit.value = fields.amount.value ? "" : guess(data.columns, [/credit/i, /deposit/i]);
     fields.description.value = guess(data.columns, [/desc/i, /payee/i, /name/i, /merchant/i]);
     fields.memo.value = guess(data.columns, [/memo/i, /note/i, /reference/i]);
+    // Optional columns are suggested only on an exact header match.
+    fields.category.value = guess(data.columns, [/^category$/i]);
+    fields.payee.value = guess(data.columns, [/^payee$/i]);
+    fields.currency.value = guess(data.columns, [/^currency$/i]);
     layout.textContent = `Read as ${data.encoding} with delimiter "${data.delimiter}". `
       + "Check the suggested columns, then preview.";
     preview.replaceChildren(table(data.columns, data.sample));
@@ -3700,9 +3705,10 @@ async function csvImportPanel() {
       + `${data.date_format} dates, ${data.number_format} decimals. `
       + Object.entries(data.counts).map(([key, count]) => `${labels[key]}: ${count}`).join(" · ");
     preview.replaceChildren(table(["Line", "Date", {label:"Amount",num:true},
-      "Description", "Status", "Reason"], data.rows.map((row) => [
+      "Description", "Category", "Payee", "Status", "Reason"], data.rows.map((row) => [
       String(row.line), row.date || "", row.amount === null ? "" : money(row.amount),
-      row.description, labels[row.status], row.reason])));
+      row.description, row.category || "", row.payee || "", labels[row.status],
+      row.reason || row.note || ""])));
   };
   const run = (action) => async () => {
     try { await action(); } catch (error) { say(error.message, "error"); }
@@ -3715,7 +3721,10 @@ async function csvImportPanel() {
       + "category you chose. A row matching a transaction already in the account on the same "
       + "date and amount is held back unless you include possible duplicates. A row that "
       + "looks like the other side of an uncategorized transfer already imported into another "
-      + "account is imported as new unless you link transfers."),
+      + "account is imported as new unless you link transfers. An optional category column "
+      + "must name an existing account (its full name, or a name no other account shares); "
+      + "a payee column matches payees you already have; a currency column must match the "
+      + "account's currency."),
     el("form", { class:"entry", onsubmit:(event) => event.preventDefault() },
       el("label", {}, "Choose a CSV file", file),
       el("label", {}, "Or enter a path visible to BreadSched", path),

@@ -4593,6 +4593,33 @@ class TestCsvImportDialog:
         assert app.db.undo() is True
         assert len(list(app.db.iter_transactions())) == before
 
+    def test_category_column_is_suggested_and_shown_in_the_preview(self, dialog, tmp_path, app):
+        expense = next(
+            item
+            for item in app.db.iter_accounts()
+            if item.atype.value == "EXPENSE" and not item.placeholder
+        )
+        full = app.db.full_name(expense)
+        self._load(
+            dialog,
+            tmp_path,
+            f"Date,Description,Amount,Category\n2026-09-01,Shop,-4.00,{full}\n"
+            "2026-09-02,Other,-1.00,Nowhere\n",
+        )
+
+        assert dialog.mapping().category == "Category"
+        preview = dialog.preview()
+
+        assert preview is not None
+        assert preview.rows[0].category == expense.handle
+        assert preview.rows[1].status == "invalid"
+        texts = []
+        child = dialog.rows_box.get_first_child()
+        while child is not None:
+            texts.append(child.get_label() if hasattr(child, "get_label") else "")
+            child = child.get_next_sibling()
+        assert full in texts
+
     def test_refused_mapping_explains_and_writes_nothing(self, dialog, tmp_path, app):
         self._load(dialog, tmp_path, "Date,Amount\n01/02/2026,-1.00\n")
         before = len(list(app.db.iter_transactions()))
