@@ -273,8 +273,10 @@ retains the ledger value instead of inventing a market value.
 
 ## Transactions and registers
 
-Select an account to open its register. Headings use account-appropriate household
-language such as Deposit/Withdrawal or Payment/Charge. The register filter searches
+Select an account to open its register. Like a check register, it lists entries
+oldest first and opens scrolled to the most recent entry at the bottom; posting a
+new entry keeps you there, and changes made elsewhere leave your place alone.
+Headings use account-appropriate household language such as Deposit/Withdrawal or Payment/Charge. The register filter searches
 descriptions, numbers, notes, split memos, and account names without changing the
 full-ledger running balance.
 
