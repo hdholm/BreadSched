@@ -36,6 +36,7 @@ from .reconciliation_resource import (
     reconciliation_update,
 )
 from .register_entry_resource import register_entry_save
+from .register_resource import register, transaction_add
 from .rules_resource import rule_add, rule_delete, rule_move, rules, rules_accept
 
 if TYPE_CHECKING:
@@ -130,14 +131,6 @@ def _dashboard(api: Api, query: QueryParams) -> object:
     return api.dashboard(liquidity, emergency)
 
 
-def _register(api: Api, query: QueryParams) -> object:
-    account = query.text("account", required=True)
-    limit = query.integer("limit", default=250, minimum=1, maximum=10000)
-    query.finish()
-    assert account is not None and limit is not None
-    return api.register(account, limit)
-
-
 def _scheduled(api: Api, query: QueryParams) -> object:
     days = query.integer("days", default=60, minimum=0, maximum=36500)
     query.finish()
@@ -220,7 +213,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/loan/options": _no_query("loan_options"),
     "/api/commodities": _no_query("commodities"),
     "/api/fsa/claims": _no_query("fsa_claims"),
-    "/api/register": _register,
+    "/api/register": register,
     "/api/reconciliation": reconciliation,
     "/api/scheduled": _scheduled,
     "/api/historical-estimates": _historical_estimates,
@@ -271,7 +264,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/account/fsa-years": _post("account_fsa_years_save"),
     "/api/fsa/claim/save": _post("fsa_claim_save"),
     "/api/fsa/claim/delete": _post("fsa_claim_delete"),
-    "/api/transaction": _post("add_transaction"),
+    "/api/transaction": transaction_add,
     "/api/reconciliation/start": reconciliation_start,
     "/api/reconciliation/update": reconciliation_update,
     "/api/reconciliation/complete": reconciliation_complete,

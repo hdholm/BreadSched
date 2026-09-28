@@ -134,6 +134,11 @@ routes parse fields into ``StartReconciliation``, ``UpdateReconciliation``, and
 ``ReconciliationAction`` and map service errors to responses. ``Api`` no longer
 has reconciliation methods, and a route test proves rejected requests leave the
 statement's selection, ending balance, and status unchanged.
+Registers and the simple two-account entry form are likewise served by
+``web.register_resource`` (``register`` consumes ``account`` and ``limit``;
+``transaction_add`` builds the ``SaveTransaction`` request), with the original
+error contract kept: a missing form field is a 400 reference error, an unknown
+register account a 404, and a rejected entry leaves the book unchanged.
 The Plan report query and JSON projection also live in ``web.plan_resource``.
 The adapter requests typed Plan results from the shared service and serializes
 controls, cash bridge, category, mortgage, planning-flow, and comparison views;

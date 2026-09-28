@@ -35,7 +35,6 @@ from ..gen.lib import (
     Account,
     AccountClass,
     AccountType,
-    Amount,
     AssumptionPeriod,
     Assumptions,
     FsaFundingYear,
@@ -63,7 +62,6 @@ from ..gen.plug import (
 )
 from ..gen.services import (
     ClaimAllocationInput,
-    ClaimAttachment,
     ClaimInput,
     ClaimLinkInput,
     ClaimRejectionInput,
@@ -89,11 +87,8 @@ from ..gen.services import (
     SaveClaim,
     SaveLoan,
     SaveScenarioAssumptions,
-    SaveTransaction,
     ServiceError,
     SuppressScenarioSchedule,
-    TransactionInput,
-    TransactionSplitInput,
     attach_review_claim,
     delete_assumption_period,
     delete_claim,
@@ -116,10 +111,8 @@ from ..gen.services import (
     save_formula_schedule,
     save_loan,
     save_scenario_assumptions,
-    save_transaction,
     skip_review,
     suppress_scenario_schedule,
-    transaction_currency,
     validate_loan,
 )
 from ..gen.services.receivables import reimbursement_proposals
@@ -781,51 +774,6 @@ class Api:
         if result.value is None:
             raise self._service_resource_error(result.errors[0])
         return {"handle": handle}
-
-    def register(self, handle: str, limit: int = 250) -> dict:
-        account = self.db.get_account(handle)
-        if account is None:
-            raise KeyError(handle)
-        rows = ledger.register(self.db, handle)[-limit:]
-        debit_label, credit_label = ledger.register_headings(account.atype)
-        return {
-            "account": self.db.full_name(account),
-            "type": account.atype.value,
-            "debit_label": debit_label,
-            "credit_label": credit_label,
-            "payees": [
-                {"handle": payee.handle, "name": payee.name} for payee in self.db.iter_payees()
-            ],
-            "rows": [
-                {
-                    "handle": row.transaction.handle,
-                    "payee": row.transaction.payee,
-                    "date": row.post_date,
-                    "num": row.transaction.num,
-                    "description": row.description,
-                    "notes": row.transaction.notes,
-                    "source_notes": row.transaction.source_notes,
-                    "transfer": row.transfer_label(self.db),
-                    "amount": row.amount,
-                    "balance": row.running,
-                    # For editing the row in place (#158): this register's split
-                    # and every split of the transaction.
-                    "split": row.split.handle,
-                    "currency": row.transaction.currency,
-                    "splits": [
-                        {
-                            "handle": split.handle,
-                            "account": split.account,
-                            "account_name": self.db.full_name(split.account),
-                            "value": split.value,
-                            "memo": split.memo,
-                        }
-                        for split in row.transaction.splits
-                    ],
-                }
-                for row in rows
-            ],
-        }
 
     def historical_estimates(
         self,
@@ -2189,63 +2137,6 @@ class Api:
         return projection_report(self.db, scenario)
 
     # ---------------------------------------------------------------- writing
-
-    def add_transaction(self, payload: dict) -> dict:
-        """Post a two-split transaction. The only write the web interface allows."""
-        debit = self.db.get_account_by_name(payload["to"])
-        credit = self.db.get_account_by_name(payload["from"])
-        if debit is None or credit is None:
-            raise ResourceError(400, "transaction.account.not_found", ("from", "to"))
-        when = date.fromisoformat(payload.get("date") or date.today().isoformat())
-        amount = self._input_money(payload, payload["amount"])
-        if amount <= 0:
-            raise ResourceError(400, "transaction.amount.non_positive", ("amount",))
-        description = str(payload.get("description") or "").strip()
-        notes = str(payload.get("notes") or "").strip()
-        memo = payload.get("memo", "")
-        investment_raw = str(payload.get("investment_activity") or "").strip()
-        try:
-            investment_activity = InvestmentActivityKind(investment_raw) if investment_raw else None
-        except ValueError:
-            raise ValueError("choose a valid investment activity") from None
-        payee_raw = payload.get("payee")
-        if payee_raw is not None and not isinstance(payee_raw, str):
-            raise ValueError("payee must be text")
-        claim_handle = str(payload.get("fsa_claim") or "").strip()
-        claim_role = str(payload.get("fsa_role") or "").strip()
-        funding_year = str(payload.get("fsa_year") or "").strip()
-        attachment = (
-            ClaimAttachment(
-                claim_handle,
-                claim_role,
-                date.fromisoformat(funding_year) if funding_year else None,
-            )
-            if claim_handle and claim_role
-            else None
-        )
-        currency = transaction_currency(self.db)
-        result = save_transaction(
-            self.db,
-            SaveTransaction(
-                TransactionInput(
-                    post_date=when,
-                    description=description,
-                    notes=notes,
-                    currency=currency,
-                    splits=(
-                        TransactionSplitInput(debit.handle, Amount(amount, currency), memo=memo),
-                        TransactionSplitInput(credit.handle, Amount(-amount, currency), memo=memo),
-                    ),
-                    investment_activity=investment_activity,
-                    payee=payee_raw or None,
-                    set_payee="payee" in payload,
-                ),
-                claim_attachment=attachment,
-            ),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        return {"handle": result.value.handle, "date": when, "amount": amount}
 
     def review_match(self, payload: dict) -> dict:
         result = match_review(

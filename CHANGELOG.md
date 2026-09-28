@@ -3,6 +3,14 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a172 - 2026-09-28
+
+- **Register and entry routes move to their own web adapter.** The browser's
+  register listing and simple entry form are served by `web/register_resource.py`
+  instead of methods on the web `Api`, with requests, responses, and errors
+  unchanged. A route test covers the register's query contract and proves rejected
+  entries write nothing. Application version `0.2.0a172`; native schema remains 9.
+
 ## 0.2.0a171 - 2026-09-28
 
 - **Reconciliation routes move to their own web adapter.** The browser's statement
