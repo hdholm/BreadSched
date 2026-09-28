@@ -5,6 +5,17 @@ belongs in `ROADMAP.md`.
 
 ## 0.2.0a144 - 2026-09-28
 
+- **Dashboard totals always cover the whole book (#149).** Net worth, Assets, and
+  Debts now always value every asset and liability account, and Liquid every
+  cash-like account, whether or not Dashboard groups are configured. Previously a
+  configured group set replaced these totals with the grouped subset (and a
+  "liquid" group replaced Liquid), with a "Partial Dashboard groups" coverage note
+  explaining the gap. Groups are now presentation only: they never change the
+  totals, near-term needs, Months covered, or pending bills and income, so those
+  coverage notes are gone; the card-payment setup note remains. Assets and Debts
+  are also available before any group is configured. The same totals appear in
+  GTK, the web Dashboard, `breadsched dashboard`, and the printed report.
+  Application version `0.2.0a144`; native schema remains 9.
 - **Documentation.** The README no longer repeats the Expense Explorer and
   Dashboard walkthrough; the User Guide already covers both, and CONTRIBUTING.md
   now says feature walkthroughs belong in the User Guide and DESIGN.md. ROADMAP

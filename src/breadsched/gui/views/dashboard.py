@@ -301,13 +301,7 @@ class DashboardView(BaseView):
             rendered = (
                 board.unavailable_reason(field)
                 if field in missing_fields
-                else (
-                    board.ledger_position.format(parens_negative=True)
-                    if field == "net_worth"
-                    and not board.groups
-                    and board.ledger_position is not None
-                    else amount.format(parens_negative=True)
-                )
+                else amount.format(parens_negative=True)
             )
             if label.startswith("Emergency fund") and "emergency_fund" in missing_fields:
                 rendered = board.unavailable_reason("emergency_fund")

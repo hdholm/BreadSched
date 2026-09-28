@@ -808,11 +808,15 @@ cash-counterpart annotations on a retirement distribution count only once.
 
 ## Dashboard aggregation
 
-Grouped Dashboard measures disclose the count of unselected asset/liability accounts.
-When a liquid group is selected, they also disclose omitted cash-like accounts.
-Selected chart parents cover descendants, and disclosures do not silently change
-the selected totals. The shared engine supplies the same scope notes to every
-presentation and print output. A combined group's note joins every account's quote
+Dashboard groups are presentation only (#149). Net worth, Assets, and Debts are
+always the whole-book reporting-currency valuation of every asset and liability
+account (`valuation.aggregate_value`), and Liquid is always every non-placeholder
+cash-like account; a missing or incompatible quote suppresses the dependent figure
+and is disclosed. Groups never change those totals, near-term needs, or the pending
+bill and income lists, so no group-scope disclosure is needed; a group's
+kind (including "liquid") only labels its rows. Selected chart parents cover
+descendants within a group row. The shared engine supplies the remaining notes
+(card payment setup) to every presentation and print output. A combined group's note joins every account's quote
 details, so the GTK group label caps its natural width (60 characters) and
 ellipsizes, with the full text in its tooltip, and headline card text wraps at 40
 characters; an ellipsized GTK label otherwise still requests its full width and

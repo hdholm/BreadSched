@@ -2767,7 +2767,7 @@ class TestDashboardApi:
         assert status == 200
         assert first["groups"] == []
         assert first["summary"]["net_worth"] == "2400.00"
-        assert first["unavailable_reasons"]["assets"] == "Dashboard groups not configured"
+        assert "assets" not in first["unavailable_reasons"]
 
         assets = client.database.get_account_by_name("Assets")
         income = client.database.get_account_by_name("Income")

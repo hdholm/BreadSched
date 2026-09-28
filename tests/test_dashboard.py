@@ -118,8 +118,8 @@ def test_imported_book_first_dashboard_uses_complete_ledger_and_commitments(
 
     assert board.groups == []
     assert report["net_worth"] == Money("2274.50")
-    assert report["assets"] is None
-    assert board.unavailable_reason("assets") == "Dashboard groups not configured"
+    # Whole-book totals need no groups (issue #149).
+    assert report["assets"] - report["debts"] == report["net_worth"]
     assert report["liquid"] == Money("2350.00")
     assert report["emergency_fund"] is not None
     assert board.monthly_outgoings == Money("1800.00")
@@ -174,7 +174,7 @@ def test_imported_security_and_commitments_first_dashboard_is_truthful(db, gnuca
     assert report["net_worth"] == Money("109950.00")
     assert report["liquid"] == Money("9000.00")
     assert board.missing_quotes == ()
-    assert board.unavailable_reason("assets") == "Dashboard groups not configured"
+    assert report["assets"] - report["debts"] == report["net_worth"]
     # No imported schedules: coverage and next income are unavailable for setup
     # reasons, never attributed to a currency quote.
     assert report["months_covered"] is None
@@ -832,41 +832,57 @@ class TestLiquidityAndEmergencyFund:
 
 
 class TestConfiguration:
-    def test_partial_groups_disclose_position_and_liquidity_scope(self, db, book):
-        from breadsched.plugins.export.html_report import dashboard_report
-
-        config = dashboard.DashboardConfig(
-            groups=[dashboard.GroupConfig("Cash", [book.checking], "liquid")]
-        )
-        board = dashboard.build(db, config, as_of=TODAY)
-        assert len(board.coverage_notes) == 2
-        assert "3 asset/liability accounts" in board.coverage_notes[0]
-        assert "1 cash-like account" in board.coverage_notes[1]
-        assert "Partial Dashboard groups" in dashboard_report(board)
-
-        complete = dashboard.build(
+    def test_groups_never_change_whole_book_totals_or_pending_flows(self, db, book):
+        """Issue #149: Dashboard groups are presentation only."""
+        with db.transaction("Balances and a bill") as txn:
+            db.add_transaction(
+                Transaction.simple(TODAY, "Opening", book.checking, book.opening, "1000"), txn
+            )
+            db.add_transaction(
+                Transaction.simple(TODAY, "Savings", book.savings, book.opening, "400"), txn
+            )
+            db.add_transaction(
+                Transaction.simple(TODAY, "Card", book.groceries, book.card, "150"), txn
+            )
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name="Rent",
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 9, 20)),
+                    splits=[
+                        ScheduledSplit(book.rent, Money("500")),
+                        ScheduledSplit(book.checking, Money("-500")),
+                    ],
+                ),
+                txn,
+            )
+        ungrouped = dashboard.build(db, as_of=TODAY)
+        partial = dashboard.build(
             db,
             dashboard.DashboardConfig(
-                groups=[
-                    dashboard.GroupConfig("Assets", [book.assets], "liquid"),
-                    dashboard.GroupConfig("Debt", [book.liabilities], "liability"),
-                ]
+                groups=[dashboard.GroupConfig("Cash", [book.checking], "liquid")]
             ),
             as_of=TODAY,
         )
-        assert complete.coverage_notes == ()
-
-        with db.transaction("Hidden cash") as txn:
-            hidden = Account(
-                name="Old cash", atype=AccountType.BANK, parent=book.assets, hidden=True
+        for board in (ungrouped, partial):
+            assert (board.assets, board.debts, board.net_worth) == (
+                Money("1400"),
+                Money("150"),
+                Money("1250"),
             )
-            db.add_account(hidden, txn)
-            db.add_transaction(
-                Transaction.simple(TODAY, "Prior cash", hidden.handle, book.opening, "25"), txn
-            )
-        hidden_board = dashboard.build(db, config, as_of=TODAY)
-        assert "4 asset/liability accounts" in hidden_board.coverage_notes[0]
-        assert "2 cash-like accounts" in hidden_board.coverage_notes[1]
+            assert board.liquid == Money("1400")
+            report = board.report_summary()
+            assert report["assets"] == Money("1400")
+            assert report["net_worth"] == Money("1250")
+        # Groups add no coverage notes; only the card-payment setup note remains.
+        assert partial.coverage_notes == ungrouped.coverage_notes
+        assert all(note.startswith("Card payments not set up") for note in partial.coverage_notes)
+        assert [(b.name, b.next_due, b.amount) for b in partial.pending] == [
+            (b.name, b.next_due, b.amount) for b in ungrouped.pending
+        ]
+        assert partial.required_liquid == ungrouped.required_liquid
+        assert partial.income_per_month == ungrouped.income_per_month
+        # The group still shows its own members.
+        assert partial.group("Cash").total == Money("1000")
 
     def test_first_run_uses_ledger_position_and_explains_missing_commitments(self, db, book):
         from breadsched.plugins.export.html_report import dashboard_report
@@ -880,10 +896,9 @@ class TestConfiguration:
         report = board.report_summary()
         assert board.groups == []
         assert report["net_worth"] == Money(125)
-        assert report["assets"] is None
+        assert report["assets"] == Money(125)
         assert report["emergency_fund"] is None
         assert report["months_covered"] is None
-        assert board.unavailable_reason("assets") == "Dashboard groups not configured"
         assert board.unavailable_reason("months_covered") == "No committed outgoings"
         html = dashboard_report(board)
         assert "125.00" in html
@@ -1500,7 +1515,8 @@ class TestHierarchicalGroups:
         board = dashboard.build(db, config, as_of=TODAY)
 
         assert board.group("Cash").total == Money("350")
-        assert board.liquid == Money("350")
+        # A "liquid" group labels rows; Liquid itself is every cash-like account.
+        assert board.liquid == dashboard.build(db, as_of=TODAY).liquid
 
     def test_mixed_heading_reports_only_its_net_total(self, db, book):
         asset = Account(name="Asset", atype=AccountType.ASSET, parent=book.assets)

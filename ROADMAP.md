@@ -31,9 +31,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
    PR per issue:
-   - Correctness: Dashboard Net worth, Assets, Debts, and Liquid always come from
-     the whole book and never from groups, which are presentation only and never
-     change pending bills or income (#149); group rows stop listing inferred
+   - Correctness: Dashboard group rows stop listing inferred
      sub-accounts and the tooltip lists members one per line (#150); Accounts
      quote evidence shows date and source without a relative age (#151).
    - Layout: Dashboard groups, bills, and income become separate sections sized to

@@ -382,15 +382,13 @@ Open the resulting file in GTK or web, inspect Dashboard, then select the follow
 month in Plan. The sample is for exploration, not financial advice or a template
 whose amounts should be copied into a real book.
 
-Dashboard group totals are based on the accounts assigned to those groups. Before
-group setup, Net worth uses all ledger asset and liability accounts, valued in the
-reporting currency as of the Dashboard date; a missing quote makes it unavailable.
-Grouped asset and debt totals remain unconfigured. Once groups are assigned, Net
-worth reflects those selected groups, which may cover only part of the book.
-When configured groups omit asset or liability accounts, a coverage note gives the
-omitted count; grouped Net worth then covers only selected accounts. If a liquid
-group omits cash-like accounts, Liquid and emergency coverage use selected cash and
-show a separate note. Selecting a chart parent includes its descendants.
+Net worth, Assets, and Debts always cover every asset and liability account in the
+book, and Liquid always covers every cash-like account, each valued in the reporting
+currency as of the Dashboard date; a missing quote makes the affected figure
+unavailable. Dashboard groups only arrange accounts into rows for reading: adding,
+removing, or rearranging groups never changes those totals, Needed within N days,
+Months covered, or the pending bills and income. Selecting a chart parent for a
+group includes its descendants in that group's row.
 
 When there are no committed outgoings, Emergency fund and Months covered say
 “No committed outgoings” instead of presenting zero as a measured need or duration.
@@ -398,7 +396,7 @@ Add schedules for known commitments and review Dashboard groups before relying o
 those figures. The synthetic sample book above provides a separate place to
 explore these controls.
 After importing a GnuCash book, Dashboard starts without invented groups. Its
-ungrouped Net worth uses imported posted balances, and supported imported schedules
+Net worth uses imported posted balances, and supported imported schedules
 can appear as pending bills. Review the account groups and reporting-currency
 quotes before relying on liquid or emergency figures; an unvalued foreign cash
 balance makes dependent figures unavailable while the bill list remains visible.
@@ -433,10 +431,9 @@ being counted twice.
 Dashboard groups accept account-style paths such as `Investments:Plan A`. Generated
 headings total their children without double-counting account subtrees. Link an
 asset and loan to show equity, loan-to-value, and a bounded repayment date together.
-When a selected group account needs a reporting-currency quote, Dashboard marks
-that group and dependent net-worth figures unavailable. If a liquid group or a
-cash balance outside the configured groups needs a quote, Liquid, Available,
-emergency shortfall, and Months covered are unavailable too. Account rows identify
+When an account needs a reporting-currency quote, Dashboard marks Net worth (and
+that account's group row) unavailable. If a cash-like account needs a quote,
+Liquid, Available, emergency shortfall, and Months covered are unavailable too. Account rows identify
 the missing quote; unaffected bills, reserves, and income still appear. GTK, web,
 CLI, and the printed Dashboard share this disclosure. Adding a direct or inverse
 pair quote can restore the totals without changing the ledger.

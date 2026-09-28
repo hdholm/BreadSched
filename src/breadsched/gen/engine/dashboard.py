@@ -466,30 +466,20 @@ class Dashboard:
     _income_events: list[tuple[date, Money]] = field(default_factory=list, repr=False)
     liquid: Money = field(default_factory=lambda: Money(0))
     liquid_missing_quotes: tuple[str, ...] = ()
-    ledger_position: Money | None = None
-    ledger_position_missing_quotes: tuple[str, ...] = ()
+    #: Whole-book asset and liability totals. Groups are presentation only and
+    #: never change these (issue #149).
+    book_assets: Money = field(default_factory=lambda: Money(0))
+    book_debts: Money = field(default_factory=lambda: Money(0))
+    book_missing_quotes: tuple[str, ...] = ()
     coverage_notes: tuple[str, ...] = ()
 
     @property
     def missing_quotes(self) -> tuple[str, ...]:
-        if not self.groups:
-            return self.ledger_position_missing_quotes
-        return tuple(
-            dict.fromkeys(
-                handle
-                for group in self.groups
-                if group.depth == 0
-                for handle in group.missing_quotes
-            )
-        )
+        return self.book_missing_quotes
 
     def report_summary(self) -> dict[str, object]:
         """Suppress monetary conclusions that depend on unavailable quotes."""
         report: dict[str, object] = dict(self.summary())
-        if not self.groups:
-            report["assets"] = None
-            report["debts"] = None
-            report["net_worth"] = self.ledger_position
         if self.missing_quotes:
             for field in ("assets", "debts", "net_worth"):
                 report[field] = None
@@ -503,10 +493,6 @@ class Dashboard:
 
     def unavailable_reason(self, field: str) -> str:
         """Explain an absent report value without conflating setup with FX gaps."""
-        if field in {"assets", "debts"} and not self.groups:
-            return "Dashboard groups not configured"
-        if field == "net_worth" and not self.groups and self.ledger_position is None:
-            return "Missing reporting-currency quote"
         if (
             field in {"emergency_fund", "emergency_shortfall", "months_covered"}
             and not self._normalised_bills()
@@ -532,24 +518,13 @@ class Dashboard:
 
     @property
     def assets(self) -> Money:
-        total = Money(0)
-        for group in self.groups:
-            if group.depth:
-                continue
-            if group.kind == "liability":
-                continue
-            total = total + (group.equity if group.equity is not None else group.total)
-        return total
+        """Every asset account in the book, whatever the Dashboard groups say."""
+        return self.book_assets
 
     @property
     def debts(self) -> Money:
-        total = Money(0)
-        for group in self.groups:
-            if group.depth:
-                continue
-            if group.kind == "liability":
-                total = total + group.total
-        return total
+        """Every liability account in the book, whatever the Dashboard groups say."""
+        return self.book_debts
 
     @property
     def net_worth(self) -> Money:
@@ -749,83 +724,38 @@ def build(
     paid_off = _paid_off_loans(db, today)
     resolved = resolve_groups(db, config)
     board.groups = _hierarchical_results(db, resolved, today, paid_off)
-    if board.groups:
-        accounts = {account.handle: account for account in db.iter_accounts()}
-        selected = {handle for group in resolved for handle in group.accounts}
 
-        def covered(account: Account, selected_handles: set[str]) -> bool:
-            handle: str | None = account.handle
-            seen: set[str] = set()
-            while handle and handle not in seen:
-                if handle in selected_handles:
-                    return True
-                seen.add(handle)
-                parent = accounts.get(handle)
-                handle = parent.parent if parent is not None else ""
-            return False
-
-        omitted = [
-            account
-            for account in accounts.values()
-            if account.account_class in (AccountClass.ASSET, AccountClass.LIABILITY)
-            and not account.placeholder
-            and not covered(account, selected)
-        ]
-        notes = []
-        if omitted:
-            unit = "account" if len(omitted) == 1 else "accounts"
-            verb = "is" if len(omitted) == 1 else "are"
-            notes.append(
-                f"Partial Dashboard groups: {len(omitted)} asset/liability {unit} "
-                f"{verb} outside the selected groups; grouped Net worth is not "
-                "whole-book Net worth."
-            )
-        liquid_selected = {
-            handle for group in resolved if group.kind == "liquid" for handle in group.accounts
-        }
-        if liquid_selected:
-            omitted_cash = [
-                account
-                for account in accounts.values()
-                if account.atype.is_cash_like
-                and not account.placeholder
-                and not covered(account, liquid_selected)
-            ]
-            if omitted_cash:
-                unit = "account" if len(omitted_cash) == 1 else "accounts"
-                verb = "is" if len(omitted_cash) == 1 else "are"
-                notes.append(
-                    f"Partial liquid group: {len(omitted_cash)} cash-like {unit} "
-                    f"{verb} outside the selected liquid groups; Liquid and coverage use "
-                    "only selected cash."
-                )
-        board.coverage_notes = tuple(notes)
-    if not board.groups:
-        position = valuation.aggregate_value(db, as_of=today, net_worth=True)
-        board.ledger_position = position.amount.value if position.amount is not None else None
-        board.ledger_position_missing_quotes = (
-            *position.missing_quotes,
-            *position.incompatible_accounts,
-        )
-
-    if any(group.kind == "liquid" for group in resolved):
-        board.liquid = sum((group.liquid for group in board.groups if group.depth == 0), Money(0))
-        board.liquid_missing_quotes = tuple(
-            dict.fromkeys(
-                handle
-                for group in board.groups
-                if group.depth == 0
-                for handle in group.liquid_missing_quotes
+    # Totals always cover the whole book; groups only arrange rows (issue #149).
+    accounts = [account for account in db.iter_accounts() if not account.is_root]
+    owned = valuation.aggregate_value(
+        db,
+        accounts=[a for a in accounts if a.account_class is AccountClass.ASSET],
+        as_of=today,
+    )
+    owed = valuation.aggregate_value(
+        db,
+        accounts=[a for a in accounts if a.account_class is AccountClass.LIABILITY],
+        as_of=today,
+    )
+    board.book_assets = owned.amount.value if owned.amount is not None else Money(0)
+    board.book_debts = owed.amount.value if owed.amount is not None else Money(0)
+    board.book_missing_quotes = tuple(
+        dict.fromkeys(
+            (
+                *owned.missing_quotes,
+                *owned.incompatible_accounts,
+                *owed.missing_quotes,
+                *owed.incompatible_accounts,
             )
         )
-    else:
-        cash = valuation.aggregate_value(
-            db,
-            accounts=[a for a in db.iter_accounts() if a.atype.is_cash_like and not a.placeholder],
-            as_of=today,
-        )
-        board.liquid = cash.amount.value if cash.amount is not None else Money(0)
-        board.liquid_missing_quotes = cash.missing_quotes
+    )
+    cash = valuation.aggregate_value(
+        db,
+        accounts=[a for a in accounts if a.atype.is_cash_like and not a.placeholder],
+        as_of=today,
+    )
+    board.liquid = cash.amount.value if cash.amount is not None else Money(0)
+    board.liquid_missing_quotes = cash.missing_quotes
     pending, estimates, income_per_month, income_with_estimates, next_income, income_events = (
         _pending_cash_flow(db, today, horizon_days, paid_off, fraction)
     )
