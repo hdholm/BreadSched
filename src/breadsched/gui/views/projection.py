@@ -137,9 +137,8 @@ class ProjectionView(BaseView):
         bar.append(Gtk.Label(label="Scenario"))
         bar.append(self.scenario_picker)
 
-        compare_button = Gtk.Button(label="Compare with…")
-        compare_button.connect("clicked", self._on_compare_clicked)
-        bar.append(compare_button)
+        # Compare and Export are toolbar icons; Save stays here because its label
+        # follows the scenario being viewed.
 
         self.explain_button = Gtk.Button(label="Explain month…")
         self.explain_button.set_sensitive(False)
@@ -157,11 +156,6 @@ class ProjectionView(BaseView):
         self.save_button.add_css_class("suggested-action")
         self.save_button.connect("clicked", self._on_save_clicked)
         bar.append(self.save_button)
-
-        export_button = Gtk.Button(icon_name="document-save-symbolic")
-        export_button.set_tooltip_text("Export the monthly rows as CSV")
-        export_button.connect("clicked", self._on_export_clicked)
-        bar.append(export_button)
         return bar
 
     def _build_controls(self, box: Gtk.Box) -> Gtk.Widget:

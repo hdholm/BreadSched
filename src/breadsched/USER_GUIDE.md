@@ -125,7 +125,7 @@ payment, or a paycheck. An estimate fills a planning gap, such as groceries or a
 irregular utility amount. Dashboard and Upcoming show commitments as obligations;
 estimates belong in Plan and Projection and are not presented as bills already due.
 
-**Suggest from History** creates reviewable estimate drafts. It never writes a
+**Suggest** (Suggest Estimates from History) creates reviewable estimate drafts. It never writes a
 schedule directly. Open **Review**, check the inferred account, purpose, amount,
 cadence, dates, seasonal profile, and evidence, then save or cancel. Accepted
 estimates retain their evidence as provenance. The evidence names the versioned
@@ -177,8 +177,10 @@ visible.
 Each view's own commands are in the **Actions** menu under that view's name, and
 the common ones also appear as toolbar icons while that view is shown: for example
 **New Account**, **Edit Account**, **Security Price**, and **Exchange Rate** in
-Accounts, **Manage FSA Claims** on the FSA Dashboard, and **Configure Dashboard
-Groups** on the Dashboard. **View → Hide Empty Accounts** and **View → Show Hidden
+Accounts, **Manage FSA Claims** on the FSA Dashboard, **Configure Dashboard
+Groups** on the Dashboard, **New Scheduled**, **Suggest**, and **New Loan** in
+Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan, and
+**Compare** and **Export** in Projection. **View → Hide Empty Accounts** and **View → Show Hidden
 Accounts** filter the account tree. Buttons that act on a selected row, such as a
 schedule's **View / Edit…**, stay beside their table.
 
@@ -401,7 +403,7 @@ automatically.
 
 ### Create a loan
 
-Choose **New loan…** in Scheduled and enter the amount borrowed, annual rate, term,
+Choose the **New Loan** toolbar icon in Scheduled and enter the amount borrowed, annual rate, term,
 first payment, loan account, interest expense account, and payment account. Review
 the level payment and the first year of principal/interest allocation before
 saving. BreadSched creates one formula schedule and can record the opening
@@ -535,7 +537,7 @@ periods and planned amounts it shows. Actuals are recorded transactions, with th
 same treatment of refunds and other special flows as Plan. Remaining uses only
 actuals posted through the as-of date.
 
-In GTK, choose **Explore expenses…** from Plan. In the web interface, scroll to
+In GTK, choose the **Explore** toolbar icon while Plan is shown. In the web interface, scroll to
 **Expense Explorer** on the Plan page, below the cash outlook. Then:
 
 1. Choose a **Period** for the category comparison. Each category shows a plan bar

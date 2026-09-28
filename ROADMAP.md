@@ -31,9 +31,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
    PR per issue:
-   - Actions: the remaining in-view command buttons in Register, Scheduled,
-     Upcoming, Plan, and Projection (already also in the Actions menu) move to
-     context-sensitive toolbar icons where that reads better (follow-up to #156).
    - Register blank entry row (#158): slice 2, in-place split entry, then slice 3,
      in-place editing of existing rows (DESIGN.md, "Blank entry row"). The web
      register gets the same interaction afterward.

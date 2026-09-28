@@ -1040,10 +1040,16 @@ is current. Activating one shows its view and calls the named view method, so me
 icon, and view never disagree; all are disabled while no book is open. Accounts
 (New/Edit account, Security price, Exchange rate, Hide empty, Show hidden), the
 FSA Dashboard (Manage FSA claims), and the Dashboard (Configure groups) no longer
-carry their own buttons. Register, Scheduled, Upcoming, Plan, and Projection
-commands are also in the menus; their in-view buttons remain for now, as do
-buttons that act on a table's selected row (Scheduled edit/duplicate/delete,
-Review match/reject) and controls that apply a view's own settings. A window
+carry their own buttons. Neither do Scheduled (New scheduled, Suggest, New loan),
+Plan (New scenario, Manage scenarios, Explore expenses), or Projection (Compare,
+Export); a `ViewAction.caption` gives each icon a short caption. A command whose
+button changes with the view's state stays in the view as well as in the menu:
+Upcoming's Review due (enabled only when something is due), Projection's Save as
+scenario (its label follows the scenario shown), and the Register's Reconcile
+(asset and liability accounts only). The Register also keeps its editor and new
+window buttons, because a secondary register window has no toolbar. Buttons that
+act on a table's selected row (Scheduled edit/duplicate/delete, Review
+match/reject) and controls that apply a view's own settings stay too. A window
 created while a book is already open attaches to it at construction.
 
 Every `Gtk.ColumnView` presenting book data (register, accounts, dashboard,

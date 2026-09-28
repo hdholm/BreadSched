@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a153 - 2026-09-28
+
+- **More view commands become toolbar icons (#156 follow-up).** Scheduled's New
+  Scheduled, Suggest, and New Loan, Plan's New Scenario, Scenarios, and Explore,
+  and Projection's Compare and Export are now toolbar icons while that view is
+  shown, in place of buttons inside the view. They remain in the **Actions** menu.
+  Buttons that change with the view (Review due, Save as scenario, Reconcile), the
+  Register's own buttons (a separate register window has no toolbar), and buttons
+  that act on a selected row stay where they were. Application version
+  `0.2.0a153`; native schema remains 9.
+
 ## 0.2.0a152 - 2026-09-28
 
 - **Type new entries in the register's blank row (#158).** The desktop register's

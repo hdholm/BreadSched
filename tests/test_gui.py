@@ -5261,6 +5261,46 @@ class TestViewActions:
         window.show_category("dashboard")
         assert tools() == ["win.dashboard-configure-groups"]
 
+    @pytest.mark.parametrize(
+        ("key", "icons", "gone"),
+        (
+            (
+                "scheduled",
+                ["new-scheduled", "suggest", "new-loan"],
+                ["New scheduled…", "Suggest from history…", "New loan…"],
+            ),
+            (
+                "plan",
+                ["new-scenario", "manage-scenarios", "explore-expenses"],
+                ["New scenario…", "Manage scenarios…", "Explore expenses…"],
+            ),
+            ("projection", ["compare", "export"], ["Compare with…"]),
+        ),
+    )
+    def test_stateless_view_commands_are_toolbar_icons_not_buttons(
+        self, app, window, populated_book, key, icons, gone
+    ):
+        """#156 follow-up: commands that never change with the view's state."""
+        app.open_book(populated_book)
+        window.show_category(key)
+        actions = [
+            button.get_action_name()
+            for button in _descendants(window.view_tools)
+            if isinstance(button, Gtk.Button)
+        ]
+        assert actions == [f"win.{key}-{name}" for name in icons]
+        labels = self._labels(window._views[key])
+        assert not set(gone) & set(labels)
+
+    def test_state_dependent_buttons_stay_in_their_views(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("projection")
+        assert window._views["projection"].save_button.get_parent() is not None
+        window.show_category("upcoming")
+        assert window._views["upcoming"].post_button.get_parent() is not None
+        window.show_category("register")
+        assert window._views["register"].reconcile_button.get_parent() is not None
+
     def test_every_view_action_is_in_a_menu_and_registered(self, app, window):
         from breadsched.gui.viewmanager import VIEW_ACTIONS, view_action_name
 
