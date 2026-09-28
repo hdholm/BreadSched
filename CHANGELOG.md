@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a138 - 2026-09-28
+
+- **Reviewed categorization rules.** `breadsched rules` keeps an ordered list of
+  rules that map a payee, or a description (normalized like payee matching), to
+  an income or expense category. The preview proposes a category for each
+  imported transaction still on **Uncategorized CSV** or **Uncategorized OFX**,
+  names the deciding rule, and lists any later rule that would have chosen
+  differently; accepting assigns the checked proposals in one undo step. A
+  category you chose is never replaced, split transactions are not guessed, and
+  rule changes are undoable. Rules are stored in book metadata, so native schema
+  remains 8. Application version `0.2.0a138`.
+
 ## 0.2.0a137 - 2026-09-28
 
 - **Fixed: the desktop Dashboard grew wider than the screen (#140).** A group that

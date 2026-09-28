@@ -107,6 +107,17 @@ _SERVICE_MESSAGES = {
     "import.format.unrecognized": "The file format is not recognised",
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
+    "rule.match.required": "Match a rule on either a payee or a description, not both",
+    "rule.match.empty": (
+        "A description match must contain at least one word without digits, such as the "
+        "merchant name"
+    ),
+    "rule.match.duplicate": "Another rule already matches that payee or description",
+    "rule.payee.not_found": "That payee no longer exists",
+    "rule.category.invalid": "Choose an income or expense category that is not a placeholder",
+    "rule.not_found": "That rule no longer exists",
+    "rule.position.invalid": "Choose a position within the rule list",
+    "rule.transaction.not_found": "That transaction no longer exists",
     "payee.name.required": "Enter a payee name",
     "payee.name.duplicate": "Another payee already has that name",
     "payee.match.empty": (
