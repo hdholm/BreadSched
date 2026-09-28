@@ -657,9 +657,11 @@ class PlanView(BaseView):
         for col, period in enumerate(periods, 1):
             label = Gtk.Label(label=period.label, xalign=1)
             label.add_css_class("heading")
+            label.add_css_class("numeric")
             self.grid.attach(label, col, 0, 1, 1)
         total_heading = Gtk.Label(label="Total", xalign=1)
         total_heading.add_css_class("heading")
+        total_heading.add_css_class("numeric")
         self.grid.attach(total_heading, len(periods) + 1, 0, 1, 1)
 
         row_index = 1
@@ -699,6 +701,7 @@ class PlanView(BaseView):
                         label=(value.format(parens_negative=True) if value is not None else "—"),
                         xalign=1,
                     )
+                    label.add_css_class("numeric")
                     button = Gtk.Button()
                     button.set_child(label)
                     button.set_tooltip_text(f"Explain {category.full_name} — {period.label}")
@@ -739,6 +742,7 @@ class PlanView(BaseView):
                         label=(value.format(parens_negative=True) if value is not None else "—"),
                         xalign=1,
                     )
+                    label.add_css_class("numeric")
                     button = Gtk.Button()
                     button.set_child(label)
                     button.set_tooltip_text(f"Explain {payment.name} — {period.label}")
@@ -768,6 +772,7 @@ class PlanView(BaseView):
                         label=(value.format(parens_negative=True) if value is not None else "—"),
                         xalign=1,
                     )
+                    label.add_css_class("numeric")
                     button = Gtk.Button()
                     button.set_child(label)
                     button.set_tooltip_text(f"Explain {flow.name} — {period.label}")
@@ -795,6 +800,7 @@ class PlanView(BaseView):
             ),
             xalign=1,
         )
+        label.add_css_class("numeric")
         if heading:
             label.add_css_class("heading")
         self.grid.attach(label, column, row, 1, 1)

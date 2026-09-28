@@ -124,7 +124,11 @@ class RegisterView(BaseView):
         bar.append(self.balance_label)
 
         add_button = Gtk.Button(icon_name="list-add-symbolic")
-        add_button.set_tooltip_text("Add a transaction")
+        # Quick entry below handles an ordinary two-split transaction without a
+        # dialog; this opens the full editor for anything quick entry cannot do.
+        add_button.set_tooltip_text(
+            "Open the full transaction editor (extra splits, notes, reconciliation)"
+        )
         add_button.connect("clicked", self._on_add_clicked)
         bar.append(add_button)
 
@@ -139,6 +143,7 @@ class RegisterView(BaseView):
         bar.append(self.reconcile_button)
 
         self.column_view = Gtk.ColumnView()
+        self.column_view.add_css_class("data-table")
         self.column_view.set_show_row_separators(True)
         self.column_view.connect("activate", self._on_activated)
         self.column_view.append_column(

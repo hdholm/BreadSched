@@ -29,29 +29,54 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **P0 — Installable Linux and Windows builds.** The Flatpak manifest, its
-   installed-sandbox CLI gate, desktop entry, AppStream metadata, icon, and sandboxed
-   GTK smoke already run in CI, but no installer is published yet. Remaining:
-   validate GTK file-chooser portals and printing inside the sandbox. Provide a Windows
-   installer with GTK runtime and the same book/upgrade and file workflows; test
-   clean installs, upgrades, launch, and uninstalls on supported Windows CI.
-   Publish signed/checksummed artifacts and concise installation instructions
-   only after their release gates are proven. Keep wheel/source releases available.
-2. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
-   conversion across Plan, Expense Explorer, Projection, comparisons, and prints are
-   delivered. Remaining: map imported exchange-rate and security-price quotes
-   (GnuCash, OFX, QIF) through the same reviewed quote contract; decide an explicit
-   multi-hop policy before enabling any conversion through a third currency; and
-   value securities quoted in a non-reporting currency (a direct reporting-currency
-   price is still required). Do not create a second monthly budget ledger.
-3. **P1 — Reimbursable expenses and receivables.** Track an expense and the
+1. **P1 — GTK chrome and layout cleanup.** A field report identified overlapping
+   navigation, cramped layout, no color to distinguish rows, numeric values sitting
+   against a pane's edge, and register entry that looked dialog-only. Delivered: the
+   toolbar no longer duplicates sidebar categories (Plan/Accounts/Projection were
+   both a toolbar button and a sidebar row; the sidebar is now the only place
+   category navigation lives), the sidebar starts narrower now that it carries no
+   duplicated actions, every ColumnView-based table (register, accounts, dashboard,
+   scheduled, upcoming) carries a shared `.data-table` class with subtle
+   at-rest row banding so rows are distinguishable without hovering or a second
+   read, every numeric value keeps clear space from its column or pane edge, the
+   Plan grid's numbers now share that same spacing, and the register's dialog
+   button is now labeled to make clear it is for extra splits/notes/reconciliation
+   -- an ordinary two-split entry already posts directly from the register's quick
+   entry with no dialog (delivered in 0.2.0a140). Remaining: audit every dialog for
+   unbounded growth the way issue #140 found on the Dashboard (a dialog whose
+   content is driven by book data should never grow past a sane bound); consider
+   further color to distinguish transaction/account states (reconciled, scheduled
+   vs. posted, over/under budget) without duplicating GnuCash's specific look,
+   which is not a goal; and review whether other dialogs would benefit from the
+   same width/margin discipline. GTK4 is the canonical interface, so this work is
+   GTK-first; carry a matching web adjustment only where the same confusion exists
+   there.
+2. **P1 — Reimbursable expenses and receivables.** Track an expense and the
    amount owed by an insurer, employer, or other payer as linked but distinct
    facts. Show open, partial, disputed, written-off, and settled receivables,
    their ages and expected cash dates, without counting a reimbursement as new
    income or erasing the original expense. Reconcile deposits to claims with
    exact partial amounts, refunds, and currency evidence; coordinate with FSA
    claims and preserve imported ledger splits.
-4. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
+3. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
+   development environment already installs BreadSched easily from source, while
+   Windows users have no equivalent path. Provide a Windows installer with the GTK
+   runtime and the same book/upgrade and file workflows; test clean installs,
+   upgrades, launch, and uninstalls on supported Windows CI. Publish
+   signed/checksummed artifacts and concise installation instructions only after
+   their release gates are proven. The Flatpak manifest, its installed-sandbox CLI
+   gate, desktop entry, AppStream metadata, icon, and sandboxed GTK smoke already
+   run in CI; remaining Linux work (validating GTK file-chooser portals and
+   printing inside the sandbox, and publishing the installer) follows the Windows
+   installer. Keep wheel/source releases available throughout.
+4. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
+   conversion across Plan, Expense Explorer, Projection, comparisons, and prints are
+   delivered. Remaining: map imported exchange-rate and security-price quotes
+   (GnuCash, OFX, QIF) through the same reviewed quote contract; decide an explicit
+   multi-hop policy before enabling any conversion through a third currency; and
+   value securities quoted in a non-reporting currency (a direct reporting-currency
+   price is still required). Do not create a second monthly budget ledger.
+5. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
    simple user edits, broader reporting and spending-over-time charts, then
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and

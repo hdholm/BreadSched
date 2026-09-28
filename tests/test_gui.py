@@ -2421,13 +2421,7 @@ class TestNavigationHighlight:
 
 
 class TestPlanToolbarIcon:
-    """The primary planning toolbar opens the derived event-driven Plan view."""
-
-    def test_it_switches_category(self, app, window, populated_book):
-        from breadsched.gui.viewmanager import TOOLBAR
-
-        entry = next(item for item in TOOLBAR if item[0] == "Plan")
-        assert entry[2] == "win.show-category::plan"
+    """Plan is reached through the sidebar; the toolbar no longer repeats it."""
 
     def test_plan_is_a_visible_category(self):
         assert any(key == "plan" for key, _label, _icon in CATEGORIES)
@@ -4952,3 +4946,86 @@ class TestEditorAutocomplete:
         assert dialog.propose_from_entry() is None
         assert [e.account_handle for e in dialog.splits] == accounts
         assert all(e.is_blank for e in dialog.splits)
+
+
+class TestChromeCleanup:
+    """Issue: sidebar/toolbar overlap, cramped panel, no color, numbers at the edge.
+
+    Category navigation lives in exactly one place (the sidebar); the toolbar
+    keeps only actions that are not also categories. Reclaiming that duplication
+    lets the sidebar start narrower, freeing width for the views. Numeric values
+    keep clear of the pane edge, and ColumnView-based tables can be told apart at
+    rest, not only on hover.
+    """
+
+    def test_the_toolbar_does_not_duplicate_sidebar_categories(self):
+        from breadsched.gui.viewmanager import CATEGORIES, TOOLBAR
+
+        category_keys = {key for key, _label, _icon in CATEGORIES}
+        for _label, _icon, action, _tooltip in TOOLBAR:
+            if action and action.startswith("win.show-category::"):
+                assert action.split("::", 1)[1] not in category_keys
+
+    def test_the_sidebar_starts_narrower_to_give_views_more_room(self, window):
+        assert window.paned.get_position() <= 160
+
+    def test_data_tables_carry_the_shared_zebra_striping_class(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("register")
+        window.show_category("dashboard")
+        window.show_category("scheduled")
+        window.show_category("upcoming")
+        window.show_category("accounts")
+        assert window._views["register"].column_view.has_css_class("data-table")
+        assert window._views["dashboard"].bills_view.has_css_class("data-table")
+        assert window._views["dashboard"].income_view.has_css_class("data-table")
+        assert window._views["scheduled"].definitions_view.has_css_class("data-table")
+        assert window._views["scheduled"].estimates_view.has_css_class("data-table")
+        assert window._views["upcoming"].upcoming_view.has_css_class("data-table")
+        assert window._views["accounts"].column_view.has_css_class("data-table")
+
+    def test_the_stylesheet_gives_numeric_values_and_tables_visual_distinction(self):
+        from breadsched.gui.app import STYLE_RESOURCE
+
+        stylesheet = STYLE_RESOURCE.read_text(encoding="utf-8")
+        assert "padding-right" in stylesheet
+        assert "data-table" in stylesheet and "nth-child" in stylesheet
+
+    def test_plan_grid_numbers_carry_the_numeric_class(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        child = view.grid.get_first_child()
+        found_numeric = False
+        while child is not None:
+            if child.has_css_class("numeric"):
+                found_numeric = True
+                break
+            child = child.get_next_sibling()
+        assert found_numeric
+
+    def test_the_register_add_button_is_distinguished_from_quick_entry(
+        self, app, window, populated_book
+    ):
+        """The dialog is for extra splits/notes/reconciliation; quick entry is
+        the direct, no-dialog way to add an ordinary two-split transaction."""
+        app.open_book(populated_book)
+        window.show_category("register")
+        view = window._views["register"]
+        assert view.quick_description is not None  # direct entry needs no dialog
+        # Walk to the "+" button in the toolbar row and check its tooltip text
+        # distinguishes it from quick entry rather than saying only "Add".
+        bar = view.get_first_child()
+        found = []
+
+        def walk(widget):
+            child = widget.get_first_child()
+            while child is not None:
+                tooltip = child.get_tooltip_text()
+                if tooltip:
+                    found.append(tooltip)
+                walk(child)
+                child = child.get_next_sibling()
+
+        walk(bar)
+        assert any("full transaction editor" in text for text in found)

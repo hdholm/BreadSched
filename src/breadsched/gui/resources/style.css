@@ -1,4 +1,4 @@
-.numeric        { font-feature-settings: "tnum"; }
+.numeric        { font-feature-settings: "tnum"; padding-right: 6px; }
 .negative       { color: @error_color; }
 .total-row      { font-weight: bold; }
 .dim            { opacity: 0.6; }
@@ -11,3 +11,11 @@
     padding: 12px;
 }
 .shortfall { background: alpha(@error_color, 0.15); }
+
+/* Every register/report ColumnView carries .data-table, so the same subtle
+   banding tells rows apart at rest across the app without depending on hover
+   or color the user would otherwise have to supply themselves. The selected
+   row keeps the theme's own selection color, untouched. */
+.data-table row:nth-child(even):not(:selected) {
+    background: alpha(currentColor, 0.04);
+}

@@ -3,6 +3,25 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a142 - 2026-09-28
+
+- **GTK chrome cleanup: navigation, spacing, color, and numeric margins.** A
+  field report identified real defects in the desktop chrome: the icon toolbar
+  duplicated three sidebar categories (Plan, Accounts, Projection) as separate
+  buttons pointing at the same views, the sidebar was wider than its own
+  navigation needed, ColumnView-based tables (register, accounts, dashboard,
+  scheduled, upcoming) had no way to tell rows apart at rest, and numeric values
+  sat flush against a column's or pane's edge, including in the Plan grid. Fixed:
+  the toolbar no longer repeats a sidebar category, so navigation lives in one
+  place; the sidebar's default width is narrower, returning space to the view;
+  every ColumnView-based table carries a shared `data-table` style class with
+  subtle at-rest row banding; every numeric value, including the Plan grid's,
+  keeps a small margin from its edge. The register's dialog button is now
+  labeled to say it is for extra splits, notes, or reconciliation, since an
+  ordinary two-split entry already posts directly from quick entry with no
+  dialog (delivered in 0.2.0a140). Application version `0.2.0a142`; native
+  schema remains 8.
+
 ## 0.2.0a141 - 2026-09-28
 
 - **Entry autocomplete in the desktop transaction editor.** For a new

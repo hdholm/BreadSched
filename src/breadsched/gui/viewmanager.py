@@ -23,6 +23,12 @@ __all__ = ["ViewManager"]
 
 #: (identifier, label, icon, factory path) for each category in the sidebar.
 #: (label, icon, action, tooltip); a None action inserts a separator.
+#:
+#: Category navigation lives in exactly one place, the sidebar below. A toolbar
+#: button that also switched categories duplicated that list and cost width
+#: better spent on the view, so the toolbar keeps only actions that are not
+#: also a sidebar category: open/import a book, undo/redo, start a new
+#: transaction, and print the current report.
 TOOLBAR = [
     ("Open", "document-open-symbolic", "app.open", "Open a book"),
     ("Import", "document-import-symbolic", "app.import", "Import a GnuCash book"),
@@ -31,14 +37,6 @@ TOOLBAR = [
     ("Redo", "edit-redo-symbolic", "app.redo", "Redo the last undone change"),
     (None, None, None, None),
     ("Transaction", "list-add-symbolic", "app.new-transaction", "Enter a new transaction"),
-    ("Plan", "view-grid-symbolic", "win.show-category::plan", "Show the event-driven plan"),
-    ("Accounts", "view-list-symbolic", "win.show-category::accounts", "Show the chart of accounts"),
-    (
-        "Projection",
-        "network-cellular-signal-excellent-symbolic",
-        "win.show-category::projection",
-        "Show the projection",
-    ),
     (None, None, None, None),
     ("Print", "document-print-symbolic", "win.print-view", "Print the current report"),
 ]
@@ -136,7 +134,11 @@ class ViewManager(Gtk.ApplicationWindow):
         self.set_child(outer)
 
         self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        self.paned.set_position(190)
+        # Narrow now that the sidebar is the only place category navigation lives
+        # (see TOOLBAR): it no longer needs to accommodate the toolbar's widest
+        # duplicate label, so the extra width goes to the view instead. Still a
+        # Paned, so a user with a longer account name to scan can drag it wider.
+        self.paned.set_position(150)
         self.paned.set_shrink_start_child(False)
         self.paned.set_vexpand(True)
         outer.append(self.paned)
@@ -512,11 +514,11 @@ def _tool_button(label: str, icon: str, action: str, tooltip: str) -> Gtk.Button
 def _category_row(key: str, label: str, icon: str) -> Gtk.ListBoxRow:
     row = Gtk.ListBoxRow()
     row.category_key = key
-    box = Gtk.Box(spacing=10)
-    box.set_margin_top(8)
-    box.set_margin_bottom(8)
-    box.set_margin_start(10)
-    box.set_margin_end(10)
+    box = Gtk.Box(spacing=8)
+    box.set_margin_top(6)
+    box.set_margin_bottom(6)
+    box.set_margin_start(8)
+    box.set_margin_end(8)
     box.append(Gtk.Image.new_from_icon_name(icon))
     box.append(Gtk.Label(label=label, xalign=0))
     row.set_child(box)
