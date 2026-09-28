@@ -2871,7 +2871,7 @@ class TestDerivedPlanView:
         dialog = ScenarioScheduleDialog(window, app.db, scenario)
         names = [app.db.full_name(account) for account in dialog._accounts]
         dialog.name_entry.set_text("Weekly groceries")
-        dialog.category.set_selected(names.index("Expenses:Groceries"))
+        dialog.category.set_selected(names.index("Income:Salary"))
         dialog.funding.set_selected(names.index("Assets:Checking Account"))
         dialog.amount_entry.set_text("300.00")
         dialog.frequency.set_selected(0)
@@ -5516,7 +5516,7 @@ class TestBlankEntryRow:
         assert focused[-1] is blank.num
         assert blank.handle_key(blank.num, Gdk.KEY_ISO_Left_Tab) is True
         assert focused[-1] is blank.date
-        assert blank.handle_key(blank.split_button, Gdk.KEY_Tab) is True
+        assert blank.handle_key(blank.editor_button, Gdk.KEY_Tab) is True
         assert focused[-1] is blank.date  # wraps around
 
         blank.description.set_text("Typed then abandoned")
@@ -5658,5 +5658,220 @@ class TestBlankEntryRow:
             view.blank.transfer.grab_focus = lambda: focused.append("transfer") or True
             view.blank.handle_key(view.blank.description, Gdk.KEY_Tab)
             assert focused == ["transfer"]
+        finally:
+            window.set_visible(False)
+
+
+class TestBlankRowSplits:
+    """#158 slice 2: "Split" expands the blank row into editable split lines."""
+
+    def _register(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.open_register(app.db.get_account_by_name("Assets:Checking Account").handle)
+        return window._views["register"]
+
+    @staticmethod
+    def _handle(app, name):
+        return app.db.get_account_by_name(name).handle
+
+    def _fill(self, blank, line, account, increase="", decrease="", memo=""):
+        handles = [account.handle for account in blank.accounts]
+        line.account.set_selected(handles.index(account) + 1)
+        line.memo.set_text(memo)
+        if increase:
+            line.increase.set_text(increase)
+        if decrease:
+            line.decrease.set_text(decrease)
+
+    def test_split_expands_the_row_into_lines_with_an_imbalance_line(
+        self, app, window, populated_book
+    ):
+        from breadsched.gui.views.blank_entry import BLANK, ImbalanceLine, SplitLine
+
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        rent = self._handle(app, "Expenses:Rent")
+        blank.select_transfer(rent)
+        blank.decrease.set_text("100.00")
+        before = view.column_view.get_model().get_n_items()
+
+        blank.split_toggle.set_active(True)
+
+        assert blank.split_mode is True
+        rows = blank.rows()
+        assert rows[0] is BLANK and isinstance(rows[-1], ImbalanceLine)
+        assert all(isinstance(row, SplitLine) for row in rows[1:-1])
+        # The row's two sides carry over, plus a trailing empty line.
+        assert len(blank.lines) == 3
+        assert blank.line_account(blank.lines[0]) == view.account_handle
+        assert blank.lines[0].decrease.get_text() == "100.00"
+        assert blank.line_account(blank.lines[1]) == rent
+        assert blank.lines[1].increase.get_text() == "100.00"
+        assert blank.imbalance.amount.get_text() == "Balanced"
+        assert view.column_view.get_model().get_n_items() == before + 4
+        assert not blank.transfer.get_visible()
+
+    def test_typing_in_the_last_line_adds_another(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        blank.split_toggle.set_active(True)
+        count = len(blank.lines)
+        blank.lines[-1].memo.set_text("more")
+        assert len(blank.lines) == count + 1
+        assert view.column_view.get_model().get_n_items() > count
+
+    def test_an_unbalanced_entry_is_refused_and_kept(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        blank.description.set_text("Unbalanced")
+        blank.split_toggle.set_active(True)
+        self._fill(blank, blank.lines[0], view.account_handle, decrease="100.00")
+        self._fill(blank, blank.lines[1], self._handle(app, "Expenses:Rent"), increase="60.00")
+        assert "(40.00)" in blank.imbalance.amount.get_text()
+        before = len(list(app.db.iter_transactions()))
+
+        assert blank.commit() is False
+
+        assert "out of balance by (40.00)" in view.entry_status.get_text()
+        assert blank.lines[1].increase.get_text() == "60.00"
+        assert len(list(app.db.iter_transactions())) == before
+
+    def test_three_balanced_splits_post_with_memos(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        rent = self._handle(app, "Expenses:Rent")
+        groceries = self._handle(app, "Income:Salary")
+        blank.description.set_text("Shared bill")
+        blank.split_toggle.set_active(True)
+        self._fill(blank, blank.lines[0], view.account_handle, decrease="100.00")
+        self._fill(blank, blank.lines[1], rent, increase="60.00", memo="rent part")
+        self._fill(blank, blank.lines[2], groceries, increase="40.00", memo="food part")
+        assert blank.imbalance.amount.get_text() == "Balanced"
+
+        assert blank.commit() is True
+
+        posted = next(t for t in app.db.iter_transactions() if t.description == "Shared bill")
+        assert posted.imbalance() == Money(0)
+        values = {split.account: (split.value, split.memo) for split in posted.splits}
+        assert values == {
+            view.account_handle: (Money("-100.00"), ""),
+            rent: (Money("60.00"), "rent part"),
+            groceries: (Money("40.00"), "food part"),
+        }
+        assert blank.split_mode is False
+        assert blank.lines == []
+        assert not blank.has_input()
+
+    def test_splits_must_touch_this_register(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        blank.description.set_text("Elsewhere")
+        blank.split_toggle.set_active(True)
+        self._fill(blank, blank.lines[0], self._handle(app, "Expenses:Rent"), decrease="5")
+        self._fill(blank, blank.lines[1], self._handle(app, "Income:Salary"), increase="5")
+        assert blank.commit() is False
+        assert "this register's account" in view.entry_status.get_text()
+
+    def test_collapsing_keeps_two_splits_and_refuses_more(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        rent = self._handle(app, "Expenses:Rent")
+        blank.split_toggle.set_active(True)
+        self._fill(blank, blank.lines[0], view.account_handle, decrease="30.00")
+        self._fill(blank, blank.lines[1], rent, increase="30.00")
+
+        blank.split_toggle.set_active(False)
+
+        assert blank.split_mode is False
+        assert blank.decrease.get_text() == "30.00"
+        assert blank.transfer_handle() == rent
+
+        blank.split_toggle.set_active(True)
+        self._fill(blank, blank.lines[2], self._handle(app, "Income:Salary"), increase="1")
+        blank.split_toggle.set_active(False)
+        assert blank.split_mode is True
+        assert blank.split_toggle.get_active() is True
+        assert "two remain" in view.entry_status.get_text()
+
+    def test_a_multi_split_match_is_proposed_as_lines(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        rent = self._handle(app, "Expenses:Rent")
+        groceries = self._handle(app, "Income:Salary")
+        blank.description.set_text("Warehouse club")
+        blank.split_toggle.set_active(True)
+        self._fill(blank, blank.lines[0], view.account_handle, decrease="90.00")
+        self._fill(blank, blank.lines[1], rent, increase="50.00")
+        self._fill(blank, blank.lines[2], groceries, increase="40.00")
+        assert blank.commit() is True
+
+        blank.description.set_text("Warehouse club")
+        suggestion = blank.propose()
+
+        assert suggestion is not None
+        assert blank.split_mode is True
+        accounts = [blank.line_account(line) for line in blank.lines if line.has_input()]
+        assert sorted(accounts) == sorted([view.account_handle, rent, groceries])
+        assert blank.imbalance.amount.get_text() == "Balanced"
+        assert "3 splits" in view.entry_status.get_text()
+
+    def test_tab_walks_the_split_lines_in_order(self, app, window, populated_book, monkeypatch):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        blank.split_toggle.set_active(True)
+        first = blank.lines[0]
+        focused = []
+        monkeypatch.setattr(first.account, "grab_focus", lambda: focused.append(1) or True)
+        assert blank.handle_key(first.memo, Gdk.KEY_Tab) is True
+        assert focused == [1]
+        assert first.memo in blank.fields and blank.transfer not in blank.fields
+
+    def test_the_editor_receives_every_split_line(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        rent = self._handle(app, "Expenses:Rent")
+        groceries = self._handle(app, "Income:Salary")
+        blank.description.set_text("Into the editor")
+        blank.split_toggle.set_active(True)
+        self._fill(blank, blank.lines[0], view.account_handle, decrease="10.00")
+        self._fill(blank, blank.lines[1], rent, increase="6.00", memo="six")
+        self._fill(blank, blank.lines[2], groceries, increase="4.00")
+        dialog = blank.open_split_editor()
+        try:
+            got = {
+                editor.account_handle: (editor.value(), editor.memo.get_text())
+                for editor in dialog.splits
+            }
+            assert got == {
+                view.account_handle: (Money("-10.00"), ""),
+                rent: (Money("6.00"), "six"),
+                groceries: (Money("4.00"), ""),
+            }
+        finally:
+            dialog.close()
+
+    def test_escape_clears_split_mode(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        blank = view.blank
+        blank.split_toggle.set_active(True)
+        blank.lines[0].memo.set_text("typed")
+        assert blank.handle_key(blank.lines[0].memo, Gdk.KEY_Escape) is True
+        assert blank.split_mode is False
+        assert not blank.has_input()
+        assert view.blank.rows() == [view.blank.rows()[0]]
+
+    def test_shown_split_lines_are_bound_into_the_register(self, app, window, populated_book):
+        view = self._register(app, window, populated_book)
+        window.set_default_size(1200, 700)
+        window.present()
+        context = GLib.MainContext.default()
+        try:
+            view.blank.split_toggle.set_active(True)
+            for _ in range(300):
+                context.iteration(False)
+            for line in view.blank.lines:
+                for widget in line.fields:
+                    assert widget.get_ancestor(Gtk.ColumnView) is view.column_view
+            assert view.blank.imbalance.amount.get_ancestor(Gtk.ColumnView) is view.column_view
         finally:
             window.set_visible(False)

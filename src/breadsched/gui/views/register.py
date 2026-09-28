@@ -27,13 +27,13 @@ from ._base import (  # noqa: E402
     table_section,
     unwrap,
 )
-from .blank_entry import BLANK, BlankEntry, BlankEntryRow
+from .blank_entry import BLANK, BLANK_PAYLOADS, BlankEntryRow, ImbalanceLine, SplitLine
 
 __all__ = ["RegisterView", "column_headings"]
 
 
 def _is_parent(payload) -> bool:
-    return not isinstance(payload, (SplitRow, BlankEntry))
+    return not isinstance(payload, (SplitRow, *BLANK_PAYLOADS))
 
 
 class SplitRow:
@@ -226,8 +226,24 @@ class RegisterView(BaseView):
 
     def _blank_cell(self, title: str):
         """A cell hook that shows the blank row's widget for ``title`` (#158)."""
-        widget = self.blank.cells[title]
-        return lambda payload: widget if payload is BLANK else None
+        return lambda payload: self._blank_widget(payload, title)
+
+    def _blank_widget(self, payload, title: str):
+        """The blank row's, or one of its split lines', widget for a column."""
+        if payload is BLANK:
+            return self.blank.cells.get(title)
+        if isinstance(payload, (SplitLine, ImbalanceLine)):
+            # A column a split line does not use shows its (empty) label.
+            return payload.blank_cells.get(title)
+        return None
+
+    def update_blank_rows(self) -> None:
+        """Show the blank row's current lines without rebuilding the register."""
+        store = getattr(self, "blank_store", None)
+        if store is None:
+            return
+        rows = [Row(payload) for payload in self.blank.rows()]
+        store.splice(0, store.get_n_items(), rows)
 
     def set_entry_status(self, text: str, *, error: bool = False) -> None:
         self.entry_status.set_text(text)
@@ -285,11 +301,12 @@ class RegisterView(BaseView):
             store.append(Row(row))
         tree = Gtk.TreeListModel.new(store, False, False, self._children_of)
         # The blank row joins after sorting and filtering, so it stays last (#158).
-        blank = Gio.ListStore.new(Row)
-        blank.append(Row(BLANK))
+        self.blank_store = Gio.ListStore.new(Row)
+        for payload in self.blank.rows():
+            self.blank_store.append(Row(payload))
         parts = Gio.ListStore.new(Gio.ListModel)
         parts.append(sorted_model(self.column_view, tree))
-        parts.append(blank)
+        parts.append(self.blank_store)
         selection = Gtk.SingleSelection(model=Gtk.FlattenListModel.new(parts))
         selection.set_autoselect(False)
         selection.set_selected(Gtk.INVALID_LIST_POSITION)
@@ -385,9 +402,10 @@ class RegisterView(BaseView):
             host = item.get_child()
             expander = host.label
             payload = unwrap(tree_row)
-            if payload is BLANK:
+            hosted = self._blank_widget(payload, "Description")
+            if hosted is not None:
                 expander.set_list_row(None)
-                host_widget(host, self.blank.description)
+                host_widget(host, hosted)
                 return
             host_widget(host, None)
             expander.set_list_row(tree_row)
@@ -481,7 +499,7 @@ class RegisterView(BaseView):
         if tree_row is None:
             return
         payload = unwrap(tree_row)
-        if payload is BLANK:
+        if isinstance(payload, BLANK_PAYLOADS):
             return
         self.edit_transaction(payload.transaction)
 

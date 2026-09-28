@@ -3,14 +3,16 @@
 The last row of every GTK register is a blank transaction. It is a sentinel, not a
 database object: its cells host one persistent set of entry widgets owned by
 :class:`BlankEntryRow`, so a value typed there survives the register repainting
-around it. Committing builds exactly two balancing splits and saves them through
-the ordinary ``save_transaction`` service; it is not a parallel transaction model.
-Anything more than two splits goes through "Split…" to the full editor.
+around it. Committing builds balancing splits and saves them through the ordinary
+``save_transaction`` service; it is not a parallel transaction model. The row holds
+a two-split entry directly; "Split" expands it into one editable line per split
+beneath it, with an imbalance line that must reach zero before it commits.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from datetime import date
 
 from ...gen.lib.amount import Amount
@@ -27,7 +29,7 @@ from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gdk, GLib, Gtk
 
-__all__ = ["BLANK", "BlankEntry", "BlankEntryRow"]
+__all__ = ["BLANK", "BLANK_PAYLOADS", "BlankEntry", "BlankEntryRow", "ImbalanceLine", "SplitLine"]
 
 
 class BlankEntry:
@@ -40,6 +42,76 @@ class BlankEntry:
 
 
 BLANK = BlankEntry()
+
+
+def _amount_entry() -> Gtk.Entry:
+    entry = Gtk.Entry(placeholder_text="0.00", xalign=1)
+    entry.set_width_chars(9)
+    entry.add_css_class("numeric")
+    return entry
+
+
+class SplitLine:
+    """One editable split beneath the blank row in split mode.
+
+    Its amounts are in the split's own direction: Increase adds to the line's
+    account the way the register's Increase column adds to the register account.
+    """
+
+    debit = credit = None
+    account_name = ""
+
+    def __init__(self, row: BlankEntryRow) -> None:
+        self.memo = Gtk.Entry(placeholder_text="Memo")
+        self.memo.set_hexpand(True)
+        self.account = Gtk.DropDown()
+        self.account.set_hexpand(True)
+        self.increase = _amount_entry()
+        self.decrease = _amount_entry()
+        self.fields: list[Gtk.Widget] = [self.memo, self.account, self.increase, self.decrease]
+        #: Column title → the widget hosted in that column for this line.
+        self.blank_cells: dict[str, Gtk.Widget] = {
+            "Description": self.memo,
+            "Transfer": self.account,
+            "Increase": self.increase,
+            "Decrease": self.decrease,
+        }
+        row.attach_line(self)
+
+    def value_text(self) -> tuple[str, int]:
+        """The typed amount text and its sign (+1 increase, -1 decrease)."""
+        increase = self.increase.get_text().strip()
+        if increase:
+            return increase, 1
+        return self.decrease.get_text().strip(), -1
+
+    def has_input(self) -> bool:
+        return bool(
+            self.memo.get_text().strip()
+            or self.increase.get_text().strip()
+            or self.decrease.get_text().strip()
+        )
+
+
+class ImbalanceLine:
+    """The line under the splits that shows how far they are from balancing."""
+
+    debit = credit = None
+    account_name = ""
+
+    def __init__(self) -> None:
+        self.caption = Gtk.Label(label="Imbalance", xalign=0)
+        self.caption.add_css_class("dim")
+        self.amount = Gtk.Label(xalign=1)
+        self.amount.add_css_class("numeric")
+        self.blank_cells: dict[str, Gtk.Widget] = {
+            "Description": self.caption,
+            "Balance": self.amount,
+        }
+
+
+#: Payloads that belong to the blank row rather than to the ledger.
+BLANK_PAYLOADS = (BlankEntry, SplitLine, ImbalanceLine)
 
 #: Answers to the unsaved-input question, in AlertDialog button order.
 CANCEL, DISCARD, SAVE = 0, 1, 2
@@ -57,7 +129,12 @@ class BlankEntryRow:
         #: The date to offer next: the last one entered in this register, else today.
         self.last_date: date | None = None
         self.transfers: list = []
+        #: Every postable, visible account, for split lines (the register's too).
+        self.accounts: list = []
         self.payees: list = []
+        self.split_mode = False
+        self.lines: list[SplitLine] = []
+        self.imbalance = ImbalanceLine()
         self._syncing = False
         self._transfer_touched = False
         self._enabled = True
@@ -72,21 +149,33 @@ class BlankEntryRow:
         self.transfer = Gtk.DropDown()
         self.transfer.set_hexpand(True)
         self.transfer.set_tooltip_text("Other side of this two-split transaction")
-        self.increase = Gtk.Entry(placeholder_text="0.00", xalign=1)
-        self.increase.set_width_chars(9)
-        self.increase.add_css_class("numeric")
-        self.decrease = Gtk.Entry(placeholder_text="0.00", xalign=1)
-        self.decrease.set_width_chars(9)
-        self.decrease.add_css_class("numeric")
-        self.split_button = Gtk.Button(label="Split…")
-        self.split_button.set_has_frame(False)
-        self.split_button.set_tooltip_text(
-            "Open this entry in the full editor for more splits, notes, or a claim"
+        self.increase = _amount_entry()
+        self.decrease = _amount_entry()
+        self.split_toggle = Gtk.ToggleButton(label="Split")
+        self.split_toggle.set_has_frame(False)
+        self.split_toggle.set_tooltip_text("Enter this transaction as several splits, in place")
+        self.split_toggle.connect("toggled", self._on_split_toggled)
+        self.editor_button = Gtk.Button(icon_name="document-edit-symbolic")
+        self.editor_button.set_has_frame(False)
+        self.editor_button.set_tooltip_text(
+            "Open this entry in the full editor for notes, a claim, or other details"
         )
-        self.split_button.connect("clicked", lambda *_: self.open_split_editor())
+        self.editor_button.connect("clicked", lambda *_: self.open_split_editor())
+        self.actions = Gtk.Box(spacing=2)
+        self.actions.append(self.split_toggle)
+        self.actions.append(self.editor_button)
 
-        #: Tab order, which is also the column order.
-        self.fields: list[Gtk.Widget] = [
+        for widget, name in (
+            (self.date, "date"),
+            (self.num, "number"),
+            (self.description, "description"),
+            (self.payee, "payee"),
+            (self.transfer, "transfer account"),
+            (self.split_toggle, "split in place"),
+            (self.editor_button, "full editor"),
+        ):
+            _label(widget, f"New transaction {name}")
+        for widget in (
             self.date,
             self.num,
             self.description,
@@ -94,26 +183,13 @@ class BlankEntryRow:
             self.transfer,
             self.increase,
             self.decrease,
-            self.split_button,
-        ]
-        for widget, name in (
-            (self.date, "date"),
-            (self.num, "number"),
-            (self.description, "description"),
-            (self.payee, "payee"),
-            (self.transfer, "transfer account"),
-            (self.split_button, "split editor"),
+            self.split_toggle,
+            self.editor_button,
         ):
-            _label(widget, f"New transaction {name}")
-        for widget in self.fields:
-            keys = Gtk.EventControllerKey()
-            keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
-            keys.connect("key-pressed", self._on_key, widget)
-            widget.add_controller(keys)
+            self._keys(widget)
 
         # Typing in one amount clears the other, so the direction is never ambiguous.
-        self.increase.connect("changed", self._on_amount_changed, self.decrease)
-        self.decrease.connect("changed", self._on_amount_changed, self.increase)
+        self._pair(self.increase, self.decrease)
         self.transfer.connect("notify::selected", self._on_transfer_changed)
         self.payee.connect("notify::selected", self._on_payee_changed)
         leave = Gtk.EventControllerFocus()
@@ -129,8 +205,221 @@ class BlankEntryRow:
             "Transfer": self.transfer,
             "Increase": self.increase,
             "Decrease": self.decrease,
-            "Balance": self.split_button,
+            "Balance": self.actions,
         }
+
+    @contextmanager
+    def _quiet(self) -> Iterator[None]:
+        """Change widgets without treating the change as the user's own input."""
+        previous = self._syncing
+        self._syncing = True
+        try:
+            yield
+        finally:
+            self._syncing = previous
+
+    def _keys(self, widget: Gtk.Widget) -> None:
+        keys = Gtk.EventControllerKey()
+        keys.set_propagation_phase(Gtk.PropagationPhase.CAPTURE)
+        keys.connect("key-pressed", self._on_key, widget)
+        widget.add_controller(keys)
+
+    def _pair(self, increase: Gtk.Entry, decrease: Gtk.Entry) -> None:
+        increase.connect("changed", self._on_amount_changed, decrease)
+        decrease.connect("changed", self._on_amount_changed, increase)
+
+    @property
+    def fields(self) -> list[Gtk.Widget]:
+        """Tab order, which is also the column order, line by line in split mode."""
+        head: list[Gtk.Widget] = [self.date, self.num, self.description, self.payee]
+        if self.split_mode:
+            body = [widget for line in self.lines for widget in line.fields]
+        else:
+            body = [self.transfer, self.increase, self.decrease]
+        return [*head, *body, self.split_toggle, self.editor_button]
+
+    def rows(self) -> list:
+        """The payloads the register shows for the blank row, top to bottom."""
+        if not self.split_mode:
+            return [BLANK]
+        return [BLANK, *self.lines, self.imbalance]
+
+    # ------------------------------------------------------------ split lines
+
+    def attach_line(self, line: SplitLine) -> None:
+        number = len(self.lines) + 1
+        for widget, name in (
+            (line.memo, "memo"),
+            (line.account, "account"),
+            (line.increase, "increase"),
+            (line.decrease, "decrease"),
+        ):
+            _label(widget, f"New split {number} {name}")
+            self._keys(widget)
+        self._pair(line.increase, line.decrease)
+        for entry in (line.memo, line.increase, line.decrease):
+            entry.connect("changed", self._on_line_changed)
+        line.account.connect("notify::selected", self._on_line_changed)
+        self._fill_accounts(line.account)
+
+    def _fill_accounts(self, picker: Gtk.DropDown, handle: str | None = None) -> None:
+        names = Gtk.StringList()
+        names.append("(choose account)")
+        db = self.view.db
+        for account in self.accounts:
+            names.append(db.full_name(account) if db is not None else account.name)
+        with self._quiet():
+            picker.set_model(names)
+            handles = [account.handle for account in self.accounts]
+            picker.set_selected(handles.index(handle) + 1 if handle in handles else 0)
+
+    @staticmethod
+    def _line_handle(row: BlankEntryRow, line: SplitLine) -> str | None:
+        index = line.account.get_selected() - 1
+        if 0 <= index < len(row.accounts):
+            return row.accounts[index].handle
+        return None
+
+    def line_account(self, line: SplitLine) -> str | None:
+        return self._line_handle(self, line)
+
+    def _new_line(self, account: str | None = None, value: Money | None = None, memo: str = ""):
+        line = SplitLine(self)
+        self.lines.append(line)
+        with self._quiet():
+            if account is not None:
+                self._fill_accounts(line.account, account)
+            line.memo.set_text(memo)
+            if value is not None and value != 0:
+                target = line.increase if value > 0 else line.decrease
+                target.set_text(abs(value).format())
+        return line
+
+    def _on_line_changed(self, *_args) -> None:
+        if self._syncing:
+            return
+        # A trailing empty line is always ready for the next split.
+        if self.lines and (
+            self.lines[-1].has_input() or self.line_account(self.lines[-1]) is not None
+        ):
+            self._new_line()
+            self.view.update_blank_rows()
+        self.update_imbalance()
+
+    def line_value(self, line: SplitLine) -> Money | None:
+        """A line's signed value; None when blank. Raises ``ValueError`` if unreadable."""
+        text, sign = line.value_text()
+        if not text:
+            return None
+        try:
+            value = Money(parse_user_amount(text))
+        except (ValueError, ArithmeticError) as error:
+            raise ValueError(text) from error
+        return value if sign > 0 else -value
+
+    def residual(self) -> Money:
+        total = Money(0)
+        for line in self.lines:
+            try:
+                value = self.line_value(line)
+            except ValueError:
+                continue
+            if value is not None:
+                total = total + value
+        return total
+
+    def update_imbalance(self) -> None:
+        residual = self.residual()
+        self.imbalance.amount.set_text(
+            residual.format(parens_negative=True) if residual else "Balanced"
+        )
+        if residual:
+            self.imbalance.amount.add_css_class("negative")
+        else:
+            self.imbalance.amount.remove_css_class("negative")
+
+    def set_split_mode(self, split: bool, *, lines=None) -> bool:
+        """Expand into split lines, or collapse back; False when that would lose splits.
+
+        Expanding carries the row's amount and transfer into the first two lines
+        unless ``lines`` gives (account, value, memo) triples to start from.
+        Collapsing is only possible while at most two lines hold a split.
+        """
+        if split == self.split_mode:
+            return True
+        view = self.view
+        if split:
+            self.lines = []
+            if lines is None:
+                try:
+                    amount = self.signed_amount()
+                except ValueError:
+                    amount = None
+                lines = [(view.account_handle, amount, ""), (self.transfer_handle(), None, "")]
+                if amount is not None:
+                    lines[1] = (self.transfer_handle(), -amount, "")
+            for account, value, memo in lines:
+                self._new_line(account, value, memo)
+            self._new_line()
+        else:
+            filled = [
+                line
+                for line in self.lines
+                if line.has_input() or self.line_account(line) is not None
+            ]
+            if len(filled) > 2:
+                view.set_entry_status(
+                    "Remove splits until two remain, or use the full editor.", error=True
+                )
+                self._set_toggle(True)
+                return False
+            mine = next(
+                (line for line in filled if self.line_account(line) == view.account_handle),
+                None,
+            )
+            if filled and mine is None:
+                view.set_entry_status(
+                    "Put one split in this register's account before leaving split mode.",
+                    error=True,
+                )
+                self._set_toggle(True)
+                return False
+            other = next((line for line in filled if line is not mine), None)
+            try:
+                amount = self.line_value(mine) if mine is not None else None
+                if amount is None and other is not None:
+                    other_value = self.line_value(other)
+                    amount = -other_value if other_value is not None else None
+            except ValueError:
+                amount = None
+            with self._quiet():
+                for entry in (self.increase, self.decrease):
+                    entry.set_text("")
+                if amount:
+                    target = self.increase if amount > 0 else self.decrease
+                    target.set_text(abs(amount).format())
+            other_account = self.line_account(other) if other is not None else None
+            if other_account is not None:
+                self.select_transfer(other_account)
+                self._transfer_touched = True
+            self.lines = []
+        self.split_mode = split
+        self._set_toggle(split)
+        for widget in (self.transfer, self.increase, self.decrease):
+            widget.set_visible(not split)
+        self.update_imbalance()
+        view.update_blank_rows()
+        return True
+
+    def _set_toggle(self, active: bool) -> None:
+        with self._quiet():
+            self.split_toggle.set_active(active)
+
+    def _on_split_toggled(self, toggle: Gtk.ToggleButton) -> None:
+        if self._syncing:
+            return
+        if self.set_split_mode(toggle.get_active()) and toggle.get_active() and self.lines:
+            self.lines[0].memo.grab_focus()
 
     # ----------------------------------------------------------------- state
 
@@ -140,20 +429,24 @@ class BlankEntryRow:
     def has_input(self) -> bool:
         """Whether anything was typed that leaving would lose."""
         typed = (self.num, self.description, self.increase, self.decrease)
-        return any(entry.get_text().strip() for entry in typed) or self.payee.get_selected() > 0
+        return (
+            any(entry.get_text().strip() for entry in typed)
+            or self.payee.get_selected() > 0
+            or any(line.has_input() for line in self.lines)
+        )
 
     def clear(self) -> None:
         """Reset every field to its default, keeping the date last entered."""
-        self._syncing = True
-        try:
+        if self.split_mode:
+            self.lines = []
+            self.set_split_mode(False)
+        with self._quiet():
             self.date.set_text(self.default_date().isoformat())
             for entry in (self.num, self.description, self.increase, self.decrease):
                 entry.set_text("")
             self.payee.set_selected(0)
             if self.transfers:
                 self.transfer.set_selected(0)
-        finally:
-            self._syncing = False
         self._transfer_touched = False
 
     def set_headings(self, increase: str, decrease: str) -> None:
@@ -175,8 +468,7 @@ class BlankEntryRow:
         """Rebuild the transfer and payee pickers, keeping their selections."""
         chosen_transfer = self.transfer_handle()
         chosen_payee = self.payee_handle()
-        self._syncing = True
-        try:
+        with self._quiet():
             self.transfers = sorted(
                 (
                     account
@@ -192,6 +484,17 @@ class BlankEntryRow:
             for account in self.transfers:
                 names.append(db.full_name(account))
             self.transfer.set_model(names)
+            chosen_lines = [self.line_account(line) for line in self.lines]
+            self.accounts = sorted(
+                (
+                    account
+                    for account in db.iter_accounts()
+                    if not account.is_root and not account.placeholder and not account.hidden
+                ),
+                key=db.full_name,
+            )
+            for line, handle in zip(self.lines, chosen_lines, strict=True):
+                self._fill_accounts(line.account, handle)
             handles = [account.handle for account in self.transfers]
             if handles:
                 self.transfer.set_selected(
@@ -207,8 +510,6 @@ class BlankEntryRow:
             self.payee.set_selected(
                 payee_handles.index(chosen_payee) + 1 if chosen_payee in payee_handles else 0
             )
-        finally:
-            self._syncing = False
         if chosen_transfer not in [account.handle for account in self.transfers]:
             self._transfer_touched = False
 
@@ -228,11 +529,8 @@ class BlankEntryRow:
         handles = [account.handle for account in self.transfers]
         if handle not in handles:
             return False
-        self._syncing = True
-        try:
+        with self._quiet():
             self.transfer.set_selected(handles.index(handle))
-        finally:
-            self._syncing = False
         return True
 
     # -------------------------------------------------------------- keyboard
@@ -256,8 +554,8 @@ class BlankEntryRow:
             target.grab_focus()
             return True
         if keyval in (Gdk.KEY_Return, Gdk.KEY_KP_Enter, Gdk.KEY_ISO_Enter):
-            if widget is self.split_button:
-                return False  # Enter on the button presses it
+            if widget in (self.split_toggle, self.editor_button):
+                return False  # Enter on a button presses it
             if widget is self.description:
                 self.propose()
             self.commit()
@@ -274,11 +572,8 @@ class BlankEntryRow:
     def _on_amount_changed(self, entry: Gtk.Entry, other: Gtk.Entry) -> None:
         if self._syncing or not entry.get_text():
             return
-        self._syncing = True
-        try:
+        with self._quiet():
             other.set_text("")
-        finally:
-            self._syncing = False
 
     def _on_transfer_changed(self, *_args) -> None:
         if not self._syncing:
@@ -310,12 +605,26 @@ class BlankEntryRow:
         if suggestion is None:
             return None
         source = f"{suggestion.when.isoformat()} “{suggestion.description}”"
-        if len(suggestion.splits) > 2:
-            view.set_entry_status(
-                f"{source} has {len(suggestion.splits)} splits; choose Split… to start from it."
-            )
-            return suggestion
         filled: list[str] = []
+        if self.split_mode or len(suggestion.splits) > 2:
+            # Split lines take the whole proposal, but only while none is typed in.
+            lines_empty = not any(line.has_input() for line in self.lines)
+            main_empty = not (self.increase.get_text().strip() or self.decrease.get_text().strip())
+            if lines_empty and main_empty and not self._transfer_touched:
+                if self.split_mode:
+                    self.lines = []
+                    self.split_mode = False
+                self.set_split_mode(
+                    True,
+                    lines=[(split.account, split.value, split.memo) for split in suggestion.splits],
+                )
+                filled.append(f"{len(suggestion.splits)} splits")
+            self._propose_payee(suggestion, payee, filled)
+            if filled:
+                view.set_entry_status(
+                    f"Proposed from {source}: {', '.join(filled)}. Edit anything, then press Enter."
+                )
+            return suggestion
         amounts_empty = not (self.increase.get_text().strip() or self.decrease.get_text().strip())
         if (
             not self._transfer_touched
@@ -325,26 +634,24 @@ class BlankEntryRow:
             filled.append(view.db.full_name(suggestion.transfer_account))
         if amounts_empty and suggestion.amount is not None:
             target = self.increase if suggestion.amount > 0 else self.decrease
-            self._syncing = True
-            try:
+            with self._quiet():
                 target.set_text(abs(suggestion.amount).format())
-            finally:
-                self._syncing = False
             filled.append(abs(suggestion.amount).format())
-        if payee is None and suggestion.payee is not None:
-            handles = [item.handle for item in self.payees]
-            if suggestion.payee in handles:
-                self._syncing = True
-                try:
-                    self.payee.set_selected(handles.index(suggestion.payee) + 1)
-                finally:
-                    self._syncing = False
-                filled.append(self.payees[handles.index(suggestion.payee)].name)
+        self._propose_payee(suggestion, payee, filled)
         if filled:
             view.set_entry_status(
                 f"Proposed from {source}: {', '.join(filled)}. Edit anything, then press Enter."
             )
         return suggestion
+
+    def _propose_payee(self, suggestion, chosen: str | None, filled: list[str]) -> None:
+        if chosen is not None or suggestion.payee is None:
+            return
+        handles = [item.handle for item in self.payees]
+        if suggestion.payee in handles:
+            with self._quiet():
+                self.payee.set_selected(handles.index(suggestion.payee) + 1)
+            filled.append(self.payees[handles.index(suggestion.payee)].name)
 
     def _fail(self, message: str, widget: Gtk.Widget) -> None:
         self.view.set_entry_status(message, error=True)
@@ -366,14 +673,12 @@ class BlankEntryRow:
         return None
 
     def commit(self) -> bool:
-        """Save the row as one balanced two-split transaction; True on success."""
+        """Save the row as one balanced transaction; True on success."""
         view = self.view
         if view.db is None or view.account_handle is None or not self._enabled:
             return False
         current = view.db.get_account(view.account_handle)
-        transfer = self.transfer_handle()
-        if current is None or current.hidden or transfer is None:
-            self._fail("Choose a visible transfer account.", self.transfer)
+        if current is None or current.hidden:
             return False
         try:
             when = date.fromisoformat(self.date.get_text().strip())
@@ -384,24 +689,94 @@ class BlankEntryRow:
         if not description:
             self._fail("Enter a description.", self.description)
             return False
+        currency = transaction_currency(view.db)
+        if self.split_mode:
+            splits = self._line_splits(currency)
+            if splits is None:
+                return False
+            amount = sum(
+                (split.value.value for split in splits if split.account == current.handle),
+                Money(0),
+            )
+        else:
+            two = self._two_splits(current.handle, currency)
+            if two is None:
+                return False
+            splits, amount = two
+        return self._save(when, description, currency, splits, amount)
+
+    def _line_splits(self, currency: str) -> tuple[TransactionSplitInput, ...] | None:
+        """Split inputs from the lines, or None after reporting what is wrong."""
+        view = self.view
+        splits: list[TransactionSplitInput] = []
+        for line in self.lines:
+            account = self.line_account(line)
+            try:
+                value = self.line_value(line)
+            except ValueError:
+                self._fail("Enter a valid amount.", line.increase)
+                return None
+            if value is None and account is None:
+                if line.memo.get_text().strip():
+                    self._fail("Choose an account for this split.", line.account)
+                    return None
+                continue
+            if account is None:
+                self._fail("Choose an account for this split.", line.account)
+                return None
+            if value is None or value == 0:
+                self._fail("Enter an amount for this split.", line.increase)
+                return None
+            splits.append(
+                TransactionSplitInput(
+                    account, Amount(value, currency), memo=line.memo.get_text().strip()
+                )
+            )
+        if len(splits) < 2:
+            self._fail("A transaction needs at least two splits.", self.lines[0].account)
+            return None
+        residual = self.residual()
+        if residual:
+            self._fail(
+                f"The splits are out of balance by {residual.format(parens_negative=True)}.",
+                self.lines[-1].memo,
+            )
+            return None
+        if not any(split.account == view.account_handle for split in splits):
+            self._fail("One split must be in this register's account.", self.lines[0].account)
+            return None
+        return tuple(splits)
+
+    def _two_splits(self, handle: str, currency: str):
+        """The two splits of an ordinary entry and its signed amount, or None."""
+        view = self.view
+        transfer = self.transfer_handle()
+        if transfer is None:
+            self._fail("Choose a visible transfer account.", self.transfer)
+            return None
         typed = self._amount_entry()
         text = typed.get_text().strip()
         if not text:
             heading = view.debit_column.get_title()
             other = view.credit_column.get_title()
             self._fail(f"Enter an amount under {heading} or {other}.", typed)
-            return False
+            return None
         try:
             value = Money(parse_user_amount(text))
         except (ValueError, ArithmeticError):
             self._fail("Enter a valid amount.", typed)
-            return False
+            return None
         if value <= 0:
             self._fail("Amount must be greater than zero.", typed)
-            return False
+            return None
         amount = value if typed is self.increase else -value
+        return (
+            TransactionSplitInput(handle, Amount(amount, currency)),
+            TransactionSplitInput(transfer, Amount(-amount, currency)),
+        ), amount
 
-        currency = transaction_currency(view.db)
+    def _save(self, when: date, description: str, currency: str, splits, amount: Money) -> bool:
+        view = self.view
         payee = self.payee_handle()
         # The new entry's repaint scrolls to the end, where the blank row is (#157).
         view.scroll_to_end_on_refresh()
@@ -415,10 +790,7 @@ class BlankEntryRow:
                     currency=currency,
                     payee=payee,
                     set_payee=payee is not None,
-                    splits=(
-                        TransactionSplitInput(current.handle, Amount(amount, currency)),
-                        TransactionSplitInput(transfer, Amount(-amount, currency)),
-                    ),
+                    splits=tuple(splits),
                 )
             ),
         )
@@ -429,7 +801,11 @@ class BlankEntryRow:
         self.last_date = when
         heading = view.debit_column.get_title() if amount > 0 else view.credit_column.get_title()
         self.clear()
-        view.set_entry_status(f"Posted {description}: {abs(amount).format()} {heading}.")
+        view.set_entry_status(
+            f"Posted {description}: {abs(amount).format()} {heading}."
+            if amount
+            else f"Posted {description}."
+        )
         GLib.idle_add(lambda: self.date.grab_focus() and GLib.SOURCE_REMOVE)
         return True
 
@@ -450,7 +826,7 @@ class BlankEntryRow:
         except ValueError:
             when = self.default_date()
         try:
-            amount = self.signed_amount()
+            amount = None if self.split_mode else self.signed_amount()
         except ValueError:
             amount = None
         dialog = TransactionDialog(
@@ -459,12 +835,24 @@ class BlankEntryRow:
             default_account=view.account_handle,
             default_date=when,
         )
+        lines = None
+        if self.split_mode:
+            lines = []
+            for line in self.lines:
+                account = self.line_account(line)
+                try:
+                    value = self.line_value(line)
+                except ValueError:
+                    value = None
+                if account is not None or value is not None:
+                    lines.append((account, value, line.memo.get_text().strip()))
         dialog.prefill(
             description=self.description.get_text().strip(),
             num=self.num.get_text().strip(),
             payee=self.payee_handle(),
             transfer=self.transfer_handle(),
             amount=amount,
+            splits=lines,
         )
 
         def on_close(*_args) -> bool:

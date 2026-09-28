@@ -31,9 +31,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
    PR per issue:
-   - Register blank entry row (#158): slice 2, in-place split entry, then slice 3,
-     in-place editing of existing rows (DESIGN.md, "Blank entry row"). The web
-     register gets the same interaction afterward.
+   - Register blank entry row (#158): slice 3, in-place editing of existing rows
+     (DESIGN.md, "Blank entry row"). The web register gets the same interaction
+     afterward.
    Also audit every dialog for unbounded growth like #140. GTK4 is canonical;
    carry a web change only where the same problem exists there. Matching
    GnuCash's appearance is not a goal; its blank register row is the one explicit
