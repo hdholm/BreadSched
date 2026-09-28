@@ -26,6 +26,7 @@ from ..planning_context import (
     notify_planning_scenario_changed,
     persist_baseline_assumptions,
 )
+from ..widgets.bounded import scroll_body
 
 __all__ = ["ScenarioManagerDialog"]
 
@@ -160,6 +161,8 @@ class ScenarioManagerDialog(Gtk.Window):
         self.save_button.connect("clicked", self._on_save)
         buttons.append(self.save_button)
         box.append(buttons)
+        # The form scrolls; its buttons stay on screen (dialog audit, #148).
+        scroll_body(self)
 
         self._reload()
 

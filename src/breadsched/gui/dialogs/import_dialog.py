@@ -129,7 +129,8 @@ class ImportDialog(Gtk.Window):
         self.result_view.set_valign(Gtk.Align.START)
         scroller = Gtk.ScrolledWindow(child=self.result_view)
         scroller.set_vexpand(True)
-        scroller.set_min_content_height(320)
+        # The result grows into the window's height; it need not demand it (#148).
+        scroller.set_min_content_height(200)
         scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
         box.append(scroller)
 

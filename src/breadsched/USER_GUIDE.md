@@ -172,7 +172,8 @@ In the desktop application each table has its own column chooser (the "⋯" butt
 at the right of that table's heading); its tooltip names the table, and the columns
 you hide are remembered. When you make the window narrower, text columns such as
 descriptions shorten (with "…") so every column, including every amount, stays
-visible.
+visible. On a small screen, a long dialog scrolls its form, and its Save and
+Cancel buttons stay at the bottom.
 
 Each view's own commands are in the **Actions** menu under that view's name, and
 the common ones also appear as toolbar icons while that view is shown: for example

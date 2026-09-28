@@ -6062,3 +6062,107 @@ class TestEditInPlace:
             assert view.blank.description.get_ancestor(Gtk.ColumnView) is view.column_view
         finally:
             window.set_visible(False)
+
+
+class TestDialogsFitTheScreen:
+    """Dialog audit (#148, like #140): no dialog demands more than a laptop screen.
+
+    A book with very long account names, descriptions, and memos, plus many
+    payees and a many-split transaction, must not raise any dialog's minimum
+    size past what a 1366x768 screen shows with its title bar and panel.
+    """
+
+    MAX_WIDTH = 800
+    MAX_HEIGHT = 600
+
+    @pytest.fixture
+    def stressed(self, app, populated_book):
+        from breadsched.gen.lib import Account, AccountType, Split, Transaction
+        from breadsched.gen.services.payees import SavePayee, save_payee
+
+        app.open_book(populated_book)
+        db = app.db
+        long_account = Account(name="Very long account name " * 12, atype=AccountType.EXPENSE)
+        long_account.parent = db.root_account().handle
+        checking = db.get_account_by_name("Assets:Checking Account")
+        long_entry = Transaction.simple(
+            date(2026, 2, 1),
+            "Long description " * 20,
+            long_account.handle,
+            checking.handle,
+            Money("5"),
+        )
+        long_entry.splits[0].memo = "long memo " * 30
+        many = Transaction(post_date=date(2026, 3, 1), description="Many splits")
+        for _ in range(40):
+            many.add_split(Split(long_account.handle, Money("1")))
+        many.add_split(Split(checking.handle, Money("-40")))
+        with db.transaction("Stress fixture") as txn:
+            db.add_account(long_account, txn)
+            db.add_transaction(long_entry, txn)
+            db.add_transaction(many, txn)
+        for index in range(150):
+            save_payee(db, SavePayee(name=f"Payee {index}"))
+        return db, long_account, checking, many
+
+    DIALOGS = (
+        ("account_dialog", "AccountDialog", "account"),
+        ("csv_import_dialog", "CsvImportDialog", None),
+        ("dashboard_dialog", "DashboardDialog", None),
+        ("exchange_rate_dialog", "ExchangeRateDialog", None),
+        ("fsa_claims_dialog", "FsaClaimsDialog", None),
+        ("historical_estimates_dialog", "HistoricalEstimatesDialog", None),
+        ("import_dialog", "ImportDialog", None),
+        ("loan_dialog", "LoanDialog", None),
+        ("payee_dialog", "PayeesDialog", None),
+        ("reconciliation_dialog", "ReconciliationDialog", "checking"),
+        ("rules_dialog", "RulesDialog", None),
+        ("scenario_dialog", "SaveScenarioDialog", "scenario"),
+        ("scenario_manager_dialog", "ScenarioManagerDialog", "manager"),
+        ("scenario_schedule_dialog", "ScenarioScheduleDialog", "scenario"),
+        ("schedule_dialog", "ScheduleDialog", None),
+        ("security_price_dialog", "SecurityPriceDialog", None),
+        ("transaction_dialog", "TransactionDialog", "transaction"),
+    )
+
+    @pytest.mark.parametrize(("module", "name", "extra"), DIALOGS)
+    def test_the_minimum_size_stays_on_a_laptop_screen(self, window, stressed, module, name, extra):
+        import importlib
+
+        from breadsched.gen.lib.scenario import Scenario
+
+        db, long_account, checking, many = stressed
+        args = {
+            None: (),
+            "account": (long_account,),
+            "checking": (checking,),
+            "scenario": (Scenario(name="Stress"),),
+            "manager": (window,),
+        }.get(extra, ())
+        cls = getattr(importlib.import_module(f"breadsched.gui.dialogs.{module}"), name)
+        dialog = (
+            cls(window, db, transaction=many) if extra == "transaction" else cls(window, db, *args)
+        )
+        try:
+            child = dialog.get_child()
+            width = child.measure(Gtk.Orientation.HORIZONTAL, -1)[0]
+            height = child.measure(Gtk.Orientation.VERTICAL, -1)[0]
+            assert width <= self.MAX_WIDTH, f"{name} needs {width}px of width"
+            assert height <= self.MAX_HEIGHT, f"{name} needs {height}px of height"
+        finally:
+            dialog.destroy()
+
+    def test_a_scrolled_dialog_keeps_its_buttons_outside_the_scroller(self, window, stressed):
+        from breadsched.gen.lib.scenario import Scenario
+        from breadsched.gui.dialogs.scenario_schedule_dialog import ScenarioScheduleDialog
+
+        db = stressed[0]
+        dialog = ScenarioScheduleDialog(window, db, Scenario(name="Stress"))
+        try:
+            outer = dialog.get_child()
+            assert isinstance(outer.get_first_child(), Gtk.ScrolledWindow)
+            footer = outer.get_last_child()
+            assert not isinstance(footer, Gtk.ScrolledWindow)
+            assert any(isinstance(w, Gtk.Button) for w in _descendants(footer))
+        finally:
+            dialog.destroy()
