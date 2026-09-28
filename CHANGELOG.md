@@ -3,6 +3,15 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a175 - 2026-09-28
+
+- **Write changes to GnuCash from the desktop and browser (#174).** GTK's File →
+  Write Changes to GnuCash… and a Write changes to GnuCash panel on the web Import
+  page show the write-back preview with one checkbox per transaction, the changes
+  that cannot be written and why, and the number of backups to keep; only ticked
+  transactions are written. Application version `0.2.0a175`; native schema
+  remains 9.
+
 ## 0.2.0a174 - 2026-09-28
 
 - **Write simple changes back to GnuCash (#174).** `breadsched gnucash-writeback`

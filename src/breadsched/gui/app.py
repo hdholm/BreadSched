@@ -124,6 +124,7 @@ class BreadSchedApplication(Gtk.Application):
             ("payees", self.on_payees, None),
             ("rules", self.on_rules, None),
             ("receivables", self.on_receivables, None),
+            ("gnucash-writeback", self.on_gnucash_writeback, None),
             ("open-default", self.on_open_default, None),
             ("undo", self.on_undo, "<Control>z"),
             ("redo", self.on_redo, "<Control><Shift>z"),
@@ -154,6 +155,7 @@ class BreadSchedApplication(Gtk.Application):
             "payees",
             "rules",
             "receivables",
+            "gnucash-writeback",
             "export",
             "backup",
             "verify",
@@ -187,6 +189,7 @@ class BreadSchedApplication(Gtk.Application):
             "payees",
             "rules",
             "receivables",
+            "gnucash-writeback",
             "export",
             "backup",
             "verify",
@@ -406,6 +409,17 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
+    def on_gnucash_writeback(self, *_args):
+        """Preview, then write chosen changes back to the imported GnuCash book."""
+        if self.db is None:
+            self._report("Open a book before writing changes to GnuCash.")
+            return None
+        from .dialogs.gnucash_writeback_dialog import GnuCashWritebackDialog
+
+        dialog = GnuCashWritebackDialog(self.props.active_window, self.db)
+        dialog.present()
+        return dialog
+
     def on_undo(self, *_args) -> None:
         if self.db is not None:
             self.db.undo()
@@ -556,6 +570,7 @@ def build_menu_model() -> Gio.Menu:
     transfer.append("Import GnuCash Book into _New Book…", "app.import-new")
     transfer.append("Import GnuCash Book into _Current Book…", "app.import")
     transfer.append("Import CSV _Statement…", "app.import-csv")
+    transfer.append("_Write Changes to GnuCash…", "app.gnucash-writeback")
     transfer.append("_Export Transactions…", "app.export")
     file_menu.append_section(None, transfer)
     safety = Gio.Menu()

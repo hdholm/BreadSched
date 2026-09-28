@@ -5071,3 +5071,54 @@ class TestReceivablesRoutes:
         salary = db.get_account_by_name("Income:Salary")
         _status, elsewhere = client.get(f"/api/reconciliation?account={salary.handle}")
         assert elsewhere["reimbursement_notice"] is None
+
+
+class TestGnuCashWritebackRoutes:
+    """#174: the browser previews and writes through the shared write-back service."""
+
+    def test_preview_write_and_rejections(self, client, gnucash_sqlite_path):
+        import sqlite3
+
+        from breadsched.gen.services.imports import ImportBook, import_book
+
+        def refused(call, *args) -> int:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                call(*args)
+            return caught.value.code
+
+        db = client.database
+        # The served book may already hold a "Rent" of its own; take the imported one.
+        before = {item.handle for item in db.iter_transactions()}
+        assert import_book(db, ImportBook(source=gnucash_sqlite_path.path, notify=False)).ok
+        rent = next(
+            item
+            for item in db.iter_transactions()
+            if item.description == "Rent" and item.handle not in before
+        )
+        rent.description = "Rent from the browser"
+        with db.transaction("Edit") as txn:
+            db.commit_transaction(rent, txn)
+        original = open(gnucash_sqlite_path.path, "rb").read()
+
+        status, preview = client.get("/api/gnucash/writeback")
+        assert status == 200 and preview["available"] is True
+        assert [item["transaction"] for item in preview["changes"]] == [rent.handle]
+        assert preview["changes"][0]["kinds"] == ["edit"]
+
+        assert refused(client.post, "/api/gnucash/writeback", {"transactions": "x"}) == 400
+        assert refused(client.post, "/api/gnucash/writeback", {"transactions": []}) == 400
+        assert refused(client.post, "/api/gnucash/writeback/settings", {"keep_backups": 0}) == 400
+        assert refused(client.get, "/api/gnucash/writeback?extra=1") == 400
+        assert open(gnucash_sqlite_path.path, "rb").read() == original
+        assert db.get_metadata("gnucash.writeback.keep_backups") is None
+
+        status, saved = client.post("/api/gnucash/writeback/settings", {"keep_backups": 4})
+        assert status == 200 and saved == {"keep_backups": 4}
+        status, written = client.post("/api/gnucash/writeback", {"transactions": [rent.handle]})
+        assert status == 200 and written["written"] == [rent.handle]
+        conn = sqlite3.connect(gnucash_sqlite_path.path)
+        [(description,)] = conn.execute(
+            "SELECT description FROM transactions WHERE guid=?", (rent.handle,)
+        ).fetchall()
+        conn.close()
+        assert description == "Rent from the browser"

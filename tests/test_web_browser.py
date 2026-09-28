@@ -350,3 +350,36 @@ def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):
     page.wait_for_selector(f".spending-over-time tbody tr.selected:has-text('{label}')")
     selected = page.locator(".expense-explorer select").first.evaluate("(node) => node.value")
     assert selected == "1"
+
+
+def test_the_import_page_writes_ticked_changes_back_to_gnucash(page, served, gnucash_sqlite_path):
+    import sqlite3
+
+    from breadsched.gen.services.imports import ImportBook, import_book
+
+    db, _httpd = served
+    # The served book may already hold a "Rent" of its own; take the imported one.
+    before = {item.handle for item in db.iter_transactions()}
+    assert import_book(db, ImportBook(source=gnucash_sqlite_path.path, notify=False)).ok
+    rent = next(
+        item
+        for item in db.iter_transactions()
+        if item.description == "Rent" and item.handle not in before
+    )
+    rent.description = "Rent via browser"
+    with db.transaction("Edit") as txn:
+        db.commit_transaction(rent, txn)
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Import", exact=True).first.click()
+    page.wait_for_selector("h2:has-text('Write changes to GnuCash')")
+    panel = page.locator(".writeback")
+    panel.get_by_label("Rent via browser", exact=False).check()
+    panel.get_by_role("button", name="Write selected").click()
+    page.wait_for_selector("text=Wrote 1 transaction(s) to GnuCash")
+    conn = sqlite3.connect(gnucash_sqlite_path.path)
+    [(description,)] = conn.execute(
+        "SELECT description FROM transactions WHERE guid=?", (rent.handle,)
+    ).fetchall()
+    conn.close()
+    assert description == "Rent via browser"

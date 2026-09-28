@@ -769,7 +769,12 @@ each period rather than recording the same activity in both.
 ### Write changes back to a GnuCash SQLite book
 
 For a GnuCash book saved in SQLite format, BreadSched can write simple changes
-back to it. Close the book in GnuCash, then preview:
+back to it. Close the book in GnuCash first. In the desktop application choose
+**File → Write Changes to GnuCash…**; in the web interface open **Import** and use
+**Write changes to GnuCash**. Both list what would be written for each
+transaction, with a checkbox; tick the ones you want and choose **Write
+selected**. **Backups to keep** sets how many backups are kept. From the command
+line, preview with:
 
 ```bash
 breadsched gnucash-writeback household.breadsched
