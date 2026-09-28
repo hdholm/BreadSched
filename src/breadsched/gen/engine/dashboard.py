@@ -191,8 +191,11 @@ class GroupAccountResult:
     name: str
     total: Money | None
     source: str = "ledger"
+    #: The selected account's own valuation note; never its descendants' (#150).
     note: str = ""
     missing_quotes: tuple[str, ...] = ()
+    #: Descendants included by inference, one line each with any quote evidence.
+    members: tuple[str, ...] = ()
 
 
 @dataclass
@@ -206,7 +209,10 @@ class GroupResult:
     depth: int = 0
     heading: bool = False
     accounts: list[GroupAccountResult] = field(default_factory=list)
+    #: The directly selected accounts' own valuation notes (#150).
     note: str = ""
+    #: Every account the row covers, one line each, for a tooltip or detail list.
+    members: tuple[str, ...] = ()
     #: Set for property groups: the value, what is owed, and the ratio.
     value: Money | None = None
     debt: Money | None = None
@@ -1003,12 +1009,15 @@ def _build_group_node(
         db, direct_accounts, direct_kind, today, paid_off
     )
     loan_end = _loan_end_date(db, direct_accounts, paid_off)
+    member_lines: list[str] = []
+    for line in lines:
+        member_lines.append(f"{line.name}: {line.note}" if line.note else line.name)
+        member_lines.extend(f"  {member}" for member in line.members)
     for child_result in children:
         assets = assets + child_result._assets
         debts = debts + child_result._debts
         liquid = liquid + child_result.liquid
-        if child_result.note:
-            notes.append(child_result.note)
+        member_lines.extend(child_result.members)
         missing.extend(child_result.missing_quotes)
         liquid_missing.extend(child_result.liquid_missing_quotes)
         if child_result.loan_end is not None and (
@@ -1040,6 +1049,7 @@ def _build_group_node(
         heading=heading,
         accounts=lines,
         note="; ".join(unique_notes),
+        members=tuple(dict.fromkeys(member_lines)),
         # A generated path row is a summary heading, not a synthetic loan. Its
         # equity belongs in the total column, while value, debt, LTV, and payoff
         # date remain evidence attached to the specific property/loan row.
@@ -1129,24 +1139,23 @@ def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupA
         elif own.source == "currency" and own.price_date is not None:
             suffix = " · inverse rate" if own.conversion_path == "inverse" else ""
             note = f"{own.price_date} · {own.price_source or 'Unknown source'}{suffix}"
-        if not aggregate.missing_quotes:
-            child_quotes = []
-            for child in subtree[1:]:
-                valued = valuation.account_value(db, child, as_of=today)
-                if valued.price_date is None or not valued.total:
-                    continue
+        members = []
+        for child in subtree[1:]:
+            line = db.full_name(child) or child.name
+            valued = valuation.account_value(db, child, as_of=today)
+            if valued.missing_quote:
+                line += ": missing reporting-currency quote"
+            elif valued.price_date is not None and valued.total:
                 suffix = " · inverse rate" if valued.conversion_path == "inverse" else ""
-                child_quotes.append(
-                    f"{db.full_name(child)}: {valued.price_date} · "
-                    f"{valued.price_source or 'Unknown source'}{suffix}"
-                )
-            note = "; ".join(part for part in (note, *child_quotes) if part)
+                line += f": {valued.price_date} · {valued.price_source or 'Unknown source'}{suffix}"
+            members.append(line)
         return GroupAccountResult(
             name=name,
             total=total,
             source=source,
             note=note,
             missing_quotes=aggregate.missing_quotes,
+            members=tuple(members),
         )
     if not account.fsa_years:
         return GroupAccountResult(

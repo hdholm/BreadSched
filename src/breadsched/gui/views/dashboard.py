@@ -349,7 +349,13 @@ class DashboardView(BaseView):
             name.set_ellipsize(Pango.EllipsizeMode.END)
             name.set_max_width_chars(_GROUP_LABEL_CHARS)
             name.set_hexpand(True)
-            name.set_tooltip_text(label if label == group.path else f"{group.path}\n{label}")
+            # The row names the group and its own valuation note; the tooltip lists
+            # every account it covers, one per line (#150).
+            tooltip = [group.path if group.path else group.name]
+            if group.note:
+                tooltip.append(group.note)
+            tooltip.extend(group.members)
+            name.set_tooltip_text("\n".join(tooltip))
             self.groups.attach(name, 0, index, 1, 1)
             self.groups.attach(_amount(group.report_value), 1, index, 1, 1)
             self.groups.attach(_amount(group.report_debt), 2, index, 1, 1)

@@ -2292,6 +2292,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                             "depth": g.depth,
                             "heading": g.heading,
                             "note": g.note,
+                            "members": list(g.members),
                             "kind": g.kind,
                             "total": g.report_total,
                             "value": g.report_value,

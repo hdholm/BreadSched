@@ -82,8 +82,11 @@ def test_missing_dashboard_group_quote_suppresses_position_and_liquidity(db, boo
     )
     parent = dashboard.build(db, parent_config, as_of=TODAY)
     assert parent.groups[0].report_total == Money(20)
-    assert "Foreign cash: 2026-02-01 · sample-source · inverse rate" in (
-        parent.groups[0].accounts[0].note
+    # Inferred descendants are members, not part of the row's note (#150).
+    assert "Foreign cash" not in parent.groups[0].note
+    assert any(
+        line.endswith("Foreign cash: 2026-02-01 · sample-source · inverse rate")
+        for line in parent.groups[0].members
     )
 
 
@@ -1825,3 +1828,24 @@ def test_cli_dashboard_groups_missed_rows_and_names_the_frequency(missed_sample,
     assert rent["occurrences"][0] == {"date": "2026-04-06", "amount": "1450.00"}
     assert payload["bills"][0]["frequency"] == "every month"
     assert [item["name"] for item in payload["missed_income"]] == ["Sample wages"]
+
+
+def test_group_row_hides_inferred_subaccounts_and_lists_members(db, book):
+    """Issue #150: a parent group lists children as members, not in its note."""
+    with db.transaction("Balances") as txn:
+        db.add_transaction(
+            Transaction.simple(TODAY, "Opening", book.checking, book.opening, "100"), txn
+        )
+        db.add_transaction(
+            Transaction.simple(TODAY, "Opening", book.savings, book.opening, "50"), txn
+        )
+    config = dashboard.DashboardConfig(
+        groups=[dashboard.GroupConfig("Everything", [book.assets], "asset")]
+    )
+    group = dashboard.build(db, config, as_of=TODAY).group("Everything")
+    assert group.total == Money("150")
+    assert "Checking" not in group.note and "Savings" not in group.note
+    assert group.members[0] == db.full_name(book.assets)
+    children = [line.strip() for line in group.members[1:]]
+    assert db.full_name(book.checking) in children
+    assert db.full_name(book.savings) in children

@@ -46,6 +46,7 @@ def dashboard_report(
                 "depth": group.depth,
                 "heading": group.heading,
                 "note": group.note,
+                "members": list(group.members),
                 "kind": group.kind,
                 "total": (
                     str(group.report_total.to_decimal()) if group.report_total is not None else None
@@ -76,6 +77,7 @@ def dashboard_report(
                         ),
                         "source": account.source,
                         "note": account.note,
+                        "members": list(account.members),
                     }
                     for account in group.accounts
                 ],

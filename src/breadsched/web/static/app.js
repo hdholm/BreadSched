@@ -3725,7 +3725,7 @@ async function showDashboard() {
   const groupCards = el("div", { class:"balance-groups" }, data.groups.map((g) =>
     el("div", {
       class:`balance-group ${depthClass("tree-depth", g.depth)} ${g.heading ? "group-heading" : ""}`,
-      title:g.path,
+      title:[g.path, ...(g.members || [])].join("\n"),
     }, el("h3",{},g.name), g.note ? el("p", {class:"note"}, g.note) : null, el("dl",{},
       g.value === null ? null : [el("dt",{},"Value"),el("dd",{},money(g.value))],
       g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
