@@ -29,8 +29,8 @@ from uuid import NAMESPACE_URL, uuid5
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
 from ...gen.utils.amount_input import NumberFormat, parse_decimal_amount
+from .brokerage import Brokerage
 from .gnucash_common import ImportSink
-from .quotes import security_by_symbol
 
 __all__ = ["import_investment_statement"]
 
@@ -88,24 +88,17 @@ class _Statement:
         self.account_id = account_id
         self.currency = currency
         tail = account_id[-4:] if account_id else "unknown"
-        label = f"{broker} Investment {tail}".strip()
-        assets = db.get_account_by_name("Assets")
-        self.parent = sink.account(
-            _handle("investment-account", account_id, broker),
-            label,
-            "ASSET",
-            assets.handle if assets is not None else None,
-            commodity=currency,
+        self.brokerage = Brokerage(
+            sink,
+            db,
+            handle=_handle,
+            identity=(account_id, broker),
+            label=f"{broker} Investment {tail}".strip(),
             description=f"Imported OFX investment account ending {tail}",
-        ).handle
-        self.cash = sink.account(
-            _handle("investment-cash", account_id, broker),
-            "Cash",
-            "BANK",
-            self.parent,
-            commodity=currency,
-        ).handle
-        self._securities: dict[str, str] = {}
+            currency=currency,
+            category=self._category,
+        )
+        self.cash = self.brokerage.cash
         self._security_names: dict[str, tuple[str, str, str]] = {}
 
     def money(self, raw: str) -> Money:
@@ -115,8 +108,7 @@ class _Statement:
         raw = self.tag(block, name)
         return self.money(raw) if raw else Money(0)
 
-    def category(self, amount: Money, name: str) -> str:
-        """An expense (positive ``amount``) or income (negative) category."""
+    def _category(self, amount: Money, name: str) -> str:
         top = "Expenses" if amount > 0 else "Income"
         atype = "EXPENSE" if amount > 0 else "INCOME"
         parent = self.db.get_account_by_name(top)
@@ -126,6 +118,10 @@ class _Statement:
             atype,
             parent.handle if parent is not None else None,
         ).handle
+
+    def category(self, amount: Money, name: str) -> str:
+        """An expense (positive ``amount``) or income (negative) category."""
+        return self.brokerage.category(amount, name)
 
     def learn_securities(self, text: str) -> None:
         for kind in ("MFINFO", "STOCKINFO", "DEBTINFO", "OPTINFO", "OTHERINFO"):
@@ -138,30 +134,16 @@ class _Statement:
 
     def security_account(self, unique: str) -> str | None:
         """The brokerage sub-account holding ``unique``, creating it if needed."""
-        if unique in self._securities:
-            return self._securities[unique]
         ticker, name, kind = self._security_names.get(unique, (unique, unique, "OTHERINFO"))
-        if not ticker:
-            return None
-        existing = security_by_symbol(self.db, ticker)
-        if existing is not None:
-            commodity = existing.handle
-        else:
-            namespace = {"MFINFO": "FUND", "STOCKINFO": "STOCK", "DEBTINFO": "BOND"}.get(
-                kind, "SECURITY"
-            )
-            commodity = self.sink.commodity(namespace, ticker, name, fraction=10000)
-        account = self.sink.account(
-            _handle("security-account", self.account_id, unique),
+        return self.brokerage.security(
+            (self.account_id, unique),
             ticker,
-            "MUTUAL" if kind == "MFINFO" else "STOCK",
-            self.parent,
-            commodity=commodity,
-            description=name,
-            commodity_scu=10000,
-        ).handle
-        self._securities[unique] = account
-        return account
+            name,
+            fund=kind == "MFINFO",
+            namespace={"MFINFO": "FUND", "STOCKINFO": "STOCK", "DEBTINFO": "BOND"}.get(
+                kind, "SECURITY"
+            ),
+        )
 
     def costs(self, block: str) -> Money:
         total = Money(0)

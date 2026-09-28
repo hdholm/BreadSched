@@ -345,16 +345,18 @@ importer never invents a security), be in a currency the book knows, and be
 positive; anything else is reported as a skipped price. It is stored with source
 `qif` or `ofx` under a handle derived from source, security, currency, and date.
 Re-importing therefore updates it in place, and it never replaces a quote entered
-in BreadSched (source `breadsched`). QIF investment *transactions* are still
-reported and skipped.
+in BreadSched (source `breadsched`).
+
+Investment accounts from OFX and QIF share `plugins/importer/brokerage.py`: a
+brokerage becomes an Assets child with a `Cash` bank sub-account and one `MUTUAL`
+or `STOCK` sub-account per traded security, all under stable uuid5 handles from
+the caller's format. A security is matched by ticker to the one book security with
+that symbol, else created (fraction 10000) in a namespace from its kind (`FUND`,
+`STOCK`, `BOND`, or `SECURITY`).
 
 An OFX file with an `INVACCTFROM` brokerage account is imported by
-`plugins/importer/ofx_investment.py`. The account becomes an Assets child named
-for the institution and account tail, with a `Cash` bank sub-account and one
-`MUTUAL` (from `MFINFO`) or `STOCK` sub-account per traded security, all under
-stable uuid5 handles. A security is matched by ticker to the one book security with
-that symbol, else created from the statement's security list (namespace `FUND`,
-`STOCK`, `BOND`, or `SECURITY`, fraction 10000). Records map to balanced
+`plugins/importer/ofx_investment.py`; the account is named for the institution and
+account tail, and securities come from the statement's security list. Records map to balanced
 transactions dated `DTTRADE` (`DTPOSTED` for cash):
 
 - `BUY*`/`SELL*` (not options): cash `TOTAL`; commission, fees, load, and taxes
@@ -373,6 +375,23 @@ Transaction handles use the same `(account id, FITID)` identity as bank records,
 and re-import goes through `keep_local_categories` with the cash account as the
 statement side, so a recategorized income or fee split survives. Security prices
 in the same file are recorded afterwards, so newly created securities are priced.
+
+A QIF `!Account` of type `Invst`, `Port`, or `401(k)/403(b)` (or a `!Type:Invst`
+section) is a brokerage named for the account (`plugins/importer/qif_investment.py`).
+Investment records name securities by full name (`Y`); a `!Type:Security` list,
+read in a pre-pass wherever it appears, maps the name to a ticker (`S`) and kind
+(`T`: mutual fund types become `MUTUAL`/`FUND`). Actions follow Quicken's
+magnitudes: `Buy` (cash `-T`, commission `O` to Investment Fees, security
+`T - O`), `Sell` (cash `T`, security `-(T + O)`, units negated), `Reinv*` (the `L`
+category or Investment Income funds the units), `Div`/`IntInc`/`CG*`/`MiscInc`
+(cash against the `L` category or Investment Income), `MiscExp` (against the `L`
+category or Investment Fees), `XIn`/`XOut`/`Cash` (against the `L` account or
+category). An `X` suffix moves cash through the `L` account instead of the
+brokerage's cash, and a bank register's `[Brokerage]` transfer resolves to that
+cash account rather than creating a bank account of the same name. Share
+transfers, splits, options, grants, and reminders are skipped with their action
+name. Handles follow the QIF content identity with an occurrence counter, and
+re-import uses `keep_local_categories` against the brokerage cash.
 
 An OFX bank or card transaction may carry its own exchange rate. `CURRATE` is the
 number of statement-currency (`CURDEF`) units per unit of `CURSYM`, so it is

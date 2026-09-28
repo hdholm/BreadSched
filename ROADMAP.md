@@ -231,8 +231,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   journal entries, return of capital, and margin interest (reported as skipped
   today), and consider cost basis once investment lots exist.
 
-- Add useful QIF investment/security records.
-
 - Add reviewed commodity/security mapping where imported identifiers cannot be
   matched safely and extend price import to additional source formats where present.
   GnuCash re-import now matches namespace and mnemonic together, accepts equivalent

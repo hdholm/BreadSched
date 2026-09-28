@@ -807,6 +807,16 @@ units from **Income:Investment Income**; dividends, interest, and cash deposits 
 withdrawals post to cash. Gains are not calculated: a sale is recorded at its
 proceeds. Option trades, transfers of shares, stock splits, and a few other kinds
 are listed as skipped so you can enter them yourself.
+
+A QIF export with investment accounts (Quicken types **Invst** or **Port**) is
+imported the same way: each becomes an account under **Assets** with **Cash** and
+one account per security, using the export's security list for tickers. Buys,
+sells, reinvested and cash dividends, interest, capital-gain distributions,
+miscellaneous income and expenses, and cash transfers are imported; a **BuyX**,
+**DivX**, or other "X" action moves the money through the named account (for
+example **[Checking]**). Transfers to an investment account from a bank register go
+to its **Cash** account. Share transfers (**ShrsIn**/**ShrsOut**), stock splits,
+and option actions are listed as skipped.
 When a format is ambiguous, select an explicit override in GTK, web, or an importer
 caller. Import problems are reported per record when safe recovery is possible.
 
