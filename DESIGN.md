@@ -1020,14 +1020,18 @@ Transfers that carry no household planning meaning should remain neutral.
 
 ## GTK application chrome
 
-Category navigation lives in exactly one place: the sidebar (`viewmanager.CATEGORIES`).
-The icon toolbar (`viewmanager.TOOLBAR`) never repeats a sidebar category as a
-button; it holds only actions that are not also a category (open/import a book,
-undo/redo, start a new transaction, print the current report). A toolbar button
-that switched to a category the sidebar already listed was a real duplication of
-function, not a shortcut, and it cost the sidebar's `Gtk.Paned` a wider default
-than the navigation itself needed; removing the duplicates let the default
-narrow, giving the view more of the window.
+The main window has no sidebar (#155): a category sidebar duplicated the View
+menu and took width from every view. The icon toolbar holds the actions
+(`viewmanager.TOOLBAR`: open/import a book, undo/redo, new transaction, print),
+then, after a separator, one toggle icon per view (`viewmanager.CATEGORIES`, each
+with a distinct icon). The View menu lists the same views. Both target the
+stateful `win.show-category` action, whose state is the current view:
+`show_category()` remains the single navigation entry point and sets that state,
+so the matching icon and menu item show as active however the view was reached
+(icon, menu, or a jump from another view). The action is disabled while no book
+is open. The toolbar scrolls horizontally rather than setting the window's
+minimum width. The toolbar icon set is expected to become partly
+view-sensitive (#156).
 
 Every `Gtk.ColumnView` presenting book data (register, accounts, dashboard,
 scheduled, upcoming) carries the shared `data-table` CSS class from
