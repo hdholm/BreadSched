@@ -26,7 +26,6 @@ from ..gen.engine import (
     ledger,
     loans,
     planning,
-    reconciliation,
     schedule,
     valuation,
 )
@@ -79,7 +78,6 @@ from ..gen.services import (
     FormulaScheduleInput,
     HeldImportDecision,
     ImportBook,
-    ReconciliationAction,
     ResolveDue,
     ResolveHeldImports,
     ReviewClaimAttachment,
@@ -93,14 +91,10 @@ from ..gen.services import (
     SaveScenarioAssumptions,
     SaveTransaction,
     ServiceError,
-    StartReconciliation,
     SuppressScenarioSchedule,
     TransactionInput,
     TransactionSplitInput,
-    UpdateReconciliation,
     attach_review_claim,
-    cancel_reconciliation,
-    complete_reconciliation,
     delete_assumption_period,
     delete_claim,
     delete_scenario,
@@ -113,7 +107,6 @@ from ..gen.services import (
     pending_due_review,
     pending_import_changes,
     reject_review,
-    reopen_reconciliation,
     resolve_due,
     resolve_import_changes,
     save_account,
@@ -125,10 +118,8 @@ from ..gen.services import (
     save_scenario_assumptions,
     save_transaction,
     skip_review,
-    start_reconciliation,
     suppress_scenario_schedule,
     transaction_currency,
-    update_reconciliation,
     validate_loan,
 )
 from ..gen.services.receivables import reimbursement_proposals
@@ -835,132 +826,6 @@ class Api:
                 for row in rows
             ],
         }
-
-    def reconciliation(self, account_handle: str) -> dict:
-        """Return the current statement workflow and its auditable history."""
-        account = self.db.get_account(account_handle)
-        if account is None:
-            raise KeyError(account_handle)
-        current = reconciliation.open_for_account(self.db, account_handle)
-        current_state = reconciliation.summary(self.db, current) if current else None
-        proposals = reimbursement_proposals(self.db, account=account_handle).value or ()
-        return {
-            "account": {"handle": account.handle, "name": self.db.full_name(account)},
-            # A deposit being reconciled may be money back on a reimbursable expense.
-            "reimbursement_notice": reimbursement_notice(len(proposals)),
-            "open": (
-                {
-                    "handle": current.handle,
-                    "statement_date": current.statement_date,
-                    "ending_balance": current.ending_balance,
-                    "opening_balance": current_state.opening_balance,
-                    "selected_balance": current_state.selected_balance,
-                    "difference": current_state.difference,
-                    "balanced": current_state.balanced,
-                    "selected_splits": list(current.selected_splits),
-                    "candidates": [
-                        {
-                            "transaction": item.transaction,
-                            "split": item.split,
-                            "date": item.post_date,
-                            "description": item.description,
-                            "amount": item.amount,
-                            "state": item.state.value,
-                            "selected": item.selected,
-                        }
-                        for item in current_state.candidates
-                    ],
-                }
-                if current is not None and current_state is not None
-                else None
-            ),
-            "history": [
-                {
-                    "handle": item.handle,
-                    "statement_date": item.statement_date,
-                    "ending_balance": item.ending_balance,
-                    "status": item.status.value,
-                    "completed_at": item.completed_at,
-                    "cancelled_at": item.cancelled_at,
-                    "events": [
-                        {"action": event.action, "at": event.occurred_at}
-                        for event in item.audit_events
-                    ],
-                }
-                for item in reversed(list(self.db.iter_reconciliations(account_handle)))
-            ],
-        }
-
-    def reconciliation_start(self, payload: dict) -> dict:
-        account = str(payload.get("account") or "")
-        try:
-            statement_date = date.fromisoformat(str(payload.get("statement_date") or ""))
-        except ValueError as exc:
-            raise ValueError("enter a valid statement date") from exc
-        ending = self._input_money(payload, payload.get("ending_balance", ""))
-        result = start_reconciliation(
-            self.db,
-            StartReconciliation(account, statement_date, ending),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        started = result.value.reconciliation
-        return {"handle": started.handle, "status": started.status.value}
-
-    def reconciliation_update(self, payload: dict) -> dict:
-        handle = str(payload.get("handle") or "")
-        raw_splits = payload.get("selected_splits", [])
-        if not isinstance(raw_splits, list) or not all(
-            isinstance(item, str) for item in raw_splits
-        ):
-            raise ValueError("selected_splits must be a list of split handles")
-        ending = (
-            self._input_money(payload, payload["ending_balance"])
-            if "ending_balance" in payload
-            else None
-        )
-        result = update_reconciliation(
-            self.db,
-            UpdateReconciliation(
-                handle,
-                selected_splits=tuple(raw_splits),
-                ending_balance=ending,
-            ),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        state = result.value
-        return {"handle": handle, "difference": state.difference, "balanced": state.balanced}
-
-    def reconciliation_complete(self, payload: dict) -> dict:
-        result = complete_reconciliation(
-            self.db,
-            ReconciliationAction(str(payload.get("handle") or "")),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        completed = result.value
-        return {"handle": completed.handle, "status": completed.status.value}
-
-    def reconciliation_cancel(self, payload: dict) -> dict:
-        result = cancel_reconciliation(
-            self.db,
-            ReconciliationAction(str(payload.get("handle") or "")),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        cancelled = result.value
-        return {"handle": cancelled.handle, "status": cancelled.status.value}
-
-    def reconciliation_reopen(self, payload: dict) -> dict:
-        result = reopen_reconciliation(
-            self.db,
-            ReconciliationAction(str(payload.get("handle") or "")),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        reopened = result.value
-        return {"handle": reopened.handle, "status": reopened.status.value}
 
     def historical_estimates(
         self,

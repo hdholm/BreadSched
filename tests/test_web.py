@@ -674,6 +674,49 @@ class TestItServes:
         assert status == 200
         assert reopened["status"] == "open"
 
+    def test_rejected_reconciliation_requests_leave_the_statement_unchanged(self, client):
+        def refused(call, *args) -> int:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                call(*args)
+            return caught.value.code
+
+        _status, accounts = client.get("/api/accounts")
+        checking = next(a for a in accounts if a["name"] == "Checking")
+        assert refused(client.get, "/api/reconciliation") == 400
+        query = urllib.parse.urlencode({"account": checking["handle"], "extra": "1"})
+        assert refused(client.get, f"/api/reconciliation?{query}") == 400
+
+        bad_start = {
+            "account": checking["handle"],
+            "statement_date": "not a date",
+            "ending_balance": "0",
+        }
+        assert refused(client.post, "/api/reconciliation/start", bad_start) == 400
+        assert list(client.database.iter_reconciliations(checking["handle"])) == []
+
+        status, started = client.post(
+            "/api/reconciliation/start",
+            {
+                "account": checking["handle"],
+                "statement_date": date.today().isoformat(),
+                "ending_balance": "10",
+            },
+        )
+        assert status == 200
+        before = client.database.get_reconciliation(started["handle"])
+        for payload in (
+            {"handle": started["handle"], "selected_splits": "not a list"},
+            {"handle": started["handle"], "selected_splits": ["no-such-split"]},
+            {"handle": started["handle"], "selected_splits": [], "ending_balance": "abc"},
+        ):
+            assert refused(client.post, "/api/reconciliation/update", payload) in (400, 404, 409)
+            after = client.database.get_reconciliation(started["handle"])
+            assert after.selected_splits == before.selected_splits
+            assert after.ending_balance == before.ending_balance
+        unbalanced = {"handle": started["handle"]}
+        assert refused(client.post, "/api/reconciliation/complete", unbalanced) in (400, 409)
+        assert client.database.get_reconciliation(started["handle"]).status.value == "open"
+
     def test_scheduled_transactions_are_listed(self, client):
         status, payload = client.get("/api/scheduled")
         assert status == 200

@@ -71,7 +71,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Split oversized modules/functions as part of the service/resource ownership
   work, especially the remaining seams in `web/server.py` (for example transaction
-  entry, register, and reconciliation handlers still parse JSON inline). Continue
+  entry and register handlers still parse JSON inline; reconciliation moved to
+  `web/reconciliation_resource.py`). Continue
   consolidating web control parsers where ownership is clear. Split large GUI test modules
   only when the resulting fixture ownership and runtime isolation improve; do not
   optimize for a line-count threshold alone.

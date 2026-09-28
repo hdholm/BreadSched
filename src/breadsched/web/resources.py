@@ -27,6 +27,14 @@ from .receivable_resource import (
     receivable_write_off,
     receivables,
 )
+from .reconciliation_resource import (
+    reconciliation,
+    reconciliation_cancel,
+    reconciliation_complete,
+    reconciliation_reopen,
+    reconciliation_start,
+    reconciliation_update,
+)
 from .register_entry_resource import register_entry_save
 from .rules_resource import rule_add, rule_delete, rule_move, rules, rules_accept
 
@@ -130,13 +138,6 @@ def _register(api: Api, query: QueryParams) -> object:
     return api.register(account, limit)
 
 
-def _reconciliation(api: Api, query: QueryParams) -> object:
-    account = query.text("account", required=True)
-    query.finish()
-    assert account is not None
-    return api.reconciliation(account)
-
-
 def _scheduled(api: Api, query: QueryParams) -> object:
     days = query.integer("days", default=60, minimum=0, maximum=36500)
     query.finish()
@@ -220,7 +221,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/commodities": _no_query("commodities"),
     "/api/fsa/claims": _no_query("fsa_claims"),
     "/api/register": _register,
-    "/api/reconciliation": _reconciliation,
+    "/api/reconciliation": reconciliation,
     "/api/scheduled": _scheduled,
     "/api/historical-estimates": _historical_estimates,
     "/api/plan": _plan,
@@ -271,11 +272,11 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/fsa/claim/save": _post("fsa_claim_save"),
     "/api/fsa/claim/delete": _post("fsa_claim_delete"),
     "/api/transaction": _post("add_transaction"),
-    "/api/reconciliation/start": _post("reconciliation_start"),
-    "/api/reconciliation/update": _post("reconciliation_update"),
-    "/api/reconciliation/complete": _post("reconciliation_complete"),
-    "/api/reconciliation/cancel": _post("reconciliation_cancel"),
-    "/api/reconciliation/reopen": _post("reconciliation_reopen"),
+    "/api/reconciliation/start": reconciliation_start,
+    "/api/reconciliation/update": reconciliation_update,
+    "/api/reconciliation/complete": reconciliation_complete,
+    "/api/reconciliation/cancel": reconciliation_cancel,
+    "/api/reconciliation/reopen": reconciliation_reopen,
     "/api/import": _post("import_local"),
     "/api/import/review": _post("import_review_resolve"),
     "/api/import/csv/inspect": csv_inspect,

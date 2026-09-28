@@ -356,17 +356,46 @@ class TestServiceBoundaries:
                 "_on_finish",
                 "complete_reconciliation",
             ),
-            ("web/server.py", "Api", "reconciliation_start", "start_reconciliation"),
-            ("web/server.py", "Api", "reconciliation_update", "update_reconciliation"),
-            ("web/server.py", "Api", "reconciliation_complete", "complete_reconciliation"),
-            ("web/server.py", "Api", "reconciliation_cancel", "cancel_reconciliation"),
-            ("web/server.py", "Api", "reconciliation_reopen", "reopen_reconciliation"),
+            (
+                "web/reconciliation_resource.py",
+                None,
+                "reconciliation_start",
+                "start_reconciliation",
+            ),
+            (
+                "web/reconciliation_resource.py",
+                None,
+                "reconciliation_update",
+                "update_reconciliation",
+            ),
+            (
+                "web/reconciliation_resource.py",
+                None,
+                "reconciliation_complete",
+                "complete_reconciliation",
+            ),
+            (
+                "web/reconciliation_resource.py",
+                None,
+                "reconciliation_cancel",
+                "cancel_reconciliation",
+            ),
+            (
+                "web/reconciliation_resource.py",
+                None,
+                "reconciliation_reopen",
+                "reopen_reconciliation",
+            ),
         ),
     )
     def test_reconciliation_mutations_use_typed_services(
         self, relative, class_name, method_name, service_call
     ):
-        calls = calls_in_method(SRC / relative, class_name, method_name)
+        calls = (
+            calls_in_function(SRC / relative, method_name)
+            if class_name is None
+            else calls_in_method(SRC / relative, class_name, method_name)
+        )
         assert service_call in calls
         assert calls.isdisjoint(
             {"start", "update", "set_selection", "complete", "cancel", "reopen"}

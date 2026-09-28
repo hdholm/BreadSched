@@ -127,6 +127,13 @@ The read-only Plan detail response is similarly owned by
 activity engine for category, planning-flow, or mortgage explanations, and
 serializes the response. ``Api.plan_detail`` delegates without reproducing that
 logic; route query parsing remains in ``web.resources``.
+Statement reconciliation's routes live in ``web.reconciliation_resource``: its
+read route consumes the one ``account`` query field and serializes the open
+statement, candidates, reimbursement notice, and audit history; its five POST
+routes parse fields into ``StartReconciliation``, ``UpdateReconciliation``, and
+``ReconciliationAction`` and map service errors to responses. ``Api`` no longer
+has reconciliation methods, and a route test proves rejected requests leave the
+statement's selection, ending balance, and status unchanged.
 The Plan report query and JSON projection also live in ``web.plan_resource``.
 The adapter requests typed Plan results from the shared service and serializes
 controls, cash bridge, category, mortgage, planning-flow, and comparison views;
