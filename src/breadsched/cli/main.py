@@ -126,7 +126,7 @@ from ..gen.services.receivables import (
     save_receivable,
 )
 from ..gen.utils import logs
-from ..presentation import service_error_message
+from ..presentation import reimbursement_notice, service_error_message
 
 LOG = logs.get_logger(__name__)
 
@@ -329,6 +329,7 @@ def cmd_import(args: argparse.Namespace) -> int:
         assert imported.value is not None
         result = imported.value.result
         result.log_path = str(args.log_file) if args.log_file else None
+        proposal_count = len(reimbursement_proposals(db).value or ())
     finally:
         db.close()
     suggestions = []
@@ -374,6 +375,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "source_format": result.source_format,
             "source_identity": result.source_identity,
             "log_file": result.log_path,
+            "reimbursement_proposals": proposal_count,
             "suggestions": [
                 {
                     "account": s.account_name,
@@ -388,9 +390,15 @@ def cmd_import(args: argparse.Namespace) -> int:
         args,
         f"Imported into {args.book}\n"
         + result.detail(limit=args.max_warnings)
-        + _inference_note(suggestions, args.infer_apply),
+        + _inference_note(suggestions, args.infer_apply)
+        + _reimbursement_note(proposal_count),
     )
     return 0
+
+
+def _reimbursement_note(count: int) -> str:
+    notice = reimbursement_notice(count)
+    return f"\n{notice} (breadsched receivables BOOK --proposals)" if notice else ""
 
 
 def _due_cell(item: object, as_of: date) -> str:
@@ -598,6 +606,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             "possible_transfers": preview.count("possible_transfer"),
             "skipped": result.skipped,
             "skipped_by_reason": result.reasons(),
+            "reimbursement_proposals": len(reimbursement_proposals(db).value or ()),
         }
         emit(
             summary,
@@ -606,7 +615,8 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
             f"imported, {preview.count('possible_duplicate')} possible duplicate(s) "
             f"{'included' if args.include_duplicates else 'held back'}, "
             f"{result.transactions_linked} transfer(s) linked, "
-            f"{result.skipped} skipped",
+            f"{result.skipped} skipped"
+            + _reimbursement_note(int(summary["reimbursement_proposals"])),
         )
         return 0
     finally:

@@ -22,8 +22,9 @@ from ...gen.services.csv_import import (
     inspect_csv,
     preview_csv_import,
 )
+from ...gen.services.receivables import reimbursement_proposals
 from ...plugins.importer.gnucash_common import ImportResult
-from ...presentation import service_error_message
+from ...presentation import reimbursement_notice, service_error_message
 from ..gi_setup import GLib, Gtk
 
 __all__ = ["CsvImportDialog"]
@@ -293,6 +294,9 @@ class CsvImportDialog(Gtk.Window):
         self._message("", False)
         return preview
 
+    def _reimbursement_notice(self) -> str | None:
+        return reimbursement_notice(len(reimbursement_proposals(self.db).value or ()))
+
     def import_rows(self) -> ImportResult | None:
         """Import the previewed rows as one undo step; None when refused."""
         request = self._request()
@@ -311,7 +315,8 @@ class CsvImportDialog(Gtk.Window):
             f"already imported; {held} possible duplicate(s) "
             f"{'included' if request.include_duplicates else 'held back'}; "
             f"{outcome.transactions_linked} transfer(s) linked; "
-            f"{outcome.skipped} skipped.",
+            f"{outcome.skipped} skipped."
+            + (f" {notice}" if (notice := self._reimbursement_notice()) else ""),
             False,
         )
         return outcome

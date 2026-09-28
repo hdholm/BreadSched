@@ -36,11 +36,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    and settled status (always recomputed, never stored) with age and an optional
    expected cash date, never counts a reimbursement as new income, never erases
    the original expense, and coordinates with GnuCash re-import the same way FSA
-   claims do, and the GTK and web screens with their register actions. Remaining:
-   surfacing the delivered reimbursement proposals (exact partial amounts, same
-   currency) during bank import and statement reconciliation, and explicit
-   coordination with FSA claims when the same expense could be claimed through
-   either.
+   claims do, the GTK and web screens with their register actions, and reviewed
+   reimbursement proposals pointed at after imports and during reconciliation.
+   Remaining: explicit coordination with FSA claims when the same expense could be
+   claimed through either (for example, an insurer pays part and the FSA the
+   rest), without counting the expense or the recovery twice.
 2. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
    development environment already installs BreadSched easily from source, while
    Windows users have no equivalent path. Provide a Windows installer with the GTK

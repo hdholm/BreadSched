@@ -131,8 +131,9 @@ from ..gen.services import (
     update_reconciliation,
     validate_loan,
 )
+from ..gen.services.receivables import reimbursement_proposals
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
-from ..presentation import service_error_message
+from ..presentation import reimbursement_notice, service_error_message
 from ..versioning import version_details
 from .dashboard_resource import dashboard_report
 from .expense_resource import expense_report
@@ -841,8 +842,11 @@ class Api:
             raise KeyError(account_handle)
         current = reconciliation.open_for_account(self.db, account_handle)
         current_state = reconciliation.summary(self.db, current) if current else None
+        proposals = reimbursement_proposals(self.db, account=account_handle).value or ()
         return {
             "account": {"handle": account.handle, "name": self.db.full_name(account)},
+            # A deposit being reconciled may be money back on a reimbursable expense.
+            "reimbursement_notice": reimbursement_notice(len(proposals)),
             "open": (
                 {
                     "handle": current.handle,
@@ -2637,6 +2641,9 @@ class Api:
             "format": imported.format_name,
             "detail": imported.result.detail(limit=50),
             "held": imported.result.transactions_held,
+            "reimbursement_notice": reimbursement_notice(
+                len(reimbursement_proposals(self.db).value or ())
+            ),
         }
 
     def import_review(self) -> dict:

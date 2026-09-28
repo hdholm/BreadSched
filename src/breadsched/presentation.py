@@ -240,6 +240,17 @@ _SERVICE_MESSAGES = {
 }
 
 
+def reimbursement_notice(count: int) -> str | None:
+    """Where deposits arrive (import, reconciliation), point at waiting proposals."""
+    if count <= 0:
+        return None
+    noun = "credit looks" if count == 1 else "credits look"
+    return (
+        f"{count} {noun} like money back on a reimbursable expense; "
+        "review them under Reimbursable Expenses."
+    )
+
+
 def service_error_message(error: ServiceError) -> str:
     """Translate a machine-readable service failure at the presentation boundary."""
     message = _SERVICE_MESSAGES.get(error.code, error.code)

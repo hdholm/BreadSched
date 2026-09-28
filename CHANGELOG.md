@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a162 - 2026-09-28
+
+- **Imports and reconciliation point at waiting reimbursements.** After a GnuCash,
+  OFX, QIF, or CSV import, on the desktop, in the browser, or on the command line,
+  BreadSched says how many credits look like money back on a reimbursable
+  expense. Reconciling the account a deposit landed in says the same at the top
+  of the statement. Nothing is linked until you accept the proposals under
+  Reimbursable Expenses. Application version `0.2.0a162`; native schema remains
+  9.
+
 ## 0.2.0a161 - 2026-09-28
 
 - **Proposed reimbursements.** BreadSched now proposes linking a credit to a
