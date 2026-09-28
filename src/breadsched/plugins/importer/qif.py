@@ -288,6 +288,32 @@ def _import_prices(
         )
 
 
+_TRANSFER_OUT = {"sellx", "divx", "intincx", "cglongx", "cgmidx", "cgshortx", "miscincx", "xout"}
+_TRANSFER_IN = {"buyx", "miscexpx", "xin"}
+
+
+def _investment_transfer_key(
+    record: list[str],
+    account: str,
+    number_format: NumberFormat,
+    date_format: QifDateFormat,
+) -> tuple[object, ...] | None:
+    """The key a bank register's copy of this investment transfer would have."""
+    fields = {line[0]: line[1:].strip() for line in record if line}
+    verb = fields.get("N", "").casefold()
+    target = fields.get("L", "")
+    if verb not in _TRANSFER_OUT | _TRANSFER_IN or not target.startswith("["):
+        return None
+    try:
+        post_date = _parse_date(fields.get("D", ""), date_format)
+        moved = abs(_parse_amount(fields.get("$") or fields.get("T") or "", number_format))
+    except ValueError:
+        return None
+    # Money entering the brokerage left the other account, and vice versa.
+    bank_amount = -moved if verb in _TRANSFER_IN else moved
+    return (post_date, target.strip("[]").strip().casefold(), account.casefold(), bank_amount)
+
+
 def import_book(
     db: DbSQLite,
     path: str | Path,
@@ -343,16 +369,29 @@ def import_book(
         detected_date_format = date_format
     investment_names: set[str] = set()
     securities: list[list[str]] = []
+    # A multi-account export writes each transfer in both registers (#176). An
+    # investment record's copy is kept (it carries the security and units), so
+    # the bank register's matching copy is claimed here and dropped below.
+    claimed: dict[tuple[object, ...], int] = {}
     scan_section = ""
+    scan_account = source.stem
     for record in records:
         if record and record[0] == "!Account":
             fields = {line[0]: line[1:].strip() for line in record[1:] if line}
+            scan_account = fields.get("N") or scan_account
             if fields.get("T", "").casefold() in _INVESTMENT_TYPES and fields.get("N"):
                 investment_names.add(fields["N"].casefold())
         elif record and record[0].startswith("!Type:"):
             scan_section = record[0].partition(":")[2].strip().casefold()
         elif record and not record[0].startswith("!") and scan_section == "security":
             securities.append(record)
+        elif record and not record[0].startswith("!") and scan_section == "invst":
+            key = _investment_transfer_key(
+                record, scan_account, detected_format, detected_date_format
+            )
+            if key is not None:
+                claimed[key] = claimed.get(key, 0) + 1
+    pending: dict[tuple[object, ...], int] = {}
     with db.transaction(message or f"Import {source.name}", batch=True, notify=notify) as txn:
         sink = ImportSink(db, txn, result)
         result.scan("transaction")
@@ -420,6 +459,19 @@ def import_book(
                     kind="transaction",
                 )
                 continue
+            transfer_target = fields.get("L", "").split("/", 1)[0].strip()
+            if not split_rows and transfer_target.startswith("[") and transfer_target.endswith("]"):
+                other = transfer_target[1:-1].strip().casefold()
+                own = (post_date, current_name.casefold(), other, amount)
+                mirror = (post_date, other, current_name.casefold(), -amount)
+                if claimed.get(own, 0) or pending.get(mirror, 0):
+                    # The other register's copy of this transfer is imported.
+                    table = claimed if claimed.get(own, 0) else pending
+                    key = own if table is claimed else mirror
+                    table[key] -= 1
+                    result.transfers_paired += 1
+                    continue
+                pending[own] = pending.get(own, 0) + 1
             source_account = _ensure_source_account(sink, db, current_name, current_type)
             raw_splits: list[dict] = [
                 {

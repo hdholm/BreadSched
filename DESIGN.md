@@ -393,6 +393,18 @@ transfers, splits, options, grants, and reminders are skipped with their action
 name. Handles follow the QIF content identity with an occurrence counter, and
 re-import uses `keep_local_categories` against the brokerage cash.
 
+A multi-account QIF export writes each transfer in both registers (#176). Within
+one file, a plain (unsplit) `[Account]` bank record is paired with its mirror: the
+same date, the opposite amount, and the two account names swapped. Investment
+records win: a pre-pass records the bank-register key each `XIn`/`XOut` or
+`X`-suffixed action implies (money entering the brokerage left the other account),
+and a matching bank record is dropped. Between two bank registers the first record
+in file order is imported and its mirror dropped; each pairing consumes one match,
+so repeated equal transfers pair one-to-one and unmatched records import as
+before. Dropped copies are counted in `ImportResult.transfers_paired` and reported
+in the import detail. Because the first side's identity is unchanged, re-import is
+stable, and a copy created by an earlier version is no longer seen in the source.
+
 An OFX bank or card transaction may carry its own exchange rate. `CURRATE` is the
 number of statement-currency (`CURDEF`) units per unit of `CURSYM`, so it is
 stored as a `CURSYM` quote priced in `CURDEF`, dated `DTPOSTED`, with source `ofx`

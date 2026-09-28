@@ -82,6 +82,8 @@ class ImportResult:
     transactions_kept: int = 0
     #: Existing transfer sides completed by an accepted statement row.
     transactions_linked: int = 0
+    #: Second register copies of a transfer already imported from the same file.
+    transfers_paired: int = 0
     splits_new: int = 0
     splits_refreshed: int = 0
     splits_unchanged: int = 0
@@ -274,6 +276,12 @@ class ImportResult:
                 f"{self.transactions_new} new, {self.transactions_refreshed} refreshed, "
                 f"{self.transactions_unchanged} unchanged"
             )
+            if self.transfers_paired:
+                lines.append(
+                    f"Transfers: {self.transfers_paired} second register cop"
+                    f"{'y' if self.transfers_paired == 1 else 'ies'} matched and not imported "
+                    "again"
+                )
             if self.transactions_held or self.transactions_kept:
                 lines.append(
                     "Reconciled in BreadSched: "

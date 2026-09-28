@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a169 - 2026-09-28
+
+- **A QIF transfer listed in both accounts is imported once (#176).** A
+  multi-account QIF export writes each transfer in both registers, and both copies
+  used to be imported, moving the money twice. The second copy (same date,
+  opposite amount, accounts swapped) is now matched and dropped; an investment
+  account's transfer record is always the one kept. The import detail reports how
+  many copies were matched. Application version `0.2.0a169`; native schema
+  remains 9.
+
 ## 0.2.0a168 - 2026-09-28
 
 - **QIF investment accounts.** A QIF export's investment accounts (Invst, Port,
