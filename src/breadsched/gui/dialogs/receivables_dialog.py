@@ -12,7 +12,6 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.lib.receivable import Receivable
 from ...gen.services.receivables import (
@@ -25,6 +24,7 @@ from ...gen.services.receivables import (
     detach_split,
     list_receivables,
     mark_disputed,
+    receivable_candidates,
     record_write_off,
     save_receivable,
 )
@@ -34,9 +34,6 @@ from ..gi_setup import Gtk
 from ..widgets.bounded import scroll_body
 
 __all__ = ["ReceivablesDialog"]
-
-#: How many recent candidate splits each link picker offers.
-_CANDIDATE_LIMIT = 300
 
 
 def _clear(grid: Gtk.Grid) -> None:
@@ -321,36 +318,20 @@ class ReceivablesDialog(Gtk.Window):
         self.dispute_note.set_text(receivable.dispute_note)
 
     def _fill_pickers(self, receivable: Receivable) -> None:
-        """Offer recent expense-account splits not yet linked, costs and credits apart."""
-        linked = {(link.transaction, link.split) for link in receivable.expenses} | {
-            (link.transaction, link.split) for link in receivable.reimbursements
-        }
-        costs: list[tuple[date, str, str, str]] = []
-        credits: list[tuple[date, str, str, str]] = []
-        classes = {account.handle: account.account_class for account in self.db.iter_accounts()}
-        for transaction in self.db.iter_transactions():
-            for split in transaction.splits:
-                if classes.get(split.account) is not AccountClass.EXPENSE:
-                    continue
-                if (transaction.handle, split.handle) in linked or not split.value:
-                    continue
-                text = (
-                    f"{transaction.post_date.isoformat()} · {transaction.description} · "
-                    f"{self.db.full_name(split.account)} · {split.value.format()}"
-                )
-                entry = (transaction.post_date, transaction.handle, split.handle, text)
-                (costs if split.value > 0 else credits).append(entry)
+        """Offer recent unlinked expense-account splits, costs and credits apart."""
+        costs, credits = receivable_candidates(self.db, receivable.handle).value or ((), ())
         for picker, items, attribute in (
             (self.cost_picker, costs, "_costs"),
             (self.credit_picker, credits, "_credits"),
         ):
-            items.sort(key=lambda item: item[0], reverse=True)
-            chosen = items[:_CANDIDATE_LIMIT]
-            setattr(self, attribute, [(item[1], item[2]) for item in chosen])
+            setattr(self, attribute, [(item.transaction, item.split) for item in items])
             names = Gtk.StringList()
-            for item in chosen:
-                names.append(item[3])
-            if not chosen:
+            for item in items:
+                names.append(
+                    f"{item.when.isoformat()} · {item.description} · "
+                    f"{self.db.full_name(item.account)} · {item.value.format()}"
+                )
+            if not items:
                 names.append("(no unlinked expense-account splits)")
             picker.set_model(names)
 

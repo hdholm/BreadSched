@@ -4700,3 +4700,135 @@ class TestRegisterEntry:
                 assert json.loads(caught.value.read())["code"] == code
         assert db.get_transaction(rent_txn.handle).serialize() == before
         assert len(list(db.iter_transactions())) == count
+
+
+class TestReceivablesRoutes:
+    """Reimbursable expenses on the web, entirely through the shared service."""
+
+    def _rent(self, client):
+        db = client.database
+        rent_txn = next(t for t in db.iter_transactions() if t.description == "Rent")
+        rent = db.get_account_by_name("Expenses:Rent")
+        cost = next(s for s in rent_txn.splits if s.account == rent.handle)
+        return rent_txn, rent, cost
+
+    def test_track_link_dispute_write_off_and_delete(self, client):
+        from breadsched.gen.lib import Transaction
+
+        db = client.database
+        rent_txn, rent, cost = self._rent(client)
+        checking = db.get_account_by_name("Assets:Checking")
+        refund = Transaction.simple(
+            rent_txn.post_date, "Insurer refund", checking.handle, rent.handle, Money("200")
+        )
+        with db.transaction("Refund fixture") as txn:
+            db.add_transaction(refund, txn)
+        ledger_before = [t.serialize() for t in db.iter_transactions()]
+
+        _status, listed = client.get("/api/receivables")
+        assert listed["receivables"] == []
+        assert {"transaction": rent_txn.handle, "split": cost.handle} in [
+            {"transaction": c["transaction"], "split": c["split"]} for c in listed["costs"]
+        ]
+        status, saved = client.post(
+            "/api/receivable/save",
+            {
+                "payer": "Acme Insurance",
+                "incurred_date": str(rent_txn.post_date),
+                "expected_amount": "500.00",
+                "link_expense": {"transaction": rent_txn.handle, "split": cost.handle},
+            },
+        )
+        assert status == 200 and saved["linked"] is True
+        handle = saved["handle"]
+        credit = next(s for s in refund.splits if s.account == rent.handle)
+        client.post(
+            "/api/receivable/link",
+            {
+                "receivable": handle,
+                "role": "reimbursement",
+                "transaction": refund.handle,
+                "split": credit.handle,
+            },
+        )
+        _status, listed = client.get("/api/receivables")
+        [item] = listed["receivables"]
+        assert item["status"] == "partial" and item["reimbursed"] == "200.00"
+        assert item["expenses"][0]["description"] == "Rent"
+
+        client.post(
+            "/api/receivable/dispute",
+            {"handle": handle, "disputed_on": "2026-03-01", "note": "Out of network"},
+        )
+        assert client.get("/api/receivables")[1]["receivables"][0]["status"] == "disputed"
+        client.post("/api/receivable/dispute", {"handle": handle, "clear": True})
+        client.post(
+            "/api/receivable/write-off",
+            {"receivable": handle, "amount": "50.00", "written_off_on": "2026-03-02"},
+        )
+        assert client.get("/api/receivables")[1]["receivables"][0]["written_off"] == "50.00"
+        client.post(
+            "/api/receivable/unlink",
+            {"receivable": handle, "transaction": refund.handle, "split": credit.handle},
+        )
+        client.post("/api/receivable/delete", {"handle": handle})
+        assert list(db.iter_receivables()) == []
+        assert [t.serialize() for t in db.iter_transactions()] == ledger_before
+
+    def test_rejected_requests_leave_receivables_unchanged(self, client):
+        rent_txn, _rent, cost = self._rent(client)
+        _status, saved = client.post(
+            "/api/receivable/save", {"payer": "Acme", "incurred_date": "2026-01-02"}
+        )
+        before = client.database.get_receivable(saved["handle"]).serialize()
+        for path, body, status, code in [
+            (
+                "/api/receivable/save",
+                {"payer": " ", "incurred_date": "2026-01-02"},
+                400,
+                "receivable.payer.required",
+            ),
+            ("/api/receivable/save", {"payer": "X", "incurred_date": "soon"}, 400, None),
+            (
+                "/api/receivable/save",
+                {"payer": "X", "incurred_date": "2026-01-02", "expected_amount": "-1"},
+                400,
+                "receivable.expected_amount.negative",
+            ),
+            (
+                "/api/receivable/link",
+                {
+                    "receivable": saved["handle"],
+                    "role": "reimbursement",
+                    "transaction": rent_txn.handle,
+                    "split": cost.handle,
+                },
+                400,
+                "receivable.split.not_a_credit",
+            ),
+            (
+                "/api/receivable/link",
+                {
+                    "receivable": saved["handle"],
+                    "role": "other",
+                    "transaction": rent_txn.handle,
+                    "split": cost.handle,
+                },
+                400,
+                None,
+            ),
+            (
+                "/api/receivable/write-off",
+                {"receivable": saved["handle"], "amount": "0", "written_off_on": "2026-01-03"},
+                400,
+                "receivable.write_off.amount_not_positive",
+            ),
+            ("/api/receivable/delete", {"handle": "missing"}, 404, "receivable.not_found"),
+        ]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(path, body)
+            assert caught.value.code == status, (path, body)
+            if code is not None:
+                assert json.loads(caught.value.read())["code"] == code
+        assert client.database.get_receivable(saved["handle"]).serialize() == before
+        assert len(list(client.database.iter_receivables())) == 1

@@ -1,4 +1,4 @@
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Verify"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Reimbursables", "Verify"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -1130,7 +1130,11 @@ async function showRegister() {
           onclick:()=>leaveEntry(()=>{ state.editing = {split:row.split, focus:true}; render(); }) },
           "Edit"),
         el("button", { class:"action", type:"button",
-          onclick:()=>makeScheduled(row.handle) }, "Make scheduled…")))));
+          onclick:()=>makeScheduled(row.handle) }, "Make scheduled…"),
+        el("button", { class:"action", type:"button",
+          title:"Track this expense as owed back by an insurer, employer, or other payer",
+          onclick:()=>{ state.receivableFrom = row.handle; switchTo("Reimbursables"); } },
+          "Reimbursable…")))));
   }
   rows.push(...registerEntry(data, usable, null));
 
@@ -3824,6 +3828,174 @@ async function showPayees() {
       el("div", { class:"toolbar" }, accept)));
 }
 
+async function showReimbursables() {
+  // Every rule and write is in the shared receivables service; this page only
+  // gathers input. Nothing here posts to the ledger or changes a transaction.
+  const data = await get("/api/receivables");
+  const refresh = async () => { current = "Reimbursables"; await render(); };
+  const run = (action) => async () => {
+    try { await action(); } catch (error) { say(error.message, "error"); }
+  };
+  const from = state.receivableFrom
+    ? data.costs.find((item) => item.transaction === state.receivableFrom) : null;
+  const unavailable = state.receivableFrom && !from;
+  state.receivableFrom = null;
+  const today = new Date().toISOString().slice(0, 10);
+  const selected = data.receivables.find((item) => item.handle === state.receivableOpen) || null;
+  const field = (name, attrs = {}) => el("input", { name, ...attrs });
+  const payer = field("payer", { placeholder:"Acme Insurance",
+    value:selected?.payer || "", "aria-label":"Payer" });
+  const description = field("description", { placeholder:"What it was for",
+    value:selected?.description ?? from?.description ?? "", "aria-label":"Description" });
+  const incurred = field("incurred_date", { type:"date",
+    value:selected?.incurred_date || from?.date || today, "aria-label":"Incurred" });
+  const expected = field("expected_amount", { inputmode:"decimal", placeholder:"Optional",
+    value:selected?.expected_amount ?? from?.value ?? "", "aria-label":"Expected back" });
+  const expectedBy = field("expected_cash_date", { type:"date",
+    value:selected?.expected_cash_date || "", "aria-label":"Expected by" });
+  const form = el("form", { class:"entry", onsubmit:(event) => {
+    event.preventDefault();
+    run(async () => {
+      const saved = await post("/api/receivable/save", {
+        handle:selected?.handle || null, payer:payer.value, description:description.value,
+        incurred_date:incurred.value, expected_amount:expected.value.trim() || null,
+        expected_cash_date:expectedBy.value || null,
+        link_expense: from ? { transaction:from.transaction, split:from.split } : null,
+      });
+      state.receivableOpen = saved.handle;
+      say(`Saved ${saved.payer}.` + (saved.linked === true ? " The expense is linked."
+        : saved.linked === false ? " The expense could not be linked." : ""));
+      await refresh();
+    })();
+  } },
+    el("label", {}, "Payer", payer), el("label", {}, "Description", description),
+    el("label", {}, "Incurred", incurred), el("label", {}, "Expected back", expected),
+    el("label", {}, "Expected by", expectedBy),
+    el("div", { class:"toolbar" },
+      el("button", { class:"action primary", type:"submit" },
+        selected ? "Save changes" : "Add receivable"),
+      selected ? el("button", { class:"action", type:"button", onclick:() => {
+        state.receivableOpen = null; refresh();
+      } }, "New") : null));
+
+  const rows = data.receivables.map((item) => el("tr", {},
+    el("td", {}, item.payer), el("td", {}, item.description || "—"),
+    el("td", {}, item.incurred_date),
+    el("td", { class:"num" }, money(item.expense_total)),
+    el("td", { class:"num" }, money(item.reimbursed)),
+    el("td", { class:"num" }, money(item.written_off)),
+    el("td", { class:cls(item.remaining) }, money(item.remaining)),
+    el("td", {}, item.status_label), el("td", { class:"num" }, `${item.age_days} d`),
+    el("td", {}, item.expected_cash_date || "—"),
+    el("td", {}, el("button", { class:"action", type:"button", onclick:() => {
+      state.receivableOpen = item.handle; refresh();
+    } }, "Open"))));
+
+  let detail = null;
+  if (selected) {
+    const linked = [
+      ...selected.expenses.map((link) => ["Expense", link]),
+      ...selected.reimbursements.map((link) => ["Reimbursement", link]),
+    ].map(([role, link]) => el("tr", {},
+      el("td", {}, role), el("td", {}, link.date || "—"),
+      el("td", {}, link.description ?? "Linked split no longer exists"),
+      el("td", {}, link.account || ""),
+      el("td", { class:"num" }, link.value == null ? "" : money(link.value)),
+      el("td", {}, el("button", { class:"action", type:"button", onclick:run(async () => {
+        await post("/api/receivable/unlink", { receivable:selected.handle,
+          transaction:link.transaction, split:link.split });
+        say("Unlinked; the transaction itself is unchanged.");
+        await refresh();
+      }) }, "Unlink"))));
+    const taken = new Set([...selected.expenses, ...selected.reimbursements]
+      .map((link) => `${link.transaction}/${link.split}`));
+    const picker = (items, label) => el("select", { "aria-label":label },
+      ...items.filter((item) => !taken.has(`${item.transaction}/${item.split}`))
+        .map((item) => el("option", { value:`${item.transaction}/${item.split}` },
+          `${item.date} · ${item.description} · ${item.account} · ${item.value}`)));
+    const costPicker = picker(data.costs, "Expense split to link");
+    const creditPicker = picker(data.credits, "Reimbursement split to link");
+    const link = (role, select) => run(async () => {
+      if (!select.value) { say("There is no split to link.", "error"); return; }
+      const [transaction, split] = select.value.split("/");
+      await post("/api/receivable/link", { receivable:selected.handle, role, transaction, split });
+      say(`Linked the ${role}.`);
+      await refresh();
+    });
+    const disputeDate = field("disputed_on", { type:"date",
+      value:selected.disputed_on || today, "aria-label":"Dispute date" });
+    const disputeNote = field("note", { value:selected.dispute_note || "",
+      placeholder:"Why the payer contests it", "aria-label":"Dispute note" });
+    const writeOffAmount = field("amount", { inputmode:"decimal", placeholder:"0.00",
+      "aria-label":"Write-off amount" });
+    const writeOffDate = field("written_off_on", { type:"date", value:today,
+      "aria-label":"Write-off date" });
+    const writeOffReason = field("reason", { placeholder:"Reason",
+      "aria-label":"Write-off reason" });
+    detail = el("div", { class:"panel panel-pad-16" },
+      el("h2", {}, `${selected.payer} — linked splits`),
+      linked.length ? table(["Role", "Date", "Description", "Account",
+        { label:"Amount", num:true }, ""], linked)
+        : el("p", { class:"note" }, "Nothing linked yet."),
+      el("div", { class:"toolbar" }, costPicker,
+        el("button", { class:"action", type:"button", onclick:link("expense", costPicker) },
+          "Link expense")),
+      el("div", { class:"toolbar" }, creditPicker,
+        el("button", { class:"action", type:"button",
+          onclick:link("reimbursement", creditPicker) }, "Link reimbursement")),
+      el("div", { class:"toolbar" }, el("strong", {}, "Dispute"), disputeDate, disputeNote,
+        el("button", { class:"action", type:"button", onclick:run(async () => {
+          await post("/api/receivable/dispute", { handle:selected.handle,
+            disputed_on:disputeDate.value, note:disputeNote.value });
+          say("Marked disputed.");
+          await refresh();
+        }) }, "Mark disputed"),
+        el("button", { class:"action", type:"button", onclick:run(async () => {
+          await post("/api/receivable/dispute", { handle:selected.handle, clear:true });
+          say("Dispute cleared.");
+          await refresh();
+        }) }, "Clear dispute")),
+      el("div", { class:"toolbar" }, el("strong", {}, "Write off"), writeOffAmount,
+        writeOffDate, writeOffReason,
+        el("button", { class:"action", type:"button", onclick:run(async () => {
+          await post("/api/receivable/write-off", { receivable:selected.handle,
+            amount:writeOffAmount.value, written_off_on:writeOffDate.value,
+            reason:writeOffReason.value });
+          say("Wrote off the amount; nothing was posted to the ledger.");
+          await refresh();
+        }) }, "Record write-off")),
+      el("div", { class:"toolbar" },
+        el("button", { class:"action", type:"button", onclick:run(async () => {
+          if (!window.confirm(`Delete the receivable from ${selected.payer}? `
+            + "Its transactions are unchanged.")) return;
+          await post("/api/receivable/delete", { handle:selected.handle });
+          state.receivableOpen = null;
+          say("Deleted the receivable; its transactions are unchanged.");
+          await refresh();
+        }) }, "Delete receivable")));
+  }
+
+  return el("div", {},
+    el("p", { class:"note" },
+      "Track an expense you paid that an insurer, employer, or other payer owes back. "
+      + "A reimbursement is an ordinary credit to the same expense account, never income, "
+      + "and the original expense is never changed. Disputes and write-offs post nothing "
+      + "to the ledger."),
+    unavailable ? el("p", { class:"note negative" },
+      "That transaction has no expense to track as reimbursable.") : null,
+    from ? el("p", { class:"note" }, `Saving links the ${from.value} expense from `
+      + `${from.date} “${from.description}”.`) : null,
+    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Reimbursable expenses"),
+      data.receivables.length
+        ? table(["Payer", "Description", "Incurred", { label:"Expense", num:true },
+          { label:"Reimbursed", num:true }, { label:"Written off", num:true },
+          { label:"Remaining", num:true }, "Status", { label:"Age", num:true },
+          "Expected by", ""], rows)
+        : el("p", { class:"note" }, "No reimbursable expenses yet."),
+      form),
+    detail);
+}
+
 async function showRules() {
   const data = await get("/api/rules");
   const refresh = async () => { current = "Rules"; await render(); };
@@ -3943,7 +4115,7 @@ const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
-  Payees: showPayees, Rules: showRules, Verify: showVerify,
+  Payees: showPayees, Rules: showRules, Reimbursables: showReimbursables, Verify: showVerify,
 };
 
 async function showFsaDashboard() {

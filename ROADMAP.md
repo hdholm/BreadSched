@@ -36,8 +36,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    and settled status (always recomputed, never stored) with age and an optional
    expected cash date, never counts a reimbursement as new income, never erases
    the original expense, and coordinates with GnuCash re-import the same way FSA
-   claims do, and the GTK dialog and register action. Remaining: the web
-   surface, reconciling a reimbursement deposit to a
+   claims do, and the GTK and web screens with their register actions. Remaining:
+   reconciling a reimbursement deposit to a
    receivable with exact partial amounts and currency evidence during bank
    import/reconciliation, and explicit coordination with FSA claims when the same
    expense could be claimed through either.

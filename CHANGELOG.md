@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a160 - 2026-09-28
+
+- **Track reimbursable expenses in the browser.** A new **Reimbursables** page
+  lists receivables with their recomputed status and balances. It adds and changes
+  them, links expense and reimbursement splits, and records disputes and
+  write-offs. **Reimbursable…** on a register row starts one from that expense.
+  All of it runs through the shared receivables service, as on the desktop, whose
+  split pickers now use the same `receivable_candidates` service. Application
+  version `0.2.0a160`; native schema remains 9.
+
 ## 0.2.0a159 - 2026-09-28
 
 - **Track reimbursable expenses on the desktop.** **Actions → Reimbursable
