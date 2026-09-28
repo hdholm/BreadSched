@@ -408,8 +408,8 @@ groups fold trimmed transaction descriptions case-insensitively in memory and su
 those actual contributions. The category's plan is never allocated to merchants.
 The service checks merchant and detail totals against the Plan cell before returning.
 The packaged guide describes the applied Plan controls, category comparison, trend,
-and selected merchant cell as one user workflow. The README gives an entry point to
-that workflow. Contribution policy requires each PR to update tests and the
+and selected merchant cell as one user workflow; the README carries no feature
+walkthroughs. Contribution policy requires each PR to update tests and the
 roadmap, changelog, design, guide, and README for its actual scope so these layers
 do not diverge from the implementation.
 GTK's Explorer dialog and the web Plan explorer use the same read-only service.

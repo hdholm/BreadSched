@@ -70,7 +70,8 @@ messages or pull requests.
   the version adds that heading; one that does not adds its entry to the next
   version's section, creating the heading with the version it will ship in.
 - Keep documentation roles distinct:
-  - `README.md` is the product/developer entry point;
+  - `README.md` is the product/developer entry point, not a place for feature
+    walkthroughs (those belong in the User Guide and DESIGN.md);
   - `src/breadsched/USER_GUIDE.md` is the packaged task-oriented user guide;
   - `DESIGN.md` records current architecture and rationale;
   - `ROADMAP.md` is the only future-work list; and

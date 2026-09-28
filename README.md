@@ -41,32 +41,6 @@ workflows and a sandboxed GTK smoke (views, help, icon, settings) under Document
 access. GTK file portals and printing remain to be validated before an installer
 is published.
 
-## Explore expenses
-
-Apply a Plan horizon, grouping, and scenario, then choose **Explore expenses…** in
-GTK Plan or scroll to **Expense Explorer** on the web Plan page. Compare category
-plan and actual amounts for a selected period, sort categories, inspect a category
-trend across periods, and open merchant transaction detail. Merchant totals are
-actuals grouped temporarily by transaction description; the category plan is not
-allocated into merchant budgets. Both interfaces can print the applied view. See
-the [User Guide](src/breadsched/USER_GUIDE.md#explore-expenses) for steps and
-interpretation.
-
-Plan value detail explains dated planned and actual contributions. The current
-Expense Explorer shows per-category remaining this period from planned spending
-minus actuals through the as-of date. An optional view toggle carries completed
-prior-period surplus or deficit. An ungrouped Dashboard shows complete ledger net
-worth; group totals need setup and emergency coverage needs committed outgoings. The
-Dashboard discloses when selected groups leave asset, debt, or cash accounts outside
-their totals. The [User Guide](src/breadsched/USER_GUIDE.md#dashboard-and-near-term-cash) explains
-current behavior, and the [roadmap](ROADMAP.md) tracks these improvements.
-An imported GnuCash book initially uses its posted account balances for ungrouped
-Net worth and keeps supported scheduled bills visible. A card balance without
-payment setup is disclosed rather than silently left out of near-term needs.
-Several missed dates of one schedule appear as a single Dashboard row with their
-range, count, and total. Missing foreign cash quotes
-make dependent Dashboard totals unavailable until a quote is supplied.
-
 ## Install and run for development
 
 ```bash
