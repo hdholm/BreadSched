@@ -267,3 +267,67 @@ def test_rollover_stops_when_a_prior_currency_period_is_unavailable(db, book):
     assert row.periods[0].remaining_reason == "Currency conversion unavailable"
     assert row.periods[1].remaining is None
     assert row.periods[1].remaining_reason == "Prior period unavailable"
+
+
+def test_spending_over_time_splits_totals_by_category_and_marks_as_of(db, book):
+    estimate = ScheduledTransaction(
+        name="Monthly groceries",
+        recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 5)),
+        splits=[
+            ScheduledSplit(book.groceries, Money(100)),
+            ScheduledSplit(book.checking, Money(-100)),
+        ],
+    )
+    with db.transaction("Spending history") as txn:
+        db.add_scheduled(estimate, txn)
+        for when, account, amount in (
+            (date(2026, 1, 9), book.groceries, "80"),
+            (date(2026, 1, 20), book.utilities, "45"),
+            (date(2026, 2, 6), book.groceries, "120"),
+            (date(2026, 2, 7), book.expenses, "5"),
+        ):
+            db.add_transaction(
+                Transaction.simple(when, "Spend", account, book.checking, amount), txn
+            )
+    result = query_expense_explorer(
+        db,
+        PlanQuery(start=date(2026, 1, 1), end=date(2026, 3, 31), today=date(2026, 2, 10)),
+    )
+    assert result.value is not None
+    points = result.value.spending
+    assert [point.label for point in points] == [item.label for item in result.value.totals]
+    assert [(point.future, point.partial) for point in points] == [
+        (False, False),
+        (False, True),
+        (True, False),
+    ]
+    for point, total in zip(points, result.value.totals, strict=True):
+        assert (point.planned, point.actual) == (total.planned, total.actual)
+        assert sum((amount for _handle, amount in point.categories), Money(0)) == point.actual
+        assert not point.currency_incomplete
+    # The lone "Expenses" root is split into its child categories; what was
+    # posted to it directly keeps its own entry.
+    january, february = dict(points[0].categories), dict(points[1].categories)
+    assert january[book.groceries] == Money(80)
+    assert january[book.utilities] == Money(45)
+    assert february[book.groceries] == Money(120)
+    assert february[book.expenses] == Money(5)
+    assert points[0].planned == Money(100)
+
+
+def test_printable_expense_report_includes_spending_over_time(db, book):
+    with db.transaction("Spend") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 1, 9), "Spend", book.groceries, book.checking, "80"),
+            txn,
+        )
+    result = query_expense_explorer(
+        db,
+        PlanQuery(start=date(2026, 1, 1), end=date(2026, 2, 28), today=date(2026, 1, 15)),
+        account=book.groceries,
+        period_index=0,
+    )
+    assert result.value is not None
+    html = expense_explorer_report(result.value)
+    assert "<h2>Spending over time</h2>" in html
+    assert "to date" in html and "future" in html

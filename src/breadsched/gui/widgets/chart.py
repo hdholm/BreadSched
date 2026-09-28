@@ -48,6 +48,11 @@ class LineChart(Gtk.DrawingArea):
         #: something that names the reason, since "no data" is rarely the reason.
         self.empty_message = "Nothing to plot yet"
         self.value_format = "{:,.0f}"
+        #: Optional index of a boundary point (for example the first future
+        #: period), drawn as a dashed vertical line just before it.
+        self.marker_index: int | None = None
+        #: Optional highlighted point index, drawn as a shaded column.
+        self.selected_index: int | None = None
         self.set_draw_func(self._draw)
         self.set_content_height(300)
         self.set_hexpand(True)
@@ -59,6 +64,18 @@ class LineChart(Gtk.DrawingArea):
         self.queue_draw()
 
     # ------------------------------------------------------------------ layout
+
+    _MARGIN_LEFT = 78.0
+    _MARGIN_RIGHT = 16.0
+
+    def index_at(self, x: float) -> int | None:
+        """The nearest point index to a widget x coordinate, if any points exist."""
+        count = max((len(s.values) for s in self.series), default=0)
+        if count < 2:
+            return None
+        plot_width = max(self.get_width() - self._MARGIN_LEFT - self._MARGIN_RIGHT, 1.0)
+        position = (x - self._MARGIN_LEFT) / plot_width * (count - 1)
+        return min(count - 1, max(0, round(position)))
 
     def _bounds(self) -> tuple[float, float]:
         values = [v for s in self.series for v in s.values]
@@ -72,7 +89,7 @@ class LineChart(Gtk.DrawingArea):
         return low - padding, high + padding
 
     def _draw(self, _area, cr, width: int, height: int) -> None:
-        margin_left, margin_right = 78.0, 16.0
+        margin_left, margin_right = self._MARGIN_LEFT, self._MARGIN_RIGHT
         margin_top, margin_bottom = 16.0, 46.0
         plot_width = max(width - margin_left - margin_right, 1.0)
         plot_height = max(height - margin_top - margin_bottom, 1.0)
@@ -119,6 +136,23 @@ class LineChart(Gtk.DrawingArea):
             cr.set_source_rgba(0.8, 0.2, 0.2, 0.06)
             cr.rectangle(margin_left, zero, plot_width, margin_top + plot_height - zero)
             cr.fill()
+
+        step_width = plot_width / (count - 1)
+        if self.selected_index is not None and 0 <= self.selected_index < count:
+            cr.set_source_rgba(0.20, 0.51, 0.89, 0.10)
+            cr.rectangle(
+                x_for(self.selected_index) - step_width / 2, margin_top, step_width, plot_height
+            )
+            cr.fill()
+        if self.marker_index is not None and 0 < self.marker_index < count:
+            marker = x_for(self.marker_index) - step_width / 2
+            cr.set_source_rgba(0.5, 0.5, 0.5, 0.8)
+            cr.set_line_width(1)
+            cr.set_dash([4.0, 3.0])
+            cr.move_to(marker, margin_top)
+            cr.line_to(marker, margin_top + plot_height)
+            cr.stroke()
+            cr.set_dash([])
 
         # Period labels, thinned so they never collide.
         if self.labels:

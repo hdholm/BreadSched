@@ -2508,6 +2508,18 @@ class TestPlanToolbarIcon:
 
 
 class TestDerivedPlanView:
+    def test_line_chart_maps_a_click_to_the_nearest_period(self):
+        from breadsched.gui.widgets.chart import LineChart, Series
+
+        class Sized(LineChart):
+            def get_width(self):
+                return 494  # 400 px of plot between the 78/16 px margins
+
+        chart = Sized()
+        assert chart.index_at(200) is None
+        chart.set_data([Series("Actual", [1.0, 2.0, 3.0])])
+        assert [chart.index_at(x) for x in (10, 170, 290, 470, 900)] == [0, 0, 1, 2, 2]
+
     def test_expense_explorer_builds_from_applied_plan(self, app, window, populated_book):
         from breadsched.gen.services.plan import PlanQuery
         from breadsched.gui.dialogs.expense_explorer_dialog import ExpenseExplorerDialog
@@ -2524,6 +2536,15 @@ class TestDerivedPlanView:
             assert dialog._report.categories
             assert dialog.content.get_first_child() is not None
             assert dialog.period.get_selected() == 0
+            # Spending over time: one chart point per period, the selection shaded.
+            chart = dialog.spending_chart
+            assert [len(series.values) for series in chart.series] == [
+                len(dialog._report.totals)
+            ] * 2
+            assert chart.selected_index == 0
+            if len(dialog._report.totals) > 1:
+                dialog.period.set_selected(1)
+                assert dialog.spending_chart.selected_index == 1
             dialog.rollover.set_active(True)
             assert dialog._report.rollover
             dialog.sort.set_selected(3)

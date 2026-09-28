@@ -1674,6 +1674,12 @@ class TestPlanApi:
             Money(rent["periods"][0]["planned"]) - Money(1800)
         )
         assert Money(report["totals"][0]["actual"]) == Money(1800)
+        [point] = report["spending"]
+        assert Money(point["actual"]) == Money(1800)
+        assert sum((Money(part["actual"]) for part in point["categories"]), Money(0)) == Money(1800)
+        assert {part["name"] for part in point["categories"]} >= {"Expenses:Rent"}
+        assert point["currency_incomplete"] is False
+        assert report["as_of"]
         params = urllib.parse.urlencode(
             {"from": "2026-01", "through": "2026-01", "account": rent["account"], "index": "0"}
         )

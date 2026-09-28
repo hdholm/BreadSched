@@ -58,10 +58,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    exchange rates imported through the same quote contract, and securities quoted
    only in another currency are valued through one as-of exchange quote.
    Remaining: decide an explicit multi-hop policy before enabling any conversion
-   between currencies through a third currency. Do not create a second monthly
+   between currencies through a third currency (proposal in #173). Do not create a second monthly
    budget ledger.
 4. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
-   simple user edits, broader reporting and spending-over-time charts, then
+   simple user edits, broader reporting (spending over time is delivered), then
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
    portability controls. Detailed acceptance contracts follow below.
@@ -98,9 +98,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   contributions and a target date; explain progress separately from spendable cash
   and avoid counting transfers as expenses.
 
-- Add a spending-over-time chart and broader reports with drill-down to the
-  exact dated events, category hierarchy, selected scenario, as-of boundary,
-  currency completeness, and matching printable/exported totals.
+- Add broader reports beyond Expense Explorer's spending over time (for example
+  income over time and net worth history) with drill-down to the exact dated
+  events, category hierarchy, selected scenario, as-of boundary, currency
+  completeness, and matching printable/exported totals.
 
 - Carry reimbursable expense and receivable status into Plan, Projection, and
   Dashboard liquidity: distinguish incurred expense, collectible asset, and

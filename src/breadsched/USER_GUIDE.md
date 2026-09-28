@@ -579,14 +579,24 @@ actuals posted through the as-of date.
 In GTK, choose the **Explore** toolbar icon while Plan is shown. In the web interface, scroll to
 **Expense Explorer** on the Plan page, below the cash outlook. Then:
 
-1. Choose a **Period** for the category comparison. Each category shows a plan bar
+1. Read **Spending over time** at the top: total plan (blue) and actual (orange)
+   for every period in the applied Plan range, with a table that splits each
+   period's actual across your top-level expense categories. A period marked
+   **to date** contains the as-of date; **future** periods show only what is
+   already posted, and a dashed line marks where they begin; **missing quote**
+   means a foreign-currency amount could not be converted and is left out. Click a
+   period on the chart (GTK) or choose it in the chart or table (web) to make it the
+   comparison period below. If all your categories sit under one **Expenses**
+   account, the split uses its subcategories, and anything posted to **Expenses**
+   itself gets its own column.
+2. Choose a **Period** for the category comparison. Each category shows a plan bar
    and an actual bar plus exact Plan, Actual, Variance, and Remaining values. The web chart
    labels plan in blue and actual in orange. **Sort categories** (GTK) or **Sort by**
    (web) orders the rows by Actual, Plan, Variance, or name/category.
-2. Choose **Category trend** to compare that category's plan and actual across all
+3. Choose **Category trend** to compare that category's plan and actual across all
    periods in the applied Plan range. The trend remains for the chosen category when
    you change the comparison period or sort order.
-3. Read **Merchants — actual only** for that category and comparison period. Each
+4. Read **Merchants — actual only** for that category and comparison period. Each
    group has an actual total and its dated transactions. The web page also shows the
    selected category's Plan, Actual, and Variance beneath the merchant table.
 
@@ -617,7 +627,7 @@ to return to each period's own remaining amount. This view choice does not chang
 transactions, schedules, or saved Plan settings.
 
 To keep a copy, use **Print…** in the GTK Explorer for a self-contained preview of
-the selected category and period with merchant detail, then print or save as PDF
+spending over time and the selected category and period with merchant detail, then print or save as PDF
 from the browser. Web **Print** includes the currently displayed Plan and applied
 Expense Explorer, including its selected comparison and detail.
 
