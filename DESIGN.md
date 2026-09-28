@@ -1128,6 +1128,34 @@ presentation adapters over the same service: `web/rules_resource.py` serves
 the category and payee choices) and `POST /api/rule/add`, `/api/rule/move`,
 `/api/rule/delete`, and `/api/rules/accept`, and parses JSON only.
 
+## Reimbursable expenses (receivables)
+
+A `Receivable` (`gen/lib/receivable.py`, table `receivable`, schema 9) tracks an
+out-of-pocket expense and what an insurer, employer, or other payer is expected to
+reimburse, as linked but distinct facts. It never rewrites or removes the expense
+split it references, and a reimbursement is never counted as new income: like an
+ordinary refund, the ledger-side reimbursement is an expense-class split crediting
+the *same* expense account the money was originally spent from (a negative-value
+split alongside the original positive one), so it offsets net spending in reports
+without touching the expense split. `engine/receivables.py` never stores a status;
+`receivable_summary` always recomputes it from the linked splits plus any recorded
+dispute or write-off: `written_off > 0` and nothing remains outstanding is
+**written off** (a deliberate, terminal decision to stop collecting, which decides
+the state even over a prior partial reimbursement); otherwise a fully offset expense
+is **settled**; an open dispute with a balance still outstanding is **disputed**; any
+reimbursement short of the full expense is **partial**; and no reimbursement yet is
+**open**. `services/receivables.py` (`save_receivable`, `attach_expense_split`,
+`attach_reimbursement_split`, `detach_split`, `mark_disputed`, `clear_dispute`,
+`record_write_off`, `delete_receivable`, `list_receivables`) validates every write:
+a linked split must belong to an expense-class account, an expense link must be a
+positive split for that role and a reimbursement link a negative one, and a split
+cannot be linked twice. Deleting a receivable or clearing a dispute never touches the
+ledger transactions it referenced. The database refuses to delete a transaction a
+receivable still links to (`receivable.missing_transaction`, matching the same
+protection FSA claims already have), and a GnuCash re-import that would delete such
+a transaction is reported the same way FSA claims are. CLI: `breadsched receivables`.
+GTK and web surfaces are not yet built.
+
 ## Statement reconciliation
 
 A reconciliation is a persisted, account-scoped statement session, not transient UI
@@ -1407,21 +1435,23 @@ purposes and never advance in lockstep. The application version reported by
 and release notes and reports the native compatibility window beside it. Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 8. A behavior-only
+native book can be opened or must be migrated; it is currently 9. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The current application writes schema 8 and
-can migrate schemas 6 and 7 before decoding primary objects. Schema 8 added the
-`payee` table (7→8); schema 7 added reconciliation sessions (6→7). An
-explicit sequential registry and durable ledger, transactional runner, verified
-pre-migration backup hook, and versioned fixture make that compatibility boundary
-testable. Migration infrastructure is a durable architectural capability even when
-an individual obsolete transformation is allowed to expire.
+SQLite is the native persistence engine. The current application writes schema 9 and
+can migrate schemas 6, 7, and 8 before decoding primary objects. Schema 9 added the
+`receivable` table (8→9); schema 8 added the `payee` table (7→8); schema 7 added
+reconciliation sessions (6→7). An explicit sequential registry and durable ledger,
+transactional runner, verified pre-migration backup hook, and versioned fixture make
+that compatibility boundary testable. Migration infrastructure is a durable
+architectural capability even when an individual obsolete transformation is allowed
+to expire.
 
-The supported migration window covers the two immediately preceding data-format
-versions: the registry retains 6→7 and 7→8, and the application accepts schemas 6,
-7, and 8. Versioned fixtures for schemas 6 and 7 prove each step. The window changes when a real schema migration is needed; there is no no-op
+The supported migration window currently covers three preceding data-format
+versions: the registry retains 6→7, 7→8, and 8→9, and the application accepts
+schemas 6, 7, 8, and 9. Versioned fixtures for schemas 6, 7, and 8 prove each step.
+The window widens only when a real schema migration is needed; there is no no-op
 format bump. A migration must run before ordinary decoding, fail atomically, preserve
 a verified backup, and leave enough version evidence to diagnose or retry safely.
 The mechanism and supported migration steps are not removed merely because the

@@ -391,12 +391,12 @@ class TestSchemaCompatibility:
     def test_new_books_record_the_current_baseline_in_the_migration_ledger(self, db):
         from breadsched.gen.lib import DEFAULT_CURRENCY_HANDLE
 
-        assert db.get_metadata("schema_version") == 8
+        assert db.get_metadata("schema_version") == 9
         assert db.get_metadata("default_currency") == DEFAULT_CURRENCY_HANDLE
         assert db.get_commodity(DEFAULT_CURRENCY_HANDLE).mnemonic == "USD"
         assert db.integrity_problems() == []
         row = db._require().execute("SELECT version FROM schema_migration").fetchone()
-        assert tuple(row) == (8,)
+        assert tuple(row) == (9,)
 
     def test_current_books_with_the_old_unused_ledger_still_open(self, tmp_path):
         path = tmp_path / "current-with-extra-table.breadsched"
@@ -408,11 +408,11 @@ class TestSchemaCompatibility:
             raw.execute(
                 "CREATE TABLE schema_migration(version INTEGER PRIMARY KEY, applied_at TEXT)"
             )
-            raw.execute("INSERT INTO schema_migration VALUES (8, 'historical')")
+            raw.execute("INSERT INTO schema_migration VALUES (9, 'historical')")
 
         reopened = DbSQLite()
         reopened.load(str(path))
-        assert reopened.get_metadata("schema_version") == 8
+        assert reopened.get_metadata("schema_version") == 9
         reopened.close()
 
     @pytest.mark.parametrize("version", [3, 4, 5])
@@ -446,7 +446,7 @@ class TestSchemaCompatibility:
         path = self._schema_6_fixture(tmp_path)
         db = DbSQLite()
         db.load(str(path))
-        assert db.get_metadata("schema_version") == 8
+        assert db.get_metadata("schema_version") == 9
         assert db.get_metadata("fixture_marker") == "schema-6"
         assert db.get_account("fixture-account").name == "Fixture Checking"
         assert [
@@ -454,7 +454,7 @@ class TestSchemaCompatibility:
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [6, 7, 8]
+        ] == [6, 7, 8, 9]
         assert db.integrity_problems() == []
         db.close()
 
@@ -508,10 +508,10 @@ class TestSchemaCompatibility:
 
     def test_a_newer_schema_is_rejected(self, tmp_path):
         path = tmp_path / "future.breadsched"
-        self._book_with_schema(path, 9)
+        self._book_with_schema(path, 10)
 
         db = DbSQLite()
-        with pytest.raises(DbError, match="unsupported newer schema 9"):
+        with pytest.raises(DbError, match="unsupported newer schema 10"):
             db.load(str(path))
 
     @pytest.mark.parametrize("version", ["seven", None])

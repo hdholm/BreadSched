@@ -55,9 +55,25 @@ def _v7_to_v8(conn: sqlite3.Connection) -> None:
     )
 
 
+def _v8_to_v9(conn: sqlite3.Connection) -> None:
+    """Add reimbursable-expense receivables, linked to ordinary ledger splits."""
+    conn.execute(
+        """
+        CREATE TABLE receivable (
+            handle        TEXT PRIMARY KEY,
+            incurred_date TEXT NOT NULL,
+            payer         TEXT NOT NULL,
+            blob          TEXT NOT NULL
+        )
+        """
+    )
+    conn.execute("CREATE INDEX idx_receivable_incurred_date ON receivable(incurred_date)")
+
+
 MIGRATIONS: dict[int, Migration] = {
     6: Migration(6, 7, "add reconciliation sessions", _v6_to_v7),
     7: Migration(7, 8, "add payees", _v7_to_v8),
+    8: Migration(8, 9, "add reimbursable-expense receivables", _v8_to_v9),
 }
 MIN_SUPPORTED_SCHEMA_VERSION = min(MIGRATIONS)
 

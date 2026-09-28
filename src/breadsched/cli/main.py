@@ -45,6 +45,7 @@ from ..gen.lib import (
     Payee,
     PeriodType,
     Rate,
+    Receivable,
     Recurrence,
     Scenario,
     ScheduledSplit,
@@ -108,6 +109,19 @@ from ..gen.services.payees import (
     delete_payee,
     preview_payee_proposals,
     save_payee,
+)
+from ..gen.services.receivables import (
+    RecordWriteOff,
+    SaveReceivable,
+    attach_expense_split,
+    attach_reimbursement_split,
+    clear_dispute,
+    delete_receivable,
+    detach_split,
+    list_receivables,
+    mark_disputed,
+    record_write_off,
+    save_receivable,
 )
 from ..gen.utils import logs
 from ..presentation import service_error_message
@@ -607,6 +621,19 @@ def _find_payee(db: DbSQLite, reference: str) -> Payee:
     return matches[0]
 
 
+def _find_receivable(db: DbSQLite, reference: str) -> Receivable:
+    """Locate a receivable by handle, or by a unique prefix of one."""
+    exact = db.get_receivable(reference)
+    if exact is not None:
+        return exact
+    matches = [item for item in db.iter_receivables() if item.handle.startswith(reference)]
+    if not matches:
+        raise CommandError(f"no receivable matches {reference!r}")
+    if len(matches) > 1:
+        raise CommandError(f"{reference!r} matches {len(matches)} receivables; use more characters")
+    return matches[0]
+
+
 def _rule_at(db: DbSQLite, position: int) -> str:
     rules = list_rules(db)
     if not 1 <= position <= len(rules):
@@ -857,6 +884,167 @@ def cmd_payees(args: argparse.Namespace) -> int:
             )
             if payees
             else "No payees yet. Add one with --add NAME --match DESCRIPTION.",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def _receivable_split(transaction: Transaction, index: int) -> Split:
+    if not 1 <= index <= len(transaction.splits):
+        raise CommandError(f"transaction has {len(transaction.splits)} split(s); no split {index}")
+    return transaction.splits[index - 1]
+
+
+def cmd_receivables(args: argparse.Namespace) -> int:
+    """List reimbursable expenses, add or resolve one, or link ledger splits."""
+    read_only = not (
+        args.add
+        or args.attach_expense
+        or args.attach_reimbursement
+        or args.detach
+        or args.dispute
+        or args.clear_dispute
+        or args.write_off
+        or args.delete
+    )
+    db = open_book(args.book, "r" if read_only else "w")
+    try:
+        if args.add:
+            if not args.incurred:
+                raise CommandError("--incurred DATE is required with --add")
+            saved = save_receivable(
+                db,
+                SaveReceivable(
+                    incurred_date=date.fromisoformat(args.incurred),
+                    payer=args.add,
+                    description=args.description or "",
+                    expected_amount=Money(args.expected) if args.expected else None,
+                    expected_cash_date=(
+                        date.fromisoformat(args.expected_cash_date)
+                        if args.expected_cash_date
+                        else None
+                    ),
+                ),
+            )
+            if saved.value is None:
+                raise CommandError(service_error_message(saved.errors[0]))
+            receivable = saved.value
+            emit(
+                {"handle": receivable.handle, "payer": receivable.payer},
+                args,
+                f"Saved receivable for {receivable.payer}",
+            )
+            return 0
+        if args.attach_expense or args.attach_reimbursement:
+            receivable = _find_receivable(db, args.attach_expense or args.attach_reimbursement)
+            if not args.transaction or not args.split_index:
+                raise CommandError("--transaction and --split-index are required")
+            transaction = _find_transaction(db, args.transaction)
+            split = _receivable_split(transaction, args.split_index)
+            linker = attach_expense_split if args.attach_expense else attach_reimbursement_split
+            result = linker(db, receivable.handle, transaction.handle, split.handle)
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            emit(
+                {"handle": receivable.handle},
+                args,
+                f"Linked {'expense' if args.attach_expense else 'reimbursement'} split "
+                f"to receivable for {receivable.payer}",
+            )
+            return 0
+        if args.detach:
+            receivable = _find_receivable(db, args.detach)
+            if not args.transaction or not args.split_index:
+                raise CommandError("--transaction and --split-index are required")
+            transaction = _find_transaction(db, args.transaction)
+            split = _receivable_split(transaction, args.split_index)
+            result = detach_split(db, receivable.handle, transaction.handle, split.handle)
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            emit({"handle": receivable.handle}, args, "Unlinked split from receivable")
+            return 0
+        if args.dispute:
+            receivable = _find_receivable(db, args.dispute)
+            if not args.on:
+                raise CommandError("--on DATE is required with --dispute")
+            result = mark_disputed(
+                db, receivable.handle, date.fromisoformat(args.on), args.note or ""
+            )
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            emit({"handle": receivable.handle}, args, f"Disputed receivable for {receivable.payer}")
+            return 0
+        if args.clear_dispute:
+            receivable = _find_receivable(db, args.clear_dispute)
+            result = clear_dispute(db, receivable.handle)
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            emit({"handle": receivable.handle}, args, "Cleared the dispute")
+            return 0
+        if args.write_off:
+            receivable = _find_receivable(db, args.write_off)
+            if not args.amount or not args.on:
+                raise CommandError("--amount and --on DATE are required with --write-off")
+            result = record_write_off(
+                db,
+                RecordWriteOff(
+                    receivable=receivable.handle,
+                    amount=Money(args.amount),
+                    written_off_on=date.fromisoformat(args.on),
+                    reason=args.reason or "",
+                ),
+            )
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            emit(
+                {"handle": receivable.handle},
+                args,
+                f"Wrote off {Money(args.amount).format()} for {receivable.payer}",
+            )
+            return 0
+        if args.delete:
+            receivable = _find_receivable(db, args.delete)
+            deleted = delete_receivable(db, receivable.handle)
+            if deleted.value is None:
+                raise CommandError(service_error_message(deleted.errors[0]))
+            emit({"deleted": deleted.value}, args, f"Deleted receivable for {receivable.payer}")
+            return 0
+        summaries = list_receivables(db).value or ()
+        emit(
+            [
+                {
+                    "handle": item.receivable.handle,
+                    "payer": item.receivable.payer,
+                    "description": item.receivable.description,
+                    "incurred_date": item.receivable.incurred_date,
+                    "expense_total": item.expense_total.format(),
+                    "reimbursed": item.reimbursed.format(),
+                    "written_off": item.written_off.format(),
+                    "remaining": item.remaining.format(),
+                    "age_days": item.age_days,
+                    "status": item.status.value,
+                }
+                for item in summaries
+            ],
+            args,
+            table(
+                [
+                    [
+                        item.receivable.incurred_date.isoformat(),
+                        item.receivable.payer,
+                        item.receivable.description,
+                        item.remaining.format(parens_negative=True),
+                        item.status.label,
+                        item.age_days,
+                    ]
+                    for item in summaries
+                ],
+                ["incurred", "payer", "description", "remaining", "status", "age (days)"],
+                right={5},
+            )
+            if summaries
+            else "No receivables yet. Add one with --add PAYER --incurred DATE.",
         )
         return 0
     finally:
@@ -2670,6 +2858,54 @@ def build_parser() -> argparse.ArgumentParser:
     )
     payees_cmd.add_argument("--accept-all", action="store_true", help="accept every proposal")
     payees_cmd.set_defaults(func=cmd_payees)
+
+    receivables_cmd = add(
+        "receivables",
+        "List reimbursable expenses, add or resolve one, or link ledger splits",
+    )
+    receivables_cmd.add_argument(
+        "--add", metavar="PAYER", help="create a receivable for this payer"
+    )
+    receivables_cmd.add_argument("--incurred", metavar="DATE", help="date the expense was incurred")
+    receivables_cmd.add_argument("--description", help="what the expense was for")
+    receivables_cmd.add_argument("--expected", metavar="AMOUNT", help="amount expected back")
+    receivables_cmd.add_argument(
+        "--expected-cash-date", metavar="DATE", help="date the reimbursement is expected"
+    )
+    receivables_cmd.add_argument(
+        "--attach-expense", metavar="RECEIVABLE", help="link the split recording the cost"
+    )
+    receivables_cmd.add_argument(
+        "--attach-reimbursement",
+        metavar="RECEIVABLE",
+        help="link the split crediting money back",
+    )
+    receivables_cmd.add_argument(
+        "--detach", metavar="RECEIVABLE", help="unlink a split (with --transaction --split-index)"
+    )
+    receivables_cmd.add_argument(
+        "--transaction", metavar="TRANSACTION", help="transaction handle or unique prefix"
+    )
+    receivables_cmd.add_argument(
+        "--split-index", type=int, metavar="N", help="1-based split position within --transaction"
+    )
+    receivables_cmd.add_argument(
+        "--dispute", metavar="RECEIVABLE", help="mark a receivable as disputed (with --on)"
+    )
+    receivables_cmd.add_argument("--note", help="dispute note")
+    receivables_cmd.add_argument(
+        "--clear-dispute", metavar="RECEIVABLE", help="withdraw a receivable's dispute"
+    )
+    receivables_cmd.add_argument(
+        "--write-off",
+        metavar="RECEIVABLE",
+        help="give up on collecting part or all of the balance (with --amount --on)",
+    )
+    receivables_cmd.add_argument("--amount", help="write-off amount")
+    receivables_cmd.add_argument("--on", metavar="DATE", help="date of the dispute or write-off")
+    receivables_cmd.add_argument("--reason", help="write-off reason")
+    receivables_cmd.add_argument("--delete", metavar="RECEIVABLE", help="delete a receivable")
+    receivables_cmd.set_defaults(func=cmd_receivables)
 
     backup = add("backup", "Create a consistent backup of a book")
     backup.add_argument("destination", help="path to write the backup")

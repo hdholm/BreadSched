@@ -20,6 +20,7 @@ from .fsa_claim import (
 )
 from .money import ZERO, Money, Rate
 from .payee import Payee
+from .receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
 from .reconciliation import Reconciliation, ReconciliationEvent, ReconciliationStatus
 from .recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
 from .scenario import (
@@ -78,6 +79,9 @@ __all__ = [
     "PrimaryObject",
     "ReconcileState",
     "Payee",
+    "Receivable",
+    "ReceivableSplitLink",
+    "ReceivableWriteOff",
     "Reconciliation",
     "ReconciliationEvent",
     "ReconciliationStatus",
