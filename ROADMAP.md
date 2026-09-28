@@ -42,13 +42,13 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    an FSA-overlap warning. Remaining: split one expense between a payer and an
    FSA claim (for example, an insurer pays part and the FSA the rest) as one
    reviewed allocation rather than a warning.
-2. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
-   development environment already installs BreadSched easily from source, while
-   Windows users have no equivalent path. Provide a Windows installer with the GTK
-   runtime and the same book/upgrade and file workflows; test clean installs,
-   upgrades, launch, and uninstalls on supported Windows CI. Publish
-   signed/checksummed artifacts and concise installation instructions only after
-   their release gates are proven. The Flatpak manifest, its installed-sandbox CLI
+2. **P0 — Windows installer.** Prioritized over further Linux packaging. A
+   per-user NSIS installer with its own MSYS2 Python and GTK runtime is built and
+   tested in CI (clean install, CLI, desktop smoke, reinstall over itself,
+   uninstall keeping books) and uploaded as an artifact. Remaining: attach it to
+   releases with checksums, code signing, an upgrade test from the previously
+   published installer, file-chooser and printing checks on Windows, and adding
+   the command line to `PATH` optionally. The Flatpak manifest, its installed-sandbox CLI
    gate, desktop entry, AppStream metadata, icon, and sandboxed GTK smoke already
    run in CI; remaining Linux work (validating GTK file-chooser portals and
    printing inside the sandbox, and publishing the installer) follows the Windows

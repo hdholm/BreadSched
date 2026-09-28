@@ -26,6 +26,18 @@ Press `F1` or choose **Help → User Guide** to open this guide. The switcher at
 top shows the overview or the desktop, browser, or command-line part, and a link to
 another part opens it.
 
+### Install on Windows
+
+The Windows installer (`BreadSched-<version>-setup.exe`) needs no administrator
+rights and nothing else installed: it carries its own Python and GTK. It installs
+for the current user under `%LOCALAPPDATA%\Programs\BreadSched` and adds
+**BreadSched** to the Start menu. The installation folder also holds
+`breadsched.cmd` for the [command line](cli.md) and `breadsched-gtk.cmd`.
+Installing a newer version over an older one replaces the program and keeps your
+books, and uninstalling (from Windows Settings or the Start menu) never removes a
+book. CI builds and tests the installer on every change; it is not yet published
+with releases, so check the release notes for availability.
+
 ## Find your way around
 
 The toolbar starts with the commands that work anywhere (open, import, undo, redo,

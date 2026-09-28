@@ -1,8 +1,9 @@
-"""Drive the installed GTK interface once inside the Flatpak sandbox.
+"""Drive the installed GTK interface once inside the Flatpak sandbox or Windows install.
 
 CI runs this with ``flatpak run --command=python3`` under a virtual display and
-with the network unshared. It proves the offline desktop path that command-line
-checks cannot: the GTK runtime starts, the installed themed icon resolves, a book
+with the network unshared, and with the Windows installer's own Python
+(``packaging/windows/test-installer.ps1``). It proves the offline desktop path
+that command-line checks cannot: the GTK runtime starts, the installed themed icon resolves, a book
 under Documents opens and every view renders, the packaged User Guide loads, and
 settings persist in the sandbox's own configuration directory.
 

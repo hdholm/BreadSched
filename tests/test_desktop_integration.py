@@ -92,6 +92,27 @@ def test_ci_validates_metadata_and_drives_gtk_inside_the_sandbox():
     assert (ROOT / "scripts" / "flatpak_gtk_smoke.py").is_file()
 
 
+def test_windows_installer_carries_its_runtime_and_is_tested_in_ci():
+    windows = ROOT / "packaging" / "windows"
+    build = (windows / "build-installer.sh").read_text(encoding="utf-8")
+    script = (windows / "breadsched.nsi").read_text(encoding="utf-8")
+    check = (windows / "test-installer.ps1").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    # The installed icon and launchers match the application identity.
+    assert f"data/icons/{ICON.name}" in build
+    assert "-m breadsched.cli.main" in build and "-m breadsched.gui" in script
+    # Per-user, and an upgrade replaces the runtime without touching books.
+    assert "RequestExecutionLevel user" in script
+    assert 'RMDir /r "$INSTDIR\\runtime"' in script
+    for step in ("sample", "verify", "guide --list", "flatpak_gtk_smoke.py", "Uninstall.exe"):
+        assert step in check, step
+    assert "uninstall removed the book" in check
+    assert "windows-installer:" in workflow
+    assert "packaging/windows/build-installer.sh" in workflow
+    assert "packaging/windows/test-installer.ps1" in workflow
+
+
 @pytest.mark.skipif(shutil.which("desktop-file-validate") is None, reason="validator missing")
 def test_desktop_entry_passes_desktop_file_validate():
     subprocess.run(["desktop-file-validate", str(DESKTOP)], check=True)

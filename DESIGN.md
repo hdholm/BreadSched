@@ -2118,6 +2118,25 @@ installed icon, and requires settings in the sandbox configuration directory
 (`~/.var/app/<id>/config`). File-chooser portals and printing remain unvalidated
 because the CI runner has no desktop portal service.
 
+The Windows installer (`packaging/windows/`) carries its own runtime rather than
+asking users to assemble Python and GTK. `build-installer.sh` runs in an MSYS2
+UCRT64 shell: it installs the BreadSched wheel into the UCRT64 prefix beside
+MSYS2's Python, GTK 4, PyGObject, and cairo, stages that prefix under `runtime\`
+without headers, static libraries, or documentation, adds the themed icon and
+`breadsched.cmd`/`breadsched-gtk.cmd` launchers, and compiles `breadsched.nsi`.
+The installer is per-user (no administrator rights) under
+`%LOCALAPPDATA%\Programs\BreadSched`, adds Start menu shortcuts that run
+`runtime\bin\pythonw.exe -m breadsched.gui`, and registers an uninstaller under
+HKCU. An upgrade replaces `runtime\` wholesale so no stale module survives, and
+neither upgrade nor uninstall touches books, which never live in the installation
+directory. The `windows-installer` CI job builds it on `windows-latest` and runs
+`test-installer.ps1` outside MSYS2 with a bare `PATH`: silent install, CLI
+version, sample book, verify, guide, `scripts/flatpak_gtk_smoke.py` with the
+installed Python, reinstall over itself, and silent uninstall that must leave the
+book and remove the runtime and registration. The job uploads the installer and
+its SHA-256 as an artifact; publishing it with releases (and code signing) is
+still pending.
+
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
 (`ValueError` from `gi.require_version`) skip the GTK module cleanly; once GTK4 is
