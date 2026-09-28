@@ -201,3 +201,33 @@ def test_qif_reimport_keeps_a_category_the_user_chose(db, book, tmp_path):
     stored = db.get_transaction(transaction.handle)
     assert {split.account for split in stored.splits} == {bank, book.groceries}
     assert result.transactions_unchanged == 1
+
+
+def test_a_transfer_in_both_registers_is_imported_once(db, book, tmp_path):
+    """Issue #176: a multi-account export lists each transfer in both accounts."""
+    path = tmp_path / "all-accounts.qif"
+    path.write_text(
+        "!Account\nNChecking\nTBank\n^\n!Type:Bank\n"
+        "D1/2/26\nT-500.00\nPTo savings\nL[Savings]\n^\n"
+        "D1/3/26\nT-500.00\nPTo savings again\nL[Savings]\n^\n"
+        "!Account\nNSavings\nTBank\n^\n!Type:Bank\n"
+        "D1/2/26\nT500.00\nPFrom checking\nL[Checking]\n^\n"
+        "D1/9/26\nT100.00\nPUnmatched\nL[Checking]\n^\n",
+        encoding="utf-8",
+    )
+
+    result = qif.import_book(db, path)
+
+    checking = db.get_account_by_name("Assets:Checking")
+    savings = db.get_account_by_name("Assets:Savings")
+    assert checking is not None and savings is not None
+    # One 500 transfer paired; the unmatched 500 and 100 stand alone.
+    assert ledger.balance(db, savings.handle) == Money(1100)
+    assert ledger.balance(db, checking.handle) == Money(-1100)
+    assert result.transfers_paired == 1
+    assert len(list(db.iter_transactions())) == 3
+    assert "1 second register copy matched" in result.detail()
+
+    again = qif.import_book(db, path)
+    assert again.transactions_new == 0
+    assert len(list(db.iter_transactions())) == 3

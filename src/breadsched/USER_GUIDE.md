@@ -817,6 +817,13 @@ miscellaneous income and expenses, and cash transfers are imported; a **BuyX**,
 example **[Checking]**). Transfers to an investment account from a bank register go
 to its **Cash** account. Share transfers (**ShrsIn**/**ShrsOut**), stock splits,
 and option actions are listed as skipped.
+
+When a QIF export contains several accounts, each transfer between them appears in
+both registers. BreadSched imports it once: the copy with the same date and
+opposite amount in the other account is matched and not imported again (an
+investment account's record is the one kept), and the import summary says how
+many copies were matched. A transfer whose other side is not in the file is
+imported as usual.
 When a format is ambiguous, select an explicit override in GTK, web, or an importer
 caller. Import problems are reported per record when safe recovery is possible.
 
