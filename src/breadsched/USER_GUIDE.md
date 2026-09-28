@@ -147,7 +147,8 @@ transaction editor; correct a scheduled purpose in the schedule editor.
 
 ## Navigate the application
 
-The GTK sidebar and the web navigation expose the same main work areas:
+The desktop toolbar has one icon per work area (the current one stays pressed),
+and the **View** menu lists the same areas; the web navigation offers the same set:
 
 - **Dashboard** summarizes household position, expected income, pending bills,
   liquidity, emergency-fund information, and linked assets and loans. In the

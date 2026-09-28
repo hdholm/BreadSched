@@ -33,7 +33,7 @@ except (ImportError, ValueError) as exc:
     # gi.require_version raises ValueError rather than ImportError; it is still an
     # unavailable GTK runtime, not a test-collection failure.
     pytest.skip(f"GTK 4 unavailable: {exc}", allow_module_level=True)
-Gdk, Gtk = gi_setup.Gdk, gi_setup.Gtk
+Gdk, GLib, Gtk = gi_setup.Gdk, gi_setup.GLib, gi_setup.Gtk
 
 try:
     # Gtk.init_check() reports True even with no display, so it cannot be trusted
@@ -163,16 +163,11 @@ class TestEmptyWindow:
     def test_opens_with_a_placeholder(self, window):
         assert window.stack.get_visible_child_name() == "empty"
 
-    def test_the_navigator_lists_every_category(self, window):
-        rows = []
-        index = 0
-        while (row := window.navigator.get_row_at_index(index)) is not None:
-            rows.append(row.category_key)
-            index += 1
-        assert rows == CATEGORY_KEYS
+    def test_the_toolbar_has_an_icon_for_every_category(self, window):
+        assert list(window.view_buttons) == CATEGORY_KEYS
 
     def test_selecting_a_category_without_a_book_does_not_crash(self, window):
-        window.navigator.select_row(window.navigator.get_row_at_index(0))
+        window.activate_action("show-category", GLib.Variant.new_string("dashboard"))
         assert window.stack.get_visible_child_name() == "empty"
 
 
@@ -2053,11 +2048,7 @@ class TestScheduledIsSplitInTwo:
     """Items 6, 7, 8: definitions and upcoming are separate; splits expand inline."""
 
     def test_both_categories_exist(self, window):
-        keys = []
-        index = 0
-        while (row := window.navigator.get_row_at_index(index)) is not None:
-            keys.append(row.category_key)
-            index += 1
+        keys = list(window.view_buttons)
         assert "scheduled" in keys and "upcoming" in keys
 
     def test_the_definitions_view_has_no_due_list(self, app, window, populated_book):
@@ -2437,26 +2428,36 @@ class TestSortingReordersRows:
 
 
 class TestNavigationHighlight:
-    """Item 3: however a view is reached, the sidebar follows."""
+    """However a view is reached, its toolbar icon shows as active (#155)."""
 
-    def test_the_toolbar_moves_the_sidebar(self, app, window, populated_book):
+    def _active(self, window):
+        return [key for key, button in window.view_buttons.items() if button.get_active()]
+
+    def test_the_toolbar_icon_follows_the_view(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("projection")
         window.show_category("accounts")
-        assert window.navigator.get_selected_row().category_key == "accounts"
+        assert window.current_category == "accounts"
+        assert self._active(window) == ["accounts"]
 
-    def test_jumping_to_a_register_moves_the_sidebar(self, app, window, populated_book):
+    def test_jumping_to_a_register_moves_the_highlight(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("accounts")
         handle = app.db.get_account_by_name("Assets:Checking Account").handle
         window.open_register(handle)
-        assert window.navigator.get_selected_row().category_key == "register"
+        assert self._active(window) == ["register"]
 
     def test_every_category_highlights_itself(self, app, window, populated_book):
         app.open_book(populated_book)
         for key, _label, _icon in CATEGORIES:
             window.show_category(key)
-            assert window.navigator.get_selected_row().category_key == key
+            assert self._active(window) == [key]
+
+    def test_clicking_an_icon_shows_its_view(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.view_buttons["plan"].emit("clicked")
+        assert window.stack.get_visible_child_name() == "plan"
+        assert self._active(window) == ["plan"]
 
 
 class TestPlanToolbarIcon:
@@ -5032,8 +5033,36 @@ class TestChromeCleanup:
             if action and action.startswith("win.show-category::"):
                 assert action.split("::", 1)[1] not in category_keys
 
-    def test_the_sidebar_starts_narrower_to_give_views_more_room(self, window):
-        assert window.paned.get_position() <= 160
+    def test_there_is_no_category_sidebar(self, window):
+        """#155: view icons in the toolbar replace the sidebar."""
+        assert not hasattr(window, "navigator")
+        assert not hasattr(window, "paned")
+        assert window.stack.get_parent() is window.get_child()
+
+    def test_every_view_has_one_icon_and_one_menu_item_with_distinct_icons(self, app, window):
+        from breadsched.gui.viewmanager import CATEGORIES
+
+        icons = [icon for _key, _label, icon in CATEGORIES]
+        assert len(set(icons)) == len(icons)
+        for key, button in window.view_buttons.items():
+            assert button.get_action_name() == "win.show-category"
+            assert button.get_action_target_value().get_string() == key
+        menu = app.get_menubar()
+        targets = []
+
+        def walk(model):
+            for index in range(model.get_n_items()):
+                action = model.get_item_attribute_value(index, "action", None)
+                target = model.get_item_attribute_value(index, "target", None)
+                if action is not None and action.get_string() == "win.show-category":
+                    targets.append(target.get_string())
+                for link in ("submenu", "section"):
+                    child = model.get_item_link(index, link)
+                    if child is not None:
+                        walk(child)
+
+        walk(menu)
+        assert targets == [key for key, _label, _icon in CATEGORIES]
 
     def test_data_tables_carry_the_shared_zebra_striping_class(self, app, window, populated_book):
         app.open_book(populated_book)

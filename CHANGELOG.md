@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a149 - 2026-09-28
+
+- **View icons in the toolbar replace the sidebar (#155).** The desktop window no
+  longer has a left sidebar; every view has an icon (with a caption) in the
+  toolbar, after the Open/Import/Undo/Redo/Transaction/Print actions, and the
+  current view's icon stays pressed however you got there. The View menu lists the
+  same views and marks the current one. Dashboard and Plan now have distinct
+  icons. The views get the full window width. Application version `0.2.0a149`;
+  native schema remains 9.
+
 ## 0.2.0a148 - 2026-09-28
 
 - **Tables keep every column visible as the window narrows (#154).** Desktop

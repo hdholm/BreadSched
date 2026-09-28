@@ -1,11 +1,11 @@
 """The main window.
 
-Gramps' arrangement: a category sidebar on the left switching a stack of views on
-the right, with each view owning its own toolbar.  Two things are borrowed from
-GnuCash instead.  First, a persistent account tree, because a chart of accounts is
-the map of a book and hiding it behind a mode switch makes the rest harder to read.
-Second, opening a register in a tab, so several accounts can be compared without
-losing your place in any of them.
+A menu bar and an icon toolbar above a stack of views, each view owning its own
+toolbar. The toolbar carries one icon per view (the View menu lists the same
+views); the icon for the current view stays pressed. A category sidebar used to
+duplicate that list and took width from every view, so it was removed (#155).
+Registers can also open in independent windows, so several accounts can be
+compared without losing your place in any of them.
 
 Views are constructed lazily and told about the book through :meth:`set_db`.  A
 switch of book therefore never rebuilds the window, and a view that has never been
@@ -21,14 +21,8 @@ from .paths import default_book_path  # noqa: E402
 
 __all__ = ["ViewManager"]
 
-#: (identifier, label, icon, factory path) for each category in the sidebar.
-#: (label, icon, action, tooltip); a None action inserts a separator.
-#:
-#: Category navigation lives in exactly one place, the sidebar below. A toolbar
-#: button that also switched categories duplicated that list and cost width
-#: better spent on the view, so the toolbar keeps only actions that are not
-#: also a sidebar category: open/import a book, undo/redo, start a new
-#: transaction, and print the current report.
+#: (label, icon, action, tooltip) for the toolbar's actions; a None action inserts
+#: a separator. The view icons (from ``CATEGORIES``) follow these.
 TOOLBAR = [
     ("Open", "document-open-symbolic", "app.open", "Open a book"),
     ("Import", "document-import-symbolic", "app.import", "Import a GnuCash book"),
@@ -41,15 +35,17 @@ TOOLBAR = [
     ("Print", "document-print-symbolic", "win.print-view", "Print the current report"),
 ]
 
+#: (key, label, icon) for each view. Every view has one toolbar icon and one View
+#: menu item; no two views share an icon.
 CATEGORIES = [
-    ("dashboard", "Dashboard", "view-grid-symbolic"),
+    ("dashboard", "Dashboard", "go-home-symbolic"),
     ("fsa-dashboard", "FSA Dashboard", "view-calendar-symbolic"),
     ("accounts", "Accounts", "view-list-symbolic"),
     ("register", "Register", "text-x-generic-symbolic"),
     ("scheduled", "Scheduled", "alarm-symbolic"),
     ("upcoming", "Upcoming", "x-office-calendar-symbolic"),
     ("resolution", "Review", "dialog-question-symbolic"),
-    ("plan", "Plan", "view-grid-symbolic"),
+    ("plan", "Plan", "x-office-spreadsheet-symbolic"),
     ("projection", "Projection", "network-cellular-signal-excellent-symbolic"),
 ]
 
@@ -63,8 +59,6 @@ class ViewManager(Gtk.ApplicationWindow):
         self.db: DbSQLite | None = None
         self._views: dict[str, Gtk.Widget] = {}
         self._register_windows: list[tuple[Gtk.Window, Gtk.Widget]] = []
-        #: Guards against show_category and the sidebar calling each other.
-        self._selecting = False
         # Automatic due review is a user-facing startup policy, not required for
         # binding views to a book. Tests and embedded windows can suppress it so
         # presenting a modal window does not pump the GLib main context.
@@ -78,10 +72,18 @@ class ViewManager(Gtk.ApplicationWindow):
         self.connect("close-request", self._on_close_request)
 
     def _install_window_actions(self) -> None:
-        """``win.show-category`` takes the category name as its parameter."""
-        action = Gio.SimpleAction.new("show-category", GLib.VariantType.new("s"))
-        action.connect("activate", lambda _a, target: self.show_category(target.get_string()))
-        self.add_action(action)
+        """``win.show-category`` takes the category name; its state is the current view.
+
+        A stateful action makes the toolbar's view icons and the View menu items
+        radio-style: the one matching the current view is shown as active, however
+        that view was reached.
+        """
+        self.category_action = Gio.SimpleAction.new_stateful(
+            "show-category", GLib.VariantType.new("s"), GLib.Variant.new_string("")
+        )
+        self.category_action.connect("activate", self._on_show_category)
+        self.category_action.set_enabled(False)
+        self.add_action(self.category_action)
         self.print_action = Gio.SimpleAction.new("print-view", None)
         self.print_action.connect("activate", self._on_print_view)
         self.print_action.set_enabled(False)
@@ -106,6 +108,7 @@ class ViewManager(Gtk.ApplicationWindow):
             getattr(self.toolbar, f"set_margin_{side}")(4)
 
         self.tool_buttons: dict[str, Gtk.Button] = {}
+        self.view_buttons: dict[str, Gtk.ToggleButton] = {}
         for label, icon, action, tooltip in TOOLBAR:
             if action is None:
                 separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
@@ -116,6 +119,15 @@ class ViewManager(Gtk.ApplicationWindow):
             assert label is not None and icon is not None and tooltip is not None
             button = _tool_button(label, icon, action, tooltip)
             self.tool_buttons[action] = button
+            self.toolbar.append(button)
+
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        separator.set_margin_start(6)
+        separator.set_margin_end(6)
+        self.toolbar.append(separator)
+        for key, label, icon in CATEGORIES:
+            button = _view_button(key, label, icon)
+            self.view_buttons[key] = button
             self.toolbar.append(button)
 
         spacer = Gtk.Box()
@@ -129,34 +141,18 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _build_body(self) -> None:
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        outer.append(self.toolbar)
+        # A narrow window scrolls the toolbar rather than refusing to shrink.
+        toolbar_scroll = Gtk.ScrolledWindow(child=self.toolbar)
+        toolbar_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        toolbar_scroll.set_propagate_natural_height(True)
+        outer.append(toolbar_scroll)
         outer.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
         self.set_child(outer)
 
-        self.paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
-        # Narrow now that the sidebar is the only place category navigation lives
-        # (see TOOLBAR): it no longer needs to accommodate the toolbar's widest
-        # duplicate label, so the extra width goes to the view instead. Still a
-        # Paned, so a user with a longer account name to scan can drag it wider.
-        self.paned.set_position(150)
-        self.paned.set_shrink_start_child(False)
-        self.paned.set_vexpand(True)
-        outer.append(self.paned)
-
-        self.navigator = Gtk.ListBox()
-        self.navigator.set_selection_mode(Gtk.SelectionMode.SINGLE)
-        self.navigator.add_css_class("navigation-sidebar")
-        self.navigator.connect("row-selected", self._on_category_selected)
-        for key, label, icon in CATEGORIES:
-            self.navigator.append(_category_row(key, label, icon))
-
-        sidebar_scroll = Gtk.ScrolledWindow(child=self.navigator)
-        sidebar_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        self.paned.set_start_child(sidebar_scroll)
-
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        self.paned.set_end_child(self.stack)
+        self.stack.set_vexpand(True)
+        outer.append(self.stack)
 
     def _show_placeholder(self) -> None:
         """The start screen: four ways in, and no book opened behind your back.
@@ -225,6 +221,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self._register_windows.clear()
         self.db = None
         self.print_action.set_enabled(False)
+        self.category_action.set_enabled(False)
 
     def book_closing(self) -> None:
         """Detach from the current book before its database connection is closed."""
@@ -255,10 +252,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self._refresh_status()
         self._on_undo_available(False)
         self._on_redo_available(False)
-        # Selecting a row that is already selected emits nothing, so opening a
-        # second book would leave the first book's view on screen. Show the
-        # category explicitly and let the selection follow.
-        self.navigator.select_row(self.navigator.get_row_at_index(0))
+        self.category_action.set_enabled(True)
         self.show_category(CATEGORIES[0][0])
         if self._prompt_due_on_open:
             self._schedule_due_prompt()
@@ -355,24 +349,15 @@ class ViewManager(Gtk.ApplicationWindow):
 
     # ------------------------------------------------------------------ views
 
-    def _on_category_selected(self, _listbox, row) -> None:
-        if row is None or self.db is None or self._selecting:
+    def _on_show_category(self, _action, target) -> None:
+        if self.db is None:
             return
-        self.show_category(row.category_key)
+        self.show_category(target.get_string())
 
-    def _select_navigator(self, key: str) -> None:
-        """Move the sidebar highlight to ``key`` without re-entering show_category."""
-        index = 0
-        while (row := self.navigator.get_row_at_index(index)) is not None:
-            if row.category_key == key:
-                if self.navigator.get_selected_row() is not row:
-                    self._selecting = True
-                    try:
-                        self.navigator.select_row(row)
-                    finally:
-                        self._selecting = False
-                return
-            index += 1
+    @property
+    def current_category(self) -> str:
+        """The view the toolbar icons and View menu show as active."""
+        return self.category_action.get_state().get_string()
 
     def show_category(self, key: str) -> None:
         view = self._views.get(key)
@@ -385,9 +370,9 @@ class ViewManager(Gtk.ApplicationWindow):
             if self.db is not None:
                 view.set_db(self.db)
         self.stack.set_visible_child_name(key)
-        # The sidebar is the map of where you are, so it follows however the view
-        # was reached -- toolbar, menu, or a jump from another view.
-        self._select_navigator(key)
+        # The active icon and menu item follow however the view was reached --
+        # toolbar, menu, or a jump from another view.
+        self.category_action.set_state(GLib.Variant.new_string(key))
         view.refresh()
         self.print_action.set_enabled(
             bool(self.db is not None and getattr(view, "PRINTABLE", False))
@@ -511,15 +496,18 @@ def _tool_button(label: str, icon: str, action: str, tooltip: str) -> Gtk.Button
     return button
 
 
-def _category_row(key: str, label: str, icon: str) -> Gtk.ListBoxRow:
-    row = Gtk.ListBoxRow()
-    row.category_key = key
-    box = Gtk.Box(spacing=8)
-    box.set_margin_top(6)
-    box.set_margin_bottom(6)
-    box.set_margin_start(8)
-    box.set_margin_end(8)
-    box.append(Gtk.Image.new_from_icon_name(icon))
-    box.append(Gtk.Label(label=label, xalign=0))
-    row.set_child(box)
-    return row
+def _view_button(key: str, label: str, icon: str) -> Gtk.ToggleButton:
+    """A toolbar icon that shows one view and stays pressed while it is current."""
+    button = Gtk.ToggleButton()
+    button.set_has_frame(False)
+    button.set_tooltip_text(f"Show {label}")
+    button.set_action_name("win.show-category")
+    button.set_action_target_value(GLib.Variant.new_string(key))
+    button.category_key = key
+    content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    content.append(Gtk.Image.new_from_icon_name(icon))
+    caption = Gtk.Label(label=label)
+    caption.add_css_class("summary-label")
+    content.append(caption)
+    button.set_child(content)
+    return button

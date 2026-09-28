@@ -31,8 +31,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
    PR per issue:
-   - Navigation: view icons in the toolbar replace the left sidebar, with the View
-     menu listing every view (#155); per-view actions move from stray buttons into
+   - Navigation: per-view actions move from stray buttons into
      menus and toolbar icons, starting with Accounts and a context-sensitive
      "Manage FSA claims" icon (#156).
    - Register: open in date order scrolled to the most recent entry (#157); replace
