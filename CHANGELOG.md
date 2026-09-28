@@ -3,6 +3,19 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a168 - 2026-09-28
+
+- **QIF investment accounts.** A QIF export's investment accounts (Invst, Port,
+  401(k)/403(b)) and security list are now imported: each account becomes an
+  Assets brokerage with a Cash account and one account per security (ticker and
+  fund/stock kind from the security list), and buys, sells, reinvestments,
+  dividends, interest, capital-gain distributions, miscellaneous income and
+  expenses, cash transfers, and "X" actions through another account become
+  balanced transactions. A bank register's transfer to an investment account goes
+  to its Cash account. Share transfers, splits, and option actions are reported as
+  skipped. OFX and QIF share the brokerage account structure. Application version
+  `0.2.0a168`; native schema remains 9.
+
 ## 0.2.0a167 - 2026-09-28
 
 - **OFX investment transactions.** A brokerage OFX/QFX statement now imports its

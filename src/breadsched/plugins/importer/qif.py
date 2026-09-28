@@ -34,6 +34,8 @@ __all__ = ["import_book", "sniff"]
 QifDateFormat = Literal["month-first", "day-first"]
 
 
+_INVESTMENT_TYPES = {"invst", "port", "401(k)/403(b)"}
+
 _QIF_TYPES = {
     "bank": "BANK",
     "cash": "CASH",
@@ -207,10 +209,19 @@ def _category_handle(
     db: DbSQLite,
     label: str,
     amount: Money,
+    transfer: Callable[[str], str | None] | None = None,
 ) -> str:
+    """A category (negative ``amount`` is an expense) or a ``[Account]`` transfer.
+
+    ``transfer`` resolves a transfer to an investment account's cash instead of
+    creating a bank account of the same name.
+    """
     category = label.split("/", 1)[0].strip()
     if category.startswith("[") and category.endswith("]"):
         target = category[1:-1].strip()
+        resolved = transfer(target) if transfer is not None else None
+        if resolved is not None:
+            return resolved
         return _ensure_source_account(sink, db, target, "Bank")
     atype = "EXPENSE" if amount < 0 else "INCOME"
     parent = _top_level(db, "Expenses" if atype == "EXPENSE" else "Income")
@@ -287,11 +298,13 @@ def import_book(
     date_format: QifDateFormat | Literal["auto"] = "auto",
     notify: bool = True,
 ) -> ImportResult:
-    """Import bank/cash/credit-card QIF accounts and transactions.
+    """Import QIF bank, cash, credit-card, and investment accounts and transactions.
 
-    Investment transaction sections are reported and skipped for now rather than
-    guessed into ordinary cash transactions.
+    Investment records (``!Type:Invst``) and the security list go through
+    :mod:`.qif_investment`; prices through the shared quote contract.
     """
+    from .qif_investment import QifInvestments
+
     del include_scheduled
     source = Path(path)
     result = ImportResult(source=str(source), source_format="qif")
@@ -328,9 +341,40 @@ def import_book(
             result.warn("QIF date order is ambiguous; assuming month/day/year")
     else:
         detected_date_format = date_format
+    investment_names: set[str] = set()
+    securities: list[list[str]] = []
+    scan_section = ""
+    for record in records:
+        if record and record[0] == "!Account":
+            fields = {line[0]: line[1:].strip() for line in record[1:] if line}
+            if fields.get("T", "").casefold() in _INVESTMENT_TYPES and fields.get("N"):
+                investment_names.add(fields["N"].casefold())
+        elif record and record[0].startswith("!Type:"):
+            scan_section = record[0].partition(":")[2].strip().casefold()
+        elif record and not record[0].startswith("!") and scan_section == "security":
+            securities.append(record)
     with db.transaction(message or f"Import {source.name}", batch=True, notify=notify) as txn:
         sink = ImportSink(db, txn, result)
         result.scan("transaction")
+
+        def transfer(name: str) -> str | None:
+            if name.casefold() in investment_names:
+                return investments.brokerage(name).cash
+            return None
+
+        def category(label: str, amount: Money) -> str:
+            return _category_handle(sink, db, label, amount, transfer)
+
+        investments = QifInvestments(
+            sink,
+            db,
+            handle=_stable_handle,
+            category=category,
+            parse_amount=lambda raw: _parse_amount(raw, detected_format),
+            parse_date=lambda raw: _parse_date(raw, detected_date_format),
+        )
+        for record in securities:
+            investments.learn_security(record)
         done = 0
         identity_counts: dict[tuple[object, ...], int] = {}
         for record in records:
@@ -341,13 +385,15 @@ def import_book(
                 fields = {line[0]: line[1:] for line in record[1:] if line}
                 current_name = fields.get("N", current_name).strip() or current_name
                 current_type = fields.get("T", current_type).strip() or current_type
-                _ensure_source_account(sink, db, current_name, current_type)
+                if current_type.casefold() in _INVESTMENT_TYPES:
+                    investments.brokerage(current_name)
+                else:
+                    _ensure_source_account(sink, db, current_name, current_type)
                 continue
             if first.startswith("!Type:"):
                 section_type = first.partition(":")[2].strip()
-                current_type = section_type or current_type
-                if section_type.casefold() == "invst":
-                    result.warn("QIF investment transactions are not imported yet")
+                if section_type.casefold() not in {"security", "prices"}:
+                    current_type = section_type or current_type
                 continue
             if first.startswith("!"):
                 continue
@@ -356,13 +402,11 @@ def import_book(
             if section_type.casefold() == "prices":
                 _import_prices(sink, db, record, detected_format, detected_date_format)
                 continue
+            if section_type.casefold() == "security":
+                continue
             if section_type.casefold() == "invst":
-                result.skip(
-                    "QIF investment transaction support is not implemented",
-                    first,
-                    identity=_stable_handle("skipped", *record),
-                    kind="transaction",
-                )
+                investment_names.add(current_name.casefold())
+                investments.record(current_name, record)
                 continue
             fields, split_rows = _transaction_fields(record)
             try:
@@ -398,9 +442,7 @@ def import_book(
                         )
                         raw_splits = []
                         break
-                    target = _category_handle(
-                        sink, db, item.get("category", "Uncategorized"), split_amount
-                    )
+                    target = category(item.get("category", "Uncategorized"), split_amount)
                     raw_splits.append(
                         {
                             "account": target,
@@ -411,7 +453,7 @@ def import_book(
                 if not raw_splits:
                     continue
             else:
-                target = _category_handle(sink, db, fields.get("L", "Uncategorized"), amount)
+                target = category(fields.get("L", "Uncategorized"), amount)
                 raw_splits.append({"account": target, "value": -amount})
             split_identity = tuple(
                 (item["account"], str(item["value"]), item.get("memo", "")) for item in raw_splits
