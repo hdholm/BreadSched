@@ -2089,7 +2089,7 @@ as the default window icon. The manifest installs all three under `/app/share`;
 CI validates them with `desktop-file-validate` and `appstreamcli`, checks that the
 installed Flatpak exports them, and then runs `scripts/flatpak_gtk_smoke.py` in the
 sandbox under a virtual display with network unshared. That smoke opens a book
-under Documents, renders every view, loads the packaged User Guide, resolves the
+under Documents, renders every view, loads every part of the packaged User Guide, resolves the
 installed icon, and requires settings in the sandbox configuration directory
 (`~/.var/app/<id>/config`). File-chooser portals and printing remain unvalidated
 because the CI runner has no desktop portal service.
@@ -2166,8 +2166,10 @@ write content types.
 Documentation has five distinct jobs:
 
 - `README.md`: product orientation, development installation/invocation, and links;
-- `src/breadsched/USER_GUIDE.md`: standalone task-oriented user documentation,
-  packaged verbatim for offline application help;
+- the packaged user guide, packaged verbatim for offline application help:
+  `src/breadsched/USER_GUIDE.md` is the interface-neutral overview (what each
+  feature does and the rules it follows), and `src/breadsched/guide/desktop.md`,
+  `guide/web.md`, and `guide/cli.md` give each interface's steps;
 - `DESIGN.md`: current architecture, rationale, and durable design decisions;
 - `ROADMAP.md`: the one authoritative list of incomplete/future work;
 - `CHANGELOG.md`: completed milestones and their durable acceptance contracts.
@@ -2177,11 +2179,28 @@ changes, or reprioritizes pending work, update the roadmap. When it completes an
 accepted outcome, move that contract to the changelog. Do not use the README or
 design document as an alternate TODO list.
 
-The GTK **Help → User Guide** action reads the installed package resource and
-presents it in a bounded, scrollable native window. The Markdown file remains the
-only content source: the application performs a deliberately conservative
-presentation transform instead of maintaining a second embedded copy or requiring
-a browser, network access, or a Markdown-rendering runtime dependency.
+The guide is split by interface (#181) so that desktop menus, browser pages, and
+command options are not mixed in one text, while every interface still shows all
+four parts. `breadsched.user_guide` (no GTK import) owns the part list, reads each
+part from the installed package, forms GitHub-style heading anchors
+(`heading_slug`), and resolves relative Markdown links by file name
+(`resolve_link`), so the links between files work the same in the repository, the
+desktop, and the browser. Interface parts carry steps and link to the overview for
+rules; the overview links to each interface's steps. `tests/test_user_guide.py`
+fails on any link to a missing part or heading.
+
+- GTK **Help → User Guide** (`gui/user_guide.py`) presents the parts in a bounded,
+  scrollable native window with a linked toggle per part. Links are text tags; a
+  click follows an internal link to its part and heading mark, or opens an external
+  one in the default browser.
+- The browser's **Guide** page reads `GET /api/guide?part=` (`web/guide_resource.py`)
+  and renders the guide's small Markdown subset as DOM nodes, never as HTML text.
+- `breadsched guide [overview|desktop|web|cli]` prints a part; `--list` names them.
+
+The Markdown files remain the only content source: each surface performs a
+deliberately conservative presentation transform instead of maintaining a second
+embedded copy or requiring network access or a Markdown-rendering runtime
+dependency.
 
 Expense Explorer derives Remaining from the full-period category plan and actual
 contributions through the report's as-of date. A partial period retains its

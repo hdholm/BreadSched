@@ -2,24 +2,42 @@
 
 BreadSched is a household-finance application for keeping an exact double-entry
 ledger, planning cash flow from dated financial events, and comparing alternate
-multi-year projections. This guide describes the GTK desktop application, the web
-interface, and the command-line tools shipped in the same release. The installed
-copy is release-specific; consult the guide packaged with the BreadSched version
-you are running.
+multi-year projections. The installed copy of this guide is release-specific;
+consult the guide packaged with the BreadSched version you are running.
 
 BreadSched is under active development. Keep independent backups of any financial
 book and review imported or inferred data before relying on it.
 
-In Accounts, a foreign-currency ledger balance can be shown in the reporting
-currency when a dated direct quote exists, or by inverting a reverse pair if no
-direct quote applies. The quote evidence column shows its date, source, and any
-inversion; a missing quote keeps the original ledger amount and names its
-currency. Do not interpret a missing-quote fallback as a converted balance.
-Account chart rollups and cash/net-worth summaries require a direct or inverse
-pair quote for each nonzero foreign balance. If one is absent, the total reads **Missing
-reporting-currency quote**; the web and CLI responses list the affected account
-handles. Once quotes exist, exact converted amounts are summed before display.
-Other reports have not yet adopted this complete-total rule.
+## How this guide is organized
+
+This overview explains what BreadSched does and the rules it follows, whichever
+interface you use. Three companion parts give the steps for each interface:
+
+- [Desktop guide](guide/desktop.md): the GTK desktop application, its menus,
+  toolbar, dialogs, and keyboard entry.
+- [Browser guide](guide/web.md): the loopback web interface and its pages.
+- [Command-line guide](guide/cli.md): the `breadsched` commands, their options, and
+  their JSON output.
+
+Every interface can show all four parts: **Help → User Guide** (`F1`) in the
+desktop application, the **Guide** page in the browser, and `breadsched guide`
+(`overview`, `desktop`, `web`, or `cli`) on the command line. The interfaces share
+one book and one set of rules, so you can move between them freely.
+
+## Getting started
+
+### Install and download
+
+From a BreadSched source checkout, install the application and its development
+dependencies with:
+
+```bash
+pip install -e ".[gui,dev]"
+```
+
+The desktop application also requires a GTK 4 runtime and PyGObject supplied by
+your operating system; see [Start the desktop application](guide/desktop.md#start-the-desktop-application).
+The command line and the browser interface work without GTK.
 
 When downloading a packaged alpha, choose the GitHub release marked
 **Pre-release**, read its versioned notes, and compare the downloaded wheel or
@@ -31,57 +49,16 @@ An initial Flatpak build manifest is available to developers. CI exercises offli
 CLI creation, import/export, backup, restore, verification, and writer locks inside
 the installed sandbox. A locally built Flatpak also installs a desktop menu entry,
 software-centre metadata, and an icon; CI opens a book, every view, and this guide
-in the sandboxed GTK interface and checks that settings persist. No Flatpak
+in the sandboxed desktop application and checks that settings persist. No Flatpak
 installer is published yet. Use the verified wheel/source release or a development
 checkout until GTK file portals and printing are validated in the sandbox.
-
-## Getting started
-
-### Install for development
-
-From a BreadSched source checkout, install the application and its development
-dependencies with:
-
-```bash
-pip install -e ".[gui,dev]"
-```
-
-The GTK application also requires a GTK 4 runtime and PyGObject supplied by your
-operating system. Run `breadsched-gtk --help` for platform-specific package hints
-when the GTK stack is unavailable.
-
-### Start an interface
-
-Open a native BreadSched book in the GTK desktop application:
-
-```bash
-breadsched-gtk household.breadsched
-```
-
-With no book argument, the GTK application offers to create a book, open a book,
-or import a GnuCash book into a new BreadSched book. The equivalent commands are
-`breadsched gui` and `python -m breadsched.gui`.
-
-Start the loopback web interface with:
-
-```bash
-breadsched web household.breadsched
-```
-
-Do not expose the development web server on an untrusted network.
-
-The command line can create and inspect books without GTK:
-
-```bash
-breadsched init household.breadsched
-breadsched --help
-```
 
 ### Create or import your first book
 
 For a new household book:
 
-1. Choose **File → New Book** in GTK, or run `breadsched init BOOK`.
+1. Create the book ([desktop](guide/desktop.md#start-the-desktop-application),
+   [command line](guide/cli.md#create-and-inspect-books)).
 2. Create the accounts that hold money, obligations, income, and expenses.
 3. Record opening balances as balanced transactions. Equity is normally the other
    side of an opening-balance transaction.
@@ -89,10 +66,22 @@ For a new household book:
 5. Add planning estimates for recurring activity that is not a commitment.
 6. Review the Plan and Dashboard before building longer Projection scenarios.
 
-To begin from GnuCash, choose **File → Import GnuCash Book into New Book**. Keep the
+To begin from GnuCash, import the GnuCash book into a new BreadSched book. Keep the
 GnuCash source file in place while the import runs. BreadSched reads it without
 modifying it and stores imported source identifiers so later imports can update the
-same records.
+same records. See [Import and GnuCash interoperability](#import-and-gnucash-interoperability).
+
+### Synthetic sample book
+
+BreadSched can create a separate learning book
+([command line](guide/cli.md#synthetic-sample-book)). Every account, transaction,
+amount, and name in it is invented, and it is never added to an open household
+book. The prior month has opening balances and dated wages, rent, groceries, and
+utilities. The following month has recurring wages, rent, and utilities plus a
+groceries Plan estimate. Dashboard Cash and Card debt groups and a two-year Base
+scenario are included. Open it in the desktop application or the browser, inspect
+Dashboard, then select the following month in Plan. The sample is for exploration,
+not financial advice or a template whose amounts should be copied into a real book.
 
 ## Understand the model
 
@@ -125,8 +114,8 @@ payment, or a paycheck. An estimate fills a planning gap, such as groceries or a
 irregular utility amount. Dashboard and Upcoming show commitments as obligations;
 estimates belong in Plan and Projection and are not presented as bills already due.
 
-**Suggest** (Suggest Estimates from History) creates reviewable estimate drafts. It never writes a
-schedule directly. Open **Review**, check the inferred account, purpose, amount,
+**Suggest** (Suggest Estimates from History) creates reviewable estimate drafts. It
+never writes a schedule directly. Review the inferred account, purpose, amount,
 cadence, dates, seasonal profile, and evidence, then save or cancel. Accepted
 estimates retain their evidence as provenance. The evidence names the versioned
 inference rules used for anomaly handling, cadence, trend, seasonality, confidence,
@@ -140,22 +129,17 @@ original expected date and amount. Editing a schedule later therefore does not
 rewrite historical variance. A scheduled occurrence is matched by amount only to
 an actual in the same transaction currency. If an older link connects different
 currencies, its occurrence variance is unavailable. Plan totals convert other
-currencies as described under **Plan**. In Plan, select a value to inspect its occurrences
-and actual splits. Use **Resolve actuals…** when an actual needs to be matched,
-marked unexpected, or reviewed. Correct a posted split's planning purpose in the
-transaction editor; correct a scheduled purpose in the schedule editor.
+currencies as described under [Plan](#plan). In Plan, open a value to inspect its
+occurrences and actual splits, and use **Resolve actuals** when an actual needs to be
+matched, marked unexpected, or reviewed. Correct a posted split's planning purpose
+in the transaction editor; correct a scheduled purpose in the schedule editor.
 
-## Navigate the application
+## Work areas
 
-The desktop toolbar has one icon per work area (the current one stays pressed),
-and the **View** menu lists the same areas; the web navigation offers the same set:
+The desktop application and the browser offer the same work areas:
 
 - **Dashboard** summarizes household position, expected income, pending bills,
-  liquidity, emergency-fund information, and linked assets and loans. In the
-  desktop application account groups, pending bills, and expected income are
-  separate sections, each as wide as its own columns; they sit side by side when
-  the window has room and stack when it does not. A long group line is shortened
-  with "…"; hover over it to read it and the accounts it covers.
+  liquidity, emergency-fund information, and linked assets and loans.
 - **FSA Dashboard** shows benefit-year availability and open healthcare claims.
 - **Accounts** is the hierarchical chart of accounts with balances and metadata.
 - **Register** shows the transaction history for one account.
@@ -164,32 +148,11 @@ and the **View** menu lists the same areas; the web navigation offers the same s
 - **Review** resolves actual activity and supports related review queues.
 - **Projection** calculates future state under Base or saved scenarios.
 
-Payees and categorization rules are managed in the desktop application from
-**Actions → Payees…** and **Actions → Categorization Rules…**, and in the web
-interface from the **Payees** and **Rules** views.
-
-In the desktop application each table has its own column chooser (the "⋯" button
-at the right of that table's heading); its tooltip names the table, and the columns
-you hide are remembered. When you make the window narrower, text columns such as
-descriptions shorten (with "…") so every column, including every amount, stays
-visible. On a small screen, a long dialog scrolls its form, and its Save and
-Cancel buttons stay at the bottom.
-
-Each view's own commands are in the **Actions** menu under that view's name, and
-the common ones also appear as toolbar icons while that view is shown: for example
-**New Account**, **Edit Account**, **Security Price**, and **Exchange Rate** in
-Accounts, **Manage FSA Claims** on the FSA Dashboard, **Configure Dashboard
-Groups** on the Dashboard, **New Scheduled**, **Suggest**, and **New Loan** in
-Scheduled, **New Scenario**, **Scenarios**, and **Explore** in Plan, and
-**Compare** and **Export** in Projection. **View → Hide Empty Accounts** and **View → Show Hidden
-Accounts** filter the account tree. Buttons that act on a selected row, such as a
-schedule's **View / Edit…**, stay beside their table.
-
-Use **View** to switch work areas. Registers can also open in independent windows;
-their account, filter, selection, and expanded row do not replace the main window's
-register state.
-
-Press `F1` or choose **Help → User Guide** in GTK to reopen this guide.
+Payees, categorization rules, reimbursable expenses, imports, and this guide have
+their own screens. How to reach each one is in the
+[Desktop guide](guide/desktop.md#find-your-way-around) and the
+[Browser guide](guide/web.md#find-your-way-around); the command line has a
+command for most of them ([Command-line guide](guide/cli.md)).
 
 ## Accounts
 
@@ -232,210 +195,150 @@ Change the source name, parent, code, description, commodity, placeholder, or hi
 state in GnuCash and import again. BreadSched-local type, notes, Dashboard group,
 projection settings, and household relationships remain editable.
 
+### Currencies and exchange rates
+
+In Accounts, a foreign-currency ledger balance can be shown in the reporting
+currency when a dated direct quote exists, or by inverting a reverse pair if no
+direct quote applies. The quote evidence shows its date, source, and any
+inversion (**inverse rate**); a missing quote keeps the original ledger amount and
+names its currency. Do not interpret a missing-quote fallback as a converted
+balance. Account chart rollups and cash/net-worth summaries require a direct or
+inverse pair quote for each nonzero foreign balance. If one is absent, the total
+reads **Missing reporting-currency quote**, and the browser and command-line data
+list the affected accounts. Once quotes exist, exact converted amounts are summed
+before display. Other reports have not yet adopted this complete-total rule.
+
+An eligible direct dated quote is preferred; if none exists, the latest eligible
+reverse pair is inverted. The direct quote wins even when the reverse quote is newer.
+An older quote remains eligible and visibly dated; BreadSched does not apply an
+automatic age cutoff. BreadSched converts only with a rate between the two
+currencies themselves (or its inverse); it never goes through a third currency. If
+you hold Swiss francs and have only franc-to-euro and euro-to-dollar rates, enter a
+franc-to-dollar rate to value them in dollars. Do not add values in unlike
+currencies when estimating net worth.
+
+A manual exchange rate is entered as target units per one source unit, for currencies
+already in the book ([desktop](guide/desktop.md#exchange-rates-and-security-prices),
+[browser](guide/web.md#exchange-rates),
+[command line](guide/cli.md#exchange-rates)). A repeated manual entry for the same
+pair and date updates that manual quote without replacing imported evidence.
+Entering a rate never creates a currency or alters ledger transactions. Imported
+exchange quotes remain available offline. When an OFX card or bank statement shows a
+foreign-currency purchase with its exchange rate, that rate is saved as the day's
+exchange quote and the purchase is posted in the account's currency at that rate.
+
+Plan totals and Expense Explorer convert foreign amounts with these rates (see
+[Plan](#plan)). Other views still require a compatible reporting-currency value.
+Review the quote date and source before treating a market-valued total as current.
+
 ### Security prices and current value
 
-The Accounts views show the date and source of a selected security quote. If no reporting-currency quote is available,
-they say so and retain the security holding's ledger value. An older quote
-remains eligible and visibly dated; BreadSched does not apply an automatic age
-cutoff. A security priced only in another currency (for example a fund quoted in
-euros) is valued in that currency and converted with the exchange rate in effect on
-the same date; the evidence then shows both, such as
-`2026-03-01 · ofx; EUR→USD 2026-03-02 · bank`. Without that exchange rate the
-account says so, shows its value in the quote currency, and is left out of
-reporting-currency totals until you enter the rate.
-Ordinary foreign-currency ledger accounts prefer an eligible direct dated quote;
-if none exists, they invert the latest eligible reverse pair. The direct quote
-wins even when the reverse quote is newer. Account quote evidence says **inverse
-rate** when that path was selected; CLI account output also identifies the path.
-Imported exchange quotes remain available offline. Security prices come in with
-imports too: GnuCash prices, a QIF file's price list, and the security prices in
-an OFX investment statement are recorded for securities already in your book
-(matched by symbol). A price for a security the book doesn't have is listed as
-skipped rather than creating a new security. Imported prices never replace one
-you entered yourself. When an OFX card or bank statement shows a foreign-currency
-purchase with its exchange rate, that rate is saved as the day's exchange quote
-and the purchase is posted in the account's currency at that rate. To save a manual exchange
-rate between currencies already in the book, run, for example:
+Record a security and its exact dated price for an Investment or Retirement account
+([desktop](guide/desktop.md#exchange-rates-and-security-prices)), and assign the
+account's commodity to that security. Accounts, Dashboard, and Projection use the
+latest applicable direct quote in the reporting currency; if no usable quote exists,
+BreadSched explicitly retains the ledger value instead of inventing a market value.
+The Accounts views show the date and source of a selected security quote.
 
-```bash
-breadsched rate household.breadsched --from EUR --to USD --date 2026-01-02 --value 1.25
-```
+A security priced only in another currency (for example a fund quoted in euros) is
+valued in that currency and converted with the exchange rate in effect on the same
+date; the evidence then shows both, such as `2026-03-01 · ofx; EUR→USD 2026-03-02 ·
+bank`. Without that exchange rate the account says so, shows its value in the quote
+currency, and is left out of reporting-currency totals until you enter the rate.
 
-The value means target units per one source unit. Use `--json` to obtain the
-exact rational rate, date, source, and quote handle. A repeated manual entry for
-the same pair and date updates that manual quote without replacing imported
-evidence. An ambiguous currency code requires its exact handle. In the web
-**Accounts** view, choose **Exchange rate…**, select the source and target
-currencies, enter an as-of date and the target units per source unit, then save.
-The account display refreshes its quote date and source or missing-quote warning.
-The web control accepts currencies already in the book; it does not create a new
-currency or alter ledger transactions. In GTK, choose the **Exchange Rate** toolbar
-icon while Accounts is shown (or **Actions → Accounts → Exchange Rate…**): the dialog shows the latest recorded quote for the chosen pair, accepts
-the rate in your usual decimal format, and refuses the same currency twice, a
-non-positive rate, or an invalid date without saving anything.
-The web and CLI JSON data also expose the signed number of days since the quote
-(`quote_age_days`), with negative days identifying a future-dated quote when no
-as-of date was requested.
-Review the quote date and source before treating a market-valued total as current.
-Plan totals and Expense Explorer convert foreign amounts with these rates (see
-Plan). Other views still require a compatible reporting-currency value.
-BreadSched converts only with a rate between the two currencies themselves (or
-its inverse); it never goes through a third currency. If you hold Swiss francs
-and have only franc-to-euro and euro-to-dollar rates, enter a franc-to-dollar rate
-to value them in dollars.
-Do not add values in unlike currencies when estimating net worth.
-
-For an Investment or Retirement account, use **Security Price** (a toolbar icon
-while Accounts is shown, or **Actions → Accounts → Security Price…**) to define a
-security and record an exact dated price. Assign the account's commodity to that
-security. Accounts, Dashboard, and Projection use the latest applicable direct
-quote in the reporting currency; if no usable quote exists, BreadSched explicitly
-retains the ledger value instead of inventing a market value.
+Security prices come in with imports too: GnuCash prices, a QIF file's price list,
+and the security prices in an OFX investment statement are recorded for securities
+already in your book (matched by symbol). A price for a security the book doesn't
+have is listed as skipped rather than creating a new security. Imported prices never
+replace one you entered yourself.
 
 ## Transactions and registers
 
-Select an account to open its register. Like a check register, it lists entries
-oldest first and opens scrolled to the most recent entry at the bottom; posting a
-new entry keeps you there, and changes made elsewhere leave your place alone.
-Headings use account-appropriate household language such as Deposit/Withdrawal or Payment/Charge. The register filter searches
-descriptions, numbers, notes, split memos, and account names without changing the
-full-ledger running balance.
+A register lists one account's entries oldest first, like a check register, with a
+full-ledger running balance. Headings use account-appropriate household language
+such as Deposit/Withdrawal or Payment/Charge. Filtering the register searches
+descriptions, numbers, notes, split memos, payees, and account names without
+changing the running balance. A transaction cannot be saved unless its exact splits
+balance.
 
-The last row of every desktop register is a blank transaction. Type a new entry
-straight into it:
+Both the desktop and browser registers end in a blank row for typing a new entry,
+with split lines for entries of more than two splits, and let you edit an existing
+entry in place ([desktop](guide/desktop.md#enter-transactions-in-a-register),
+[browser](guide/web.md#enter-transactions-in-the-register)).
 
-1. Enter the date (it starts as the date you last entered, or today), an optional
-   number, and a description. Choose a payee if you use one.
-2. Choose the other visible account under **Transfer**.
-3. Type a positive amount under the heading that describes the effect on this
-   account, such as **Deposit** or **Withdrawal**. Typing in one clears the other.
-4. Press **Enter** to save it. The row empties for the next entry, keeping the
-   date.
+When you type a description for a new entry, BreadSched looks for the latest
+earlier transaction in this account whose description matches (ignoring case,
+punctuation, and words containing digits, such as store numbers). It fills only what
+you have not yet typed or chosen: the transfer account (or every split line of a
+multi-split entry), the amount under the same heading, and the payee, and says where
+they came from. Nothing is saved until you confirm. Notes, reconciliation, planning
+links, and FSA claims are never copied, and editing an existing transaction never
+proposes anything.
 
-**Tab** and **Shift+Tab** move between the row's fields, and **Escape** clears
-the row. If something is missing or wrong, the line under the register says
-what. Your typing stays in place, and the cursor moves to that field. The row is
-greyed out, with the reason shown in its Description cell, for a hidden or
-placeholder account.
-
-When you leave the description, BreadSched looks for the latest earlier
-transaction in this account whose description matches (ignoring case,
-punctuation, and words containing digits, such as store numbers). It fills only
-what you have not yet typed or chosen: the transfer account, the amount under the
-same heading, and the payee. The line under the register says where they came
-from. Nothing is saved until you press Enter. Notes, reconciliation, planning
-links, and FSA claims are never copied.
-
-For more than two splits, choose **Split** at the end of the row. The row opens
-into one line per split, each with a memo, an account, and an amount under the
-account's own Increase or Decrease heading. What you had typed carries into the
-first two lines, and an empty line waits at the bottom for the next split. An
-**Imbalance** line shows how far the splits are from balancing. Enter saves the
-transaction only once it reads **Balanced** and one split is in this register's
-account. Choose **Split** again to fold two lines back into a single row. If the
-latest matching entry had several splits, leaving the description fills in its
-lines.
-
-The pencil icon beside **Split** opens the full transaction editor filled in with
-what you typed, including every split line. Saving there empties the row, and
-cancelling leaves it as it was. If you switch accounts, open another
-transaction, or close a register window while the row holds typing, BreadSched
-asks whether to save it, discard it, or stay.
-
-The browser interface's register works the same way. It has a blank row at the
-bottom, **Split** for split lines with an imbalance line, and **Edit** on any row
-to change it in place, with **Enter** to save and **Escape** to cancel. Choosing
-another account, or editing another row, while something is typed asks before
-discarding it.
-
-To change an existing transaction without opening a window, select it and press
-**F2** (or choose **Actions → Register → Edit Transaction in Place**). Its row
-turns into the same fields as the blank row, and a transaction with more than two
-splits opens its split lines underneath. Edit anything, then press **Enter** to
-save, or **Escape** to put the row back as it was. Notes, planning purposes,
-investment classifications, reconciliation, and FSA links, which the row does not
-show, are kept. The pencil icon opens the same transaction in the full editor.
-Double-clicking a transaction still opens the full editor.
-
-Changing an amount in an existing transaction updates both of the numbers
-BreadSched keeps for each split. A split in an account held in another currency
-or commodity is the exception: BreadSched refuses to change its amount without
-its converted quantity, rather than keep a quantity that no longer matches.
-
-Use the full transaction editor for additional splits, notes, reconciliation
-metadata, FSA links, or investment classifications. A transaction cannot be saved
-unless its exact splits balance.
-
-In the desktop editor, a new transaction is proposed the same way: when you leave
-the description or choose a payee, and no split has an amount or memo yet, every
-split of the latest matching transaction (with its accounts, amounts, and memos) is
-filled in, along with its payee if you have not chosen one, and a note says where
-it came from. Edit anything before choosing **Save**. Editing an existing
-transaction never proposes anything.
+Editing in place keeps notes, planning purposes, investment classifications,
+reconciliation, and FSA links, which the row does not show. Changing an amount in an
+existing transaction updates both of the numbers BreadSched keeps for each split. A
+split in an account held in another currency or commodity is the exception:
+BreadSched refuses to change its amount without its converted quantity, rather than
+keep a quantity that no longer matches. Use the full transaction editor for
+additional splits, notes, reconciliation metadata, FSA links, or investment
+classifications.
 
 ### Reconcile a statement
 
-Bank, Cash, Asset, Investment, Retirement, FSA, Escrow, Credit card, Loan,
-Liability, and Technical registers can be reconciled:
-
-1. Choose **Reconcile…** from the register.
-2. Enter the statement date and ending balance.
-3. Check eligible entries until the exact difference is zero.
-4. Finish the session to mark the selected splits reconciled.
+Bank, Cash, Asset, Investment, Retirement, FSA, Escrow, Receivable, Credit card,
+Loan, Liability, and Technical registers can be reconciled: enter the statement date
+and ending balance, check eligible entries until the exact difference is zero, and
+finish the session to mark the selected splits reconciled
+([desktop](guide/desktop.md#reconcile-a-statement),
+[browser](guide/web.md#reconcile-a-statement)).
 
 Cancel leaves ledger splits unchanged and retains an audit record. The most recent
 completed statement can be reopened for correction; its entries return to Cleared
 until it balances and is finished again. Reopen later completed statements first.
 
-Reconciling imported GnuCash transactions is safe: re-import keeps their
-Reconciled state and holds any GnuCash change to them for review. See
+Reconciling imported GnuCash transactions is safe: re-import keeps their Reconciled
+state and holds any GnuCash change to them for review. See
 [Review GnuCash changes to reconciled transactions](#review-gnucash-changes-to-reconciled-transactions).
 
 ## Scheduled activity
 
-In the web Scheduled view, enter a name, category, funding account, amount, and
-recurrence to create a fixed schedule. Editing one can also set future amounts,
-one-time exceptions, additional splits, and optional planning classifications.
-Review the result before relying on a projection. If the edit is rejected, the
-existing schedule is retained; complex imported definitions remain protected when
-the simple editor cannot preserve their structure.
+Scheduled transactions support recurrence bounds, weekend adjustment, skipped
+occurrences, one-time overrides, future-effective amount changes, multiple splits,
+and bounded formulas. Use a new schedule for a fixed or formula-driven commitment or
+estimate, and review all split signs and purposes. Fixed multi-split schedules can
+change individual signed legs from an effective date, but every effective set must
+still balance. If an edit is rejected, the existing schedule is retained; complex
+imported definitions remain protected when a simple editor cannot preserve their
+structure.
+
 For alternate assumptions, add a scenario-only estimate or alter an eligible
 baseline schedule within a saved scenario. The original baseline definition stays
 intact. An invalid exception, such as skipping and overriding the same occurrence,
 is rejected without changing the saved scenario.
 
-Scheduled transactions support recurrence bounds, weekend adjustment, skipped
-occurrences, one-time overrides, future-effective amount changes, multiple splits,
-and bounded formulas.
+Imported schedules that BreadSched cannot reproduce safely remain visible but
+read-only and are excluded from planning, projection, and posting. Duplicate one
+into an independent definition if you want to translate and review it without
+altering the imported evidence.
 
 ### Review due and missed transactions
 
-Nothing scheduled is posted until you decide. GTK asks when a book opens (after
-any held GnuCash changes) and from **Review due…** in Scheduled; the web interface
-offers **Review due transactions…** in Scheduled and, when something is due, on
-Dashboard; the command line uses `breadsched due-review BOOK`. Due and missed dates
-are grouped by schedule with a count and total, and each date has its own choice:
+Nothing scheduled is posted until you decide
+([desktop](guide/desktop.md#review-due-transactions),
+[browser](guide/web.md#review-due-transactions),
+[command line](guide/cli.md#review-due-transactions)). Due and missed dates are
+grouped by schedule with a count and total, and each date has its own choice:
 
 - **Post now** writes that date's transaction;
 - **Remind me later**, the default, leaves it due;
 - **Never (mark as done)** skips that one date without posting anything.
 
 A schedule with several dates also offers a choice that sets all of them at once.
-**Apply** re-checks every chosen date first: if one was already posted or skipped
+Applying re-checks every chosen date first: if one was already posted or skipped
 elsewhere (another window, the browser, or the command line), nothing is written
 and the review says so instead of posting it twice. The whole batch is one undo
-step. Plan-only estimates are never offered for posting. On the command line,
-`--post` and `--skip` take a schedule id prefix or exact name, optionally with
-`@YYYY-MM-DD` for one date; `--post-all` and `--skip-all` decide everything due.
-
-Use **New transaction** for a fixed or formula-driven commitment or estimate. Review
-all split signs and purposes. Fixed multi-split schedules can change individual
-signed legs from an effective date, but every effective set must still balance.
-
-Imported schedules that BreadSched cannot reproduce safely remain visible but
-read-only and are excluded from planning, projection, and posting. Duplicate one
-into an independent definition if you want to translate and review it without
-altering the imported evidence.
+step. Plan-only estimates are never offered for posting.
 
 ### Credit-card payments
 
@@ -448,27 +351,13 @@ automatically.
 
 ### Create a loan
 
-Choose the **New Loan** toolbar icon in Scheduled and enter the amount borrowed, annual rate, term,
-first payment, loan account, interest expense account, and payment account. Review
-the level payment and the first year of principal/interest allocation before
-saving. BreadSched creates one formula schedule and can record the opening
-liability.
+A new loan takes the amount borrowed, annual rate, term, first payment, loan
+account, interest expense account, and payment account. Review the level payment
+and the first year of principal/interest allocation before saving. BreadSched
+creates one formula schedule and can record the opening liability
+([desktop](guide/desktop.md#scheduled-activity)).
 
 ## Dashboard and near-term cash
-
-### Synthetic sample book
-
-Run `breadsched sample sample.breadsched` to create a separate learning book. Every
-account, transaction, amount, and name in it is invented. The command refuses an
-existing path and never adds tutorial entries to an open household book. Use
-`--as-of YYYY-MM-DD` to choose a repeatable reference month; for example,
-`breadsched sample sample.breadsched --as-of 2026-09-15`. The prior month has
-opening balances and dated wages, rent, groceries, and utilities. The following
-month has recurring wages, rent, and utilities plus a groceries Plan estimate.
-Dashboard Cash and Card debt groups and a two-year Base scenario are included.
-Open the resulting file in GTK or web, inspect Dashboard, then select the following
-month in Plan. The sample is for exploration, not financial advice or a template
-whose amounts should be copied into a real book.
 
 Net worth, Assets, and Debts always cover every asset and liability account in the
 book, and Liquid always covers every cash-like account, each valued in the reporting
@@ -483,8 +372,9 @@ included account, one per line, with its quote date and source where it has one.
 When there are no committed outgoings, Emergency fund and Months covered say
 “No committed outgoings” instead of presenting zero as a measured need or duration.
 Add schedules for known commitments and review Dashboard groups before relying on
-those figures. The synthetic sample book above provides a separate place to
-explore these controls.
+those figures. The [synthetic sample book](#synthetic-sample-book) provides a
+separate place to explore these controls.
+
 After importing a GnuCash book, Dashboard starts without invented groups. Its
 Net worth uses imported posted balances, and supported imported schedules
 can appear as pending bills. Review the account groups and reporting-currency
@@ -496,10 +386,6 @@ no payment day or payment schedule is not part of Needed within 30 days; the
 Dashboard says so in a “Card payments not set up” note until you configure the
 card's payment behavior (see [Credit-card payments](#credit-card-payments)).
 
-In the web Dashboard, a requested liquidity or emergency-fund horizon changes
-the displayed calculation for that request. Reopening the view uses the saved
-Dashboard settings; use the Dashboard settings controls to save a new horizon.
-
 Dashboard keeps expected income and committed bills separate. **Hold now** is the
 portion of current cash reserved for a bill. It accrues on actual income dates in
 proportion to the income received during that bill cycle. If there is no identified
@@ -508,9 +394,7 @@ income before the due date, the full bill is protected.
 When a schedule has missed two or more dates, Dashboard shows it once: the missed
 date range and count, the total, and how often it recurs (for example “every
 month”). Its monthly and annual figures describe the schedule once rather than
-repeating per missed date. Expand the row in the web interface, or read the printed
-report or `breadsched dashboard --json` (`missed_bills` and `missed_income`), for
-each missed date and amount; activate the row in GTK to open the schedule.
+repeating per missed date. Each interface can show every missed date and amount.
 
 An overdue bill remains in liquidity until resolved. A paid-in-full card contributes
 its balance on the payment date; a carried card contributes the lesser of its
@@ -518,25 +402,30 @@ balance and usual payment. Scheduled card purchases remain planning expenses but
 not become immediate cash bills, preventing a purchase and its later payment from
 being counted twice.
 
+**Reimbursements due** shows what payers still owe you on
+[reimbursable expenses](#reimbursable-expenses), with the part that is disputed or
+past its expected date. It is part of net worth and never of liquidity.
+
 Dashboard groups accept account-style paths such as `Investments:Plan A`. Generated
 headings total their children without double-counting account subtrees. Link an
 asset and loan to show equity, loan-to-value, and a bounded repayment date together.
 When an account needs a reporting-currency quote, Dashboard marks Net worth (and
 that account's group row) unavailable. If a cash-like account needs a quote,
-Liquid, Available, emergency shortfall, and Months covered are unavailable too. Account rows identify
-the missing quote; unaffected bills, reserves, and income still appear. GTK, web,
-CLI, and the printed Dashboard share this disclosure. Adding a direct or inverse
-pair quote can restore the totals without changing the ledger.
+Liquid, Available, emergency shortfall, and Months covered are unavailable too.
+Account rows identify the missing quote; unaffected bills, reserves, and income
+still appear. Every interface and the printed Dashboard share this disclosure.
+Adding a direct or inverse pair quote can restore the totals without changing the
+ledger.
 
 ## Plan
 
 Choose From, Through, Group by, Show, scenario, and comparison values, then apply
-them. These controls are saved with the book and shared between GTK and web.
-To compare assumptions, select a different saved scenario or Base as the comparison
-and apply the controls. The comparison shows amounts for both cases and differences
-for matching categories, cash-bridge entries, mortgage requirements, and planning
-flows; the original scenarios and recorded actuals remain unchanged. Reopen Plan to
-see the saved selection.
+them. These controls are saved with the book and shared between the desktop
+application and the browser. To compare assumptions, select a different saved
+scenario or Base as the comparison and apply the controls. The comparison shows
+amounts for both cases and differences for matching categories, cash-bridge entries,
+mortgage requirements, and planning flows; the original scenarios and recorded
+actuals remain unchanged.
 
 The first section is a signed spendable-cash bridge. Income and retirement
 distributions add cash. Ordinary expenses, retirement saving, benefit funding,
@@ -557,54 +446,46 @@ variance summaries are not applicable rather than zero.
 Schedules and transactions in another currency are converted to the reporting
 currency before any Plan value is added up. Each currency uses one exchange rate:
 the latest one recorded on or before the as-of date. A direct rate (for example
-EUR→USD) is preferred; otherwise the reverse rate (USD→EUR) is inverted. A note
-under the Plan summary, in the web Plan, in print, and after
-`breadsched activity` states the rate, its date, source, and age on the as-of
-date, and whether it was inverted. Judge an old rate yourself; BreadSched does not
-reject it. Converted amounts are not rounded to cents before they are added up. When no rate applies, those amounts are **not included in totals**: the
-note lists each one with its currency and date rather than counting euros as dollars.
-Add an exchange rate in Accounts to include them. `breadsched activity --as-of DATE`
-chooses which rates apply; its JSON adds `conversions` and `unconverted`, and the
-web Plan response adds a `currency` object with the same evidence.
+EUR→USD) is preferred; otherwise the reverse rate (USD→EUR) is inverted. A note with
+the Plan states the rate, its date, source, and age on the as-of date, and whether
+it was inverted. Judge an old rate yourself; BreadSched does not reject it.
+Converted amounts are not rounded to cents before they are added up. When no rate
+applies, those amounts are **not included in totals**: the note lists each one with
+its currency and date rather than counting euros as dollars. Add an exchange rate in
+Accounts to include them.
 
 Open a Plan value to inspect its dated planned occurrences and actual transactions,
 including matching status and explanations. Category values show their account
 class; planning-flow values identify the flow kind, and mortgage cash requirements
-show the whole payment. In the web view these details follow the chosen scenario;
-Base uses the book's saved Base assumptions. This is a read-only explanation and
-does not change the selected Plan or ledger.
+show the whole payment. These details follow the chosen scenario; Base uses the
+book's saved Base assumptions. This is a read-only explanation and does not change
+the selected Plan or ledger.
 
 ### Explore expenses
 
-Apply the Plan horizon, **Group by** period (month, quarter, or year), and scenario
-first. Expense Explorer uses those applied Plan choices; changing them changes the
-periods and planned amounts it shows. Actuals are recorded transactions, with the
-same treatment of refunds and other special flows as Plan. Remaining uses only
-actuals posted through the as-of date.
+Expense Explorer uses the applied Plan horizon, **Group by** period (month,
+quarter, or year), and scenario; changing them changes the periods and planned
+amounts it shows. Actuals are recorded transactions, with the same treatment of
+refunds and other special flows as Plan. Remaining uses only actuals posted through
+the as-of date. Open it from Plan
+([desktop](guide/desktop.md#explore-expenses), [browser](guide/web.md#explore-expenses)).
 
-In GTK, choose the **Explore** toolbar icon while Plan is shown. In the web interface, scroll to
-**Expense Explorer** on the Plan page, below the cash outlook. Then:
-
-1. Read **Spending over time** at the top: total plan (blue) and actual (orange)
-   for every period in the applied Plan range, with a table that splits each
-   period's actual across your top-level expense categories. A period marked
-   **to date** contains the as-of date; **future** periods show only what is
-   already posted, and a dashed line marks where they begin; **missing quote**
-   means a foreign-currency amount could not be converted and is left out. Click a
-   period on the chart (GTK) or choose it in the chart or table (web) to make it the
-   comparison period below. If all your categories sit under one **Expenses**
-   account, the split uses its subcategories, and anything posted to **Expenses**
-   itself gets its own column.
-2. Choose a **Period** for the category comparison. Each category shows a plan bar
-   and an actual bar plus exact Plan, Actual, Variance, and Remaining values. The web chart
-   labels plan in blue and actual in orange. **Sort categories** (GTK) or **Sort by**
-   (web) orders the rows by Actual, Plan, Variance, or name/category.
-3. Choose **Category trend** to compare that category's plan and actual across all
-   periods in the applied Plan range. The trend remains for the chosen category when
-   you change the comparison period or sort order.
-4. Read **Merchants — actual only** for that category and comparison period. Each
-   group has an actual total and its dated transactions. The web page also shows the
-   selected category's Plan, Actual, and Variance beneath the merchant table.
+- **Spending over time** shows total plan (blue) and actual (orange) for every period
+  in the applied Plan range, with a table that splits each period's actual across
+  your top-level expense categories. A period marked **to date** contains the as-of
+  date; **future** periods show only what is already posted, and a dashed line marks
+  where they begin; **missing quote** means a foreign-currency amount could not be
+  converted and is left out. Choosing a period makes it the comparison period below.
+  If all your categories sit under one **Expenses** account, the split uses its
+  subcategories, and anything posted to **Expenses** itself gets its own column.
+- The **Period** comparison shows a plan bar and an actual bar for each category,
+  plus exact Plan, Actual, Variance, and Remaining values, sorted by Actual, Plan,
+  Variance, or name.
+- **Category trend** compares one category's plan and actual across all periods in
+  the applied Plan range, and stays on that category when you change the comparison
+  period or sort order.
+- **Merchants — actual only** groups that category's transactions in the comparison
+  period, each group with an actual total and its dated transactions.
 
 Category values and section totals come from Plan; category hierarchy rows can
 include child accounts, so do not add parent and child rows together. Variance may
@@ -615,27 +496,23 @@ include refunds in the same actual total. A category plan is never split into
 merchant budgets: for example, a plan of 100 and purchases totaling 120 show a
 category variance of 20, even if the purchases appear under several merchants.
 The explorer does not create or save merchant rules or change the ledger.
+
 Remaining answers how much of the selected full-period expense plan is left after
 actuals posted through the as-of date. A refund increases it; overspending shows a
 negative amount. Actual and Variance still describe the full selected period, so a
 future-dated transaction may appear in Actual before it affects Remaining. A
 future-only period says “Future period.” Foreign-currency amounts use Plan's
 converted values; a category with an amount that no exchange rate converts says
-“Currency conversion unavailable,” and rollover stops there.
-Remaining has no merchant allocation and is a planning comparison, not a bank
-balance. Rollover is off by default.
-Select **Carry prior periods** in Expense Explorer to add a completed period's
-surplus or deficit to the next selected period. The first period starts with zero
-carry. Read the displayed Carry in, Plan, actual through as-of, and Remaining as a
-period bridge. A prior unavailable currency period blocks later carry with “Prior
-period unavailable”; future periods never provide a carry. Turn the control off
-to return to each period's own remaining amount. This view choice does not change
-transactions, schedules, or saved Plan settings.
+“Currency conversion unavailable,” and rollover stops there. Remaining has no
+merchant allocation and is a planning comparison, not a bank balance.
 
-To keep a copy, use **Print…** in the GTK Explorer for a self-contained preview of
-spending over time and the selected category and period with merchant detail, then print or save as PDF
-from the browser. Web **Print** includes the currently displayed Plan and applied
-Expense Explorer, including its selected comparison and detail.
+Rollover is off by default. **Carry prior periods** adds a completed period's surplus
+or deficit to the next selected period. The first period starts with zero carry.
+Read the displayed Carry in, Plan, actual through as-of, and Remaining as a period
+bridge. A prior unavailable currency period blocks later carry with “Prior period
+unavailable”; future periods never provide a carry. Turning it off returns each
+period to its own remaining amount. This view choice does not change transactions,
+schedules, or saved Plan settings.
 
 ## Projection and scenarios
 
@@ -646,7 +523,7 @@ therefore continue to affect it.
 
 To compare an alternative:
 
-1. Open Projection and create a scenario derived from Base or another scenario.
+1. Create a scenario derived from Base or another scenario.
 2. Override only assumptions that differ, such as income growth, inflation, return,
    or an account-specific rate.
 3. Add, replace, or suppress scenario events where the alternative changes dated
@@ -657,29 +534,24 @@ To compare an alternative:
 Untouched assumptions inherit through a deterministic, cycle-free scenario chain.
 Later parent edits reach inheriting children; deliberate child overrides remain.
 Dated assumption periods and scenario events belong to their owning scenario.
-The web Scenarios list shows each effective assumption and its source, along with
-the saved dated periods and eligible account-specific rate choices. Review those
-sources after changing a parent to see which values a child still inherits.
+Review each effective assumption's source after changing a parent to see which
+values a child still inherits.
 
 Projection advances account state between dated actual, scheduled, estimated, and
 one-off events. Months and years are reports of those transitions, not the engine's
-clock. GTK runs longer projections in the background and allows cancellation.
-In web Projection, open a month to inspect its cash movement, holdings and
-liabilities, dated events, and assumption sources. A calculation from edited draft
-controls remains temporary until you explicitly save those controls.
-The Projection summary and scenario comparison use the same dated calculation.
+clock. A calculation from edited draft controls remains temporary until you
+explicitly save those controls. The Projection summary and scenario comparison use
+the same dated calculation.
 
 Amounts in another currency are converted once with the exchange rate known on the
 day before the projection starts, the same date used for opening balances. This
 applies to schedules, estimates, scenario events, and foreign-currency account
-balances. Projection warnings state the rate, its date, source, and age, and whether it
-was inverted. When no rate applies, the amount or opening balance is left out of
+balances. Projection warnings state the rate, its date, source, and age, and whether
+it was inverted. When no rate applies, the amount or opening balance is left out of
 the projection and listed in the warnings; it is never counted as reporting
 currency. Add an exchange rate in Accounts, then recalculate, to include it.
-Scenario comparisons use each scenario's converted projection.
-Compare scenarios over the same horizon to read month-by-month cash and net-worth
-differences; calculate or compare freely before choosing **Save** for edited
-assumptions.
+Scenario comparisons use each scenario's converted projection. Compare scenarios
+over the same horizon to read month-by-month cash and net-worth differences.
 
 Schedule and scenario events have a growth policy:
 
@@ -719,7 +591,56 @@ FSA accounts can hold funding years with election and run-out dates. Benefit
 availability is separate from the custodial ledger balance. Claims can associate
 healthcare payments, reimbursements, allocations, refunds, and rejected attempts.
 Use FSA Dashboard to review open and recently closed benefit years and unresolved
-claims.
+claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
+
+### Reimbursable expenses
+
+A receivable tracks an expense you paid out of pocket and what an insurer,
+employer, or other payer is expected to send back, without ever rewriting the
+expense or counting the reimbursement as new income
+([desktop](guide/desktop.md#reimbursable-expenses),
+[browser](guide/web.md#reimbursable-expenses),
+[command line](guide/cli.md#reimbursable-expenses)).
+
+What the payer still owes is held in a **Receivable** account. When you track an
+expense, BreadSched moves the amount expected back (or the whole expense, if you
+gave no expected amount) out of the expense account and into the receivable
+account. So your spending shows only what you will really bear, and your net worth
+includes what is owed. Liquidity, Available, and the emergency fund never count it,
+because you cannot spend it yet. Money back moves it out of the receivable account
+again; money back beyond what was owed stays a refund in the expense account. A
+write-off returns the unpaid balance to the expense. A dispute posts nothing.
+BreadSched keeps these moving transactions itself and recomputes them whenever the
+receivable or a linked transaction changes, including after an import; they are
+marked in their notes, and editing or deleting one as a transaction is refused
+(change the receivable instead). You can choose the receivable account; by default
+BreadSched uses, or creates, a "Reimbursements Receivable" account under Assets for
+the expense's currency. An imported GnuCash receivable is used only when you
+choose it.
+
+When money comes back, record it as a credit to the same expense account, as an
+ordinary refund, and link it to the receivable. BreadSched proposes such a credit
+for one open receivable only if all of these hold:
+
+- it is in the same account and currency as the expense;
+- it is dated on or after the expense;
+- it is no more than what is still owed.
+
+If a credit could belong to more than one receivable, it is proposed only when the
+payer's name appears in its description. Nothing is linked until you accept. After
+an import, and when you reconcile the account a deposit landed in, BreadSched tells
+you how many such credits are waiting for review.
+
+Status is always recomputed from the linked splits plus any dispute or write-off,
+never stored: open, then partially reimbursed once some money is back, disputed
+while a balance remains and a dispute is recorded, written off once you record
+giving up on the remainder (even after a partial reimbursement), or settled once the
+linked reimbursements cover what is owed (the expected amount, or the whole
+expense). Unlinking, disputes, and deleting a receivable never change your linked
+transactions. If an expense you track is also on an FSA claim, the receivable shows
+a warning, so the same cost is not expected back twice. A GnuCash re-import that
+would delete a transaction a receivable depends on is refused, the same protection
+FSA claims already have.
 
 ## Import and GnuCash interoperability
 
@@ -730,15 +651,15 @@ Unsupported source details remain visible instead of being silently simplified.
 Commodities with the same mnemonic in different namespaces remain distinct during
 import and re-import. If a price refers only to an ambiguous mnemonic, inspect its
 import warning and resolve the source identifier before relying on that quote.
+Imports run as one atomic undo step; a cancelled import writes nothing
+([desktop](guide/desktop.md#import-files), [browser](guide/web.md#import-files),
+[command line](guide/cli.md#import-files)).
 
 Re-import updates source-owned data and removes source transactions that have
 disappeared. A deleted source transaction still referenced by a BreadSched
 reconciliation or FSA claim is retained and reported for review. Local planning
-decisions are not overwritten by source refreshes.
-
-GnuCash sources are read, not edited, by current import workflows. Write-back of
-simple changes requires a separate reviewed workflow and is future work. AqBanking
-links are not available yet.
+decisions are not overwritten by source refreshes. AqBanking links are not
+available yet.
 
 ### Keep GnuCash and BreadSched side by side
 
@@ -769,53 +690,40 @@ each period rather than recording the same activity in both.
   transactions are otherwise never written to GnuCash and are never removed by
   re-import, so recording the same activity in both produces duplicates.
 
-### Write changes back to a GnuCash SQLite book
-
-For a GnuCash book saved in SQLite format, BreadSched can write simple changes
-back to it. Close the book in GnuCash first. In the desktop application choose
-**File → Write Changes to GnuCash…**; in the web interface open **Import** and use
-**Write changes to GnuCash**. Both list what would be written for each
-transaction, with a checkbox; tick the ones you want and choose **Write
-selected**. **Backups to keep** sets how many backups are kept. From the command
-line, preview with:
-
-```bash
-breadsched gnucash-writeback household.breadsched
-```
-
-The preview lists, for each transaction, exactly what would be written:
-transactions you entered in BreadSched with two splits in accounts that exist in
-GnuCash, date, description, number, and memo edits to imported transactions that
-GnuCash has not reconciled, and reconcile marks you set in BreadSched. Anything
-else (changed amounts or accounts, added or removed splits, other currencies) is
-listed as not written, with the reason. Nothing is written until you choose:
-
-```bash
-breadsched gnucash-writeback household.breadsched --apply 1a2b3c4d
-breadsched gnucash-writeback household.breadsched --all
-```
-
-BreadSched refuses if GnuCash has the book open or if the book changed since you
-last imported it; import it again first. Before writing it copies the book to a
-backup folder next to your BreadSched book, writes everything in one step, reads
-it back to confirm GnuCash will see exactly what you have, and restores the copy
-if anything fails. Changes you did not choose stay as they are in BreadSched and
-are offered again next time. Choose how many backups to keep with
-`--keep-backups N` (10 by default).
-
 **To make BreadSched the ledger of record:** re-import once from the final
-GnuCash book, run `breadsched verify` and `breadsched backup`, and from then on
-record activity only in BreadSched. Keep the GnuCash file as a read-only archive;
+GnuCash book, verify and back up the BreadSched book, and from then on record
+activity only in BreadSched. Keep the GnuCash file as a read-only archive;
 importing a later GnuCash copy would restore GnuCash's values over any imported
 unreconciled transactions you have since edited.
 
+### Write changes back to a GnuCash SQLite book
+
+For a GnuCash book saved in SQLite format, BreadSched can write simple changes
+back to it ([desktop](guide/desktop.md#write-changes-back-to-gnucash),
+[browser](guide/web.md#write-changes-back-to-gnucash),
+[command line](guide/cli.md#write-changes-back-to-gnucash)). Close the book in
+GnuCash first. The preview lists, for each transaction, exactly what would be
+written: transactions you entered in BreadSched with two splits in accounts that
+exist in GnuCash, date, description, number, and memo edits to imported
+transactions that GnuCash has not reconciled, and reconcile marks you set in
+BreadSched. Anything else (changed amounts or accounts, added or removed splits,
+other currencies) is listed as not written, with the reason. Nothing is written
+until you choose which transactions to write.
+
+BreadSched refuses if GnuCash has the book open or if the book changed since you
+last imported it; import it again first. Before writing it copies the book to a
+backup folder next to your BreadSched book (keeping 10 backups unless you choose
+another number), writes everything in one step, reads it back to confirm GnuCash
+will see exactly what you have, and restores the copy if anything fails. Changes you
+did not choose stay as they are in BreadSched and are offered again next time.
+
 ### Review GnuCash changes to reconciled transactions
 
-When re-import holds GnuCash changes, the import summary reports how many. GTK
-offers the review after the import and whenever the book opens, before the
-review of due scheduled transactions. The web interface offers it after an
-import, when the page loads, and from **Review held GnuCash changes…** on the
-Import page. Each row lists the transaction and what GnuCash changed:
+When re-import holds GnuCash changes, the import summary reports how many, and each
+interface offers the review ([desktop](guide/desktop.md#review-held-gnucash-changes),
+[browser](guide/web.md#review-held-gnucash-changes),
+[command line](guide/cli.md#review-held-gnucash-changes)). Each row lists the
+transaction and what GnuCash changed:
 
 - **Keep BreadSched version** leaves the transaction as reconciled. That GnuCash
   version is not raised again; a later, different GnuCash change is.
@@ -826,17 +734,18 @@ Import page. Each row lists the transaction and what GnuCash changed:
   instead of offering this choice: reopen that statement first.
 - **Decide later**, the default, asks again next time.
 
-Choose **Apply** to commit all rows as one undo step; nothing is written if any
-row is refused. From the command line, `breadsched import-review BOOK` lists held
-changes, and `--keep`, `--use-gnucash`, `--keep-all`, or `--use-gnucash-all`
-apply decisions.
+Applying commits all rows as one undo step; nothing is written if any row is
+refused.
 
-QIF and OFX/QFX imports infer decimal and date conventions from whole-file evidence.
-Re-importing a QIF or OFX/QFX statement refreshes only the statement account's side
-of each transaction. A category you chose or split after the first import is kept.
-If the bank corrects an amount, a single category follows the new amount. A
-transaction you split across several categories is left unchanged, with a warning
-to review it.
+### QIF and OFX statements
+
+QIF and OFX/QFX imports infer decimal and date conventions from whole-file evidence;
+when a format is ambiguous, choose an explicit override. Import problems are
+reported per record when safe recovery is possible. Re-importing a QIF or OFX/QFX
+statement refreshes only the statement account's side of each transaction. A
+category you chose or split after the first import is kept. If the bank corrects an
+amount, a single category follows the new amount. A transaction you split across
+several categories is left unchanged, with a warning to review it.
 
 An OFX/QFX file from a brokerage imports its transactions too. BreadSched creates
 an account under **Assets** named for the brokerage and account number, with a
@@ -864,288 +773,114 @@ opposite amount in the other account is matched and not imported again (an
 investment account's record is the one kept), and the import summary says how
 many copies were matched. A transfer whose other side is not in the file is
 imported as usual.
-When a format is ambiguous, select an explicit override in GTK, web, or an importer
-caller. Import problems are reported per record when safe recovery is possible.
-
-GTK imports run in the background as one atomic undo step. Leave the open book and
-source file in place until completion or cancellation. A cancelled import writes
-nothing. In the web import view, select a QIF, OFX/QFX, or GnuCash file from the
-browser (up to 32 MiB), or enter a path visible to the BreadSched server. Uploaded
-files are retained beside the native book in a `<book>.uploads` directory; keep
-that directory with the book if you want to repeat an import from its remembered
-path. Uploading the same filename again refreshes the same source identity;
-different filenames are separate sources. Import options and warning details
-are shared with the path-based workflow.
 
 ### Import a CSV statement
 
 Most banks and card issuers can export a statement as CSV, but every layout
-differs, so BreadSched asks which columns hold which facts rather than guessing.
-Choose the account the statement belongs to, then map the date column and either
-one signed amount column (negative for money out, or for a card charge) or separate
-debit and credit columns. A description and memo column are optional. Refer to a
-column by its header name, or by number (1 for the first) with `--no-header`.
+differs, so BreadSched asks which columns hold which facts rather than guessing
+([desktop](guide/desktop.md#import-a-csv-statement),
+[browser](guide/web.md#import-a-csv-statement),
+[command line](guide/cli.md#import-a-csv-statement)). Choose the account the
+statement belongs to, then map the date column and either one signed amount column
+(negative for money out, or for a card charge) or separate debit and credit
+columns. A description and memo column are optional.
 
-Always preview first:
-
-```bash
-breadsched import-csv household.breadsched statement.csv --account Checking \
-    --date Date --amount Amount --description Description --preview
-```
-
-The preview lists every row with its status:
+Always preview first. The preview lists every row with its status:
 
 - **new** rows will be imported;
 - **imported** rows are already in the book from an earlier import of the same
   rows and are left exactly as they are, including any category you chose since;
 - **possible duplicate** rows match a transaction already in that account on the
   same date and amount, for example one you typed in or imported from OFX. They
-  are held back unless you add `--include-duplicates`;
+  are held back unless you include them;
 - **possible transfer** rows look like the other side of a transfer already
   imported from another account's statement: the opposite amount, within three
   days, still posted against **Uncategorized CSV** or **Uncategorized OFX**. The
-  reason names that account and date. Add `--link-transfers` to turn each pair into
-  one transfer between the two accounts; without it the row is imported as new and
-  the other transaction is left as it is. A transaction you have categorized is
+  reason names that account and date. Linking possible transfers turns each pair
+  into one transfer between the two accounts; otherwise the row is imported as new
+  and the other transaction is left as it is. A transaction you have categorized is
   never offered;
 - **invalid** rows give the line number and the reason, such as a date or amount
   that cannot be read, and are skipped.
 
 The file's encoding (UTF-8 or Windows-1252), delimiter, date order, and decimal
 convention are detected from the whole file and shown in the preview. If every date
-could be read either day-first or month-first, the preview stops and asks for
-`--date-format day-first` or `month-first`. Use `--number-format`, `--encoding`, or
-`--delimiter` to override detection, and `--invert` for exports that show money out
-as a positive number. Run the same command without `--preview` to import; the whole
-import is one undo step. New rows are posted against **Uncategorized CSV** under
-Expenses or Income for you to categorize. Two identical rows on the same day remain
-two transactions.
+could be read either day-first or month-first, the preview stops and asks you to
+choose. You can override detection, and invert the sign for exports that show money
+out as a positive number. The whole import is one undo step. New rows are posted
+against **Uncategorized CSV** under Expenses or Income for you to categorize. Two
+identical rows on the same day remain two transactions.
 
-Three more columns are optional. A **category** column (`--category`) posts each
-row to an account you already have, named by its full name such as
-`Expenses:Groceries`, or by its own name when no other account shares it; a row
-whose category names no account, or several, is invalid and says so, and an empty
-cell uses **Uncategorized CSV**. A row with a category is not offered as a possible
-transfer. A **payee** column (`--payee`) sets the payee when it matches one you
-already have, by name or by the same description matching the Payees screen uses;
-an unknown payee is noted in the preview and the row imports without one. A
-**currency** column (`--currency`) must match the account's currency; a row in
+Three more columns are optional. A **category** column posts each row to an account
+you already have, named by its full name such as `Expenses:Groceries`, or by its own
+name when no other account shares it; a row whose category names no account, or
+several, is invalid and says so, and an empty cell uses **Uncategorized CSV**. A row
+with a category is not offered as a possible transfer. A **payee** column sets the
+payee when it matches one you already have, by name or by the same description
+matching payees use; an unknown payee is noted in the preview and the row imports
+without one. A **currency** column must match the account's currency; a row in
 another currency is invalid rather than imported at the wrong value. BreadSched
 never creates accounts, payees, or currencies from these columns. Re-importing a
 row already imported leaves it untouched even if its category cell has changed.
-
-In the web interface, open **Import** and use the **CSV statement** section. Choose
-the file from the browser (it is kept beside the book in `<book>.uploads`) or enter
-a path, then choose **Read columns**. BreadSched shows the detected encoding and
-delimiter with the first rows and suggests columns from their headers; check each
-suggestion. Choose the account and any date order, decimal, or sign options, then
-**Preview** to see every row's status. **Import** writes the previewed rows as one
-undo step, and the preview refreshes to show them as already imported. The web
-screen uses the same rules as the command line.
-
-In the desktop application, choose **File → Import CSV Statement…**. Choose the
-file; BreadSched reads its columns at once, shows the first rows, and suggests the
-mapping. Adjust the account, columns, and options, choose **Preview**, then
-**Import**. Clearing **First row is a header** rereads the file with numbered
-columns. Both screens offer **Link possible transfers**, which does what
-`--link-transfers` does.
 
 ### Payees
 
 A payee records who a transaction was with, separately from its description, so
 "CORNER GROCER #1234" and "Corner Grocer 0987" can both belong to **Corner Grocer**
-while each keeps the text its statement printed.
+while each keeps the text its statement printed
+([desktop](guide/desktop.md#payees), [browser](guide/web.md#payees),
+[command line](guide/cli.md#payees)).
 
-In the desktop application choose **Actions → Payees…**; in the web interface
-open **Payees**. Enter a name and one or more example descriptions (one per line)
-and choose **Add payee**. The **Proposals** list then shows each transaction
-without a payee whose description matches, with the matched key; every proposal
-starts checked. Clear any you do not want and choose **Accept selected**. **Edit**
-loads a payee into the form so you can rename it or change its descriptions;
-**Delete** removes it and clears it from its transactions (in the desktop
-application, **Edit → Undo** restores it). From the command line:
-
-```sh
-breadsched payees book.breadsched --add "Corner Grocer" --match "CORNER GROCER #1234"
-breadsched payees book.breadsched --preview
-breadsched payees book.breadsched --accept-all       # or --accept TRANSACTION
-breadsched payees book.breadsched                    # list payees and their counts
-breadsched payees book.breadsched --delete "Corner Grocer"
-```
-
-`--match` takes an example description. BreadSched ignores case, punctuation, and
-any word containing a digit, so the example above matches every description that
-reduces to "corner grocer"; the preview shows that matched key for each proposal.
+A payee has a name and one or more example descriptions. BreadSched ignores case,
+punctuation, and any word containing a digit, so "CORNER GROCER #1234" matches every
+description that reduces to "corner grocer"; proposals show that matched key.
 Matching is exact after that, never a guess, and one description key can belong to
-only one payee. The preview lists transactions that have no payee yet and writes
+only one payee. Proposals list transactions that have no payee yet and write
 nothing. Accepting assigns the payee in one undo step, and a transaction that
 already has a payee is never changed. Deleting a payee clears it from its
 transactions. Re-importing from GnuCash, OFX, QIF, or CSV keeps the payees you
-assigned.
-
-The register shows each transaction's payee. To set or change one directly, open
-the transaction in the desktop editor and choose it under **Payee** (or **(no
-payee)** to clear it); in the web register, choose it in the row's **Payee** list.
-The register filter in the desktop application also matches payee names.
+assigned. The register shows each transaction's payee, and you can set or clear it
+in the transaction editor or the register row.
 
 ### Categorization rules
 
 Imported transactions start in **Uncategorized CSV** or **Uncategorized OFX**. A
 categorization rule proposes a category for them, matched by payee or by
 description (with the same matching as payees: case, punctuation, and words
-containing digits are ignored). Rules are ordered: the first rule that matches
-decides, and the preview names any later rule that would have chosen differently
-so you can reorder them. Only transactions still on those placeholders are ever
-proposed, so a category you chose yourself is never replaced, and a transaction
-split across several placeholder lines is left for you. Nothing changes until you
-accept, and accepting is one undo step.
-
-In the desktop application choose **Actions → Categorization Rules…**; in the web
-interface open **Rules**. Choose whether a rule matches a description (enter an
-example) or a payee, choose the category, and choose **Add rule**. **Up** and
-**Down** change a rule's priority and **Delete** removes it (in the desktop
-application, **Edit → Undo** restores it). The **Proposals** list shows each
-transaction's proposed category, the deciding rule, and any later rule that would
-have chosen differently; every proposal starts checked. Clear any you do not want
-and choose **Accept selected**. From the command line:
-
-```sh
-breadsched rules book.breadsched --add-description "CORNER GROCER #1234" --category "Expenses:Groceries"
-breadsched rules book.breadsched --add-payee "City Power" --category "Expenses:Utilities" --position 1
-breadsched rules book.breadsched                     # list rules in priority order
-breadsched rules book.breadsched --preview           # proposals, deciding rule, conflicts
-breadsched rules book.breadsched --accept-all        # or --accept TRANSACTION
-breadsched rules book.breadsched --move 2 --to 1
-breadsched rules book.breadsched --delete 2
-```
-
-### Reimbursable expenses
-
-A receivable tracks an expense you paid out of pocket and what an insurer,
-employer, or other payer is expected to send back, without ever rewriting the
-expense or counting the reimbursement as new income. The desktop application, the
-browser interface, and the command line all manage receivables.
-
-In the desktop application, select the transaction in a register and choose
-**Actions → Register → Track as Reimbursable…**. The date, description, and
-expense amount are filled in; enter who owes you and choose **Add receivable**,
-and the expense is linked. **Actions → Reimbursable Expenses…** lists every
-receivable with what is reimbursed, written off, and still remaining, its status,
-and its age. Choose **Open** on one to change it, link more expense splits, or
-link the split that credits money back (**Link reimbursement**). You can also
-record a dispute or write off part of the balance there. Unlinking, disputes, and
-write-offs never change your linked transactions.
-
-What the payer still owes is held in a **Receivable** account. When you track an
-expense, BreadSched moves the amount expected back (or the whole expense, if you
-gave no expected amount) out of the expense account and into the receivable
-account. So your spending shows only what you will really bear, and your net worth
-includes what is owed. Liquidity, Available, and the emergency fund never count it,
-because you cannot spend it yet. Money back moves it out of the receivable account
-again; money back beyond what was owed stays a refund in the expense account. A
-write-off returns the unpaid balance to the expense. A dispute posts nothing.
-BreadSched keeps these moving transactions itself and recomputes them whenever the
-receivable or a linked transaction changes, including after an import; they are marked in their notes, and a
-register edit or delete of one is refused (change the receivable instead). **Held
-in** chooses the receivable account; by default BreadSched uses, or creates, a
-"Reimbursements Receivable" account under Assets for the expense's currency. An
-imported GnuCash receivable is used only when you choose it.
-
-The Dashboard shows **Reimbursements due** with the part that is disputed or past
-its expected date. If an expense you track is also on an FSA claim, the receivable
-shows a warning, so the same cost is not expected back twice. Money waiting in an
-FSA is already an FSA asset: net worth, never liquidity.
-
-In the browser interface, choose **Reimbursable…** on a register row to start a
-receivable from that expense, or open the **Reimbursables** page to list, open,
-link, dispute, and write off receivables the same way.
-
-When money comes back, record it as a credit to the same expense account, as an
-ordinary refund. **Proposed reimbursements**, on the desktop dialog and the
-browser page, lists each such credit that clearly belongs to one open receivable,
-with the balance that would remain. BreadSched proposes a credit only if all of
-these hold:
-
-- it is in the same account and currency as the expense;
-- it is dated on or after the expense;
-- it is no more than what is still owed.
-
-If a credit could belong to more than one receivable, it is proposed only when
-the payer's name appears in its description. Nothing is linked until you choose
-**Accept selected**. After an import, and when you reconcile the account a
-deposit landed in, BreadSched tells you how many such credits are waiting for
-review.
-
-On the command line:
-
-```sh
-breadsched receivables book.breadsched --add "Acme Insurance" --incurred 2026-09-01 \
-    --description "Doctor visit" --expected 150.00 [--account "Assets:Owed to me"]
-breadsched receivables book.breadsched --attach-expense RECEIVABLE \
-    --transaction TRANSACTION --split-index 1
-breadsched receivables book.breadsched --attach-reimbursement RECEIVABLE \
-    --transaction TRANSACTION --split-index 2
-breadsched receivables book.breadsched --dispute RECEIVABLE --on 2026-09-20 \
-    --note "Insurer denied the claim"
-breadsched receivables book.breadsched --clear-dispute RECEIVABLE
-breadsched receivables book.breadsched --write-off RECEIVABLE --amount 25.00 \
-    --on 2026-10-01 --reason "Deductible"
-breadsched receivables book.breadsched                # list with status and age
-breadsched receivables book.breadsched --delete RECEIVABLE
-breadsched receivables book.breadsched --proposals         # credits that look like money back
-breadsched receivables book.breadsched --accept-proposals  # link every current proposal
-```
-
-Link the split that records the cost with `--attach-expense`, and the split that
-credits money back (a deposit's other split posted to the same expense account,
-exactly like an ordinary refund) with `--attach-reimbursement`; `--split-index` is
-the split's 1-based position within `--transaction`. Status is always recomputed
-from those linked splits plus any dispute or write-off, never stored: open, then
-partially reimbursed once some money is back, disputed while a balance remains and
-a dispute is recorded, written off once you record giving up on the remainder
-(even after a partial reimbursement), or settled once the linked reimbursements
-cover what is owed (the expected amount, or the whole expense). The list also
-shows the receivable account and any FSA-claim overlap. Deleting a receivable or clearing a dispute never
-changes the underlying transactions. A GnuCash re-import that would delete a
-transaction a receivable depends on is refused, the same protection FSA claims
-already have.
+containing digits are ignored) ([desktop](guide/desktop.md#categorization-rules),
+[browser](guide/web.md#categorization-rules),
+[command line](guide/cli.md#categorization-rules)). Rules are ordered: the first rule
+that matches decides, and proposals name any later rule that would have chosen
+differently so you can reorder them. Only transactions still on those placeholders
+are ever proposed, so a category you chose yourself is never replaced, and a
+transaction split across several placeholder lines is left for you. Nothing changes
+until you accept, and accepting is one undo step.
 
 ## Print, export, and inspect
 
-Dashboard, Plan, and Projection can be printed from the GTK toolbar or **File →
-Print Current View** (`Ctrl+P`). BreadSched opens a self-contained preview in the
-default browser; use the browser print dialog for a printer or PDF. The preview uses
-the controls and calculation already applied in the view.
-
-Plan printing leads with the cash outlook and omits the private book path. Optional
-category detail begins on a new page. Web **Print** prints the current view with
-navigation and actions removed.
-
-Use **File → Export Transactions** for transaction data. Projection also exposes
-its dated state and explanations in its supported outputs.
+Dashboard, Plan, and Projection can be printed as a self-contained preview that uses
+the controls and calculation already applied in the view; use the browser print
+dialog for a printer or PDF ([desktop](guide/desktop.md#print-and-export),
+[browser](guide/web.md#print)). Plan printing leads with the cash outlook and omits
+the private book path. Optional category detail begins on a new page. Transactions
+can be exported, and Projection exposes its dated state and explanations in its
+supported outputs.
 
 ## Protect and recover a book
 
-Native books use the `.breadsched` suffix and SQLite storage. The application version
-and the separate native schema version appear in `breadsched --version` and Verify
-diagnostics.
+Native books use the `.breadsched` suffix and SQLite storage. The application
+version and the separate native schema version appear in the version output and
+Verify diagnostics. Regularly:
 
-Use these GTK File menu commands regularly:
+- **back up** the book: an independent verified backup;
+- **verify** it: SQLite integrity and financial relationships such as balanced
+  transactions, valid references, precision, scheduled realization, and
+  reconciliation consistency;
+- when needed, **restore** a backup as a new book: the backup is verified and
+  written to a different path, never over the open live book.
 
-- **Back Up Current Book…** creates an independent verified backup.
-- **Verify Current Book** checks SQLite integrity and financial relationships such
-  as balanced transactions, valid references, precision, scheduled realization,
-  and reconciliation consistency.
-- **Restore Backup as New Book…** verifies a backup, writes it to a different path,
-  and opens the result. It will not overwrite the currently open live book.
-
-Equivalent command-line operations are:
-
-```bash
-breadsched verify household.breadsched
-breadsched backup household.breadsched household.backup
-breadsched restore household.backup restored-household.breadsched
-```
+See [desktop](guide/desktop.md#protect-and-recover-a-book) and
+[command line](guide/cli.md#protect-and-recover-a-book).
 
 A writable book has a sidecar lock. A second process may open it read-only but
 cannot become a competing writer. A stale same-host lock is reclaimed when its
@@ -1155,28 +890,8 @@ Do not keep the only copy of a book in a synchronization location that is unsafe
 SQLite. BreadSched warns about recognized OneDrive, iCloud Drive, Dropbox, and Google
 Drive roots. Keep independent backups on separate storage.
 
-## Command-line reference
-
-The CLI exposes book operations and scripting-oriented access to the same core
-model. Many commands support `--json` for structured output. Common examples are:
-
-```bash
-breadsched init household.breadsched
-breadsched import household.breadsched accounts.gnucash
-breadsched verify household.breadsched
-breadsched accounts household.breadsched
-breadsched register household.breadsched "Assets:Checking Account" --limit 20
-breadsched balance household.breadsched --as-of 2026-06-30
-breadsched estimate household.breadsched suggest --json
-```
-
-Use `breadsched --help` and `breadsched COMMAND --help` for the exact command surface
-in your installed release.
-
 ## Troubleshooting
 
-- If GTK is unavailable, run `breadsched-gtk --help` and install the named GTK 4 and
-  PyGObject packages. The CLI continues to work without GTK.
 - If a book opens read-only, check whether another BreadSched process has it open and
   inspect the lock information before assuming the lock is stale.
 - If imported values or dates are ambiguous, rerun the import with an explicit
@@ -1185,7 +900,7 @@ in your installed release.
   Check dates, account types, explicit split purposes, and occurrence matches.
 - If Projection warns that a period does not reconcile, inspect its opening state,
   dated events, accruals, and closing state. BreadSched refuses to hide that error.
-- Before reporting a problem, run Verify and record `breadsched --version`. Never
+- Before reporting a problem, run Verify and record the BreadSched version. Never
   attach an unsanitized financial book to a public issue.
-- If the web interface reports an internal error, include its correlation ID in
-  the report; the server returns that ID even when diagnostic output is unavailable.
+
+Each interface part ends with its own troubleshooting notes.

@@ -15,6 +15,7 @@ from .gnucash_writeback_resource import (
     gnucash_writeback_apply,
     gnucash_writeback_settings,
 )
+from .guide_resource import guide
 from .payee_resource import (
     payee_accept,
     payee_delete,
@@ -236,6 +237,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/payees": payees,
     "/api/gnucash/writeback": gnucash_writeback,
     "/api/receivables": receivables,
+    "/api/guide": guide,
     "/api/rules": rules,
     "/api/entry/suggest": entry_suggestion,
 }

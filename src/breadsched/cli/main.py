@@ -1299,6 +1299,23 @@ def cmd_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_guide(args: argparse.Namespace) -> int:
+    """Print one part of the packaged user guide, or list the parts."""
+    from ..user_guide import GUIDE_PARTS, guide_part, read_guide
+
+    if args.list:
+        emit(
+            [{"part": part.id, "title": part.title} for part in GUIDE_PARTS],
+            args,
+            "\n".join(f"{part.id:<9} {part.title}" for part in GUIDE_PARTS),
+        )
+        return 0
+    part = guide_part(args.part)
+    text = read_guide(part.id)
+    emit({"part": part.id, "title": part.title, "markdown": text}, args, text.rstrip("\n"))
+    return 0
+
+
 def cmd_restore(args: argparse.Namespace) -> int:
     """Restore a verified backup, preserving an overwritten book first."""
     destination = DbSQLite.restore_backup(args.source, args.destination, overwrite=args.overwrite)
@@ -3123,6 +3140,17 @@ def build_parser() -> argparse.ArgumentParser:
     backup.add_argument("destination", help="path to write the backup")
     backup.add_argument("--overwrite", action="store_true", help="replace an existing backup")
     backup.set_defaults(func=cmd_backup)
+
+    guide = add("guide", "Print the user guide packaged with this release", needs_book=False)
+    guide.add_argument(
+        "part",
+        nargs="?",
+        default="overview",
+        choices=["overview", "desktop", "web", "cli"],
+        help="which part to print (default: the overview)",
+    )
+    guide.add_argument("--list", action="store_true", help="list the parts")
+    guide.set_defaults(func=cmd_guide)
 
     restore = add("restore", "Restore a verified backup", needs_book=False)
     restore.add_argument("source", help="path to the backup")

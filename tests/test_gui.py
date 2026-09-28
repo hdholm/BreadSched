@@ -1099,6 +1099,30 @@ class TestMenuBarAndToolbar:
         app.activate_action("user-guide")
         assert len([w for w in app.get_windows() if isinstance(w, UserGuideWindow)]) == 1
 
+    def test_the_guide_shows_every_part_and_follows_links_between_them(self, app):
+        from breadsched.gui.user_guide import UserGuideWindow
+
+        guide = UserGuideWindow(app, None)
+        try:
+            buffer = guide.text_view.get_buffer()
+            assert guide.part == "overview"
+            assert list(guide.part_buttons) == ["overview", "desktop", "web", "cli"]
+            guide.part_buttons["cli"].set_active(True)
+            assert guide.part == "cli"
+            assert buffer.get_text(*buffer.get_bounds(), False).startswith("Command-line guide")
+
+            # A link to another part opens it at that heading.
+            guide.part_buttons["desktop"].set_active(True)
+            assert "../USER_GUIDE.md" in guide.link_targets()
+            target = guide.follow("../USER_GUIDE.md#reimbursable-expenses")
+            assert (target.part, target.anchor) == ("overview", "reimbursable-expenses")
+            assert guide.part == "overview" and guide.part_buttons["overview"].get_active()
+            assert buffer.get_mark("h:reimbursable-expenses") is not None
+            guide.follow("guide/web.md#payees")
+            assert guide.part == "web"
+        finally:
+            guide.destroy()
+
     def test_there_is_a_separate_icon_toolbar(self, window):
         children = []
         child = window.toolbar.get_first_child()

@@ -309,8 +309,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   Use the same offline guide content, with contextual GTK/web entry points and
   no tutorial transactions written into a real book.
 
-- Evolve the packaged Markdown user guide into a versioned `docs/` site if its
-  proven information architecture would benefit from generator-backed navigation.
+- Evolve the packaged Markdown user guide (an overview and desktop, browser, and
+  command-line parts) into a versioned `docs/` site if its proven information
+  architecture would benefit from generator-backed navigation and search.
   Keep the guide usable as a standalone document and packaged for offline help; do
   not make a documentation generator a runtime requirement.
 
