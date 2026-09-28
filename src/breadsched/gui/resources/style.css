@@ -28,3 +28,8 @@
     border-radius: 8px;
     padding: 8px 10px;
 }
+
+/* Open views and registers as tabs below the toolbar (#183). */
+.tab-bar button { padding: 2px 8px; min-height: 0; }
+.tab-bar .current-tab { border-bottom: 2px solid currentColor; }
+.tab-bar .current-tab button:first-child { font-weight: bold; }

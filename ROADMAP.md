@@ -269,6 +269,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## GTK, web parity, and reporting
 
+- **Tabs beyond desktop registers (#183 follow-up).** The desktop keeps opened
+  views and one register per account as tabs. Consider several Projection tabs
+  (one per scenario) and whether the browser should offer the same tabs, and
+  remember open tabs between sessions.
 - Continue real GTK runtime testing for selections, dialogs, focus transitions,
   model replacement, multiple windows, and GTK API-version differences.
 

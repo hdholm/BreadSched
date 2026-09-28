@@ -1183,6 +1183,20 @@ so the matching icon and menu item show as active however the view was reached
 is open. The toolbar scrolls horizontally rather than setting the window's
 minimum width.
 
+Below the toolbar, a tab bar (#183) lists each view opened in this window and one
+tab per open register. `ViewManager._tabs` holds `_Tab(key, register)` entries;
+`show_category()` opens or selects the matching tab. The single `register` stack
+page is itself a stack (`register_stack`) of `RegisterView`s, one per register
+tab, and `_views["register"]` always names the register shown, so view actions and
+callers that address "the register" keep working. `open_register()` reuses the
+account's tab or opens a new register, so the register you were in keeps its place
+and half-typed entry. A register tab's label follows its account picker. Closing a
+register tab with unsaved typing goes through `RegisterView.confirm_leave`;
+closing the current tab selects a neighbour, and closing the last shows the
+Dashboard. Closing a view tab keeps its lazily built view for reuse. Opening
+another book closes every tab and register, because they name the old book's
+accounts.
+
 View commands are declared once in `viewmanager.VIEW_ACTIONS` (#156). Each
 `ViewAction` becomes a `win.<view>-<name>` action, is listed in **Actions**
 (checkable toggles go in **View**), and, when marked `toolbar`, appears as an icon

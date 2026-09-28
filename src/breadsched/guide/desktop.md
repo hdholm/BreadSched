@@ -61,6 +61,13 @@ When you make the window narrower, text columns such as descriptions shorten (wi
 "…") so every column, including every amount, stays visible. On a small screen, a
 long dialog scrolls its form, and its Save and Cancel buttons stay at the bottom.
 
+Every view you open, and the register of every account you open, gets a tab in the
+bar below the toolbar. Choose a tab to go back to it; each register tab keeps its
+own place, filter, and half-typed entry. Opening an account that already has a tab
+returns to that tab. The × on a tab closes it; closing a register with an unsaved
+entry asks first, and closing the last tab returns to the Dashboard. Opening
+another book starts with fresh tabs.
+
 Registers can also open in independent windows; their account, filter, selection,
 and expanded row do not replace the main window's register state.
 
