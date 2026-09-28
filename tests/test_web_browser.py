@@ -179,3 +179,22 @@ def test_rules_view_adds_a_rule_and_accepts_its_proposal(page, served, tmp_path)
     names = {db.full_name(split.account) for split in stored.splits}
     assert category in names
     assert stored.description == "City Power"
+
+
+def test_quick_entry_proposes_the_latest_matching_entry(page, served):
+    db, _httpd = served
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Register", exact=True).first.click()
+    page.wait_for_selector("input[name=description]")
+    page.fill("input[name=description]", "Browser Bakery")
+    page.fill("input[name=amount]", "12.34")
+    page.locator("form.toolbar button[type=submit]").nth(1).click()
+    page.wait_for_selector("text=Transaction posted.")
+    before = len(list(db.iter_transactions()))
+
+    page.fill("input[name=description]", "BROWSER BAKERY #2")
+    page.locator("input[name=amount]").focus()
+    page.wait_for_selector("text=Proposed from")
+
+    assert page.input_value("input[name=amount]") == "12.34"
+    assert len(list(db.iter_transactions())) == before

@@ -266,6 +266,14 @@ Quick entry creates an ordinary two-split transaction:
 2. Enter a positive amount and the transaction details.
 3. Choose the button whose label describes the effect on the displayed account.
 
+When you leave the description, quick entry looks for the latest earlier
+transaction in this account whose description matches (ignoring case,
+punctuation, and words containing digits, such as store numbers). If it finds one
+and you have not typed an amount, it fills in that transaction's other account and
+amount and says where they came from, and which button would repeat it. Change
+anything you like; nothing is posted until you choose a button. Notes,
+reconciliation, planning links, and FSA claims are never copied.
+
 Use the full transaction editor for additional splits, notes, reconciliation
 metadata, FSA links, or investment classifications. A transaction cannot be saved
 unless its exact splits balance.
@@ -625,8 +633,8 @@ reconciliation or FSA claim is retained and reported for review. Local planning
 decisions are not overwritten by source refreshes.
 
 GnuCash sources are read, not edited, by current import workflows. Write-back of
-simple changes requires a separate reviewed workflow and is future work. Entry
-autocomplete from earlier transactions and AqBanking links are not available yet.
+simple changes requires a separate reviewed workflow and is future work. AqBanking
+links are not available yet.
 
 ### Keep GnuCash and BreadSched side by side
 

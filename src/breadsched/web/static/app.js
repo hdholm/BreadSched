@@ -1116,6 +1116,33 @@ async function showRegister() {
     el("td", {}, el("button", { class:"action", type:"button",
       onclick:()=>makeScheduled(row.handle) }, "Make scheduled…"))));
 
+  const quickDescription = el("input", {name:"description", placeholder:"Description",
+    required:"required"});
+  const quickTransfer = el("select", {name:"transfer"}, transferAccounts.map((item)=>
+    el("option", {value:item.full_name}, item.full_name)));
+  const quickAmount = el("input", {name:"amount", placeholder:"0.00", inputmode:"decimal",
+    required:"required"});
+  // Leaving the description proposes the latest matching entry's transfer account
+  // and amount. It never overwrites a typed amount and never posts by itself.
+  quickDescription.addEventListener("change", async () => {
+    if (quickAmount.value.trim() || !quickDescription.value.trim()) return;
+    try {
+      const query = new URLSearchParams({ account:state.account,
+        description:quickDescription.value });
+      const { suggestion } = await get(`/api/entry/suggest?${query}`);
+      if (!suggestion || !suggestion.amount || !suggestion.transfer_name) return;
+      if (!transferAccounts.some((item) => item.full_name === suggestion.transfer_name)) return;
+      quickTransfer.value = suggestion.transfer_name;
+      // Exact decimal text from the server; only the sign is interpreted here.
+      const negative = suggestion.amount.startsWith("-");
+      const magnitude = negative ? suggestion.amount.slice(1) : suggestion.amount;
+      quickAmount.value = magnitude;
+      const button = negative ? data.credit_label : data.debit_label;
+      say(`Proposed from ${suggestion.date} “${suggestion.description}”: `
+        + `${suggestion.transfer_name}, ${magnitude}. `
+        + `Edit if needed, then choose ${button}.`);
+    } catch (error) { say(error.message, "error"); }
+  });
   const quickEntry = selectedAccount?.hidden ? el("p", {class:"note"},
     "Hidden accounts remain readable but cannot be used for a new transaction.")
     : el("form", {class:"toolbar", onsubmit:async(event)=>{
@@ -1140,11 +1167,7 @@ async function showRegister() {
       el("strong", {}, "Quick entry"),
       el("input", {type:"date", name:"date", required:"required",
         value:new Date().toISOString().slice(0,10)}),
-      el("input", {name:"description", placeholder:"Description", required:"required"}),
-      el("select", {name:"transfer"}, transferAccounts.map((item)=>
-        el("option", {value:item.full_name}, item.full_name))),
-      el("input", {name:"amount", placeholder:"0.00", inputmode:"decimal",
-        required:"required"}),
+      quickDescription, quickTransfer, quickAmount,
       el("button", {class:"action primary", type:"submit", name:"direction", value:"debit"},
         data.debit_label),
       el("button", {class:"action", type:"submit", name:"direction", value:"credit"},

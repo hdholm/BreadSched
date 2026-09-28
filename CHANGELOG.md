@@ -3,6 +3,20 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a140 - 2026-09-28
+
+- **Entry autocomplete in quick entry.** Leaving the description in the desktop or
+  web register's quick entry proposes the latest earlier transaction in that
+  account whose description matches (the same normalized comparison payees and
+  rules use): its other account and amount fill an empty form, with a note saying
+  where they came from and which button would repeat it. A typed amount is never
+  overwritten, nothing posts until a button is chosen, and notes, reconciliation,
+  planning links, and FSA claims are never copied. The shared `suggest_entry`
+  service also matches by payee, limits candidates to the entry's account and
+  currency and to visible, postable accounts, and is served at
+  `GET /api/entry/suggest`. Application version `0.2.0a140`; native schema
+  remains 8.
+
 ## 0.2.0a139 - 2026-09-28
 
 - **Categorization rule screens.** The desktop **Actions → Categorization Rules…**
