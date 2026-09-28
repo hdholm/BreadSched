@@ -345,8 +345,34 @@ importer never invents a security), be in a currency the book knows, and be
 positive; anything else is reported as a skipped price. It is stored with source
 `qif` or `ofx` under a handle derived from source, security, currency, and date.
 Re-importing therefore updates it in place, and it never replaces a quote entered
-in BreadSched (source `breadsched`). QIF and OFX investment *transactions* are
-still reported and skipped.
+in BreadSched (source `breadsched`). QIF investment *transactions* are still
+reported and skipped.
+
+An OFX file with an `INVACCTFROM` brokerage account is imported by
+`plugins/importer/ofx_investment.py`. The account becomes an Assets child named
+for the institution and account tail, with a `Cash` bank sub-account and one
+`MUTUAL` (from `MFINFO`) or `STOCK` sub-account per traded security, all under
+stable uuid5 handles. A security is matched by ticker to the one book security with
+that symbol, else created from the statement's security list (namespace `FUND`,
+`STOCK`, `BOND`, or `SECURITY`, fraction 10000). Records map to balanced
+transactions dated `DTTRADE` (`DTPOSTED` for cash):
+
+- `BUY*`/`SELL*` (not options): cash `TOTAL`; commission, fees, load, and taxes
+  to `Expenses:Investment Fees`; the security split takes the units as quantity
+  and the balancing value (`-TOTAL - costs`), so the statement's rounding is kept
+  and no cost basis or realized gain is invented. Unsigned sold units are negated;
+  a missing `TOTAL` is `-(units × price) - costs`.
+- `REINVEST`: `Income:Investment Income` for `-|TOTAL|` against the security
+  (and any costs); cash is untouched.
+- `INCOME`/`INVEXPENSE`: cash against `Investment Income`/`Investment Fees`.
+- `INVBANKTRAN`: cash against `Uncategorized OFX`, as in a bank statement.
+- Options, `TRANSFER`, `SPLIT`, journals, return of capital, and margin interest
+  are skipped with a per-kind reason.
+
+Transaction handles use the same `(account id, FITID)` identity as bank records,
+and re-import goes through `keep_local_categories` with the cash account as the
+statement side, so a recategorized income or fee split survives. Security prices
+in the same file are recorded afterwards, so newly created securities are priced.
 
 An OFX bank or card transaction may carry its own exchange rate. `CURRATE` is the
 number of statement-currency (`CURDEF`) units per unit of `CURSYM`, so it is

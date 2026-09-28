@@ -797,6 +797,16 @@ of each transaction. A category you chose or split after the first import is kep
 If the bank corrects an amount, a single category follows the new amount. A
 transaction you split across several categories is left unchanged, with a warning
 to review it.
+
+An OFX/QFX file from a brokerage imports its transactions too. BreadSched creates
+an account under **Assets** named for the brokerage and account number, with a
+**Cash** account and one account per security you traded (using a security already
+in your book when the ticker matches). Purchases and sales move units and cash,
+with commissions and fees in **Expenses:Investment Fees**; reinvested dividends add
+units from **Income:Investment Income**; dividends, interest, and cash deposits or
+withdrawals post to cash. Gains are not calculated: a sale is recorded at its
+proceeds. Option trades, transfers of shares, stock splits, and a few other kinds
+are listed as skipped so you can enter them yourself.
 When a format is ambiguous, select an explicit override in GTK, web, or an importer
 caller. Import problems are reported per record when safe recovery is possible.
 

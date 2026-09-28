@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a167 - 2026-09-28
+
+- **OFX investment transactions.** A brokerage OFX/QFX statement now imports its
+  purchases, sales, reinvested dividends, income, investment expenses, and cash
+  activity as balanced transactions in a brokerage account under Assets, with a
+  Cash account and one account per traded security (units as quantity, fees in
+  Investment Fees, income in Investment Income). Securities are matched by ticker
+  or created from the statement's security list, re-import refreshes without
+  duplicating and keeps recategorized income or fees, and the statement's prices
+  are recorded. Options, share transfers, splits, and similar records are reported
+  as skipped. Application version `0.2.0a167`; native schema remains 9.
+
 ## 0.2.0a166 - 2026-09-28
 
 - **Spending over time in Expense Explorer.** GTK and the browser now open
