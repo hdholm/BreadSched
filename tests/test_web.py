@@ -5021,6 +5021,58 @@ class TestReceivablesRoutes:
         assert client.database.get_receivable(saved["handle"]).serialize() == before
         assert len(list(client.database.iter_receivables())) == 1
 
+    def test_an_fsa_claim_covers_the_rest_of_a_receivable(self, client):
+        # Issue #192: linked from the claim; the FSA share waits for the EOB.
+        db = client.database
+        rent_txn, _rent, cost = self._rent(client)
+        link = {"transaction": rent_txn.handle, "split": cost.handle}
+        _status, saved = client.post(
+            "/api/receivable/save",
+            {
+                "payer": "Acme Insurance",
+                "incurred_date": str(rent_txn.post_date),
+                "expected_amount": "500.00",
+                "link_expense": link,
+            },
+        )
+        receivable = saved["handle"]
+        _status, claims = client.get("/api/fsa/claims")
+        assert receivable in [item["handle"] for item in claims["candidates"]["receivables"]]
+        body = {
+            "service_date": str(rent_txn.post_date),
+            "provider": "Clinic",
+            "payments": [link],
+            "allocations": [],
+            "receivable": receivable,
+        }
+        _status, claim = client.post("/api/fsa/claim/save", body)
+        _status, claims = client.get("/api/fsa/claims")
+        [row] = claims["claims"]
+        shared = row["shared"]
+        assert row["receivable"] == receivable and row["status"] == "waiting_eob"
+        assert (shared["payer_share"], shared["fsa_share"]) == ("500.00", "0.00")
+        assert shared["expense"] == str(cost.value.to_decimal().quantize(Decimal("0.01")))
+        assert shared["waiting_eob"] and not shared["needs_review"]
+        assert "until the EOB is entered" in shared["text"]
+        _status, listed = client.get("/api/receivables")
+        [item] = listed["receivables"]
+        assert item["fsa_claims"] == []
+        assert [cost["claim"] for cost in item["shared_costs"]] == [claim["handle"]]
+
+        before = db.get_fsa_claim(claim["handle"]).serialize()
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/fsa/claim/save",
+                {**body, "handle": claim["handle"], "receivable": "missing"},
+            )
+        assert caught.value.code == 404
+        assert json.loads(caught.value.read())["code"] == "claim.receivable.not_found"
+        assert db.get_fsa_claim(claim["handle"]).serialize() == before
+
+        client.post("/api/receivable/delete", {"handle": receivable})
+        assert db.get_fsa_claim(claim["handle"]).receivable is None
+        assert client.get("/api/fsa/claims")[1]["claims"][0]["shared"] is None
+
     def test_proposals_are_listed_and_accepted_only_when_chosen(self, client):
         from breadsched.gen.lib import Transaction
 

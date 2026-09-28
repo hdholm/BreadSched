@@ -637,6 +637,12 @@ async function openFsaClaimsEditor(initialHandle=null) {
   const provider = el("input", { placeholder:"Provider" });
   const description = el("input", { placeholder:"Description" });
   const eob = el("input", { placeholder:"EOB patient responsibility" });
+  // A payer covering part of this expense leaves the FSA the rest (#192).
+  const payer = el("select", { "aria-label":"Payer covers part",
+    title:"A reimbursable expense whose payer covers part of this bill" },
+    el("option", { value:"" }, "No payer covers part"),
+    ...(data.candidates.receivables || []).map((item) =>
+      el("option", { value:item.handle }, item.label)));
   const paymentSelect = el("select", { multiple:"multiple", size:"5" });
   const refundSelect = el("select", { multiple:"multiple", size:"4" });
   const allocations = el("div", { class:"stack" });
@@ -741,6 +747,7 @@ async function openFsaClaimsEditor(initialHandle=null) {
   const clearForm = () => {
     editingHandle = null;
     service.value = ""; provider.value = ""; description.value = ""; eob.value = "";
+    payer.value = "";
     refreshClaimCandidates([], []);
     allocations.replaceChildren();
   };
@@ -749,6 +756,7 @@ async function openFsaClaimsEditor(initialHandle=null) {
     service.value = claim.service_date; provider.value = claim.provider || "";
     description.value = claim.description || "";
     eob.value = claim.eob_responsibility || "";
+    payer.value = claim.receivable || "";
     refreshClaimCandidates(claim.payments, claim.refunds);
     (claim.allocations || []).forEach((allocation)=>addAllocation(allocation));
   };
@@ -759,6 +767,8 @@ async function openFsaClaimsEditor(initialHandle=null) {
         el("span", {}, ` ${claim.status_label} — paid ${money(claim.net_paid)}, `
           + `reimbursed ${money(claim.reimbursed)}, rejected ${money(claim.rejected)}, `
           + `remaining ${money(claim.remaining)}`),
+        claim.shared ? el("p", { class:claim.shared.needs_review ? "note negative" : "note" },
+          claim.shared.text) : null,
         el("div", { class:"row" },
           el("button", { class:"action", type:"button", onclick:()=>loadClaim(claim) }, "Edit"),
           el("button", { class:"action", type:"button", onclick:async()=>{
@@ -796,6 +806,7 @@ async function openFsaClaimsEditor(initialHandle=null) {
       provider:provider.value.trim(),
       description:description.value.trim(),
       eob_responsibility:eob.value.trim(), payments, refunds, allocations:allocationPayload,
+      receivable:payer.value || null,
     });
     backdrop.remove(); say(editingHandle ? "FSA claim updated." : "FSA claim saved."); render();
   };
@@ -812,6 +823,7 @@ async function openFsaClaimsEditor(initialHandle=null) {
       "Service and EOB information is separate from ledger dates. Provider refunds reduce "
       + "the net amount paid; rejected reimbursement attempts are tracked without creating ledger activity."),
     el("div", { class:"row" }, service, provider, description, eob),
+    el("label", {}, "Payer covers part", payer),
     el("label", {}, "Healthcare payments"), paymentSelect,
     el("label", {}, "Provider refunds / credits"), refundSelect,
     el("h3", {}, "FSA allocations"), allocations,
@@ -4089,6 +4101,8 @@ async function showReimbursables() {
       selected.fsa_claims.length ? el("p", { class:"note negative" },
         "An expense linked here is also on an FSA claim. Check that the same cost is not "
         + "expected back from both.") : null,
+      ...(selected.shared_costs || []).map((shared) => el("p",
+        { class:shared.needs_review ? "note negative" : "note" }, shared.text)),
       linked.length ? table(["Role", "Date", "Description", "Account",
         { label:"Amount", num:true }, ""], linked)
         : el("p", { class:"note" }, "Nothing linked yet."),

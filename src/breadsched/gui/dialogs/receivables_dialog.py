@@ -31,9 +31,10 @@ from ...gen.services.receivables import (
     record_write_off,
     reimbursement_proposals,
     save_receivable,
+    shared_costs,
 )
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
+from ...presentation import service_error_message, shared_cost_text
 from ..gi_setup import Gtk
 from ..widgets.bounded import scroll_body
 
@@ -173,6 +174,9 @@ class ReceivablesDialog(Gtk.Window):
         self.warning = Gtk.Label(xalign=0, wrap=True)
         self.warning.add_css_class("negative")
         self.detail.append(self.warning)
+        # An FSA claim covering the rest of this expense (issue #192).
+        self.shared = Gtk.Label(xalign=0, wrap=True)
+        self.detail.append(self.shared)
 
         link_row = Gtk.Box(spacing=8)
         self.cost_picker = Gtk.DropDown()
@@ -362,8 +366,17 @@ class ReceivablesDialog(Gtk.Window):
         self.delete_button.set_sensitive(receivable is not None)
         _clear(self.links)
         self.warning.set_visible(False)
+        self.shared.set_visible(False)
         if receivable is None:
             return
+        shared = shared_costs(self.db, receivable.handle)
+        lines = (
+            [shared_cost_text(item) for item in shared.value]
+            if shared.value is not None
+            else [service_error_message(shared.errors[0])]
+        )
+        self.shared.set_text("\n".join(lines))
+        self.shared.set_visible(bool(lines))
         overlaps = next(
             (
                 summary.fsa_claims

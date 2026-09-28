@@ -128,6 +128,7 @@ from .projection_resource import (
     projection_month_report,
     projection_report,
 )
+from .receivable_resource import shared_cost_json
 from .resources import ResourceError
 from .scenario_resource import scenario_payload, scenarios_report
 from .schedule_write_resource import save_fixed_schedule_request, save_scenario_schedule_request
@@ -656,6 +657,10 @@ class Api:
                     "status_label": summary.status.label,
                     "payments": [link.serialize() for link in claim.payments],
                     "refunds": [link.serialize() for link in claim.refunds],
+                    "receivable": claim.receivable,
+                    "shared": (
+                        shared_cost_json(summary.shared) if summary.shared is not None else None
+                    ),
                     "allocations": [
                         {
                             **allocation.serialize(),
@@ -718,6 +723,19 @@ class Api:
             "refunds": refunds,
             "reimbursements": reimbursements,
             "fsa_accounts": fsa_accounts,
+            # A payer covering part of a claim's expense (issue #192).
+            "receivables": [
+                {
+                    "handle": item.handle,
+                    "label": (
+                        f"{item.payer} — {item.description or 'expense'} "
+                        f"({item.incurred_date.isoformat()})"
+                    ),
+                }
+                for item in sorted(
+                    self.db.iter_receivables(), key=lambda item: (item.incurred_date, item.payer)
+                )
+            ],
         }
 
     def fsa_claim_save(self, payload: dict) -> dict:
@@ -760,6 +778,7 @@ class Api:
                         )
                         for item in payload.get("allocations", [])
                     ),
+                    receivable=str(payload.get("receivable") or "").strip() or None,
                 ),
                 existing_handle=handle,
             ),

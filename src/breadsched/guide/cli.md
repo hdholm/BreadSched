@@ -192,7 +192,10 @@ exactly like an ordinary refund) with `--attach-reimbursement`; `--split-index` 
 the split's 1-based position within `--transaction`. `--account` chooses the
 Receivable account; without it BreadSched uses the default for the expense's
 currency. The list shows what is owed, the account, and any FSA-claim overlap, and
-warns under the table when an expense is also on an FSA claim. See
+warns under the table when an expense is also on an FSA claim. When an FSA claim
+covers the rest of a receivable's bill (linked on the claim in the desktop or
+browser), a line under the table shows what the payer, the FSA, and you each pay,
+and `--json` lists it under `shared_costs`. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
 ## Projection and scenarios

@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import gettext
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .gen.services import ServiceError
+
+if TYPE_CHECKING:
+    from .gen.engine.fsa_claims import SharedCost
 
 _LOCALE_DIR = Path(__file__).with_name("locale")
 _translation: gettext.NullTranslations = gettext.translation(
@@ -43,6 +47,8 @@ _SERVICE_MESSAGES = {
     "claim.not_found": "The FSA claim no longer exists",
     "claim.link.transaction.not_found": "A linked transaction no longer exists",
     "claim.link.split.not_found": "A linked transaction entry no longer exists",
+    "claim.receivable.not_found": "The linked receivable no longer exists",
+    "claim.receivable.taken": "Another FSA claim already covers the rest of this receivable",
     "claim.allocation.account.invalid": "A claim allocation must use an FSA account",
     "claim.allocation.year.not_found": "The selected FSA funding year no longer exists",
     "claim.allocation.target.negative": "An FSA allocation target cannot be negative",
@@ -287,6 +293,25 @@ def reimbursement_notice(count: int) -> str | None:
         f"{count} {noun} like money back on a reimbursable expense; "
         "review them under Reimbursable Expenses."
     )
+
+
+def shared_cost_text(shared: SharedCost) -> str:
+    """One line allocating an expense between a payer, the FSA, and you (issue #192)."""
+    fsa = (
+        f"{shared.fsa_share.format()} until the EOB is entered"
+        if shared.waiting_eob
+        else shared.fsa_share.format()
+    )
+    text = (
+        f"Of {shared.expense.format()}: {shared.payer} pays {shared.payer_share.format()}, "
+        f"the FSA {fsa}, you {shared.your_share.format(parens_negative=True)}"
+    )
+    if shared.needs_review:
+        text += (
+            f". Needs review: {shared.over_allocated.format()} more than was paid; "
+            "adjust the expected amount, the EOB, or write off the difference"
+        )
+    return text
 
 
 def service_error_message(error: ServiceError) -> str:

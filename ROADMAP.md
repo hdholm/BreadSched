@@ -29,20 +29,7 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **P1 — Reimbursable expenses and receivables.** The domain model, engine,
-   service, native schema (9), and CLI (`breadsched receivables`) are delivered:
-   a receivable tracks an expense and what an insurer, employer, or other payer
-   owes as linked but distinct facts, shows open, partial, disputed, written-off,
-   and settled status (always recomputed, never stored) with age and an optional
-   expected cash date, never counts a reimbursement as new income, never erases
-   the original expense, and coordinates with GnuCash re-import the same way FSA
-   claims do, the GTK and web screens with their register actions, and reviewed
-   reimbursement proposals pointed at after imports and during reconciliation,
-   and Receivable accounts holding what is owed (net worth, never liquidity) with
-   an FSA-overlap warning. Remaining: split one expense between a payer and an
-   FSA claim (for example, an insurer pays part and the FSA the rest) as one
-   reviewed allocation rather than a warning.
-2. **P0 — Windows installer.** Prioritized over further Linux packaging. A
+1. **P0 — Windows installer.** Prioritized over further Linux packaging. A
    per-user NSIS installer with its own MSYS2 Python and GTK runtime is built and
    tested in CI (clean install, CLI, desktop smoke, reinstall over itself,
    uninstall keeping books) and uploaded as an artifact. Remaining: attach it to
@@ -53,7 +40,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    run in CI; remaining Linux work (validating GTK file-chooser portals and
    printing inside the sandbox, and publishing the installer) follows the Windows
    installer. Keep wheel/source releases available throughout.
-3. **P2 — Interoperability and analysis.** GnuCash write-back for simple edits
+2. **P2 — Interoperability and analysis.** GnuCash write-back for simple edits
    is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
    configurable backups). Then broader reporting (spending over time is
    delivered),

@@ -25,7 +25,7 @@ from ...gen.services import (
     save_claim,
 )
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
+from ...presentation import service_error_message, shared_cost_text
 from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import scroll_body
 
@@ -191,17 +191,37 @@ class FsaClaimsDialog(Gtk.Window):
         self.provider = Gtk.Entry(placeholder_text="Provider")
         self.description = Gtk.Entry(placeholder_text="Description")
         self.eob = Gtk.Entry(placeholder_text="EOB patient responsibility")
+        # A payer (an insurer) covering part of this same expense leaves the FSA
+        # only the rest (issue #192); linked only from here, never inferred.
+        self.receivables = sorted(
+            db.iter_receivables(), key=lambda item: (item.incurred_date, item.payer)
+        )
+        self.payer = Gtk.DropDown.new_from_strings(
+            ["None"]
+            + [
+                f"{item.payer} — {item.description or 'expense'} ({item.incurred_date})"
+                for item in self.receivables
+            ]
+        )
+        self.payer.set_tooltip_text(
+            "A reimbursable expense whose payer covers part of this bill; "
+            "the FSA then claims only the rest"
+        )
         for row, (label, widget) in enumerate(
             (
                 ("Service date", self.service),
                 ("Provider", self.provider),
                 ("Description", self.description),
                 ("EOB responsibility", self.eob),
+                ("Payer covers part", self.payer),
             )
         ):
             fields.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
             fields.attach(widget, 1, row, 1, 1)
         outer.append(fields)
+        self.shared = Gtk.Label(xalign=0, wrap=True)
+        self.shared.set_visible(False)
+        outer.append(self.shared)
 
         payments, refunds, reimbursements = self._candidates()
         self._payment_candidates = payments
@@ -365,6 +385,34 @@ class FsaClaimsDialog(Gtk.Window):
         if claim:
             for allocation in claim.allocations:
                 self._add_allocation(allocation)
+        self.payer.set_selected(
+            next(
+                (
+                    index + 1
+                    for index, item in enumerate(self.receivables)
+                    if claim is not None and item.handle == claim.receivable
+                ),
+                0,
+            )
+        )
+        self._show_shared()
+
+    def _show_shared(self) -> None:
+        """The payer/FSA/you allocation of the stored claim, when it has a payer."""
+        shared = None
+        if self.current is not None and self.current.receivable is not None:
+            try:
+                shared = fsa_claims.claim_summary(self.db, self.current).shared
+            except (fsa_claims.FsaClaimError, ValueError) as exc:
+                self.shared.set_text(str(exc))
+                self.shared.set_visible(True)
+                return
+        self.shared.set_text(shared_cost_text(shared) if shared is not None else "")
+        self.shared.set_visible(shared is not None)
+
+    def _selected_receivable(self) -> str | None:
+        index = self.payer.get_selected()
+        return self.receivables[index - 1].handle if 0 < index <= len(self.receivables) else None
 
     def _save(self, _button) -> None:
         try:
@@ -380,6 +428,7 @@ class FsaClaimsDialog(Gtk.Window):
                         payments=tuple(self.payments.links()),
                         refunds=tuple(self.refunds.links()),
                         allocations=tuple(row.value() for row in self._allocation_rows),
+                        receivable=self._selected_receivable(),
                     ),
                     existing_handle=self.current.handle if self.current else None,
                 ),
@@ -392,6 +441,7 @@ class FsaClaimsDialog(Gtk.Window):
             return
         self.current = self.db.get_fsa_claim(result.value.handle)
         self.status.set_text("Claim saved.")
+        self._show_shared()
 
     def _delete(self, _button) -> None:
         if self.current is None:

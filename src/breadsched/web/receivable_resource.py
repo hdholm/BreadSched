@@ -28,11 +28,38 @@ from ..gen.services.receivables import (
     record_write_off,
     reimbursement_proposals,
     save_receivable,
+    shared_costs,
 )
+from ..presentation import shared_cost_text
 
 if TYPE_CHECKING:
+    from ..gen.engine.fsa_claims import SharedCost
     from .resources import QueryParams
     from .server import Api
+
+
+def shared_cost_json(shared: SharedCost) -> dict[str, object]:
+    """One payer/FSA/you allocation (issue #192), with the shared wording."""
+    return {
+        "claim": shared.claim,
+        "receivable": shared.receivable,
+        "payer": shared.payer,
+        "expense": shared.expense,
+        "payer_share": shared.payer_share,
+        "fsa_share": shared.fsa_share,
+        "your_share": shared.your_share,
+        "waiting_eob": shared.waiting_eob,
+        "needs_review": shared.needs_review,
+        "over_allocated": shared.over_allocated,
+        "text": shared_cost_text(shared),
+    }
+
+
+def _shared(api: Api, handle: str) -> list[dict[str, object]]:
+    result = shared_costs(api.db, handle)
+    if result.value is None:
+        raise api._service_resource_error(result.errors[0])
+    return [shared_cost_json(item) for item in result.value]
 
 
 def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> str | None:
@@ -138,6 +165,7 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
                     api.db.full_name(item.receivable.account) if item.receivable.account else None
                 ),
                 "fsa_claims": list(item.fsa_claims),
+                "shared_costs": _shared(api, item.receivable.handle),
                 "expenses": _linked(api, item.receivable.expenses),
                 "reimbursements": _linked(api, item.receivable.reimbursements),
             }

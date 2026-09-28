@@ -12,20 +12,23 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass, AccountType, FsaFundingYear
 from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
 from ..lib.money import Money
+from ..lib.receivable import Receivable
 from ..lib.transaction import Split, Transaction
-from . import fsa, split_links
+from . import fsa, receivables, split_links
 
 __all__ = [
     "FsaClaimError",
     "FsaClaimStatus",
     "FsaClaimSuggestion",
     "FsaClaimSummary",
+    "SharedCost",
     "attach_transaction_to_claim",
     "claim_summary",
     "claim_year_window",
     "delete_claim",
     "iter_claims",
     "save_claim",
+    "shared_costs_for_receivable",
     "suggest_claims_for_transaction",
 ]
 
@@ -203,6 +206,37 @@ class FsaClaimStatus(str, Enum):
 
 
 @dataclass(frozen=True)
+class SharedCost:
+    """One expense split between a payer's receivable and an FSA claim (issue #192).
+
+    The three shares always add up to ``expense``: ``your_share`` goes negative
+    when the payer and the EOB together claim more than was paid, and then
+    ``over_allocated`` says by how much and the claim needs review. Nothing is
+    refused or rewritten, and no posting depends on this allocation.
+    """
+
+    claim: str
+    receivable: str
+    payer: str
+    #: The claim's net paid amount: what the provider was paid, less refunds.
+    expense: Money
+    #: What the receivable is owed, or what the payer actually paid once that
+    #: is more; less any amount written off.
+    payer_share: Money
+    #: What the FSA is expected to reimburse: zero until an EOB responsibility
+    #: is entered, then that responsibility, never more than the remainder.
+    fsa_share: Money
+    your_share: Money
+    waiting_eob: bool
+    #: How far the payer share plus the EOB responsibility exceed the expense.
+    over_allocated: Money
+
+    @property
+    def needs_review(self) -> bool:
+        return self.over_allocated > 0
+
+
+@dataclass(frozen=True)
 class FsaClaimSummary:
     claim: FsaClaim
     paid: Money
@@ -215,6 +249,8 @@ class FsaClaimSummary:
     remaining_reimbursable: Money
     available_fsa: Money
     status: FsaClaimStatus
+    #: The payer/FSA/you allocation when the claim is linked to a receivable.
+    shared: SharedCost | None = None
 
 
 def iter_claims(db: DbSQLite) -> list[FsaClaim]:
@@ -258,6 +294,17 @@ def save_claim(db: DbSQLite, claim: FsaClaim, *, txn: DbTxn | None = None) -> Fs
     """Persist a claim and linked split classifications as one atomic edit."""
     seen_reimbursements: set[tuple[str, str]] = set()
     assignments: dict[str, list[tuple[str, date]]] = {}
+    if claim.receivable is not None:
+        _linked_receivable(db, claim)
+        if any(
+            other.receivable == claim.receivable and other.handle != claim.handle
+            for other in iter_claims(db)
+        ):
+            raise FsaClaimError(
+                "claim.receivable.taken",
+                ("receivable",),
+                "another FSA claim already covers the rest of this receivable",
+            )
     for link in claim.payments:
         _resolve_link(db, link)
     for link in claim.refunds:
@@ -452,6 +499,35 @@ def _sum_links(db: DbSQLite, links: list[FsaClaimSplitLink]) -> Money:
     return split_links.sum_links(db, links, _missing_link)
 
 
+def _linked_receivable(db: DbSQLite, claim: FsaClaim) -> Receivable:
+    receivable = db.get_receivable(claim.receivable or "")
+    if receivable is None:
+        raise FsaClaimError(
+            "claim.receivable.not_found",
+            ("receivable",),
+            "the linked receivable no longer exists",
+        )
+    return receivable
+
+
+def _payer_share(db: DbSQLite, receivable: Receivable, when: date) -> Money:
+    summary = receivables.receivable_summary(db, receivable, as_of=when)
+    return max(summary.owed - summary.written_off, summary.reimbursed, Money(0))
+
+
+def shared_costs_for_receivable(
+    db: DbSQLite, receivable: Receivable, *, as_of: date | None = None
+) -> list[SharedCost]:
+    """The allocation of each FSA claim that covers the rest of ``receivable``'s expense."""
+    found: list[SharedCost] = []
+    for claim in iter_claims(db):
+        if claim.receivable == receivable.handle:
+            shared = claim_summary(db, claim, as_of=as_of).shared
+            if shared is not None:
+                found.append(shared)
+    return found
+
+
 def claim_summary(
     db: DbSQLite,
     claim: FsaClaim,
@@ -483,15 +559,31 @@ def claim_summary(
             has_targets = True
             target_total = target_total + allocation.target
 
+    # A payer covering part of this expense leaves the FSA only the remainder,
+    # and nothing at all until the EOB says what the patient owes (issue #192).
+    payer: Receivable | None = None
+    payer_share = over_allocated = Money(0)
+    if claim.receivable is not None:
+        payer = _linked_receivable(db, claim)
+        payer_share = _payer_share(db, payer, when)
+        eob_part = Money(0)
+        if claim.eob_responsibility is not None:
+            eob_part = min(max(net_paid, Money(0)), claim.eob_responsibility)
+        over_allocated = max(payer_share + eob_part - net_paid, Money(0))
+
     if net_paid < 0:
         reimbursable = Money(0)
         status = FsaClaimStatus.NEEDS_REVIEW
     elif claim.eob_responsibility is None:
-        reimbursable = net_paid
-        status = FsaClaimStatus.WAITING_EOB
+        reimbursable = net_paid if payer is None else Money(0)
+        status = FsaClaimStatus.NEEDS_REVIEW if over_allocated > 0 else FsaClaimStatus.WAITING_EOB
     else:
         reimbursable = min(net_paid, claim.eob_responsibility)
-        if has_targets and target_total > reimbursable:
+        if payer is not None:
+            reimbursable = min(reimbursable, max(net_paid - payer_share, Money(0)))
+        if over_allocated > 0:
+            status = FsaClaimStatus.NEEDS_REVIEW
+        elif has_targets and target_total > reimbursable:
             status = FsaClaimStatus.NEEDS_REVIEW
         elif reimbursed > reimbursable:
             status = FsaClaimStatus.NEEDS_REVIEW
@@ -504,6 +596,19 @@ def claim_summary(
         else:
             status = FsaClaimStatus.OPEN
     remaining = max(reimbursable - reimbursed, Money(0))
+    shared = None
+    if payer is not None:
+        shared = SharedCost(
+            claim=claim.handle,
+            receivable=payer.handle,
+            payer=payer.payer,
+            expense=net_paid,
+            payer_share=payer_share,
+            fsa_share=reimbursable,
+            your_share=net_paid - payer_share - reimbursable,
+            waiting_eob=claim.eob_responsibility is None,
+            over_allocated=over_allocated,
+        )
     return FsaClaimSummary(
         claim=claim,
         paid=paid,
@@ -516,4 +621,5 @@ def claim_summary(
         remaining_reimbursable=remaining,
         available_fsa=available,
         status=status,
+        shared=shared,
     )

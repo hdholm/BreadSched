@@ -462,7 +462,9 @@ def fsa_overlaps(db: DbSQLite, receivable: Receivable) -> tuple[str, ...]:
     """FSA claims that also claim one of the receivable's expense splits.
 
     The same cost expected back from both a payer and the FSA is usually a
-    mistake, but not always (a partial claim on each), so this only warns.
+    mistake, but not always (a partial claim on each), so this only warns. A
+    claim linked to this receivable to cover the rest of the expense (issue
+    #192) is an explicit allocation, not an overlap.
     """
     linked = {(link.transaction, link.split) for link in receivable.expenses}
     if not linked:
@@ -470,5 +472,6 @@ def fsa_overlaps(db: DbSQLite, receivable: Receivable) -> tuple[str, ...]:
     return tuple(
         claim.handle
         for claim in db.iter_fsa_claims()
-        if any((link.transaction, link.split) in linked for link in claim.payments)
+        if claim.receivable != receivable.handle
+        and any((link.transaction, link.split) in linked for link in claim.payments)
     )

@@ -131,9 +131,10 @@ from ..gen.services.receivables import (
     record_write_off,
     reimbursement_proposals,
     save_receivable,
+    shared_costs,
 )
 from ..gen.utils import logs
-from ..presentation import reimbursement_notice, service_error_message
+from ..presentation import reimbursement_notice, service_error_message, shared_cost_text
 
 LOG = logs.get_logger(__name__)
 
@@ -1087,6 +1088,12 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             emit({"deleted": deleted.value}, args, f"Deleted receivable for {receivable.payer}")
             return 0
         summaries = list_receivables(db).value or ()
+        shared: dict[str, tuple] = {}
+        for item in summaries:
+            found = shared_costs(db, item.receivable.handle)
+            if found.value is None:
+                raise CommandError(service_error_message(found.errors[0]))
+            shared[item.receivable.handle] = found.value
         emit(
             [
                 {
@@ -1105,6 +1112,19 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                         db.full_name(item.receivable.account) if item.receivable.account else None
                     ),
                     "fsa_claims": list(item.fsa_claims),
+                    "shared_costs": [
+                        {
+                            "claim": cost.claim,
+                            "expense": cost.expense.format(),
+                            "payer_share": cost.payer_share.format(),
+                            "fsa_share": cost.fsa_share.format(),
+                            "your_share": cost.your_share.format(),
+                            "waiting_eob": cost.waiting_eob,
+                            "needs_review": cost.needs_review,
+                            "over_allocated": cost.over_allocated.format(),
+                        }
+                        for cost in shared[item.receivable.handle]
+                    ],
                 }
                 for item in summaries
             ],
@@ -1129,6 +1149,12 @@ def cmd_receivables(args: argparse.Namespace) -> int:
                 + " is also claimed from the FSA; check that it is not expected back twice."
                 for item in summaries
                 if item.fsa_claims
+            )
+            + "".join(
+                f"\n{item.receivable.payer} {item.receivable.description}".rstrip()
+                + f" and its FSA claim: {shared_cost_text(cost)}."
+                for item in summaries
+                for cost in shared[item.receivable.handle]
             )
             if summaries
             else "No receivables yet. Add one with --add PAYER --incurred DATE.",
