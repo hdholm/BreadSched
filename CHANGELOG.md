@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a164 - 2026-09-28
+
+- **OFX foreign-currency transactions carry their exchange rate.** When an OFX
+  transaction names its currency and rate (`CURRENCY` or `ORIGCURRENCY` with
+  `CURRATE`), the rate is recorded as a dated exchange quote for that day, the
+  same kind of quote as one you enter, with source `ofx`. A transaction whose
+  amount is in the foreign currency (`CURRENCY`) is now posted converted into the
+  account's currency instead of as if it were already in it; one without a usable
+  rate is reported as skipped. Application version `0.2.0a164`; native schema
+  remains 9.
+
 ## 0.2.0a163 - 2026-09-28
 
 - **QIF and OFX imports bring security prices.** A QIF file's price list

@@ -105,3 +105,63 @@ def test_ofx_prices_for_unknown_securities_are_skipped(db, tmp_path):
     result = ofx.import_book(db, path)
     assert result.prices == 0
     assert result.reasons() == {"OFX price for a security not in the book": 2}
+
+
+OFX_FOREIGN = """OFXHEADER:100
+DATA:OFXSGML
+VERSION:102
+
+<OFX>
+<SIGNONMSGSRSV1><SONRS><FI><ORG>Sample Bank</FI></SONRS></SIGNONMSGSRSV1>
+<CREDITCARDMSGSRSV1><CCSTMTTRNRS><CCSTMTRS>
+<CURDEF>USD
+<CCACCTFROM><ACCTID>4111000011112222</CCACCTFROM>
+<BANKTRANLIST>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260310<TRNAMT>-100.00<FITID>eur-1<NAME>Paris Hotel
+<CURRENCY><CURRATE>1.0825<CURSYM>EUR</CURRENCY></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260312<TRNAMT>-73.40<FITID>gbp-1<NAME>London Cafe
+<ORIGCURRENCY><CURRATE>1.2710<CURSYM>GBP</ORIGCURRENCY></STMTTRN>
+<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260314<TRNAMT>-20.00<FITID>bad-1<NAME>No Rate
+<CURRENCY><CURSYM>CHF</CURRENCY></STMTTRN>
+</BANKTRANLIST>
+</CCSTMTRS></CCSTMTTRNRS></CREDITCARDMSGSRSV1>
+</OFX>
+"""
+
+
+def _currency(db, code):
+    return next(
+        item for item in db.iter_commodities() if item.is_currency and item.mnemonic == code
+    )
+
+
+def test_ofx_transaction_exchange_rates_become_dated_currency_quotes(db, book, tmp_path):
+    path = tmp_path / "card.ofx"
+    path.write_text(OFX_FOREIGN, encoding="utf-8")
+
+    result = ofx.import_book(db, path)
+
+    usd = _currency(db, "USD")
+    eur = _currency(db, "EUR")
+    gbp = _currency(db, "GBP")
+    [eur_quote] = list(db.iter_prices(commodity=eur.handle, currency=usd.handle))
+    assert (eur_quote.quote_date, eur_quote.value, eur_quote.source) == (
+        date(2026, 3, 10),
+        Money("1.0825"),
+        "ofx",
+    )
+    assert eur_quote.quote_type == "transaction"
+    [gbp_quote] = list(db.iter_prices(commodity=gbp.handle, currency=usd.handle))
+    assert (gbp_quote.quote_date, gbp_quote.value) == (date(2026, 3, 12), Money("1.271"))
+    # A CURRENCY amount is in the foreign currency and is posted converted; an
+    # ORIGCURRENCY amount is already in the statement currency.
+    values = {
+        item.description: next(split.value for split in item.splits if split.value < 0)
+        for item in db.iter_transactions()
+    }
+    assert values == {"Paris Hotel": Money("-108.25"), "London Cafe": Money("-73.40")}
+    assert result.reasons() == {"OFX foreign-currency transaction has no usable exchange rate": 1}
+    # Re-importing refreshes the same quotes rather than adding more.
+    ofx.import_book(db, path)
+    assert len(list(db.iter_prices(commodity=eur.handle))) == 1
+    assert len(list(db.iter_transactions())) == 2
