@@ -17,6 +17,7 @@ from .payee_resource import (
     payees,
     transaction_payee,
 )
+from .register_entry_resource import register_entry_save
 from .rules_resource import rule_add, rule_delete, rule_move, rules, rules_accept
 
 if TYPE_CHECKING:
@@ -273,6 +274,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/payee/delete": payee_delete,
     "/api/payees/accept": payee_accept,
     "/api/transaction/payee": transaction_payee,
+    "/api/register/entry": register_entry_save,
     "/api/rule/add": rule_add,
     "/api/rule/delete": rule_delete,
     "/api/rule/move": rule_move,

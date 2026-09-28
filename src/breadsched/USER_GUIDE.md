@@ -324,9 +324,11 @@ cancelling leaves it as it was. If you switch accounts, open another
 transaction, or close a register window while the row holds typing, BreadSched
 asks whether to save it, discard it, or stay.
 
-The browser interface keeps its quick-entry form for now. It creates the same
-kind of two-split transaction, and you post it with the button whose label
-describes the effect on the account.
+The browser interface's register works the same way. It has a blank row at the
+bottom, **Split** for split lines with an imbalance line, and **Edit** on any row
+to change it in place, with **Enter** to save and **Escape** to cancel. Choosing
+another account, or editing another row, while something is typed asks before
+discarding it.
 
 To change an existing transaction without opening a window, select it and press
 **F2** (or choose **Actions → Register → Edit Transaction in Place**). Its row

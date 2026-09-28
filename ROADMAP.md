@@ -29,16 +29,7 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **P1 — GTK look and feel** (tracking issue #148). Deliver in this order, one
-   PR per issue:
-   - Web register: bring the GTK blank entry row, in-place splits, and in-place
-     editing (#158, DESIGN.md "Blank entry row") to the web register, replacing its
-     quick-entry form.
-   GTK4 is canonical; carry a web change only where the same problem exists
-   there. Matching
-   GnuCash's appearance is not a goal; its blank register row is the one explicit
-   model.
-2. **P1 — Reimbursable expenses and receivables.** The domain model, engine,
+1. **P1 — Reimbursable expenses and receivables.** The domain model, engine,
    service, native schema (9), and CLI (`breadsched receivables`) are delivered:
    a receivable tracks an expense and what an insurer, employer, or other payer
    owes as linked but distinct facts, shows open, partial, disputed, written-off,
@@ -50,7 +41,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    receivable with exact partial amounts and currency evidence during bank
    import/reconciliation, and explicit coordination with FSA claims when the same
    expense could be claimed through either.
-3. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
+2. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
    development environment already installs BreadSched easily from source, while
    Windows users have no equivalent path. Provide a Windows installer with the GTK
    runtime and the same book/upgrade and file workflows; test clean installs,
@@ -61,14 +52,14 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    run in CI; remaining Linux work (validating GTK file-chooser portals and
    printing inside the sandbox, and publishing the installer) follows the Windows
    installer. Keep wheel/source releases available throughout.
-4. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
+3. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
    conversion across Plan, Expense Explorer, Projection, comparisons, and prints are
    delivered. Remaining: map imported exchange-rate and security-price quotes
    (GnuCash, OFX, QIF) through the same reviewed quote contract; decide an explicit
    multi-hop policy before enabling any conversion through a third currency; and
    value securities quoted in a non-reporting currency (a direct reporting-currency
    price is still required). Do not create a second monthly budget ledger.
-5. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
+4. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
    simple user edits, broader reporting and spending-over-time charts, then
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
