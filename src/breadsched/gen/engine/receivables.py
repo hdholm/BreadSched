@@ -18,12 +18,16 @@ from ..db.sqlite import DbSQLite
 from ..lib.money import Money
 from ..lib.receivable import Receivable, ReceivableSplitLink
 from ..lib.transaction import Split, Transaction
+from .currency import reporting_currency_handle
+from .payees import match_key
 
 __all__ = [
     "ReceivableError",
     "ReceivableStatus",
     "ReceivableSummary",
+    "ReimbursementProposal",
     "iter_receivables",
+    "propose_reimbursements",
     "receivable_summary",
 ]
 
@@ -136,3 +140,127 @@ def receivable_summary(
         age_days=age_days,
         status=status,
     )
+
+
+@dataclass(frozen=True, slots=True)
+class ReimbursementProposal:
+    """An unlinked credit that looks like money back on one open receivable."""
+
+    receivable: str
+    payer: str
+    transaction: str
+    split: str
+    when: date
+    description: str
+    account: str
+    #: What the credit gives back (positive).
+    amount: Money
+    #: The receivable's remaining balance once this and earlier proposals land.
+    remaining_after: Money
+    reason: str
+
+
+_CLOSED = {ReceivableStatus.SETTLED, ReceivableStatus.WRITTEN_OFF}
+
+
+def propose_reimbursements(
+    db: DbSQLite, *, as_of: date | None = None
+) -> list[ReimbursementProposal]:
+    """Propose reimbursement links for credits that clearly belong to one receivable.
+
+    A credit (a negative split) qualifies for a receivable that is still owed
+    something when all of these hold:
+
+    - it posts to an expense account one of the receivable's expense splits used;
+    - it is dated on or after the receivable's incurred date;
+    - it is in the same transaction currency as that expense;
+    - it is no larger than what remains;
+    - it is not already linked to any receivable.
+
+    Where a credit fits several receivables, it is proposed only when the payer's
+    name (by ``payees.match_key``) appears in its description and singles one out.
+    Otherwise it is left alone. Credits are allocated oldest first, so proposals
+    never promise more than a receivable's remaining balance. Nothing is written.
+    """
+    receivables = iter_receivables(db)
+    linked: set[tuple[str, str]] = set()
+    for receivable in receivables:
+        for link in (*receivable.expenses, *receivable.reimbursements):
+            linked.add((link.transaction, link.split))
+    # A transaction with no recorded currency is in the book's reporting currency,
+    # as the transaction service reads it.
+    book_currency = reporting_currency_handle(db)
+
+    def currency_of(transaction: Transaction) -> str:
+        return transaction.currency or book_currency
+
+    open_items: list[tuple[Receivable, set[str], set[str], str]] = []
+    remaining: dict[str, Money] = {}
+    for receivable in receivables:
+        try:
+            summary = receivable_summary(db, receivable, as_of=as_of)
+            expenses = [_resolve_link(db, link) for link in receivable.expenses]
+        except ReceivableError:
+            continue  # a broken link is reported by the summary, not guessed around
+        if summary.status in _CLOSED or summary.remaining <= 0 or not expenses:
+            continue
+        accounts = {split.account for _transaction, split in expenses}
+        currencies = {currency_of(transaction) for transaction, _split in expenses}
+        open_items.append((receivable, accounts, currencies, match_key(receivable.payer)))
+        remaining[receivable.handle] = summary.remaining
+    if not open_items:
+        return []
+    credits: list[tuple[Transaction, Split]] = []
+    wanted = set().union(*(accounts for _r, accounts, _c, _k in open_items))
+    for transaction in db.iter_transactions():
+        for split in transaction.splits:
+            if split.value < 0 and split.account in wanted:
+                if (transaction.handle, split.handle) not in linked:
+                    credits.append((transaction, split))
+    credits.sort(key=lambda item: (item[0].post_date, item[0].handle, item[1].handle))
+    proposals: list[ReimbursementProposal] = []
+    for transaction, split in credits:
+        amount = -split.value
+        eligible = [
+            item
+            for item in open_items
+            if split.account in item[1]
+            and currency_of(transaction) in item[2]
+            and transaction.post_date >= item[0].incurred_date
+            and amount <= remaining[item[0].handle]
+        ]
+        if not eligible:
+            continue
+        # Whole words only: "acme insurance" is named in "acme insurance payment",
+        # but "acme" is not named in "macme".
+        key = f" {match_key(transaction.description)} "
+        named = [item for item in eligible if item[3] and f" {item[3]} " in key]
+        if len(eligible) == 1:
+            chosen = eligible[0]
+            reason = (
+                "payer named in the description; only open receivable for this account"
+                if named
+                else "only open receivable for this account"
+            )
+        elif len(named) == 1:
+            chosen = named[0]
+            reason = "payer named in the description"
+        else:
+            continue
+        receivable = chosen[0]
+        remaining[receivable.handle] = remaining[receivable.handle] - amount
+        proposals.append(
+            ReimbursementProposal(
+                receivable=receivable.handle,
+                payer=receivable.payer,
+                transaction=transaction.handle,
+                split=split.handle,
+                when=transaction.post_date,
+                description=transaction.description,
+                account=split.account,
+                amount=amount,
+                remaining_after=remaining[receivable.handle],
+                reason=reason,
+            )
+        )
+    return proposals

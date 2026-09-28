@@ -300,3 +300,39 @@ def test_a_register_expense_becomes_a_reimbursable(page, served):
     cost = next(s for s in visit.splits if s.account == expense.handle)
     assert (receivable.payer, receivable.expenses[0].split) == ("Dental plan", cost.handle)
     page.wait_for_selector("td:has-text('Dental plan')")
+
+
+def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
+    from breadsched.gen.lib import AccountClass, Money, Transaction
+    from breadsched.gen.services.receivables import (
+        SaveReceivable,
+        attach_expense_split,
+        save_receivable,
+    )
+
+    db, _httpd = served
+    expense = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE and not a.placeholder and not a.hidden
+    )
+    bank = next(a for a in db.iter_accounts() if a.name == "Checking")
+    visit = Transaction.simple(date(2026, 1, 5), "Clinic", expense.handle, bank.handle, Money("90"))
+    refund = Transaction.simple(
+        date(2026, 1, 20), "Acme Insurance", bank.handle, expense.handle, Money("40")
+    )
+    with db.transaction("Browser fixture") as txn:
+        db.add_transaction(visit, txn)
+        db.add_transaction(refund, txn)
+    receivable = save_receivable(
+        db, SaveReceivable(incurred_date=date(2026, 1, 5), payer="Acme Insurance")
+    ).value
+    cost = next(s for s in visit.splits if s.account == expense.handle)
+    attach_expense_split(db, receivable.handle, visit.handle, cost.handle)
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Reimbursables", exact=True).first.click()
+    page.wait_for_selector("text=Proposed reimbursements")
+    page.get_by_role("button", name="Accept selected").click()
+    page.wait_for_selector("text=Linked 1 reimbursement(s)")
+    assert len(db.get_receivable(receivable.handle).reimbursements) == 1

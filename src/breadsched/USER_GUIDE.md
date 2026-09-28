@@ -938,6 +938,20 @@ In the browser interface, choose **Reimbursable…** on a register row to start 
 receivable from that expense, or open the **Reimbursables** page to list, open,
 link, dispute, and write off receivables the same way.
 
+When money comes back, record it as a credit to the same expense account, as an
+ordinary refund. **Proposed reimbursements**, on the desktop dialog and the
+browser page, lists each such credit that clearly belongs to one open receivable,
+with the balance that would remain. BreadSched proposes a credit only if all of
+these hold:
+
+- it is in the same account and currency as the expense;
+- it is dated on or after the expense;
+- it is no more than what is still owed.
+
+If a credit could belong to more than one receivable, it is proposed only when
+the payer's name appears in its description. Nothing is linked until you choose
+**Accept selected**.
+
 On the command line:
 
 ```sh
@@ -954,6 +968,8 @@ breadsched receivables book.breadsched --write-off RECEIVABLE --amount 25.00 \
     --on 2026-10-01 --reason "Deductible"
 breadsched receivables book.breadsched                # list with status and age
 breadsched receivables book.breadsched --delete RECEIVABLE
+breadsched receivables book.breadsched --proposals         # credits that look like money back
+breadsched receivables book.breadsched --accept-proposals  # link every current proposal
 ```
 
 Link the split that records the cost with `--attach-expense`, and the split that

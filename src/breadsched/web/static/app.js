@@ -3891,6 +3891,37 @@ async function showReimbursables() {
       state.receivableOpen = item.handle; refresh();
     } }, "Open"))));
 
+  const accepted = new Set(data.proposals.map((item) =>
+    `${item.receivable}/${item.transaction}/${item.split}`));
+  const proposalRows = data.proposals.map((item) => {
+    const key = `${item.receivable}/${item.transaction}/${item.split}`;
+    const box = el("input", { type:"checkbox", checked:"checked",
+      "aria-label":`Accept ${item.description} for ${item.payer}` });
+    box.addEventListener("change", () => {
+      if (box.checked) accepted.add(key); else accepted.delete(key);
+    });
+    return el("tr", {}, el("td", {}, box), el("td", {}, item.date),
+      el("td", {}, item.description), el("td", {}, item.payer),
+      el("td", { class:"num" }, money(item.amount)),
+      el("td", { class:cls(item.remaining_after) }, money(item.remaining_after)),
+      el("td", { class:"muted" }, item.reason));
+  });
+  const proposals = el("div", { class:"panel panel-pad-16" },
+    el("h2", {}, "Proposed reimbursements"),
+    data.proposals.length
+      ? table(["Accept", "Date", "Description", "Payer", { label:"Amount", num:true },
+        { label:"Remaining after", num:true }, "Why"], proposalRows)
+      : el("p", { class:"note" },
+        "No unlinked credits clearly reimburse an open receivable."),
+    el("div", { class:"toolbar" }, el("button", { class:"action primary", type:"button",
+      disabled:data.proposals.length ? null : "disabled",
+      onclick:run(async () => {
+        const result = await post("/api/receivables/accept",
+          { links:[...accepted].map((key) => key.split("/")) });
+        say(`Linked ${result.linked} reimbursement(s); ${result.unchanged} left unchanged.`);
+        await refresh();
+      }) }, "Accept selected")));
+
   let detail = null;
   if (selected) {
     const linked = [
@@ -3993,6 +4024,7 @@ async function showReimbursables() {
           "Expected by", ""], rows)
         : el("p", { class:"note" }, "No reimbursable expenses yet."),
       form),
+    proposals,
     detail);
 }
 

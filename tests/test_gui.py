@@ -6296,3 +6296,31 @@ class TestReceivablesDialog:
         app.open_book(populated_book)
         assert app.lookup_action("receivables").get_enabled() is True
         assert window.lookup_action("register-track-reimbursable") is not None
+
+    def test_proposed_reimbursements_link_only_when_accepted(self, app, window, populated_book):
+        from breadsched.gen.services.receivables import ReceivableStatus, list_receivables
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+
+        db, rent_txn, rent, cost = self._book(app, populated_book)
+        dialog = ReceivablesDialog(window, db, expense=(rent_txn.handle, cost.handle))
+        try:
+            dialog.payer_entry.set_text("Acme Insurance")
+            receivable = dialog.save()
+            refund = self._refund(db, rent)
+            dialog.refresh()
+            credit = next(s for s in refund.splits if s.account == rent.handle)
+            key = (receivable.handle, refund.handle, credit.handle)
+            assert list(dialog.proposal_checks) == [key]
+            assert db.get_receivable(receivable.handle).reimbursements == []
+
+            dialog.proposal_checks[key].set_active(False)
+            assert dialog.accept_selected().linked == 0
+            assert db.get_receivable(receivable.handle).reimbursements == []
+
+            dialog.proposal_checks[key].set_active(True)
+            assert dialog.accept_selected().linked == 1
+            [summary] = list_receivables(db).value
+            assert summary.status is ReceivableStatus.PARTIAL
+            assert dialog.proposal_checks == {}
+        finally:
+            dialog.destroy()

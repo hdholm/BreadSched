@@ -18,6 +18,7 @@ from .payee_resource import (
     transaction_payee,
 )
 from .receivable_resource import (
+    receivable_accept,
     receivable_delete,
     receivable_dispute,
     receivable_link,
@@ -291,6 +292,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/receivable/dispute": receivable_dispute,
     "/api/receivable/write-off": receivable_write_off,
     "/api/receivable/delete": receivable_delete,
+    "/api/receivables/accept": receivable_accept,
     "/api/rule/add": rule_add,
     "/api/rule/delete": rule_delete,
     "/api/rule/move": rule_move,

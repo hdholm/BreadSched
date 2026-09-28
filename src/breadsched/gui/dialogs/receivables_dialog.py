@@ -17,6 +17,7 @@ from ...gen.lib.receivable import Receivable
 from ...gen.services.receivables import (
     RecordWriteOff,
     SaveReceivable,
+    accept_reimbursements,
     attach_expense_split,
     attach_reimbursement_split,
     clear_dispute,
@@ -26,6 +27,7 @@ from ...gen.services.receivables import (
     mark_disputed,
     receivable_candidates,
     record_write_off,
+    reimbursement_proposals,
     save_receivable,
 )
 from ...gen.utils.amount_input import parse_user_amount
@@ -134,6 +136,19 @@ class ReceivablesDialog(Gtk.Window):
             actions.append(button)
         form.attach(actions, 1, 5, 1, 1)
         box.append(form)
+
+        # Credits that clearly reimburse one open receivable; nothing links until
+        # the user accepts.
+        proposals_heading = Gtk.Label(label="Proposed reimbursements", xalign=0)
+        proposals_heading.add_css_class("heading")
+        box.append(proposals_heading)
+        self.proposal_rows = Gtk.Grid(column_spacing=14, row_spacing=4)
+        box.append(self.proposal_rows)
+        self.accept_button = Gtk.Button(label="Accept selected")
+        self.accept_button.set_halign(Gtk.Align.START)
+        self.accept_button.connect("clicked", lambda _b: self.accept_selected())
+        box.append(self.accept_button)
+        self.proposal_checks: dict[tuple[str, str, str], Gtk.CheckButton] = {}
 
         # Links, dispute, and write-off apply to the receivable loaded in the form.
         self.detail = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
@@ -270,7 +285,60 @@ class ReceivablesDialog(Gtk.Window):
             open_button = Gtk.Button(label="Open")
             open_button.connect("clicked", lambda _b, handle=item.handle: self.edit(handle))
             self.rows.attach(open_button, 10, row, 1, 1)
+        self._refresh_proposals()
         self._refresh_detail()
+
+    def _refresh_proposals(self) -> None:
+        proposals = reimbursement_proposals(self.db, as_of=date.today()).value or ()
+        _clear(self.proposal_rows)
+        self.proposal_checks = {}
+        _heading(
+            self.proposal_rows,
+            ("Accept", "Date", "Description", "Payer", "Amount", "Remaining after", "Why"),
+            {4, 5},
+        )
+        if not proposals:
+            self.proposal_rows.attach(
+                Gtk.Label(
+                    label="No unlinked credits clearly reimburse an open receivable.", xalign=0
+                ),
+                0,
+                1,
+                7,
+                1,
+            )
+        for row, item in enumerate(proposals, start=1):
+            check = Gtk.CheckButton(active=True)
+            check.update_property(
+                [Gtk.AccessibleProperty.LABEL], [f"Accept {item.description} for {item.payer}"]
+            )
+            self.proposal_checks[(item.receivable, item.transaction, item.split)] = check
+            self.proposal_rows.attach(check, 0, row, 1, 1)
+            for column, text in enumerate(
+                (item.when.isoformat(), item.description, item.payer), start=1
+            ):
+                self.proposal_rows.attach(Gtk.Label(label=text, xalign=0), column, row, 1, 1)
+            self.proposal_rows.attach(_amount(item.amount), 4, row, 1, 1)
+            self.proposal_rows.attach(_amount(item.remaining_after), 5, row, 1, 1)
+            reason = Gtk.Label(label=item.reason, xalign=0, wrap=True)
+            reason.add_css_class("dim")
+            self.proposal_rows.attach(reason, 6, row, 1, 1)
+        self.accept_button.set_sensitive(bool(proposals))
+
+    def accept_selected(self):
+        """Link the checked proposals that are still on offer."""
+        chosen = tuple(key for key, check in self.proposal_checks.items() if check.get_active())
+        result = accept_reimbursements(self.db, chosen)
+        if result.value is None:
+            self._message(service_error_message(result.errors[0]), True)
+            return None
+        self.refresh()
+        self._message(
+            f"Linked {result.value.linked} reimbursement(s); "
+            f"{result.value.unchanged} left unchanged.",
+            False,
+        )
+        return result.value
 
     def _refresh_detail(self) -> None:
         receivable = self.db.get_receivable(self.editing) if self.editing else None

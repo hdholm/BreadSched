@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 from ..gen.services.receivables import (
     RecordWriteOff,
     SaveReceivable,
+    accept_reimbursements,
     attach_expense_split,
     attach_reimbursement_split,
     clear_dispute,
@@ -24,6 +25,7 @@ from ..gen.services.receivables import (
     mark_disputed,
     receivable_candidates,
     record_write_off,
+    reimbursement_proposals,
     save_receivable,
 )
 
@@ -95,7 +97,23 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
     query.finish()
     summaries = _result(api, list_receivables(api.db, as_of=date.today()))
     costs, credits = _result(api, receivable_candidates(api.db))
+    proposals = _result(api, reimbursement_proposals(api.db, as_of=date.today()))
     return {
+        "proposals": [
+            {
+                "receivable": item.receivable,
+                "payer": item.payer,
+                "transaction": item.transaction,
+                "split": item.split,
+                "date": item.when,
+                "description": item.description,
+                "account": api.db.full_name(item.account),
+                "amount": item.amount,
+                "remaining_after": item.remaining_after,
+                "reason": item.reason,
+            }
+            for item in proposals
+        ],
         "receivables": [
             {
                 "handle": item.receivable.handle,
@@ -215,6 +233,20 @@ def receivable_write_off(api: Api, payload: Mapping[str, Any]) -> dict[str, obje
         ),
     )
     return {"handle": saved.handle}
+
+
+def receivable_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
+    """Link the chosen proposals that are still on offer."""
+    raw = payload.get("links")
+    if not isinstance(raw, list) or not all(
+        isinstance(item, list) and len(item) == 3 and all(isinstance(part, str) for part in item)
+        for item in raw
+    ):
+        raise ValueError("links must be a list of [receivable, transaction, split]")
+    accepted = _result(
+        api, accept_reimbursements(api.db, tuple((item[0], item[1], item[2]) for item in raw))
+    )
+    return {"linked": accepted.linked, "unchanged": accepted.unchanged}
 
 
 def receivable_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
