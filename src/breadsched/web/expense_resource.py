@@ -102,10 +102,15 @@ def expense_report(
         "income": over_time(
             explorer.income, {row.account: row.full_name for row in explorer.income_categories}
         ),
+        "income_categories": [
+            {"account": row.account, "full_name": row.full_name}
+            for row in explorer.income_categories
+        ],
         "drilldown": None
         if detail is None
         else {
             "account": detail.account,
+            "income": detail.income,
             "period": period_value(detail.period),
             "merchants": [
                 {

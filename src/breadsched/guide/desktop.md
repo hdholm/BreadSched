@@ -201,7 +201,8 @@ Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection.
 
 Apply the Plan controls first, then choose the **Explore** toolbar icon while Plan
 is shown. Click a period on the **Spending over time** or **Income over time** chart
-to make it the comparison period, use **Sort categories** to order the category rows, and choose a
+to make it the comparison period (choose an **Income detail** category to list that
+period's dated income), use **Sort categories** to order the category rows, and choose a
 **Category trend**. **Carry prior periods** turns rollover on. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
 

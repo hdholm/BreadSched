@@ -3,6 +3,15 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a189 - 2026-09-29
+
+- **Income detail.** Expense Explorer's drill-down now accepts an income category.
+  For the chosen period it lists each scheduled occurrence with its planned date and
+  expected amount, and each receipt with its date and amount, grouped by payer. The
+  service asserts that they reconcile to the Plan cell, as it does for expenses. GTK
+  and the web page add an **Income detail** choice below Income over time.
+  Application version `0.2.0a189`; native schema remains 9.
+
 ## 0.2.0a188 - 2026-09-29
 
 - **Net worth history.** A new shared service values the whole book's assets and

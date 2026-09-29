@@ -41,6 +41,7 @@ def test_merchant_grouping_keeps_category_plan_unallocated(db, book):
     assert result.ok
     explorer = result.value
     assert explorer is not None and explorer.drilldown is not None
+    assert not explorer.drilldown.income
     assert explorer.drilldown.period.planned == Money(100)
     assert explorer.drilldown.period.actual == Money(120)
     assert explorer.drilldown.period.variance == Money(20)
@@ -385,3 +386,41 @@ def test_income_over_time_uses_plan_income_and_reconciles(db, book):
     html = expense_explorer_report(selected.value)
     assert "<h2>Income over time</h2>" in html
     assert "3,100.00" in html
+
+
+def test_income_drilldown_lists_the_dated_events_behind_a_period(db, book):
+    pay = ScheduledTransaction(
+        name="Pay",
+        recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 15)),
+        splits=[
+            ScheduledSplit(book.checking, Money(3000)),
+            ScheduledSplit(book.salary, Money(-3000)),
+        ],
+    )
+    with db.transaction("Income history") as txn:
+        db.add_scheduled(pay, txn)
+        db.add_transaction(
+            Transaction.simple(date(2026, 2, 13), "Employer", book.checking, book.salary, "3100"),
+            txn,
+        )
+        db.add_transaction(
+            Transaction.simple(date(2026, 2, 20), " ", book.checking, book.salary, "25"), txn
+        )
+    request = PlanQuery(start=date(2026, 1, 1), end=date(2026, 3, 31), today=date(2026, 2, 25))
+    result = query_expense_explorer(db, request, account=book.salary, period_index=1)
+    assert result.value is not None and result.value.drilldown is not None
+    detail = result.value.drilldown
+    assert detail.income and detail.account == book.salary
+    assert detail.period.label == "Feb 2026"
+    # The dated planned occurrence and the actuals that make the period's total.
+    assert [event.planned_date for event in detail.planned_events] == [date(2026, 2, 15)]
+    assert detail.planned_events[0].expected == Money(3000)
+    assert [(item.post_date, item.amount) for item in detail.actual_transactions] == [
+        (date(2026, 2, 13), Money(3100)),
+        (date(2026, 2, 20), Money(25)),
+    ]
+    assert [(group.name, group.amount) for group in detail.merchants] == [
+        ("Employer", Money(3100)),
+        ("Unknown payer", Money(25)),
+    ]
+    assert detail.period.actual == Money(3125)

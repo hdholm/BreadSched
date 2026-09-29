@@ -2602,6 +2602,16 @@ class TestDerivedPlanView:
             assert dialog.income_table.get_child_at(1, 1).get_label() == (
                 dialog._report.income[0].planned.format()
             )
+            # Income detail: the selected period's dated planned and received rows.
+            received = [
+                dialog.income_detail.get_child_at(0, row).get_label()
+                for row in range(1, 40)
+                if dialog.income_detail.get_child_at(0, row) is not None
+            ]
+            assert "Received" in received
+            period = dialog._report.income[0]
+            dated = [text for text in received if text[:4].isdigit()]
+            assert all(period.start.isoformat() <= text <= period.end.isoformat() for text in dated)
             if len(dialog._report.totals) > 1:
                 dialog.period.set_selected(1)
                 assert dialog.spending_chart.selected_index == 1

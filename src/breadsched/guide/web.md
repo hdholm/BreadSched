@@ -90,7 +90,8 @@ dated events, and assumption sources.
 
 Apply the Plan controls first, then scroll to **Expense Explorer** on the Plan page,
 below the cash outlook. Choose a period in the **Spending over time** or **Income
-over time** chart or table to make it the comparison period, use **Sort by** to order the category rows, and
+over time** chart or table to make it the comparison period (the **Income detail**
+list below the income chart shows that period's dated income), use **Sort by** to order the category rows, and
 choose a **Category trend**. The chart labels plan in blue and actual in orange. The
 page also shows the selected category's Plan, Actual, and Variance beneath the
 merchant table. **Carry prior periods** turns rollover on. See

@@ -66,6 +66,8 @@ class ExpenseDrilldown:
     planned_events: tuple[CategoryPlannedDetail, ...]
     actual_transactions: tuple[CategoryActualDetail, ...]
     merchants: tuple[MerchantGroup, ...]
+    # An income category's drilldown groups its actuals by payer the same way.
+    income: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,8 +106,8 @@ class ExpenseExplorer:
     income_categories: tuple[ExpenseCategory, ...] = ()
 
 
-def _merchant_name(description: str) -> str:
-    return description.strip() or "Unknown merchant"
+def _merchant_name(description: str, income: bool = False) -> str:
+    return description.strip() or ("Unknown payer" if income else "Unknown merchant")
 
 
 def _expense_period(
@@ -399,7 +401,10 @@ def query_expense_explorer(
     )
     drilldown = None
     if account is not None or period_index is not None:
-        selected = next((item for item in categories if item.account == account), None)
+        selected = next(
+            (item for item in (*categories, *income_categories) if item.account == account),
+            None,
+        )
         if selected is None or period_index is None or not 0 <= period_index < len(buckets):
             return ServiceResult.failure(
                 ServiceError("expense.selection.invalid", ("account", "period_index"))
@@ -413,12 +418,14 @@ def query_expense_explorer(
             scenario=scenario,
             as_of=plan.report.as_of,
         )
+        is_income = selected in income_categories
         grouped: dict[str, list[CategoryActualDetail]] = {}
         for actual in detail.actual_transactions:
-            grouped.setdefault(_merchant_name(actual.description).casefold(), []).append(actual)
+            key = _merchant_name(actual.description, is_income).casefold()
+            grouped.setdefault(key, []).append(actual)
         merchants = tuple(
             MerchantGroup(
-                min(_merchant_name(item.description) for item in items),
+                min(_merchant_name(item.description, is_income) for item in items),
                 sum((item.amount for item in items), Money(0)),
                 tuple(
                     MerchantActual(item.transaction, item.post_date, item.description, item.amount)
@@ -443,6 +450,7 @@ def query_expense_explorer(
             detail.planned_events,
             detail.actual_transactions,
             merchants,
+            income=is_income,
         )
     return ServiceResult.success(
         ExpenseExplorer(
