@@ -193,8 +193,8 @@ Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection.
 ### Explore expenses
 
 Apply the Plan controls first, then choose the **Explore** toolbar icon while Plan
-is shown. Click a period on the **Spending over time** chart to make it the
-comparison period, use **Sort categories** to order the category rows, and choose a
+is shown. Click a period on the **Spending over time** or **Income over time** chart
+to make it the comparison period, use **Sort categories** to order the category rows, and choose a
 **Category trend**. **Carry prior periods** turns rollover on. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
 
@@ -276,8 +276,8 @@ differently; every proposal starts checked. Clear any you do not want and choose
 Print Dashboard, Plan, or Projection from the toolbar or **File → Print Current
 View** (`Ctrl+P`). BreadSched opens a self-contained preview in the default browser;
 use the browser print dialog for a printer or PDF. In Expense Explorer, **Print…**
-previews spending over time and the selected category and period with merchant
-detail. Use **File → Export Transactions** for transaction data.
+previews spending and income over time and the selected category and period with
+merchant detail. Use **File → Export Transactions** for transaction data.
 
 ## Protect and recover a book
 

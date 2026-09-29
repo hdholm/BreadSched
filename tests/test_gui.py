@@ -2570,9 +2570,20 @@ class TestDerivedPlanView:
                 len(dialog._report.totals)
             ] * 2
             assert chart.selected_index == 0
+            # Income over time: the same periods, its own chart and table.
+            assert dialog._report.income
+            income = dialog.income_chart
+            assert [len(series.values) for series in income.series] == [
+                len(dialog._report.totals)
+            ] * 2
+            assert income.selected_index == 0
+            assert dialog.income_table.get_child_at(1, 1).get_label() == (
+                dialog._report.income[0].planned.format()
+            )
             if len(dialog._report.totals) > 1:
                 dialog.period.set_selected(1)
                 assert dialog.spending_chart.selected_index == 1
+                assert dialog.income_chart.selected_index == 1
             dialog.rollover.set_active(True)
             assert dialog._report.rollover
             dialog.sort.set_selected(3)

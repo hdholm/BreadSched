@@ -70,10 +70,10 @@ class ExpenseDrilldown:
 
 @dataclass(frozen=True, slots=True)
 class SpendingPoint:
-    """One period of total spending over time, split by top-level category.
+    """One period of total spending (or income) over time, split by top-level category.
 
-    ``categories`` pairs each top-level expense category's handle with its actual
-    for the period; together they equal ``actual`` exactly. ``future`` periods
+    ``categories`` pairs each top-level category's handle with its actual for the
+    period; together they equal ``actual`` exactly. ``future`` periods
     start after the as-of date (their actual is only what is already posted), and
     ``partial`` periods contain it. ``currency_incomplete`` marks a period with
     foreign activity that has no applicable quote and is therefore left out.
@@ -98,6 +98,10 @@ class ExpenseExplorer:
     drilldown: ExpenseDrilldown | None
     rollover: bool = False
     spending: tuple[SpendingPoint, ...] = ()
+    # Income over time uses the same Plan periods and income categories; its
+    # points carry income category handles, named by ``income_categories``.
+    income: tuple[SpendingPoint, ...] = ()
+    income_categories: tuple[ExpenseCategory, ...] = ()
 
 
 def _merchant_name(description: str) -> str:
@@ -170,6 +174,50 @@ def _spending_composition(
         level = children
     entries = [(row.account, tuple(period.actual for period in row.periods)) for row in level]
     return tuple(entries + residual)
+
+
+def _roots(categories: tuple[ExpenseCategory, ...]) -> tuple[ExpenseCategory, ...]:
+    return tuple(
+        row
+        for row in categories
+        if not any(
+            row.full_name.startswith(f"{candidate.full_name}:")
+            for candidate in categories
+            if candidate is not row
+        )
+    )
+
+
+def _over_time(
+    buckets: tuple[PeriodActivity, ...] | list[PeriodActivity],
+    categories: tuple[ExpenseCategory, ...],
+    planned: list[Money | None],
+    actual: list[Money | None],
+    foreign: list[set[str]] | list[frozenset[str]],
+    as_of: date,
+    what: str,
+) -> tuple[SpendingPoint, ...]:
+    """Total plan and actual per period, with actual split by top-level category."""
+    handles = {row.account for row in categories}
+    composition = _spending_composition(categories, _roots(categories))
+    points = tuple(
+        SpendingPoint(
+            bucket.start,
+            bucket.end,
+            bucket.label,
+            planned[index] or Money(0),
+            actual[index] or Money(0),
+            future=bucket.start > as_of,
+            partial=bucket.start <= as_of < bucket.end,
+            currency_incomplete=bool(foreign[index] & handles),
+            categories=tuple((handle, amounts[index]) for handle, amounts in composition),
+        )
+        for index, bucket in enumerate(buckets)
+    )
+    for point in points:
+        if sum((amount for _account, amount in point.categories), Money(0)) != point.actual:
+            raise AssertionError(f"top-level {what} categories do not reconcile to Plan")
+    return points
 
 
 def _apply_rollover(
@@ -277,15 +325,7 @@ def query_expense_explorer(
         )
         for row in plan.report.expenses
     )
-    roots = tuple(
-        row
-        for row in categories
-        if not any(
-            row.full_name.startswith(f"{candidate.full_name}:")
-            for candidate in categories
-            if candidate is not row
-        )
-    )
+    roots = _roots(categories)
     totals = _apply_rollover(
         tuple(
             _expense_period(
@@ -314,24 +354,49 @@ def query_expense_explorer(
         plan.report.as_of,
     )
     as_of = plan.report.as_of
-    composition = _spending_composition(categories, roots)
-    spending = tuple(
-        SpendingPoint(
-            bucket.start,
-            bucket.end,
-            bucket.label,
-            total.planned,
-            total.actual,
-            future=bucket.start > as_of,
-            partial=bucket.start <= as_of < bucket.end,
-            currency_incomplete=bool(foreign[index]),
-            categories=tuple((handle, amounts[index]) for handle, amounts in composition),
-        )
-        for index, (bucket, total) in enumerate(zip(buckets, totals, strict=True))
+    spending = _over_time(
+        buckets,
+        categories,
+        [total.planned for total in totals],
+        [total.actual for total in totals],
+        plan.report.unconverted_accounts,
+        as_of,
+        "expense",
     )
-    for point in spending:
-        if sum((amount for _account, amount in point.categories), Money(0)) != point.actual:
-            raise AssertionError("top-level expense categories do not reconcile to Plan")
+    income_categories = tuple(
+        ExpenseCategory(
+            row.account,
+            row.name,
+            row.full_name,
+            row.depth,
+            tuple(
+                ExpensePeriod(
+                    bucket.start,
+                    bucket.end,
+                    bucket.label,
+                    planned,
+                    actual,
+                    variance,
+                    None,
+                    None,
+                    None,
+                )
+                for bucket, planned, actual, variance in zip(
+                    buckets, row.planned, row.actual, row.variance, strict=True
+                )
+            ),
+        )
+        for row in plan.report.income
+    )
+    income = _over_time(
+        buckets,
+        income_categories,
+        plan.report.category_totals(AccountClass.INCOME, PlanMeasure.PLANNED),
+        plan.report.category_totals(AccountClass.INCOME, PlanMeasure.ACTUAL),
+        plan.report.unconverted_accounts,
+        as_of,
+        "income",
+    )
     drilldown = None
     if account is not None or period_index is not None:
         selected = next((item for item in categories if item.account == account), None)
@@ -380,5 +445,7 @@ def query_expense_explorer(
             merchants,
         )
     return ServiceResult.success(
-        ExpenseExplorer(plan, categories, totals, drilldown, rollover, spending)
+        ExpenseExplorer(
+            plan, categories, totals, drilldown, rollover, spending, income, income_categories
+        )
     )

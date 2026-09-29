@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a187 - 2026-09-29
+
+- **Income over time.** Expense Explorer now follows Spending over time with
+  Income over time: total planned and actual income for every period in the
+  applied Plan range, split across top-level income categories, with the same
+  to-date, future, and missing-quote markers. It uses the Plan report's income
+  rows through the same helper as spending, and the service asserts that each
+  period's split sums exactly to its actual. GTK, the web page, and the printable
+  report show it as a second chart and table, and choosing one of its periods
+  selects that period for the whole explorer. Application version `0.2.0a187`;
+  native schema remains 9.
+
 ## 0.2.0a186 - 2026-09-29
 
 - **Windows file chooser and printing are checked in the installed copy.** After

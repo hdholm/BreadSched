@@ -96,15 +96,23 @@ class ExpenseExplorerDialog(Gtk.Window):
         bar.set_hexpand(True)
         return bar
 
-    def _append_spending(self, index: int) -> None:
+    def _append_spending(self, index: int, *, income: bool = False) -> None:
         """Total plan and actual by period; clicking a period selects it."""
-        points = self._report.spending
-        self.content.append(self._label("Spending over time", heading=True))
+        points = self._report.income if income else self._report.spending
+        self.content.append(
+            self._label("Income over time" if income else "Spending over time", heading=True)
+        )
         self.content.append(
             self._label(
                 f"Total plan and actual. Actual is posted through "
                 f"{self._report.plan.report.as_of.isoformat()}; the dashed line marks the "
-                "first future period. Click a period to compare its categories."
+                "first future period. "
+                + (
+                    "Income is split by top-level income category; clicking a period "
+                    "also selects it for the expense comparison."
+                    if income
+                    else "Click a period to compare its categories."
+                )
             )
         )
         chart = LineChart()
@@ -129,9 +137,13 @@ class ExpenseExplorerDialog(Gtk.Window):
 
         click.connect("pressed", pressed)
         chart.add_controller(click)
-        self.spending_chart = chart
+        if income:
+            self.income_chart = chart
+        else:
+            self.spending_chart = chart
         self.content.append(chart)
-        names = {row.account: row.full_name for row in self._report.categories}
+        rows = self._report.income_categories if income else self._report.categories
+        names = {row.account: row.full_name for row in rows}
         grid = Gtk.Grid(column_spacing=12, row_spacing=3)
         headings = ["Period", "Plan", "Actual"]
         if points:
@@ -162,7 +174,10 @@ class ExpenseExplorerDialog(Gtk.Window):
                     label.set_xalign(1)
                     label.add_css_class("numeric")
                 grid.attach(label, column, row, 1, 1)
-        self.spending_table = grid
+        if income:
+            self.income_table = grid
+        else:
+            self.spending_table = grid
         self.content.append(grid)
 
     def _update(self, *_args) -> None:
@@ -194,6 +209,8 @@ class ExpenseExplorerDialog(Gtk.Window):
             ),
         )
         self._append_spending(index)
+        if self._report.income:
+            self._append_spending(index, income=True)
         self.content.append(
             self._label(f"Category comparison — {self._report.totals[index].label}", heading=True)
         )
