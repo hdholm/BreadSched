@@ -33,8 +33,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    per-user NSIS installer with its own MSYS2 Python and GTK runtime is built and
    tested in CI (clean install, CLI, desktop smoke, reinstall over itself,
    uninstall keeping books), and each release attaches it with its checksum.
-   Remaining: code signing, an upgrade test from the previously
-   published installer, file-chooser and printing checks on Windows, and adding
+   Every CI run and release also upgrades from the newest published installer.
+   Remaining: code signing, file-chooser and printing checks on Windows, and adding
    the command line to `PATH` optionally. The Flatpak manifest, its installed-sandbox CLI
    gate, desktop entry, AppStream metadata, icon, and sandboxed GTK smoke already
    run in CI; remaining Linux work (validating GTK file-chooser portals and

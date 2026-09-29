@@ -2159,7 +2159,13 @@ The installer is per-user (no administrator rights) under
 HKCU. An upgrade replaces `runtime\` wholesale so no stale module survives, and
 neither upgrade nor uninstall touches books, which never live in the installation
 directory. The `windows-installer` CI job builds it on `windows-latest` and runs
-`test-installer.ps1` outside MSYS2 with a bare `PATH`: silent install, CLI
+`test-installer.ps1` outside MSYS2 with a bare `PATH`. It first upgrades from the
+newest published installer: `fetch-previous.ps1` picks the newest release other
+than this version that carries one, downloads it with that release's `SHA256SUMS`,
+and refuses it unless the hash matches; the test installs it, makes a book with it,
+installs this build over it, and requires the upgraded copy to report this version
+and still verify and read that book before uninstalling (nothing is compared
+between the versions' outputs, which may legitimately differ). Then a silent install, CLI
 version, sample book, verify, guide, `scripts/flatpak_gtk_smoke.py` with the
 installed Python, reinstall over itself, and silent uninstall that must leave the
 book and remove the runtime and registration. `stage-release.ps1` then copies the

@@ -169,9 +169,14 @@ jobs:
 
       - name: Install, exercise, upgrade, and uninstall outside MSYS2
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $installer = Get-ChildItem dist/windows/BreadSched-*-setup.exe | Select-Object -First 1
-          ./packaging/windows/test-installer.ps1 $installer.FullName
+          $version = $installer.Name -replace '^BreadSched-(.+)-setup\.exe$', '$1'
+          # Upgrade from the newest published installer, verified against its SHA256SUMS.
+          $previous = ./packaging/windows/fetch-previous.ps1 $version previous-release
+          ./packaging/windows/test-installer.ps1 $installer.FullName -Previous "$previous"
           ./packaging/windows/stage-release.ps1 $installer.FullName release-installer
 
       - name: Check the staged release checksum the way the publisher does

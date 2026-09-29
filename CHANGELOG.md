@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a184 - 2026-09-29
+
+- **Windows upgrades are tested from the published installer.** Every CI run and
+  release now downloads the newest published installer (for now
+  `BreadSched-0.2.0a183-setup.exe`), refuses it unless it matches that release's
+  `SHA256SUMS`, installs it, makes a book with it, installs the new build over it,
+  and requires the upgraded copy to report the new version and still verify and
+  read that book before the existing install, desktop, and uninstall checks
+  (`packaging/windows/fetch-previous.ps1`, `test-installer.ps1 -Previous`).
+  Application version `0.2.0a184`; native schema remains 9.
+
 ## 0.2.0a183 - 2026-09-29
 
 - **Windows installer on releases.** The release workflow gains a
