@@ -67,7 +67,7 @@ def gnucash_report(path: Path) -> dict | None:
     return json.loads(done.stdout)
 
 
-def _materialize(kind: str, directory: Path) -> Path:
+def _materialize(kind: str, directory: Path, newline: str = "\n") -> Path:
     if kind == "sqlite":
         path = directory / "household.gnucash"
         conn = sqlite3.connect(path)
@@ -75,7 +75,8 @@ def _materialize(kind: str, directory: Path) -> Path:
         conn.close()
         return path
     path = directory / "household-xml.gnucash"
-    path.write_bytes(gzip.compress((FIXTURES / "household-gnucash-5.5.xml").read_bytes()))
+    text = (FIXTURES / "household-gnucash-5.5.xml").read_bytes().replace(b"\r\n", b"\n")
+    path.write_bytes(gzip.compress(text.replace(b"\n", newline.encode())))
     return path
 
 
@@ -245,8 +246,9 @@ def test_wider_edits_round_trip_through_the_written_book(linked, tmp_path):
             assert Money(int(number), int(denominator)) == expected, name
 
 
-def test_xml_write_back_leaves_untouched_bytes_alone(tmp_path):
-    source = _materialize("xml", tmp_path)
+@pytest.mark.parametrize("newline", ["\n", "\r\n"], ids=["lf", "crlf"])
+def test_xml_write_back_leaves_untouched_bytes_alone(tmp_path, newline):
+    source = _materialize("xml", tmp_path, newline)
     before = gzip.decompress(source.read_bytes()).decode()
     db = DbSQLite()
     db.load(str(tmp_path / "home.breadsched"))
@@ -259,9 +261,10 @@ def test_xml_write_back_leaves_untouched_bytes_alone(tmp_path):
     finally:
         db.close()
     after = gzip.decompress(source.read_bytes()).decode()
+    assert after.count("\r\n") == (after.count("\n") if newline == "\r\n" else 0)
     start = before.index(f'<trn:id type="guid">{rent.handle}</trn:id>')
     block_start = before.rindex("<gnc:transaction", 0, start)
-    block_end = before.index("</gnc:transaction>", start) + len("</gnc:transaction>\n")
+    block_end = before.index("</gnc:transaction>", start) + len(f"</gnc:transaction>{newline}")
     assert after[:block_start] == before[:block_start]
     assert after[block_start:].endswith(before[block_end:])
     edited = after[block_start : len(after) - len(before[block_end:])]

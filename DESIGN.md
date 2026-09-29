@@ -2109,7 +2109,8 @@ Applying recomputes the preview, re-reads the book, and copies it to
 statement in one `BEGIN IMMEDIATE` transaction (a changed row count aborts). XML
 is edited as text: each chosen transaction's `gnc:transaction` block (found by
 GUID, outside `gnc:template-transactions`) is parsed, changed in place so unknown
-elements and slots survive, and serialized in GnuCash's own two-space layout; new
+elements and slots survive, and serialized in GnuCash's own two-space layout with
+the book's own line endings (a CRLF book stays CRLF); new
 blocks follow the last transaction; deletions remove the block; the transaction
 `gnc:count-data` is adjusted; the file is written to a temporary file (gzipped if
 it was) and swapped in with `os.replace`. Every other byte is unchanged. The book

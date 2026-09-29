@@ -250,7 +250,7 @@ def _read_sqlite(path: Path) -> SourceBook:
 
 # XML: GnuCash's namespaces, and the book-level transaction blocks.
 
-_TXN_BLOCK = re.compile(r'<gnc:transaction version="2\.0\.0">.*?</gnc:transaction>\n?', re.S)
+_TXN_BLOCK = re.compile(r'<gnc:transaction version="2\.0\.0">.*?</gnc:transaction>(?:\r?\n)?', re.S)
 _TEMPLATE_BLOCK = re.compile(r"<gnc:template-transactions>.*?</gnc:template-transactions>", re.S)
 _XMLNS = re.compile(r'xmlns:([\w.-]+)="([^"]+)"')
 
@@ -1153,6 +1153,13 @@ def _xml_transaction_element(
 
 def _write_xml(path: Path, book: SourceBook, selected: tuple[WritebackChange, ...]) -> None:
     text, gzipped = _load_xml(path)
+    # Written blocks follow the book's own line endings, so a book saved with
+    # CRLF does not end up with mixed ones.
+    newline = "\r\n" if "\r\n" in text else "\n"
+
+    def serialize(element: ET.Element) -> str:
+        return _serialize(element, prefixes).replace("\n", newline)
+
     ns = _namespaces(text)
     prefixes = {uri: prefix for prefix, uri in ns.items()}
     spans = {}
@@ -1169,7 +1176,7 @@ def _write_xml(path: Path, book: SourceBook, selected: tuple[WritebackChange, ..
         if operation.action == "new":
             assert operation.target is not None
             element = _xml_transaction_element(None, operation.target, ns)
-            added.append(_serialize(element, prefixes))
+            added.append(serialize(element))
             delta += 1
             continue
         if operation.guid not in spans:
@@ -1185,7 +1192,7 @@ def _write_xml(path: Path, book: SourceBook, selected: tuple[WritebackChange, ..
         assert operation.target is not None
         element = _parse_block(text[start:end], ns)
         _xml_transaction_element(element, operation.target, ns)
-        edits.append((start, end, _serialize(element, prefixes)))
+        edits.append((start, end, serialize(element)))
     if added:
         anchor = max((end for _start, end in spans.values()), default=None)
         if anchor is None:
@@ -1194,7 +1201,7 @@ def _write_xml(path: Path, book: SourceBook, selected: tuple[WritebackChange, ..
     for start, end, replacement in sorted(edits, key=lambda item: item[0], reverse=True):
         text = text[:start] + replacement + text[end:]
     if delta:
-        text = _recount(text, delta)
+        text = _recount(text, delta, newline)
     payload = text.encode("utf-8")
     if gzipped:
         payload = gzip.compress(payload, mtime=0)
@@ -1225,14 +1232,14 @@ def _insert_point(text: str) -> int:
     raise WritebackError("writeback.source.unreadable", "the GnuCash XML book has no book element")
 
 
-def _recount(text: str, delta: int) -> str:
+def _recount(text: str, delta: int, newline: str = "\n") -> str:
     pattern = re.compile(r'(<gnc:count-data cd:type="transaction">)(\d+)(</gnc:count-data>)')
     found = pattern.search(text)
     if found is None:
         if delta > 0:
-            book = re.search(r'<book:id type="guid">[0-9a-f]+</book:id>\n', text)
+            book = re.search(r'<book:id type="guid">[0-9a-f]+</book:id>\r?\n', text)
             if book is not None:
-                line = f'<gnc:count-data cd:type="transaction">{delta}</gnc:count-data>\n'
+                line = f'<gnc:count-data cd:type="transaction">{delta}</gnc:count-data>{newline}'
                 return text[: book.end()] + line + text[book.end() :]
         return text
     count = max(0, int(found.group(2)) + delta)

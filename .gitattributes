@@ -1,0 +1,3 @@
+# Fixture books must be byte-identical on every platform.
+tests/fixtures/gnucash/*.xml -text
+tests/fixtures/gnucash/*.sql -text
