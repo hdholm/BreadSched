@@ -108,9 +108,68 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  windows-installer:
+    name: Build and test the Windows installer for release
+    needs: prepare
+    if: needs.prepare.outputs.selected == 'true'
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Require the tested main checkout before running source code
+        shell: pwsh
+        run: |
+          if ($env:TESTED_SHA -notmatch '^[0-9a-f]{40}$') { throw "bad tested SHA" }
+          if ((git rev-parse HEAD) -ne $env:TESTED_SHA) { throw "main moved after testing" }
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-python-pip
+            mingw-w64-ucrt-x86_64-python-setuptools
+            mingw-w64-ucrt-x86_64-python-wheel
+            mingw-w64-ucrt-x86_64-python-gobject
+            mingw-w64-ucrt-x86_64-python-cairo
+            mingw-w64-ucrt-x86_64-gtk4
+            mingw-w64-ucrt-x86_64-librsvg
+            mingw-w64-ucrt-x86_64-adwaita-icon-theme
+            mingw-w64-ucrt-x86_64-nsis
+
+      - name: Build the installer
+        run: packaging/windows/build-installer.sh dist/windows
+
+      - name: Install, exercise, upgrade, and uninstall outside MSYS2
+        shell: pwsh
+        run: |
+          $name = "BreadSched-$env:VERSION-setup.exe"
+          $installer = Join-Path "dist/windows" $name
+          if (-not (Test-Path $installer)) { throw "expected $name for the selected version" }
+          ./packaging/windows/test-installer.ps1 $installer
+          ./packaging/windows/stage-release.ps1 $installer release-installer
+
+      - name: Transfer only the tested installer as data
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-installer
+          path: release-installer/
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: Tag and publish verified artifacts
-    needs: prepare
+    needs: [prepare, windows-installer]
     if: needs.prepare.outputs.selected == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -134,6 +193,11 @@ jobs:
         with:
           name: release-inputs
           path: release-inputs
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-installer
+          path: release-inputs/installer
 
       - name: Validate transferred files without executing them
         shell: bash
@@ -161,9 +225,21 @@ jobs:
           matches = [re.fullmatch(r"([0-9a-f]{64})  (.+)", line) for line in lines]
           assert len(matches) == 2 and all(matches)
           assert {match.group(2) for match in matches} == names
+
+          # The Windows installer, built and tested on Windows from the same commit.
+          setup = f"BreadSched-{version}-setup.exe"
+          installer = list(Path("installer").iterdir())
+          assert {p.name for p in installer} == {setup, f"{setup}.sha256"}
+          assert all(p.is_file() and not p.is_symlink() for p in installer)
+          line = Path("installer", f"{setup}.sha256").read_text(encoding="utf-8")
+          assert re.fullmatch(r"[0-9a-f]{64}  " + re.escape(setup) + r"\n", line)
           PY
           cd dist
           sha256sum --check ../SHA256SUMS
+          cd ../installer
+          sha256sum --check "BreadSched-${VERSION}-setup.exe.sha256"
+          # SHA256SUMS then covers every published file.
+          cat "BreadSched-${VERSION}-setup.exe.sha256" >> ../SHA256SUMS
 
       - name: Create or verify the accepted-main tag
         env:
@@ -204,7 +280,8 @@ jobs:
           fi
           gh release create "$TAG" \
             "dist/breadsched-${VERSION}-py3-none-any.whl" \
-            "dist/breadsched-${VERSION}.tar.gz" SHA256SUMS "${release_flags[@]}" \
+            "dist/breadsched-${VERSION}.tar.gz" \
+            "installer/BreadSched-${VERSION}-setup.exe" SHA256SUMS "${release_flags[@]}" \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "BreadSched $TAG" \
             --notes-file "docs/releases/${TAG}.md"

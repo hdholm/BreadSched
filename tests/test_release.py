@@ -98,6 +98,27 @@ def test_release_smoke_compares_the_installed_version_with_the_source():
         assert f"native schema {schema}" not in smoke, schema
 
 
+def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    windows = workflow.split("\n  windows-installer:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    publication = workflow.split("\n  publish:\n", 1)[1]
+
+    assert "needs: prepare" in windows and "runs-on: windows-latest" in windows
+    assert "contents: write" not in windows
+    assert "persist-credentials: false" in windows and "ref: main" in windows
+    verify = windows.index("(git rev-parse HEAD) -ne $env:TESTED_SHA")
+    assert verify < windows.index("packaging/windows/build-installer.sh")
+    assert "./packaging/windows/test-installer.ps1 $installer" in windows
+    stage = windows.index("./packaging/windows/stage-release.ps1 $installer release-installer")
+    assert windows.index("test-installer.ps1") < stage
+    assert "BreadSched-$env:VERSION-setup.exe" in windows
+    assert "name: release-installer" in windows
+    assert "needs: [prepare, windows-installer]" in publication
+    assert "name: release-installer" in publication
+    assert '"installer/BreadSched-${VERSION}-setup.exe" SHA256SUMS' in publication
+    assert "test-installer.ps1" not in publication and "build-installer" not in publication
+
+
 def test_release_workflow_sets_an_annotated_tag_identity():
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
 
@@ -179,6 +200,12 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
         "".join(f"{hashlib.sha256(name.encode()).hexdigest()}  {name}\n" for name in names),
         encoding="utf-8",
     )
+    setup = f"BreadSched-{version}-setup.exe"
+    installer = root / "installer"
+    installer.mkdir()
+    (installer / setup).write_bytes(b"installer")
+    setup_line = f"{hashlib.sha256(b'installer').hexdigest()}  {setup}\n"
+    (installer / f"{setup}.sha256").write_text(setup_line, encoding="utf-8")
 
     def validate() -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -190,7 +217,27 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
             check=False,
         )
 
+    assert validate().returncode == 0, validate().stderr
+    # The published SHA256SUMS then covers the wheel, sdist, and installer.
+    published = (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+    assert [line.split("  ")[1] for line in published] == [*names, setup]
+    (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
+
+    # A tampered installer, a Windows-style checksum line, or a stray file is refused.
+    (installer / setup).write_bytes(b"tampered")
+    assert validate().returncode != 0
+    (installer / setup).write_bytes(b"installer")
+    (installer / f"{setup}.sha256").write_text(setup_line.replace("  ", " *"), encoding="utf-8")
+    assert validate().returncode != 0
+    (installer / f"{setup}.sha256").write_text(setup_line, encoding="utf-8")
+    (installer / "other.exe").write_bytes(b"x")
+    assert validate().returncode != 0
+    (installer / "other.exe").unlink()
+    (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
     assert validate().returncode == 0
+    # Each accepted run appends the installer line; start the next cases clean.
+    (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
+
     extra = dist / "unexpected.whl"
     extra.write_bytes(b"extra")
     assert validate().returncode != 0

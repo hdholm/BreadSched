@@ -188,7 +188,9 @@ It then builds and installs the distribution, checks that the installed wheel's
 `breadsched --version` line equals the one `breadsched.versioning.version_summary()`
 gives for the tested source (so the check follows the native schema; it must never
 hard-code a schema window), creates an annotated tag on that exact commit, publishes the human-reviewed
-notes, and attaches the wheel, source distribution, and `SHA256SUMS`. An existing tag
+notes, and attaches the wheel, source distribution, the Windows installer (built,
+installed, exercised, and uninstalled on Windows from the same commit by the
+workflow's `windows-installer` job), and `SHA256SUMS` covering all three. An existing tag
 must resolve to the same commit; an existing release is never overwritten. A later
 `main` commit that keeps an already-tagged version, such as a documentation-only or
 CI change, is reported as not selected rather than failing the release run; advance

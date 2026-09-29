@@ -111,6 +111,12 @@ def test_windows_installer_carries_its_runtime_and_is_tested_in_ci():
     assert "windows-installer:" in workflow
     assert "packaging/windows/build-installer.sh" in workflow
     assert "packaging/windows/test-installer.ps1" in workflow
+    # CI stages the release checksum on every pull request, so the release
+    # job's staging runs before a release depends on it.
+    stage = (windows / "stage-release.ps1").read_text(encoding="utf-8")
+    assert '"$hash  $name`n"' in stage
+    assert "packaging/windows/stage-release.ps1" in workflow
+    assert "sha256sum --check BreadSched-*-setup.exe.sha256" in workflow
 
 
 @pytest.mark.skipif(shutil.which("desktop-file-validate") is None, reason="validator missing")

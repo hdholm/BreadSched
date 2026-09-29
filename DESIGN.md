@@ -2162,9 +2162,16 @@ directory. The `windows-installer` CI job builds it on `windows-latest` and runs
 `test-installer.ps1` outside MSYS2 with a bare `PATH`: silent install, CLI
 version, sample book, verify, guide, `scripts/flatpak_gtk_smoke.py` with the
 installed Python, reinstall over itself, and silent uninstall that must leave the
-book and remove the runtime and registration. The job uploads the installer and
-its SHA-256 as an artifact; publishing it with releases (and code signing) is
-still pending.
+book and remove the runtime and registration. `stage-release.ps1` then copies the
+installer beside a one-line `<sha256>  <name>` file (written in PowerShell because
+MSYS2's `sha256sum` marks binary mode on Windows), and CI checks that line with
+`sha256sum --check` exactly as the publisher will. The release workflow's
+`windows-installer` job repeats build, test, and staging on Windows from the tested
+`main` commit (verified before any source runs) and transfers only those two files.
+The Linux publisher, which never executes what it receives, requires exactly
+`BreadSched-<version>-setup.exe` and its checksum file, checks the line's form and
+the hash, appends it to `SHA256SUMS`, and attaches the installer with the wheel and
+source archive. Code signing is still pending.
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib

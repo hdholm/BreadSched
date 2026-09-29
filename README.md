@@ -33,10 +33,10 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
 
-Alpha releases provide a wheel, source archive, and checksums. CI builds and tests
-a per-user Windows installer with its own Python and GTK runtime
-(`packaging/windows/`); it is not yet published with releases. A native Linux
-installer is planned. Read the release notes and verify the checksums
+Alpha releases provide a wheel, source archive, a per-user Windows installer with
+its own Python and GTK runtime (`BreadSched-<version>-setup.exe`, built and tested
+on Windows from the released commit; not yet code-signed), and checksums covering
+all three. A native Linux installer is planned. Read the release notes and verify the checksums
 before installing. The [User Guide](src/breadsched/USER_GUIDE.md) covers current
 workflows and their limits, including exchange rates, imports, and recovery.
 The source tree includes a Flatpak manifest, desktop entry, AppStream metadata, and
