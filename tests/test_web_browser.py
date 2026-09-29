@@ -424,6 +424,10 @@ def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):
     income = page.locator(".income-over-time tbody tr")
     assert income.count() == periods.count()
     assert page.locator("svg.income-chart path").count() == 2
+    # The income detail lists the selected period's dated receipts by payer.
+    page.wait_for_selector(".income-detail h3")
+    assert page.locator(".income-detail select option").count() >= 1
+    assert "Payer" in page.locator(".income-detail").inner_text()
     income.nth(0).locator("button").click()
     page.wait_for_selector(".spending-over-time tbody tr.selected >> nth=0")
     selected = page.locator(".expense-explorer select").first.evaluate("(node) => node.value")

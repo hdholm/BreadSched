@@ -1783,6 +1783,23 @@ class TestPlanApi:
             earned["actual"]
         )
         assert all(part["name"].startswith("Income") for part in earned["categories"])
+        # An income category drills down to its dated receipts, grouped by payer.
+        source = report["income_categories"][-1]
+        params = urllib.parse.urlencode(
+            {"from": "2026-01", "through": "2026-01", "account": source["account"], "index": "0"}
+        )
+        status, received = client.get(f"/api/expense-explorer?{params}")
+        assert status == 200
+        detail = received["drilldown"]
+        assert detail["income"] is True
+        assert sum((Money(group["amount"]) for group in detail["merchants"]), Money(0)) == Money(
+            detail["period"]["actual"]
+        )
+        assert all(
+            item["date"].startswith("2026-01")
+            for g in detail["merchants"]
+            for item in g["transactions"]
+        )
         assert report["as_of"]
         params = urllib.parse.urlencode(
             {"from": "2026-01", "through": "2026-01", "account": rent["account"], "index": "0"}

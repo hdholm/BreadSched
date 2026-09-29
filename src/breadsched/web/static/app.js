@@ -2212,6 +2212,33 @@ function spendingOverTime(data, periodIndex, kind = "spending") {
         el("td", {class:"muted"}, note(item) || "—")))));
 }
 
+async function incomeDetail(data, params, index) {
+  // The dated planned occurrences and actual receipts behind one income period.
+  const choices = data.income_categories || [];
+  if (!choices.length || !(data.income || []).length) return null;
+  const selected = choices.find((item) => item.account === state.incomeCategory) || choices[0];
+  const detailParams = new URLSearchParams(params);
+  detailParams.set("account", selected.account);
+  detailParams.set("index", String(index));
+  const detail = (await get(`/api/expense-explorer?${detailParams}`)).drilldown;
+  const pick = el("select", { onchange: (event) => {
+    state.incomeCategory = event.target.value; render();
+  } }, choices.map((item) => el("option", {
+    value: item.account, selected: item.account === selected.account ? "selected" : null,
+  }, item.full_name)));
+  return el("div", { class: "income-detail" },
+    el("h3", {}, `${selected.full_name} — ${detail.period.label}`),
+    el("div", { class: "toolbar" }, el("label", {}, "Income detail ", pick)),
+    table(["Planned date", "Scheduled", {label:"Expected",num:true}],
+      detail.planned.map((item) => [item.date, item.description, String(item.expected)])),
+    table(["Payer", {label:"Actual",num:true}, "Received"],
+      detail.merchants.map((group) => el("tr", {},
+        el("td", {}, group.name), el("td", {class:"num"}, String(group.amount)),
+        el("td", {}, group.transactions.map((item) => el("div", {},
+          `${item.date} · ${item.description || "Unknown payer"} · ${item.amount}`)))))),
+    el("p", {class:"note"}, `Planned ${detail.period.planned}; actual ${detail.period.actual}.`));
+}
+
 async function expenseExplorerPanel(currentPlan) {
   const params = new URLSearchParams({
     from: currentPlan.from, through: currentPlan.through, period: currentPlan.period,
@@ -2251,7 +2278,11 @@ async function expenseExplorerPanel(currentPlan) {
       onchange:(event)=>{ state.expenseRollover = event.target.checked; render(); } }),
       " Carry prior periods")));
   panel.append(spendingOverTime(data, index));
-  if ((data.income || []).length) panel.append(spendingOverTime(data, index, "income"));
+  if ((data.income || []).length) {
+    panel.append(spendingOverTime(data, index, "income"));
+    const detail = await incomeDetail(data, params, index);
+    if (detail) panel.append(detail);
+  }
   const ordered = [...choices].sort((a, b) => state.expenseSort === "name"
     ? a.full_name.localeCompare(b.full_name)
     : Number(b.periods[index][state.expenseSort] || 0)

@@ -213,14 +213,24 @@ def quantity_balance(db: DbSQLite, account: str | Account, as_of: date | None = 
 
 
 def account_value(
-    db: DbSQLite, account: str | Account, as_of: date | None = None
+    db: DbSQLite,
+    account: str | Account,
+    as_of: date | None = None,
+    *,
+    ledger_amount: Amount | None = None,
 ) -> AccountValuation:
-    """Market-value a security account, falling back explicitly to ledger value."""
+    """Market-value a security account, falling back explicitly to ledger value.
+
+    ``ledger_amount`` may supply the account's own natural-sign ledger balance on
+    ``as_of`` when the caller has already accumulated it (net worth history walks
+    each account's splits once rather than once per date).
+    """
     obj = db.get_account(account) if isinstance(account, str) else account
     if obj is None:
         total_amount = Amount(Money(0), reporting_currency_handle(db))
         return AccountValuation(Money(0), total_amount=total_amount)
-    ledger_amount = ledger.balance_amount(db, obj, as_of=as_of)
+    if ledger_amount is None:
+        ledger_amount = ledger.balance_amount(db, obj, as_of=as_of)
     ledger_total = ledger_amount.value
     if obj.atype not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
         reporting = reporting_currency_handle(db)

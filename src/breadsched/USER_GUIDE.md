@@ -504,6 +504,10 @@ the as-of date. Open it from Plan
   income categories (or the subcategories of a single **Income** account). Choosing
   a period there also makes it the comparison period; the comparison, category
   trend, and merchants below cover expenses only.
+- **Income detail** lists what makes up one income category's total for the chosen
+  period: each scheduled occurrence with its planned date and expected amount, and
+  each receipt with its date and amount, grouped by payer. A receipt with no
+  description is grouped as **Unknown payer**.
 - The **Period** comparison shows a plan bar and an actual bar for each category,
   plus exact Plan, Actual, Variance, and Remaining values, sorted by Actual, Plan,
   Variance, or name.

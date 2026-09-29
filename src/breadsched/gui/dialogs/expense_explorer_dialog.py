@@ -37,6 +37,12 @@ class ExpenseExplorerDialog(Gtk.Window):
         controls.append(Gtk.Label(label="Sort categories"))
         self.sort = Gtk.DropDown.new_from_strings(["Actual", "Plan", "Variance", "Name"])
         controls.append(self.sort)
+        controls.append(Gtk.Label(label="Income detail"))
+        self.income_category = Gtk.DropDown.new_from_strings(
+            [item.full_name for item in self._report.income_categories]
+        )
+        self.income_category.set_sensitive(bool(self._report.income_categories))
+        controls.append(self.income_category)
         self.rollover = Gtk.CheckButton(label="Carry prior periods")
         self.rollover.connect("toggled", self._toggle_rollover)
         controls.append(self.rollover)
@@ -49,6 +55,7 @@ class ExpenseExplorerDialog(Gtk.Window):
         self.period.connect("notify::selected", self._update)
         self.category.connect("notify::selected", self._update)
         self.sort.connect("notify::selected", self._update)
+        self.income_category.connect("notify::selected", self._update)
         self.content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
         scroll = Gtk.ScrolledWindow(child=self.content)
         scroll.set_vexpand(True)
@@ -180,6 +187,54 @@ class ExpenseExplorerDialog(Gtk.Window):
             self.spending_table = grid
         self.content.append(grid)
 
+    def _append_income_detail(self, index: int) -> None:
+        """The dated planned occurrences and receipts behind one income period."""
+        choices = self._report.income_categories
+        chosen = self.income_category.get_selected()
+        if not choices or chosen >= len(choices):
+            return
+        selected = choices[chosen]
+        result = query_expense_explorer(
+            self._db,
+            self._request,
+            account=selected.account,
+            period_index=index,
+            rollover=self.rollover.get_active(),
+        )
+        detail = result.value.drilldown if result.value is not None else None
+        if detail is None:
+            return
+        self.content.append(
+            self._label(f"{selected.full_name} — {detail.period.label}", heading=True)
+        )
+        grid = Gtk.Grid(column_spacing=12, row_spacing=3)
+        rows = [("Planned date", "Scheduled", "Expected")]
+        rows += [
+            (item.planned_date.isoformat(), item.description, item.expected.format())
+            for item in detail.planned_events
+        ]
+        rows.append(("Received", "Payer", "Actual"))
+        rows += [
+            (item.post_date.isoformat(), group.name, item.amount.format())
+            for group in detail.merchants
+            for item in group.transactions
+        ]
+        for row, cells in enumerate(rows):
+            heading = cells[0] in {"Planned date", "Received"}
+            for column, text in enumerate(cells):
+                label = self._label(text, heading=heading)
+                if column == 2 and not heading:
+                    label.set_xalign(1)
+                    label.add_css_class("numeric")
+                grid.attach(label, column, row, 1, 1)
+        self.income_detail = grid
+        self.content.append(grid)
+        self.content.append(
+            self._label(
+                f"Planned {detail.period.planned.format()}; actual {detail.period.actual.format()}."
+            )
+        )
+
     def _update(self, *_args) -> None:
         while child := self.content.get_first_child():
             self.content.remove(child)
@@ -211,6 +266,7 @@ class ExpenseExplorerDialog(Gtk.Window):
         self._append_spending(index)
         if self._report.income:
             self._append_spending(index, income=True)
+            self._append_income_detail(index)
         self.content.append(
             self._label(f"Category comparison — {self._report.totals[index].label}", heading=True)
         )

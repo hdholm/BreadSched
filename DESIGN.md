@@ -2358,7 +2358,12 @@ its periods, as-of flags, currency flags, top-level split, and exact
 reconciliation assertion match spending's; `income_categories` supplies the
 names. GTK, web, and the printable report show it as a second chart and table
 after spending. Selecting one of its periods selects that period for the whole
-explorer; the category comparison and merchant drill-down remain expense-only.
+explorer; the category comparison remains expense-only. The drill-down accepts an
+income category too: `explain_category_period` already explains income cells, so
+the same reconciliation asserts that its planned events and actuals equal the Plan
+cell, and actuals group by payer (`ExpenseDrilldown.income`, "Unknown payer" for a
+blank description). GTK and the web page show it as **Income detail**, chosen
+independently of the expense trend category.
 
 Net worth history (`services/net_worth.query_net_worth_history`) values every
 asset and liability account with `valuation.account_value` on each period's end,
@@ -2367,9 +2372,13 @@ the as-of date is valued on that date and marked partial; later periods are
 omitted because the ledger has no future balances (Projection forecasts them).
 Values are summed per top-level account tree and kind; any account without a
 reporting-currency value withholds that point's totals and change and is named in
-`missing`, never converted by guesswork. The service asserts that each complete
-point equals `valuation.net_worth` on its date, so it always matches the
-Dashboard's valuation. The CLI `net-worth` command, the web
+`missing`, never converted by guesswork. Each account's ledger balance is carried
+from one point to the next by adding only the splits since the previous date
+(`ledger.balance_amount(since=...)`), and `valuation.account_value(ledger_amount=...)`
+values that balance, so each split is read once however many periods are shown;
+a 30,000-transaction book's twelve months take well under a second (a performance
+test guards it). Tests assert that every complete point equals
+`valuation.net_worth` on its date, so it always matches the Dashboard's valuation. The CLI `net-worth` command, the web
 `/api/net-worth-history` resource (typed month parsing only) and Dashboard
 section, the GTK Dashboard **History** dialog, and the printable report all render
 the same points; the GTK chart plots only complete points.
