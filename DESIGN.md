@@ -1998,7 +1998,10 @@ root.
 The **application version** and **native data-format version** serve different
 purposes and never advance in lockstep. The application version reported by
 `breadsched --version` identifies the installed build for bug reports, packaging,
-and release notes and reports the native compatibility window beside it. Book
+and release notes and reports the native compatibility window beside it. The
+release workflow compares the installed wheel's line with
+`versioning.version_summary()` run on the tested source; a hard-coded schema window
+there went stale at schema 8 and stopped every release after 0.2.0a133 (#207). Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
 native book can be opened or must be migrated; it is currently 9. A behavior-only

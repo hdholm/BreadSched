@@ -76,13 +76,21 @@ jobs:
         run: |
           python -m pip install --upgrade pip build
           python -m build
+          # The installed wheel must report exactly what the tested source does:
+          # the application version and its native-schema window, never a
+          # hard-coded schema that goes stale when the schema advances.
+          expected=$(PYTHONPATH=src python -c 'from breadsched.versioning import version_summary; print(version_summary())')
+          case "$expected" in
+            "breadsched ${{ steps.release.outputs.version }} (native schema "*) ;;
+            *) echo "source reports an unexpected version: $expected"; exit 1 ;;
+          esac
           cd "$RUNNER_TEMP"
           python -m pip install "${GITHUB_WORKSPACE}"/dist/*.whl
           actual=$(breadsched --version)
-          case "$actual" in
-            *"${{ steps.release.outputs.version }}"*"native schema 7"*"supports 6–7"*) ;;
-            *) echo "unexpected installed version report: $actual"; exit 1 ;;
-          esac
+          if [[ "$actual" != "$expected" ]]; then
+            echo "installed wheel reports '$actual', expected '$expected'"
+            exit 1
+          fi
           cd "$GITHUB_WORKSPACE/dist"
           sha256sum * > ../SHA256SUMS
           sha256sum --check ../SHA256SUMS
