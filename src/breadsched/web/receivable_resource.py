@@ -2,8 +2,8 @@
 
 This adapter only parses JSON into the shared receivables service's requests and
 translates its results. Validation, status arithmetic, and every write stay in
-``gen/services/receivables``, so a rejected request never changes the book, and
-no request here posts anything to the ledger.
+``gen/services/receivables``, so a rejected request never changes the book. The
+service, not this adapter, keeps the Receivable-account reclassifications (#170).
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from ..gen.services.receivables import (
     detach_split,
     list_receivables,
     mark_disputed,
+    receivable_accounts,
     receivable_candidates,
     record_write_off,
     reimbursement_proposals,
@@ -131,6 +132,12 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
                 "age_days": item.age_days,
                 "status": item.status.value,
                 "status_label": item.status.label,
+                "owed": item.owed,
+                "account": item.receivable.account,
+                "account_name": (
+                    api.db.full_name(item.receivable.account) if item.receivable.account else None
+                ),
+                "fsa_claims": list(item.fsa_claims),
                 "expenses": _linked(api, item.receivable.expenses),
                 "reimbursements": _linked(api, item.receivable.reimbursements),
             }
@@ -138,6 +145,10 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
         ],
         "costs": [_candidate(api, item) for item in costs],
         "credits": [_candidate(api, item) for item in credits],
+        "accounts": [
+            {"handle": account.handle, "name": api.db.full_name(account) or account.name}
+            for account in receivable_accounts(api.db)
+        ],
     }
 
 
@@ -154,6 +165,7 @@ def receivable_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         expected_amount=expected,
         expected_cash_date=_date(payload, "expected_cash_date", optional=True),
         handle=_text(payload, "handle", optional=True) or None,
+        account=_text(payload, "account", optional=True) or None,
     )
     saved = _result(api, save_receivable(api.db, request))
     response: dict[str, object] = {"handle": saved.handle, "payer": saved.payer}

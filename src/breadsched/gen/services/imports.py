@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, cast
 from ..db.sqlite import DbSQLite
 from ..plug import IMPORTER, PluginManager, remember_import_source
 from .contracts import ServiceError, ServiceResult
+from .receivables import sync_all_receivables
 
 if TYPE_CHECKING:
     from ...plugins.importer.gnucash_common import ImportResult
@@ -76,5 +77,7 @@ def import_book(db: DbSQLite, request: ImportBook) -> ServiceResult[ImportedBook
         kwargs["date_format"] = request.date_format
 
     result = cast("ImportResult", plugin.run(db, str(source), **kwargs))
+    # An import can change a linked expense directly; keep receivable accounts true.
+    sync_all_receivables(db)
     remembered = remember_import_source(db, source)
     return ServiceResult.success(ImportedBook(remembered, plugin.id, plugin.name, result))

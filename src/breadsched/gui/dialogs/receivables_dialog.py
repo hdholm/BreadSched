@@ -3,8 +3,9 @@
 This dialog only gathers input and shows results. Every rule and every write is in
 ``gen/services/receivables``: a receivable never rewrites or removes the expense
 splits it references, a reimbursement is an ordinary credit to the same expense
-account (never income), and recording a dispute or a write-off posts nothing to
-the ledger. Status and remaining balance are always recomputed, never stored.
+account (never income), and what is still owed is held in a Receivable account by
+reclassification transactions the service keeps up to date (#170); a dispute posts
+nothing. Status and remaining balance are always recomputed, never stored.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from ...gen.services.receivables import (
     detach_split,
     list_receivables,
     mark_disputed,
+    receivable_accounts,
     receivable_candidates,
     record_write_off,
     reimbursement_proposals,
@@ -91,9 +93,12 @@ class ReceivablesDialog(Gtk.Window):
             Gtk.Label(
                 label=(
                     "Track an expense you paid that an insurer, employer, or other payer "
-                    "owes back. A reimbursement is recorded as an ordinary credit to the "
-                    "same expense account, never as income, and the original expense is "
-                    "never changed. Disputes and write-offs post nothing to the ledger."
+                    "owes back. What is owed moves from the expense into a Receivable "
+                    "account: part of net worth, never of liquidity, because it cannot "
+                    "be spent yet. A reimbursement is an ordinary credit to the same "
+                    "expense account, never income; a write-off returns the balance to "
+                    "the expense, and a dispute posts nothing. The original expense is "
+                    "never changed."
                 ),
                 xalign=0,
                 wrap=True,
@@ -112,6 +117,13 @@ class ReceivablesDialog(Gtk.Window):
         self.expected_entry = Gtk.Entry(placeholder_text="Optional", xalign=1)
         self.expected_entry.add_css_class("numeric")
         self.cash_date_entry = Gtk.Entry(placeholder_text="Optional YYYY-MM-DD")
+        self.account_picker = Gtk.DropDown()
+        self.account_picker.set_tooltip_text(
+            "The Receivable account holding what is owed; by default one per currency, "
+            "created when the book has none"
+        )
+        #: The account handle behind each picker entry; None is the default.
+        self._accounts: list[str | None] = []
         for row, (label, widget) in enumerate(
             (
                 ("Payer", self.payer_entry),
@@ -119,6 +131,7 @@ class ReceivablesDialog(Gtk.Window):
                 ("Incurred", self.incurred_entry),
                 ("Expected back", self.expected_entry),
                 ("Expected by", self.cash_date_entry),
+                ("Held in", self.account_picker),
             )
         ):
             form.attach(Gtk.Label(label=label, xalign=0), 0, row, 1, 1)
@@ -134,7 +147,7 @@ class ReceivablesDialog(Gtk.Window):
         self.delete_button.connect("clicked", lambda _b: self.delete())
         for button in (self.save_button, new_button, self.delete_button):
             actions.append(button)
-        form.attach(actions, 1, 5, 1, 1)
+        form.attach(actions, 1, 6, 1, 1)
         box.append(form)
 
         # Credits that clearly reimburse one open receivable; nothing links until
@@ -157,6 +170,9 @@ class ReceivablesDialog(Gtk.Window):
         self.detail.append(heading)
         self.links = Gtk.Grid(column_spacing=14, row_spacing=4)
         self.detail.append(self.links)
+        self.warning = Gtk.Label(xalign=0, wrap=True)
+        self.warning.add_css_class("negative")
+        self.detail.append(self.warning)
 
         link_row = Gtk.Box(spacing=8)
         self.cost_picker = Gtk.DropDown()
@@ -345,8 +361,23 @@ class ReceivablesDialog(Gtk.Window):
         self.detail.set_visible(receivable is not None)
         self.delete_button.set_sensitive(receivable is not None)
         _clear(self.links)
+        self.warning.set_visible(False)
         if receivable is None:
             return
+        overlaps = next(
+            (
+                summary.fsa_claims
+                for summary in list_receivables(self.db).value or ()
+                if summary.receivable.handle == receivable.handle
+            ),
+            (),
+        )
+        if overlaps:
+            self.warning.set_text(
+                "An expense linked here is also on an FSA claim. Check that the same "
+                "cost is not expected back from both."
+            )
+            self.warning.set_visible(True)
         _heading(self.links, ("Role", "Date", "Description", "Account", "Amount"), {4})
         linked = [("Expense", link) for link in receivable.expenses] + [
             ("Reimbursement", link) for link in receivable.reimbursements
@@ -403,6 +434,18 @@ class ReceivablesDialog(Gtk.Window):
                 names.append("(no unlinked expense-account splits)")
             picker.set_model(names)
 
+    def _fill_accounts(self, current: str | None) -> None:
+        accounts = receivable_accounts(self.db)
+        self._accounts = [None, *(account.handle for account in accounts)]
+        names = Gtk.StringList()
+        names.append("Default Receivable account")
+        for account in accounts:
+            names.append(self.db.full_name(account) or account.name)
+        self.account_picker.set_model(names)
+        self.account_picker.set_selected(
+            self._accounts.index(current) if current in self._accounts else 0
+        )
+
     def edit(self, handle: str | None) -> None:
         """Load a receivable into the form, or clear the form to add one."""
         receivable = self.db.get_receivable(handle) if handle is not None else None
@@ -418,6 +461,7 @@ class ReceivablesDialog(Gtk.Window):
         self.write_off_amount.set_text("")
         self.write_off_date.set_text(today)
         self.write_off_reason.set_text("")
+        self._fill_accounts(receivable.account if receivable else None)
         self.save_button.set_label("Save changes" if receivable else "Add receivable")
         if receivable is not None:
             self.pending_expense = None
@@ -455,6 +499,9 @@ class ReceivablesDialog(Gtk.Window):
                 expected_amount=self._money(self.expected_entry, "expected amount", optional=True),
                 expected_cash_date=self._date(self.cash_date_entry, "expected date", optional=True),
                 handle=self.editing,
+                account=self._accounts[self.account_picker.get_selected()]
+                if self._accounts
+                else None,
             )
         except ValueError as error:
             self._message(str(error), True)
@@ -568,5 +615,5 @@ class ReceivablesDialog(Gtk.Window):
             return False
         self.edit(self.editing)
         self.refresh()
-        self._message(f"Wrote off {amount.format()}; nothing was posted to the ledger.", False)
+        self._message(f"Wrote off {amount.format()}; it is back in the expense account.", False)
         return True

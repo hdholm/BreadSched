@@ -42,8 +42,8 @@ from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scheduled import ScheduledTransaction
-from . import fsa, ledger, schedule, valuation
-from .currency import reporting_fraction
+from . import fsa, ledger, receivables, schedule, valuation
+from .currency import reporting_currency_handle, reporting_fraction
 from .escrow import recognition as escrow_recognition
 
 __all__ = [
@@ -454,6 +454,8 @@ class DashboardSummary(TypedDict):
     income_per_month_with_estimates: Money
     next_income: date | None
     bills: int
+    receivables_owed: Money
+    receivables_attention: Money
 
 
 @dataclass
@@ -478,6 +480,11 @@ class Dashboard:
     book_debts: Money = field(default_factory=lambda: Money(0))
     book_missing_quotes: tuple[str, ...] = ()
     coverage_notes: tuple[str, ...] = ()
+    #: Reimbursements still owed in the reporting currency (issue #170). Held in
+    #: Receivable accounts: part of net worth, never of liquidity.
+    receivables_owed: Money = field(default_factory=lambda: Money(0))
+    #: The part of ``receivables_owed`` that is disputed or past its expected date.
+    receivables_attention: Money = field(default_factory=lambda: Money(0))
 
     @property
     def missing_quotes(self) -> tuple[str, ...]:
@@ -710,6 +717,8 @@ class Dashboard:
             "income_per_month_with_estimates": self.income_per_month_with_estimates,
             "next_income": self.next_income,
             "bills": len(self.bills),
+            "receivables_owed": self.receivables_owed,
+            "receivables_attention": self.receivables_attention,
         }
 
 
@@ -771,6 +780,7 @@ def build(
     board.income_per_month_with_estimates = income_with_estimates
     board.next_income = next_income
     board._income_events = income_events
+    _receivables(db, board, today)
     unpaid_cards = schedule.unconfigured_card_balances(db, today)
     if unpaid_cards:
         count = len(unpaid_cards)
@@ -786,6 +796,41 @@ def build(
             "behavior on the card account.",
         )
     return board
+
+
+def _receivables(db: DbSQLite, board: Dashboard, today: date) -> None:
+    """What payers still owe back, and how much of it needs attention.
+
+    Only reporting-currency receivables are summed; others are counted in a
+    coverage note rather than converted.
+    """
+    book = reporting_currency_handle(db)
+    foreign = 0
+    for receivable in receivables.iter_receivables(db):
+        try:
+            summary = receivables.receivable_summary(db, receivable, as_of=today)
+            currency = receivables.posting_currency(db, receivable)
+        except receivables.ReceivableError:
+            continue
+        if summary.remaining <= 0 or summary.status in {
+            receivables.ReceivableStatus.SETTLED,
+            receivables.ReceivableStatus.WRITTEN_OFF,
+        }:
+            continue
+        if currency is not None and currency != book:
+            foreign += 1
+            continue
+        board.receivables_owed = board.receivables_owed + summary.remaining
+        overdue = (
+            receivable.expected_cash_date is not None and receivable.expected_cash_date < today
+        )
+        if summary.status is receivables.ReceivableStatus.DISPUTED or overdue:
+            board.receivables_attention = board.receivables_attention + summary.remaining
+    if foreign:
+        board.coverage_notes = (
+            *board.coverage_notes,
+            f"Reimbursements due excludes {foreign} receivable(s) in another currency.",
+        )
 
 
 def linked_pairs(db: DbSQLite) -> list[tuple[Account, Account]]:

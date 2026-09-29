@@ -342,6 +342,12 @@ class DashboardView(BaseView):
         )
         if shortfall > 0 and "emergency_shortfall" not in missing_fields:
             self.cards.append(_card("Short of the fund", shortfall.format(), True))
+        owed, attention = summary["receivables_owed"], summary["receivables_attention"]
+        if owed > 0:
+            text = owed.format()
+            if attention > 0:
+                text += f" ({attention.format()} disputed or overdue)"
+            self.cards.append(_card("Reimbursements due", text, attention > 0))
         for note in board.coverage_notes:
             self.cards.append(_card("Coverage", note, False))
 

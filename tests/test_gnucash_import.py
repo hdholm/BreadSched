@@ -184,7 +184,7 @@ class TestSqliteImport:
         assert accounts["brokerage"].atype is AccountType.INVESTMENT
         assert accounts["fund"].atype is AccountType.INVESTMENT
         assert accounts["money_market"].atype is AccountType.BANK
-        assert accounts["receivable"].atype is AccountType.ASSET
+        assert accounts["receivable"].atype is AccountType.RECEIVABLE
         assert accounts["mortgage"].atype is AccountType.LIABILITY
         assert accounts["payable"].atype is AccountType.LIABILITY
         assert accounts["unusual"].atype is AccountType.TECHNICAL

@@ -13,7 +13,7 @@ from ..lib.account import AccountClass, AccountType, FsaFundingYear
 from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
 from ..lib.money import Money
 from ..lib.transaction import Split, Transaction
-from . import fsa
+from . import fsa, split_links
 
 __all__ = [
     "FsaClaimError",
@@ -221,22 +221,16 @@ def iter_claims(db: DbSQLite) -> list[FsaClaim]:
     return list(db.iter_fsa_claims())
 
 
-def _resolve_link(db: DbSQLite, link: FsaClaimSplitLink):
-    transaction = db.get_transaction(link.transaction)
-    if transaction is None:
-        raise FsaClaimError(
-            "claim.link.transaction.not_found",
-            ("links",),
-            "linked transaction no longer exists",
-        )
-    split = next((item for item in transaction.splits if item.handle == link.split), None)
-    if split is None:
-        raise FsaClaimError(
-            "claim.link.split.not_found",
-            ("links",),
-            "linked transaction split no longer exists",
-        )
-    return transaction, split
+def _missing_link(part: str) -> FsaClaimError:
+    return FsaClaimError(
+        f"claim.link.{part}.not_found",
+        ("links",),
+        f"linked transaction{' split' if part == 'split' else ''} no longer exists",
+    )
+
+
+def _resolve_link(db: DbSQLite, link: FsaClaimSplitLink) -> tuple[Transaction, Split]:
+    return split_links.resolve_link(db, link, _missing_link)
 
 
 def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFundingYear:
@@ -455,11 +449,7 @@ def delete_claim(db: DbSQLite, handle: str) -> None:
 
 
 def _sum_links(db: DbSQLite, links: list[FsaClaimSplitLink]) -> Money:
-    total = Money(0)
-    for link in links:
-        _transaction, split = _resolve_link(db, link)
-        total = total + abs(split.value)
-    return total
+    return split_links.sum_links(db, links, _missing_link)
 
 
 def claim_summary(

@@ -83,6 +83,7 @@ class AccountType(str, Enum):
     RETIREMENT = "RETIREMENT"
     FSA = "FSA"
     ESCROW = "ESCROW"
+    RECEIVABLE = "RECEIVABLE"
     CREDIT = "CREDIT CARD"
     LOAN = "LOAN"
     LIABILITY = "LIABILITY"
@@ -189,6 +190,7 @@ _CLASS_OF: dict[AccountType, AccountClass] = {
     AccountType.RETIREMENT: AccountClass.ASSET,
     AccountType.FSA: AccountClass.ASSET,
     AccountType.ESCROW: AccountClass.ASSET,
+    AccountType.RECEIVABLE: AccountClass.ASSET,
     AccountType.CREDIT: AccountClass.LIABILITY,
     AccountType.LOAN: AccountClass.LIABILITY,
     AccountType.LIABILITY: AccountClass.LIABILITY,
@@ -229,7 +231,7 @@ _BREADSCHED_TYPE_FOR_SOURCE: dict[GnuCashAccountType, AccountType] = {
     GnuCashAccountType.STOCK: AccountType.INVESTMENT,
     GnuCashAccountType.MUTUAL: AccountType.INVESTMENT,
     GnuCashAccountType.CURRENCY: AccountType.ASSET,
-    GnuCashAccountType.RECEIVABLE: AccountType.ASSET,
+    GnuCashAccountType.RECEIVABLE: AccountType.RECEIVABLE,
     GnuCashAccountType.TRADING: AccountType.TECHNICAL,
     GnuCashAccountType.CREDIT: AccountType.CREDIT,
     GnuCashAccountType.LIABILITY: AccountType.LIABILITY,

@@ -3,10 +3,14 @@
 A receivable never rewrites or erases the expense splits it points at, and a
 reimbursement is never counted as new income: like an ordinary refund, the
 ledger-side reimbursement is a split crediting the *same* expense account the
-money was originally spent from, so it offsets net spending in reports
-without touching the original expense split. Disputes and write-offs are
-metadata layered over those splits; recording either never posts anything to
-the ledger on its own.
+money was originally spent from.
+
+What is still owed sits in a receivable account (issue #170): an asset that
+counts toward net worth but never toward liquidity, because the money has not
+been received and cannot be spent. BreadSched owns the reclassification
+transactions that move it there (``postings``) and recomputes them from the
+receivable on every change -- see ``engine.receivables.planned_postings``. A
+dispute posts nothing.
 """
 
 from __future__ import annotations
@@ -38,7 +42,7 @@ class ReceivableSplitLink:
 
 @dataclass(frozen=True)
 class ReceivableWriteOff:
-    """An amount given up as uncollectible, with no ledger posting of its own."""
+    """An amount given up as uncollectible; its reclassification returns it to the expense."""
 
     written_off_on: date
     amount: Money
@@ -78,6 +82,8 @@ class Receivable(PrimaryObject):
         dispute_note: str = "",
         write_offs: list[ReceivableWriteOff] | None = None,
         handle: str | None = None,
+        account: str | None = None,
+        postings: list[str] | None = None,
     ) -> None:
         super().__init__(handle=handle)
         self.incurred_date = incurred_date or date.min
@@ -94,6 +100,11 @@ class Receivable(PrimaryObject):
         self.disputed_on = disputed_on
         self.dispute_note = dispute_note
         self.write_offs = list(write_offs or [])
+        #: The receivable-type asset account holding what is still owed; ``None``
+        #: for a receivable recorded before issue #170, which posts nothing.
+        self.account = account
+        #: Handles of the BreadSched-owned reclassification transactions.
+        self.postings = list(postings or [])
 
     def _serialize(self) -> dict[str, Any]:
         return {
@@ -113,6 +124,8 @@ class Receivable(PrimaryObject):
             "disputed_on": self.disputed_on.isoformat() if self.disputed_on is not None else None,
             "dispute_note": self.dispute_note,
             "write_offs": [item.serialize() for item in self.write_offs],
+            "account": self.account,
+            "postings": list(self.postings),
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -137,6 +150,9 @@ class Receivable(PrimaryObject):
         self.write_offs = [
             ReceivableWriteOff.from_dict(item) for item in data.get("write_offs", [])
         ]
+        raw_account = data.get("account")
+        self.account = str(raw_account) if raw_account else None
+        self.postings = [str(item) for item in data.get("postings", [])]
 
     def __repr__(self) -> str:
         return f"<Receivable {self.payer!r} {self.description!r}>"

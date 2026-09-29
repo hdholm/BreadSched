@@ -6,6 +6,20 @@ or dispute, so it can never drift from the ledger it describes. A
 reimbursement split is never counted as income and an expense split is never
 rewritten -- see ``lib.receivable`` for why both are ordinary expense-class
 splits.
+
+What is owed is the expected amount, or the whole linked expense when none is
+given, and never more than the linked expense. ``planned_postings`` derives the
+BreadSched-owned reclassification transactions that hold it in the receivable
+account (issue #170):
+
+- tracking: receivable +owed, expense -owed, on the incurred date;
+- each reimbursement: expense +amount, receivable -amount, on its date;
+- each write-off: expense +amount, receivable -amount, on its date.
+
+Reimbursements and write-offs are applied oldest first and never take the
+receivable below zero; money back beyond what was owed simply stays a refund in
+the expense account. So the receivable account holds exactly what is still
+owed, which counts toward net worth but never toward liquidity.
 """
 
 from __future__ import annotations
@@ -13,12 +27,15 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
+from uuid import NAMESPACE_URL, uuid5
 
 from ..db.sqlite import DbSQLite
+from ..lib.account import AccountType
 from ..lib.money import Money
-from ..lib.receivable import Receivable, ReceivableSplitLink
+from ..lib.receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
 from ..lib.transaction import Split, Transaction
-from .currency import reporting_currency_handle
+from . import split_links
+from .currency import commodity_fraction, reporting_currency_handle
 from .payees import match_key
 
 __all__ = [
@@ -26,7 +43,11 @@ __all__ = [
     "ReceivableStatus",
     "ReceivableSummary",
     "ReimbursementProposal",
+    "fsa_overlaps",
     "iter_receivables",
+    "owned_postings",
+    "planned_postings",
+    "posting_currency",
     "propose_reimbursements",
     "receivable_summary",
 ]
@@ -64,44 +85,46 @@ class ReceivableSummary:
     receivable: Receivable
     #: Sum of the linked expense splits (always >= 0).
     expense_total: Money
+    #: What the payer owes: the expected amount, or the whole linked expense
+    #: when none is given, never more than the linked expense.
+    owed: Money
     #: Sum credited back by the linked reimbursement splits (always >= 0).
     reimbursed: Money
     #: Sum recorded as given up (always >= 0).
     written_off: Money
-    #: What is still expected; negative when reimbursed more than the expense.
+    #: What is still expected; negative when reimbursed more than was owed.
     remaining: Money
     age_days: int
     status: ReceivableStatus
+    #: FSA claims that also claim one of the linked expense splits (a warning).
+    fsa_claims: tuple[str, ...] = ()
 
 
 def iter_receivables(db: DbSQLite) -> list[Receivable]:
     return list(db.iter_receivables())
 
 
+def _missing_link(part: str) -> ReceivableError:
+    return ReceivableError(
+        f"receivable.link.{part}.not_found",
+        ("links",),
+        f"linked transaction{' split' if part == 'split' else ''} no longer exists",
+    )
+
+
 def _resolve_link(db: DbSQLite, link: ReceivableSplitLink) -> tuple[Transaction, Split]:
-    transaction = db.get_transaction(link.transaction)
-    if transaction is None:
-        raise ReceivableError(
-            "receivable.link.transaction.not_found",
-            ("links",),
-            "linked transaction no longer exists",
-        )
-    split = next((item for item in transaction.splits if item.handle == link.split), None)
-    if split is None:
-        raise ReceivableError(
-            "receivable.link.split.not_found",
-            ("links",),
-            "linked transaction split no longer exists",
-        )
-    return transaction, split
+    return split_links.resolve_link(db, link, _missing_link)
 
 
 def _sum_links(db: DbSQLite, links: list[ReceivableSplitLink]) -> Money:
-    total = Money(0)
-    for link in links:
-        _transaction, split = _resolve_link(db, link)
-        total = total + abs(split.value)
-    return total
+    return split_links.sum_links(db, links, _missing_link)
+
+
+def _owed(receivable: Receivable, expense_total: Money) -> Money:
+    """The expected amount (or the whole expense), never more than the expense."""
+    if receivable.expected_amount is None:
+        return expense_total
+    return min(receivable.expected_amount, expense_total)
 
 
 def receivable_summary(
@@ -113,7 +136,8 @@ def receivable_summary(
     written_off = Money(0)
     for item in receivable.write_offs:
         written_off = written_off + item.amount
-    remaining = expense_total - reimbursed - written_off
+    owed = _owed(receivable, expense_total)
+    remaining = owed - reimbursed - written_off
     today = as_of or date.today()
     age_days = (today - receivable.incurred_date).days
 
@@ -134,11 +158,13 @@ def receivable_summary(
     return ReceivableSummary(
         receivable=receivable,
         expense_total=expense_total,
+        owed=owed,
         reimbursed=reimbursed,
         written_off=written_off,
         remaining=remaining,
         age_days=age_days,
         status=status,
+        fsa_claims=fsa_overlaps(db, receivable),
     )
 
 
@@ -211,8 +237,11 @@ def propose_reimbursements(
     if not open_items:
         return []
     credits: list[tuple[Transaction, Split]] = []
+    owned = owned_postings(db)
     wanted = set().union(*(accounts for _r, accounts, _c, _k in open_items))
     for transaction in db.iter_transactions():
+        if transaction.handle in owned:
+            continue  # BreadSched's own reclassification, never a reimbursement
         for split in transaction.splits:
             if split.value < 0 and split.account in wanted:
                 if (transaction.handle, split.handle) not in linked:
@@ -264,3 +293,182 @@ def propose_reimbursements(
             )
         )
     return proposals
+
+
+# ---------------------------------------------------------------- postings
+
+#: The note on every BreadSched-owned reclassification transaction.
+POSTING_NOTE = (
+    "Maintained by BreadSched for a reimbursable expense. Change the receivable "
+    "instead; this transaction is recomputed from it."
+)
+
+
+def owned_postings(db: DbSQLite) -> set[str]:
+    """Handles of every reclassification transaction a receivable owns."""
+    return {handle for receivable in db.iter_receivables() for handle in receivable.postings}
+
+
+def posting_currency(db: DbSQLite, receivable: Receivable) -> str | None:
+    """The one transaction currency of the linked splits; ``None`` if nothing is linked.
+
+    Raises when the linked splits are in different currencies, because a
+    receivable account holds one currency and no conversion is guessed.
+    """
+    book = reporting_currency_handle(db)
+    found: set[str] = set()
+    for link in (*receivable.expenses, *receivable.reimbursements):
+        transaction, _split = _resolve_link(db, link)
+        found.add(transaction.currency or book)
+    if len(found) > 1:
+        raise ReceivableError(
+            "receivable.currency.mixed",
+            ("links",),
+            "linked expense and reimbursement splits are in different currencies",
+        )
+    return next(iter(found), None)
+
+
+def _posting_handle(receivable: Receivable, *parts: object) -> str:
+    text = "|".join(str(part) for part in (receivable.handle, *parts))
+    return uuid5(NAMESPACE_URL, f"breadsched:receivable-posting:{text}").hex
+
+
+def _quantity(value: Money, source: Split) -> Money:
+    """``value`` in the account's commodity, at the rate ``source`` recorded."""
+    if source.quantity == source.value or not source.value:
+        return value
+    return value * (source.quantity / source.value)
+
+
+def planned_postings(db: DbSQLite, receivable: Receivable) -> list[Transaction]:
+    """The reclassification transactions ``receivable`` should own right now.
+
+    Nothing is posted for a receivable without an account (recorded before
+    issue #170) or without a linked expense. Raises ``ReceivableError`` when the
+    account is missing, is not a receivable account, or holds another currency.
+    """
+    if receivable.account is None or not receivable.expenses:
+        return []
+    account = db.get_account(receivable.account)
+    if account is None:
+        raise ReceivableError("receivable.account.not_found", ("account",), "no such account")
+    if account.atype is not AccountType.RECEIVABLE:
+        raise ReceivableError(
+            "receivable.account.not_receivable",
+            ("account",),
+            "a receivable is held in a Receivable account",
+        )
+    currency = posting_currency(db, receivable)
+    book = reporting_currency_handle(db)
+    if (account.commodity or book) != currency:
+        raise ReceivableError(
+            "receivable.account.currency_mismatch",
+            ("account",),
+            "the receivable account holds another currency than the linked splits",
+        )
+    expenses = [_resolve_link(db, link) for link in receivable.expenses]
+    expense_total = Money(0)
+    for _transaction, split in expenses:
+        expense_total = expense_total + split.value
+    owed = _owed(receivable, expense_total)
+    raw_currency = expenses[0][0].currency
+    fraction = commodity_fraction(db, currency)
+    largest = max(expenses, key=lambda item: item[1].value)[1]
+
+    def posting(
+        key: object, when: date, description: str, lines: list[tuple[str, Money, Split | None]]
+    ) -> Transaction:
+        transaction = Transaction(
+            handle=_posting_handle(receivable, key),
+            post_date=when,
+            description=description,
+            currency=raw_currency,
+        )
+        for index, (target, value, source) in enumerate(lines):
+            transaction.add_split(
+                Split(
+                    target,
+                    value,
+                    quantity=_quantity(value, source) if source is not None else None,
+                    memo=receivable.description,
+                    handle=_posting_handle(receivable, key, index),
+                )
+            )
+        transaction.notes = POSTING_NOTE
+        return transaction
+
+    postings: list[Transaction] = []
+    if owed > 0:
+        shares: list[tuple[str, Money, Split | None]] = []
+        allocated = Money(0)
+        for index, (_transaction, split) in enumerate(expenses):
+            if owed == expense_total:
+                share = split.value
+            elif index == len(expenses) - 1:
+                share = owed - allocated
+            else:
+                share = (owed * (split.value / expense_total)).quantize(fraction)
+            allocated = allocated + share
+            if share:
+                shares.append((split.account, -share, split))
+        postings.append(
+            posting(
+                "tracking",
+                receivable.incurred_date,
+                f"Reimbursable from {receivable.payer}",
+                [(receivable.account, owed, None), *shares],
+            )
+        )
+
+    events: list[tuple[date, int, int, object]] = []
+    for index, link in enumerate(receivable.reimbursements):
+        transaction, _split = _resolve_link(db, link)
+        events.append((transaction.post_date, 0, index, link))
+    for index, item in enumerate(receivable.write_offs):
+        events.append((item.written_off_on, 1, index, item))
+    outstanding = owed
+    for when, kind, index, event in sorted(events, key=lambda item: item[:3]):
+        if outstanding <= 0:
+            break
+        if kind == 0:
+            assert isinstance(event, ReceivableSplitLink)
+            _transaction, split = _resolve_link(db, event)
+            amount = min(-split.value, outstanding)
+            expense_account, source = split.account, split
+            key: object = ("reimbursement", event.transaction, event.split)
+            description = f"Reimbursement from {receivable.payer} received"
+        else:
+            assert isinstance(event, ReceivableWriteOff)
+            amount = min(event.amount, outstanding)
+            expense_account, source = largest.account, largest
+            key = ("write-off", index)
+            description = f"Reimbursement from {receivable.payer} written off"
+        if amount <= 0:
+            continue
+        outstanding = outstanding - amount
+        postings.append(
+            posting(
+                key,
+                when,
+                description,
+                [(expense_account, amount, source), (receivable.account, -amount, None)],
+            )
+        )
+    return postings
+
+
+def fsa_overlaps(db: DbSQLite, receivable: Receivable) -> tuple[str, ...]:
+    """FSA claims that also claim one of the receivable's expense splits.
+
+    The same cost expected back from both a payer and the FSA is usually a
+    mistake, but not always (a partial claim on each), so this only warns.
+    """
+    linked = {(link.transaction, link.split) for link in receivable.expenses}
+    if not linked:
+        return ()
+    return tuple(
+        claim.handle
+        for claim in db.iter_fsa_claims()
+        if any((link.transaction, link.split) in linked for link in claim.payments)
+    )

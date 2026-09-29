@@ -91,6 +91,10 @@ _SERVICE_MESSAGES = {
     "transaction.investment.invalid": "Check the investment activity classification",
     "transaction.claim.not_found": "The selected FSA claim no longer exists",
     "transaction.claim.invalid": "The transaction cannot be attached to that FSA claim",
+    "transaction.receivable_posting": (
+        "BreadSched keeps this transaction for a reimbursable expense; change the "
+        "receivable instead"
+    ),
     "loan.name.required": "Give the loan a name",
     "loan.principal.non_positive": "The amount borrowed must be positive",
     "loan.rate.negative": "The annual rate cannot be negative",
@@ -160,6 +164,20 @@ _SERVICE_MESSAGES = {
     "receivable.split.duplicate": "That split is already linked to this receivable",
     "receivable.link.not_found": "That split is not linked to this receivable",
     "receivable.write_off.amount_not_positive": "The write-off amount must be positive",
+    "receivable.split.owned_posting": (
+        "That is BreadSched's own receivable reclassification; link the original "
+        "transaction instead"
+    ),
+    "receivable.link.transaction.not_found": "A linked transaction no longer exists",
+    "receivable.link.split.not_found": "A linked split no longer exists",
+    "receivable.account.not_found": "That receivable account no longer exists",
+    "receivable.account.not_receivable": "Choose a Receivable account to hold what is owed",
+    "receivable.account.currency_mismatch": (
+        "Choose a receivable account in the same currency as the linked expense"
+    ),
+    "receivable.currency.mixed": (
+        "Linked expense and reimbursement splits must all be in one currency"
+    ),
     "import.csv.account.invalid": "Choose a bank, cash, card, or other posting asset or liability",
     "import.csv.column.not_found": "A mapped column is not in the CSV file",
     "import.csv.amount.mapping": "Map either one amount column or debit and credit columns",

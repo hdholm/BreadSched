@@ -1263,6 +1263,15 @@ class DbSQLite(DbBase):
 
     def _verify_receivable_references(self, receivable: Receivable) -> list[BookIssue]:
         issues: list[BookIssue] = []
+        if receivable.account is not None and self.get_account(receivable.account) is None:
+            issues.append(
+                BookIssue(
+                    "receivable.missing_account",
+                    f"receivable {receivable.handle} refers to missing account "
+                    f"{receivable.account}",
+                    receivable.handle,
+                )
+            )
         for link in [*receivable.expenses, *receivable.reimbursements]:
             transaction = self.get_transaction(link.transaction)
             if transaction is None:
@@ -1493,6 +1502,15 @@ class DbSQLite(DbBase):
                             "fsa_claim.missing_account",
                             f"FSA claim {claim.handle} refers to missing account {handle}",
                             claim.handle,
+                        )
+                    )
+            for receivable in self.iter_receivables():
+                if receivable.account == handle:
+                    issues.append(
+                        BookIssue(
+                            "receivable.missing_account",
+                            f"receivable {receivable.handle} refers to missing account {handle}",
+                            receivable.handle,
                         )
                     )
 

@@ -8,6 +8,7 @@ from datetime import date
 from ..db.sqlite import DbSQLite
 from ..engine import fsa_claims, investment
 from ..engine.currency import reporting_currency_handle
+from ..engine.receivables import ReceivableError
 from ..lib.amount import Amount
 from ..lib.commodity import DEFAULT_CURRENCY, DEFAULT_CURRENCY_HANDLE, Commodity
 from ..lib.money import Money
@@ -18,6 +19,7 @@ from ..lib.transaction import (
     Transaction,
 )
 from .contracts import ServiceError, ServiceResult
+from .receivables import is_owned_posting, sync_linked_receivables
 
 
 @dataclass(frozen=True, slots=True)
@@ -230,6 +232,8 @@ def save_transaction(
     """Validate and persist a transaction, plus an optional claim link, atomically."""
     if request.existing_handle is not None and db.get_transaction(request.existing_handle) is None:
         return ServiceResult.failure(ServiceError("transaction.not_found", ("handle",)))
+    if request.existing_handle is not None and is_owned_posting(db, request.existing_handle):
+        return ServiceResult.failure(ServiceError("transaction.receivable_posting", ("handle",)))
     built = build_transaction(db, request)
     if built.value is None:
         return ServiceResult.failure(*built.errors)
@@ -269,6 +273,10 @@ def save_transaction(
                     raise ClaimNotFound from exc
                 except ValueError as exc:
                     raise ClaimInvalid from exc
+            if request.existing_handle is not None:
+                sync_linked_receivables(db, candidate.handle, txn)
+    except ReceivableError as exc:
+        return ServiceResult.failure(ServiceError(exc.code, exc.fields))
     except ClaimNotFound:
         return ServiceResult.failure(ServiceError("transaction.claim.not_found", ("claim",)))
     except ClaimInvalid:
@@ -283,6 +291,8 @@ def delete_transaction(db: DbSQLite, request: DeleteTransaction) -> ServiceResul
     existing = db.get_transaction(request.handle)
     if existing is None:
         return ServiceResult.failure(ServiceError("transaction.not_found", ("handle",)))
+    if is_owned_posting(db, existing.handle):
+        return ServiceResult.failure(ServiceError("transaction.receivable_posting", ("handle",)))
     with db.transaction(f"Delete {existing.description}") as txn:
         db.remove_transaction(existing.handle, txn)
     return ServiceResult.success(
