@@ -38,9 +38,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    the original expense, and coordinates with GnuCash re-import the same way FSA
    claims do, the GTK and web screens with their register actions, and reviewed
    reimbursement proposals pointed at after imports and during reconciliation.
-   Remaining: explicit coordination with FSA claims when the same expense could be
-   claimed through either (for example, an insurer pays part and the FSA the
-   rest), without counting the expense or the recovery twice.
+   Remaining (#170): receivable accounts that hold what is owed, counted in net
+   worth and never in liquidity (as pending FSA reimbursements already are), and
+   coordination with FSA claims when the same expense could be claimed through
+   either (for example, an insurer pays part and the FSA the rest), without
+   counting the expense or the recovery twice.
 2. **P0 — Windows installer.** Prioritized over further Linux packaging: a Linux
    development environment already installs BreadSched easily from source, while
    Windows users have no equivalent path. Provide a Windows installer with the GTK
@@ -52,15 +54,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    run in CI; remaining Linux work (validating GTK file-chooser portals and
    printing inside the sandbox, and publishing the installer) follows the Windows
    installer. Keep wheel/source releases available throughout.
-3. **P1 — Finish currency handling.** Manual exchange rates and disclosed as-of
-   conversion across Plan, Expense Explorer, Projection, comparisons, and prints are
-   delivered, as are GnuCash, QIF, and OFX security prices and OFX per-transaction
-   exchange rates imported through the same quote contract, and securities quoted
-   only in another currency are valued through one as-of exchange quote.
-   Remaining: decide an explicit multi-hop policy before enabling any conversion
-   between currencies through a third currency (proposal in #173). Do not create a second monthly
-   budget ledger.
-4. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
+3. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
    simple user edits, broader reporting (spending over time is delivered), then
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
@@ -135,11 +129,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   projection UI/comparison/explanations.
 
 - Add investment lots and cost basis.
-
-- **Cross-cutting multi-currency valuation and import.** Preserve exact source
-  amounts and quote metadata, and never combine unlike currencies silently. The
-  remaining work, an explicit multi-hop conversion policy, is listed under P1
-  item 3.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.

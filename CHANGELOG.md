@@ -3,6 +3,14 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a173 - 2026-09-28
+
+- **Direct exchange rates only (#173).** Currency conversion is settled as direct
+  rate only: a currency converts through its own pair's quote or that pair's
+  inverse, never through a third currency. The policy is recorded in the design
+  and user guide, and the open roadmap item is closed. No behavior changes.
+  Application version `0.2.0a173`; native schema remains 9.
+
 ## 0.2.0a172 - 2026-09-28
 
 - **Register and entry routes move to their own web adapter.** The browser's

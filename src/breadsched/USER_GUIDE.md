@@ -275,8 +275,11 @@ The web and CLI JSON data also expose the signed number of days since the quote
 as-of date was requested.
 Review the quote date and source before treating a market-valued total as current.
 Plan totals and Expense Explorer convert foreign amounts with these rates (see
-Plan). Other views still require a compatible reporting-currency value, and no
-multi-hop path through an intermediate currency is inferred.
+Plan). Other views still require a compatible reporting-currency value.
+BreadSched converts only with a rate between the two currencies themselves (or
+its inverse); it never goes through a third currency. If you hold Swiss francs
+and have only franc-to-euro and euro-to-dollar rates, enter a franc-to-dollar rate
+to value them in dollars.
 Do not add values in unlike currencies when estimating net worth.
 
 For an Investment or Retirement account, use **Security Price** (a toolbar icon
