@@ -3,6 +3,19 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a180 - 2026-09-28
+
+- **Windows installer built and tested in CI.** `packaging/windows/` builds a
+  per-user NSIS installer (`BreadSched-<version>-setup.exe`, no administrator
+  rights) that carries its own MSYS2 UCRT64 Python, GTK 4, and PyGObject runtime,
+  a Start-menu shortcut, a `breadsched.cmd` command-line launcher, and an
+  uninstaller. A new `windows-installer` CI job builds it, installs it silently on
+  a clean runner with a bare `PATH`, runs the command line and the desktop smoke
+  from the installed copy, reinstalls over itself, uninstalls, checks that books
+  survive, and uploads the installer with its checksum as a workflow artifact. It
+  is not yet attached to releases. Application version `0.2.0a180`; native schema
+  remains 9.
+
 ## 0.2.0a179 - 2026-09-28
 
 - **Tabs for open views and registers (#183).** A tab bar below the desktop

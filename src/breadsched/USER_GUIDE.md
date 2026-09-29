@@ -53,6 +53,10 @@ in the sandboxed desktop application and checks that settings persist. No Flatpa
 installer is published yet. Use the verified wheel/source release or a development
 checkout until GTK file portals and printing are validated in the sandbox.
 
+For Windows, CI builds and tests an installer that carries its own Python and GTK
+runtime; it is not yet published with releases. See
+[Install on Windows](guide/desktop.md#install-on-windows).
+
 ### Create or import your first book
 
 For a new household book:
