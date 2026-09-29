@@ -99,7 +99,7 @@ def test_qif_investment_account_imports_trades_income_and_transfers(db, book, tm
 
     result = qif.import_book(db, path)
 
-    assert result.reasons() == {"QIF ShrsIn investment actions are not imported yet": 1}
+    assert result.reasons() == {"A transfer of shares in is not imported; enter it yourself": 1}
     cash = _account(db, "Assets:Brokerage:Cash")
     fund = _account(db, "Assets:Brokerage:VTSAX")
     stock = _account(db, "Assets:Brokerage:ACME")

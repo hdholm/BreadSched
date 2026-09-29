@@ -246,6 +246,10 @@ _SERVICE_MESSAGES = {
         "Reopen the completed statement before using the GnuCash version"
     ),
     "import.review.unbalanced": "The GnuCash version does not balance",
+    "import.review.deletion_referenced": (
+        "A reconciliation, FSA claim, or receivable still uses this transaction; "
+        "remove that link before applying the GnuCash deletion"
+    ),
     "review.transaction.not_found": "The transaction no longer exists",
     "review.transaction.not_unresolved": "The transaction is no longer awaiting review",
     "review.occurrence.not_found": "The planned occurrence no longer exists",

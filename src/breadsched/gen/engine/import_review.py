@@ -15,6 +15,13 @@ plus each locally reconciled split's account, value, quantity, memo, and action,
 or that split's disappearance. Changes confined to splits that are not reconciled
 locally, and read-only source notes, never require review.
 
+A transaction deleted in GnuCash is held the same way when any of its splits is
+reconciled, whether it was reconciled in GnuCash or in BreadSched: the deletion
+is recorded as a held change with ``deleted`` set and no incoming version, and the
+transaction stays until the user chooses to apply the deletion. (A transaction a
+BreadSched reconciliation, FSA claim, or receivable still refers to is retained
+outright; see ``deletion_references``.)
+
 Held versions live in book metadata written inside the import's database
 transaction, so they are undoable, survive restart, and are shared by every
 presentation.
@@ -38,9 +45,12 @@ __all__ = [
     "REVIEW_KEY",
     "HeldChange",
     "HeldStatus",
+    "DELETION_FINGERPRINT",
     "blocking_reconciliations",
+    "deletion_references",
     "describe_changes",
     "held_changes",
+    "is_reconciled",
     "is_protected_change",
     "locally_reconciled",
     "merge_local_state",
@@ -51,6 +61,8 @@ __all__ = [
 ]
 
 REVIEW_KEY = "import.reconciled_review"
+#: The fingerprint of a held deletion; the deleted source has no version to digest.
+DELETION_FINGERPRINT = "deleted"
 
 
 class HeldStatus(str, Enum):
@@ -72,9 +84,11 @@ class HeldChange:
     detected: date
     changes: tuple[str, ...]
     incoming: dict[str, Any]
+    #: The transaction was deleted in the source; ``incoming`` is then empty.
+    deleted: bool = False
 
     def serialize(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "status": self.status.value,
             "fingerprint": self.fingerprint,
             "source": self.source,
@@ -82,6 +96,9 @@ class HeldChange:
             "changes": list(self.changes),
             "incoming": self.incoming,
         }
+        if self.deleted:
+            data["deleted"] = True
+        return data
 
     @classmethod
     def from_dict(cls, handle: str, data: dict[str, Any]) -> HeldChange:
@@ -93,6 +110,7 @@ class HeldChange:
             detected=date.fromisoformat(str(data["detected"])),
             changes=tuple(str(item) for item in data.get("changes", [])),
             incoming=dict(data["incoming"]),
+            deleted=bool(data.get("deleted", False)),
         )
 
     def incoming_transaction(self) -> Transaction:
@@ -283,6 +301,46 @@ def blocking_reconciliations(
         if reconciliation.status is ReconciliationStatus.COMPLETED
         and changed.intersection(reconciliation.selected_splits)
     ]
+
+
+def deletion_references(db: DbSQLite, transaction: Transaction) -> list[str]:
+    """Name BreadSched-owned objects that make deleting ``transaction`` unsafe."""
+    split_handles = {split.handle for split in transaction.splits}
+    reconciliation_count = sum(
+        bool(split_handles.intersection(item.selected_splits)) for item in db.iter_reconciliations()
+    )
+    claim_count = 0
+    for claim in db.iter_fsa_claims():
+        links = [*claim.payments, *claim.refunds]
+        links.extend(link for allocation in claim.allocations for link in allocation.reimbursements)
+        if any(
+            link.transaction == transaction.handle or link.split in split_handles for link in links
+        ):
+            claim_count += 1
+    receivable_count = 0
+    for receivable in db.iter_receivables():
+        receivable_links = [*receivable.expenses, *receivable.reimbursements]
+        if any(
+            link.transaction == transaction.handle or link.split in split_handles
+            for link in receivable_links
+        ):
+            receivable_count += 1
+
+    references: list[str] = []
+    if reconciliation_count:
+        references.append(
+            f"{reconciliation_count} reconciliation{'s' if reconciliation_count != 1 else ''}"
+        )
+    if claim_count:
+        references.append(f"{claim_count} FSA claim{'s' if claim_count != 1 else ''}")
+    if receivable_count:
+        references.append(f"{receivable_count} receivable{'s' if receivable_count != 1 else ''}")
+    return references
+
+
+def is_reconciled(transaction: Transaction) -> bool:
+    """Whether any split is reconciled, in GnuCash or in BreadSched."""
+    return bool(locally_reconciled(transaction))
 
 
 # ---------------------------------------------------------------------- storage

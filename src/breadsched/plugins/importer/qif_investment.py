@@ -38,6 +38,20 @@ __all__ = ["QifInvestments"]
 _INCOME = {"div", "intinc", "cglong", "cgmid", "cgshort", "miscinc"}
 _REINVEST = {"reinvdiv", "reinvint", "reinvlg", "reinvmd", "reinvsh"}
 _FUND_TYPES = {"mutual fund", "fund", "etf", "index fund", "money market"}
+#: Quicken actions not imported, named as the import report shows them.
+_SKIPPED_ACTIONS = {
+    "shrsin": "a transfer of shares in",
+    "shrsout": "a transfer of shares out",
+    "stksplit": "a stock split",
+    "grant": "an employee stock option grant",
+    "vest": "an employee stock option vesting",
+    "exercise": "an option exercise",
+    "exercisx": "an option exercise",
+    "expire": "an option expiry",
+    "buyopt": "an option purchase",
+    "sellopt": "an option sale",
+    "reminder": "a Quicken reminder",
+}
 
 
 def _fields(record: list[str]) -> dict[str, str]:
@@ -208,7 +222,9 @@ class QifInvestments:
             label = {"buy": "Buy", "sell": "Sell"}.get(verb, "Reinvest")
             return splits, fields.get("P") or f"{label} {security_name}"
         if verb not in _INCOME and verb not in {"miscexp", "xin", "xout", "cash"}:
-            return f"QIF {fields.get('N') or 'unnamed'} investment actions are not imported yet"
+            action = fields.get("N") or "unnamed"
+            label = _SKIPPED_ACTIONS.get(verb, f"a QIF {action} investment action")
+            return f"{label[0].upper()}{label[1:]} is not imported; enter it yourself"
         if not total:
             return "QIF investment record has no amount"
         if verb in _INCOME:

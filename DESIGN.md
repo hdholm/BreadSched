@@ -1980,7 +1980,8 @@ stable preflight codes and field paths are independent of their English wording.
 Transaction deletion synchronization uses a separate complete-scan inventory keyed
 by the stable GnuCash chart-root identity, with the canonical source path only as a
 fallback. A previously observed transaction GUID that is absent from the source is
-removed in the same atomic import operation. A skipped but still present source
+removed in the same atomic import operation, unless it is reconciled (held for
+review; see *Locally reconciled imported transactions*). A skipped but still present source
 record counts as observed and is never mistaken for a deletion. Reconciliation
 sessions and FSA claims are durable BreadSched audit data, so a missing source
 transaction referenced by either is retained and reported as a conflict instead of
@@ -2040,6 +2041,17 @@ owns the rule and the importer's shared sink applies it to SQLite and XML books:
   first keeps `verify` and statement reopening consistent.
 - GTK presents the batch when a book opens (before the due-schedule review) and
   after an import that held changes; web and CLI expose the same service.
+- A source deletion of a transaction with any Reconciled split (reconciled in
+  GnuCash or BreadSched) is held too, as a `HeldChange` with `deleted` set, the
+  fixed fingerprint `deleted`, and no incoming version. Its GUID stays in the
+  deletion inventory, so every later import re-evaluates it: a kept deletion is
+  counted as kept and not raised again, a pending one stays pending, and a GUID
+  that reappears in the source is imported normally and clears the entry. Using
+  the source deletes the transaction in the review's undoable batch, refused as
+  `import.review.deletion_referenced` if a reconciliation, FSA claim, or
+  receivable (`import_review.deletion_references`) has come to refer to it.
+  Referenced transactions are retained outright on import, as before, and
+  unreconciled ones are still removed.
 
 Transactions with no split reconciled locally keep the general rule: local edits to
 source-owned facts are replaced and counted as refreshed. Transactions created in

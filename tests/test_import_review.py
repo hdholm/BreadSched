@@ -369,3 +369,126 @@ def test_xml_reimport_uses_the_same_hold_rule(db, tmp_path, gnucash_xml_path):
     assert held.transactions_held == 1
     assert db.get_transaction(transaction.handle).description == transaction.description
     assert [item.transaction for item in pending_import_changes(db)] == [transaction.handle]
+
+
+def _delete_in_source(path, guid):
+    with sqlite3.connect(path) as source:
+        rows = source.execute("SELECT * FROM splits WHERE tx_guid=?", (guid,)).fetchall()
+        header = source.execute("SELECT * FROM transactions WHERE guid=?", (guid,)).fetchone()
+        source.execute("DELETE FROM splits WHERE tx_guid=?", (guid,))
+        source.execute("DELETE FROM transactions WHERE guid=?", (guid,))
+    return header, rows
+
+
+def _restore_in_source(path, header, rows):
+    with sqlite3.connect(path) as source:
+        source.execute("INSERT INTO transactions VALUES (?,?,?,?,?,?)", header)
+        for row in rows:
+            source.execute("INSERT INTO splits VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", row)
+
+
+def _gnucash_reconciled_rent(db, source):
+    gnucash_sqlite.import_book(db, source.path)
+    rent = _transaction(db, "Rent")
+    _set_source(
+        source.path,
+        "UPDATE splits SET reconcile_state='y' WHERE guid=?",
+        _checking_split(rent, source.ids).handle,
+    )
+    gnucash_sqlite.import_book(db, source.path)
+    return rent
+
+
+def test_deleting_a_reconciled_transaction_in_gnucash_is_held_for_review(db, gnucash_sqlite_path):
+    source = gnucash_sqlite_path
+    rent = _gnucash_reconciled_rent(db, source)
+    _delete_in_source(source.path, rent.handle)
+
+    result = gnucash_sqlite.import_book(db, source.path)
+
+    assert db.get_transaction(rent.handle) is not None
+    assert (result.transactions_removed, result.transactions_held) == (0, 1)
+    assert "1 GnuCash change(s) held for review" in result.detail()
+    [held] = pending_import_changes(db)
+    assert (held.transaction, held.deleted, held.changes) == (
+        rent.handle,
+        True,
+        ("Deleted in GnuCash",),
+    )
+    assert held.can_use_source
+    # Importing again asks nothing new.
+    again = gnucash_sqlite.import_book(db, source.path)
+    assert again.transactions_held == 1 and len(pending_import_changes(db)) == 1
+
+    assert (
+        resolve_import_changes(
+            db, ResolveHeldImports(((rent.handle, HeldImportDecision.USE_SOURCE),))
+        ).value.applied
+        == 1
+    )
+    assert db.get_transaction(rent.handle) is None
+    assert pending_import_changes(db) == []
+    assert db.undo() is True
+    assert db.get_transaction(rent.handle) is not None
+    assert len(pending_import_changes(db)) == 1
+
+
+def test_a_kept_deletion_is_not_asked_again_and_a_restored_source_clears_it(
+    db, gnucash_sqlite_path
+):
+    source = gnucash_sqlite_path
+    rent = _gnucash_reconciled_rent(db, source)
+    header, rows = _delete_in_source(source.path, rent.handle)
+    gnucash_sqlite.import_book(db, source.path)
+
+    assert (
+        resolve_import_changes(
+            db, ResolveHeldImports(((rent.handle, HeldImportDecision.KEEP_LOCAL),))
+        ).value.kept
+        == 1
+    )
+    kept = gnucash_sqlite.import_book(db, source.path)
+    assert (kept.transactions_kept, kept.transactions_held) == (1, 0)
+    assert db.get_transaction(rent.handle) is not None
+    assert pending_import_changes(db) == []
+
+    _restore_in_source(source.path, header, rows)
+    restored = gnucash_sqlite.import_book(db, source.path)
+    assert restored.transactions_kept == 0 and restored.transactions_held == 0
+    assert rent.handle not in import_review.held_changes(db)
+
+
+def test_a_held_deletion_cannot_be_applied_once_something_refers_to_it(db, gnucash_sqlite_path):
+    from datetime import date
+
+    from breadsched.gen.lib.receivable import Receivable, ReceivableSplitLink
+
+    source = gnucash_sqlite_path
+    rent = _gnucash_reconciled_rent(db, source)
+    _delete_in_source(source.path, rent.handle)
+    gnucash_sqlite.import_book(db, source.path)
+    receivable = Receivable(
+        incurred_date=date(2026, 1, 2),
+        payer="Landlord",
+        expenses=[ReceivableSplitLink(rent.handle, rent.splits[0].handle)],
+    )
+    with db.transaction("Receivable") as txn:
+        db.add_receivable(receivable, txn)
+
+    [held] = pending_import_changes(db)
+    assert held.blocked_by == ("1 receivable",) and not held.can_use_source
+    refused = resolve_import_changes(
+        db, ResolveHeldImports(((rent.handle, HeldImportDecision.USE_SOURCE),))
+    )
+    assert [error.code for error in refused.errors] == ["import.review.deletion_referenced"]
+    assert db.get_transaction(rent.handle) is not None
+
+
+def test_unreconciled_source_deletions_are_still_mirrored(db, gnucash_sqlite_path):
+    source = gnucash_sqlite_path
+    gnucash_sqlite.import_book(db, source.path)
+    rent = _transaction(db, "Rent")
+    _delete_in_source(source.path, rent.handle)
+    result = gnucash_sqlite.import_book(db, source.path)
+    assert (result.transactions_removed, result.transactions_held) == (1, 0)
+    assert db.get_transaction(rent.handle) is None
