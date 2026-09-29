@@ -176,7 +176,7 @@ breadsched gnucash-writeback household.breadsched --all
 ```
 
 Choose how many backups to keep with `--keep-backups N` (10 by default). See
-[Write changes back to a GnuCash SQLite book](../USER_GUIDE.md#write-changes-back-to-a-gnucash-sqlite-book).
+[Write changes back to a GnuCash book](../USER_GUIDE.md#write-changes-back-to-a-gnucash-book).
 
 ## Payees
 

@@ -3,6 +3,24 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a198 - 2026-09-29
+
+- **Wider GnuCash write-back.** Write-back now works on XML books (GnuCash's
+  default, compressed or not) as well as SQLite, and writes new transactions with
+  any number of splits (a split in a security or foreign-currency account keeps its
+  quantity); changed amounts, accounts, split actions, and added or removed splits
+  of imported transactions; and transactions deleted in BreadSched, with their
+  notes. A transaction GnuCash has reconciled, or one in a GnuCash lot, still only
+  takes reconcile marks. An XML book is changed only where a chosen transaction
+  changes; the rest of the file stays byte for byte as GnuCash wrote it, and an
+  XML book open in GnuCash (its `.LCK` file) is refused. New transactions carry
+  GnuCash's `date-posted` detail, which a date edit now updates too.
+- **Checked in real GnuCash.** Tests run every kind of write on SQLite and XML
+  books that GnuCash 5.5 created, prove a fresh import reproduces the edited book,
+  and, in a new CI job, open the written book in GnuCash itself to compare every
+  transaction and account balance. Application version `0.2.0a198`; native
+  schema remains 10.
+
 ## 0.2.0a197 - 2026-09-29
 
 - **GnuCash deletions of reconciled transactions are reviewed.** A transaction

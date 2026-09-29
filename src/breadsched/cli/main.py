@@ -3583,7 +3583,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     writeback = add(
         "gnucash-writeback",
-        "Preview, or write chosen changes back to the imported GnuCash SQLite book",
+        "Preview, or write chosen changes back to the imported GnuCash book",
     )
     writeback.add_argument(
         "--apply",

@@ -37,6 +37,19 @@ def _gnc(path, sql, *params):
         conn.close()
 
 
+def _gnc_exec(path, sql, *params):
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute(sql, params)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _account(db, source_guid):
+    return next(a.handle for a in db.iter_accounts() if a.source_guid == source_guid)
+
+
 def _rent(db):
     return next(item for item in db.iter_transactions() if item.description == "Rent")
 
@@ -139,18 +152,130 @@ def test_reconcile_state_set_in_breadsched_is_written(linked):
     assert state == "y" and stamp.startswith("20260131")
 
 
-def test_amount_changes_and_three_split_entries_are_listed_not_written(linked):
+def _save(db, transaction):
+    with db.transaction("Edit") as txn:
+        db.commit_transaction(transaction, txn)
+
+
+def _write_all(db):
+    plan = preview_writeback(db).value
+    assert plan is not None
+    applied = apply_writeback(db, ApplyWriteback(tuple(c.transaction for c in plan.changes)))
+    assert applied.value is not None, applied.errors
+    return plan
+
+
+def test_amount_account_and_split_changes_are_written(linked):
+    from breadsched.gen.lib import Split
+
+    db, gnc = linked
+    ids = gnc.ids
+    rent = _rent(db)
+    checking = next(s for s in rent.splits if s.account != _account(db, ids.rent))
+    expense = next(s for s in rent.splits if s.account == _account(db, ids.rent))
+    expense.value = Money("1700.00")
+    rent.splits.append(Split(_account(db, ids.food), Money("100.00"), memo="Pantry"))
+    _save(db, rent)
+    supermarket = next(t for t in db.iter_transactions() if t.description == "Supermarket")
+    card = next(s for s in supermarket.splits if s.account == _account(db, ids.card))
+    card.account = _account(db, ids.checking)
+    _save(db, supermarket)
+
+    plan = _write_all(db)
+
+    by_handle = {change.transaction: change for change in plan.changes}
+    assert "add split Expenses:Groceries 100.00" in "\n".join(by_handle[rent.handle].details)
+    rows = _gnc(
+        gnc.path,
+        "SELECT account_guid, value_num, value_denom, memo FROM splits WHERE tx_guid=?",
+        rent.handle,
+    )
+    assert sorted(rows) == sorted(
+        [(ids.rent, 170000, 100, "January"), (ids.checking, -180000, 100, ""),
+         (ids.food, 10000, 100, "Pantry")]
+    )  # fmt: skip
+    assert checking.handle in {row[0] for row in _gnc(
+        gnc.path, "SELECT guid FROM splits WHERE tx_guid=?", rent.handle
+    )}  # fmt: skip
+    assert (ids.checking,) in _gnc(
+        gnc.path, "SELECT account_guid FROM splits WHERE guid=?", card.handle
+    )
+    assert preview_writeback(db).value.changes == ()
+
+
+def test_a_three_split_transaction_is_inserted(linked):
+    from breadsched.gen.lib import Split
+
+    db, gnc = linked
+    ids = gnc.ids
+    entry = Transaction(
+        post_date=date(2026, 1, 20),
+        description="Hardware and food",
+        splits=[
+            Split(_account(db, ids.food), Money("30.00")),
+            Split(_account(db, ids.rent), Money("20.00"), memo="Shelf"),
+            Split(_account(db, ids.checking), Money("-50.00")),
+        ],
+    )
+    with db.transaction("New") as txn:
+        db.add_transaction(entry, txn)
+    _write_all(db)
+    assert len(_gnc(gnc.path, "SELECT guid FROM splits WHERE tx_guid=?", entry.handle)) == 3
+    assert _gnc(
+        gnc.path,
+        "SELECT gdate_val FROM slots WHERE obj_guid=? AND name='date-posted'",
+        entry.handle,
+    ) == [("20260120",)]
+    assert preview_writeback(db).value.changes == ()
+
+
+def test_a_transaction_deleted_here_is_deleted_in_gnucash(linked):
     db, gnc = linked
     rent = _rent(db)
-    rent.splits[0].value = rent.splits[0].value + Money(1)
-    rent.splits[1].value = rent.splits[1].value - Money(1)
-    with db.transaction("Amount edit") as txn:
-        db.commit_transaction(rent, txn)
+    _gnc_exec(
+        gnc.path,
+        "INSERT INTO slots (obj_guid,name,slot_type,string_val) VALUES (?,?,?,?)",
+        rent.handle,
+        "notes",
+        4,
+        "note",
+    )
+    import_book(db, ImportBook(source=gnc.path, notify=False))
+    with db.transaction("Delete") as txn:
+        db.remove_transaction(rent.handle, txn)
+
     plan = preview_writeback(db).value
-    assert plan is not None and plan.changes == ()
+    [change] = plan.changes
+    assert change.kinds == ("delete",) and change.transaction == rent.handle
+    _write_all(db)
+    assert _gnc(gnc.path, "SELECT * FROM transactions WHERE guid=?", rent.handle) == []
+    assert _gnc(gnc.path, "SELECT * FROM splits WHERE tx_guid=?", rent.handle) == []
+    assert _gnc(gnc.path, "SELECT * FROM slots WHERE obj_guid=?", rent.handle) == []
+    # A later import does not bring it back, and nothing is left to write.
+    import_book(db, ImportBook(source=gnc.path, notify=False))
+    assert db.get_transaction(rent.handle) is None
+    assert preview_writeback(db).value.changes == ()
+
+
+def test_gnucash_reconciled_transactions_only_take_reconcile_state(linked):
+    db, gnc = linked
+    rent = _rent(db)
+    _gnc_exec(gnc.path, "UPDATE splits SET reconcile_state='y' WHERE tx_guid=?", rent.handle)
+    import_book(db, ImportBook(source=gnc.path, notify=False))
+    rent = _rent(db)
+    rent.splits[0].value, rent.splits[1].value = (
+        rent.splits[0].value + Money(1),
+        rent.splits[1].value - Money(1),
+    )
+    _save(db, rent)
+    plan = preview_writeback(db).value
+    assert plan.changes == ()
     [item] = plan.unsupported
-    assert item.transaction == rent.handle
-    assert "amount or account" in item.reason
+    assert "reconciled in GnuCash" in item.reason
+    with db.transaction("Delete") as txn:
+        db.remove_transaction(rent.handle, txn)
+    [item] = preview_writeback(db).value.unsupported
+    assert item.reason == "reconciled in GnuCash; not deleted there"
 
 
 def test_a_changed_or_locked_book_is_refused(linked):

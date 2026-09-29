@@ -90,7 +90,8 @@ folder beside the book, as in GnuCash; a book backup does not include that folde
 ## Project status
 
 BreadSched is under active development and is not yet a complete GnuCash replacement.
-GnuCash import is one-way. If you keep using GnuCash, follow the User Guide's
+GnuCash import is one-way; changes reach a GnuCash book (SQLite or XML) only
+through an explicit, previewed write-back. If you keep using GnuCash, follow the User Guide's
 [side-by-side guidance](src/breadsched/USER_GUIDE.md#keep-gnucash-and-breadsched-side-by-side)
 to avoid duplicate or overwritten transactions. Re-import keeps statements you
 reconcile in BreadSched and holds GnuCash changes to those transactions for a

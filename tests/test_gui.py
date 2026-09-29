@@ -6535,7 +6535,7 @@ class TestGnuCashWritebackDialog:
         app.open_book(str(path))
         dialog = app.on_gnucash_writeback()
         try:
-            assert "Import the GnuCash SQLite book" in dialog.summary.get_text()
+            assert "Import the GnuCash book" in dialog.summary.get_text()
             assert dialog.write_button.get_sensitive() is False
         finally:
             dialog.destroy()

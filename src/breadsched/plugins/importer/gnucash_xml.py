@@ -125,8 +125,12 @@ def import_book(
     transactions.  A single pass would risk meeting a split before its account,
     since XML books do not guarantee ordering between the two sections.
     """
+    from ..export.gnucash_writeback import file_digest, record_fingerprint
+
     result = ImportResult(source=str(path), source_format="xml")
     LOG.info("importing GnuCash XML book %s", path)
+    # The exact bytes read, so a later write-back can prove GnuCash is unchanged.
+    digest = file_digest(Path(path))
 
     def report(stage: str, done: int, total: int = 0) -> None:
         """An XML book gives no count in advance, so the bar pulses instead."""
@@ -207,6 +211,7 @@ def import_book(
                     )
 
         result.finish(db, txn)
+        record_fingerprint(db, path, digest, txn)
 
     LOG.info("import finished: %s", result.describe())
     if notify:

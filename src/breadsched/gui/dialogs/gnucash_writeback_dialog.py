@@ -1,9 +1,9 @@
-"""Preview and write simple changes back to the imported GnuCash SQLite book (#174).
+"""Preview and write changes back to the imported GnuCash book, SQLite or XML (#174).
 
 The dialog shows exactly what each transaction's write would change and every
 local difference that cannot be written, with its reason. Nothing is written until
 changes are ticked and **Write selected** is pressed; the shared service then backs
-the book up, writes atomically, reads back, and re-imports to confirm.
+the book up, writes atomically, and reads back to confirm.
 """
 
 from __future__ import annotations

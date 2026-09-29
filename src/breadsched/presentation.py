@@ -126,7 +126,7 @@ _SERVICE_MESSAGES = {
     "import.number_format.invalid": "Choose a valid number format",
     "import.date_format.invalid": "Choose a valid QIF date order",
     "writeback.source.unknown": (
-        "Import the GnuCash SQLite book into BreadSched before writing changes back to it"
+        "Import the GnuCash book into BreadSched before writing changes back to it"
     ),
     "writeback.source.missing": "The GnuCash book is no longer at the path it was imported from",
     "writeback.source.other_book": "The file at that path is a different GnuCash book",
