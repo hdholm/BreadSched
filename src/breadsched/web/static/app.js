@@ -3810,7 +3810,58 @@ async function showImport() {
         onclick:()=>openImportReviewDialog().catch((error)=>say(error.message, "error")) },
         "Review held GnuCash changes…")),
     el("div", { class:"panel panel-pad-16" }, form, result),
-    await csvImportPanel());
+    await csvImportPanel(),
+    await writebackPanel());
+}
+
+async function writebackPanel() {
+  // #174: preview, then write only the ticked transactions back to GnuCash.
+  const data = await get("/api/gnucash/writeback");
+  const keep = el("input", { type:"number", min:"1", max:"1000", value:String(data.keep_backups),
+    onchange: async (event) => {
+      try {
+        await post("/api/gnucash/writeback/settings",
+          { keep_backups:Number(event.target.value) });
+      } catch (error) { say(error.message, "error"); }
+    } });
+  const panel = el("div", { class:"panel panel-pad-16 writeback" },
+    el("h2", {}, "Write changes to GnuCash"));
+  if (!data.available) {
+    panel.append(el("p", { class:"note" }, data.message),
+      el("label", {}, "Backups to keep ", keep));
+    return panel;
+  }
+  const boxes = data.changes.map((change) => el("input", { type:"checkbox",
+    value:change.transaction }));
+  panel.append(
+    el("p", { class:"note" }, `GnuCash book: ${data.source}. Tick the transactions to write; `
+      + "nothing is written until you press Write selected. Close the book in GnuCash first. "
+      + "The book is backed up, written in one step, and read back; changes you do not tick "
+      + "stay here and are offered again."),
+    data.changes.length
+      ? el("div", { class:"writeback-changes" }, data.changes.map((change, i) =>
+        el("div", {}, el("label", {}, boxes[i],
+          ` ${change.date} ${change.description} (${change.kinds.join(", ")})`),
+        el("pre", { class:"note" }, change.details.join("\n")))))
+      : el("p", { class:"note" }, "Nothing to write."),
+    data.unsupported.length
+      ? el("div", {}, el("h3", {}, "Not written"),
+        el("ul", {}, data.unsupported.map((item) =>
+          el("li", {}, `${item.date} ${item.description}: ${item.reason}`))))
+      : el("span", {}),
+    el("label", {}, "Backups to keep ", keep),
+    el("div", { class:"toolbar" }, el("button", { class:"action primary", type:"button",
+      disabled: data.changes.length ? null : "disabled",
+      onclick: async () => {
+        const chosen = boxes.filter((box) => box.checked).map((box) => box.value);
+        if (!chosen.length) { say("Tick one or more transactions to write.", "error"); return; }
+        try {
+          const result = await post("/api/gnucash/writeback", { transactions:chosen });
+          say(`Wrote ${result.written.length} transaction(s) to GnuCash. Backup: ${result.backup}`);
+          await render();
+        } catch (error) { say(error.message, "error"); }
+      } }, "Write selected")));
+  return panel;
 }
 
 async function showPayees() {

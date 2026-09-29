@@ -6143,6 +6143,68 @@ class TestEditInPlace:
             window.set_visible(False)
 
 
+class TestGnuCashWritebackDialog:
+    """#174: preview, tick, and write simple changes back to the GnuCash book."""
+
+    def test_the_dialog_writes_only_the_ticked_changes(self, app, tmp_path, gnucash_sqlite_path):
+        import sqlite3
+
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.services.imports import ImportBook, import_book
+
+        path = tmp_path / "linked.breadsched"
+        setup = DbSQLite()
+        setup.load(str(path))
+        assert import_book(setup, ImportBook(source=gnucash_sqlite_path.path, notify=False)).ok
+        setup.close()
+        app.open_book(str(path))
+        db = app.db
+        edited = []
+        for description in ("Rent", "Payroll deposit"):
+            transaction = next(t for t in db.iter_transactions() if t.description == description)
+            transaction.description = f"{description} (edited)"
+            with db.transaction("Edit") as txn:
+                db.commit_transaction(transaction, txn)
+            edited.append(transaction.handle)
+
+        dialog = app.on_gnucash_writeback()
+        try:
+            assert [handle for handle, _check in dialog.checks] == sorted(
+                edited, key=lambda h: db.get_transaction(h).post_date
+            )
+            assert dialog.write() is None  # nothing ticked
+            rent_check = next(check for handle, check in dialog.checks if handle == edited[0])
+            rent_check.set_active(True)
+            assert dialog.write() == 1
+            assert "Wrote 1 transaction" in dialog.status.get_text()
+            [handle] = [h for h, _c in dialog.checks]
+            assert handle == edited[1]  # the unticked edit is still pending
+            dialog.keep.set_value(3)
+            assert db.get_metadata("gnucash.writeback.keep_backups") == 3
+        finally:
+            dialog.destroy()
+        conn = sqlite3.connect(gnucash_sqlite_path.path)
+        rows = dict(conn.execute("SELECT guid, description FROM transactions").fetchall())
+        conn.close()
+        assert rows[edited[0]] == "Rent (edited)"
+        assert rows[edited[1]] == "Payroll deposit"
+
+    def test_the_dialog_explains_a_book_that_was_not_imported(self, app, window, tmp_path):
+        from breadsched.gen.db.sqlite import DbSQLite
+
+        path = tmp_path / "native.breadsched"
+        native = DbSQLite()
+        native.load(str(path))
+        native.close()
+        app.open_book(str(path))
+        dialog = app.on_gnucash_writeback()
+        try:
+            assert "Import the GnuCash SQLite book" in dialog.summary.get_text()
+            assert dialog.write_button.get_sensitive() is False
+        finally:
+            dialog.destroy()
+
+
 class TestDialogsFitTheScreen:
     """Dialog audit (#148, like #140): no dialog demands more than a laptop screen.
 
@@ -6190,6 +6252,7 @@ class TestDialogsFitTheScreen:
         ("dashboard_dialog", "DashboardDialog", None),
         ("exchange_rate_dialog", "ExchangeRateDialog", None),
         ("fsa_claims_dialog", "FsaClaimsDialog", None),
+        ("gnucash_writeback_dialog", "GnuCashWritebackDialog", None),
         ("historical_estimates_dialog", "HistoricalEstimatesDialog", None),
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),

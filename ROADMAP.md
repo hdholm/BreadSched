@@ -55,9 +55,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    printing inside the sandbox, and publishing the installer) follows the Windows
    installer. Keep wheel/source releases available throughout.
 3. **P2 — Interoperability and analysis.** GnuCash write-back for simple edits
-   (#174: SQLite books, previewed, with configurable backups) has its service
-   and CLI; its GTK and web screens remain. Then broader reporting (spending over
-   time is delivered),
+   is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
+   configurable backups). Then broader reporting (spending over time is
+   delivered),
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
    portability controls. Detailed acceptance contracts follow below.
@@ -206,10 +206,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   GnuCash is removed without review. Decide whether such deletions should be held
   with the same keep/use-GnuCash/decide-later choices.
 
-- GnuCash write-back (#174): add the GTK and web preview-and-write screens and the
-  backup-retention setting there; later consider XML books and wider edits
-  (multi-split, account changes, deletions) only with round-trip fixtures that
-  prove preservation. Never write to the source during normal import.
+- Widen GnuCash write-back (#174) to XML books and wider edits (multi-split,
+  account changes, deletions) only with round-trip fixtures that prove
+  preservation, and confirm written books open in a real GnuCash in CI. Never
+  write to the source during normal import.
 
 - Investigate AqBanking integration through a small optional adapter: supported
   platforms, consent and credential ownership, bank connection maintenance,

@@ -1826,6 +1826,15 @@ transactions to the import inventory, so GnuCash owns them from then on. Backups
 beyond `gnucash.writeback.keep_backups` (default 10, 1-1000) are removed oldest
 first after a successful write.
 
+GTK's `GnuCashWritebackDialog` (File → Write Changes to GnuCash…) and the web
+Import page's **Write changes to GnuCash** panel present the same preview: one
+unticked checkbox per writable transaction with its detail lines, the "Not
+written" list with reasons, and the backup-retention setting. Both write only the
+ticked handles through `apply_writeback`; the web adapter
+(`web/gnucash_writeback_resource.py`: `GET /api/gnucash/writeback`,
+`POST /api/gnucash/writeback`, `POST /api/gnucash/writeback/settings`) only
+parses JSON, and a route test proves rejected requests change neither book.
+
 ### Ambiguous import formats are user-resolvable
 
 Importers should infer date/number conventions from whole-file evidence where possible,

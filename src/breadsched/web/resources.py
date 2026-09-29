@@ -10,6 +10,11 @@ from urllib.parse import parse_qs
 from .autocomplete_resource import entry_suggestion
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
+from .gnucash_writeback_resource import (
+    gnucash_writeback,
+    gnucash_writeback_apply,
+    gnucash_writeback_settings,
+)
 from .payee_resource import (
     payee_accept,
     payee_delete,
@@ -229,6 +234,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/due-review": _no_query("due_review"),
     "/api/verify": _no_query("verify"),
     "/api/payees": payees,
+    "/api/gnucash/writeback": gnucash_writeback,
     "/api/receivables": receivables,
     "/api/rules": rules,
     "/api/entry/suggest": entry_suggestion,
@@ -275,6 +281,8 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/import/csv/inspect": csv_inspect,
     "/api/import/csv/preview": csv_preview,
     "/api/import/csv": csv_import,
+    "/api/gnucash/writeback": gnucash_writeback_apply,
+    "/api/gnucash/writeback/settings": gnucash_writeback_settings,
     "/api/payee/save": payee_save,
     "/api/payee/delete": payee_delete,
     "/api/payees/accept": payee_accept,
