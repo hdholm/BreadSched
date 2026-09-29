@@ -82,9 +82,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   contributions and a target date; explain progress separately from spendable cash
   and avoid counting transfers as expenses.
 
-- Add a drill-down from a net worth change to the postings that made it, and put
-  Income detail in the printed Expense Explorer, with category hierarchy, selected
-  scenario, as-of boundary, currency completeness, and matching printable/exported
+- Add a drill-down from a net worth change to the postings that made it, with
+  the as-of boundary, currency completeness, and matching printable/exported
   totals.
 
 - Carry reimbursable expense and receivable status into Plan, Projection, and

@@ -15,7 +15,7 @@ from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
-from ...gen.services.expense_explorer import ExpenseExplorer, SpendingPoint
+from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
 from ...gen.services.net_worth import NetWorthHistory
 
 __all__ = ["dashboard_report", "expense_explorer_report", "plan_report", "projection_report"]
@@ -155,8 +155,42 @@ def _over_time_table(
     )
 
 
-def expense_explorer_report(explorer: ExpenseExplorer) -> str:
-    """Print the selected expense cell and its shared Plan breakdown."""
+def _income_detail(explorer: ExpenseExplorer, detail: ExpenseDrilldown) -> str:
+    """The dated planned occurrences and receipts behind one income period."""
+    name = next(
+        (row.full_name for row in explorer.income_categories if row.account == detail.account),
+        detail.account,
+    )
+    planned = "".join(
+        f"<tr><td>{item.planned_date.isoformat()}</td><td>{escape(item.description)}</td>"
+        f"{_amount(item.expected)}</tr>"
+        for item in detail.planned_events
+    )
+    received = "".join(
+        f"<tr><td>{item.post_date.isoformat()}</td><td>{escape(group.name)}</td>"
+        f"{_amount(item.amount)}</tr>"
+        for group in detail.merchants
+        for item in group.transactions
+    )
+    return (
+        f"<h2>Income detail — {escape(name)} — {escape(detail.period.label)}</h2>"
+        "<table><thead><tr><th>Planned date</th><th>Scheduled</th>"
+        f'<th class="num">Expected</th></tr></thead><tbody>{planned}</tbody></table>'
+        "<table><thead><tr><th>Received</th><th>Payer</th>"
+        f'<th class="num">Actual</th></tr></thead><tbody>{received}</tbody></table>'
+        f"<p class='note'>Planned {escape(_money(detail.period.planned))}; actual "
+        f"{escape(_money(detail.period.actual))}.</p>"
+    )
+
+
+def expense_explorer_report(
+    explorer: ExpenseExplorer, income_detail: ExpenseDrilldown | None = None
+) -> str:
+    """Print the selected expense cell and its shared Plan breakdown.
+
+    ``income_detail``, an income category's drilldown for the same period, adds the
+    dated occurrences and receipts behind it.
+    """
     detail = explorer.drilldown
     if detail is None:
         raise ValueError("expense printout requires a selected category and period")
@@ -235,7 +269,14 @@ def expense_explorer_report(explorer: ExpenseExplorer) -> str:
         f"{explorer.plan.scenario.name} · {explorer.plan.start.isoformat()} through "
         f"{explorer.plan.end.isoformat()} · {escape(selected.label)}"
     )
-    return _document("Expense Explorer", subtitle, spending + comparison + trend + merchants)
+    income = (
+        _income_detail(explorer, income_detail)
+        if income_detail is not None and income_detail.income
+        else ""
+    )
+    return _document(
+        "Expense Explorer", subtitle, spending + comparison + trend + merchants + income
+    )
 
 
 def net_worth_history_report(history: NetWorthHistory) -> str:

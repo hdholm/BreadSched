@@ -284,8 +284,8 @@ differently; every proposal starts checked. Clear any you do not want and choose
 Print Dashboard, Plan, or Projection from the toolbar or **File → Print Current
 View** (`Ctrl+P`). BreadSched opens a self-contained preview in the default browser;
 use the browser print dialog for a printer or PDF. In Expense Explorer, **Print…**
-previews spending and income over time and the selected category and period with
-merchant detail. Use **File → Export Transactions** for transaction data.
+previews spending and income over time, the selected category and period with
+merchant detail, and the chosen Income detail. Use **File → Export Transactions** for transaction data.
 
 ## Protect and recover a book
 
