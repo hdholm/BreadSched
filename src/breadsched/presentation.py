@@ -159,6 +159,23 @@ _SERVICE_MESSAGES = {
     "payee.match.conflict": "That description already identifies another payee",
     "payee.not_found": "That payee no longer exists",
     "payee.transaction.not_found": "That transaction no longer exists",
+    "savings_goal.name.required": "Give the savings goal a name",
+    "savings_goal.account.invalid": (
+        "Choose an asset account in the reporting currency to hold the goal's money"
+    ),
+    "savings_goal.target.invalid": "The target amount must be more than zero",
+    "savings_goal.target.below_allocated": (
+        "The target cannot be less than the extra money already allocated"
+    ),
+    "savings_goal.dates.invalid": "The target date must be after the start date",
+    "savings_goal.not_found": "That savings goal no longer exists",
+    "savings_goal.closed": "That savings goal is closed",
+    "savings_goal.open": "That savings goal is not closed",
+    "savings_goal.allocation.invalid": "The amount to allocate must be more than zero",
+    "savings_goal.allocation.exceeds_target": (
+        "Allocations cannot add up to more than the goal's target"
+    ),
+    "savings_goal.close.before_start": "A goal cannot close before it starts",
     "receivable.payer.required": "Enter who owes this reimbursement",
     "receivable.not_found": "That receivable no longer exists",
     "receivable.expected_amount.negative": "The expected amount must not be negative",

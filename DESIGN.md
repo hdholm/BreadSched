@@ -1518,6 +1518,53 @@ presentation adapters over the same service: `web/rules_resource.py` serves
 the category and payee choices) and `POST /api/rule/add`, `/api/rule/move`,
 `/api/rule/delete`, and `/api/rules/accept`, and parses JSON only.
 
+## Savings goals
+
+A `SavingsGoal` (`gen/lib/savings_goal.py`, table `savings_goal`, schema 10) names an
+asset account, a target amount, a start date, a target date, dated extra
+`GoalAllocation`s, and an optional `closed_on`. The goal owns no ledger
+transactions. What it sets aside is a derived earmark on its account, never stored,
+so a back-dated income posting or allocation is reflected immediately.
+
+`engine.savings_goals.goal_progress` computes the earmark on a date the way a bill's
+reserve is computed. `engine.cash_flow` holds the shared rules for what counts as
+income and when it counts as received: an income occurrence counts once it is
+posted or handled, or while it is still in the future. Both the Dashboard's bill
+reserves and goals use these rules, so a missed paycheck funds neither.
+
+- Allocations dated before the start date are set aside at once.
+- From the start date, the timeline is cut into segments at each allocation date.
+  In each segment, the gap still open (target less what is set aside) is funded in
+  the proportion *income received in the segment / income expected from the
+  segment's start through the target date*.
+- An allocation is set aside in full on its date, before that day's income.
+- With no income expected, elapsed days over remaining days is the proportion
+  (basis `time`).
+- On and after the target date the whole target is set aside: a milestone spends
+  nothing.
+- A goal closed on or before the date sets nothing aside.
+- Amounts stay exact (`Fraction`) and are quantized once to the reporting fraction,
+  capped at the target.
+
+The Dashboard exposes `goals`, `goals_set_aside`, and `goals_held`, and `available`
+subtracts `goals_held` alongside `required_liquid`. `spendable_hold` holds the
+whole earmark of a goal whose account is cash-like, because that money is inside
+Liquid. For non-cash accounts it holds only the part of the earmarks on that
+account that its balance does not cover: money not yet moved there must still come
+from spendable cash. Liquid, Months covered, and the emergency fund are unchanged.
+Goals are limited to reporting-currency asset accounts, so no conversion is ever
+implied.
+
+`services.savings_goals` owns validation and every write:
+`save_savings_goal`, `allocate_to_goal` (allocations may not exceed the target),
+`close_savings_goal`/`reopen_savings_goal`, `delete_savings_goal`, and the
+read-only `query_savings_goals`. A rejected request leaves the stored goal unchanged.
+Deleting a goal's account is refused by reference verification
+(`savings_goal.missing_account`). The CLI `goals` command, the Dashboard card or tile
+in GTK and web, the printed Dashboard, and `breadsched dashboard` render these
+results. GTK and web editors, and Plan/Projection milestones with scenario overrides
+("pinned" goals), are planned slices.
+
 ## Reimbursable expenses (receivables)
 
 A `Receivable` (`gen/lib/receivable.py`, table `receivable`, schema 9) tracks an
@@ -2007,22 +2054,22 @@ release workflow compares the installed wheel's line with
 there went stale at schema 8 and stopped every release after 0.2.0a133 (#207). Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 9. A behavior-only
+native book can be opened or must be migrated; it is currently 10. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
-SQLite is the native persistence engine. The current application writes schema 9 and
-can migrate schemas 6, 7, and 8 before decoding primary objects. Schema 9 added the
-`receivable` table (8→9); schema 8 added the `payee` table (7→8); schema 7 added
+SQLite is the native persistence engine. The current application writes schema 10 and
+can migrate schemas 6, 7, 8, and 9 before decoding primary objects. Schema 10 added the
+`savings_goal` table (9→10); schema 9 added the `receivable` table (8→9); schema 8 added the `payee` table (7→8); schema 7 added
 reconciliation sessions (6→7). An explicit sequential registry and durable ledger,
 transactional runner, verified pre-migration backup hook, and versioned fixture make
 that compatibility boundary testable. Migration infrastructure is a durable
 architectural capability even when an individual obsolete transformation is allowed
 to expire.
 
-The supported migration window currently covers three preceding data-format
-versions: the registry retains 6→7, 7→8, and 8→9, and the application accepts
-schemas 6, 7, 8, and 9. Versioned fixtures for schemas 6, 7, and 8 prove each step.
+The supported migration window currently covers four preceding data-format
+versions: the registry retains 6→7, 7→8, 8→9, and 9→10, and the application accepts
+schemas 6 through 10. Versioned fixtures for schemas 6, 7, 8, and 9 prove each step.
 The window widens only when a real schema migration is needed; there is no no-op
 format bump. A migration must run before ordinary decoding, fail atomically, preserve
 a verified backup, and leave enough version evidence to diagnose or retry safely.

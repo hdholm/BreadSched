@@ -4649,6 +4649,12 @@ async function showDashboard() {
           + (Number(s.receivables_attention) > 0
             ? ` (${money(s.receivables_attention)} disputed or overdue)` : ""),
         Number(s.receivables_attention) > 0)
+      : null,
+    // Savings-goal earmarks are held from Available like bill reserves.
+    Number(s.goals_set_aside) > 0
+      ? tile("Set aside for goals", money(s.goals_set_aside)
+          + (Number(s.goals_held) !== Number(s.goals_set_aside)
+            ? ` (${money(s.goals_held)} held from spendable cash)` : ""))
       : null);
 
   const controls = el("div", { class: "row" },

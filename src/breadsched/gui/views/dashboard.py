@@ -348,6 +348,12 @@ class DashboardView(BaseView):
             if attention > 0:
                 text += f" ({attention.format()} disputed or overdue)"
             self.cards.append(_card("Reimbursements due", text, attention > 0))
+        set_aside, held = summary["goals_set_aside"], summary["goals_held"]
+        if set_aside > 0:
+            text = set_aside.format()
+            if held != set_aside:
+                text += f" ({held.format()} held from spendable cash)"
+            self.cards.append(_card("Set aside for goals", text, False))
         for note in board.coverage_notes:
             self.cards.append(_card("Coverage", note, False))
 

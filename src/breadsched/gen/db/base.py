@@ -26,6 +26,7 @@ from ..lib.fsa_claim import FsaClaim
 from ..lib.payee import Payee
 from ..lib.receivable import Receivable
 from ..lib.reconciliation import Reconciliation
+from ..lib.savings_goal import SavingsGoal
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
@@ -341,6 +342,23 @@ class DbBase(Callback, ABC):
 
     @abstractmethod
     def iter_receivables(self) -> Iterator[Receivable]: ...
+
+    # ----------------------------------------------------------- savings goals
+
+    @abstractmethod
+    def add_savings_goal(self, goal: SavingsGoal, txn: DbTxn) -> str: ...
+
+    @abstractmethod
+    def commit_savings_goal(self, goal: SavingsGoal, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def remove_savings_goal(self, handle: str, txn: DbTxn) -> None: ...
+
+    @abstractmethod
+    def get_savings_goal(self, handle: str) -> SavingsGoal | None: ...
+
+    @abstractmethod
+    def iter_savings_goals(self) -> Iterator[SavingsGoal]: ...
 
     # ---------------------------------------------------------------- metadata
 

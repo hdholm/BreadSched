@@ -3,6 +3,25 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a192 - 2026-09-29
+
+- **Savings goals.** A goal names an asset account, a target amount, a start date,
+  and a target date. Like a pending bill, each income received from the start date
+  sets aside a prorated share of what the goal still needs, so the whole target is
+  set aside by the target date. Extra money can be allocated at any time, and later
+  income spreads only the remaining gap. Income that never arrived sets nothing
+  aside. With no scheduled income before the target date, the gap is spread by day.
+  What is set aside is an earmark, so one account can serve several goals and other
+  purposes. The target date is a milestone (nothing is spent), and closing a goal
+  releases its earmark. The Dashboard holds goal earmarks out of Available, like
+  bill reserves, and shows **Set aside for goals** on the desktop, in the browser,
+  in the printout, and in `breadsched dashboard`. For a goal held in a non-cash
+  account, only the part not yet moved there is held. The new `breadsched goals`
+  command adds, funds, lists, closes, reopens, and deletes goals. Bill reserves and
+  goals now share one rule for what income counts as received. Application version
+  `0.2.0a192`; **native schema 10** adds the `savings_goal` table, and schemas 6–9
+  migrate automatically with a verified backup.
+
 ## 0.2.0a191 - 2026-09-29
 
 - **Net worth change drill-down.** Choosing a period's change in Net worth history

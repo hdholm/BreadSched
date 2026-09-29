@@ -224,6 +224,26 @@ browser), a line under the table shows what the payer, the FSA, and you each pay
 and `--json` lists it under `shared_costs`. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
+## Savings goals
+
+```sh
+breadsched goals book.breadsched --add "New roof" --account "Assets:Savings" \
+    --target 12000 --by 2027-06-30 [--start 2026-07-01] [--description "Metal roof"]
+breadsched goals book.breadsched --allocate "New roof" --amount 1500 --on 2026-09-01 \
+    [--memo "Bonus"]
+breadsched goals book.breadsched [--as-of 2026-09-15] [--all] [--json]
+breadsched goals book.breadsched --close "New roof" --on 2027-07-10
+breadsched goals book.breadsched --reopen "New roof"
+breadsched goals book.breadsched --delete "New roof"
+```
+
+The list shows each goal's account, target date, target, what is set aside, what
+remains, and its status. A status of **saving (time)** means no income is scheduled
+before the target date, so the gap is spread by day. Below the table are the total
+set aside and the part held from spendable cash. A goal is named by its exact name
+or a unique handle prefix. `breadsched dashboard` shows the same total as **Set
+aside for goals**. See [Savings goals](../USER_GUIDE.md#savings-goals).
+
 ## Projection and scenarios
 
 ```bash

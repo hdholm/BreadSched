@@ -414,6 +414,15 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
             "</div></div>"
         )
 
+    if summary["goals_set_aside"] > 0:
+        goals = _money(summary["goals_set_aside"])
+        if summary["goals_held"] != summary["goals_set_aside"]:
+            goals += f" ({_money(summary['goals_held'])} held from spendable cash)"
+        cards = cards.removesuffix("</div>") + (
+            f'<div class="card"><small>Set aside for goals</small><strong>{escape(goals)}'
+            "</strong></div></div>"
+        )
+
     coverage = "".join(f'<p class="note">{escape(note)}</p>' for note in board.coverage_notes)
     group_rows = []
     for group in board.groups:

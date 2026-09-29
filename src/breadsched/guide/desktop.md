@@ -71,7 +71,8 @@ On the Dashboard, account groups, pending bills, and expected income are separat
 sections, each as wide as its own columns; they sit side by side when the window has
 room and stack when it does not. A long group line is shortened with "…"; hover over
 it to read it and the accounts it covers. Activate a missed-schedule row to open its
-schedule.
+schedule. When savings goals have set money aside, a **Set aside for goals** card
+shows the total (see [Savings goals](../USER_GUIDE.md#savings-goals)).
 
 ### Net worth history
 

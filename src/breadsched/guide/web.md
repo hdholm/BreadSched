@@ -26,7 +26,9 @@ or command-line part, and a link to another part opens it there.
 On the Dashboard, a requested liquidity or emergency-fund horizon changes the
 displayed calculation for that request. Reopening the view uses the saved Dashboard
 settings; use the Dashboard settings controls to save a new horizon. Expand a
-missed-schedule row to see each missed date and amount.
+missed-schedule row to see each missed date and amount. When savings goals have set
+money aside, a **Set aside for goals** tile shows the total (see
+[Savings goals](../USER_GUIDE.md#savings-goals)).
 
 ### Net worth history
 

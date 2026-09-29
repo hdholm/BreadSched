@@ -505,3 +505,29 @@ def test_the_guide_page_switches_parts_and_follows_links(page):
         ".getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; }"
     )
     assert page.get_by_role("tab", name="Overview").get_attribute("aria-selected") == "true"
+
+
+def test_dashboard_shows_what_savings_goals_set_aside(page, served):
+    from breadsched.gen.lib import Money
+    from breadsched.gen.services import (
+        AllocateToGoal,
+        SaveSavingsGoal,
+        allocate_to_goal,
+        goal_accounts,
+        save_savings_goal,
+    )
+
+    db, httpd = served
+    today = date.today()
+    cash = next(
+        handle for handle, _name in goal_accounts(db) if db.get_account(handle).atype.is_cash_like
+    )
+    goal = save_savings_goal(
+        db,
+        SaveSavingsGoal("Holiday", cash, Money(1200), today.replace(year=today.year + 1), today),
+    ).value
+    assert allocate_to_goal(db, AllocateToGoal(goal.handle, Money(250), today)).ok
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/?goals#token={httpd.token}")
+    page.wait_for_selector("text=Set aside for goals")
+    tile = page.locator(".card", has_text="Set aside for goals")
+    assert "250" in tile.inner_text()

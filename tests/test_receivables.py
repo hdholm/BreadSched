@@ -275,7 +275,7 @@ def test_schema_8_book_migrates_to_receivables(tmp_path):
     db = DbSQLite()
     db.load(str(path))
     try:
-        assert db.get_metadata("schema_version") == 9
+        assert db.get_metadata("schema_version") == 10
         assert db.get_metadata("fixture_marker") == "schema-8"
         assert list(db.iter_receivables()) == []
         saved = save_receivable(db, SaveReceivable(date(2026, 9, 1), "Acme Insurance"))
@@ -285,7 +285,7 @@ def test_schema_8_book_migrates_to_receivables(tmp_path):
             for row in db._require().execute(
                 "SELECT version FROM schema_migration ORDER BY version"
             )
-        ] == [7, 8, 9]
+        ] == [7, 8, 9, 10]
         assert db.integrity_problems() == []
     finally:
         db.close()

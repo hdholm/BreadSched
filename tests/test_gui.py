@@ -3761,6 +3761,50 @@ class TestDashboardView:
             child = child.get_next_sibling()
         assert note in shown
 
+    def test_dashboard_card_shows_what_savings_goals_set_aside(self, app, window, tmp_path):
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gen.services import (
+            AllocateToGoal,
+            SaveSavingsGoal,
+            allocate_to_goal,
+            goal_accounts,
+            save_savings_goal,
+        )
+
+        path = tmp_path / "goals.breadsched"
+        today = date.today()
+        create_sample_book(path, as_of=today)
+        app.open_book(str(path))
+        db = app.db
+        cash = next(
+            handle
+            for handle, _name in goal_accounts(db)
+            if db.get_account(handle).atype.is_cash_like
+        )
+        goal = save_savings_goal(
+            db,
+            SaveSavingsGoal(
+                "Holiday", cash, Money(1200), today.replace(year=today.year + 1), today
+            ),
+        ).value
+        assert allocate_to_goal(db, AllocateToGoal(goal.handle, Money(250), today)).ok
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        view.refresh()
+        assert view.board.goals_set_aside >= Money(250)
+        shown = []
+        child = view.cards.get_first_child()
+        while child is not None:
+            label = child.get_first_child()
+            texts = []
+            while label is not None:
+                texts.append(label.get_text())
+                label = label.get_next_sibling()
+            shown.append(texts)
+            child = child.get_next_sibling()
+        [card] = [texts for texts in shown if texts[0] == "Set aside for goals"]
+        assert card[1] == view.board.goals_set_aside.format()
+
     def test_missed_occurrences_render_as_one_row_per_schedule(self, app, window, tmp_path):
         from datetime import timedelta
 
