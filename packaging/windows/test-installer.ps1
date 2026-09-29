@@ -100,8 +100,14 @@ if ($Previous) {
     if (-not $newVersion.StartsWith("breadsched $version ")) {
         throw "upgraded copy reports '$newVersion', expected $version"
     }
-    # The book the published version made still verifies and reads after the
-    # upgrade (output formats may differ between versions, so none is compared).
+    # The book the published version made migrates when it is older (keeping a
+    # backup), then verifies and reads after the upgrade (output formats may
+    # differ between versions, so none is compared).
+    $migration = Invoke-In $upgradeDir migrate $published --json | ConvertFrom-Json
+    if ($migration.migrated -and -not (Test-Path $migration.backup)) {
+        throw "migration left no backup at $($migration.backup)"
+    }
+    Write-Host "migrated: schema $($migration.schema_before) -> $($migration.schema)"
     Invoke-In $upgradeDir verify $published | Out-Null
     Invoke-In $upgradeDir accounts $published | Out-Null
     Uninstall-From $upgradeDir

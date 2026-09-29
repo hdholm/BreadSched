@@ -407,6 +407,12 @@ balance and usual payment. Scheduled card purchases remain planning expenses but
 not become immediate cash bills, preventing a purchase and its later payment from
 being counted twice.
 
+**Set aside for goals** shows what your [savings goals](#savings-goals) have set
+aside so far, and a **Savings goals** table lists each goal's target date, target,
+amount set aside, what remains, and status. Available leaves it out, exactly like a bill's reserve. If a goal's
+money is kept in a non-cash account (a brokerage account, say), only the part not
+yet moved there is held from Available, and the card says how much that is.
+
 **Reimbursements due** shows what payers still owe you on
 [reimbursable expenses](#reimbursable-expenses), with the part that is disputed or
 past its expected date. It is part of net worth and never of liquidity.
@@ -634,6 +640,36 @@ availability is separate from the custodial ledger balance. Claims can associate
 healthcare payments, reimbursements, allocations, refunds, and rejected attempts.
 Use FSA Dashboard to review open and recently closed benefit years and unresolved
 claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
+
+### Savings goals
+
+A savings goal is money you want set aside by a date, such as a new roof or a
+holiday ([desktop](guide/desktop.md#savings-goals),
+[browser](guide/web.md#savings-goals), [command line](guide/cli.md#savings-goals)).
+A goal names the account that holds (or will hold) its
+money, a target amount, a start date, and a target date.
+
+A goal works like a pending bill. From its start date, each income you receive sets
+aside a share of what the goal still needs: that income's share of all the income
+expected between the goal's start date and its target date. So by the target date
+the whole target is set aside. Twelve equal monthly paychecks toward a 1,200 goal
+set aside 100 each. Income that was scheduled but never arrived sets nothing aside.
+If no income is scheduled before the target date, the gap is set aside evenly by
+day instead.
+
+You can allocate extra money to a goal at any time, for example a bonus. It is set
+aside in full on its date, and later income spreads only what is still missing.
+Allocations cannot add up to more than the target.
+
+What is set aside is an earmark, not the whole account. One savings account can
+hold money for several goals and for other purposes, and a goal never creates or
+changes transactions. Moving money into the goal's account is an ordinary transfer
+you record, never an expense.
+
+The target date is a milestone: nothing is spent then, and the whole target stays
+set aside. When you have used the money (say, after buying the roof), close the goal
+to release its earmark. You can reopen a closed goal. Only goals in the reporting
+currency are supported, held in an asset account.
 
 ### Reimbursable expenses
 
@@ -933,6 +969,12 @@ Verify diagnostics. Regularly:
   reconciliation consistency;
 - when needed, **restore** a backup as a new book: the backup is verified and
   written to a different path, never over the open live book.
+
+After you upgrade to a version with a newer native schema, a book from an earlier
+alpha is migrated the first time it is opened for writing: the desktop and browser
+do this when they open it, and on the command line `breadsched migrate` does it. A
+verified backup of the old book is written next to it first. Read-only commands
+never migrate; they ask you to migrate instead.
 
 See [desktop](guide/desktop.md#protect-and-recover-a-book) and
 [command line](guide/cli.md#protect-and-recover-a-book).

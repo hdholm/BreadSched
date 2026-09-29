@@ -71,7 +71,8 @@ On the Dashboard, account groups, pending bills, and expected income are separat
 sections, each as wide as its own columns; they sit side by side when the window has
 room and stack when it does not. A long group line is shortened with "…"; hover over
 it to read it and the accounts it covers. Activate a missed-schedule row to open its
-schedule.
+schedule. When savings goals have set money aside, a **Set aside for goals** card
+shows the total (see [Savings goals](../USER_GUIDE.md#savings-goals)).
 
 ### Net worth history
 
@@ -207,6 +208,19 @@ to make it the comparison period (choose an **Income detail** category to list t
 period's dated income), use **Sort categories** to order the category rows, and choose a
 **Category trend**. **Carry prior periods** turns rollover on. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
+
+## Savings goals
+
+Choose **Savings Goals…** in the menus. Each goal shows its account, target date,
+target, what is set aside, what remains, and its status. To add a goal, fill in the
+name, the account that holds the money, the target amount, the date to start saving,
+and the target date, then choose **Add goal**. **Edit** loads a goal into the form;
+save it with **Save changes**. With a goal loaded, **Allocate to goal** sets extra
+money aside on the date you enter. **Close** releases a goal's money (for example
+after the purchase), **Reopen** undoes that, and **Delete** removes the goal; Edit →
+Undo restores it. **Show closed goals** includes closed goals in the list. On the
+Dashboard, the **Savings goals** table lists each open goal; activate a row to open
+this window. See [Savings goals](../USER_GUIDE.md#savings-goals).
 
 ## Reimbursable expenses
 

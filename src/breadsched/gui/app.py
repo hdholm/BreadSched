@@ -130,6 +130,7 @@ class BreadSchedApplication(Gtk.Application):
             ("payees", self.on_payees, None),
             ("rules", self.on_rules, None),
             ("receivables", self.on_receivables, None),
+            ("savings-goals", self.on_savings_goals, None),
             ("gnucash-writeback", self.on_gnucash_writeback, None),
             ("open-default", self.on_open_default, None),
             ("undo", self.on_undo, "<Control>z"),
@@ -161,6 +162,7 @@ class BreadSchedApplication(Gtk.Application):
             "payees",
             "rules",
             "receivables",
+            "savings-goals",
             "gnucash-writeback",
             "export",
             "backup",
@@ -195,6 +197,7 @@ class BreadSchedApplication(Gtk.Application):
             "payees",
             "rules",
             "receivables",
+            "savings-goals",
             "gnucash-writeback",
             "export",
             "backup",
@@ -415,6 +418,17 @@ class BreadSchedApplication(Gtk.Application):
         dialog.present()
         return dialog
 
+    def on_savings_goals(self, *_args):
+        """Open savings goals: add, fund, close, and review their progress."""
+        if self.db is None:
+            self._report("Open a book before managing savings goals.")
+            return None
+        from .dialogs.savings_goals_dialog import SavingsGoalsDialog
+
+        dialog = SavingsGoalsDialog(self.props.active_window, self.db)
+        dialog.present()
+        return dialog
+
     def on_gnucash_writeback(self, *_args):
         """Preview, then write chosen changes back to the imported GnuCash book."""
         if self.db is None:
@@ -591,6 +605,7 @@ class ActionsMenu:
         general.append("Pa_yees…", "app.payees")
         general.append("Categorization _Rules…", "app.rules")
         general.append("Rei_mbursable Expenses…", "app.receivables")
+        general.append("Savings _Goals…", "app.savings-goals")
         self.menu.append_section(None, general)
         others = Gio.Menu()
         for view in VIEW_ACTIONS:

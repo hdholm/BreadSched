@@ -70,10 +70,24 @@ def _v8_to_v9(conn: sqlite3.Connection) -> None:
     conn.execute("CREATE INDEX idx_receivable_incurred_date ON receivable(incurred_date)")
 
 
+def _v9_to_v10(conn: sqlite3.Connection) -> None:
+    """Add savings goals: earmarks toward a target amount by a target date."""
+    conn.execute(
+        """
+        CREATE TABLE savings_goal (
+            handle TEXT PRIMARY KEY,
+            name   TEXT NOT NULL,
+            blob   TEXT NOT NULL
+        )
+        """
+    )
+
+
 MIGRATIONS: dict[int, Migration] = {
     6: Migration(6, 7, "add reconciliation sessions", _v6_to_v7),
     7: Migration(7, 8, "add payees", _v7_to_v8),
     8: Migration(8, 9, "add reimbursable-expense receivables", _v8_to_v9),
+    9: Migration(9, 10, "add savings goals", _v9_to_v10),
 }
 MIN_SUPPORTED_SCHEMA_VERSION = min(MIGRATIONS)
 

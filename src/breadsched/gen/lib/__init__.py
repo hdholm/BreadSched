@@ -23,6 +23,7 @@ from .payee import Payee
 from .receivable import Receivable, ReceivableSplitLink, ReceivableWriteOff
 from .reconciliation import Reconciliation, ReconciliationEvent, ReconciliationStatus
 from .recurrence import PeriodType, Recurrence, WeekendAdjust, add_months
+from .savings_goal import GoalAllocation, SavingsGoal
 from .scenario import (
     AssumptionPeriod,
     Assumptions,
@@ -82,6 +83,8 @@ __all__ = [
     "Receivable",
     "ReceivableSplitLink",
     "ReceivableWriteOff",
+    "GoalAllocation",
+    "SavingsGoal",
     "Reconciliation",
     "ReconciliationEvent",
     "ReconciliationStatus",

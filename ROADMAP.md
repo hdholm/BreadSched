@@ -46,7 +46,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
    configurable backups). Then broader reporting (spending and income over time
    and net worth history are delivered),
-   scenario-aware pinned savings targets. Investigate AqBanking as an optional
+   scenario-aware pinned savings targets (goals, their Dashboard hold, and editors in
+   every interface are delivered; Plan/Projection milestones remain). Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
    portability controls. Detailed acceptance contracts follow below.
 
@@ -79,9 +80,15 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
-- Add savings goals as pinned, scenario-aware target events with dated
-  contributions and a target date; explain progress separately from spendable cash
-  and avoid counting transfers as expenses.
+- **Savings goals, continued.** The model, schema 10, earmark engine, service,
+  CLI, Dashboard hold, GTK and web editors, and per-goal Dashboard rows are
+  delivered: a goal sets aside a prorated share of each income received until its
+  target date, like a pending bill, with extra allocations, and closing releases
+  the earmark. Remaining:
+  - Plan and Projection: show each goal's projected set-aside at its target date
+    as a milestone (nothing is spent), keep goals pinned across scenarios, and
+    let a scenario override a goal's target amount or date;
+  - never count transfers into a goal's account as expenses.
 
 - Carry reimbursable expense and receivable status into Plan, Projection, and
   Dashboard liquidity: distinguish incurred expense, collectible asset, and

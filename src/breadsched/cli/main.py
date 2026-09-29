@@ -134,7 +134,12 @@ from ..gen.services.receivables import (
     shared_costs,
 )
 from ..gen.utils import logs
-from ..presentation import reimbursement_notice, service_error_message, shared_cost_text
+from ..presentation import (
+    goal_status_text,
+    reimbursement_notice,
+    service_error_message,
+    shared_cost_text,
+)
 
 LOG = logs.get_logger(__name__)
 
@@ -922,6 +927,147 @@ def _receivable_split(transaction: Transaction, index: int) -> Split:
     return transaction.splits[index - 1]
 
 
+def _resolve_goal(db: DbSQLite, reference: str) -> str:
+    """A savings goal by exact handle, unique handle prefix, or exact name."""
+    goals = list(db.iter_savings_goals())
+    matches = [goal for goal in goals if goal.handle == reference]
+    matches = matches or [goal for goal in goals if goal.handle.startswith(reference)]
+    matches = matches or [goal for goal in goals if goal.name.casefold() == reference.casefold()]
+    if len(matches) != 1:
+        raise CommandError(
+            f"no savings goal matches {reference!r}"
+            if not matches
+            else f"{reference!r} matches several savings goals"
+        )
+    return matches[0].handle
+
+
+def cmd_goals(args: argparse.Namespace) -> int:
+    """List savings goals and what each has set aside, or add, fund, or close one."""
+    from ..gen.services import (
+        AllocateToGoal,
+        SaveSavingsGoal,
+        allocate_to_goal,
+        close_savings_goal,
+        delete_savings_goal,
+        query_savings_goals,
+        reopen_savings_goal,
+        save_savings_goal,
+    )
+
+    writes = (args.add, args.allocate, args.close, args.reopen, args.delete)
+    db = open_book(args.book, "w" if any(writes) else "r")
+    try:
+        on = parse_date(args.on) or date.today()
+
+        def check(result: Any) -> Any:
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            return result.value
+
+        if args.add:
+            if not (args.account and args.target and args.by):
+                raise CommandError("--account, --target, and --by are required with --add")
+            by = parse_date(args.by)
+            assert by is not None
+            goal = check(
+                save_savings_goal(
+                    db,
+                    SaveSavingsGoal(
+                        name=args.add,
+                        account=resolve_account(db, args.account).handle,
+                        target_amount=Money(args.target),
+                        target_date=by,
+                        start_date=parse_date(args.start) or date.today(),
+                        description=args.description or "",
+                    ),
+                )
+            )
+            emit({"handle": goal.handle}, args, f"Added savings goal {goal.name} ({goal.handle})")
+            return 0
+        if args.allocate:
+            if not args.amount:
+                raise CommandError("--amount is required with --allocate")
+            goal = check(
+                allocate_to_goal(
+                    db,
+                    AllocateToGoal(
+                        _resolve_goal(db, args.allocate), Money(args.amount), on, args.memo or ""
+                    ),
+                )
+            )
+            emit({"handle": goal.handle}, args, f"Allocated {args.amount} to {goal.name}")
+            return 0
+        if args.close:
+            goal = check(close_savings_goal(db, _resolve_goal(db, args.close), on))
+            emit({"handle": goal.handle}, args, f"Closed savings goal {goal.name}")
+            return 0
+        if args.reopen:
+            goal = check(reopen_savings_goal(db, _resolve_goal(db, args.reopen)))
+            emit({"handle": goal.handle}, args, f"Reopened savings goal {goal.name}")
+            return 0
+        if args.delete:
+            check(delete_savings_goal(db, _resolve_goal(db, args.delete)))
+            emit({"deleted": True}, args, "Deleted savings goal")
+            return 0
+        report = check(
+            query_savings_goals(db, parse_date(args.as_of) or date.today(), include_closed=args.all)
+        )
+        rows = [
+            [
+                item.goal.name,
+                item.account_name,
+                item.goal.target_date.isoformat(),
+                item.target.format(),
+                item.set_aside.format(),
+                item.remaining.format(),
+                goal_status_text(item),
+            ]
+            for item in report.goals
+        ]
+        text = (
+            table(
+                rows,
+                ["goal", "account", "by", "target", "set aside", "remaining", "status"],
+                right={3, 4, 5},
+            )
+            + f"\nSet aside for goals: {report.set_aside.format()}; "
+            f"held from spendable cash: {report.held.format()}"
+            if rows
+            else "No savings goals."
+        )
+        emit(
+            {
+                "as_of": report.as_of,
+                "set_aside": report.set_aside,
+                "held": report.held,
+                "goals": [
+                    {
+                        "handle": item.goal.handle,
+                        "name": item.goal.name,
+                        "account": item.goal.account,
+                        "account_name": item.account_name,
+                        "start_date": item.goal.start_date,
+                        "target_date": item.goal.target_date,
+                        "target": item.target,
+                        "allocated": item.allocated,
+                        "from_income": item.from_income,
+                        "set_aside": item.set_aside,
+                        "remaining": item.remaining,
+                        "status": item.status,
+                        "basis": item.basis,
+                    }
+                    for item in report.goals
+                ],
+            },
+            args,
+            text,
+        )
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_receivables(args: argparse.Namespace) -> int:
     """List reimbursable expenses, add or resolve one, or link ledger splits."""
     read_only = not (
@@ -1350,6 +1496,35 @@ def cmd_restore(args: argparse.Namespace) -> int:
     if pre_restore.exists():
         payload["pre_restore_backup"] = str(pre_restore)
     emit(payload, args, f"Restored {args.source} to {destination}")
+    return 0
+
+
+def cmd_migrate(args: argparse.Namespace) -> int:
+    """Bring a book from an earlier alpha to the current schema, keeping a backup."""
+    from ..gen.db.sqlite import SCHEMA_VERSION
+
+    path = Path(args.book)
+    if not path.exists():
+        raise CommandError(f"no book at {path}")
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as raw:
+        row = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
+    before = int(json.loads(row[0])) if row is not None else None
+    db = open_book(str(path), "w")
+    db.close()
+    backup = Path(f"{path}.pre-migration-v{before}.bak")
+    migrated = before is not None and before < SCHEMA_VERSION
+    emit(
+        {
+            "schema_before": before,
+            "schema": SCHEMA_VERSION,
+            "migrated": migrated,
+            "backup": str(backup) if migrated else None,
+        },
+        args,
+        f"Migrated {path} from schema {before} to {SCHEMA_VERSION}; backup at {backup}"
+        if migrated
+        else f"{path} already uses schema {SCHEMA_VERSION}; nothing to migrate",
+    )
     return 0
 
 
@@ -2730,6 +2905,21 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
             *(
                 [
                     [
+                        "Set aside for goals",
+                        summary["goals_set_aside"].format()
+                        + (
+                            f" ({summary['goals_held'].format()} held from spendable cash)"
+                            if summary["goals_held"] != summary["goals_set_aside"]
+                            else ""
+                        ),
+                    ]
+                ]
+                if summary["goals_set_aside"] > 0
+                else []
+            ),
+            *(
+                [
+                    [
                         "Reimbursements due",
                         summary["receivables_owed"].format()
                         + (
@@ -3270,6 +3460,29 @@ def build_parser() -> argparse.ArgumentParser:
     receivables_cmd.add_argument("--delete", metavar="RECEIVABLE", help="delete a receivable")
     receivables_cmd.set_defaults(func=cmd_receivables)
 
+    goals_cmd = add(
+        "goals",
+        "List savings goals and what each has set aside, or add, fund, or close one",
+    )
+    goals_cmd.add_argument("--add", metavar="NAME", help="create a savings goal")
+    goals_cmd.add_argument("--account", metavar="ACCOUNT", help="asset account holding the money")
+    goals_cmd.add_argument("--target", metavar="AMOUNT", help="amount to have set aside")
+    goals_cmd.add_argument("--by", metavar="DATE", help="target date")
+    goals_cmd.add_argument(
+        "--start", metavar="DATE", help="income from this date sets money aside (default today)"
+    )
+    goals_cmd.add_argument("--description", help="what the goal is for")
+    goals_cmd.add_argument("--allocate", metavar="GOAL", help="set extra money aside (--amount)")
+    goals_cmd.add_argument("--amount", help="amount to allocate")
+    goals_cmd.add_argument("--memo", help="note for the allocation")
+    goals_cmd.add_argument("--close", metavar="GOAL", help="release a goal's earmark (--on)")
+    goals_cmd.add_argument("--reopen", metavar="GOAL", help="reopen a closed goal")
+    goals_cmd.add_argument("--delete", metavar="GOAL", help="delete a savings goal")
+    goals_cmd.add_argument("--on", metavar="DATE", help="date of an allocation or closing")
+    goals_cmd.add_argument("--as-of", help="report progress on this date (default today)")
+    goals_cmd.add_argument("--all", action="store_true", help="include closed goals")
+    goals_cmd.set_defaults(func=cmd_goals)
+
     backup = add("backup", "Create a consistent backup of a book")
     backup.add_argument("destination", help="path to write the backup")
     backup.add_argument("--overwrite", action="store_true", help="replace an existing backup")
@@ -3298,6 +3511,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     verify = add("verify", "Verify SQLite integrity and financial object relationships")
     verify.set_defaults(func=cmd_verify)
+
+    migrate = add(
+        "migrate",
+        "Bring a book from an earlier alpha to the current schema, keeping a verified backup",
+    )
+    migrate.set_defaults(func=cmd_migrate)
 
     accounts = add("accounts", "Show the chart of accounts with balances")
     accounts.add_argument("--as-of", help="balances as at this date (YYYY-MM-DD)")

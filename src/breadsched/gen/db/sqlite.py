@@ -31,6 +31,7 @@ from ..lib.fsa_claim import FsaClaim
 from ..lib.payee import Payee
 from ..lib.receivable import Receivable
 from ..lib.reconciliation import Reconciliation
+from ..lib.savings_goal import SavingsGoal
 from ..lib.scenario import Assumptions, Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction, UnbalancedError
@@ -44,7 +45,7 @@ LOG = get_logger(__name__)
 
 __all__ = ["DbSQLite"]
 
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
 T = TypeVar("T", bound=PrimaryObject)
 
 _SCHEMA = """
@@ -133,6 +134,11 @@ CREATE TABLE IF NOT EXISTS receivable (
     blob          TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_receivable_incurred_date ON receivable(incurred_date);
+CREATE TABLE IF NOT EXISTS savings_goal (
+    handle TEXT PRIMARY KEY,
+    name   TEXT NOT NULL,
+    blob   TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS schema_migration (
     version    INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -151,6 +157,7 @@ _TABLES: dict[str, tuple[type, str]] = {
     "reconciliation": (Reconciliation, "reconciliation"),
     "payee": (Payee, "payee"),
     "receivable": (Receivable, "receivable"),
+    "savings_goal": (SavingsGoal, "savings-goal"),
 }
 
 
@@ -404,8 +411,8 @@ class DbSQLite(DbBase):
         if version < SCHEMA_VERSION:
             if self.readonly:
                 raise DbError(
-                    f"book uses schema {version}; open it writable once to migrate to "
-                    f"schema {SCHEMA_VERSION}"
+                    f"book uses schema {version}; open it writable once (for example with "
+                    f"`breadsched migrate`) to migrate to schema {SCHEMA_VERSION}"
                 )
             self._migrate(version)
 
@@ -649,6 +656,7 @@ class DbSQLite(DbBase):
             "receivable": ("incurred_date", "payer"),
             "reconciliation": ("account", "statement_date", "status"),
             "payee": ("name",),
+            "savings_goal": ("name",),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -670,6 +678,7 @@ class DbSQLite(DbBase):
             ("reconciliation", "statement_date"): "",
             ("reconciliation", "status"): "",
             ("payee", "name"): "",
+            ("savings_goal", "name"): "",
         }
         for table, columns in derived_specs.items():
             selected = ", ".join(("handle", *columns, "blob"))
@@ -1183,6 +1192,17 @@ class DbSQLite(DbBase):
         elif table == "receivable":
             issues.extend(self._verify_receivable_references(Receivable.from_dict(data)))
 
+        elif table == "savings_goal":
+            goal = SavingsGoal.from_dict(data)
+            if self.get_account(goal.account) is None:
+                issues.append(
+                    BookIssue(
+                        "savings_goal.missing_account",
+                        f"savings goal {goal.name!r} refers to missing account {goal.account}",
+                        handle,
+                    )
+                )
+
         elif table == "reconciliation":
             issues.extend(self._verify_reconciliation_references(Reconciliation.from_dict(data)))
 
@@ -1313,6 +1333,7 @@ class DbSQLite(DbBase):
             "receivable": ("incurred_date", "payer"),
             "reconciliation": ("account", "statement_date", "status"),
             "payee": ("name",),
+            "savings_goal": ("name",),
         }
         defaults: dict[tuple[str, str], Any] = {
             ("commodity", "mnemonic"): "",
@@ -1334,6 +1355,7 @@ class DbSQLite(DbBase):
             ("reconciliation", "statement_date"): "",
             ("reconciliation", "status"): "",
             ("payee", "name"): "",
+            ("savings_goal", "name"): "",
         }
         columns = columns_by_table[table]
         selected = ", ".join(("handle", *columns))
@@ -1519,6 +1541,15 @@ class DbSQLite(DbBase):
                             "receivable.missing_account",
                             f"receivable {receivable.handle} refers to missing account {handle}",
                             receivable.handle,
+                        )
+                    )
+            for goal in self.iter_savings_goals():
+                if goal.account == handle:
+                    issues.append(
+                        BookIssue(
+                            "savings_goal.missing_account",
+                            f"savings goal {goal.name!r} refers to missing account {handle}",
+                            goal.handle,
                         )
                     )
 
@@ -2139,6 +2170,29 @@ class DbSQLite(DbBase):
             "SELECT handle, blob FROM receivable ORDER BY incurred_date, handle"
         ):
             obj = self._decode_row("receivable", row["handle"], row["blob"], Receivable)
+            if obj is not None:
+                yield obj
+
+    # ----------------------------------------------------------- savings goals
+
+    def add_savings_goal(self, goal: SavingsGoal, txn: DbTxn) -> str:
+        return self._write(goal, txn, "savings_goal")
+
+    def commit_savings_goal(self, goal: SavingsGoal, txn: DbTxn) -> None:
+        self._write(goal, txn, "savings_goal")
+
+    def remove_savings_goal(self, handle: str, txn: DbTxn) -> None:
+        self._delete("savings_goal", handle, txn)
+
+    def get_savings_goal(self, handle: str) -> SavingsGoal | None:
+        data = self._read("savings_goal", handle)
+        return SavingsGoal.from_dict(data) if data else None
+
+    def iter_savings_goals(self) -> Iterator[SavingsGoal]:
+        for row in self._require().execute(
+            "SELECT handle, blob FROM savings_goal ORDER BY name, handle"
+        ):
+            obj = self._decode_row("savings_goal", row["handle"], row["blob"], SavingsGoal)
             if obj is not None:
                 yield obj
 

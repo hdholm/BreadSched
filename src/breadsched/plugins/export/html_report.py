@@ -17,6 +17,7 @@ from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
 from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
+from ...presentation import goal_status_text
 
 __all__ = ["dashboard_report", "expense_explorer_report", "plan_report", "projection_report"]
 
@@ -414,6 +415,15 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
             "</div></div>"
         )
 
+    if summary["goals_set_aside"] > 0:
+        goals = _money(summary["goals_set_aside"])
+        if summary["goals_held"] != summary["goals_set_aside"]:
+            goals += f" ({_money(summary['goals_held'])} held from spendable cash)"
+        cards = cards.removesuffix("</div>") + (
+            f'<div class="card"><small>Set aside for goals</small><strong>{escape(goals)}'
+            "</strong></div></div>"
+        )
+
     coverage = "".join(f'<p class="note">{escape(note)}</p>' for note in board.coverage_notes)
     group_rows = []
     for group in board.groups:
@@ -488,9 +498,23 @@ def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:
         f"<tbody>{''.join(income_rows)}</tbody></table>"
     )
     subtitle = f"{book_name + ' · ' if book_name else ''}As at {board.as_of.isoformat()}"
+    goals = ""
+    if board.goals:
+        goal_rows = "".join(
+            f"<tr><td>{escape(item.goal.name)}</td><td>{item.goal.target_date.isoformat()}</td>"
+            f"{_amount(item.target)}{_amount(item.set_aside)}{_amount(item.remaining)}"
+            f"<td>{escape(goal_status_text(item))}</td></tr>"
+            for item in board.goals
+        )
+        goals = (
+            "<h2>Savings goals</h2><table><thead><tr><th>Goal</th><th>Target date</th>"
+            '<th class="num">Target</th><th class="num">Set aside</th>'
+            '<th class="num">Remaining</th><th>Status</th></tr></thead>'
+            f"<tbody>{goal_rows}</tbody></table>"
+        )
     body = (
         f"{cards}<h2>Balances</h2>{groups}<h2>Pending bills</h2>{bills}"
-        f"<h2>Expected income</h2>{income}"
+        f"<h2>Expected income</h2>{income}{goals}"
     )
     return _document("Dashboard", subtitle, body)
 

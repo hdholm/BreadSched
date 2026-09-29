@@ -505,3 +505,60 @@ def test_the_guide_page_switches_parts_and_follows_links(page):
         ".getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; }"
     )
     assert page.get_by_role("tab", name="Overview").get_attribute("aria-selected") == "true"
+
+
+def test_dashboard_shows_what_savings_goals_set_aside(page, served):
+    from breadsched.gen.lib import Money
+    from breadsched.gen.services import (
+        AllocateToGoal,
+        SaveSavingsGoal,
+        allocate_to_goal,
+        goal_accounts,
+        save_savings_goal,
+    )
+
+    db, httpd = served
+    today = date.today()
+    cash = next(
+        handle for handle, _name in goal_accounts(db) if db.get_account(handle).atype.is_cash_like
+    )
+    goal = save_savings_goal(
+        db,
+        SaveSavingsGoal("Holiday", cash, Money(1200), today.replace(year=today.year + 1), today),
+    ).value
+    assert allocate_to_goal(db, AllocateToGoal(goal.handle, Money(250), today)).ok
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/?goals#token={httpd.token}")
+    page.wait_for_selector("text=Set aside for goals")
+    tile = page.locator(".card", has_text="Set aside for goals")
+    assert "250" in tile.inner_text()
+
+
+def test_goals_page_adds_funds_and_closes_a_goal(page, served):
+    db, _httpd = served
+    today = date.today()
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Goals", exact=True).first.click()
+    page.wait_for_selector("text=No savings goals yet.")
+    form = page.locator("form.goal-form")
+    form.locator("input[name=name]").fill("Roof")
+    form.locator("input[name=target_amount]").fill("900")
+    form.locator("input[name=target_date]").fill(today.replace(year=today.year + 1).isoformat())
+    form.get_by_role("button", name="Add goal").click()
+    page.wait_for_selector("text=Saved Roof.")
+    [goal] = list(db.iter_savings_goals())
+    assert goal.name == "Roof" and goal.target_amount.to_decimal() == 900
+
+    page.get_by_label("Amount to allocate to Roof").fill("150")
+    page.get_by_role("button", name="Allocate", exact=True).click()
+    page.wait_for_selector("text=Allocated 150 to Roof.")
+    assert db.get_savings_goal(goal.handle).allocated(today).to_decimal() == 150
+
+    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    page.wait_for_selector("h2:has-text('Savings goals (1)')")
+    assert "Roof" in page.locator(".dashboard-goals").inner_text()
+
+    page.get_by_role("button", name="Goals", exact=True).first.click()
+    page.wait_for_selector("text=Set aside for goals")
+    page.get_by_role("button", name="Close", exact=True).click()
+    page.wait_for_selector("text=Closed Roof.")
+    assert db.get_savings_goal(goal.handle).closed_on == today

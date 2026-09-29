@@ -42,7 +42,9 @@ from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scheduled import ScheduledTransaction
-from . import fsa, ledger, receivables, schedule, valuation
+from . import fsa, ledger, receivables, savings_goals, schedule, valuation
+from .cash_flow import flow_amounts as _flow_amounts
+from .cash_flow import income_occurrences
 from .currency import reporting_currency_handle, reporting_fraction
 from .escrow import recognition as escrow_recognition
 
@@ -456,6 +458,8 @@ class DashboardSummary(TypedDict):
     bills: int
     receivables_owed: Money
     receivables_attention: Money
+    goals_set_aside: Money
+    goals_held: Money
 
 
 @dataclass
@@ -485,6 +489,8 @@ class Dashboard:
     receivables_owed: Money = field(default_factory=lambda: Money(0))
     #: The part of ``receivables_owed`` that is disputed or past its expected date.
     receivables_attention: Money = field(default_factory=lambda: Money(0))
+    #: Each savings goal's earmark on the as-of date.
+    goals: list[savings_goals.GoalProgress] = field(default_factory=list)
 
     @property
     def missing_quotes(self) -> tuple[str, ...]:
@@ -676,9 +682,22 @@ class Dashboard:
         )
 
     @property
+    def goals_set_aside(self) -> Money:
+        """Everything set aside for open savings goals, wherever it is held."""
+        return sum((item.set_aside for item in self.goals), Money(0))
+
+    @property
+    def goals_held(self) -> Money:
+        """The part of goal earmarks taken out of spendable cash."""
+        return savings_goals.spendable_hold(self.goals)
+
+    @property
     def available(self) -> Money:
-        """Cash that is genuinely free: liquid, less what is spoken for."""
-        return self.liquid - self.required_liquid - self.config.reserve
+        """Cash that is genuinely free: liquid, less what is spoken for.
+
+        Savings-goal earmarks are spoken for exactly like bill reserves.
+        """
+        return self.liquid - self.required_liquid - self.goals_held - self.config.reserve
 
     @property
     def emergency_shortfall(self) -> Money:
@@ -719,6 +738,8 @@ class Dashboard:
             "bills": len(self.bills),
             "receivables_owed": self.receivables_owed,
             "receivables_attention": self.receivables_attention,
+            "goals_set_aside": self.goals_set_aside,
+            "goals_held": self.goals_held,
         }
 
 
@@ -781,6 +802,11 @@ def build(
     board.next_income = next_income
     board._income_events = income_events
     _receivables(db, board, today)
+    board.goals = [
+        item
+        for item in savings_goals.goals_progress(db, today)
+        if item.status not in {"closed", "not started"} or item.set_aside > 0
+    ]
     unpaid_cards = schedule.unconfigured_card_balances(db, today)
     if unpaid_cards:
         count = len(unpaid_cards)
@@ -1282,27 +1308,6 @@ def _paid_off_loans(db: DbSQLite, today: date) -> set[str]:
     return paid_off
 
 
-def _flow_amounts(db: DbSQLite, sched: ScheduledTransaction, when: date) -> tuple[Money, Money]:
-    """Return the occurrence's direct spendable-cash inflow and outflow.
-
-    Economic expense belongs in Plan. Dashboard liquidity changes only when a
-    Bank/Cash leg changes, so a purchase charged to a card is not counted once at
-    purchase and again when the account payment becomes due.
-    """
-    net_cash = Money(0)
-    legs = list(sched.resolved_splits(when=when))
-    for handle, amount in legs:
-        account = db.get_account(handle)
-        if account is None or not account.is_spendable_cash:
-            continue
-        net_cash = net_cash + amount
-    if net_cash > 0:
-        return net_cash, Money(0)
-    if net_cash < 0:
-        return Money(0), -net_cash
-    return Money(0), Money(0)
-
-
 def _emergency_outflow(db: DbSQLite, sched: ScheduledTransaction, when: date) -> Money:
     """Return the non-duplicated portion retained when income stops.
 
@@ -1356,31 +1361,13 @@ def _income_events_for_cycle(
     through: date,
     today: date,
 ) -> tuple[Money, Money]:
-    """Return total cycle income and the share already received by ``today``.
-
-    Future scheduled income belongs in the denominator. Past income participates
-    only when its schedule says it was handled or a corresponding ledger
-    transaction exists; a missed pay event cannot reserve cash that never arrived.
-    """
+    """Return total cycle income and the share already received by ``today``."""
     total = Money(0)
     received = Money(0)
-    for sched in schedules:
-        for when in sched.recurrence.occurrences(through, since=start + timedelta(days=1)):
-            if when in sched.skipped:
-                continue
-            income, outflow = _flow_amounts(db, sched, when)
-            if income <= 0 or income < outflow:
-                continue
-            happened = when > today
-            if not happened and sched.last_posted is not None and when <= sched.last_posted:
-                happened = True
-            if not happened:
-                happened = schedule.already_posted(db, sched.handle, when)
-            if not happened:
-                continue
-            total = total + income
-            if when <= today:
-                received = received + income
+    for when, income in income_occurrences(db, schedules, start, through, today):
+        total = total + income
+        if when <= today:
+            received = received + income
     return total, received
 
 

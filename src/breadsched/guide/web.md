@@ -19,14 +19,16 @@ GTK. To create a book first, use the [command line](cli.md#create-and-inspect-bo
 
 The navigation bar offers the work areas (**Dashboard**, **FSA Dashboard**,
 **Accounts**, **Register**, **Scheduled**, **Plan**, **Review**, **Projection**) and
-**Enter**, **Import**, **Payees**, **Rules**, **Reimbursables**, **Verify**, and
+**Enter**, **Import**, **Payees**, **Rules**, **Reimbursables**, **Goals**, **Verify**, and
 **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
 or command-line part, and a link to another part opens it there.
 
 On the Dashboard, a requested liquidity or emergency-fund horizon changes the
 displayed calculation for that request. Reopening the view uses the saved Dashboard
 settings; use the Dashboard settings controls to save a new horizon. Expand a
-missed-schedule row to see each missed date and amount.
+missed-schedule row to see each missed date and amount. When savings goals have set
+money aside, a **Set aside for goals** tile shows the total (see
+[Savings goals](../USER_GUIDE.md#savings-goals)).
 
 ### Net worth history
 
@@ -98,6 +100,17 @@ choose a **Category trend**. The chart labels plan in blue and actual in orange.
 page also shows the selected category's Plan, Actual, and Variance beneath the
 merchant table. **Carry prior periods** turns rollover on. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
+
+## Savings goals
+
+**Goals** lists each goal's account, target date, target, what is set aside, what
+remains, and its status. Fill in the form below the list and choose **Add goal**;
+**Edit** loads a goal into the form for **Save changes**. Enter an amount beside a
+goal and choose **Allocate** to set extra money aside today. **Close** releases a
+goal's money, **Reopen** undoes that, and **Delete** removes the goal. **Show closed
+goals** includes closed goals. The Dashboard lists each open goal under **Savings
+goals**; choose a goal's name to open **Goals**. See
+[Savings goals](../USER_GUIDE.md#savings-goals).
 
 ## Reimbursable expenses
 
