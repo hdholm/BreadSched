@@ -44,7 +44,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 2. **P2 — Interoperability and analysis.** GnuCash write-back for simple edits
    is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
    configurable backups). Then broader reporting (spending and income over time
-   are delivered),
+   and net worth history are delivered),
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
    portability controls. Detailed acceptance contracts follow below.
@@ -82,10 +82,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   contributions and a target date; explain progress separately from spendable cash
   and avoid counting transfers as expenses.
 
-- Add broader reports beyond Expense Explorer's spending and income over time (for
-  example net worth history, and an income drill-down to the exact dated events)
-  with category hierarchy, selected scenario, as-of boundary, currency
-  completeness, and matching printable/exported totals.
+- Add drill-downs from the delivered over-time reports to the exact dated events:
+  income periods to their transactions, and a net worth change to the postings
+  that made it, with category hierarchy, selected scenario, as-of boundary,
+  currency completeness, and matching printable/exported totals.
 
 - Carry reimbursable expense and receivable status into Plan, Projection, and
   Dashboard liquidity: distinguish incurred expense, collectible asset, and

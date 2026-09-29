@@ -631,6 +631,47 @@ class TestPlanningAndProjection:
         assert code == 0
         assert "Jan 2026" in out and "Dec 2026" in out
 
+    def test_net_worth_reports_each_period_end_through_the_as_of_date(self, capsys, book_path):
+        run(capsys, "sample", book_path, "--as-of", "2026-09-15")
+        result = run_json(
+            capsys,
+            "net-worth",
+            book_path,
+            "--start",
+            "2026-07-01",
+            "--end",
+            "2026-12-31",
+            "--as-of",
+            "2026-09-15",
+        )
+        assert [point["label"] for point in result["points"]] == [
+            "Jul 2026",
+            "Aug 2026",
+            "Sep 2026",
+        ]
+        september = result["points"][-1]
+        assert september["valued_on"] == "2026-09-15" and september["partial"] is True
+        assert Money(september["net_worth"]) == Money(september["assets"]) - Money(
+            september["debts"]
+        )
+        assert september["missing"] == []
+        code, out = run(
+            capsys,
+            "net-worth",
+            book_path,
+            "--start",
+            "2026-09-01",
+            "--end",
+            "2026-09-30",
+            "--as-of",
+            "2026-09-15",
+        )
+        assert code == 0 and "to date" in out and "net worth" in out
+        code, _out = run(
+            capsys, "net-worth", book_path, "--start", "2026-09-30", "--end", "2026-09-01"
+        )
+        assert code != 0
+
     def test_activity_reports_periods_without_making_them_the_plan(self, capsys, book_path):
         run(capsys, "init", book_path)
         run(

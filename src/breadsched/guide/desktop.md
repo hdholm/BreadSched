@@ -73,6 +73,13 @@ room and stack when it does not. A long group line is shortened with "…"; hove
 it to read it and the accounts it covers. Activate a missed-schedule row to open its
 schedule.
 
+### Net worth history
+
+Choose the **History** toolbar icon (or **Net Worth History…** in the menus) while
+the Dashboard is shown. **Group by** switches between months, quarters, and years;
+hover over a period to see its top-level account values, and **Print…** previews the
+table. See [Net worth history](../USER_GUIDE.md#net-worth-history).
+
 Each table has its own column chooser (the "⋯" button at the right of that table's
 heading); its tooltip names the table, and the columns you hide are remembered.
 When you make the window narrower, text columns such as descriptions shorten (with

@@ -28,6 +28,12 @@ displayed calculation for that request. Reopening the view uses the saved Dashbo
 settings; use the Dashboard settings controls to save a new horizon. Expand a
 missed-schedule row to see each missed date and amount.
 
+### Net worth history
+
+**Net worth history** is the last section of the Dashboard page. **Group by**
+switches between months, quarters, and years, and expanding a period lists its
+top-level account values. See [Net worth history](../USER_GUIDE.md#net-worth-history).
+
 ## Exchange rates
 
 In **Accounts**, choose **Exchange rate…**, select the source and target currencies,

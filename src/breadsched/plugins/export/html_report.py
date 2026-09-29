@@ -16,6 +16,7 @@ from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseExplorer, SpendingPoint
+from ...gen.services.net_worth import NetWorthHistory
 
 __all__ = ["dashboard_report", "expense_explorer_report", "plan_report", "projection_report"]
 
@@ -235,6 +236,42 @@ def expense_explorer_report(explorer: ExpenseExplorer) -> str:
         f"{explorer.plan.end.isoformat()} · {escape(selected.label)}"
     )
     return _document("Expense Explorer", subtitle, spending + comparison + trend + merchants)
+
+
+def net_worth_history_report(history: NetWorthHistory) -> str:
+    """Print net worth at each period end, with each point's top-level breakdown."""
+    rows = []
+    for point in history.points:
+        notes = [
+            text
+            for text in (
+                "to date" if point.partial else "",
+                f"missing quote: {', '.join(point.missing)}" if point.missing else "",
+            )
+            if text
+        ]
+        breakdown = "<br>".join(
+            escape(f"{line.name} ({line.kind}): {_money(line.value)}") for line in point.lines
+        )
+        rows.append(
+            f"<tr><td>{escape(point.label)}</td><td>{point.valued_on.isoformat()}</td>"
+            f"{_amount(point.assets)}{_amount(point.debts)}{_amount(point.net_worth)}"
+            f"<td class='num'>{escape(_signed_money(point.change))}</td>"
+            f"<td>{escape('; '.join(notes) or '—')}</td><td>{breakdown or '—'}</td></tr>"
+        )
+    body = (
+        "<p class='note'>Assets less debts, market-valued at each period end. A point "
+        "with a missing quote shows — and names the account rather than guessing a "
+        "conversion.</p><table><thead><tr><th>Period</th><th>Valued on</th>"
+        '<th class="num">Assets</th><th class="num">Debts</th><th class="num">Net worth</th>'
+        '<th class="num">Change</th><th>Note</th><th>Top-level accounts</th></tr></thead>'
+        f"<tbody>{''.join(rows)}</tbody></table>"
+    )
+    subtitle = (
+        f"{history.start.isoformat()} through {history.end.isoformat()} · "
+        f"by {history.period.value} · valued through {history.as_of.isoformat()}"
+    )
+    return _document("Net worth history", subtitle, body)
 
 
 def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:

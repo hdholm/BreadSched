@@ -16,6 +16,7 @@ from .gnucash_writeback_resource import (
     gnucash_writeback_settings,
 )
 from .guide_resource import guide
+from .net_worth_resource import net_worth_history
 from .payee_resource import (
     payee_accept,
     payee_delete,
@@ -226,6 +227,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/plan": _plan,
     "/api/plan/detail": _plan_detail,
     "/api/expense-explorer": _expense_explorer,
+    "/api/net-worth-history": net_worth_history,
     "/api/review": _optional_text("review", "transaction"),
     "/api/scenarios": _no_query("scenarios"),
     "/api/scenario/events": _optional_text("scenario_events", "handle"),
