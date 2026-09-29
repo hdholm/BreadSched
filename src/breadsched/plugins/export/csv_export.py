@@ -8,13 +8,21 @@ as numbers, not a human reading a report.
 from __future__ import annotations
 
 import csv
+import io
 from datetime import date
 from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.projection import Projection
+from ...gen.lib.money import Money
+from ...gen.services.net_worth import NetWorthChange
 
-__all__ = ["export_transactions", "export_projection"]
+__all__ = [
+    "export_transactions",
+    "export_projection",
+    "export_net_worth_change",
+    "net_worth_change_csv",
+]
 
 
 def export_transactions(
@@ -78,3 +86,53 @@ def export_projection(projection: Projection, path: str | Path) -> int:
                 + [str(getattr(row, name).to_decimal()) for name in fields[1:]]
             )
     return len(projection.rows)
+
+
+def net_worth_change_csv(change: NetWorthChange) -> str:
+    """The postings behind a net worth change, then the totals they reconcile to.
+
+    A blank amount is a missing quote, never a guessed conversion; the note column
+    says so.
+    """
+
+    def number(value: Money | None) -> str:
+        return "" if value is None else str(value.to_decimal())
+
+    output = io.StringIO()
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(["date", "description", "accounts", "currency", "net worth effect", "note"])
+    for posting in change.postings:
+        writer.writerow(
+            [
+                posting.posted.isoformat(),
+                posting.description,
+                "; ".join(posting.accounts),
+                posting.currency,
+                number(posting.effect),
+                "missing quote" if posting.effect is None else "",
+            ]
+        )
+    for label, when, value in (
+        ("Opening net worth", change.opening_on, change.opening),
+        ("Postings", change.closing_on, change.posted),
+        ("Market and exchange-rate changes", change.closing_on, change.revaluation),
+        ("Closing net worth", change.closing_on, change.closing),
+        ("Change", change.closing_on, change.change),
+    ):
+        writer.writerow(
+            [
+                when.isoformat(),
+                label,
+                "",
+                "",
+                number(value),
+                "missing quote" if value is None else "",
+            ]
+        )
+    return output.getvalue()
+
+
+def export_net_worth_change(change: NetWorthChange, path: str | Path) -> int:
+    """Write :func:`net_worth_change_csv`; returns the number of postings written."""
+    Path(path).write_text(net_worth_change_csv(change), encoding="utf-8")
+    return len(change.postings)

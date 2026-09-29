@@ -16,7 +16,7 @@ from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
-from ...gen.services.net_worth import NetWorthHistory
+from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
 
 __all__ = ["dashboard_report", "expense_explorer_report", "plan_report", "projection_report"]
 
@@ -313,6 +313,49 @@ def net_worth_history_report(history: NetWorthHistory) -> str:
         f"by {history.period.value} · valued through {history.as_of.isoformat()}"
     )
     return _document("Net worth history", subtitle, body)
+
+
+def net_worth_change_report(change: NetWorthChange) -> str:
+    """Print the postings behind one net worth change and what they reconcile to."""
+    rows = "".join(
+        f"<tr><td>{posting.posted.isoformat()}</td><td>{escape(posting.description)}</td>"
+        f"<td>{escape('; '.join(posting.accounts))}</td><td>{escape(posting.currency)}</td>"
+        f"{_amount(posting.effect)}"
+        f"<td>{'missing quote' if posting.effect is None else ''}</td></tr>"
+        for posting in change.postings
+    )
+    totals = "".join(
+        f"<tr><th colspan='4'>{escape(label)}</th>{_amount(value)}<td></td></tr>"
+        for label, value in (
+            (f"Opening net worth ({change.opening_on.isoformat()})", change.opening),
+            ("Postings", change.posted),
+            ("Market and exchange-rate changes", change.revaluation),
+            (f"Closing net worth ({change.closing_on.isoformat()})", change.closing),
+            ("Change", change.change),
+        )
+    )
+    notes = [
+        "Each posting is the net of its splits in asset and debt accounts, converted "
+        "with the quote applicable on its date. Market and exchange-rate changes are "
+        "the rest of the change."
+    ]
+    if change.transfers:
+        notes.append(
+            f"{change.transfers} transfer(s) between your own accounts left out: "
+            "they do not change net worth."
+        )
+    if change.missing:
+        notes.append(f"Missing quote: {', '.join(change.missing)}. Totals are withheld.")
+    body = (
+        "".join(f"<p class='note'>{escape(note)}</p>" for note in notes)
+        + "<table><thead><tr><th>Date</th><th>Description</th><th>Accounts</th>"
+        '<th>Currency</th><th class="num">Net worth effect</th><th>Note</th></tr></thead>'
+        f"<tbody>{rows}</tbody><tfoot>{totals}</tfoot></table>"
+    )
+    subtitle = f"{change.start.isoformat()} through {change.closing_on.isoformat()}" + (
+        " · to date" if change.partial else ""
+    )
+    return _document("Net worth change", subtitle, body)
 
 
 def dashboard_report(board: Dashboard, *, book_name: str = "") -> str:

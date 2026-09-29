@@ -132,6 +132,7 @@ class TestLayering:
             "gzip",
             "hashlib",
             "html",
+            "io",
             "json",
             "logging",
             "math",

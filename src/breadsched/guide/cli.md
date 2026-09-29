@@ -68,6 +68,16 @@ assets, debts, net worth, the change, and a note naming any account whose quote
 was missing. `--json` adds each point's top-level account values. See
 [Net worth history](../USER_GUIDE.md#net-worth-history).
 
+```bash
+breadsched net-worth-change household.breadsched --start 2026-06-01 --end 2026-06-30 \
+    --csv june-change.csv
+```
+
+`net-worth-change` lists the transactions that changed net worth from `--start`
+through `--end` (or `--as-of`), then the opening and closing net worth, the postings
+total, and the market and exchange-rate changes that reconcile them. `--csv` writes
+the same rows and totals.
+
 ## Exchange rates
 
 ```bash

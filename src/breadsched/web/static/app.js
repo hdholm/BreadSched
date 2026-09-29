@@ -2191,6 +2191,7 @@ function spendingOverTime(data, periodIndex, kind = "spending") {
     svg.append(hit);
   });
   const categories = points.length ? points[0].categories : [];
+  const slot = el("div", { class: "net-worth-change-slot" });
   const note = (item) => [item.partial ? "to date" : "", item.future ? "future" : "",
     item.currency_incomplete ? "missing quote" : ""].filter(Boolean).join(", ");
   return el("div", { class: income ? "income-over-time" : "spending-over-time" },
@@ -4543,6 +4544,7 @@ async function netWorthHistory() {
   } }, [["month", "Month"], ["quarter", "Quarter"], ["year", "Year"]].map(([value, label]) =>
     el("option", { value, selected: value === period ? "selected" : null }, label)));
   const amount = (value) => value === null ? "Missing quote" : money(value);
+  const slot = el("div", { class: "net-worth-change-slot" });
   const note = (item) => [item.partial ? "to date" : "",
     item.missing.length ? `missing quote: ${item.missing.join(", ")}` : ""]
     .filter(Boolean).join("; ") || "—";
@@ -4560,7 +4562,53 @@ async function netWorthHistory() {
           el("ul", {}, ...item.lines.map((line) => el("li", {},
             `${line.name} (${line.kind}): ${amount(line.value)}`)))),
         item.valued_on, amount(item.assets), amount(item.debts), amount(item.net_worth),
-        item.change === null ? "—" : money(item.change), note(item)])));
+        el("button", { class: "action net-worth-explain", type: "button",
+          title: "Show the postings behind this change",
+          onclick: () => netWorthChange(item, slot) },
+          item.change === null ? "Explain" : money(item.change)), note(item)])),
+    slot);
+}
+
+// The postings behind one history point's change, with the market and exchange-rate
+// movement that reconciles them to it. The CSV is the shared export, so its totals
+// are the ones shown here and printed with the page.
+async function netWorthChange(point, slot) {
+  const data = await get(`/api/net-worth-change?from=${point.start}&through=${point.end}`);
+  const amount = (value) => value === null ? "Missing quote" : money(value);
+  const download = () => {
+    const link = el("a", { href: URL.createObjectURL(new Blob([data.csv], { type: "text/csv" })),
+      download: `net-worth-change-${data.start}-${data.closing_on}.csv` });
+    document.body.append(link);
+    link.click();
+    link.remove();
+  };
+  const notes = ["Each posting is the net of its splits in asset and debt accounts, converted "
+    + "with the quote applicable on its date. Market and exchange-rate changes are the rest."];
+  if (data.transfers) {
+    notes.push(`${data.transfers} transfer(s) between your own accounts left out: `
+      + "they do not change net worth.");
+  }
+  if (data.missing.length) {
+    notes.push(`Missing quote: ${data.missing.join(", ")}. Totals are withheld.`);
+  }
+  const total = (label, value) => el("tr", { class: "total" },
+    el("th", { colspan: "4" }, label), el("td", { class: "num" }, amount(value)));
+  slot.replaceChildren(el("section", { class: "net-worth-change" },
+    el("h3", {}, `Net worth change ${data.start} through ${data.closing_on}`
+      + (data.partial ? " (to date)" : "")),
+    ...notes.map((text) => el("p", { class: "note" }, text)),
+    el("div", { class: "toolbar" },
+      el("button", { class: "action", type: "button", onclick: download }, "Download CSV"),
+      el("button", { class: "action", type: "button",
+        onclick: () => slot.replaceChildren() }, "Close")),
+    table(["Date", "Description", "Accounts", "Currency", { label: "Net worth effect", num: true }],
+      [...data.postings.map((item) => [item.posted, item.description, item.accounts.join("; "),
+        item.currency, amount(item.effect)]),
+      total(`Opening net worth (${data.opening_on})`, data.opening),
+      total("Postings", data.posted),
+      total("Market and exchange-rate changes", data.revaluation),
+      total(`Closing net worth (${data.closing_on})`, data.closing),
+      total("Change", data.change)])));
 }
 
 // The dashboard: what is owned and owed, the liquidity verdict, and the bills.

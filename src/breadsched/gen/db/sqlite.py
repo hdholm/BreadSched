@@ -1855,7 +1855,8 @@ class DbSQLite(DbBase):
     ) -> list[sqlite3.Row]:
         """Indexed split lookup: the fast path for balances and registers."""
         sql = (
-            "SELECT s.*, json_extract(t.blob, '$.currency') AS currency "
+            "SELECT s.*, json_extract(t.blob, '$.currency') AS currency, "
+            "t.description AS description "
             "FROM split_index s JOIN txn t ON t.handle=s.txn WHERE s.account=?"
         )
         params: list[Any] = [account]

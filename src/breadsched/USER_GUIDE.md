@@ -438,6 +438,18 @@ lists the value of each top-level account tree, such as **Assets** and
 ([desktop](guide/desktop.md#net-worth-history), [browser](guide/web.md#net-worth-history),
 [command line](guide/cli.md#net-worth-history)).
 
+To see why net worth moved, choose a period's change. The drill-down values net
+worth at the end of the day before the period and at its end (or today), and lists
+every transaction in between that changed it. It shows each transaction's asset and
+debt accounts and its effect, converted with the exchange rate applicable on the
+transaction's date. **Market and exchange-rate changes** is the rest of the change:
+price moves on securities and currencies you already held. Postings plus that line
+always equal the change exactly. Transfers between your own accounts, such as
+paying a credit card from checking, do not change net worth and are only counted. If
+a transaction needs a quote that did not exist on its date, it shows **Missing
+quote** and the totals are withheld rather than guessed. The printout and CSV export
+carry the same totals as the screen.
+
 ## Plan
 
 Choose From, Through, Group by, Show, scenario, and comparison values, then apply

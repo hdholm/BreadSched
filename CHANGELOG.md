@@ -3,6 +3,22 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a191 - 2026-09-29
+
+- **Net worth change drill-down.** Choosing a period's change in Net worth history
+  (the Change button on the desktop and in the browser, or the new
+  `breadsched net-worth-change` command) lists the transactions that changed net
+  worth in that window. Each shows its date, description, the asset and debt
+  accounts it touched, its currency, and its effect converted with the quote
+  applicable on its date. A **Market and exchange-rate changes** line accounts for
+  the rest, so postings plus market movement equal the change exactly. Transfers
+  between your own accounts are counted and left out. A posting without a quote
+  withholds the totals and is named. The desktop printout, the CSV export
+  (desktop, browser download, `--csv`), and the screen show the same totals.
+  Application version `0.2.0a191`; native schema remains 9.
+- **Roadmap.** Windows code signing is deferred until a beta release is reasonable;
+  alpha installers stay unsigned.
+
 ## 0.2.0a190 - 2026-09-29
 
 - **Printed Income detail.** The desktop Expense Explorer's **Print…** now includes

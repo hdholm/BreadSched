@@ -672,6 +672,26 @@ class TestPlanningAndProjection:
         )
         assert code != 0
 
+    def test_net_worth_change_lists_postings_and_exports_matching_totals(
+        self, capsys, book_path, tmp_path
+    ):
+        run(capsys, "sample", book_path, "--as-of", "2026-09-15")
+        arguments = ["--start", "2026-08-01", "--end", "2026-08-31", "--as-of", "2026-09-15"]
+        result = run_json(capsys, "net-worth-change", book_path, *arguments)
+        history = run_json(capsys, "net-worth", book_path, "--start", "2026-07-01", *arguments[2:])
+        assert Money(result["change"]) == Money(history["points"][1]["change"])
+        assert Money(result["posted"]) + Money(result["revaluation"]) == Money(result["change"])
+        assert result["postings"] and result["missing"] == []
+        exported = tmp_path / "change.csv"
+        code, out = run(capsys, "net-worth-change", book_path, *arguments, "--csv", str(exported))
+        assert code == 0 and "Market and exchange-rate changes" in out
+        last = exported.read_text(encoding="utf-8").splitlines()[-1].split(",")
+        assert last[1] == "Change" and Money(last[4]) == Money(result["change"])
+        code, _out = run(
+            capsys, "net-worth-change", book_path, "--start", "2026-09-30", "--end", "2026-09-01"
+        )
+        assert code != 0
+
     def test_activity_reports_periods_without_making_them_the_plan(self, capsys, book_path):
         run(capsys, "init", book_path)
         run(

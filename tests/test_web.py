@@ -1760,6 +1760,31 @@ class TestPlanApi:
         status, error = refused("/api/net-worth-history?from=March")
         assert status == 400 and error["fields"] == ["from"]
 
+    def test_net_worth_change_lists_the_postings_behind_a_history_point(self, client):
+        _status, history = client.get("/api/net-worth-history?from=2026-01&through=2026-02")
+        february = history["points"][1]
+        status, change = client.get(
+            f"/api/net-worth-change?from={february['start']}&through={february['end']}"
+        )
+        assert status == 200
+        assert Money(change["change"]) == Money(february["change"])
+        assert change["opening_on"] == "2026-01-31"
+        assert Money(change["posted"]) + Money(change["revaluation"]) == Money(change["change"])
+        assert sum((Money(item["effect"]) for item in change["postings"]), Money(0)) == Money(
+            change["posted"]
+        )
+        assert change["csv"].splitlines()[-1].startswith(f"{change['closing_on']},Change,")
+
+        def refused(path: str) -> tuple[int, dict]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(path)
+            return caught.value.code, json.loads(caught.value.read())
+
+        status, error = refused("/api/net-worth-change?from=2026-02-01")
+        assert status == 400 and error["fields"] == ["through"]
+        status, error = refused("/api/net-worth-change?from=2026-02-28&through=2026-02-01")
+        assert status == 400 and error["code"] == "net_worth.range.invalid"
+
     def test_expense_explorer_reconciles_category_and_merchant_actual(self, client):
         status, report = client.get("/api/expense-explorer?from=2026-01&through=2026-01")
         assert status == 200
