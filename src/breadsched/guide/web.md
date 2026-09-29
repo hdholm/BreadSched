@@ -181,7 +181,7 @@ transaction** or **Delete it here too**.
 Close the book in GnuCash, then open **Import** and use **Write changes to
 GnuCash**. Tick the transactions to write and choose **Write selected**. **Backups
 to keep** sets how many backups are kept. See
-[Write changes back to a GnuCash SQLite book](../USER_GUIDE.md#write-changes-back-to-a-gnucash-sqlite-book).
+[Write changes back to a GnuCash book](../USER_GUIDE.md#write-changes-back-to-a-gnucash-book).
 
 ## Payees
 

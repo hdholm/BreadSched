@@ -845,26 +845,39 @@ activity only in BreadSched. Keep the GnuCash file as a read-only archive;
 importing a later GnuCash copy would restore GnuCash's values over any imported
 unreconciled transactions you have since edited.
 
-### Write changes back to a GnuCash SQLite book
+### Write changes back to a GnuCash book
 
-For a GnuCash book saved in SQLite format, BreadSched can write simple changes
-back to it ([desktop](guide/desktop.md#write-changes-back-to-gnucash),
+BreadSched can write your changes back to the GnuCash book you imported, whether it
+is saved as SQLite or as XML (GnuCash's default, compressed or not)
+([desktop](guide/desktop.md#write-changes-back-to-gnucash),
 [browser](guide/web.md#write-changes-back-to-gnucash),
 [command line](guide/cli.md#write-changes-back-to-gnucash)). Close the book in
 GnuCash first. The preview lists, for each transaction, exactly what would be
-written: transactions you entered in BreadSched with two splits in accounts that
-exist in GnuCash, date, description, number, and memo edits to imported
-transactions that GnuCash has not reconciled, and reconcile marks you set in
-BreadSched. Anything else (changed amounts or accounts, added or removed splits,
-other currencies) is listed as not written, with the reason. Nothing is written
-until you choose which transactions to write.
+written:
+
+- transactions you entered in BreadSched, with any number of splits, when every
+  account exists in GnuCash and the transaction is in a currency the book has (a
+  split in a security or foreign-currency account keeps its own quantity);
+- edits to transactions that came from GnuCash: date, description, number, split
+  memos and actions, amounts, accounts, and added or removed splits;
+- transactions you deleted in BreadSched, which are deleted in GnuCash too, with
+  their notes and other details; and
+- reconcile marks you set in BreadSched.
+
+A transaction GnuCash has reconciled only takes reconcile marks: other edits to it,
+and deleting it, are listed as not written, as is a transaction in a GnuCash lot
+(investment lots). Anything else that cannot be written is listed too, with the
+reason. Nothing is written until you choose which transactions to write.
 
 BreadSched refuses if GnuCash has the book open or if the book changed since you
 last imported it; import it again first. Before writing it copies the book to a
 backup folder next to your BreadSched book (keeping 10 backups unless you choose
-another number), writes everything in one step, reads it back to confirm GnuCash
-will see exactly what you have, and restores the copy if anything fails. Changes you
-did not choose stay as they are in BreadSched and are offered again next time.
+another number) and writes everything in one step. An XML book is rewritten only
+where a chosen transaction changes; the rest of the file stays exactly as GnuCash
+wrote it. BreadSched then reads the book back to confirm GnuCash will see exactly
+what you have, and restores the copy if anything fails. Changes you did not choose
+stay as they are in BreadSched and are offered again next time. Each release is
+tested by opening written books in GnuCash itself.
 
 ### Review GnuCash changes to reconciled transactions
 

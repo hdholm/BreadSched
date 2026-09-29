@@ -49,11 +49,12 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    delivered, as are transaction tags and linked documents. AqBanking was
    investigated and is supported through the reviewed CSV import rather than a
    built-in link (see `DESIGN.md`). GnuCash deletions of reconciled transactions
-   are reviewed. Next, widen GnuCash write-back (XML books, multi-split, account
-   changes, deletions). Further OFX investment activity (options, share transfers,
+   are reviewed, and write-back covers XML books, multi-split transactions,
+   amount and account changes, and deletions, checked in real GnuCash in CI.
+   Further OFX investment activity (options, share transfers,
    splits, return of capital, margin interest, journals) is not planned while it
    stays documented and reported as skipped on import.
-3. **Next — Interface, FSA, and scheduling.** After the write-back work, take the
+3. **Next — Interface, FSA, and scheduling.** Take the
    GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
    scheduled transactions and loans (sections below).
 
@@ -184,11 +185,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Extend CSV import mapping to split columns (several category/amount pairs per
   row). Reject ambiguous mappings rather than inventing ledger accounts or
   balancing splits, as the category, payee, and currency columns already do.
-
-- Widen GnuCash write-back (#174) to XML books and wider edits (multi-split,
-  account changes, deletions) only with round-trip fixtures that prove
-  preservation, and confirm written books open in a real GnuCash in CI. Never
-  write to the source during normal import.
 
 - Add reviewed commodity/security mapping where imported identifiers cannot be
   matched safely and extend price import to additional source formats where present.
