@@ -78,3 +78,19 @@ def test_thirty_year_projection_stays_responsive_with_large_history(realistic_bo
 
     assert len(result.rows) == 360
     assert elapsed < 3.0, f"30-year projection took {elapsed:.3f}s on a 30k-transaction book"
+
+
+@pytest.mark.performance
+def test_net_worth_history_reads_each_split_once(realistic_book):
+    """Guard the Dashboard's history against re-scanning the ledger per date."""
+    from breadsched.gen.services import query_net_worth_history
+
+    db, _checking, _expense = realistic_book
+    start = perf_counter()
+    result = query_net_worth_history(
+        db, date(2025, 10, 1), date(2026, 9, 30), "month", today=date(2026, 9, 15)
+    )
+    elapsed = perf_counter() - start
+
+    assert result.value is not None and len(result.value.points) == 12
+    assert elapsed < 1.5, f"12-month net worth history took {elapsed:.3f}s on a 30k book"

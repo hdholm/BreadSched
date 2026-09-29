@@ -10,6 +10,14 @@ belongs in `ROADMAP.md`.
   expected amount, and each receipt with its date and amount, grouped by payer. The
   service asserts that they reconcile to the Plan cell, as it does for expenses. GTK
   and the web page add an **Income detail** choice below Income over time.
+- **Net worth history is fast on large books.** 0.2.0a188 re-read every account's
+  whole ledger for each period, and checked each point against a second full
+  valuation, so twelve months of a 30,000-transaction book took about 10 seconds,
+  and the web Dashboard waited for it. Each account's balance is now carried
+  forward by adding only the splits since the previous date, and the full
+  comparison moved into the tests: the same history takes about 0.2 seconds. A
+  performance test guards it, and a new test checks the carried balances against a
+  full valuation every month for a year.
   Application version `0.2.0a189`; native schema remains 9.
 
 ## 0.2.0a188 - 2026-09-29

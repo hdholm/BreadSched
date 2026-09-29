@@ -108,3 +108,32 @@ def test_missing_quote_withholds_totals_and_names_the_account(db, book):
     assert "<h1>Net worth history</h1>" in html or "Net worth history" in html
     assert "missing quote: Assets:Foreign cash" in html
     assert "20.00" in html
+
+
+def test_carried_balances_match_a_full_valuation_every_month(db, book):
+    """Each point adds only the splits since the previous one; it must still equal
+    a fresh valuation of the whole ledger on its date."""
+    with db.transaction("A year of activity") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2025, 12, 31), "Opening", book.checking, book.opening, "900"),
+            txn,
+        )
+        for month in range(1, 13):
+            db.add_transaction(
+                Transaction.simple(date(2026, month, 1), "Pay", book.checking, book.salary, "100"),
+                txn,
+            )
+            db.add_transaction(
+                Transaction.simple(
+                    date(2026, month, month + 10), "Card", book.groceries, book.card, "7.5"
+                ),
+                txn,
+            )
+    result = query_net_worth_history(
+        db, date(2026, 1, 1), date(2026, 12, 31), today=date(2026, 12, 31)
+    )
+    assert result.value is not None
+    assert len(result.value.points) == 12
+    for point in result.value.points:
+        assert point.net_worth == valuation.net_worth(db, as_of=point.valued_on), point.label
+    assert result.value.points[-1].net_worth == Money(900 + 1200 - 90)
