@@ -13,6 +13,13 @@ belongs in `ROADMAP.md`.
   entry and keeps the rest of the value, unexpanded variables, and registry type
   exactly. CI checks the default, the opt-in, the remembered choice, and that
   uninstalling restores `PATH` exactly. Ruff now also checks `packaging/`.
+- **Rejected browser writes no longer reset the connection.** The local web
+  server rejected some writes (untrusted, wrong content type, unknown route, or an
+  invalid upload query) without reading the request body. Closing a connection
+  with data unread makes the operating system reset it, so a Windows client could
+  lose the error response (seen as `WinError 10053` in CI on `main`). The server
+  now reads and drops a bounded body before these rejections, and a raw-socket
+  test requires a clean close for each one.
   Application version `0.2.0a185`; native schema remains 9.
 
 ## 0.2.0a184 - 2026-09-29

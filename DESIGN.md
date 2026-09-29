@@ -172,7 +172,10 @@ shared service owns validation and atomic scenario persistence; a rejected reque
 does not change the scenario's overrides.
 
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
-not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,
+not accept transfer encodings. A write rejected before its body is used (untrusted,
+wrong content type, unknown route, or invalid upload query) first reads and drops a
+body of valid, in-limit length. Closing with request data unread makes the operating
+system reset the connection, and a Windows client then loses the error response. Browser CSS and JavaScript are packaged static assets,
 all events are registered from JavaScript, and charts construct SVG through namespaced
 DOM nodes rather than interpolating markup. This permits a directive-specific Content
 Security Policy with no inline-script or inline-style exception.

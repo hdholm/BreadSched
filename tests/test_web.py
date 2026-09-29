@@ -12,6 +12,7 @@ import json
 import socket
 import sys
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -2756,6 +2757,36 @@ class TestSafety:
         with pytest.raises(urllib.error.HTTPError) as caught:
             urllib.request.urlopen(request, timeout=10)
         assert caught.value.code == 403
+
+    @pytest.mark.parametrize(
+        ("path", "content_type", "status"),
+        (
+            ("/api/transaction", "text/plain", 403),
+            ("/api/no-such-route", "application/json", 404),
+            ("/api/import/upload?filename=a.csv", "text/plain", 403),
+            ("/api/import/upload", "application/octet-stream", 400),
+        ),
+    )
+    def test_rejected_write_reads_its_body_before_closing(self, client, path, content_type, status):
+        # Closing with the request body unread makes the OS reset the connection
+        # (RST), and a Windows client then loses the error response (WinError
+        # 10053). A clean close lets the client write once more without error;
+        # after a reset, that write fails.
+        port = int(client.base_url.rsplit(":", 1)[1])
+        body = b"x" * 60000
+        head = (
+            f"POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+            f"Content-Type: {content_type}\r\nContent-Length: {len(body)}\r\n"
+            f"X-BreadSched-Token: {client.token}\r\n\r\n"
+        ).encode("ascii")
+        with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+            sock.sendall(head + body)
+            response = b""
+            while chunk := sock.recv(65536):
+                response += chunk
+            assert response.split(b"\r\n", 1)[0].split()[1] == str(status).encode()
+            time.sleep(0.2)
+            sock.send(b"x")
 
     def test_foreign_host_is_rejected(self, client):
         request = urllib.request.Request(
