@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import os
 import sys
 import time
 from collections.abc import Callable
@@ -64,6 +65,12 @@ class _Win32:
             ("PostMessageW", user32)
         )
         self._enum_proc = prototype(wintypes.BOOL, hwnd, wintypes.LPARAM)
+        self._enum_top = prototype(wintypes.BOOL, self._enum_proc, wintypes.LPARAM)(
+            ("EnumWindows", user32)
+        )
+        self._owner = prototype(wintypes.DWORD, hwnd, ctypes.POINTER(wintypes.DWORD))(
+            ("GetWindowThreadProcessId", user32)
+        )
         self._enum = prototype(wintypes.BOOL, hwnd, self._enum_proc, wintypes.LPARAM)(
             ("EnumChildWindows", user32)
         )
@@ -115,6 +122,21 @@ class _Win32:
             self.post(self.item(dialog, IDOK), BM_CLICK, 0, 0)
         return way
 
+    def own_windows(self) -> list[str]:
+        """This process's visible top-level windows, e.g. a rejection message box."""
+        found: list[str] = []
+
+        def visit(window: int, _param: int) -> bool:
+            pid = wintypes.DWORD()
+            self._owner(window, ctypes.byref(pid))
+            if pid.value == os.getpid() and self.visible(window):
+                texts = [self.text(child) for child in self.descendants(window)]
+                found.append(f"{self.class_name(window)} {self.text(window)!r}: {texts[:8]}")
+            return True
+
+        self._enum_top(self._enum_proc(visit), 0)
+        return found
+
     def describe(self, dialog: int) -> list[str]:
         return [
             f"{self.class_name(window)}#{self.control_id(window)}"
@@ -159,6 +181,9 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
         a click on the default button; the report records which ones it took.
         """
         dialog = wait_for(lambda: win32.find("#32770", title), f'the "{title}" dialog')
+        # MSYS2's Python joins paths with "/" when MSYSTEM is set; the native
+        # dialog rejects such a name, so give it the Windows form.
+        name = str(path).replace("/", "\\")
         attempts: list[str] = []
         deadline = time.monotonic() + TIMEOUT
         while time.monotonic() < deadline:
@@ -167,16 +192,18 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
                 return
             box = win32.file_name_box(dialog)
             if box and win32.find("#32770", title):
-                win32.set_text(box, str(path))
-                if win32.text(box) == str(path):
+                win32.set_text(box, name)
+                if win32.text(box) == name:
                     attempts.append(win32.accept(dialog, box, len(attempts)))
             pause_until = time.monotonic() + 2.0
             while time.monotonic() < pause_until and win32.find("#32770", title):
                 settle()
                 time.sleep(0.1)
         controls = "\n  ".join(win32.describe(dialog))
+        windows = "\n  ".join(win32.own_windows())
         raise AssertionError(
-            f'"{title}" did not accept {path} after {attempts}; controls:\n  {controls}'
+            f'"{title}" did not accept {name} after {attempts}; controls:\n  {controls}'
+            f"\nwindows of this process:\n  {windows}"
         )
 
     app = BreadSchedApplication(application_id=f"{APP_ID}.WindowsChecks", unique=False)
