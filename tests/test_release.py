@@ -108,7 +108,9 @@ def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit()
     assert "persist-credentials: false" in windows and "ref: main" in windows
     verify = windows.index("(git rev-parse HEAD) -ne $env:TESTED_SHA")
     assert verify < windows.index("packaging/windows/build-installer.sh")
-    assert "./packaging/windows/test-installer.ps1 $installer" in windows
+    assert './packaging/windows/test-installer.ps1 $installer -Previous "$previous"' in windows
+    assert windows.index("fetch-previous.ps1 $env:VERSION") < windows.index("test-installer.ps1")
+    assert "GH_TOKEN: ${{ github.token }}" in windows
     stage = windows.index("./packaging/windows/stage-release.ps1 $installer release-installer")
     assert windows.index("test-installer.ps1") < stage
     assert "BreadSched-$env:VERSION-setup.exe" in windows

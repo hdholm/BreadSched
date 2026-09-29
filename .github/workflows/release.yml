@@ -152,11 +152,15 @@ jobs:
 
       - name: Install, exercise, upgrade, and uninstall outside MSYS2
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $name = "BreadSched-$env:VERSION-setup.exe"
           $installer = Join-Path "dist/windows" $name
           if (-not (Test-Path $installer)) { throw "expected $name for the selected version" }
-          ./packaging/windows/test-installer.ps1 $installer
+          # Upgrade from the newest published installer, verified against its SHA256SUMS.
+          $previous = ./packaging/windows/fetch-previous.ps1 $env:VERSION previous-release
+          ./packaging/windows/test-installer.ps1 $installer -Previous "$previous"
           ./packaging/windows/stage-release.ps1 $installer release-installer
 
       - name: Transfer only the tested installer as data

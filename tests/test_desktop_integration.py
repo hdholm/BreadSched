@@ -108,6 +108,17 @@ def test_windows_installer_carries_its_runtime_and_is_tested_in_ci():
     for step in ("sample", "verify", "guide --list", "flatpak_gtk_smoke.py", "Uninstall.exe"):
         assert step in check, step
     assert "uninstall removed the book" in check
+    # Upgrade from the newest published installer, verified before it runs.
+    fetch = (windows / "fetch-previous.ps1").read_text(encoding="utf-8")
+    assert '-ne "v$Version"' in fetch and "SHA256SUMS" in fetch
+    assert fetch.index("Get-FileHash") < fetch.index("Write-Output $setup.FullName")
+    assert "[string]$Previous" in check
+    upgrade = check.split("if ($Previous) {", 1)[1].split('\nWrite-Host "== clean install"', 1)[0]
+    assert upgrade.index("Install-Once $Previous") < upgrade.index("Install-Once $Installer")
+    assert 'StartsWith("breadsched $version ")' in upgrade
+    assert "verify $published" in upgrade and "Uninstall-From $upgradeDir" in upgrade
+    assert "packaging/windows/fetch-previous.ps1" in workflow
+    assert '-Previous "$previous"' in workflow
     assert "windows-installer:" in workflow
     assert "packaging/windows/build-installer.sh" in workflow
     assert "packaging/windows/test-installer.ps1" in workflow
