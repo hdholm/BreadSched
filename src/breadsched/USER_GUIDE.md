@@ -804,8 +804,8 @@ Imports run as one atomic undo step; a cancelled import writes nothing
 Re-import updates source-owned data and removes source transactions that have
 disappeared. A deleted source transaction still referenced by a BreadSched
 reconciliation or FSA claim is retained and reported for review. Local planning
-decisions are not overwritten by source refreshes. AqBanking links are not
-available yet.
+decisions are not overwritten by source refreshes. BreadSched does not connect to
+banks itself; see [Bank downloads through AqBanking](#bank-downloads-through-aqbanking).
 
 ### Keep GnuCash and BreadSched side by side
 
@@ -968,6 +968,27 @@ without one. A **currency** column must match the account's currency; a row in
 another currency is invalid rather than imported at the wrong value. BreadSched
 never creates accounts, payees, or currencies from these columns. Re-importing a
 row already imported leaves it untouched even if its category cell has changed.
+
+### Bank downloads through AqBanking
+
+BreadSched does not connect to banks directly, and does not bundle AqBanking (the
+online-banking library GnuCash uses). AqBanking mainly serves German and other
+European banks through FinTS/HBCI and EBICS; its United States route, OFX Direct
+Connect, is being withdrawn by major banks. If your bank works with AqBanking, set
+it up with AqBanking's own tools, which keep your bank login, PIN, and TAN
+handling, then download a statement and export it as CSV:
+
+```bash
+aqbanking-cli request --transactions -c statement.ctx --fromdate=20260901
+aqbanking-cli export -c statement.ctx --exporter=csv --profile=default -o statement.csv
+```
+
+Import `statement.csv` as a [CSV statement](#import-a-csv-statement) into the
+matching account, choosing the **date** column for the date, **value_value** for
+the amount, **remoteName** for the description, and **purpose** for the memo. The
+preview and duplicate review work as for any CSV statement, so downloading
+overlapping days again adds nothing twice
+([command line](guide/cli.md#import-a-csv-statement)).
 
 ### Payees
 

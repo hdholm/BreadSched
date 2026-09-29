@@ -416,3 +416,33 @@ def test_cli_maps_the_category_column(tmp_path, capsys):
     assert rows[0]["category"] == "Expenses:Groceries"
     assert rows[1]["status"] == "invalid"
     assert "Nowhere" in rows[1]["reason"]
+
+
+def test_an_aqbanking_cli_export_imports_with_the_documented_mapping(db, book):
+    """The guide's AqBanking route: ``aqbanking-cli export --exporter=csv``.
+
+    The fixture is unedited output of aqbanking-cli 6.5.4 with its default CSV
+    profile (semicolons, quoted fields, YYYY/MM/DD dates, dot decimals).
+    """
+    from pathlib import Path
+
+    source = Path(__file__).parent / "fixtures" / "aqbanking" / "aqbanking-cli-6.5.4-default.csv"
+    request = CsvImportRequest(
+        source=str(source),
+        account=book.checking,
+        mapping=CsvMapping(
+            date="date", amount="value_value", description="remoteName", memo="purpose"
+        ),
+    )
+
+    preview = preview_csv_import(db, request)
+
+    assert preview.ok, preview.errors
+    assert preview.value.delimiter == ";"
+    assert [(row.when, row.amount, row.description, row.memo) for row in preview.value.rows] == [
+        (date(2026, 9, 1), Money("-42.10"), "CORNER GROCER", "Groceries"),
+        (date(2026, 9, 15), Money("2500.00"), "EMPLOYER GMBH", "September salary"),
+    ]
+    assert import_csv(db, request).value.result.transactions_new == 2
+    # Fetching the same days again, as a later aqbanking-cli request will, adds nothing.
+    assert import_csv(db, request).value.result.transactions_unchanged == 2

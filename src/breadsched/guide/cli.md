@@ -143,6 +143,14 @@ Run the same command without `--preview` to import. Other options:
 - `--number-format`, `--encoding`, and `--delimiter` override detection, and
   `--invert` flips exports that show money out as a positive number.
 
+For a statement downloaded and exported with `aqbanking-cli` (see
+[Bank downloads through AqBanking](../USER_GUIDE.md#bank-downloads-through-aqbanking)):
+
+```bash
+breadsched import-csv household.breadsched statement.csv --account Checking \
+    --date date --amount value_value --description remoteName --memo purpose --preview
+```
+
 See [Import a CSV statement](../USER_GUIDE.md#import-a-csv-statement).
 
 ### Review held GnuCash changes
