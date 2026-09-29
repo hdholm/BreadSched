@@ -172,6 +172,16 @@ jobs:
         run: |
           $installer = Get-ChildItem dist/windows/BreadSched-*-setup.exe | Select-Object -First 1
           ./packaging/windows/test-installer.ps1 $installer.FullName
+          ./packaging/windows/stage-release.ps1 $installer.FullName release-installer
+
+      - name: Check the staged release checksum the way the publisher does
+        run: |
+          cd release-installer
+          ls
+          line=$(cat BreadSched-*-setup.exe.sha256)
+          [[ "$line" =~ ^[0-9a-f]{64}\ \ BreadSched-[0-9.a]+-setup\.exe$ ]]
+          test "$(wc -l < BreadSched-*-setup.exe.sha256)" -eq 1
+          sha256sum --check BreadSched-*-setup.exe.sha256
 
       - uses: actions/upload-artifact@v4
         with:

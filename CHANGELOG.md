@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a183 - 2026-09-29
+
+- **Windows installer on releases.** The release workflow gains a
+  `windows-installer` job that builds, installs, exercises, and uninstalls the
+  installer on Windows from the tested `main` commit, then hands only the installer
+  and its checksum line to the publisher. The publisher checks their exact names,
+  the line's form, and the hash without running them, adds the line to `SHA256SUMS`,
+  and attaches `BreadSched-<version>-setup.exe` beside the wheel and source archive.
+  `packaging/windows/stage-release.ps1` writes that checksum line, and CI runs it
+  and checks it the publisher's way on every pull request. The installer is not
+  yet code-signed. Application version `0.2.0a183`; native schema remains 9.
+
 ## 0.2.0a182 - 2026-09-29
 
 - **Releases publish again (#207).** Every release since 0.2.0a133 failed before

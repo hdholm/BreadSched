@@ -35,8 +35,9 @@ for the current user under `%LOCALAPPDATA%\Programs\BreadSched` and adds
 `breadsched.cmd` for the [command line](cli.md) and `breadsched-gtk.cmd`.
 Installing a newer version over an older one replaces the program and keeps your
 books, and uninstalling (from Windows Settings or the Start menu) never removes a
-book. CI builds and tests the installer on every change; it is not yet published
-with releases, so check the release notes for availability.
+book. Download it from the release page and check it against the release's
+`SHA256SUMS` (in PowerShell, `Get-FileHash BreadSched-<version>-setup.exe`). It is
+not yet code-signed, so Windows SmartScreen may ask you to confirm before it runs.
 
 ## Find your way around
 
