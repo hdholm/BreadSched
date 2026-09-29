@@ -145,6 +145,7 @@ class TestLayering:
             "time",
             "typing",
             "unicodedata",
+            "urllib",
             "uuid",
             "weakref",
             "xml",

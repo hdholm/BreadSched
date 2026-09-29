@@ -115,7 +115,7 @@ def split_source_facts(split: Split) -> tuple[object, ...]:
 
 
 def transaction_source_facts(transaction: Transaction) -> tuple[object, ...]:
-    return (
+    facts: tuple[object, ...] = (
         transaction.post_date,
         transaction.description,
         transaction.currency,
@@ -123,6 +123,9 @@ def transaction_source_facts(transaction: Transaction) -> tuple[object, ...]:
         transaction.source_notes,
         tuple(sorted((split_source_facts(split) for split in transaction.splits), key=repr)),
     )
+    # Appended only when present, so fingerprints of books without source links
+    # (every book before links were imported) stay exactly as they were.
+    return (*facts, transaction.source_link) if transaction.source_link else facts
 
 
 def source_fingerprint(transaction: Transaction) -> str:
@@ -236,6 +239,8 @@ def merge_local_state(incoming: Transaction, existing: Transaction) -> None:
     incoming.planning_resolution = existing.planning_resolution
     incoming.rejected_plan_occurrences = list(existing.rejected_plan_occurrences)
     incoming.payee = existing.payee
+    incoming.tags = list(existing.tags)
+    incoming.attachments = list(existing.attachments)
 
     existing_splits = {split.handle: split for split in existing.splits}
     for split in incoming.splits:

@@ -17,13 +17,19 @@ earlier entry with the same description or payee (``services.autocomplete``) whe
 the description is left or a payee is chosen. The proposal only fills the form,
 with a visible note; nothing is saved until the user chooses Save, typed splits
 are never replaced, and a transaction being edited is never rewritten.
+
+Tags are saved with the transaction. Linked documents are changed at once through
+``services.attachments`` (each change is its own undoable step) and only on a
+transaction that has been saved; a missing file is marked, never removed.
 """
 
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite
+from ...gen.engine import attachments as attachment_engine
 from ...gen.engine import escrow, fsa_claims
 from ...gen.lib import (
     Amount,
@@ -40,15 +46,19 @@ from ...gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
+    attach_file,
+    attach_location,
     build_transaction,
     delete_transaction,
+    detach,
+    relink,
     save_transaction,
     transaction_currency,
 )
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
-from ..gi_setup import Gtk
+from ..gi_setup import Gio, GLib, Gtk
 
 __all__ = ["TransactionDialog"]
 
@@ -304,6 +314,23 @@ class TransactionDialog(Gtk.Window):
                 header.attach(Gtk.Label(label="Escrow treatment", xalign=0), 0, 5, 1, 1)
                 header.attach(self.escrow_treatment, 1, 5, 1, 1)
 
+        self.tags_entry = Gtk.Entry(placeholder_text="Comma-separated, e.g. Tax, Home repair")
+        if transaction is not None:
+            self.tags_entry.set_text(", ".join(transaction.tags))
+        self.tags_entry.set_tooltip_text(
+            "BreadSched's own labels; kept when a GnuCash book is imported again"
+        )
+        header.attach(Gtk.Label(label="Tags", xalign=0), 0, 6, 1, 1)
+        header.attach(self.tags_entry, 1, 6, 3, 1)
+
+        self.documents = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        header.attach(Gtk.Label(label="Documents", xalign=0, yalign=0), 0, 7, 1, 1)
+        header.attach(self.documents, 1, 7, 3, 1)
+        #: (status, row) for each linked document shown, in order.
+        self.document_rows: list[tuple[attachment_engine.AttachmentStatus, Gtk.Widget]] = []
+        self.link_entry: Gtk.Entry | None = None
+        self._show_documents()
+
         caption = Gtk.Box(spacing=8)
         splits_label = Gtk.Label(label="Splits", xalign=0)
         splits_label.add_css_class("total-row")
@@ -394,6 +421,151 @@ class TransactionDialog(Gtk.Window):
             second.account.set_selected(here)
             first.account.set_selected(1 if here == 0 and len(self.accounts) > 1 else 0)
         self.revalidate()
+
+    # --------------------------------------------------------------- documents
+
+    def _show_documents(self) -> None:
+        while (child := self.documents.get_first_child()) is not None:
+            self.documents.remove(child)
+        self.document_rows = []
+        self.link_entry = None
+        if self.transaction is None:
+            note = Gtk.Label(label="Save the transaction to link documents.", xalign=0)
+            note.add_css_class("dim")
+            self.documents.append(note)
+            return
+        for item in attachment_engine.statuses(self.db, self.transaction):
+            row = Gtk.Box(spacing=6)
+            label = Gtk.Label(
+                label=item.location + (" — missing" if item.missing else ""),
+                xalign=0,
+                selectable=True,
+                wrap=True,
+            )
+            label.set_hexpand(True)
+            if item.missing:
+                label.add_css_class("negative")
+                label.set_tooltip_text(
+                    f"Not found at {item.path}. Restore the file, or relink it."
+                    if item.path is not None
+                    else "Not found"
+                )
+            elif item.owner == "source":
+                label.set_tooltip_text("Linked in GnuCash; refreshed on re-import")
+            if item.owner == "source":
+                label.add_css_class("dim")
+            row.append(label)
+            open_button = Gtk.Button(label="Open")
+            open_button.set_sensitive(not item.missing)
+            open_button.connect("clicked", lambda _b, status=item: self.open_document(status))
+            row.append(open_button)
+            if item.owner == "breadsched":
+                again = Gtk.Button(label="Relink…")
+                again.connect("clicked", lambda _b, status=item: self._choose_relink(status))
+                row.append(again)
+                remove = Gtk.Button(icon_name="list-remove-symbolic")
+                remove.set_tooltip_text("Unlink; the file itself is kept")
+                remove.connect(
+                    "clicked", lambda _b, status=item: self.remove_document(status.location)
+                )
+                row.append(remove)
+            self.documents.append(row)
+            self.document_rows.append((item, row))
+        folder = attachment_engine.attachment_folder(self.db)
+        controls = Gtk.Box(spacing=6)
+        attach = Gtk.Button(label="Attach file…")
+        attach.set_tooltip_text(
+            f"Copy a file into {folder} and link it" if folder else "Link a file where it is"
+        )
+        attach.connect("clicked", self._choose_attachment)
+        controls.append(attach)
+        address = Gtk.Entry(placeholder_text="https://…")
+        address.set_hexpand(True)
+        address.connect("activate", lambda entry: self.link_location(entry.get_text()))
+        controls.append(address)
+        self.link_entry = address
+        link = Gtk.Button(label="Link address")
+        link.connect("clicked", lambda *_: self.link_location(address.get_text()))
+        controls.append(link)
+        self.documents.append(controls)
+
+    def _document_changed(self, result) -> bool:
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
+            self.status.add_css_class("negative")
+            return False
+        # Later saves build on the stored transaction, including its documents.
+        self.transaction = result.value
+        self._show_documents()
+        return True
+
+    def attach_path(self, path: Path) -> bool:
+        """Copy a file into the attachment folder (or link it in place) and link it."""
+        if self.transaction is None:
+            return False
+        copy = attachment_engine.attachment_folder(self.db) is not None
+        return self._document_changed(
+            attach_file(self.db, self.transaction.handle, path, copy=copy)
+        )
+
+    def link_location(self, location: str) -> bool:
+        if self.transaction is None:
+            return False
+        return self._document_changed(attach_location(self.db, self.transaction.handle, location))
+
+    def remove_document(self, location: str) -> bool:
+        if self.transaction is None:
+            return False
+        return self._document_changed(detach(self.db, self.transaction.handle, location))
+
+    def relink_document(self, location: str, path: Path) -> bool:
+        if self.transaction is None:
+            return False
+        new = attachment_engine.location_for(self.db, path)
+        return self._document_changed(relink(self.db, self.transaction.handle, location, new))
+
+    def open_document(self, item: attachment_engine.AttachmentStatus) -> str | None:
+        """Open a document with the desktop's default application."""
+        if item.kind == "web":
+            uri = item.location
+        elif item.path is not None and item.path.is_file():
+            uri = item.path.as_uri()
+        else:
+            self.status.set_text(f"{item.location} cannot be found")
+            self.status.add_css_class("negative")
+            return None
+        try:
+            Gio.AppInfo.launch_default_for_uri(uri, None)
+        except GLib.Error as exc:
+            self.status.set_text(f"Could not open {item.location}: {exc.message}")
+            self.status.add_css_class("negative")
+        return uri
+
+    def _choose_attachment(self, _button) -> None:
+        dialog = Gtk.FileDialog(title="Attach a document")
+
+        def chosen(dialog, result) -> None:
+            try:
+                file = dialog.open_finish(result)
+            except GLib.Error:
+                return
+            if file.get_path():
+                self.attach_path(Path(file.get_path()))
+
+        dialog.open(self, None, chosen)
+
+    def _choose_relink(self, item: attachment_engine.AttachmentStatus) -> None:
+        dialog = Gtk.FileDialog(title=f"Where is {item.location} now?")
+
+        def chosen(dialog, result) -> None:
+            try:
+                file = dialog.open_finish(result)
+            except GLib.Error:
+                return
+            if file.get_path():
+                self.relink_document(item.location, Path(file.get_path()))
+
+        dialog.open(self, None, chosen)
 
     def _on_make_scheduled(self, _button) -> None:
         if self.transaction is None:
@@ -613,6 +785,7 @@ class TransactionDialog(Gtk.Window):
                 splits=tuple(splits),
                 payee=self._chosen_payee(),
                 set_payee=True,
+                tags=tuple(self.tags_entry.get_text().split(",")),
             ),
             existing_handle=self.transaction.handle if self.transaction is not None else None,
             claim_attachment=attachment,

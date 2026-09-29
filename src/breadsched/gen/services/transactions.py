@@ -50,6 +50,9 @@ class TransactionInput:
     #: edit keeps the stored payee, so editors that do not show payees never drop one.
     payee: str | None = None
     set_payee: bool = False
+    #: The tags to record; ``None`` keeps the stored tags, so editors that do
+    #: not show tags never drop them.
+    tags: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -115,6 +118,15 @@ def build_transaction(
         and db.get_payee(definition.payee) is None
     ):
         errors.append(ServiceError("payee.not_found", ("payee",)))
+    tags: list[str] | None = None
+    if definition.tags is not None:
+        from .attachments import normalize_tags
+
+        normalized = normalize_tags(db, definition.tags)
+        if isinstance(normalized, ServiceError):
+            errors.append(normalized)
+        else:
+            tags = normalized
 
     preferred_currency = definition.currency or (
         existing.currency if existing is not None else None
@@ -219,6 +231,8 @@ def build_transaction(
     candidate.splits = candidate_splits
     if definition.set_payee:
         candidate.payee = definition.payee
+    if tags is not None:
+        candidate.tags = tags
 
     if investment.activity_problems(db, candidate.splits):
         return ServiceResult.failure(ServiceError("transaction.investment.invalid", ("splits",)))

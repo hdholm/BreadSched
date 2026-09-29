@@ -503,6 +503,17 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
         else {}
     )
 
+    # GnuCash's "Linked Document": ``assoc_uri`` before 4.x, ``doclink`` since.
+    source_links: dict[str, str] = {}
+    if _table_exists(conn, "slots"):
+        for row in conn.execute(
+            "SELECT obj_guid, name, string_val FROM slots "
+            "WHERE name IN ('assoc_uri', 'doclink') ORDER BY id"
+        ):
+            newer = row["name"] == "doclink" or row["obj_guid"] not in source_links
+            if row["string_val"] and newer:
+                source_links[row["obj_guid"]] = row["string_val"]
+
     done = 0
     for row in conn.execute("SELECT * FROM transactions ORDER BY post_date"):
         done += 1
@@ -535,6 +546,7 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
             num=row["num"] or "",
             splits=splits_by_txn.get(row["guid"], []),
             source_notes=source_notes.get(row["guid"], ""),
+            source_link=source_links.get(row["guid"], ""),
         )
 
 

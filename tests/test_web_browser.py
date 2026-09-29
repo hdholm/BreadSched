@@ -500,9 +500,10 @@ def test_the_guide_page_switches_parts_and_follows_links(page):
     page.wait_for_selector("article.guide h2:has-text('BreadSched User Guide')")
     heading = page.locator("#guide-reimbursable-expenses")
     assert heading.count() == 1
+    # Scrolling to a heading can leave it a fraction of a pixel above the top.
     page.wait_for_function(
         "() => { const r = document.getElementById('guide-reimbursable-expenses')"
-        ".getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; }"
+        ".getBoundingClientRect(); return r.top > -1 && r.top < window.innerHeight; }"
     )
     assert page.get_by_role("tab", name="Overview").get_attribute("aria-selected") == "true"
 
@@ -593,3 +594,30 @@ def test_goals_page_changes_a_goal_in_a_scenario_and_projection_shows_it(page, s
     page.get_by_role("button", name="Projection", exact=True).first.click()
     page.wait_for_selector(".projection-goals")
     assert "Goal Car" in page.locator(".projection-goals").inner_text()
+
+
+def test_a_register_row_is_tagged_and_links_documents(page, served, tmp_path):
+    db, _httpd = served
+    _open_register(page)
+    page.get_by_role("button", name="Tags & documents…").first.click()
+    heading = page.locator(".detail-dialog h2").inner_text()
+    description = heading.removeprefix("Tags & documents: ")
+    page.fill("input[aria-label='Tags']", "Tax, home repair")
+    page.get_by_role("button", name="Save tags").click()
+    page.wait_for_selector("text=Tags saved.")
+    receipt = tmp_path / "receipt.pdf"
+    receipt.write_bytes(b"%PDF-1.4")
+    page.set_input_files("input[aria-label='Document file']", str(receipt))
+    page.get_by_role("button", name="Attach file").click()
+    page.wait_for_selector(".detail-dialog span:has-text('receipt.pdf')")
+    page.fill("input[aria-label='Document address']", "https://example.com/invoice")
+    page.get_by_role("button", name="Link", exact=True).click()
+    page.wait_for_selector(".detail-dialog span:has-text('https://example.com/invoice')")
+
+    (tmp_path / "browser attachments" / "receipt.pdf").unlink()
+    page.get_by_role("button", name="Done").click()
+    page.wait_for_selector("text=Tags: Tax, home repair")
+    page.wait_for_selector("text=Documents: 2 (1 missing)")
+    [stored] = [item for item in db.iter_transactions() if item.tags]
+    assert stored.description == description
+    assert stored.attachments == ["receipt.pdf", "https://example.com/invoice"]

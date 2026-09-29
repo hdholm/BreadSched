@@ -450,6 +450,7 @@ def _read_transaction(element: ET.Element, sink: ImportSink) -> None:
         num=_text(element, "trn:num"),
         splits=splits,
         source_notes=_slot_value(element, "notes") or "",
+        source_link=_slot_value(element, "doclink") or _slot_value(element, "assoc_uri") or "",
     )
 
 

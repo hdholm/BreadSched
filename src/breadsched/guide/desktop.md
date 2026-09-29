@@ -165,6 +165,21 @@ in, along with its payee if you have not chosen one, and a note says where it ca
 from. Edit anything before choosing **Save**. Choose a payee under **Payee**, or
 **(no payee)** to clear it.
 
+### Tags and linked documents
+
+In the full transaction editor, type tags under **Tags**, separated by commas; they
+are saved with the transaction. The register filter also matches tags.
+
+**Documents** lists the transaction's linked documents once it has been saved. A
+missing file is shown in red, marked **missing**, and its tooltip says where
+BreadSched looked. **Attach file…** copies a file into the book's attachment folder
+and links it. Type a web address and choose **Link address** to link a page.
+**Open** opens a document with your usual application or browser, **Relink…**
+points a moved or missing file at where it is now, and the remove button unlinks
+it without deleting the file. A document linked in GnuCash is shown dimmed and can
+only be opened. Each change is saved at once and can be undone with **Edit → Undo**.
+See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
+
 ## Reconcile a statement
 
 1. Choose **Reconcile…** from the register.

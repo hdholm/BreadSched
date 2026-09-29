@@ -46,9 +46,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
    configurable backups). Broader reporting (spending and income over time, net
    worth history and its drill-down) and scenario-aware pinned savings goals are
-   delivered. Next, investigate AqBanking as an optional
-   integration, and add transaction tags/attachments with private-data and
-   portability controls. Detailed acceptance contracts follow below.
+   delivered, as are transaction tags and linked documents. Next, investigate
+   AqBanking as an optional integration. Detailed acceptance contracts follow
+   below.
 
 
 ## Architecture and correctness
@@ -67,11 +67,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Consider whether a categorization rule should also be able to set a payee, and
   whether split transactions can be supported with explicit per-split rules
   rather than a guess.
-
-- Add transaction tags and optional attachments with search/filter/export support.
-  Define book-relative storage, size/type limits, backup/restore and archive
-  inclusion, privacy-safe diagnostics, and behavior on GnuCash re-import or
-  missing external files. Do not imply GnuCash supports an unproven round trip.
 
 
 ## Plan and planning-flow reporting

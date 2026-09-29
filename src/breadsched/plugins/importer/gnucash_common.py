@@ -794,6 +794,7 @@ class ImportSink:
         splits: list[dict[str, Any]],
         source_notes: str = "",
         payee: str | None = None,
+        source_link: str = "",
     ) -> Transaction | None:
         """Build and store one transaction.
 
@@ -818,6 +819,7 @@ class ImportSink:
         # masse. On re-import, BreadSched-owned planning state is merged below.
         txn_obj.planning_resolution = PlanningResolution.HISTORICAL
         txn_obj.source_notes = source_notes
+        txn_obj.source_link = source_link
         subject = txn_obj.describe()
 
         if not splits:

@@ -262,7 +262,7 @@ replace one you entered yourself.
 A register lists one account's entries oldest first, like a check register, with a
 full-ledger running balance. Headings use account-appropriate household language
 such as Deposit/Withdrawal or Payment/Charge. Filtering the register searches
-descriptions, numbers, notes, split memos, payees, and account names without
+descriptions, numbers, notes, tags, split memos, payees, and account names without
 changing the running balance. A transaction cannot be saved unless its exact splits
 balance.
 
@@ -288,6 +288,42 @@ BreadSched refuses to change its amount without its converted quantity, rather t
 keep a quantity that no longer matches. Use the full transaction editor for
 additional splits, notes, reconciliation metadata, FSA links, or investment
 classifications.
+
+### Tags and linked documents
+
+A **tag** is a short label of your own, such as *Tax* or *Home repair*, and a
+transaction can carry several. Tags are matched regardless of capitals, and a new
+tag takes the spelling the book already uses. A tag cannot contain a comma or be
+longer than 64 characters.
+
+A transaction can also link **documents**: a receipt, statement, or invoice file,
+or a web address. As in GnuCash, the files stay outside the book. Attaching a file
+copies it into an **attachment folder** beside the book (for `household.breadsched`,
+the folder `household attachments`) and links it by its name there, so the book
+and folder can move together. An existing file of the same name is never
+overwritten; the copy gets a numbered name. A file can instead be linked where it
+is, and a web address is only linked, never fetched. Removing a document only
+unlinks it: the file is kept. The browser can link only web addresses and files
+inside the attachment folder, so that it cannot be used to read other files on the
+computer; the desktop and command line can link a file anywhere.
+
+A file can go missing: moved, renamed, or on a drive that is not connected. It is
+then marked **missing** wherever documents are shown, and the link is kept so that
+you can restore the file or **relink** it to where it is now. A missing document
+never stops the book from opening or verifying.
+
+A document linked in GnuCash (its **Linked Document**) comes across with the
+transaction and is shown beside yours. It is kept as a link, never copied, and it
+is refreshed from GnuCash on every re-import, while your own tags and documents
+are kept. A relative GnuCash link is looked up under GnuCash's *Path head for
+linked files*, which is your home folder unless you tell BreadSched otherwise
+([command line](guide/cli.md#tags-and-linked-documents)).
+
+A transaction CSV export includes a **tags** column and a **documents** column. A
+book backup does not include the attachment folder: back it up with your other
+files. See [desktop](guide/desktop.md#tags-and-linked-documents),
+[browser](guide/web.md#tags-and-linked-documents), and
+[command line](guide/cli.md#tags-and-linked-documents).
 
 ### Reconcile a statement
 
@@ -982,7 +1018,8 @@ Native books use the `.breadsched` suffix and SQLite storage. The application
 version and the separate native schema version appear in the version output and
 Verify diagnostics. Regularly:
 
-- **back up** the book: an independent verified backup;
+- **back up** the book: an independent verified backup (linked documents live in
+  the attachment folder beside the book, which a book backup does not include);
 - **verify** it: SQLite integrity and financial relationships such as balanced
   transactions, valid references, precision, scheduled realization, and
   reconciliation consistency;

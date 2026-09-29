@@ -625,6 +625,122 @@ async function openCurrencyRateEditor() {
 }
 
 
+// Tags and linked documents for one transaction. Documents stay outside the book,
+// in the attachment folder beside it; a missing file is marked, never dropped.
+// A file opens only if the page can show it safely; anything else is saved.
+const SAFE_DOCUMENT_TYPES = ["application/pdf", "image/png", "image/jpeg", "image/gif",
+  "image/webp", "text/plain"];
+
+async function openDocument(transaction, item) {
+  if (item.kind === "web") {
+    window.open(item.location, "_blank", "noopener");
+    return;
+  }
+  const query = new URLSearchParams({ transaction, location:item.location });
+  const response = await fetch(`/api/attachment/content?${query}`, { headers:apiHeaders() });
+  if (!response.ok) throw new Error((await response.json()).error || response.statusText);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const type = (response.headers.get("Content-Type") || "").split(";")[0];
+  if (SAFE_DOCUMENT_TYPES.includes(type)) {
+    window.open(url, "_blank", "noopener");
+  } else {
+    const link = el("a", { href:url, download:item.location.split(/[\\/]/).pop() });
+    document.body.append(link);
+    link.click();
+    link.remove();
+  }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+function openTransactionDocuments(row) {
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) close(); },
+  });
+  let changed = false;
+  const close = () => { backdrop.remove(); if (changed) render(); };
+  const tags = el("input", { value:row.tags.join(", "), "aria-label":"Tags",
+    placeholder:"Comma-separated, e.g. Tax, Home repair" });
+  const list = el("div", { class:"stack" });
+  const address = el("input", { placeholder:"https://… or a file in the attachment folder",
+    "aria-label":"Document address" });
+  const file = el("input", { type:"file", "aria-label":"Document file" });
+  const act = async (work) => {
+    try {
+      const result = await work();
+      changed = true;
+      row.tags = result.tags;
+      row.documents = result.documents;
+      show();
+      return result;
+    } catch (error) { say(error.message, "error"); return null; }
+  };
+  const show = () => {
+    list.replaceChildren(...(row.documents.length ? row.documents.map((item) => el("div",
+      { class:"row" },
+      el("span", { class:item.missing ? "negative" : (item.owner === "source" ? "muted" : ""),
+        title:item.missing ? `Not found at ${item.path || item.location}` : (item.path || "") },
+        item.location, item.missing ? " — missing" : "",
+        item.owner === "source" ? " (linked in GnuCash)" : ""),
+      el("button", { class:"action", type:"button", disabled:item.missing ? "disabled" : null,
+        onclick:()=>openDocument(row.handle, item).catch((error)=>say(error.message,"error")) },
+        "Open"),
+      item.owner === "breadsched" ? el("button", { class:"action", type:"button",
+        onclick:()=>{
+          const to = window.prompt(
+            `Where is ${item.location} now? Give its place in the attachment folder.`,
+            item.location);
+          if (to) act(()=>post("/api/transaction/attachment/relink",
+            { transaction:row.handle, location:item.location, to }));
+        } }, "Relink…") : null,
+      item.owner === "breadsched" ? el("button", { class:"action", type:"button",
+        title:"Unlink; the file itself is kept",
+        onclick:()=>act(()=>post("/api/transaction/attachment/remove",
+          { transaction:row.handle, location:item.location })) }, "Remove") : null))
+      : [el("p", { class:"muted" }, "No linked documents.")]));
+  };
+  show();
+  const upload = async () => {
+    if (!file.files.length) throw new Error("Choose a file to attach.");
+    const query = new URLSearchParams({ transaction:row.handle, filename:file.files[0].name });
+    const response = await fetch(`/api/attachment/upload?${query}`, {
+      method:"POST", headers:{ ...apiHeaders(), "Content-Type":"application/octet-stream" },
+      body:file.files[0],
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || response.statusText);
+    file.value = "";
+    return payload;
+  };
+  backdrop.append(el("section", { class:"detail-dialog" },
+    el("h2", {}, `Tags & documents: ${row.description}`),
+    el("div", { class:"scenario-fields" },
+      el("label", {}, "Tags", tags),
+      el("button", { class:"action", type:"button",
+        onclick:()=>act(()=>post("/api/transaction/tags",
+          { transaction:row.handle, tags:tags.value.split(",") })).then((result)=>{
+          if (result) { tags.value = result.tags.join(", "); say("Tags saved."); }
+        }) }, "Save tags")),
+    el("h3", {}, "Documents"),
+    list,
+    el("div", { class:"toolbar" }, file,
+      el("button", { class:"action", type:"button",
+        title:"Copy the file into the attachment folder beside the book and link it",
+        onclick:()=>act(upload) }, "Attach file")),
+    el("div", { class:"toolbar" }, address,
+      el("button", { class:"action", type:"button",
+        onclick:()=>act(()=>post("/api/transaction/attachment/link",
+          { transaction:row.handle, location:address.value })).then((result)=>{
+          if (result) address.value = "";
+        }) }, "Link")),
+    el("div", { class:"toolbar" },
+      el("span", { class:"spacer" }),
+      el("button", { class:"action primary", type:"button", onclick:close }, "Done"))));
+  document.body.append(backdrop);
+}
+
+
 async function openFsaClaimsEditor(initialHandle=null) {
   const data = await get("/api/fsa/claims");
   const backdrop = el("div", {
@@ -1129,7 +1245,13 @@ async function showRegister() {
       el("td", {},
         el("div", {}, row.description),
         row.notes ? el("div", {class:"muted"}, `BreadSched: ${row.notes}`) : null,
-        row.source_notes ? el("div", {class:"muted"}, `Imported: ${row.source_notes}`) : null),
+        row.source_notes ? el("div", {class:"muted"}, `Imported: ${row.source_notes}`) : null,
+        row.tags.length ? el("div", {class:"muted"}, `Tags: ${row.tags.join(", ")}`) : null,
+        row.documents.length ? el("div", {class:
+          row.documents.some((item)=>item.missing) ? "negative" : "muted"},
+          `Documents: ${row.documents.length}`
+          + (row.documents.some((item)=>item.missing)
+            ? ` (${row.documents.filter((item)=>item.missing).length} missing)` : "")) : null),
       el("td", {}, payeePicker(row)),
       el("td", { class: "muted" }, row.transfer),
       el("td", { class: "num" }, amount > 0 ? money(row.amount) : ""),
@@ -1139,6 +1261,9 @@ async function showRegister() {
         el("button", { class:"action", type:"button", title:"Edit this transaction in its row",
           onclick:()=>leaveEntry(()=>{ state.editing = {split:row.split, focus:true}; render(); }) },
           "Edit"),
+        el("button", { class:"action", type:"button",
+          title:"Tag this transaction and link receipts, statements, or web pages",
+          onclick:()=>openTransactionDocuments(row) }, "Tags & documents…"),
         el("button", { class:"action", type:"button",
           onclick:()=>makeScheduled(row.handle) }, "Make scheduled…"),
         el("button", { class:"action", type:"button",

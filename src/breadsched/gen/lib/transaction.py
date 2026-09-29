@@ -267,6 +267,12 @@ class Transaction(PrimaryObject):
         self.rejected_plan_occurrences: list[str] = []
         #: The accepted payee, owned by BreadSched; the description is never rewritten.
         self.payee: str | None = None
+        #: Linked documents owned by BreadSched: a path relative to the book's
+        #: attachment folder, an absolute path or ``file:`` URI, or a web address.
+        self.attachments: list[str] = []
+        #: The document linked in the import source (GnuCash "Linked Document"),
+        #: read-only and refreshed on re-import like ``source_notes``.
+        self.source_link = ""
         self.splits: list[Split] = list(splits or [])
 
     # ------------------------------------------------------------------ splits
@@ -365,6 +371,8 @@ class Transaction(PrimaryObject):
             "planning_resolution": self.planning_resolution.value,
             "rejected_plan_occurrences": list(self.rejected_plan_occurrences),
             "payee": self.payee,
+            "attachments": list(self.attachments),
+            "source_link": self.source_link,
             "splits": [s.serialize() for s in self.splits],
         }
 
@@ -392,6 +400,8 @@ class Transaction(PrimaryObject):
         )
         self.rejected_plan_occurrences = list(data.get("rejected_plan_occurrences", []))
         self.payee = data.get("payee")
+        self.attachments = [str(item) for item in data.get("attachments", [])]
+        self.source_link = str(data.get("source_link", ""))
         self.splits = [Split.from_dict(s) for s in data.get("splits", [])]
 
     def __repr__(self) -> str:

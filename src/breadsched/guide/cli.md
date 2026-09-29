@@ -180,6 +180,30 @@ breadsched payees book.breadsched --delete "Corner Grocer"
 `--match` takes an example description; the preview shows the matched key for each
 proposal and writes nothing.
 
+## Tags and linked documents
+
+```sh
+breadsched tags book.breadsched --transaction 3f2a --set "Tax, Home repair"
+breadsched tags book.breadsched                      # every tag and its count
+breadsched tags book.breadsched tax                  # transactions tagged Tax
+breadsched register book.breadsched Checking --tag tax
+breadsched attachments book.breadsched --transaction 3f2a --add ~/Scans/receipt.pdf
+breadsched attachments book.breadsched --transaction 3f2a --add https://example.com/invoice
+breadsched attachments book.breadsched --missing     # documents that cannot be found
+breadsched attachments book.breadsched --transaction 3f2a \
+    --relink receipt.pdf --to ~/Archive/receipt.pdf
+breadsched attachments book.breadsched --transaction 3f2a --remove receipt.pdf
+```
+
+`--set ""` removes every tag. `--add` copies a file into the attachment folder;
+add `--link` to link it where it is instead. `--remove` unlinks a document and
+keeps the file. `--folder DIR` moves where relative documents are looked up (a
+relative folder is taken from the book's folder; `--folder ""` restores the
+default). `--gnucash-folder DIR` sets where relative GnuCash linked documents live,
+matching GnuCash's *Path head for linked files*. The register's `--tag` filter
+keeps the full running balance, and its `--json` rows include each transaction's
+tags and document count.
+
 ## Categorization rules
 
 ```sh
