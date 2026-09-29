@@ -149,11 +149,28 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
     from breadsched import APP_ID
     from breadsched.gui import printing
     from breadsched.gui.app import BreadSchedApplication
-    from breadsched.gui.gi_setup import Gio, GLib
+    from breadsched.gui.gi_setup import Gio, GLib, Gtk
     from breadsched.gui.viewmanager import CATEGORIES, ViewManager
 
     win32 = _Win32()
     accepted: dict[str, list[str]] = {}
+    # What the application's own callbacks received from the native dialogs.
+    finished: dict[str, str | None] = {}
+
+    def recording(kind: str, real: Callable[..., Any]) -> Callable[..., Any]:
+        def finish(dialog: Any, result: Any) -> Any:
+            try:
+                chosen = real(dialog, result)
+            except GLib.Error as exc:
+                finished[kind] = f"error: {exc.message}"
+                raise
+            finished[kind] = chosen.get_path() if chosen is not None else None
+            return chosen
+
+        return finish
+
+    Gtk.FileDialog.open_finish = recording("open", Gtk.FileDialog.open_finish)
+    Gtk.FileDialog.save_finish = recording("save", Gtk.FileDialog.save_finish)
     context = GLib.MainContext.default()
     work = Path(work_dir)
 
@@ -169,7 +186,10 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
             if value:
                 return value
             time.sleep(0.1)
-        raise AssertionError(f"timed out waiting for {what}")
+        raise AssertionError(
+            f"timed out waiting for {what}; dialogs {accepted}; results {finished}; "
+            f"work dir {sorted(entry.name for entry in work.iterdir())}"
+        )
 
     def choose(title: str, path: Path) -> None:
         """Type ``path`` into the native dialog titled ``title`` and accept it.
@@ -274,6 +294,7 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
         "export_header": header,
         "printed": printed,
         "dialogs": accepted,
+        "results": finished,
     }
     window.destroy()
     if app.db is not None:
