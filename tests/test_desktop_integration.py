@@ -191,6 +191,56 @@ def test_windows_installer_offers_path_as_an_opt_in_that_uninstall_removes():
     assert "uninstall did not restore the user PATH" in check
 
 
+def test_windows_installer_stops_runtime_helpers_before_touching_the_runtime():
+    windows = ROOT / "packaging" / "windows"
+    script = (windows / "breadsched.nsi").read_text(encoding="utf-8")
+    build = (windows / "build-installer.sh").read_text(encoding="utf-8")
+    helpers = (windows / "stop-helpers.ps1").read_text(encoding="utf-8")
+
+    # GLib's gdbus.exe session bus outlives the application and holds runtime
+    # files open, so both install and uninstall stop it before removing runtime\.
+    assert 'cp "$here/stop-helpers.ps1" "$stage/stop-helpers.ps1"' in build
+    install, uninstall = script.split('Section "Uninstall"', 1)
+    main = install.split('Section "BreadSched" SecMain', 1)[1]
+    assert main.index('"$PLUGINSDIR\\stop-helpers.ps1"') < main.index(
+        'RMDir /r "$INSTDIR\\runtime"'
+    )
+    assert uninstall.index('"$INSTDIR\\stop-helpers.ps1"') < uninstall.index(
+        'RMDir /r "$INSTDIR\\runtime"'
+    )
+    assert 'Delete "$INSTDIR\\stop-helpers.ps1"' in uninstall
+    # Only helpers running from this installation's runtime are stopped.
+    assert "Name = 'gdbus.exe'" in helpers
+    assert "StartsWith($runtime, [StringComparison]::OrdinalIgnoreCase)" in helpers
+
+
+def test_windows_installer_drives_the_native_file_chooser_and_printing():
+    windows = ROOT / "packaging" / "windows"
+    check = (windows / "test-installer.ps1").read_text(encoding="utf-8")
+    script = (ROOT / "scripts" / "windows_desktop_checks.py").read_text(encoding="utf-8")
+
+    # The installed copy's own Python runs the check, after the GTK smoke.
+    assert check.index("flatpak_gtk_smoke.py") < check.index("windows_desktop_checks.py")
+    assert (
+        'runtime\\bin\\python.exe") (Join-Path $root "scripts\\windows_desktop_checks.py")' in check
+    )
+    # Real application actions and the real native dialogs, found by title.
+    for action in ("app.on_open()", "app.on_export()", "window.print_action.activate(None)"):
+        assert action in script, action
+    assert 'choose("Open book", target)' in script
+    assert 'choose("Export transactions", ' in script
+    # The export is checked where the native save dialog told the application.
+    assert 'recording("save", Gtk.FileDialog.save_finish)' in script
+    assert 'finished.get("save")' in script
+    assert 'win32.find("#32770", title)' in script
+    assert "WM_COMMAND, IDOK" in script
+    # The chosen book must actually open, and every printed report must have a
+    # default handler that opens it.
+    assert "Path(app.book_path).resolve() == target" in script
+    assert "Gio.AppInfo.get_default_for_type" in script
+    assert "launch_default_for_uri" in script
+
+
 @pytest.mark.skipif(shutil.which("desktop-file-validate") is None, reason="validator missing")
 def test_desktop_entry_passes_desktop_file_validate():
     subprocess.run(["desktop-file-validate", str(DESKTOP)], check=True)

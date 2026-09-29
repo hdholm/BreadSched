@@ -58,6 +58,8 @@ CMD
 cp "$root/LICENSE" "$stage/LICENSE.txt"
 # Run by the installer and uninstaller to edit the user PATH when asked to.
 cp "$here/user_path.py" "$stage/user_path.py"
+# Run by the installer and uninstaller to stop gdbus.exe helpers from this runtime.
+cp "$here/stop-helpers.ps1" "$stage/stop-helpers.ps1"
 
 makensis -V2 -DVERSION="$version" -DSTAGE="$(cygpath -w "$stage")" \
     -DOUTFILE="$(cygpath -w "$out/BreadSched-$version-setup.exe")" \

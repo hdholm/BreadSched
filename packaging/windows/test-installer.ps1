@@ -125,6 +125,14 @@ $report = Join-Path $work "gtk-smoke.json"
 if ($LASTEXITCODE -ne 0) { throw "GTK smoke exited with $LASTEXITCODE" }
 Get-Content $report
 
+Write-Host "== native file chooser and printing"
+$other = Join-Path $work "chosen.breadsched"
+Remove-Item -Force -ErrorAction SilentlyContinue $other
+Invoke-BreadSched sample $other --as-of 2026-09-15 | Out-Null
+$checks = Join-Path $work "windows-checks.json"
+& (Join-Path $dir "runtime\bin\python.exe") (Join-Path $root "scripts\windows_desktop_checks.py") $book $other $work $checks
+if ($LASTEXITCODE -ne 0) { throw "Windows desktop checks exited with $LASTEXITCODE" }
+
 Write-Host "== upgrade in place keeps the book"
 Install-Once
 Invoke-BreadSched verify $book
@@ -150,4 +158,4 @@ if ((Get-UserPath) -ne $originalPath -or (Get-UserPathKind) -ne $originalKind) {
     throw "uninstall did not restore the user PATH ($originalKind '$originalPath')"
 }
 $upgraded = if ($Previous) { ", upgrade from $(Split-Path -Leaf $Previous)" } else { "" }
-Write-Host "Installer passed: clean install, CLI, desktop, upgrade, PATH option, uninstall$upgraded."
+Write-Host "Installer passed: clean install, CLI, desktop, file chooser, printing, upgrade, PATH option, uninstall$upgraded."

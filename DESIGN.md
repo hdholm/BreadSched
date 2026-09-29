@@ -2198,6 +2198,30 @@ default install to leave `PATH` alone, `/ADDTOPATH` to add the directory once an
 let a fresh `PATH` resolve `breadsched` to it, a later plain install to keep it,
 and uninstalling to restore the raw value and its type exactly.
 
+After the GTK smoke, `test-installer.ps1` runs `scripts/windows_desktop_checks.py`
+with the installed Python to cover what the smoke cannot: the native file chooser
+and printing. It goes through the application's own actions. **Open** shows the
+native Common Item Dialog (found as a `#32770` window by its title), the check
+sets another book's path in the visible `Edit` of its file-name combo box and
+accepts it, and the application must then have that book open. The dialog may
+still be initializing when it appears, so the name is set and accepted again
+until it closes; accepting rotates through `WM_COMMAND(IDOK)` posted to the
+dialog (no active window needed), Enter in the box, and a click on the default
+button, and the report records which were tried. A timeout lists every control's
+class, ID, and text. **Export
+transactions** accepts the native save dialog, and a fresh CSV must be written at
+the path the dialog returned to the application (recorded by wrapping
+`Gtk.FileDialog.save_finish`); the save dialog keeps its own suggested name when
+the box is set programmatically, while the Open dialog takes the typed path. **Print** runs on every printable view: the report must be written, Windows
+must have a default handler for its type, and opening it must succeed.
+These checks found that GLib starts `runtime\bin\gdbus.exe` as a D-Bus session
+bus that outlives the application and keeps runtime files open, so the next
+upgrade could not replace `runtime\` and uninstalling left it behind. The
+installer (from its temporary plugins directory) and the uninstaller therefore
+run `stop-helpers.ps1` before removing `runtime\`; it stops only `gdbus.exe`
+processes whose executable lies inside this installation's runtime. Printing
+itself stays in that handler (a browser's print dialog), which is not driven.
+
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
 (`ValueError` from `gi.require_version`) skip the GTK module cleanly; once GTK4 is

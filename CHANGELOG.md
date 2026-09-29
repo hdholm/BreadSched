@@ -3,6 +3,23 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a186 - 2026-09-29
+
+- **Windows file chooser and printing are checked in the installed copy.** After
+  the GTK smoke, the installer test runs `scripts/windows_desktop_checks.py` with
+  the installed Python. It chooses another book in the native Open dialog and
+  requires the application to open it. It saves an export through the native save
+  dialog and requires the CSV to be written. It prints every printable view and
+  requires a written report with a default handler that opens it. The roadmap's
+  Windows installer item now leaves only code signing.
+- **Windows upgrades and uninstalls remove the whole runtime.** GLib starts the
+  bundled `gdbus.exe` as a D-Bus session bus that outlives BreadSched and keeps
+  runtime files open, so an upgrade could not fully replace the runtime and
+  uninstalling left it behind. The installer and uninstaller now stop only the
+  `gdbus.exe` running from that installation's runtime before removing it
+  (`packaging/windows/stop-helpers.ps1`).
+  Application version `0.2.0a186`; native schema remains 9.
+
 ## 0.2.0a185 - 2026-09-29
 
 - **Optional command line on `PATH` in the Windows installer.** A Components-page
