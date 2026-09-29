@@ -642,7 +642,20 @@ giving up on the remainder (even after a partial reimbursement), or settled once
 linked reimbursements cover what is owed (the expected amount, or the whole
 expense). Unlinking, disputes, and deleting a receivable never change your linked
 transactions. If an expense you track is also on an FSA claim, the receivable shows
-a warning, so the same cost is not expected back twice. A GnuCash re-import that
+a warning, so the same cost is not expected back twice.
+
+When an insurer pays part of a bill and the FSA pays the rest, link the two instead:
+on the FSA claim, choose the receivable as the payer that covers part. The claim and
+the receivable then show one allocation of the bill: what the payer pays (the
+expected amount, or what it actually paid once that is more), what the FSA covers,
+and what is left for you. The FSA share stays zero until you enter the claim's EOB
+responsibility, and never exceeds what the payer leaves. If the payer and the EOB
+together come to more than was paid (say the insurer paid more than expected), the
+claim shows **Needs review**. Nothing is refused or rewritten; adjust the expected
+amount or the EOB, or write off the difference. The link is made only on the claim,
+never guessed, and changes no transactions; deleting the receivable removes it.
+
+A GnuCash re-import that
 would delete a transaction a receivable depends on is refused, the same protection
 FSA claims already have.
 

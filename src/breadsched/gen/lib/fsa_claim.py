@@ -108,6 +108,7 @@ class FsaClaim(PrimaryObject):
         refunds: list[FsaClaimSplitLink] | None = None,
         allocations: list[FsaClaimAllocation] | None = None,
         handle: str | None = None,
+        receivable: str | None = None,
     ) -> None:
         super().__init__(handle=handle)
         self.service_date = service_date or date.min
@@ -117,6 +118,9 @@ class FsaClaim(PrimaryObject):
         self.payments = list(payments or [])
         self.refunds = list(refunds or [])
         self.allocations = list(allocations or [])
+        #: A receivable whose payer covers part of this same expense; the FSA
+        #: then claims only the remainder (issue #192). Linked from the claim.
+        self.receivable = receivable
 
     def _serialize(self) -> dict[str, Any]:
         return {
@@ -131,6 +135,7 @@ class FsaClaim(PrimaryObject):
             "payments": [link.serialize() for link in self.payments],
             "refunds": [link.serialize() for link in self.refunds],
             "allocations": [allocation.serialize() for allocation in self.allocations],
+            "receivable": self.receivable,
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -144,3 +149,5 @@ class FsaClaim(PrimaryObject):
         self.allocations = [
             FsaClaimAllocation.from_dict(item) for item in data.get("allocations", [])
         ]
+        raw_receivable = data.get("receivable")
+        self.receivable = str(raw_receivable) if raw_receivable else None

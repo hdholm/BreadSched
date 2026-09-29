@@ -98,7 +98,12 @@ or open **Reimbursables** to list, open, link, dispute, and write off receivable
 **Proposed reimbursements** lists credits that clearly belong to one open
 receivable, checked; choose **Accept selected** to link them. A warning appears when
 a linked expense is also on an FSA claim, and the open receivable shows what is
-owed and the account holding it. See
+owed and the account holding it.
+
+When the FSA pays what the insurer does not, open the FSA claim editor, choose the
+receivable under **Payer covers part**, and save the claim. The claim list and the
+receivable then show what the payer, the FSA, and you each pay, and **Needs
+review** when that comes to more than was paid. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
 ## Import files

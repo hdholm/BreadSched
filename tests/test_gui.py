@@ -6395,6 +6395,52 @@ class TestReceivablesDialog:
         finally:
             dialog.destroy()
 
+    def test_an_fsa_claim_is_linked_to_cover_the_rest_of_a_receivable(
+        self, app, window, populated_book
+    ):
+        # Issue #192: linked only from the claim; the FSA share waits for the EOB.
+        from breadsched.gen.lib.fsa_claim import FsaClaimSplitLink
+        from breadsched.gen.services.receivables import (
+            SaveReceivable,
+            attach_expense_split,
+            save_receivable,
+        )
+        from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+
+        db, rent_txn, _rent, cost = self._book(app, populated_book)
+        receivable = save_receivable(
+            db,
+            SaveReceivable(
+                rent_txn.post_date, "Acme Insurance", "Visit", expected_amount=Money("500")
+            ),
+        ).value
+        assert attach_expense_split(db, receivable.handle, rent_txn.handle, cost.handle).ok
+        claims = FsaClaimsDialog(window, db)
+        try:
+            assert claims.shared.get_visible() is False
+            claims.service.set_text(rent_txn.post_date.isoformat())
+            claims.provider.set_text("Clinic")
+            claims.payments.set_links([FsaClaimSplitLink(rent_txn.handle, cost.handle)])
+            index = [item.handle for item in claims.receivables].index(receivable.handle)
+            claims.payer.set_selected(index + 1)
+            claims._save(None)
+            assert claims.status.get_text() == "Claim saved."
+            assert db.get_fsa_claim(claims.current.handle).receivable == receivable.handle
+            assert claims.shared.get_visible()
+            assert "Acme Insurance pays 500.00" in claims.shared.get_text()
+            assert "until the EOB is entered" in claims.shared.get_text()
+        finally:
+            claims.destroy()
+        dialog = ReceivablesDialog(window, db)
+        try:
+            dialog.edit(receivable.handle)
+            assert dialog.warning.get_visible() is False
+            assert dialog.shared.get_visible()
+            assert "Acme Insurance pays 500.00" in dialog.shared.get_text()
+        finally:
+            dialog.destroy()
+
     def test_link_dispute_write_off_and_unlink_leave_linked_transactions_alone(
         self, app, window, populated_book
     ):

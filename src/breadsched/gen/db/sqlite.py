@@ -1259,6 +1259,14 @@ class DbSQLite(DbBase):
                         claim.handle,
                     )
                 )
+        if claim.receivable is not None and self.get_receivable(claim.receivable) is None:
+            issues.append(
+                BookIssue(
+                    "fsa_claim.missing_receivable",
+                    f"FSA claim {claim.handle} refers to missing receivable {claim.receivable}",
+                    claim.handle,
+                )
+            )
         return issues
 
     def _verify_receivable_references(self, receivable: Receivable) -> list[BookIssue]:
@@ -1593,6 +1601,17 @@ class DbSQLite(DbBase):
                             "price.missing_commodity",
                             f"price {price.handle} refers to deleted commodity {handle}",
                             price.handle,
+                        )
+                    )
+
+        elif table == "receivable":
+            for claim in self.iter_fsa_claims():
+                if claim.receivable == handle:
+                    issues.append(
+                        BookIssue(
+                            "fsa_claim.missing_receivable",
+                            f"FSA claim {claim.handle} refers to missing receivable {handle}",
+                            claim.handle,
                         )
                     )
 

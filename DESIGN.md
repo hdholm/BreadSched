@@ -1583,6 +1583,31 @@ expense split is also an FSA claim payment reports the claim in
 `ReceivableSummary.fsa_claims`; the surfaces warn rather than refuse, because a
 split between payer and FSA can be legitimate.
 
+That legitimate split is made explicit from the claim (issue #192):
+`FsaClaim.receivable` names the receivable whose payer covers part of the same
+expense. It is set only in the claim screens, never inferred, and stored in the
+claim's JSON blob (no schema change). `engine.fsa_claims.claim_summary` then
+returns a `SharedCost` allocating the claim's net paid amount three ways:
+
+- **payer share:** the receivable's `owed` less write-offs, or what it actually
+  reimbursed when that is more;
+- **FSA share:** zero until an EOB responsibility is entered (the claim reads
+  *Waiting for EOB*, and its reimbursable amount is zero rather than the whole net
+  paid), then that responsibility, capped at net paid less the payer share;
+- **your share:** the rest.
+
+When the payer share plus the EOB responsibility exceed net paid, `over_allocated`
+is positive and the claim status is *Needs review*. Nothing is refused and no
+posting depends on the allocation: the receivable still reclassifies only what
+the payer owes, and FSA money stays in the FSA asset. A linked claim is dropped
+from `fsa_overlaps`, so the warning stays only for unlinked overlaps. `save_claim`
+refuses a missing receivable (`claim.receivable.not_found`) and a second claim on
+the same receivable (`claim.receivable.taken`); `delete_receivable` unlinks its
+claim in the same database transaction, and `verify_book` reports
+`fsa_claim.missing_receivable`. `services.receivables.shared_costs` gives the
+receivable side the same allocations, and `presentation.shared_cost_text` words
+them for GTK, the web (as `text`), and the CLI.
+
 GTK: **Actions → Reimbursable Expenses…** opens `ReceivablesDialog`
 (`gui/dialogs/receivables_dialog.py`), which only gathers input and calls the
 service.
@@ -1595,8 +1620,9 @@ service.
   (positive) for **Link expense**, credits (negative) for **Link reimbursement**.
   Both GTK and web take them from `services.receivables.receivable_candidates`,
   which applies the same sign and account-class rules as `attach_*`.
-- **Held in**, the Receivable account (default: one per currency), and a warning
-  when a linked expense is also on an FSA claim.
+- **Held in**, the Receivable account (default: one per currency), a warning
+  when a linked expense is also on an FSA claim, and the payer/FSA/you line of a
+  claim linked to cover the rest (the claim dialog's **Payer covers part**).
 - **Dispute and write-off** controls; a dispute posts nothing, and a write-off's
   reclassification returns the balance to the expense.
 

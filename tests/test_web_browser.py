@@ -302,6 +302,59 @@ def test_a_register_expense_becomes_a_reimbursable(page, served):
     page.wait_for_selector("td:has-text('Dental plan')")
 
 
+def test_an_open_receivable_shows_its_fsa_allocation(page, served):
+    # Issue #192: an FSA claim linked to cover the rest of the bill.
+    from breadsched.gen.lib import AccountClass, Money, Transaction
+    from breadsched.gen.services.claims import (
+        ClaimInput,
+        ClaimLinkInput,
+        SaveClaim,
+        save_claim,
+    )
+    from breadsched.gen.services.receivables import (
+        SaveReceivable,
+        attach_expense_split,
+        save_receivable,
+    )
+
+    db, _httpd = served
+    expense = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE and not a.placeholder and not a.hidden
+    )
+    bank = next(a for a in db.iter_accounts() if a.name == "Checking")
+    visit = Transaction.simple(date(2026, 1, 5), "Clinic", expense.handle, bank.handle, Money("90"))
+    with db.transaction("Browser fixture") as txn:
+        db.add_transaction(visit, txn)
+    receivable = save_receivable(
+        db,
+        SaveReceivable(
+            incurred_date=date(2026, 1, 5), payer="Acme Insurance", expected_amount=Money("60")
+        ),
+    ).value
+    cost = next(s for s in visit.splits if s.account == expense.handle)
+    attach_expense_split(db, receivable.handle, visit.handle, cost.handle)
+    assert save_claim(
+        db,
+        SaveClaim(
+            ClaimInput(
+                date(2026, 1, 5),
+                "Clinic",
+                payments=(ClaimLinkInput(visit.handle, cost.handle),),
+                receivable=receivable.handle,
+            )
+        ),
+    ).ok
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Reimbursables", exact=True).first.click()
+    page.locator("tr:has-text('Acme Insurance')").get_by_role("button", name="Open").click()
+    page.wait_for_selector("text=Acme Insurance pays 60.00")
+    assert page.locator("text=until the EOB is entered").count() == 1
+    assert page.locator("text=is also on an FSA claim").count() == 0
+
+
 def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
     from breadsched.gen.lib import AccountClass, Money, Transaction
     from breadsched.gen.services.receivables import (

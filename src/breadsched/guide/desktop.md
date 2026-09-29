@@ -205,7 +205,12 @@ is one per currency). **Link expense** adds more expense splits and **Link
 reimbursement** links a credit that paid money back. **Proposed reimbursements**
 lists credits that clearly belong to one open receivable, checked; choose **Accept
 selected** to link them. Record a dispute or write off part of the balance on the
-same screen. A warning appears when a linked expense is also on an FSA claim. See
+same screen. A warning appears when a linked expense is also on an FSA claim.
+
+When the FSA pays what the insurer does not, open **Manage FSA Claims** on the FSA
+Dashboard, choose the receivable under **Payer covers part**, and save the claim.
+The claim and the receivable then show what the payer, the FSA, and you each pay,
+and **Needs review** when that comes to more than was paid. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
 ## Import files

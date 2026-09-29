@@ -3,6 +3,20 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a181 - 2026-09-28
+
+- **One bill split between a payer and the FSA (#192).** An FSA claim can name the
+  receivable whose payer (an insurer) covers part of the same bill, chosen under
+  **Payer covers part** in the desktop and browser claim screens. The claim and the
+  receivable then show one allocation: the payer's share (the expected amount, or
+  what it actually paid once that is more), the FSA's share, and yours. The FSA
+  share stays zero until the claim's EOB responsibility is entered and never
+  exceeds what the payer leaves; when the payer and the EOB together exceed what
+  was paid, the claim reads **Needs review**. Nothing is refused, rewritten, or
+  posted, a linked claim no longer raises the overlap warning, deleting the
+  receivable unlinks the claim, and `breadsched receivables` lists the allocation.
+  Application version `0.2.0a181`; native schema remains 9.
+
 ## 0.2.0a180 - 2026-09-28
 
 - **Windows installer built and tested in CI.** `packaging/windows/` builds a

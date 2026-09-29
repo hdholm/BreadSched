@@ -49,6 +49,8 @@ class ClaimInput:
     payments: tuple[ClaimLinkInput, ...] = ()
     refunds: tuple[ClaimLinkInput, ...] = ()
     allocations: tuple[ClaimAllocationInput, ...] = ()
+    #: A receivable whose payer covers part of this expense (issue #192).
+    receivable: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -90,6 +92,7 @@ def build_claim(request: SaveClaim) -> FsaClaim:
             )
             for item in definition.allocations
         ],
+        receivable=definition.receivable or None,
     )
 
 

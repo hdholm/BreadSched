@@ -15,6 +15,7 @@ from datetime import date
 
 from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
+from ..engine import fsa_claims
 from ..engine.currency import reporting_currency_handle
 from ..engine.receivables import (
     ReceivableError,
@@ -59,6 +60,7 @@ __all__ = [
     "record_write_off",
     "reimbursement_proposals",
     "save_receivable",
+    "shared_costs",
 ]
 
 
@@ -367,11 +369,19 @@ def record_write_off(db: DbSQLite, request: RecordWriteOff) -> ServiceResult[Rec
 
 
 def delete_receivable(db: DbSQLite, handle: str) -> ServiceResult[str]:
-    """Delete a receivable and its reclassifications; linked transactions are untouched."""
+    """Delete a receivable and its reclassifications; linked transactions are untouched.
+
+    An FSA claim covering the rest of its expense is unlinked in the same edit,
+    so the claim again expects the whole EOB responsibility (issue #192).
+    """
     receivable = db.get_receivable(handle)
     if receivable is None:
         return ServiceResult.failure(ServiceError("receivable.not_found", ("handle",)))
     with db.transaction(f"Delete receivable {receivable.payer}") as txn:
+        for claim in list(db.iter_fsa_claims()):
+            if claim.receivable == handle:
+                claim.receivable = None
+                db.commit_fsa_claim(claim, txn)
         for posting in receivable.postings:
             if db.get_transaction(posting) is not None:
                 db.remove_transaction(posting, txn)
@@ -445,6 +455,20 @@ def list_receivables(
     return ServiceResult.success(
         tuple(receivable_summary(db, item, as_of=as_of) for item in iter_receivables(db))
     )
+
+
+def shared_costs(
+    db: DbSQLite, handle: str, *, as_of: date | None = None
+) -> ServiceResult[tuple[fsa_claims.SharedCost, ...]]:
+    """How each FSA claim covering the rest of this receivable's expense allocates it."""
+    receivable = db.get_receivable(handle)
+    if receivable is None:
+        return ServiceResult.failure(ServiceError("receivable.not_found", ("handle",)))
+    try:
+        found = fsa_claims.shared_costs_for_receivable(db, receivable, as_of=as_of)
+    except fsa_claims.FsaClaimError as exc:
+        return ServiceResult.failure(ServiceError(exc.code, exc.fields))
+    return ServiceResult.success(tuple(found))
 
 
 def reimbursement_proposals(
