@@ -9,6 +9,10 @@ structured output, and `-v` (or `-vv`) logs progress and warnings to stderr. Use
 `breadsched --help` and `breadsched COMMAND --help` for the exact command surface in
 your installed release.
 
+On Windows, the installer puts `breadsched.cmd` in its installation folder. Run it
+from there, or choose **Add the breadsched command to PATH** when installing (see
+[Install on Windows](desktop.md#install-on-windows)) to type `breadsched` anywhere.
+
 ## Read this guide
 
 ```bash

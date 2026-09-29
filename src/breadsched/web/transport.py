@@ -218,16 +218,34 @@ class Handler(BaseHTTPRequestHandler):
             return None
         return length
 
+    def _discard_body(self, maximum: int = MAX_JSON_BODY) -> None:
+        """Read and drop a bounded request body before rejecting the request.
+
+        Closing a connection with request data still unread makes the operating
+        system reset it, and a Windows client then loses the error response.
+        """
+        values = self.headers.get_all("Content-Length", [])
+        if self.headers.get("Transfer-Encoding") is not None or len(values) != 1:
+            return
+        try:
+            length = int(values[0])
+        except ValueError:
+            return
+        if 0 < length <= maximum:
+            self.rfile.read(length)
+
     def do_POST(self) -> None:  # noqa: N802 - required by the base class
         if urlparse(self.path).path == "/api/import/upload":
             self._import_upload()
             return
         if not self._trusted_api_request(write=True):
+            self._discard_body()
             self._error(403, "request.untrusted")
             return
         parsed = urlparse(self.path)
         route = POST_ROUTES.get(parsed.path)
         if route is None:
+            self._discard_body()
             self._error(404, "resource.not_found")
             return
         length = self._content_length()
@@ -260,6 +278,7 @@ class Handler(BaseHTTPRequestHandler):
             not self._trusted_api_request()
             or self.headers.get_content_type() != "application/octet-stream"
         ):
+            self._discard_body(MAX_UPLOAD_BODY)
             self._error(403, "request.untrusted")
             return
         try:
@@ -268,6 +287,15 @@ class Handler(BaseHTTPRequestHandler):
             number_format = query.text("number_format") or "auto"
             date_format = query.text("date_format") or "auto"
             query.finish()
+        except QueryError as exc:
+            self._discard_body(MAX_UPLOAD_BODY)
+            self._error(400, exc.code, exc.fields)
+            return
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._discard_body(MAX_UPLOAD_BODY)
+            self._unexpected()
+            return
+        try:
             assert filename is not None
             length = self._content_length(MAX_UPLOAD_BODY)
             if length is None:
@@ -286,8 +314,6 @@ class Handler(BaseHTTPRequestHandler):
                     date_format=date_format,
                 )
             self._json(200, result)
-        except QueryError as exc:
-            self._error(400, exc.code, exc.fields)
         except ResourceError as exc:
             self._error(exc.status, exc.code, exc.fields, message=exc.message)
         except ValueError as exc:

@@ -33,6 +33,11 @@ rights and nothing else installed: it carries its own Python and GTK. It install
 for the current user under `%LOCALAPPDATA%\Programs\BreadSched` and adds
 **BreadSched** to the Start menu. The installation folder also holds
 `breadsched.cmd` for the [command line](cli.md) and `breadsched-gtk.cmd`.
+To type `breadsched` in any new Command Prompt or PowerShell window, tick **Add
+the breadsched command to PATH** on the installer's Components page (off by
+default). This adds only the installation folder to your own `PATH`; later
+installs keep your choice unless you change it, and uninstalling removes it. For
+an unattended install, run the installer with `/S /ADDTOPATH`.
 Installing a newer version over an older one replaces the program and keeps your
 books, and uninstalling (from Windows Settings or the Start menu) never removes a
 book. Download it from the release page and check it against the release's

@@ -172,7 +172,10 @@ shared service owns validation and atomic scenario persistence; a rejected reque
 does not change the scenario's overrides.
 
 JSON writes require one non-negative ``Content-Length`` no larger than 64 KiB and do
-not accept transfer encodings. Browser CSS and JavaScript are packaged static assets,
+not accept transfer encodings. A write rejected before its body is used (untrusted,
+wrong content type, unknown route, or invalid upload query) first reads and drops a
+body of valid, in-limit length. Closing with request data unread makes the operating
+system reset the connection, and a Windows client then loses the error response. Browser CSS and JavaScript are packaged static assets,
 all events are registered from JavaScript, and charts construct SVG through namespaced
 DOM nodes rather than interpolating markup. This permits a directive-specific Content
 Security Policy with no inline-script or inline-style exception.
@@ -2178,6 +2181,22 @@ The Linux publisher, which never executes what it receives, requires exactly
 `BreadSched-<version>-setup.exe` and its checksum file, checks the line's form and
 the hash, appends it to `SHA256SUMS`, and attaches the installer with the wheel and
 source archive. Code signing is still pending.
+
+Putting the command line on `PATH` is an opt-in `SecPath` component (the Components
+page, or `/ADDTOPATH` for a silent install), remembered as `AddToPath` under
+`HKCU\Software\BreadSched` so a later install keeps the choice unless the user
+changes it; deselecting it on a later install removes the entry. Only the
+installation directory is added, so `breadsched.cmd` and `breadsched-gtk.cmd` are
+found but the bundled `python.exe` and DLLs never shadow anything else on `PATH`.
+NSIS string handling truncates long values and flattens `%VARIABLES%`, so the edit
+is made by `packaging/windows/user_path.py` with the bundled Python: it reads
+`HKCU\Environment\Path` raw, appends or removes only that directory (compared
+case-insensitively, ignoring a trailing separator), writes the value back with its
+original registry type, and broadcasts `WM_SETTINGCHANGE`. The uninstaller always
+runs the removal before deleting the runtime. `test-installer.ps1` requires a
+default install to leave `PATH` alone, `/ADDTOPATH` to add the directory once and
+let a fresh `PATH` resolve `breadsched` to it, a later plain install to keep it,
+and uninstalling to restore the raw value and its type exactly.
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib

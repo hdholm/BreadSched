@@ -6,9 +6,17 @@
 ; %LOCALAPPDATA%\Programs\BreadSched, and registers an uninstaller for the
 ; current user only. Books are never inside the installation directory, so
 ; upgrading or uninstalling never touches them.
+;
+; Adding the command line to the user's PATH is optional and off by default:
+; choose it on the Components page, or pass /ADDTOPATH to a silent install. A
+; later install keeps that choice unless it is changed, and the uninstaller always
+; removes the entry. user_path.py makes the change with the bundled Python.
 
 Unicode true
 !include "MUI2.nsh"
+!include "FileFunc.nsh"
+!include "LogicLib.nsh"
+!include "Sections.nsh"
 
 !ifndef VERSION
   !error "VERSION is required"
@@ -32,6 +40,7 @@ SetCompressor /SOLID lzma
 
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_LICENSE "${STAGE}\LICENSE.txt"
+!insertmacro MUI_PAGE_COMPONENTS
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\runtime\bin\pythonw.exe"
@@ -66,14 +75,51 @@ Section "BreadSched" SecMain
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
 SectionEnd
 
+!define USER_PATH '"$INSTDIR\runtime\bin\python.exe" "$INSTDIR\user_path.py"'
+
+Section /o "Add the breadsched command to PATH" SecPath
+  nsExec::ExecToLog '${USER_PATH} add "$INSTDIR"'
+  Pop $0
+  ${If} $0 != 0
+    MessageBox MB_ICONEXCLAMATION "Could not add $INSTDIR to PATH ($0)." /SD IDOK
+    SetErrorLevel 3
+  ${EndIf}
+  WriteRegDWORD HKCU "Software\${APP}" "AddToPath" 1
+SectionEnd
+
+; Deselecting the option on a later install takes the entry off PATH again.
+Section "-Keep PATH as chosen"
+  ${IfNot} ${SectionIsSelected} ${SecPath}
+    nsExec::ExecToLog '${USER_PATH} remove "$INSTDIR"'
+    Pop $0
+    WriteRegDWORD HKCU "Software\${APP}" "AddToPath" 0
+  ${EndIf}
+SectionEnd
+
+Function .onInit
+  ReadRegDWORD $0 HKCU "Software\${APP}" "AddToPath"
+  ${GetParameters} $1
+  ClearErrors
+  ${GetOptions} $1 "/ADDTOPATH" $2
+  ${IfNot} ${Errors}
+    StrCpy $0 1
+  ${EndIf}
+  ${If} $0 == 1
+    !insertmacro SelectSection ${SecPath}
+  ${EndIf}
+FunctionEnd
+
 Section "Uninstall"
   Delete "$SMPROGRAMS\${APP}\${APP}.lnk"
   Delete "$SMPROGRAMS\${APP}\Uninstall ${APP}.lnk"
   RMDir "$SMPROGRAMS\${APP}"
+  nsExec::ExecToLog '${USER_PATH} remove "$INSTDIR"'
+  Pop $0
   RMDir /r "$INSTDIR\runtime"
   Delete "$INSTDIR\breadsched.cmd"
   Delete "$INSTDIR\breadsched-gtk.cmd"
   Delete "$INSTDIR\LICENSE.txt"
+  Delete "$INSTDIR\user_path.py"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"

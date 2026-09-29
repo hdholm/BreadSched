@@ -56,6 +56,8 @@ cat > "$stage/breadsched-gtk.cmd" <<'CMD'
 start "" "%~dp0runtime\bin\pythonw.exe" -m breadsched.gui %*
 CMD
 cp "$root/LICENSE" "$stage/LICENSE.txt"
+# Run by the installer and uninstaller to edit the user PATH when asked to.
+cp "$here/user_path.py" "$stage/user_path.py"
 
 makensis -V2 -DVERSION="$version" -DSTAGE="$(cygpath -w "$stage")" \
     -DOUTFILE="$(cygpath -w "$out/BreadSched-$version-setup.exe")" \
