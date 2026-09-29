@@ -205,7 +205,10 @@ def test_windows_installer_drives_the_native_file_chooser_and_printing():
     for action in ("app.on_open()", "app.on_export()", "window.print_action.activate(None)"):
         assert action in script, action
     assert 'choose("Open book", target)' in script
-    assert 'choose("Export transactions", export)' in script
+    assert 'choose("Export transactions", ' in script
+    # The export is checked where the native save dialog told the application.
+    assert 'recording("save", Gtk.FileDialog.save_finish)' in script
+    assert 'finished.get("save")' in script
     assert 'win32.find("#32770", title)' in script
     assert "WM_COMMAND, IDOK" in script
     # The chosen book must actually open, and every printed report must have a
