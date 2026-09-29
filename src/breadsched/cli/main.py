@@ -135,7 +135,9 @@ from ..gen.services.receivables import (
 )
 from ..gen.utils import logs
 from ..presentation import (
+    goal_milestone_text,
     goal_status_text,
+    projection_goal_notes,
     reimbursement_notice,
     service_error_message,
     shared_cost_text,
@@ -953,9 +955,11 @@ def cmd_goals(args: argparse.Namespace) -> int:
         query_savings_goals,
         reopen_savings_goal,
         save_savings_goal,
+        set_goal_override,
     )
+    from ..gen.services.savings_goals import SetGoalOverride
 
-    writes = (args.add, args.allocate, args.close, args.reopen, args.delete)
+    writes = (args.add, args.allocate, args.close, args.reopen, args.delete, args.override)
     db = open_book(args.book, "w" if any(writes) else "r")
     try:
         on = parse_date(args.on) or date.today()
@@ -984,6 +988,46 @@ def cmd_goals(args: argparse.Namespace) -> int:
                 )
             )
             emit({"handle": goal.handle}, args, f"Added savings goal {goal.name} ({goal.handle})")
+            return 0
+        if args.override:
+            if not args.scenario:
+                raise CommandError("--scenario is required with --override")
+            scenario = db.get_scenario_by_name(args.scenario)
+            if scenario is None:
+                raise CommandError(f"no scenario named {args.scenario!r}")
+            handle = _resolve_goal(db, args.override)
+            changed = check(
+                set_goal_override(
+                    db,
+                    SetGoalOverride(
+                        scenario.handle,
+                        handle,
+                        target_amount=Money(args.target) if args.target else None,
+                        target_date=parse_date(args.by),
+                        excluded=args.leave_out,
+                    ),
+                )
+            )
+            override = changed.goal_overrides.get(handle)
+            if override is None:
+                text = f"{scenario.name} now follows the goal unchanged"
+            elif override.excluded:
+                text = f"{scenario.name} leaves the goal out"
+            else:
+                parts = [
+                    f"target {override.target_amount.format()}" if override.target_amount else "",
+                    f"by {override.target_date.isoformat()}" if override.target_date else "",
+                ]
+                text = f"{scenario.name} changes the goal: " + ", ".join(p for p in parts if p)
+            emit(
+                {
+                    "scenario": scenario.handle,
+                    "goal": handle,
+                    "override": override.serialize() if override is not None else None,
+                },
+                args,
+                text,
+            )
             return 0
         if args.allocate:
             if not args.amount:
@@ -2271,7 +2315,31 @@ def cmd_project(args: argparse.Namespace) -> int:
                 f"investment return {assumptions.investment_return:.1%}"
             )
             print()
-        emit({"summary": summary, "rows": [r.as_dict() for r in result.rows]}, args, text)
+        milestones = [
+            {
+                "goal": item.goal.handle,
+                "name": item.goal.name,
+                "target": item.target,
+                "target_date": item.target_date,
+                "overridden": item.overridden,
+                "month_index": item.month_index,
+                "set_aside": item.set_aside,
+                "cash_close": item.cash_close,
+                "goals_held": item.goals_held,
+                "covered": item.covered,
+                "text": goal_milestone_text(item),
+            }
+            for item in result.goal_milestones
+        ]
+        emit(
+            {
+                "summary": summary,
+                "rows": [r.as_dict() for r in result.rows],
+                "goal_milestones": milestones,
+            },
+            args,
+            text,
+        )
 
         if not args.json:
             shortfall = result.first_shortfall()
@@ -2283,6 +2351,8 @@ def cmd_project(args: argparse.Namespace) -> int:
                 )
             else:
                 print(f"  Lowest cash balance: {result.minimum_cash.format()}")
+            for note in projection_goal_notes(result):
+                print(f"  {note}")
             for warning in result.warnings:
                 print(f"  warning: {warning}")
             if args.csv:
@@ -3481,6 +3551,16 @@ def build_parser() -> argparse.ArgumentParser:
     goals_cmd.add_argument("--on", metavar="DATE", help="date of an allocation or closing")
     goals_cmd.add_argument("--as-of", help="report progress on this date (default today)")
     goals_cmd.add_argument("--all", action="store_true", help="include closed goals")
+    goals_cmd.add_argument(
+        "--override",
+        metavar="GOAL",
+        help="change a goal in one scenario (--scenario, with --target/--by or --leave-out; "
+        "none of those clears the change)",
+    )
+    goals_cmd.add_argument("--scenario", metavar="NAME", help="scenario for --override")
+    goals_cmd.add_argument(
+        "--leave-out", action="store_true", help="with --override: leave the goal out"
+    )
     goals_cmd.set_defaults(func=cmd_goals)
 
     backup = add("backup", "Create a consistent backup of a book")

@@ -26,6 +26,7 @@ from ...gen.services import (
     query_plan,
     suppress_scenario_schedule,
 )
+from ...presentation import plan_goal_text
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -194,6 +195,12 @@ class PlanView(BaseView):
         self.currency_note.set_margin_end(12)
         self.currency_note.set_margin_bottom(8)
         self.append(self.currency_note)
+        # Savings goals whose target date falls in the applied range.
+        self.goal_note = Gtk.Label(xalign=0, wrap=True, visible=False, selectable=True)
+        self.goal_note.set_margin_start(12)
+        self.goal_note.set_margin_end(12)
+        self.goal_note.set_margin_bottom(8)
+        self.append(self.goal_note)
 
         note = Gtk.Label(
             label=(
@@ -592,6 +599,12 @@ class PlanView(BaseView):
             self.currency_note.add_css_class("negative")
         else:
             self.currency_note.remove_css_class("negative")
+        self.goal_milestones = result.value.goal_milestones
+        self.goal_note.set_text(
+            "Savings goals reaching their target:\n"
+            + "\n".join(plan_goal_text(item) for item in self.goal_milestones)
+        )
+        self.goal_note.set_visible(bool(self.goal_milestones))
         self.review_actuals_button.set_sensitive(activity.unresolved_actual_count > 0)
         self._update_scenario_actions()
         self._render()
@@ -629,6 +642,7 @@ class PlanView(BaseView):
             self._measure(),
             scenario_name=selected.name if selected is not None else "Base scenario",
             book_name=Path(book_path).name if book_path else "",
+            goal_milestones=getattr(self, "goal_milestones", ()),
         )
 
     def _clear_grid(self) -> None:

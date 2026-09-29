@@ -25,6 +25,7 @@ from . import investment, planning, valuation
 from .conversion import ReportingConverter, UnconvertedActivity, conversion_notes
 from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
+from .goal_projection import GoalMilestone, project_goals
 
 __all__ = [
     "MonthLedger",
@@ -277,6 +278,14 @@ class MonthRow:
     holdings: Money
     liabilities: Money
     ledger: MonthLedger
+    #: Projected savings-goal earmarks at month end, and the part held from cash.
+    goals_set_aside: Money = field(default_factory=lambda: Money(0))
+    goals_held: Money = field(default_factory=lambda: Money(0))
+
+    @property
+    def cash_after_goals(self) -> Money:
+        """Projected cash less what goals in cash accounts have set aside."""
+        return self.cash_close - self.goals_held
 
     @property
     def net_flow(self) -> Money:
@@ -317,6 +326,9 @@ class MonthRow:
             "liabilities",
         ):
             data[name] = getattr(self, name)
+        data["goals_set_aside"] = self.goals_set_aside
+        data["goals_held"] = self.goals_held
+        data["cash_after_goals"] = self.cash_after_goals
         data["net_flow"] = self.net_flow
         data["net_worth"] = self.net_worth
         data["ledger"] = self.ledger.as_dict()
@@ -382,6 +394,8 @@ class Projection:
     rows: list[MonthRow] = field(default_factory=list)
     #: Events or assumptions that could not be applied.
     warnings: list[str] = field(default_factory=list)
+    #: Each savings goal's target date in this scenario (pinned unless overridden).
+    goal_milestones: list[GoalMilestone] = field(default_factory=list)
 
     # ------------------------------------------------------------------ series
 
@@ -419,6 +433,13 @@ class Projection:
     def minimum_cash(self) -> Money:
         return min((row.cash_close for row in self.rows), default=Money(0))
 
+    def first_goal_shortfall(self) -> MonthRow | None:
+        """The first month cash covers bills but not what goals have set aside."""
+        for row in self.rows:
+            if row.cash_close >= 0 and row.cash_after_goals < 0:
+                return row
+        return None
+
     def first_shortfall(self) -> MonthRow | None:
         """The month the current account first goes negative, if it ever does."""
         for row in self.rows:
@@ -450,6 +471,12 @@ class Projection:
             "total_rollovers": self.total("rollovers"),
             "total_growth": self.total("investment_growth"),
             "first_shortfall": shortfall.label if shortfall else None,
+            "ending_goals_set_aside": self.rows[-1].goals_set_aside if self.rows else Money(0),
+            "first_goal_shortfall": (
+                goal_shortfall.label
+                if (goal_shortfall := self.first_goal_shortfall()) is not None
+                else None
+            ),
             "warnings": list(self.warnings),
         }
 
@@ -1135,6 +1162,16 @@ def _project_events(
                 ledger=month_ledger,
             )
         )
+    goal_months, result.goal_milestones = project_goals(
+        db,
+        scenario,
+        [row.month for row in result.rows],
+        [row.income for row in result.rows],
+        [row.cash_close for row in result.rows],
+    )
+    for row, goals in zip(result.rows, goal_months, strict=True):
+        row.goals_set_aside = goals.set_aside
+        row.goals_held = goals.held
     _report_progress(progress, end, start, end, "Complete")
     return result
 

@@ -17,16 +17,19 @@ from ...gen.services.savings_goals import (
     AllocateToGoal,
     SaveSavingsGoal,
     SavingsGoalReport,
+    SetGoalOverride,
     allocate_to_goal,
     close_savings_goal,
     delete_savings_goal,
     goal_accounts,
+    goal_overrides,
     query_savings_goals,
     reopen_savings_goal,
     save_savings_goal,
+    set_goal_override,
 )
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import goal_status_text, service_error_message
+from ...presentation import goal_override_text, goal_status_text, service_error_message
 from ..gi_setup import Gtk
 
 __all__ = ["SavingsGoalsDialog"]
@@ -119,9 +122,32 @@ class SavingsGoalsDialog(Gtk.Window):
             allocate.append(widget)
         box.append(allocate)
 
+        # Goals apply to every scenario unless one changes them here.
+        override = Gtk.Box(spacing=8)
+        override.append(Gtk.Label(label="In scenario"))
+        self.scenario_picker = Gtk.DropDown()
+        self.override_target = Gtk.Entry(placeholder_text="Target amount", width_chars=12)
+        self.override_date = Gtk.Entry(placeholder_text="Target date", width_chars=12)
+        self.override_excluded = Gtk.CheckButton(label="Leave out")
+        self.override_button = Gtk.Button(label="Apply to scenario")
+        self.override_button.set_tooltip_text(
+            "Leave both fields empty and Leave out unchecked to follow the goal unchanged"
+        )
+        self.override_button.connect("clicked", lambda _b: self.apply_override())
+        for widget in (
+            self.scenario_picker,
+            self.override_target,
+            self.override_date,
+            self.override_excluded,
+            self.override_button,
+        ):
+            override.append(widget)
+        box.append(override)
+
         self.status = Gtk.Label(xalign=0, wrap=True, selectable=True)
         box.append(self.status)
         self._accounts: list[str] = []
+        self._scenarios: list[str] = []
         self._load_accounts()
         self.edit(None)
         self.refresh()
@@ -132,6 +158,11 @@ class SavingsGoalsDialog(Gtk.Window):
         choices = goal_accounts(self.db)
         self._accounts = [handle for handle, _name in choices]
         self.account_picker.set_model(Gtk.StringList.new([name for _handle, name in choices]))
+        scenarios = sorted(self.db.iter_scenarios(), key=lambda item: item.name.casefold())
+        self._scenarios = [scenario.handle for scenario in scenarios]
+        self.scenario_picker.set_model(
+            Gtk.StringList.new([scenario.name for scenario in scenarios])
+        )
 
     def refresh(self) -> None:
         """Reload every goal's progress on today's date."""
@@ -140,14 +171,24 @@ class SavingsGoalsDialog(Gtk.Window):
         )
         self.report = report = result.value
         _clear(self.goal_rows)
-        headings = ("Goal", "Held in", "Target date", "Target", "Set aside", "Remaining", "Status")
+        headings = (
+            "Goal",
+            "Held in",
+            "Target date",
+            "Target",
+            "Set aside",
+            "Remaining",
+            "Status",
+            "Scenario changes",
+        )
+        changes = goal_overrides(self.db)
         for column, heading in enumerate(headings):
             label = Gtk.Label(label=heading, xalign=1 if 3 <= column <= 5 else 0)
             label.add_css_class("dim")
             self.goal_rows.attach(label, column, 0, 1, 1)
         goals = report.goals if report is not None else ()
         if not goals:
-            self.goal_rows.attach(Gtk.Label(label="No savings goals yet.", xalign=0), 0, 1, 7, 1)
+            self.goal_rows.attach(Gtk.Label(label="No savings goals yet.", xalign=0), 0, 1, 8, 1)
         for row, item in enumerate(goals, start=1):
             cells = (
                 (item.goal.name, False),
@@ -157,6 +198,14 @@ class SavingsGoalsDialog(Gtk.Window):
                 (item.set_aside.format(), True),
                 (item.remaining.format(), True),
                 (goal_status_text(item), False),
+                (
+                    "\n".join(
+                        goal_override_text(scenario.name, override)
+                        for scenario, override in changes.get(item.goal.handle, [])
+                    )
+                    or "—",
+                    False,
+                ),
             )
             for column, (text, numeric) in enumerate(cells):
                 label = Gtk.Label(label=text, xalign=1 if numeric else 0, selectable=True)
@@ -172,7 +221,7 @@ class SavingsGoalsDialog(Gtk.Window):
             delete = Gtk.Button(label="Delete")
             delete.connect("clicked", lambda _b, h=handle: self.delete(h))
             for offset, button in enumerate((edit, toggle, delete)):
-                self.goal_rows.attach(button, 7 + offset, row, 1, 1)
+                self.goal_rows.attach(button, 8 + offset, row, 1, 1)
         if report is not None and goals:
             text = f"Set aside for goals: {report.set_aside.format()}"
             if report.held != report.set_aside:
@@ -194,6 +243,7 @@ class SavingsGoalsDialog(Gtk.Window):
         self.description_entry.set_text(goal.description if goal is not None else "")
         self.save_button.set_label("Save changes" if goal is not None else "Add goal")
         self.allocate_button.set_sensitive(goal is not None)
+        self.override_button.set_sensitive(goal is not None and bool(self._scenarios))
 
     # ----------------------------------------------------------------- writes
 
@@ -260,6 +310,39 @@ class SavingsGoalsDialog(Gtk.Window):
         self.refresh()
         self._message(f"Allocated {request.amount.format()} to {result.value.name}.", False)
         return result.value
+
+    def apply_override(self) -> bool:
+        """Change the goal being edited in the chosen scenario, or clear the change."""
+        if self.editing is None or not self._scenarios:
+            self._message("Choose a goal, and save a scenario first.", True)
+            return False
+        target_text = self.override_target.get_text().strip()
+        date_text = self.override_date.get_text().strip()
+        try:
+            target = self._money(self.override_target, "target amount") if target_text else None
+            when = self._date(self.override_date, "target date") if date_text else None
+        except ValueError as exc:
+            self._message(str(exc), True)
+            return False
+        scenario = self._scenarios[self.scenario_picker.get_selected()]
+        result = set_goal_override(
+            self.db,
+            SetGoalOverride(
+                scenario, self.editing, target, when, self.override_excluded.get_active()
+            ),
+        )
+        if result.value is None:
+            self._message(service_error_message(result.errors[0]), True)
+            return False
+        override = result.value.goal_overrides.get(self.editing)
+        self.refresh()
+        self._message(
+            goal_override_text(result.value.name, override)
+            if override is not None
+            else f"{result.value.name} follows the goal unchanged.",
+            False,
+        )
+        return True
 
     def toggle_closed(self, handle: str, closed: bool) -> SavingsGoal | None:
         result = (

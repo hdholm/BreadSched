@@ -17,6 +17,7 @@ from ..engine.savings_goals import GoalProgress, goals_progress, spendable_hold
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from ..lib.savings_goal import GoalAllocation, SavingsGoal
+from ..lib.scenario import GoalOverride, Scenario
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
@@ -24,7 +25,10 @@ __all__ = [
     "GoalProgress",
     "SaveSavingsGoal",
     "SavingsGoalReport",
+    "SetGoalOverride",
     "allocate_to_goal",
+    "goal_overrides",
+    "set_goal_override",
     "close_savings_goal",
     "delete_savings_goal",
     "goal_accounts",
@@ -167,11 +171,14 @@ def reopen_savings_goal(db: DbSQLite, handle: str) -> ServiceResult[SavingsGoal]
 
 
 def delete_savings_goal(db: DbSQLite, handle: str) -> ServiceResult[str]:
-    """Delete a goal; no ledger transaction is touched."""
+    """Delete a goal and its scenario overrides; no ledger transaction is touched."""
     goal = db.get_savings_goal(handle)
     if goal is None:
         return ServiceResult.failure(ServiceError("savings_goal.not_found", ("handle",)))
     with db.transaction(f"Delete savings goal {goal.name}") as txn:
+        for scenario in list(db.iter_scenarios()):
+            if scenario.goal_overrides.pop(handle, None) is not None:
+                db.commit_scenario(scenario, txn)
         db.remove_savings_goal(handle, txn)
     return ServiceResult.success(handle)
 
@@ -192,3 +199,51 @@ def query_savings_goals(
             spendable_hold(progress),
         )
     )
+
+
+@dataclass(frozen=True, slots=True)
+class SetGoalOverride:
+    """Change one goal in one scenario; with nothing changed, the scenario follows it."""
+
+    scenario: str
+    goal: str
+    target_amount: Money | None = None
+    target_date: date | None = None
+    excluded: bool = False
+
+
+def set_goal_override(db: DbSQLite, request: SetGoalOverride) -> ServiceResult[Scenario]:
+    """Override a pinned goal's target in one scenario, leave it out, or clear the override."""
+    scenario = db.get_scenario(request.scenario)
+    if scenario is None:
+        return ServiceResult.failure(ServiceError("scenario.not_found", ("scenario",)))
+    goal = db.get_savings_goal(request.goal)
+    if goal is None:
+        return ServiceResult.failure(ServiceError("savings_goal.not_found", ("goal",)))
+    if request.target_amount is not None and request.target_amount <= 0:
+        return ServiceResult.failure(
+            ServiceError("savings_goal.target.invalid", ("target_amount",))
+        )
+    if request.target_date is not None and request.target_date <= goal.start_date:
+        return ServiceResult.failure(ServiceError("savings_goal.dates.invalid", ("target_date",)))
+    override: GoalOverride | None = GoalOverride(
+        request.target_amount, request.target_date, request.excluded
+    )
+    if not request.excluded and request.target_amount is None and request.target_date is None:
+        override = None
+    if override is None:
+        scenario.goal_overrides.pop(goal.handle, None)
+    else:
+        scenario.goal_overrides[goal.handle] = override
+    with db.transaction(f"Change savings goal {goal.name} in {scenario.name}") as txn:
+        db.commit_scenario(scenario, txn)
+    return ServiceResult.success(scenario)
+
+
+def goal_overrides(db: DbSQLite) -> dict[str, list[tuple[Scenario, GoalOverride]]]:
+    """Every scenario change to each goal, by goal handle, in scenario-name order."""
+    found: dict[str, list[tuple[Scenario, GoalOverride]]] = {}
+    for scenario in sorted(db.iter_scenarios(), key=lambda item: item.name.casefold()):
+        for handle, override in scenario.goal_overrides.items():
+            found.setdefault(handle, []).append((scenario, override))
+    return found

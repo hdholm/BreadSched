@@ -235,6 +235,8 @@ breadsched goals book.breadsched [--as-of 2026-09-15] [--all] [--json]
 breadsched goals book.breadsched --close "New roof" --on 2027-07-10
 breadsched goals book.breadsched --reopen "New roof"
 breadsched goals book.breadsched --delete "New roof"
+breadsched goals book.breadsched --override "New roof" --scenario Lean \
+    [--target 15000] [--by 2027-12-31] [--leave-out]
 ```
 
 The list shows each goal's account, target date, target, what is set aside, what
@@ -243,7 +245,12 @@ remains, and its status: **saving**, **fully set aside**, **starts** a later dat
 scheduled before the target date, so the gap is spread by day. Below the table are the total
 set aside and the part held from spendable cash. A goal is named by its exact name
 or a unique handle prefix. `breadsched dashboard` shows the same total as **Set
-aside for goals**. See [Savings goals](../USER_GUIDE.md#savings-goals).
+aside for goals**. `--override` changes a goal in one saved scenario; with neither
+`--target`, `--by`, nor `--leave-out`, it clears the change. `breadsched project`
+prints each goal's milestone and the first month cash stops covering goal money,
+and its `--json` output adds `goal_milestones` and per-month `goals_set_aside`,
+`goals_held`, and `cash_after_goals`. See
+[Savings goals](../USER_GUIDE.md#savings-goals).
 
 ## Projection and scenarios
 

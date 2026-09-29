@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection
 from ..gen.lib import Scenario
+from ..presentation import projection_goal_notes
 
 
 def projection_month_report(db: DbSQLite, scenario: Scenario, month_index: int) -> dict:
@@ -95,6 +96,22 @@ def projection_report(
         },
         "summary": result.summary(),
         "warnings": list(result.warnings),
+        "goal_notes": projection_goal_notes(result),
+        "goal_milestones": [
+            {
+                "goal": item.goal.handle,
+                "name": item.goal.name,
+                "target": item.target,
+                "target_date": item.target_date,
+                "overridden": item.overridden,
+                "month_index": item.month_index,
+                "set_aside": item.set_aside,
+                "cash_close": item.cash_close,
+                "goals_held": item.goals_held,
+                "covered": item.covered,
+            }
+            for item in result.goal_milestones
+        ],
         "rows": [
             {
                 "label": row.label,

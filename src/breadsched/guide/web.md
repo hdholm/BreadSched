@@ -109,7 +109,12 @@ remains, and its status. Fill in the form below the list and choose **Add goal**
 goal and choose **Allocate** to set extra money aside today. **Close** releases a
 goal's money, **Reopen** undoes that, and **Delete** removes the goal. **Show closed
 goals** includes closed goals. The Dashboard lists each open goal under **Savings
-goals**; choose a goal's name to open **Goals**. See
+goals**; choose a goal's name to open **Goals**. After **Edit**, the form below the
+goal form changes that goal in one scenario: choose the scenario, enter a different
+target amount or target date or check **Leave out**, and choose **Apply to
+scenario** (with nothing entered, the scenario follows the goal unchanged).
+**Scenario changes** lists every change. **Projection** shows a **Savings goals**
+section, and **Plan** lists goals reaching their target in its range. See
 [Savings goals](../USER_GUIDE.md#savings-goals).
 
 ## Reimbursable expenses

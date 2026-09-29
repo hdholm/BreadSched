@@ -3,6 +3,25 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a194 - 2026-09-29
+
+- **Savings goals in Plan, Projection, and scenarios.** Goals are pinned: every
+  scenario carries every open goal. A scenario can change a goal's target amount or
+  target date, or leave it out, without touching the goal or other scenarios. This
+  can be done from the desktop Savings Goals window, the browser Goals page, or
+  `breadsched goals --override`. Each goal lists its scenario changes.
+- **Projection.** It starts from what each goal has actually set aside, then sets
+  aside a share of the scenario's own projected income each month until the target
+  month. Each goal's target month is a milestone that says whether projected cash
+  covers everything set aside for goals then, and the first month cash covers bills
+  but not goal money is named. This appears on the desktop, in the browser, in the
+  printout, and in `breadsched project` (with `--json`). The projection CSV export
+  adds each month's goal money and the cash left after it.
+- **Plan.** Goals reaching their target date in the Plan range are listed, with
+  what they have set aside so far, on the desktop, in the browser, and in the
+  printout. A test confirms money moved into a goal's account is never projected as
+  an expense. Application version `0.2.0a194`; native schema remains 10.
+
 ## 0.2.0a193 - 2026-09-29
 
 - **Savings goals.** A goal names an asset account, a target amount, a start date,

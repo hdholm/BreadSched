@@ -327,3 +327,223 @@ def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys
     capsys.readouterr()
     assert main(["migrate", str(path)]) == 0
     assert "nothing to migrate" in capsys.readouterr().out
+
+
+def _projected(db, book, **overrides):
+    from breadsched.gen.engine import projection
+    from breadsched.gen.lib import GoalOverride, Scenario
+
+    _monthly_pay(db, book, last_posted=date(2026, 6, 1))
+    goal = _goal(db, book)
+    scenario = Scenario(name="Next year", start=date(2026, 7, 1), years=1)
+    if overrides:
+        scenario.goal_overrides[goal.handle] = GoalOverride(**overrides)
+    return goal, projection.project(db, scenario)
+
+
+def test_projection_sets_aside_a_share_of_each_projected_income(db, book):
+    goal, result = _projected(db, book)
+    # 600 set aside by June 30; July to December income spreads the other 600.
+    assert [row.goals_set_aside for row in result.rows[:6]] == [
+        Money(700),
+        Money(800),
+        Money(900),
+        Money(1000),
+        Money(1100),
+        Money(1200),
+    ]
+    assert all(row.goals_set_aside == Money(1200) for row in result.rows[6:])
+    assert all(row.goals_held == row.goals_set_aside for row in result.rows)
+    assert result.rows[0].cash_after_goals == result.rows[0].cash_close - Money(700)
+    [milestone] = result.goal_milestones
+    assert (milestone.goal.handle, milestone.month_index) == (goal.handle, 5)
+    assert (milestone.target, milestone.set_aside) == (Money(1200), Money(1200))
+    assert milestone.cash_close == result.rows[5].cash_close
+    assert milestone.covered == (result.rows[5].cash_close >= Money(1200))
+    assert not milestone.overridden
+    data = result.rows[0].as_dict()
+    assert (data["goals_set_aside"], data["goals_held"]) == (Money(700), Money(700))
+
+
+def test_a_scenario_overrides_or_leaves_out_a_pinned_goal(db, book):
+    goal, raised = _projected(db, book, target_amount=Money(1800), target_date=date(2027, 3, 31))
+    [milestone] = raised.goal_milestones
+    assert milestone.overridden and milestone.target == Money(1800)
+    assert (milestone.target_date, milestone.month_index) == (date(2027, 3, 31), 8)
+    # The larger target applies from the goal's start: 6 of 15 paychecks set aside
+    # 720 by June 30, and July's paycheck adds a ninth of the remaining 1,080.
+    assert raised.rows[0].goals_set_aside == Money(840)
+    assert raised.rows[8].goals_set_aside == Money(1800)
+    # The goal itself is unchanged, and other scenarios still carry it.
+    assert db.get_savings_goal(goal.handle).target_amount == Money(1200)
+
+
+def test_a_scenario_can_leave_a_goal_out(db, book):
+    _goal, result = _projected(db, book, excluded=True)
+    assert result.goal_milestones == []
+    assert all(row.goals_set_aside == Money(0) for row in result.rows)
+
+
+def test_goal_overrides_survive_saving_the_scenario(db, book):
+    from breadsched.gen.lib import GoalOverride, Scenario
+
+    scenario = Scenario(name="Saved", start=date(2026, 7, 1))
+    scenario.goal_overrides["goal"] = GoalOverride(Money(5), date(2027, 1, 1), excluded=False)
+    reloaded = Scenario.from_dict(scenario.serialize())
+    assert reloaded.goal_overrides == scenario.goal_overrides
+
+
+def test_service_overrides_a_goal_per_scenario_and_cleans_up(db, book):
+    from breadsched.gen.lib import Scenario
+    from breadsched.gen.services import (
+        SetGoalOverride,
+        delete_savings_goal,
+        save_savings_goal,
+        set_goal_override,
+    )
+
+    goal = save_savings_goal(db, _request(book)).value
+    scenario = Scenario(name="Lean", start=date(2026, 7, 1))
+    with db.transaction("Scenario") as txn:
+        db.add_scenario(scenario, txn)
+    changed = set_goal_override(
+        db, SetGoalOverride(scenario.handle, goal.handle, target_amount=Money(900))
+    )
+    assert changed.ok and changed.value.goal_overrides[goal.handle].target_amount == Money(900)
+    assert db.get_scenario(scenario.handle).goal_overrides[goal.handle].target_amount == Money(900)
+    before = db.get_scenario(scenario.handle).serialize()
+    for request, code in (
+        (SetGoalOverride("missing", goal.handle), "scenario.not_found"),
+        (SetGoalOverride(scenario.handle, "missing"), "savings_goal.not_found"),
+        (SetGoalOverride(scenario.handle, goal.handle, Money(0)), "savings_goal.target.invalid"),
+        (
+            SetGoalOverride(scenario.handle, goal.handle, target_date=date(2025, 1, 1)),
+            "savings_goal.dates.invalid",
+        ),
+    ):
+        rejected = set_goal_override(db, request)
+        assert rejected.errors[0].code == code
+        assert db.get_scenario(scenario.handle).serialize() == before
+    cleared = set_goal_override(db, SetGoalOverride(scenario.handle, goal.handle))
+    assert cleared.ok and cleared.value.goal_overrides == {}
+    assert db.get_scenario(scenario.handle).goal_overrides == {}
+    set_goal_override(db, SetGoalOverride(scenario.handle, goal.handle, excluded=True))
+    assert delete_savings_goal(db, goal.handle).ok
+    assert db.get_scenario(scenario.handle).goal_overrides == {}
+
+
+def test_transfers_into_a_goal_account_are_not_projected_as_expenses(db, book):
+    from breadsched.gen.engine import projection
+    from breadsched.gen.lib import Scenario
+
+    _monthly_pay(db, book, last_posted=date(2026, 6, 1))
+    _goal(db, book)
+    move = ScheduledTransaction(
+        name="Save for the roof",
+        recurrence=Recurrence(PeriodType.MONTH, interval=1, start=date(2026, 7, 2)),
+        splits=[
+            ScheduledSplit(book.savings, Money(100)),
+            ScheduledSplit(book.checking, Money(-100)),
+        ],
+    )
+    with db.transaction("Transfer") as txn:
+        db.add_scheduled(move, txn)
+    result = projection.project(db, Scenario(name="Base", start=date(2026, 7, 1), years=1))
+    assert all(row.expense == Money(0) for row in result.rows)
+    assert result.rows[0].goals_set_aside == Money(700)
+
+
+def test_cli_overrides_a_goal_in_a_scenario_and_projects_its_milestone(tmp_path, capsys):
+    import json
+
+    from breadsched.cli.main import main
+
+    path = str(tmp_path / "plan.breadsched")
+    assert main(["sample", path, "--as-of", "2026-09-15"]) == 0
+    capsys.readouterr()
+    assert main(["accounts", path, "--json"]) == 0
+    accounts = json.loads(capsys.readouterr().out)
+    bank = next(item for item in accounts if item.get("type", item.get("atype")) == "BANK")
+    assert (
+        main(
+            [
+                "goals",
+                path,
+                "--add",
+                "Car",
+                "--account",
+                bank["handle"],
+                "--target",
+                "6000",
+                "--by",
+                "2027-06-30",
+                "--start",
+                "2026-09-01",
+            ]
+        )
+        == 0
+    )
+    assert main(["scenario", path, "save", "--name", "Lean", "--start", "2026-09-01"]) == 0
+    capsys.readouterr()
+    name = "Lean"
+    assert (
+        main(["goals", path, "--override", "Car", "--scenario", name, "--target", "8000", "--json"])
+        == 0
+    )
+    result = json.loads(capsys.readouterr().out)
+    assert result["override"]["excluded"] is False
+    assert main(["project", path, "--scenario", name, "--years", "1", "--json"]) == 0
+    projected = json.loads(capsys.readouterr().out)
+    [milestone] = projected["goal_milestones"]
+    assert milestone["name"] == "Car" and milestone["overridden"] is True
+    assert Money(milestone["target"]) == Money(8000)
+    assert "goals_set_aside" in projected["rows"][0]
+    assert main(["project", path, "--scenario", name, "--years", "1"]) == 0
+    assert "Goal Car: 8,000.00 by 2027-06-30 (changed in this scenario)" in (
+        capsys.readouterr().out
+    )
+    assert main(["goals", path, "--override", "Car", "--scenario", name]) == 0
+    assert "follows the goal unchanged" in capsys.readouterr().out
+
+
+def test_projection_outputs_carry_goal_milestones(db, book, tmp_path):
+    from breadsched.plugins.export.csv_export import export_projection
+    from breadsched.plugins.export.html_report import projection_report
+    from breadsched.presentation import projection_goal_notes
+
+    _goal, result = _projected(db, book)
+    notes = projection_goal_notes(result)
+    assert notes[-1].startswith("Goal New roof: 1,200.00 by 2026-12-31; projected cash of")
+    html = projection_report(result)
+    assert "<h2>Savings goals</h2>" in html and "New roof" in html
+    path = tmp_path / "projection.csv"
+    export_projection(result, path)
+    header, first, *_rest = path.read_text(encoding="utf-8").splitlines()
+    assert header.endswith("net_worth,goals_set_aside,cash_after_goals")
+    assert first.split(",")[-2] == "700.0000" or first.split(",")[-2].startswith("700")
+
+
+def test_plan_lists_goals_reaching_their_target_in_range(db, book):
+    from breadsched.gen.services import PlanQuery, query_plan
+    from breadsched.plugins.export.html_report import plan_report
+
+    _monthly_pay(db, book, last_posted=date(2026, 6, 1))
+    _goal(db, book)
+    result = query_plan(
+        db, PlanQuery(start=date(2026, 1, 1), end=date(2026, 12, 31), today=date(2026, 6, 15))
+    ).value
+    [milestone] = result.goal_milestones
+    assert (milestone.target, milestone.set_aside, milestone.remaining) == (
+        Money(1200),
+        Money(600),
+        Money(600),
+    )
+    outside = query_plan(
+        db, PlanQuery(start=date(2026, 1, 1), end=date(2026, 6, 30), today=date(2026, 6, 15))
+    ).value
+    assert outside.goal_milestones == ()
+    html = plan_report(
+        result.report, result.measure, scenario_name="Base", goal_milestones=result.goal_milestones
+    )
+    assert "Savings goals reaching their target" in html
+    assert "600.00 set aside so far" in html

@@ -2616,6 +2616,11 @@ async function showPlan() {
   document.body.classList.toggle("include-plan-detail", state.planPrintDetail);
 
   return el("div", {}, controls, cards,
+    ...((data.goal_milestones || []).length
+      ? [el("section", { class: "plan-goals" },
+        el("h2", {}, "Savings goals reaching their target"),
+        ...data.goal_milestones.map((item) => el("p", { class: "note" }, item.text)))]
+      : []),
     ...(data.currency?.notes || []).map((line) => el("p", {
       class: `note plan-currency-note${line.startsWith("Not included") ? " neg" : ""}`,
     }, line)),
@@ -3523,9 +3528,13 @@ async function showProjection() {
 
   const warnings = data.warnings && data.warnings.length
     ? el("p", { class: "note neg" }, data.warnings.join("  ")) : null;
+  const goalNotes = (data.goal_notes || []).length
+    ? el("section", { class: "projection-goals" }, el("h3", {}, "Savings goals"),
+      ...data.goal_notes.map((line) => el("p", { class: "note" }, line)))
+    : null;
   return el("div", {},
     el("h2", {}, "Projection"),
-    form, cards, chart(data.rows), comparisonView, warnings,
+    form, cards, chart(data.rows), comparisonView, goalNotes, warnings,
     el("p", { class: "note" }, `Scenario "${scenarioData.name}", by year.`),
     table(["Month", { label: "Income", num: true }, { label: "Expense", num: true },
            { label: "Cash", num: true }, { label: "Holdings", num: true },
@@ -4024,6 +4033,32 @@ async function showGoals() {
     el("label", {}, "Target amount", target), el("label", {}, "Start saving", start),
     el("label", {}, "Target date", by), el("label", {}, "Description", description),
     saveButton);
+  // Goals apply to every scenario unless one changes them; Edit picks the goal.
+  const overrideGoal = el("strong", {}, "");
+  const overrideScenario = el("select", { name:"scenario" },
+    ...data.scenarios.map((item) => el("option", { value:item.handle }, item.name)));
+  const overrideTarget = el("input", { name:"override_target", inputmode:"decimal",
+    placeholder:"Target amount" });
+  const overrideDate = el("input", { name:"override_date", type:"date" });
+  const overrideExcluded = el("input", { name:"override_excluded", type:"checkbox" });
+  const overrideForm = el("form", { class:"entry goal-override", hidden:"hidden",
+    onsubmit:(event) => {
+      event.preventDefault();
+      run(async () => {
+        const saved = await post("/api/savings-goal/override", {
+          handle:editing, scenario:overrideScenario.value, target_amount:overrideTarget.value,
+          target_date:overrideDate.value, excluded:overrideExcluded.checked });
+        say(saved.text + ".");
+        await refresh();
+      })();
+    } },
+    el("p", { class:"note" }, "Change ", overrideGoal, " in one scenario. Leave both fields "
+      + "empty and Leave out unchecked to follow the goal unchanged."),
+    el("label", {}, "Scenario", overrideScenario),
+    el("label", {}, "Target amount", overrideTarget),
+    el("label", {}, "Target date", overrideDate),
+    el("label", {}, overrideExcluded, " Leave out"),
+    el("button", { class:"action", type:"submit" }, "Apply to scenario"));
   const rows = data.goals.map((goal) => {
     const amount = el("input", { inputmode:"decimal", placeholder:"Amount", size:"8",
       "aria-label":`Amount to allocate to ${goal.name}` });
@@ -4034,9 +4069,13 @@ async function showGoals() {
       el("td", { class:"num" }, money(goal.set_aside)),
       el("td", { class:"num" }, money(goal.remaining)),
       el("td", {}, goal.status_text),
+      el("td", { class:"goal-changes" },
+        (goal.overrides || []).map((item) => item.text).join("; ") || "—"),
       el("td", {},
         el("button", { class:"action", type:"button", onclick:() => {
           editing = goal.handle;
+          overrideGoal.textContent = goal.name;
+          overrideForm.hidden = !data.scenarios.length;
           name.value = goal.name; account.value = goal.account;
           target.value = goal.target; start.value = goal.start_date; by.value = goal.target_date;
           description.value = goal.description;
@@ -4080,10 +4119,11 @@ async function showGoals() {
       el("label", {}, toggle, " Show closed goals"),
       data.goals.length
         ? table(["Goal", "Held in", "Target date", { label:"Target", num:true },
-          { label:"Set aside", num:true }, { label:"Remaining", num:true }, "Status", ""], rows)
+          { label:"Set aside", num:true }, { label:"Remaining", num:true }, "Status",
+          "Scenario changes", ""], rows)
         : el("p", { class:"note" }, "No savings goals yet."),
       totals ? el("p", { class:"note" }, totals) : null,
-      form));
+      form, overrideForm));
 }
 
 async function showReimbursables() {

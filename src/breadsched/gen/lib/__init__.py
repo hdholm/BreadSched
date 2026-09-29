@@ -27,6 +27,7 @@ from .savings_goal import GoalAllocation, SavingsGoal
 from .scenario import (
     AssumptionPeriod,
     Assumptions,
+    GoalOverride,
     OneOff,
     Scenario,
     ScenarioSchedule,
@@ -72,6 +73,7 @@ __all__ = [
     "DEFAULT_CURRENCY_HANDLE",
     "FormulaError",
     "Money",
+    "GoalOverride",
     "OneOff",
     "Rate",
     "PeriodType",

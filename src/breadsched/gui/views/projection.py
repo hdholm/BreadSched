@@ -26,6 +26,7 @@ from ...gen.services import (
 )
 from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger  # noqa: E402
+from ...presentation import projection_goal_notes
 from ..background import BackgroundJob
 from ..gi_setup import GLib, Gtk
 from ..planning_context import (
@@ -476,7 +477,9 @@ class ProjectionView(BaseView):
             ("Cash runs out", shortfall.label if shortfall else "Never"),
         ]
         self._render_summary(cards, alarm=shortfall is not None)
-        self._show_projection_notes(result.warnings, bullets=True)
+        self._show_projection_notes(
+            [*projection_goal_notes(result), *result.warnings], bullets=True
+        )
 
     def _show_projection_notes(self, notes: list[str], *, bullets: bool = False) -> None:
         """Render readable notes without letting them dictate the window height."""

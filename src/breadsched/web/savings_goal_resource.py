@@ -14,15 +14,18 @@ from typing import TYPE_CHECKING, Any
 from ..gen.services.savings_goals import (
     AllocateToGoal,
     SaveSavingsGoal,
+    SetGoalOverride,
     allocate_to_goal,
     close_savings_goal,
     delete_savings_goal,
     goal_accounts,
+    goal_overrides,
     query_savings_goals,
     reopen_savings_goal,
     save_savings_goal,
+    set_goal_override,
 )
-from ..presentation import goal_status_text
+from ..presentation import goal_override_text, goal_status_text
 
 if TYPE_CHECKING:
     from ..gen.engine.savings_goals import GoalProgress
@@ -86,12 +89,32 @@ def savings_goals(api: Api, query: QueryParams) -> dict[str, object]:
     include_closed = query.text("closed") == "1"
     query.finish()
     report = _result(api, query_savings_goals(api.db, date.today(), include_closed=include_closed))
+    changes = goal_overrides(api.db)
+    goals = []
+    for item in report.goals:
+        entry = goal_json(item)
+        entry["overrides"] = [
+            {
+                "scenario": scenario.handle,
+                "scenario_name": scenario.name,
+                "target_amount": override.target_amount,
+                "target_date": override.target_date,
+                "excluded": override.excluded,
+                "text": goal_override_text(scenario.name, override),
+            }
+            for scenario, override in changes.get(item.goal.handle, [])
+        ]
+        goals.append(entry)
     return {
         "as_of": report.as_of,
         "set_aside": report.set_aside,
         "held": report.held,
-        "goals": [goal_json(item) for item in report.goals],
+        "goals": goals,
         "accounts": [{"handle": handle, "name": name} for handle, name in goal_accounts(api.db)],
+        "scenarios": [
+            {"handle": scenario.handle, "name": scenario.name}
+            for scenario in sorted(api.db.iter_scenarios(), key=lambda item: item.name.casefold())
+        ],
     }
 
 
@@ -134,3 +157,30 @@ def savings_goal_reopen(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
 
 def savings_goal_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     return {"deleted": _result(api, delete_savings_goal(api.db, _text(payload, "handle") or ""))}
+
+
+def savings_goal_override(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
+    """Change a goal in one scenario; with no change given, the scenario follows it."""
+    raw_target = payload.get("target_amount")
+    excluded = payload.get("excluded", False)
+    if not isinstance(excluded, bool):
+        raise ValueError("excluded must be true or false")
+    request = SetGoalOverride(
+        scenario=_text(payload, "scenario") or "",
+        goal=_text(payload, "handle") or "",
+        target_amount=(
+            api._input_money(dict(payload), raw_target) if raw_target not in (None, "") else None
+        ),
+        target_date=_date(payload, "target_date", optional=True),
+        excluded=excluded,
+    )
+    scenario = _result(api, set_goal_override(api.db, request))
+    override = scenario.goal_overrides.get(request.goal)
+    return {
+        "scenario": scenario.handle,
+        "text": (
+            goal_override_text(scenario.name, override)
+            if override is not None
+            else f"{scenario.name} follows the goal unchanged"
+        ),
+    }

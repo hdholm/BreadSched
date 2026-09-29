@@ -1859,6 +1859,7 @@ class TestPlanApi:
             "planning_flows",
             "cash_bridge",
             "column_totals",
+            "goal_milestones",
         }
         assert payload["currency"]["notes"] == []
         assert set(payload["currency"]) == {"as_of", "conversions", "unconverted", "notes"}
@@ -5413,3 +5414,56 @@ class TestGuideRoute:
             with pytest.raises(urllib.error.HTTPError) as caught:
                 client.get(f"/api/guide?{query}")
             assert caught.value.code == 400
+
+
+class TestSavingsGoalScenarioRoutes:
+    def test_a_goal_is_changed_in_one_scenario_through_the_route(self, client):
+        from breadsched.gen.lib import Scenario
+
+        _status, listing = client.get("/api/savings-goals")
+        account = next(item for item in listing["accounts"] if item["name"].endswith("Checking"))
+        today = date.today()
+        _status, saved = client.post(
+            "/api/savings-goal/save",
+            {
+                "name": "Roof",
+                "account": account["handle"],
+                "target_amount": "1200",
+                "start_date": today.isoformat(),
+                "target_date": today.replace(year=today.year + 1).isoformat(),
+            },
+        )
+        scenario = Scenario(name="Lean", start=today.replace(day=1))
+        with client.database.transaction("Scenario") as txn:
+            client.database.add_scenario(scenario, txn)
+        status, changed = client.post(
+            "/api/savings-goal/override",
+            {"handle": saved["handle"], "scenario": scenario.handle, "target_amount": "1500"},
+        )
+        assert status == 200 and changed["text"] == "Lean: target 1,500.00"
+        _status, listing = client.get("/api/savings-goals")
+        assert listing["scenarios"] == [{"handle": scenario.handle, "name": "Lean"}]
+        [override] = listing["goals"][0]["overrides"]
+        assert Money(override["target_amount"]) == Money(1500)
+        before = client.database.get_scenario(scenario.handle).serialize()
+        for body, code in (
+            ({"handle": saved["handle"], "scenario": "missing"}, "scenario.not_found"),
+            (
+                {"handle": saved["handle"], "scenario": scenario.handle, "target_amount": "0"},
+                "savings_goal.target.invalid",
+            ),
+            ({"handle": saved["handle"], "scenario": scenario.handle, "excluded": "yes"}, None),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/savings-goal/override", body)
+            assert caught.value.code in {400, 404}
+            if code is not None:
+                assert json.loads(caught.value.read())["code"] == code
+        assert client.database.get_scenario(scenario.handle).serialize() == before
+        _status, cleared = client.post(
+            "/api/savings-goal/override", {"handle": saved["handle"], "scenario": scenario.handle}
+        )
+        assert cleared["text"] == "Lean follows the goal unchanged"
+        _status, projected = client.get(f"/api/projection?scenario={scenario.handle}")
+        assert projected["goal_milestones"][0]["name"] == "Roof"
+        assert projected["goal_notes"]

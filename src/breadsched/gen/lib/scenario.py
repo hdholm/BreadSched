@@ -32,6 +32,7 @@ from .scheduled import (
 
 __all__ = [
     "ASSUMPTION_FIELDS",
+    "GoalOverride",
     "OneOff",
     "ScenarioSchedule",
     "Assumptions",
@@ -81,6 +82,50 @@ class OneOff:
             amount=Money(*data["amount"]),
             description=data.get("description", ""),
         )
+
+
+class GoalOverride:
+    """How one scenario changes a savings goal that otherwise applies to every scenario.
+
+    Goals are pinned: each scenario inherits every goal unchanged unless it
+    overrides the target amount or date, or leaves the goal out.
+    """
+
+    __slots__ = ("excluded", "target_amount", "target_date")
+
+    def __init__(
+        self,
+        target_amount: Money | None = None,
+        target_date: date | None = None,
+        excluded: bool = False,
+    ) -> None:
+        self.target_amount = target_amount
+        self.target_date = target_date
+        self.excluded = excluded
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "target_amount": (
+                [self.target_amount.numerator, self.target_amount.denominator]
+                if self.target_amount is not None
+                else None
+            ),
+            "target_date": self.target_date.isoformat() if self.target_date else None,
+            "excluded": self.excluded,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> GoalOverride:
+        amount = data.get("target_amount")
+        when = data.get("target_date")
+        return cls(
+            target_amount=Money(*amount) if amount is not None else None,
+            target_date=date.fromisoformat(when) if when else None,
+            excluded=bool(data.get("excluded", False)),
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, GoalOverride) and self.serialize() == other.serialize()
 
 
 class ScenarioSchedule:
@@ -514,6 +559,8 @@ class Scenario(PrimaryObject):
         #: Pretend an account starts at this balance instead of its ledger balance.
         self.opening_overrides: dict[str, Money] = {}
         self.one_offs: list[OneOff] = []
+        #: Savings-goal changes by goal handle; every other goal applies unchanged.
+        self.goal_overrides: dict[str, GoalOverride] = {}
 
     @classmethod
     def derived_from_base(cls, base: Assumptions, **kwargs: Any) -> Scenario:
@@ -695,6 +742,9 @@ class Scenario(PrimaryObject):
                 k: [v.numerator, v.denominator] for k, v in self.opening_overrides.items()
             },
             "one_offs": [o.serialize() for o in self.one_offs],
+            "goal_overrides": {
+                handle: item.serialize() for handle, item in sorted(self.goal_overrides.items())
+            },
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -742,6 +792,10 @@ class Scenario(PrimaryObject):
             k: Money(*v) for k, v in data.get("opening_overrides", {}).items()
         }
         self.one_offs = [OneOff.from_dict(o) for o in data.get("one_offs", [])]
+        self.goal_overrides = {
+            handle: GoalOverride.from_dict(item)
+            for handle, item in data.get("goal_overrides", {}).items()
+        }
 
     def __repr__(self) -> str:
         return f"<Scenario {self.name!r} {self.years}y>"
