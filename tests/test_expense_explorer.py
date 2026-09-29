@@ -331,3 +331,57 @@ def test_printable_expense_report_includes_spending_over_time(db, book):
     html = expense_explorer_report(result.value)
     assert "<h2>Spending over time</h2>" in html
     assert "to date" in html and "future" in html
+
+
+def test_income_over_time_uses_plan_income_and_reconciles(db, book):
+    pay = ScheduledTransaction(
+        name="Pay",
+        recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 1, 15)),
+        splits=[
+            ScheduledSplit(book.checking, Money(3000)),
+            ScheduledSplit(book.salary, Money(-3000)),
+        ],
+    )
+    with db.transaction("Income history") as txn:
+        db.add_scheduled(pay, txn)
+        for when, amount in ((date(2026, 1, 15), "3000"), (date(2026, 2, 13), "3100")):
+            db.add_transaction(
+                Transaction.simple(when, "Pay", book.checking, book.salary, amount), txn
+            )
+        db.add_transaction(
+            Transaction.simple(date(2026, 1, 9), "Spend", book.groceries, book.checking, "80"),
+            txn,
+        )
+    result = query_expense_explorer(
+        db,
+        PlanQuery(start=date(2026, 1, 1), end=date(2026, 3, 31), today=date(2026, 2, 20)),
+    )
+    assert result.value is not None
+    explorer = result.value
+    points = explorer.income
+    assert [point.label for point in points] == [point.label for point in explorer.spending]
+    assert [(point.future, point.partial) for point in points] == [
+        (False, False),
+        (False, True),
+        (True, False),
+    ]
+    # Income is positive, planned from the schedule, and actual from the ledger;
+    # expenses never leak into it.
+    assert [point.actual for point in points] == [Money(3000), Money(3100), Money(0)]
+    assert [point.planned for point in points] == [Money(3000), Money(3000), Money(3000)]
+    for point in points:
+        assert sum((amount for _handle, amount in point.categories), Money(0)) == point.actual
+        assert not point.currency_incomplete
+    assert dict(points[0].categories) == {book.salary: Money(3000)}
+    names = {row.account: row.full_name for row in explorer.income_categories}
+    assert names[book.salary].endswith("Salary")
+    selected = query_expense_explorer(
+        db,
+        PlanQuery(start=date(2026, 1, 1), end=date(2026, 3, 31), today=date(2026, 2, 20)),
+        account=book.groceries,
+        period_index=0,
+    )
+    assert selected.value is not None
+    html = expense_explorer_report(selected.value)
+    assert "<h2>Income over time</h2>" in html
+    assert "3,100.00" in html

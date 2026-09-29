@@ -15,7 +15,7 @@ from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
-from ...gen.services.expense_explorer import ExpenseExplorer
+from ...gen.services.expense_explorer import ExpenseExplorer, SpendingPoint
 
 __all__ = ["dashboard_report", "expense_explorer_report", "plan_report", "projection_report"]
 
@@ -122,6 +122,38 @@ def _cards(items: list[tuple[str, object, bool]]) -> str:
     return f'<div class="cards">{"".join(cards)}</div>'
 
 
+def _over_time_table(
+    title: str, points: tuple[SpendingPoint, ...], names: dict[str, str], as_of: str
+) -> str:
+    """Total plan and actual by period, with actual split by top-level category."""
+    parts = points[0].categories if points else ()
+    rows = []
+    for point in points:
+        notes = [
+            text
+            for flag, text in (
+                (point.partial, "to date"),
+                (point.future, "future"),
+                (point.currency_incomplete, "missing quote"),
+            )
+            if flag
+        ]
+        rows.append(
+            f"<tr><td>{escape(point.label)}</td>{_amount(point.planned)}{_amount(point.actual)}"
+            + "".join(_amount(amount) for _handle, amount in point.categories)
+            + f"<td>{escape(', '.join(notes) or '—')}</td></tr>"
+        )
+    return (
+        f"<h2>{escape(title)}</h2><p class='note'>Total plan and actual by period, "
+        f"with actual split by top-level category. Actual is posted through {as_of}.</p>"
+        '<table><thead><tr><th>Period</th><th class="num">Plan</th><th class="num">Actual</th>'
+        + "".join(
+            f'<th class="num">{escape(names.get(handle, handle))}</th>' for handle, _ in parts
+        )
+        + f"<th>Note</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
+    )
+
+
 def expense_explorer_report(explorer: ExpenseExplorer) -> str:
     """Print the selected expense cell and its shared Plan breakdown."""
     detail = explorer.drilldown
@@ -186,33 +218,17 @@ def expense_explorer_report(explorer: ExpenseExplorer) -> str:
         '<th class="num">Actual</th><th>Transactions</th></tr></thead><tbody>'
         f"{''.join(merchant_rows)}</tbody></table>"
     )
-    names = {row.account: row.full_name for row in explorer.categories}
-    parts = explorer.spending[0].categories if explorer.spending else ()
-    spending_rows = []
-    for point in explorer.spending:
-        notes = [
-            text
-            for flag, text in (
-                (point.partial, "to date"),
-                (point.future, "future"),
-                (point.currency_incomplete, "missing quote"),
-            )
-            if flag
-        ]
-        spending_rows.append(
-            f"<tr><td>{escape(point.label)}</td>{_amount(point.planned)}{_amount(point.actual)}"
-            + "".join(_amount(amount) for _handle, amount in point.categories)
-            + f"<td>{escape(', '.join(notes) or '—')}</td></tr>"
-        )
-    spending = (
-        "<h2>Spending over time</h2><p class='note'>Total plan and actual by period, "
-        "with actual split by top-level category. Actual is posted through "
-        f"{explorer.plan.report.as_of.isoformat()}.</p><table><thead><tr><th>Period</th>"
-        '<th class="num">Plan</th><th class="num">Actual</th>'
-        + "".join(
-            f'<th class="num">{escape(names.get(handle, handle))}</th>' for handle, _ in parts
-        )
-        + f"<th>Note</th></tr></thead><tbody>{''.join(spending_rows)}</tbody></table>"
+    as_of = explorer.plan.report.as_of.isoformat()
+    spending = _over_time_table(
+        "Spending over time",
+        explorer.spending,
+        {row.account: row.full_name for row in explorer.categories},
+        as_of,
+    ) + _over_time_table(
+        "Income over time",
+        explorer.income,
+        {row.account: row.full_name for row in explorer.income_categories},
+        as_of,
     )
     subtitle = (
         f"{explorer.plan.scenario.name} · {explorer.plan.start.isoformat()} through "

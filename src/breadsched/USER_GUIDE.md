@@ -483,6 +483,11 @@ the as-of date. Open it from Plan
   converted and is left out. Choosing a period makes it the comparison period below.
   If all your categories sit under one **Expenses** account, the split uses its
   subcategories, and anything posted to **Expenses** itself gets its own column.
+- **Income over time** follows it with the same periods, markers, and notes for
+  income: total planned and actual income per period, split across your top-level
+  income categories (or the subcategories of a single **Income** account). Choosing
+  a period there also makes it the comparison period; the comparison, category
+  trend, and merchants below cover expenses only.
 - The **Period** comparison shows a plan bar and an actual bar for each category,
   plus exact Plan, Actual, Variance, and Remaining values, sorted by Actual, Plan,
   Variance, or name.

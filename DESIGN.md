@@ -2352,6 +2352,13 @@ shaded, `index_at` mapping a click to a period), the web page with an SVG whose
 period hit areas are keyboard-focusable buttons, and the printable report as a
 table. Selecting a period drives the existing comparison and merchant drill-down,
 so every drill-down stays on the shared Plan values.
+Income over time (`ExpenseExplorer.income`) is built by the same `_over_time`
+helper from the Plan report's income rows and `category_totals(INCOME, ...)`, so
+its periods, as-of flags, currency flags, top-level split, and exact
+reconciliation assertion match spending's; `income_categories` supplies the
+names. GTK, web, and the printable report show it as a second chart and table
+after spending. Selecting one of its periods selects that period for the whole
+explorer; the category comparison and merchant drill-down remain expense-only.
 The view toggle does not mutate historical events or persist a second budget
 ledger. Reimbursable expense
 work must link the original balanced expense, collectible receivable, and later

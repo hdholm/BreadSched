@@ -403,6 +403,15 @@ def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):
     page.wait_for_selector(f".spending-over-time tbody tr.selected:has-text('{label}')")
     selected = page.locator(".expense-explorer select").first.evaluate("(node) => node.value")
     assert selected == "1"
+    # Income over time has its own chart and table over the same periods, and
+    # selecting a period there selects it for the whole explorer.
+    income = page.locator(".income-over-time tbody tr")
+    assert income.count() == periods.count()
+    assert page.locator("svg.income-chart path").count() == 2
+    income.nth(0).locator("button").click()
+    page.wait_for_selector(".spending-over-time tbody tr.selected >> nth=0")
+    selected = page.locator(".expense-explorer select").first.evaluate("(node) => node.value")
+    assert selected == "0"
 
 
 def test_the_import_page_writes_ticked_changes_back_to_gnucash(page, served, gnucash_sqlite_path):

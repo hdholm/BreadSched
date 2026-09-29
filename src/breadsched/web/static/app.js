@@ -2155,9 +2155,10 @@ function expenseTrend(category) {
   return svg;
 }
 
-function spendingOverTime(data, periodIndex) {
+function spendingOverTime(data, periodIndex, kind = "spending") {
   // Total plan and actual per period; each period is a button that selects it.
-  const points = data.spending || [];
+  const points = data[kind] || [];
+  const income = kind === "income";
   const values = points.flatMap((item) => [Number(item.planned), Number(item.actual)]);
   const low = Math.min(0, ...values);
   const high = Math.max(1, ...values);
@@ -2165,8 +2166,9 @@ function spendingOverTime(data, periodIndex) {
   const step = 560 / Math.max(1, points.length - 1);
   const x = (index) => 20 + index * step;
   const y = (value) => bottom - (bottom - top) * (Number(value) - low) / (high - low);
-  const svg = svgEl("svg", { viewBox: `0 0 ${width} 150`, role: "img", class: "spending-chart",
-    "aria-label": "Total expense plan and actual by period" });
+  const svg = svgEl("svg", { viewBox: `0 0 ${width} 150`, role: "img",
+    class: income ? "income-chart" : "spending-chart",
+    "aria-label": `Total ${income ? "income" : "expense"} plan and actual by period` });
   const asOf = points.findIndex((item) => item.future);
   if (asOf > 0) {
     svg.append(svgEl("line", { x1: x(asOf) - step / 2, x2: x(asOf) - step / 2, y1: top,
@@ -2191,11 +2193,13 @@ function spendingOverTime(data, periodIndex) {
   const categories = points.length ? points[0].categories : [];
   const note = (item) => [item.partial ? "to date" : "", item.future ? "future" : "",
     item.currency_incomplete ? "missing quote" : ""].filter(Boolean).join(", ");
-  return el("div", { class: "spending-over-time" },
-    el("h3", {}, "Spending over time"),
+  return el("div", { class: income ? "income-over-time" : "spending-over-time" },
+    el("h3", {}, income ? "Income over time" : "Spending over time"),
     el("p", { class: "note" }, `Blue: total plan · Orange: total actual. Actual is posted `
       + `through ${data.as_of}; the dashed line marks the first future period. `
-      + "Select a period to compare its categories and merchants."),
+      + (income ? "Income is split by top-level income category; selecting a period also "
+        + "selects it for the expense comparison."
+        : "Select a period to compare its categories and merchants.")),
     svg,
     table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
       ...categories.map((item) => ({label:item.name, num:true})), "Note"],
@@ -2247,6 +2251,7 @@ async function expenseExplorerPanel(currentPlan) {
       onchange:(event)=>{ state.expenseRollover = event.target.checked; render(); } }),
       " Carry prior periods")));
   panel.append(spendingOverTime(data, index));
+  if ((data.income || []).length) panel.append(spendingOverTime(data, index, "income"));
   const ordered = [...choices].sort((a, b) => state.expenseSort === "name"
     ? a.full_name.localeCompare(b.full_name)
     : Number(b.periods[index][state.expenseSort] || 0)

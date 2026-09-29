@@ -61,6 +61,25 @@ def expense_report(
             "remaining_reason": item.remaining_reason,
         }
 
+    def over_time(points, names):
+        return [
+            {
+                "start": point.start,
+                "end": point.end,
+                "label": point.label,
+                "planned": point.planned,
+                "actual": point.actual,
+                "future": point.future,
+                "partial": point.partial,
+                "currency_incomplete": point.currency_incomplete,
+                "categories": [
+                    {"account": handle, "name": names.get(handle, handle), "actual": amount}
+                    for handle, amount in point.categories
+                ],
+            }
+            for point in points
+        ]
+
     detail = explorer.drilldown
     names = {row.account: row.full_name for row in explorer.categories}
     return {
@@ -79,23 +98,10 @@ def expense_report(
         ],
         "totals": [period_value(item) for item in explorer.totals],
         "as_of": explorer.plan.report.as_of,
-        "spending": [
-            {
-                "start": point.start,
-                "end": point.end,
-                "label": point.label,
-                "planned": point.planned,
-                "actual": point.actual,
-                "future": point.future,
-                "partial": point.partial,
-                "currency_incomplete": point.currency_incomplete,
-                "categories": [
-                    {"account": handle, "name": names.get(handle, handle), "actual": amount}
-                    for handle, amount in point.categories
-                ],
-            }
-            for point in explorer.spending
-        ],
+        "spending": over_time(explorer.spending, names),
+        "income": over_time(
+            explorer.income, {row.account: row.full_name for row in explorer.income_categories}
+        ),
         "drilldown": None
         if detail is None
         else {

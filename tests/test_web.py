@@ -1751,6 +1751,14 @@ class TestPlanApi:
         assert sum((Money(part["actual"]) for part in point["categories"]), Money(0)) == Money(1800)
         assert {part["name"] for part in point["categories"]} >= {"Expenses:Rent"}
         assert point["currency_incomplete"] is False
+        # Income over time uses the same periods and reconciles to its own total.
+        [earned] = report["income"]
+        assert earned["label"] == point["label"]
+        assert Money(earned["actual"]) > Money(0)
+        assert sum((Money(part["actual"]) for part in earned["categories"]), Money(0)) == Money(
+            earned["actual"]
+        )
+        assert all(part["name"].startswith("Income") for part in earned["categories"])
         assert report["as_of"]
         params = urllib.parse.urlencode(
             {"from": "2026-01", "through": "2026-01", "account": rent["account"], "index": "0"}
