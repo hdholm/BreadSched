@@ -5467,3 +5467,104 @@ class TestSavingsGoalScenarioRoutes:
         _status, projected = client.get(f"/api/projection?scenario={scenario.handle}")
         assert projected["goal_milestones"][0]["name"] == "Roof"
         assert projected["goal_notes"]
+
+
+class TestTransactionTagsAndDocumentRoutes:
+    def _content(self, client, transaction, location):
+        query = urllib.parse.urlencode({"transaction": transaction, "location": location})
+        request = urllib.request.Request(
+            client.base_url + "/api/attachment/content?" + query,
+            headers={"X-BreadSched-Token": client.token},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.read(), response.headers
+
+    def _upload(self, client, transaction, filename, content):
+        query = urllib.parse.urlencode({"transaction": transaction, "filename": filename})
+        request = urllib.request.Request(
+            client.base_url + "/api/attachment/upload?" + query,
+            data=content,
+            headers={
+                "Content-Type": "application/octet-stream",
+                "X-BreadSched-Token": client.token,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read())
+
+    def test_tags_and_documents_round_trip_through_the_register(self, client, book_path):
+        transaction = next(iter(client.database.iter_transactions()))
+        account = transaction.splits[0].account
+        _status, saved = client.post(
+            "/api/transaction/tags", {"transaction": transaction.handle, "tags": ["Tax", " tax"]}
+        )
+        assert saved["tags"] == ["Tax"]
+        uploaded = self._upload(client, transaction.handle, "receipt.pdf", b"%PDF-1")
+        assert uploaded["documents"][0]["location"] == "receipt.pdf"
+        folder = book_path.parent / f"{book_path.stem} attachments"
+        assert (folder / "receipt.pdf").read_bytes() == b"%PDF-1"
+        client.post(
+            "/api/transaction/attachment/link",
+            {"transaction": transaction.handle, "location": "https://example.com/r"},
+        )
+        body, headers = self._content(client, transaction.handle, "receipt.pdf")
+        assert body == b"%PDF-1" and headers["Content-Type"] == "application/pdf"
+        assert headers["X-Content-Type-Options"] == "nosniff"
+
+        (folder / "receipt.pdf").rename(book_path.parent / "moved.pdf")
+        _status, register = client.get(f"/api/register?account={account}")
+        row = next(item for item in register["rows"] if item["handle"] == transaction.handle)
+        assert row["tags"] == ["Tax"]
+        assert [(item["location"], item["missing"]) for item in row["documents"]] == [
+            ("receipt.pdf", True),
+            ("https://example.com/r", False),
+        ]
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            self._content(client, transaction.handle, "receipt.pdf")
+        assert caught.value.code == 404
+        assert json.loads(caught.value.read())["code"] == "attachment.missing"
+        _status, relinked = client.post(
+            "/api/transaction/attachment/relink",
+            {
+                "transaction": transaction.handle,
+                "location": "receipt.pdf",
+                "to": str(book_path.parent / "moved.pdf"),
+            },
+        )
+        assert relinked["documents"][0]["missing"] is False
+        _status, removed = client.post(
+            "/api/transaction/attachment/remove",
+            {"transaction": transaction.handle, "location": "https://example.com/r"},
+        )
+        assert [item["location"] for item in removed["documents"]] == [
+            str(book_path.parent / "moved.pdf")
+        ]
+
+    def test_rejected_requests_keep_the_stored_transaction(self, client, book_path):
+        transaction = next(iter(client.database.iter_transactions()))
+        before = client.database.get_transaction(transaction.handle).serialize()
+        for path, payload, code in (
+            ("/api/transaction/tags", {"transaction": transaction.handle, "tags": ["a,b"]},
+             "tag.invalid"),
+            ("/api/transaction/tags", {"transaction": "missing", "tags": []},
+             "transaction.not_found"),
+            ("/api/transaction/attachment/link",
+             {"transaction": transaction.handle, "location": "  "},
+             "attachment.location.required"),
+            ("/api/transaction/attachment/remove",
+             {"transaction": transaction.handle, "location": "nothing.pdf"},
+             "attachment.not_found"),
+        ):  # fmt: skip
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(path, payload)
+            assert json.loads(caught.value.read())["code"] == code
+        for filename in ("../x.pdf", "a\\b.pdf"):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                self._upload(client, transaction.handle, filename, b"x")
+            assert json.loads(caught.value.read())["code"] == "attachment.filename.invalid"
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            self._content(client, transaction.handle, "/etc/passwd")
+        assert json.loads(caught.value.read())["code"] == "attachment.not_found"
+        assert client.database.get_transaction(transaction.handle).serialize() == before
+        assert not (book_path.parent / f"{book_path.stem} attachments").exists()

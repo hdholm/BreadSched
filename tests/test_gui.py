@@ -689,6 +689,44 @@ class TestDialogs:
         first_account = dialog.splits[0].account_handle
         assert posted.value_for(first_account) == Money("42.00")
 
+    def test_the_transaction_editor_saves_tags_and_links_documents(
+        self, app, window, populated_book, tmp_path, monkeypatch
+    ):
+        from breadsched.gui.dialogs import transaction_dialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+
+        app.open_book(populated_book)
+        fresh = TransactionDialog(window, app.db)
+        assert fresh.document_rows == [] and fresh.link_entry is None
+        target = next(t for t in app.db.iter_transactions() if t.description == "Supermarket")
+        dialog = TransactionDialog(window, app.db, transaction=target)
+        dialog.tags_entry.set_text("tax, Groceries ,tax")
+        receipt = tmp_path / "receipt.pdf"
+        receipt.write_bytes(b"%PDF")
+        assert dialog.attach_path(receipt) is True
+        assert dialog.link_location("https://example.com/r") is True
+        folder = tmp_path / "gui attachments"
+        (folder / "receipt.pdf").unlink()
+        dialog._show_documents()
+        states = [(item.location, item.missing) for item, _row in dialog.document_rows]
+        assert states == [("receipt.pdf", True), ("https://example.com/r", False)]
+        opened = []
+        monkeypatch.setattr(
+            transaction_dialog.Gio.AppInfo,
+            "launch_default_for_uri",
+            lambda uri, _context: opened.append(uri),
+        )
+        assert dialog.open_document(dialog.document_rows[0][0]) is None
+        assert "cannot be found" in dialog.status.get_text()
+        assert dialog.relink_document("receipt.pdf", receipt) is True
+        assert dialog.open_document(dialog.document_rows[0][0]) == receipt.resolve().as_uri()
+        assert dialog.remove_document("https://example.com/r") is True
+        dialog._on_save(None)
+        saved = app.db.get_transaction(target.handle)
+        assert saved.tags == ["tax", "Groceries"]
+        assert saved.attachments == [str(receipt.resolve())]
+        assert opened == [receipt.resolve().as_uri()]
+
     def test_the_import_dialog_preselects_the_last_successful_source(
         self, app, window, populated_book, gnucash_sqlite_path
     ):
@@ -5766,6 +5804,18 @@ class TestBlankEntryRow:
         model = view.column_view.get_model()
         assert model.get_n_items() == 1
         assert self._last_payload(view) is BLANK
+
+    def test_the_register_filter_matches_tags(self, app, window, populated_book):
+        from breadsched.gen.services import set_tags
+
+        view = self._register(app, window, populated_book)
+        view.filter_entry.set_text("roofing-project")
+        view.refresh()
+        assert view.column_view.get_model().get_n_items() == 1
+        transaction = next(iter(app.db.iter_transactions()))
+        assert set_tags(app.db, transaction.handle, ["Roofing-Project"]).ok
+        view.refresh()
+        assert view.column_view.get_model().get_n_items() == 2
 
     def test_the_blank_cells_host_the_persistent_entry_widgets(self):
         from breadsched.gui.views._base import host_widget

@@ -1495,6 +1495,62 @@ the book's payees, and its per-row picker calls `POST /api/transaction/payee`
 (`assign_payee`). Categorization rules and entry autocomplete can
 match on the payee.
 
+## Tags and linked documents
+
+Tags reuse `PrimaryObject.tags` on `Transaction`; linked documents are
+`Transaction.attachments` (BreadSched-owned locations, in order) and
+`Transaction.source_link` (GnuCash's transaction `doclink` slot, or `assoc_uri`
+before GnuCash 4). No schema change was needed: both live in the transaction's
+JSON, and books without them load with empty defaults.
+
+- **Ownership on re-import.** `import_review.merge_local_state` carries `tags` and
+  `attachments` forward like the payee, while `source_link` is source-owned and
+  refreshed. `transaction_source_facts` includes the source link only when it is
+  set, so books imported before this change keep their fingerprints and a
+  re-import reports them unchanged.
+- **Locations.** `engine/attachments.py` resolves a location: a web address
+  (`http`/`https`, never fetched or checked), a `file:` URI (including the
+  `file:///C:/…` Windows form), an absolute path, or a path relative to a folder.
+  BreadSched's own relative locations resolve against the attachment folder:
+  book metadata `attachment_folder` (absolute, or relative to the book's folder),
+  by default `<book stem> attachments` beside the book, and none for an in-memory
+  book. GnuCash's relative links resolve against metadata
+  `gnucash_linked_files_folder`, defaulting to the home folder as GnuCash's
+  *Path head for linked files* does. The book and GnuCash share a file system, so
+  the link is kept as written and never copied.
+- **Missing files are a state, not damage.** `statuses` reports each document's
+  resolved path and `present` (`None` for a web address), and
+  `services.attachments.attachment_report` lists them for the book. Verification
+  does not fail on a missing document; the link is kept so that it can be
+  restored or relinked.
+- **Writes.** `services/attachments.py` owns every change, each in one undoable
+  database transaction, and a refused request leaves the stored transaction
+  unchanged: `set_tags` (whitespace collapsed, case-insensitive duplicates
+  dropped, the book's existing spelling reused, commas and tags over 64
+  characters refused), `attach_location`, `attach_file` (copies into the folder
+  under a name that never overwrites an existing file, and removes the copy again
+  if the link is refused; `copy=False` links in place, relative when inside the
+  folder), `detach` (unlinks only; files are never deleted), `relink`,
+  `set_attachment_folder`, and `set_source_link_folder`. `TransactionInput.tags`
+  sets tags with a transaction save; `None` keeps the stored tags, so editors that
+  do not show them never drop them.
+- **Surfaces.** The GTK transaction editor saves tags with the transaction and
+  changes documents at once, rebuilding its source transaction from each result
+  so that a later Save keeps them; a new transaction must be saved first. The GTK
+  register filter matches tags. The web register row returns `tags` and
+  `documents`; `web/attachment_resource.py` serves `POST /api/transaction/tags`,
+  `/api/transaction/attachment/link`, `/remove`, and `/relink`. The transport
+  receives `POST /api/attachment/upload` (an octet-stream body of at most 32 MiB,
+  with a plain file name and no client path) and serves
+  `GET /api/attachment/content` only for a location the transaction lists, never
+  an arbitrary path. Every response carries `X-Content-Type-Options: nosniff`, and
+  the page opens only PDF, image, and plain-text documents and saves anything
+  else, so a linked HTML file never runs in the application's origin. The CLI has
+  `tags` and `attachments` commands and `register --tag`. The transaction CSV
+  export adds `tags` and `documents` columns.
+- **Not included.** Book backup and restore cover the book, not the attachment
+  folder, as in GnuCash. Nothing is written back to GnuCash.
+
 ## Categorization rules
 
 Rules live in book metadata (`categorization_rules`) as one ordered list of

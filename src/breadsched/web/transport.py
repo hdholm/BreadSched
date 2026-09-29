@@ -17,6 +17,7 @@ from urllib.parse import urlencode, urlparse
 from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
 from ..gen.utils.logs import get_logger
+from .attachment_resource import MAX_ATTACHMENT_BYTES, attachment_content, attachment_upload
 from .resources import GET_ROUTES, POST_ROUTES, QueryError, QueryParams, ResourceError
 from .server import Api
 from .upload_resource import import_upload
@@ -60,6 +61,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header(
             "Content-Security-Policy",
             "; ".join(
@@ -168,6 +170,9 @@ class Handler(BaseHTTPRequestHandler):
             self._error(403, "request.host.untrusted", ("Host",))
             return
         parsed = urlparse(self.path)
+        if parsed.path == "/api/attachment/content":
+            self._attachment_content(parsed.query)
+            return
         route = GET_ROUTES.get(parsed.path)
         if route is None:
             self._static("index.html" if parsed.path in ("/", "") else parsed.path[1:])
@@ -237,6 +242,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802 - required by the base class
         if urlparse(self.path).path == "/api/import/upload":
             self._import_upload()
+            return
+        if urlparse(self.path).path == "/api/attachment/upload":
+            self._attachment_upload()
             return
         if not self._trusted_api_request(write=True):
             self._discard_body()
@@ -312,6 +320,71 @@ class Handler(BaseHTTPRequestHandler):
                     content=content,
                     number_format=number_format,
                     date_format=date_format,
+                )
+            self._json(200, result)
+        except ResourceError as exc:
+            self._error(exc.status, exc.code, exc.fields, message=exc.message)
+        except ValueError as exc:
+            self._error(400, "request.invalid", message=str(exc))
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._unexpected()
+
+    def _attachment_content(self, raw_query: str) -> None:
+        """Send one document a transaction lists, as bytes the page opens or saves."""
+        if not self._trusted_api_request():
+            self._error(403, "request.untrusted")
+            return
+        try:
+            query = QueryParams(raw_query)
+            transaction = query.text("transaction", required=True) or ""
+            location = query.text("location", required=True) or ""
+            query.finish()
+            api, reader = self._open_read_api()
+            try:
+                content, kind = attachment_content(api.db, transaction, location)
+            finally:
+                self._close_read_api(reader)
+            self._send(200, content, kind)
+        except QueryError as exc:
+            self._error(400, exc.code, exc.fields)
+        except ResourceError as exc:
+            self._error(exc.status, exc.code, exc.fields, message=exc.message)
+        except Exception:  # noqa: BLE001 - isolate the threaded server
+            self._unexpected()
+
+    def _attachment_upload(self) -> None:
+        """Receive one bounded document for a transaction, without a client path."""
+        if (
+            not self._trusted_api_request()
+            or self.headers.get_content_type() != "application/octet-stream"
+        ):
+            self._discard_body(MAX_ATTACHMENT_BYTES)
+            self._error(403, "request.untrusted")
+            return
+        try:
+            query = QueryParams(urlparse(self.path).query)
+            transaction = query.text("transaction", required=True) or ""
+            filename = query.text("filename", required=True) or ""
+            query.finish()
+        except QueryError as exc:
+            self._discard_body(MAX_ATTACHMENT_BYTES)
+            self._error(400, exc.code, exc.fields)
+            return
+        try:
+            length = self._content_length(MAX_ATTACHMENT_BYTES)
+            if length is None:
+                return
+            content = self.rfile.read(length)
+            if len(content) != length:
+                self._error(400, "request.body.incomplete", ("file",))
+                return
+            with self.lock:
+                result = attachment_upload(
+                    self.api_object,
+                    self.writer_db,
+                    transaction=transaction,
+                    filename=filename,
+                    content=content,
                 )
             self._json(200, result)
         except ResourceError as exc:

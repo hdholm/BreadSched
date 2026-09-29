@@ -112,7 +112,9 @@ class RegisterView(BaseView):
         bar.append(self.account_picker)
 
         self.filter_entry = Gtk.SearchEntry(placeholder_text="Filter this register")
-        self.filter_entry.set_tooltip_text("Filter by description, number, memo, or account")
+        self.filter_entry.set_tooltip_text(
+            "Filter by description, payee, number, notes, tag, memo, or account"
+        )
         self.filter_entry.connect("search-changed", lambda *_: self.schedule_refresh())
         bar.append(self.filter_entry)
 
@@ -507,6 +509,7 @@ class RegisterView(BaseView):
                 transaction.num,
                 transaction.notes,
                 transaction.source_notes,
+                *transaction.tags,
                 *(split.memo for split in transaction.splits),
                 *(self.db.full_name(split.account) for split in transaction.splits),
             ]

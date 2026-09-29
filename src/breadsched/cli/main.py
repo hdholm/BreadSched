@@ -1112,6 +1112,176 @@ def cmd_goals(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_tags(args: argparse.Namespace) -> int:
+    """List the book's tags, the transactions carrying one, or set a transaction's tags."""
+    from ..gen.services import set_tags, tag_counts, transactions_with_tag
+
+    db = open_book(args.book, "w" if args.set is not None else "r")
+    try:
+        if args.set is not None:
+            if not args.transaction:
+                raise CommandError("--transaction is required with --set")
+            target = _find_transaction(db, args.transaction)
+            result = set_tags(db, target.handle, args.set.split(","))
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            tags = result.value.tags
+            emit(
+                {"handle": target.handle, "tags": tags},
+                args,
+                f"Tags: {', '.join(tags)}" if tags else "Removed every tag",
+            )
+            return 0
+        if args.tag:
+            found = sorted(
+                transactions_with_tag(db, args.tag), key=lambda item: (item.post_date, item.handle)
+            )
+            emit(
+                [
+                    {
+                        "handle": item.handle,
+                        "date": item.post_date,
+                        "description": item.description,
+                        "tags": item.tags,
+                    }
+                    for item in found
+                ],
+                args,
+                table(
+                    [
+                        [item.handle[:8], item.post_date.isoformat(), item.description[:40]]
+                        for item in found
+                    ],
+                    ["id", "date", "description"],
+                )
+                if found
+                else f"No transaction is tagged {args.tag!r}.",
+            )
+            return 0
+        counts = tag_counts(db)
+        emit(
+            [{"tag": item.tag, "transactions": item.transactions} for item in counts],
+            args,
+            table(
+                [[item.tag, str(item.transactions)] for item in counts],
+                ["tag", "transactions"],
+                right={1},
+            )
+            if counts
+            else "No tags.",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_attachments(args: argparse.Namespace) -> int:
+    """List linked documents and which are missing, or link, unlink, and relink them."""
+    from ..gen.engine import attachments as attachment_engine
+    from ..gen.services import (
+        attach_file,
+        attach_location,
+        attachment_report,
+        detach,
+        relink,
+        set_attachment_folder,
+        set_source_link_folder,
+    )
+
+    writes = (args.add, args.remove, args.relink, args.folder, args.gnucash_folder)
+    db = open_book(args.book, "w" if any(item is not None for item in writes) else "r")
+    try:
+
+        def check(result: Any) -> Any:
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            return result.value
+
+        if args.folder is not None:
+            folder = check(set_attachment_folder(db, args.folder))
+            emit({"folder": str(folder)}, args, f"Attachment folder: {folder}")
+            return 0
+        if args.gnucash_folder is not None:
+            folder = check(set_source_link_folder(db, args.gnucash_folder))
+            emit({"folder": str(folder)}, args, f"GnuCash linked files resolve from: {folder}")
+            return 0
+        target = _find_transaction(db, args.transaction) if args.transaction else None
+        if any(item is not None for item in (args.add, args.remove, args.relink)):
+            if target is None:
+                raise CommandError("--transaction is required to change attachments")
+            if args.add is not None:
+                if attachment_engine.is_web_address(args.add):
+                    changed = check(attach_location(db, target.handle, args.add))
+                else:
+                    changed = check(
+                        attach_file(db, target.handle, Path(args.add), copy=not args.link)
+                    )
+                text = f"Linked {changed.attachments[-1]}"
+            elif args.remove is not None:
+                changed = check(detach(db, target.handle, args.remove))
+                text = f"Unlinked {args.remove}; the file itself is kept"
+            else:
+                if not args.to:
+                    raise CommandError("--to is required with --relink")
+                changed = check(relink(db, target.handle, args.relink, args.to))
+                text = f"Relinked {args.relink} to {args.to}"
+            emit({"handle": changed.handle, "attachments": changed.attachments}, args, text)
+            return 0
+        if target is not None:
+            found = attachment_engine.statuses(db, target)
+            if args.missing:
+                found = [item for item in found if item.missing]
+            folder = attachment_engine.attachment_folder(db)
+        else:
+            report = attachment_report(db, missing_only=args.missing)
+            found, folder = list(report.attachments), report.folder
+
+        def state(item: attachment_engine.AttachmentStatus) -> str:
+            if item.present is None:
+                return "web address" if item.kind == "web" else "no folder"
+            return "found" if item.present else "missing"
+
+        text = (
+            table(
+                [
+                    [
+                        item.transaction[:8],
+                        item.location,
+                        "GnuCash" if item.owner == "source" else "BreadSched",
+                        state(item),
+                    ]
+                    for item in found
+                ],
+                ["id", "document", "linked by", "state"],
+            )
+            if found
+            else ("No missing documents." if args.missing else "No linked documents.")
+        )
+        if folder is not None:
+            text += f"\nAttachment folder: {folder}"
+        emit(
+            {
+                "folder": str(folder) if folder is not None else None,
+                "attachments": [
+                    {
+                        "transaction": item.transaction,
+                        "location": item.location,
+                        "kind": item.kind,
+                        "path": str(item.path) if item.path is not None else None,
+                        "present": item.present,
+                        "owner": item.owner,
+                    }
+                    for item in found
+                ],
+            },
+            args,
+            text,
+        )
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_receivables(args: argparse.Namespace) -> int:
     """List reimbursable expenses, add or resolve one, or link ledger splits."""
     read_only = not (
@@ -1671,6 +1841,11 @@ def cmd_register(args: argparse.Namespace) -> int:
         rows = ledger.register(
             db, account.handle, start=parse_date(args.start), end=parse_date(args.end)
         )
+        if args.tag:
+            wanted = " ".join(args.tag.split()).casefold()
+            rows = [
+                row for row in rows if any(t.casefold() == wanted for t in row.transaction.tags)
+            ]
         if args.limit:
             rows = rows[-args.limit :]
         payload = [
@@ -1681,6 +1856,9 @@ def cmd_register(args: argparse.Namespace) -> int:
                 "transfer": row.transfer_label(db),
                 "amount": row.amount,
                 "balance": row.running,
+                "tags": row.transaction.tags,
+                "attachments": len(row.transaction.attachments)
+                + (1 if row.transaction.source_link else 0),
             }
             for row in rows
         ]
@@ -3563,6 +3741,53 @@ def build_parser() -> argparse.ArgumentParser:
     )
     goals_cmd.set_defaults(func=cmd_goals)
 
+    tags_cmd = add("tags", "List tags, the transactions with one, or set a transaction's tags")
+    tags_cmd.add_argument("tag", nargs="?", help="list the transactions with this tag")
+    tags_cmd.add_argument(
+        "--transaction", metavar="TRANSACTION", help="transaction handle or unique prefix"
+    )
+    tags_cmd.add_argument(
+        "--set", metavar="TAGS", help="replace the transaction's tags (comma-separated; '' clears)"
+    )
+    tags_cmd.set_defaults(func=cmd_tags)
+
+    attachments_cmd = add(
+        "attachments", "List linked documents and which are missing, or link and unlink them"
+    )
+    attachments_cmd.add_argument(
+        "--transaction", metavar="TRANSACTION", help="transaction handle or unique prefix"
+    )
+    attachments_cmd.add_argument(
+        "--missing", action="store_true", help="only documents that cannot be found"
+    )
+    attachments_cmd.add_argument(
+        "--add",
+        metavar="FILE_OR_URL",
+        help="copy a file into the attachment folder and link it, or link a web address",
+    )
+    attachments_cmd.add_argument(
+        "--link", action="store_true", help="with --add: link the file where it is, no copy"
+    )
+    attachments_cmd.add_argument(
+        "--remove", metavar="LOCATION", help="unlink a document (the file is kept)"
+    )
+    attachments_cmd.add_argument(
+        "--relink", metavar="LOCATION", help="point a moved or missing document elsewhere (--to)"
+    )
+    attachments_cmd.add_argument("--to", metavar="LOCATION", help="new location for --relink")
+    attachments_cmd.add_argument(
+        "--folder",
+        metavar="DIR",
+        help="set the attachment folder (relative to the book; '' restores the default)",
+    )
+    attachments_cmd.add_argument(
+        "--gnucash-folder",
+        metavar="DIR",
+        help="where relative GnuCash linked documents live (GnuCash's 'Path head for linked "
+        "files'; '' restores the home folder)",
+    )
+    attachments_cmd.set_defaults(func=cmd_attachments)
+
     backup = add("backup", "Create a consistent backup of a book")
     backup.add_argument("destination", help="path to write the backup")
     backup.add_argument("--overwrite", action="store_true", help="replace an existing backup")
@@ -3608,6 +3833,9 @@ def build_parser() -> argparse.ArgumentParser:
     register.add_argument("--start")
     register.add_argument("--end")
     register.add_argument("--limit", type=int, default=0, help="show only the last N rows")
+    register.add_argument(
+        "--tag", help="only transactions with this tag (the running balance is unchanged)"
+    )
     register.set_defaults(func=cmd_register)
 
     balance = add("balance", "Show a balance, or the book's headline totals")

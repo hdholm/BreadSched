@@ -23,6 +23,7 @@ from ..gen.services import (
     save_transaction,
     transaction_currency,
 )
+from .attachment_resource import document_json
 
 if TYPE_CHECKING:
     from .resources import QueryParams
@@ -56,6 +57,8 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                 "description": row.description,
                 "notes": row.transaction.notes,
                 "source_notes": row.transaction.source_notes,
+                "tags": list(row.transaction.tags),
+                "documents": document_json(api.db, row.transaction),
                 "transfer": row.transfer_label(api.db),
                 "amount": row.amount,
                 "balance": row.running,

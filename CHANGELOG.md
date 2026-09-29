@@ -3,6 +3,30 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a195 - 2026-09-29
+
+- **Transaction tags.** A transaction can carry tags of your own, matched regardless
+  of capitals and spelled as the book already spells them. Set them in the desktop
+  transaction editor, from a browser register row (**Tags & documents…**), or with
+  `breadsched tags`. The desktop register filter matches tags, and
+  `breadsched register --tag` lists one tag's transactions with the full running
+  balance.
+- **Linked documents.** As in GnuCash, receipts, statements, and web pages are
+  linked, not stored in the book. Attaching a file copies it into an attachment
+  folder beside the book (never overwriting a file of the same name), or links it
+  where it is; a web address is only linked. A missing file is marked **missing**,
+  keeps its link, and can be relinked; removing a document never deletes the
+  file. Documents can be opened from the desktop editor and the browser, and
+  `breadsched attachments` lists them, reports missing ones, and links, relinks, or
+  unlinks them.
+- **GnuCash linked documents.** A transaction's GnuCash *Linked Document* is
+  imported as a link, never copied, and refreshed on re-import. Relative links
+  resolve under GnuCash's *Path head for linked files* (the home folder by default,
+  or `breadsched attachments --gnucash-folder`). Re-import keeps BreadSched's own
+  tags and documents, and books imported earlier are still reported unchanged.
+- **Export.** The transaction CSV export adds **tags** and **documents** columns.
+  Application version `0.2.0a195`; native schema remains 10.
+
 ## 0.2.0a194 - 2026-09-29
 
 - **Savings goals in Plan, Projection, and scenarios.** Goals are pinned: every

@@ -164,6 +164,19 @@ _SERVICE_MESSAGES = {
     "payee.match.conflict": "That description already identifies another payee",
     "payee.not_found": "That payee no longer exists",
     "payee.transaction.not_found": "That transaction no longer exists",
+    "tag.invalid": "A tag cannot contain a comma or be longer than 64 characters",
+    "attachment.location.required": "Enter a file path or web address to link",
+    "attachment.duplicate": "That document is already linked to this transaction",
+    "attachment.file.not_found": "That file does not exist",
+    "attachment.not_found": "That document is not linked to this transaction",
+    "attachment.folder.unavailable": (
+        "Save the book to a file, or choose an absolute attachment folder, first"
+    ),
+    "attachment.folder.relative": "Choose an absolute folder",
+    "attachment.filename.invalid": "Choose a file with an ordinary file name",
+    "attachment.file.empty": "That file is empty",
+    "attachment.web_address": "A web address opens in the browser, not through BreadSched",
+    "attachment.missing": "That document cannot be found; restore the file or relink it",
     "savings_goal.name.required": "Give the savings goal a name",
     "savings_goal.account.invalid": (
         "Choose an asset account in the reporting currency to hold the goal's money"

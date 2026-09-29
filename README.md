@@ -84,7 +84,8 @@ BreadSched native books use the `.breadsched` suffix and SQLite storage. Keep
 independent backups and do not place the only copy of a book in a synchronization
 location that is unsafe for SQLite. The GTK File menu and CLI provide Verify,
 Backup, and Restore operations; the [User Guide](src/breadsched/USER_GUIDE.md)
-explains them in detail.
+explains them in detail. Documents linked to transactions stay in an attachment
+folder beside the book, as in GnuCash; a book backup does not include that folder.
 
 ## Project status
 

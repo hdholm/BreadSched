@@ -1,5 +1,9 @@
 """CSV export.
 
+A transaction export carries each transaction's tags and linked documents (its
+own and the one linked in GnuCash) on every split row, so a filtered spreadsheet
+keeps them.
+
 Amounts are written as plain decimal strings with no thousands separators and no
 currency symbol, because the destination is a spreadsheet that needs to parse them
 as numbers, not a human reading a report.
@@ -36,7 +40,19 @@ def export_transactions(
     rows = 0
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["date", "num", "description", "account", "memo", "amount", "reconciled"])
+        writer.writerow(
+            [
+                "date",
+                "num",
+                "description",
+                "account",
+                "memo",
+                "amount",
+                "reconciled",
+                "tags",
+                "documents",
+            ]
+        )
         for txn in db.iter_transactions(account=account, start=start, end=end):
             for split in txn.splits:
                 writer.writerow(
@@ -48,6 +64,12 @@ def export_transactions(
                         split.memo,
                         str(split.value.to_decimal()),
                         split.reconcile.value,
+                        # Tags cannot contain commas; locations can, so documents
+                        # are separated by a bar.
+                        ", ".join(txn.tags),
+                        " | ".join(
+                            [*txn.attachments, *([txn.source_link] if txn.source_link else [])]
+                        ),
                     ]
                 )
                 rows += 1

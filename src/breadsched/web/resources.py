@@ -7,6 +7,12 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
+from .attachment_resource import (
+    transaction_attachment_link,
+    transaction_attachment_relink,
+    transaction_attachment_remove,
+    transaction_tags,
+)
 from .autocomplete_resource import entry_suggestion
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
@@ -302,6 +308,10 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/payee/delete": payee_delete,
     "/api/payees/accept": payee_accept,
     "/api/transaction/payee": transaction_payee,
+    "/api/transaction/tags": transaction_tags,
+    "/api/transaction/attachment/link": transaction_attachment_link,
+    "/api/transaction/attachment/remove": transaction_attachment_remove,
+    "/api/transaction/attachment/relink": transaction_attachment_relink,
     "/api/register/entry": register_entry_save,
     "/api/savings-goal/save": savings_goal_save,
     "/api/savings-goal/allocate": savings_goal_allocate,
