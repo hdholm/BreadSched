@@ -2363,7 +2363,10 @@ income category too: `explain_category_period` already explains income cells, so
 the same reconciliation asserts that its planned events and actuals equal the Plan
 cell, and actuals group by payer (`ExpenseDrilldown.income`, "Unknown payer" for a
 blank description). GTK and the web page show it as **Income detail**, chosen
-independently of the expense trend category.
+independently of the expense trend category. The web page prints itself, so its
+Income detail is printed as shown; the GTK printout passes the chosen income
+drilldown to `expense_explorer_report(explorer, income_detail)`, which appends it
+only when it is an income drilldown.
 
 Net worth history (`services/net_worth.query_net_worth_history`) values every
 asset and liability account with `valuation.account_value` on each period's end,

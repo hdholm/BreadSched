@@ -85,8 +85,21 @@ class ExpenseExplorerDialog(Gtk.Window):
             period_index=period_index,
             rollover=self.rollover.get_active(),
         )
-        if result.value is not None:
-            open_print_preview(expense_explorer_report(result.value))
+        if result.value is None:
+            return
+        income_detail = None
+        choices = self._report.income_categories
+        chosen = self.income_category.get_selected()
+        if self._report.income and chosen < len(choices):
+            income = query_expense_explorer(
+                self._db,
+                self._request,
+                account=choices[chosen].account,
+                period_index=period_index,
+                rollover=self.rollover.get_active(),
+            )
+            income_detail = income.value.drilldown if income.value is not None else None
+        open_print_preview(expense_explorer_report(result.value, income_detail))
 
     @staticmethod
     def _label(text: str, *, heading: bool = False) -> Gtk.Label:

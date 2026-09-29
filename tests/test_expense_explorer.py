@@ -424,3 +424,24 @@ def test_income_drilldown_lists_the_dated_events_behind_a_period(db, book):
         ("Unknown payer", Money(25)),
     ]
     assert detail.period.actual == Money(3125)
+
+
+def test_printout_adds_the_selected_income_detail(db, book):
+    with db.transaction("History") as txn:
+        db.add_transaction(
+            Transaction.simple(date(2026, 2, 13), "Employer", book.checking, book.salary, "3100"),
+            txn,
+        )
+        db.add_transaction(
+            Transaction.simple(date(2026, 2, 9), "Shop", book.groceries, book.checking, "40"), txn
+        )
+    request = PlanQuery(start=date(2026, 2, 1), end=date(2026, 2, 28), today=date(2026, 2, 25))
+    expense = query_expense_explorer(db, request, account=book.groceries, period_index=0)
+    income = query_expense_explorer(db, request, account=book.salary, period_index=0)
+    assert expense.value is not None and income.value is not None
+    html = expense_explorer_report(expense.value, income.value.drilldown)
+    assert "Income detail — Income:Salary — Feb 2026" in html
+    assert "2026-02-13" in html and "Employer" in html and "3,100.00" in html
+    # Without an income selection, or with an expense drilldown, nothing is added.
+    assert "Income detail" not in expense_explorer_report(expense.value)
+    assert "Income detail" not in expense_explorer_report(expense.value, expense.value.drilldown)

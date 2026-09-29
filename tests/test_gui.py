@@ -2570,7 +2570,9 @@ class TestDerivedPlanView:
         finally:
             dialog.destroy()
 
-    def test_expense_explorer_builds_from_applied_plan(self, app, window, populated_book):
+    def test_expense_explorer_builds_from_applied_plan(
+        self, app, window, populated_book, monkeypatch
+    ):
         from breadsched.gen.services.plan import PlanQuery
         from breadsched.gui.dialogs.expense_explorer_dialog import ExpenseExplorerDialog
 
@@ -2612,6 +2614,13 @@ class TestDerivedPlanView:
             period = dialog._report.income[0]
             dated = [text for text in received if text[:4].isdigit()]
             assert all(period.start.isoformat() <= text <= period.end.isoformat() for text in dated)
+            # Print adds the chosen income category's detail for the selected period.
+            from breadsched.gui import printing
+
+            printed: list[str] = []
+            monkeypatch.setattr(printing, "open_print_preview", printed.append)
+            dialog._print(None)
+            assert len(printed) == 1 and "Income detail — " in printed[0]
             if len(dialog._report.totals) > 1:
                 dialog.period.set_selected(1)
                 assert dialog.spending_chart.selected_index == 1

@@ -3,6 +3,14 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a190 - 2026-09-29
+
+- **Printed Income detail.** The desktop Expense Explorer's **Print…** now includes
+  the chosen Income detail for the selected period: its dated scheduled occurrences
+  and receipts by payer, with the period's planned and actual totals. The browser
+  already printed it as part of the page. Application version `0.2.0a190`; native
+  schema remains 9.
+
 ## 0.2.0a189 - 2026-09-29
 
 - **Income detail.** Expense Explorer's drill-down now accepts an income category.
