@@ -191,6 +191,29 @@ def test_windows_installer_offers_path_as_an_opt_in_that_uninstall_removes():
     assert "uninstall did not restore the user PATH" in check
 
 
+def test_windows_installer_drives_the_native_file_chooser_and_printing():
+    windows = ROOT / "packaging" / "windows"
+    check = (windows / "test-installer.ps1").read_text(encoding="utf-8")
+    script = (ROOT / "scripts" / "windows_desktop_checks.py").read_text(encoding="utf-8")
+
+    # The installed copy's own Python runs the check, after the GTK smoke.
+    assert check.index("flatpak_gtk_smoke.py") < check.index("windows_desktop_checks.py")
+    assert (
+        'runtime\\bin\\python.exe") (Join-Path $root "scripts\\windows_desktop_checks.py")' in check
+    )
+    # Real application actions and the real native dialogs, found by title.
+    for action in ("app.on_open()", "app.on_export()", "window.print_action.activate(None)"):
+        assert action in script, action
+    assert 'choose("Open book", target)' in script
+    assert 'choose("Export transactions", export)' in script
+    assert 'FindWindowW("#32770", title)' in script
+    # The chosen book must actually open, and every printed report must have a
+    # default handler that opens it.
+    assert "Path(app.book_path).resolve() == target" in script
+    assert "Gio.AppInfo.get_default_for_type" in script
+    assert "launch_default_for_uri" in script
+
+
 @pytest.mark.skipif(shutil.which("desktop-file-validate") is None, reason="validator missing")
 def test_desktop_entry_passes_desktop_file_validate():
     subprocess.run(["desktop-file-validate", str(DESKTOP)], check=True)

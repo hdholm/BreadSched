@@ -2198,6 +2198,17 @@ default install to leave `PATH` alone, `/ADDTOPATH` to add the directory once an
 let a fresh `PATH` resolve `breadsched` to it, a later plain install to keep it,
 and uninstalling to restore the raw value and its type exactly.
 
+After the GTK smoke, `test-installer.ps1` runs `scripts/windows_desktop_checks.py`
+with the installed Python to cover what the smoke cannot: the native file chooser
+and printing. It goes through the application's own actions. **Open** shows the
+native Common Item Dialog (found as a `#32770` window by its title), the check
+types another book's path into its first `Edit` control and clicks the default
+button, and the application must then have that book open. **Export
+transactions** does the same through the native save dialog and must write the
+CSV. **Print** runs on every printable view: the report must be written, Windows
+must have a default handler for its type, and opening it must succeed. Printing
+itself stays in that handler (a browser's print dialog), which is not driven.
+
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
 (`ValueError` from `gi.require_version`) skip the GTK module cleanly; once GTK4 is
