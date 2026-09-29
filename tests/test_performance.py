@@ -94,3 +94,20 @@ def test_net_worth_history_reads_each_split_once(realistic_book):
 
     assert result.value is not None and len(result.value.points) == 12
     assert elapsed < 1.5, f"12-month net worth history took {elapsed:.3f}s on a 30k book"
+
+
+@pytest.mark.performance
+def test_net_worth_change_stays_interactive(realistic_book):
+    """A month holding the whole 30k-transaction history still answers promptly."""
+    from breadsched.gen.services import query_net_worth_change
+
+    db, _checking, _expense = realistic_book
+    start = perf_counter()
+    result = query_net_worth_change(db, date(2026, 1, 1), date(2026, 1, 31), date(2026, 9, 15))
+    elapsed = perf_counter() - start
+
+    change = result.value
+    assert change is not None and change.postings
+    assert change.posted is not None and change.revaluation is not None
+    assert change.posted + change.revaluation == change.change
+    assert elapsed < 1.5, f"a month's net worth change took {elapsed:.3f}s on a 30k book"

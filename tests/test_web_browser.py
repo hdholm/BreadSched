@@ -8,8 +8,10 @@ not installed (set ``BREADSCHED_CHROMIUM`` to an executable to choose one).
 from __future__ import annotations
 
 import os
+import re
 import threading
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -405,6 +407,25 @@ def test_dashboard_shows_net_worth_history_and_regroups_it(page):
         arg=months,
     )
     assert "20" in page.locator(".net-worth-history tbody tr").first.inner_text()
+
+
+def test_dashboard_explains_a_net_worth_change_and_downloads_it(page):
+    page.wait_for_selector("h2:has-text('Net worth history')")
+    page.locator(".net-worth-explain").last.click()
+    section = page.locator(".net-worth-change")
+    section.wait_for()
+    assert "Market and exchange-rate changes" in section.inner_text()
+    change = section.locator("tr.total td").last.inner_text()
+    with page.expect_download() as caught:
+        section.get_by_role("button", name="Download CSV").click()
+    exported = Path(caught.value.path()).read_text(encoding="utf-8").splitlines()
+    assert exported[0].startswith("date,description,accounts")
+    last = exported[-1].split(",")
+    assert last[1] == "Change"
+    # The page and the export show the same total.
+    assert re.sub(r"[^0-9.]", "", change) == f"{abs(Decimal(last[4])):.2f}"
+    section.get_by_role("button", name="Close").click()
+    assert page.locator(".net-worth-change").count() == 0
 
 
 def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):

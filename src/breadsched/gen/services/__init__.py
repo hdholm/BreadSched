@@ -60,9 +60,12 @@ from .import_review import (
 from .imports import ImportBook, ImportedBook, import_book
 from .loans import SavedLoan, SaveLoan, save_loan, validate_loan
 from .net_worth import (
+    NetWorthChange,
     NetWorthHistory,
     NetWorthLine,
     NetWorthPoint,
+    NetWorthPosting,
+    query_net_worth_change,
     query_net_worth_history,
 )
 from .plan import (
@@ -222,8 +225,11 @@ __all__ = [
     "MerchantActual",
     "MerchantGroup",
     "query_expense_explorer",
+    "query_net_worth_change",
     "query_net_worth_history",
+    "NetWorthChange",
     "NetWorthHistory",
+    "NetWorthPosting",
     "NetWorthLine",
     "NetWorthPoint",
     "build_claim",

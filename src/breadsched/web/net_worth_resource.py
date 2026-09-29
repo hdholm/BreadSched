@@ -11,7 +11,8 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from ..gen.lib.recurrence import add_months
-from ..gen.services import query_net_worth_history
+from ..gen.services import query_net_worth_change, query_net_worth_history
+from ..plugins.export.csv_export import net_worth_change_csv
 
 if TYPE_CHECKING:
     from .resources import QueryParams
@@ -27,6 +28,52 @@ def _month(text: str | None, field: str) -> date | None:
         from .resources import QueryError  # resources imports this module
 
         raise QueryError("query.invalid", (field,)) from None
+
+
+def _day(text: str | None, field: str) -> date:
+    try:
+        return date.fromisoformat(text or "")
+    except ValueError:
+        from .resources import QueryError
+
+        raise QueryError("query.invalid", (field,)) from None
+
+
+def net_worth_change(api: Api, query: QueryParams) -> dict[str, object]:
+    """The postings behind one net worth change, with the CSV the page downloads."""
+    start = _day(query.text("from", required=True), "from")
+    through = _day(query.text("through", required=True), "through")
+    query.finish()
+    result = query_net_worth_change(api.db, start, through, date.today())
+    if result.value is None:
+        raise api._service_resource_error(result.errors[0])
+    change = result.value
+    return {
+        "start": change.start,
+        "end": change.end,
+        "opening_on": change.opening_on,
+        "closing_on": change.closing_on,
+        "partial": change.partial,
+        "opening": change.opening,
+        "closing": change.closing,
+        "change": change.change,
+        "posted": change.posted,
+        "revaluation": change.revaluation,
+        "transfers": change.transfers,
+        "missing": list(change.missing),
+        "postings": [
+            {
+                "transaction": posting.transaction,
+                "posted": posting.posted,
+                "description": posting.description,
+                "accounts": list(posting.accounts),
+                "currency": posting.currency,
+                "effect": posting.effect,
+            }
+            for posting in change.postings
+        ],
+        "csv": net_worth_change_csv(change),
+    }
 
 
 def net_worth_history(api: Api, query: QueryParams) -> dict[str, object]:

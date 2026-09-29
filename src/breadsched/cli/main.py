@@ -1839,6 +1839,63 @@ def cmd_net_worth(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_net_worth_change(args: argparse.Namespace) -> int:
+    """List the postings behind a net worth change and the market movement beside them."""
+    from dataclasses import asdict
+
+    from ..gen.services import query_net_worth_change
+    from ..plugins.export.csv_export import export_net_worth_change
+
+    db = open_book(args.book, "r")
+    try:
+        start = parse_date(args.start)
+        end = parse_date(args.end)
+        if start is None or end is None:
+            raise CommandError("net-worth-change requires --start and --end")
+        result = query_net_worth_change(db, start, end, parse_date(args.as_of))
+        if result.value is None:
+            raise CommandError(service_error_message(result.errors[0]))
+        change = result.value
+        if args.csv:
+            export_net_worth_change(change, args.csv)
+
+        def money(value: Money | None) -> str:
+            return "missing quote" if value is None else value.format(parens_negative=True)
+
+        rows = [
+            [
+                posting.posted.isoformat(),
+                posting.description,
+                "; ".join(posting.accounts),
+                posting.currency,
+                money(posting.effect),
+            ]
+            for posting in change.postings
+        ]
+        rows += [
+            ["", label, "", "", money(value)]
+            for label, value in (
+                (f"Opening net worth {change.opening_on.isoformat()}", change.opening),
+                ("Postings", change.posted),
+                ("Market and exchange-rate changes", change.revaluation),
+                (f"Closing net worth {change.closing_on.isoformat()}", change.closing),
+                ("Change", change.change),
+            )
+        ]
+        text = table(rows, ["date", "description", "accounts", "currency", "effect"], right={4})
+        if change.transfers:
+            text += (
+                f"\n{change.transfers} transfer(s) between your own accounts left out: "
+                "they do not change net worth."
+            )
+        if change.missing:
+            text += f"\nMissing quote: {', '.join(change.missing)}; totals withheld."
+        emit(asdict(change), args, text)
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_plan_unresolved(args: argparse.Namespace) -> int:
     """List unresolved scheduled expectations over an exact date horizon."""
     db = open_book(args.book, "r")
@@ -3332,6 +3389,20 @@ def build_parser() -> argparse.ArgumentParser:
         help="last date to value; later periods are omitted (default today)",
     )
     net_worth_cmd.set_defaults(func=cmd_net_worth)
+
+    net_worth_change_cmd = add(
+        "net-worth-change",
+        "The postings behind a net worth change, reconciled to market movement",
+    )
+    net_worth_change_cmd.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
+    net_worth_change_cmd.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
+    net_worth_change_cmd.add_argument(
+        "--as-of", help="value on this date instead when --end is later (default today)"
+    )
+    net_worth_change_cmd.add_argument(
+        "--csv", metavar="PATH", help="also write the postings and totals as CSV"
+    )
+    net_worth_change_cmd.set_defaults(func=cmd_net_worth_change)
 
     plan_unresolved = add(
         "plan-unresolved",

@@ -2385,6 +2385,25 @@ test guards it). Tests assert that every complete point equals
 `/api/net-worth-history` resource (typed month parsing only) and Dashboard
 section, the GTK Dashboard **History** dialog, and the printable report all render
 the same points; the GTK chart plots only complete points.
+`query_net_worth_change(start, end, today)` explains one change. It values net worth
+at the end of `start - 1` and on `min(end, today)` the way a history point is valued.
+It then groups every asset and liability split dated in that window by transaction,
+summing the raw signed values, since those sum to net worth. The window's splits are
+read once (`split_rows` also returns each transaction's date and description, so no
+transaction is decoded). They feed both the postings and the closing ledger balances,
+which are the opening balances plus the window. A performance test covers a month
+that holds a 30,000-transaction history. A transaction that nets
+to zero is a transfer between the household's own accounts; it is counted in
+`transfers` and left out. A foreign-currency effect is converted with
+`valuation.convert_currency` at the posting date. Without an applicable quote the
+effect is `None` and named in `missing`, and `posted` and `revaluation` are
+withheld. Otherwise `revaluation = change - posted`: the price and exchange-rate
+movement on holdings, including the gap between a security's cost and its market
+value. So `posted + revaluation == change` exactly, by construction. The CLI
+`net-worth-change` (with `--csv`), web `/api/net-worth-change` (from/through ISO
+dates; the payload carries the shared CSV text for download), the GTK history
+dialog's Change buttons, `html_report.net_worth_change_report`, and
+`csv_export.net_worth_change_csv` all render that one result.
 The view toggle does not mutate historical events or persist a second budget
 ledger. Reimbursable expense
 work must link the original balanced expense, collectible receivable, and later

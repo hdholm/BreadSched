@@ -35,8 +35,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    uninstall keeping books), and each release attaches it with its checksum.
    Every CI run and release also upgrades from the newest published installer.
    The command line can optionally be added to the user's `PATH`, and CI drives
-   the native file chooser and printing in the installed copy. Remaining: code
-   signing. The Flatpak manifest, its installed-sandbox CLI
+   the native file chooser and printing in the installed copy. Code signing is
+   deferred until a beta release is reasonable (see Packaging and release
+   quality). The Flatpak manifest, its installed-sandbox CLI
    gate, desktop entry, AppStream metadata, icon, and sandboxed GTK smoke already
    run in CI; remaining Linux work (validating GTK file-chooser portals and
    printing inside the sandbox, and publishing the installer) follows the Windows
@@ -81,10 +82,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Add savings goals as pinned, scenario-aware target events with dated
   contributions and a target date; explain progress separately from spendable cash
   and avoid counting transfers as expenses.
-
-- Add a drill-down from a net worth change to the postings that made it, with
-  the as-of boundary, currency completeness, and matching printable/exported
-  totals.
 
 - Carry reimbursable expense and receivable status into Plan, Projection, and
   Dashboard liquidity: distinguish incurred expense, collectible asset, and
@@ -321,6 +318,12 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Deliver Flatpak and Windows installation per the prioritized acceptance contract.
   Keep macOS behavior isolated behind a small platform layer and evaluate a native
   macOS artifact after the Linux/Windows paths are reliable.
+
+- **Before the first beta: sign Windows releases.** Sign `setup.exe` and the
+  installed launchers through a hardware-backed signing service (Azure Artifact
+  Signing under the maintainer's name, or SignPath Foundation's free open-source
+  program), then verify the signatures in CI and compute `SHA256SUMS` over the
+  signed files. Alphas stay unsigned until then.
 
 - Improve crash recovery, diagnostic logging, and privacy-safe error reporting.
 

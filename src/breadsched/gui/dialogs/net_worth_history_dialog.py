@@ -8,8 +8,14 @@ from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.activity import ReportingPeriod
 from ...gen.lib.money import Money
 from ...gen.lib.recurrence import add_months
-from ...gen.services.net_worth import NetWorthHistory, query_net_worth_history
-from ..gi_setup import Gtk
+from ...gen.services.net_worth import (
+    NetWorthChange,
+    NetWorthHistory,
+    NetWorthPoint,
+    query_net_worth_change,
+    query_net_worth_history,
+)
+from ..gi_setup import GLib, Gtk
 from ..widgets.chart import LineChart, Series
 
 #: Grouping choices and how far back each looks from the current period.
@@ -33,6 +39,7 @@ class NetWorthHistoryDialog(Gtk.Window):
         self._db = db
         self._today = today or date.today()
         self.history: NetWorthHistory | None = None
+        self.change: NetWorthChange | None = None
         outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(12)
@@ -53,6 +60,8 @@ class NetWorthHistoryDialog(Gtk.Window):
         scroll = Gtk.ScrolledWindow(child=self.content)
         scroll.set_vexpand(True)
         outer.append(scroll)
+        self.change_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        outer.append(self.change_box)
         self._update()
 
     @staticmethod
@@ -70,6 +79,7 @@ class NetWorthHistoryDialog(Gtk.Window):
         return "Missing quote" if value is None else value.format()
 
     def _update(self, *_args) -> None:
+        self._close_change()
         while child := self.content.get_first_child():
             self.content.remove(child)
         _label, period, back = GROUPINGS[self.grouping.get_selected()]
@@ -129,6 +139,13 @@ class NetWorthHistoryDialog(Gtk.Window):
                 ("; ".join(notes) or "—", False),
             ]
             for column, (text, numeric) in enumerate(cells):
+                if column == 5:
+                    button = Gtk.Button(label="Explain" if point.change is None else text)
+                    button.add_css_class("flat")
+                    button.set_tooltip_text("Show the postings behind this change")
+                    button.connect("clicked", self._explain, point)
+                    grid.attach(button, column, row, 1, 1)
+                    continue
                 label = self._label(text, numeric=numeric)
                 if column == 0:
                     label.set_tooltip_text(
@@ -141,6 +158,111 @@ class NetWorthHistoryDialog(Gtk.Window):
                 grid.attach(label, column, row, 1, 1)
         self.table = grid
         self.content.append(grid)
+
+    def _close_change(self, *_args) -> None:
+        self.change = None
+        while child := self.change_box.get_first_child():
+            self.change_box.remove(child)
+
+    def _explain(self, _button, point: NetWorthPoint) -> None:
+        """Show the postings behind ``point``'s change, reconciled to market movement."""
+        self._close_change()
+        result = query_net_worth_change(self._db, point.start, point.end, self._today)
+        if result.value is None:
+            self.change_box.append(self._label(result.errors[0].code))
+            return
+        self.change = change = result.value
+        heading = f"Net worth change {change.start.isoformat()} through {change.closing_on}"
+        self.change_box.append(
+            self._label(heading + (" (to date)" if change.partial else ""), heading=True)
+        )
+        notes = [
+            "Each posting is the net of its splits in asset and debt accounts, converted "
+            "with the quote applicable on its date. Market and exchange-rate changes are "
+            "the rest."
+        ]
+        if change.transfers:
+            notes.append(
+                f"{change.transfers} transfer(s) between your own accounts left out: "
+                "they do not change net worth."
+            )
+        if change.missing:
+            notes.append(f"Missing quote: {', '.join(change.missing)}. Totals are withheld.")
+        for note in notes:
+            label = self._label(note)
+            label.set_wrap(True)
+            self.change_box.append(label)
+        actions = Gtk.Box(spacing=8)
+        for caption, handler in (
+            ("Print…", self._print_change),
+            ("Export CSV…", self._export_change),
+            ("Close", self._close_change),
+        ):
+            button = Gtk.Button(label=caption)
+            button.connect("clicked", handler)
+            actions.append(button)
+        self.change_box.append(actions)
+        grid = Gtk.Grid(column_spacing=14, row_spacing=3)
+        headings = ["Date", "Description", "Accounts", "Currency", "Net worth effect"]
+        for column, heading in enumerate(headings):
+            grid.attach(self._label(heading, heading=True), column, 0, 1, 1)
+        rows = [
+            [
+                posting.posted.isoformat(),
+                posting.description,
+                "; ".join(posting.accounts),
+                posting.currency,
+                self._money(posting.effect),
+            ]
+            for posting in change.postings
+        ]
+        rows += [
+            ["", label, "", "", self._money(value)]
+            for label, value in (
+                (f"Opening net worth ({change.opening_on.isoformat()})", change.opening),
+                ("Postings", change.posted),
+                ("Market and exchange-rate changes", change.revaluation),
+                (f"Closing net worth ({change.closing_on.isoformat()})", change.closing),
+                ("Change", change.change),
+            )
+        ]
+        for row, cells in enumerate(rows, 1):
+            for column, text in enumerate(cells):
+                grid.attach(self._label(text, numeric=column == 4), column, row, 1, 1)
+        self.change_table = grid
+        scroll = Gtk.ScrolledWindow(child=grid)
+        scroll.set_min_content_height(160)
+        self.change_box.append(scroll)
+
+    def _print_change(self, _button) -> None:
+        from ...plugins.export.html_report import net_worth_change_report
+        from ..printing import open_print_preview
+
+        if self.change is not None:
+            open_print_preview(net_worth_change_report(self.change))
+
+    def export_change(self, path: str) -> None:
+        from ...plugins.export.csv_export import export_net_worth_change
+
+        if self.change is not None:
+            export_net_worth_change(self.change, path)
+
+    def _export_change(self, _button) -> None:
+        if self.change is None:
+            return
+        dialog = Gtk.FileDialog(
+            title="Export net worth change",
+            initial_name=f"net-worth-change-{self.change.start.isoformat()}.csv",
+        )
+
+        def on_saved(file_dialog, result) -> None:
+            try:
+                file = file_dialog.save_finish(result)
+            except GLib.Error:
+                return
+            self.export_change(file.get_path())
+
+        dialog.save(self, None, on_saved)
 
     def _print(self, _button) -> None:
         from ...plugins.export.html_report import net_worth_history_report

@@ -78,7 +78,9 @@ schedule.
 Choose the **History** toolbar icon (or **Net Worth History…** in the menus) while
 the Dashboard is shown. **Group by** switches between months, quarters, and years;
 hover over a period to see its top-level account values, and **Print…** previews the
-table. See [Net worth history](../USER_GUIDE.md#net-worth-history).
+table. Choose a period's **Change** (or **Explain** for the first period) to list the
+postings behind it below the table; that section has its own **Print…** and
+**Export CSV…**. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 
 Each table has its own column chooser (the "⋯" button at the right of that table's
 heading); its tooltip names the table, and the columns you hide are remembered.

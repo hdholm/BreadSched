@@ -2548,7 +2548,10 @@ class TestDerivedPlanView:
         chart.set_data([Series("Actual", [1.0, 2.0, 3.0])])
         assert [chart.index_at(x) for x in (10, 170, 290, 470, 900)] == [0, 0, 1, 2, 2]
 
-    def test_net_worth_history_dialog_charts_complete_points(self, app, window, populated_book):
+    def test_net_worth_history_dialog_charts_complete_points(
+        self, app, window, populated_book, monkeypatch, tmp_path
+    ):
+        from breadsched.gui import printing
         from breadsched.gui.dialogs.net_worth_history_dialog import NetWorthHistoryDialog
         from breadsched.gui.viewmanager import VIEW_ACTIONS
 
@@ -2565,8 +2568,27 @@ class TestDerivedPlanView:
             assert dialog.table.get_child_at(4, 1).get_label() == (
                 "Missing quote" if first is None else first.format()
             )
+            last = history.points[-1]
+            explain = dialog.table.get_child_at(5, len(history.points))
+            assert isinstance(explain, Gtk.Button)
+            explain.emit("clicked")
+            change = dialog.change
+            assert change is not None and change.change == last.change
+            rows = len(change.postings) + 5
+            assert dialog.change_table.get_child_at(1, rows).get_label() == "Change"
+            printed: list[str] = []
+            monkeypatch.setattr(printing, "open_print_preview", printed.append)
+            dialog._print_change(None)
+            assert "Market and exchange-rate changes" in printed[0]
+            exported = tmp_path / "change.csv"
+            dialog.export_change(str(exported))
+            total = exported.read_text(encoding="utf-8").splitlines()[-1].split(",")
+            shown = dialog.change_table.get_child_at(4, rows).get_label()
+            assert total[1] == "Change"
+            assert shown == ("Missing quote" if change.change is None else Money(total[4]).format())
             dialog.grouping.set_selected(2)
             assert dialog.history.period.value == "year"
+            assert dialog.change is None
         finally:
             dialog.destroy()
 

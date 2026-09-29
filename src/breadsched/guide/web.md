@@ -32,7 +32,9 @@ missed-schedule row to see each missed date and amount.
 
 **Net worth history** is the last section of the Dashboard page. **Group by**
 switches between months, quarters, and years, and expanding a period lists its
-top-level account values. See [Net worth history](../USER_GUIDE.md#net-worth-history).
+top-level account values. Choose a period's **Change** (or **Explain**) to list the
+postings behind it; **Download CSV** saves them with their totals, and printing the
+page includes them. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 
 ## Exchange rates
 
