@@ -3,6 +3,24 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a197 - 2026-09-29
+
+- **GnuCash deletions of reconciled transactions are reviewed.** A transaction
+  deleted in GnuCash is no longer removed silently when any of its splits is
+  reconciled, in GnuCash or in BreadSched. It is held in the same review as
+  GnuCash changes (desktop, browser, and `breadsched import-review`), marked
+  **Deleted in GnuCash**, with **Keep the transaction**, **Delete it here too**
+  (refused while a reconciliation, FSA claim, or receivable refers to it), and
+  **Decide later**. A kept deletion is not asked again. Unreconciled deletions are
+  still mirrored.
+- **Skipped investment activity is named.** OFX and QIF investment records that
+  are not imported (options, share transfers, stock splits, return of capital,
+  margin interest, and sub-account journals; for QIF also grants, vesting, and
+  reminders) are reported with their date and a plain reason such as *"A stock
+  split is not imported; enter it yourself"*, and the User Guide lists them.
+  Importing more of these is not planned for now. Application version
+  `0.2.0a197`; native schema remains 10.
+
 ## 0.2.0a196 - 2026-09-29
 
 - **AqBanking decision.** BreadSched will not build in a bank connection or bundle

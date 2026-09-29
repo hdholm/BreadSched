@@ -803,7 +803,10 @@ Imports run as one atomic undo step; a cancelled import writes nothing
 
 Re-import updates source-owned data and removes source transactions that have
 disappeared. A deleted source transaction still referenced by a BreadSched
-reconciliation or FSA claim is retained and reported for review. Local planning
+reconciliation or FSA claim is retained and reported for review, and one that is
+reconciled is held for your decision (see
+[Review GnuCash changes to reconciled transactions](#review-gnucash-changes-to-reconciled-transactions)).
+Local planning
 decisions are not overwritten by source refreshes. BreadSched does not connect to
 banks itself; see [Bank downloads through AqBanking](#bank-downloads-through-aqbanking).
 
@@ -880,6 +883,14 @@ transaction and what GnuCash changed:
   instead of offering this choice: reopen that statement first.
 - **Decide later**, the default, asks again next time.
 
+A transaction deleted in GnuCash is held the same way when any of its splits is
+reconciled, whether you reconciled it in GnuCash or in BreadSched. Its row says
+**Deleted in GnuCash**, and the choices read **Keep the transaction** (not asked
+again while GnuCash still lacks it), **Delete it here too**, and **Decide later**.
+Deleting is refused while a BreadSched reconciliation, FSA claim, or receivable
+refers to the transaction; the row names what still uses it. An unreconciled
+transaction deleted in GnuCash is still removed on re-import, as before.
+
 Applying commits all rows as one undo step; nothing is written if any row is
 refused.
 
@@ -900,8 +911,16 @@ in your book when the ticker matches). Purchases and sales move units and cash,
 with commissions and fees in **Expenses:Investment Fees**; reinvested dividends add
 units from **Income:Investment Income**; dividends, interest, and cash deposits or
 withdrawals post to cash. Gains are not calculated: a sale is recorded at its
-proceeds. Option trades, transfers of shares, stock splits, and a few other kinds
-are listed as skipped so you can enter them yourself.
+proceeds.
+
+Some brokerage activity is not imported, and is not planned for now: option
+purchases, sales, exercises, assignments, and expiries; transfers of shares in or
+out; stock splits; return of capital; margin interest; and cash or share moves
+between a brokerage account's sub-accounts. Each such record is listed in the import
+summary under **Skipped records by reason** with its date and the brokerage's
+description (for example *"A stock split is not imported; enter it yourself"*),
+and a later import of the same file reports it as repeated rather than new. Enter
+these yourself in the brokerage's accounts.
 
 A QIF export with investment accounts (Quicken types **Invst** or **Port**) is
 imported the same way: each becomes an account under **Assets** with **Cash** and
@@ -910,8 +929,10 @@ sells, reinvested and cash dividends, interest, capital-gain distributions,
 miscellaneous income and expenses, and cash transfers are imported; a **BuyX**,
 **DivX**, or other "X" action moves the money through the named account (for
 example **[Checking]**). Transfers to an investment account from a bank register go
-to its **Cash** account. Share transfers (**ShrsIn**/**ShrsOut**), stock splits,
-and option actions are listed as skipped.
+to its **Cash** account. Share transfers (**ShrsIn**/**ShrsOut**), stock splits
+(**StkSplit**), employee stock option grants, vesting, exercises, and expiries,
+option trades, and reminders are not imported; each is listed as skipped in the
+same way, for you to enter yourself.
 
 When a QIF export contains several accounts, each transfer between them appears in
 both registers. BreadSched imports it once: the copy with the same date and

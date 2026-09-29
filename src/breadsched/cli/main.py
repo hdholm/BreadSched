@@ -1657,6 +1657,7 @@ def cmd_import_review(args: argparse.Namespace) -> int:
                     "changes": list(item.changes),
                     "blocked_by": list(item.blocked_by),
                     "can_use_gnucash": item.can_use_source,
+                    "deleted": item.deleted,
                 }
                 for item in pending
             ],

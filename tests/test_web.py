@@ -2625,6 +2625,7 @@ class TestImportReview:
         by_handle = {item["transaction"]: item for item in listed["changes"]}
         assert by_handle[rent.handle]["changes"] == ["Description: Rent -> Rent (edited)"]
         assert by_handle[rent.handle]["can_use_gnucash"] is True
+        assert by_handle[rent.handle]["deleted"] is False
         assert by_handle[payroll.handle]["can_use_gnucash"] is False
         assert by_handle[payroll.handle]["blocked_by"]
 

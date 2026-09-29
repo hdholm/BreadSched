@@ -2435,6 +2435,7 @@ class Api:
                     "changes": list(item.changes),
                     "blocked_by": list(item.blocked_by),
                     "can_use_gnucash": item.can_use_source,
+                    "deleted": item.deleted,
                 }
                 for item in pending_import_changes(self.db)
             ]

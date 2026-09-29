@@ -162,6 +162,9 @@ breadsched import-review household.breadsched --use-gnucash TRANSACTION
 breadsched import-review household.breadsched --keep-all  # or --use-gnucash-all
 ```
 
+A held GnuCash deletion is listed as `Deleted in GnuCash` (`"deleted": true` with
+`--json`); `--use-gnucash` deletes the transaction here too, and `--keep` keeps it.
+
 ### Write changes back to GnuCash
 
 Close the book in GnuCash first. Preview, then write chosen transactions or all:

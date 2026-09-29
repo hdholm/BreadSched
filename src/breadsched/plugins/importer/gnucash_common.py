@@ -245,6 +245,12 @@ class ImportResult:
                         f"because it is still used by {', '.join(references)}"
                     )
                     continue
+                if import_review.is_reconciled(transaction):
+                    # A reconciled record is a statement assertion: hold its
+                    # deletion for review instead of removing it silently.
+                    retained_source_deletions.add(handle)
+                    self._hold_deletion(db, transaction)
+                    continue
                 db.remove_transaction(handle, txn)
                 self.transactions_removed += 1
 
@@ -252,6 +258,26 @@ class ImportResult:
         # complete the deletion after its local audit reference is removed.
         inventory[source_key] = {"transactions": sorted(current | retained_source_deletions)}
         db.set_metadata(_SOURCE_INVENTORY_KEY, inventory, txn)
+
+    def _hold_deletion(self, db: DbSQLite, transaction: Transaction) -> None:
+        prior = import_review.held_changes(db).get(transaction.handle)
+        if prior is not None and prior.deleted:
+            if prior.status is import_review.HeldStatus.KEPT:
+                self.transactions_kept += 1
+            else:
+                self.transactions_held += 1
+            return
+        self.transactions_held += 1
+        self._review_updates[transaction.handle] = import_review.HeldChange(
+            transaction=transaction.handle,
+            status=import_review.HeldStatus.PENDING,
+            fingerprint=import_review.DELETION_FINGERPRINT,
+            source=self.source,
+            detected=date.today(),
+            changes=("Deleted in GnuCash",),
+            incoming={},
+            deleted=True,
+        )
 
     def describe(self) -> str:
         parts = [
@@ -284,7 +310,7 @@ class ImportResult:
                 )
             if self.transactions_held or self.transactions_kept:
                 lines.append(
-                    "Reconciled in BreadSched: "
+                    "Reconciled transactions: "
                     f"{self.transactions_held} GnuCash change(s) held for review, "
                     f"{self.transactions_kept} kept as previously decided"
                 )
@@ -401,39 +427,7 @@ def recurrence_interval(period: PeriodType, raw: object) -> int:
     return interval
 
 
-def _protected_transaction_references(db: DbSQLite, transaction: Transaction) -> list[str]:
-    """Name BreadSched-owned objects that make source deletion unsafe."""
-    split_handles = {split.handle for split in transaction.splits}
-    reconciliation_count = sum(
-        bool(split_handles.intersection(item.selected_splits)) for item in db.iter_reconciliations()
-    )
-    claim_count = 0
-    for claim in db.iter_fsa_claims():
-        links = [*claim.payments, *claim.refunds]
-        links.extend(link for allocation in claim.allocations for link in allocation.reimbursements)
-        if any(
-            link.transaction == transaction.handle or link.split in split_handles for link in links
-        ):
-            claim_count += 1
-    receivable_count = 0
-    for receivable in db.iter_receivables():
-        receivable_links = [*receivable.expenses, *receivable.reimbursements]
-        if any(
-            link.transaction == transaction.handle or link.split in split_handles
-            for link in receivable_links
-        ):
-            receivable_count += 1
-
-    references: list[str] = []
-    if reconciliation_count:
-        references.append(
-            f"{reconciliation_count} reconciliation{'s' if reconciliation_count != 1 else ''}"
-        )
-    if claim_count:
-        references.append(f"{claim_count} FSA claim{'s' if claim_count != 1 else ''}")
-    if receivable_count:
-        references.append(f"{receivable_count} receivable{'s' if receivable_count != 1 else ''}")
-    return references
+_protected_transaction_references = import_review.deletion_references
 
 
 class ImportSink:

@@ -173,6 +173,8 @@ as already imported. See
 
 The review is offered after an import, when the page loads, and from **Review held
 GnuCash changes…** on the Import page. Choose each row's decision, then **Apply**.
+A GnuCash deletion of a reconciled transaction is listed too, with **Keep the
+transaction** or **Delete it here too**.
 
 ### Write changes back to GnuCash
 

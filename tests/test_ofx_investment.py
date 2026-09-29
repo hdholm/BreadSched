@@ -64,7 +64,11 @@ def test_ofx_investment_statement_imports_balanced_trades_and_income(db, book, t
     result = ofx.import_book(db, path)
 
     assert result.transactions == 5
-    assert result.reasons() == {"OFX TRANSFER investment transactions are not imported yet": 1}
+    assert result.reasons() == {
+        "A transfer of shares in or out is not imported; enter it yourself": 1
+    }
+    [(_reason, subject)] = result.skipped_details
+    assert subject.startswith("2026-03-01 ") and subject.endswith("(OFX TRANSFER)")
     cash = _account(db, "Assets:Sample Brokerage Investment 5432:Cash")
     fund = _account(db, "Assets:Sample Brokerage Investment 5432:VTSAX")
     stock = _account(db, "Assets:Sample Brokerage Investment 5432:ACME")

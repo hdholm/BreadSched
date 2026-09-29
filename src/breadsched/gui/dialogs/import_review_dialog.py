@@ -33,6 +33,12 @@ _LABELS = {
     HeldImportDecision.USE_SOURCE: "Use GnuCash version",
     HeldImportDecision.LATER: "Decide later",
 }
+#: A held deletion asks whether to delete the transaction here too.
+_DELETION_LABELS = {
+    HeldImportDecision.KEEP_LOCAL: "Keep the transaction",
+    HeldImportDecision.USE_SOURCE: "Delete it here too",
+    HeldImportDecision.LATER: "Decide later",
+}
 
 
 class ImportReviewDialog(Gtk.Window):
@@ -89,7 +95,8 @@ class ImportReviewDialog(Gtk.Window):
             grid.attach(Gtk.Label(label=change.description, xalign=0), 1, index, 1, 1)
             lines = list(change.changes)
             if change.blocked_by:
-                lines.append("Reopen first: " + ", ".join(change.blocked_by))
+                prefix = "Still used by: " if change.deleted else "Reopen first: "
+                lines.append(prefix + ", ".join(change.blocked_by))
             detail = Gtk.Label(label="\n".join(lines), xalign=0, wrap=True)
             grid.attach(detail, 2, index, 1, 1)
 
@@ -102,7 +109,8 @@ class ImportReviewDialog(Gtk.Window):
                 )
                 if change.can_use_source or decision is not HeldImportDecision.USE_SOURCE
             ]
-            chooser = Gtk.DropDown.new_from_strings([_LABELS[item] for item in options])
+            labels = _DELETION_LABELS if change.deleted else _LABELS
+            chooser = Gtk.DropDown.new_from_strings([labels[item] for item in options])
             # Undecided by default: an unread question is asked again.
             chooser.set_selected(options.index(HeldImportDecision.LATER))
             self.choosers.append(chooser)

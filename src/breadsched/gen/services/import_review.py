@@ -8,6 +8,11 @@ every presentation list those held versions and apply one batch of decisions:
 * use the GnuCash version, preserving BreadSched annotations; or
 * decide later.
 
+A held deletion (the transaction was deleted in GnuCash while reconciled) offers
+the same choices: keeping it keeps the transaction and is not asked again, and
+using the GnuCash version deletes it here too, unless a BreadSched
+reconciliation, FSA claim, or receivable has come to refer to it since.
+
 A batch is validated completely before anything is written and then commits as
 one undoable database transaction.
 """
@@ -20,7 +25,7 @@ from enum import Enum
 
 from ..db.sqlite import DbSQLite
 from ..engine import import_review
-from ..lib.transaction import UnbalancedError
+from ..lib.transaction import Transaction, UnbalancedError
 from .contracts import ServiceError, ServiceResult
 
 __all__ = [
@@ -49,8 +54,11 @@ class HeldImportChange:
     source: str
     detected: date
     changes: tuple[str, ...]
-    #: Completed statements that must be reopened before the GnuCash version applies.
+    #: Completed statements that must be reopened before the GnuCash version applies,
+    #: or, for a deletion, what still refers to the transaction.
     blocked_by: tuple[str, ...]
+    #: The transaction was deleted in GnuCash; using GnuCash deletes it here.
+    deleted: bool = False
 
     @property
     def can_use_source(self) -> bool:
@@ -78,7 +86,6 @@ def pending_import_changes(db: DbSQLite) -> list[HeldImportChange]:
         existing = db.get_transaction(handle)
         if existing is None:
             continue
-        blockers = import_review.blocking_reconciliations(db, existing, held.incoming_transaction())
         items.append(
             HeldImportChange(
                 transaction=handle,
@@ -87,7 +94,8 @@ def pending_import_changes(db: DbSQLite) -> list[HeldImportChange]:
                 source=held.source,
                 detected=held.detected,
                 changes=held.changes,
-                blocked_by=tuple(_statement_label(db, item) for item in blockers),
+                blocked_by=_blockers(db, existing, held),
+                deleted=held.deleted,
             )
         )
     items.sort(key=lambda item: (item.post_date, item.description, item.transaction))
@@ -114,12 +122,13 @@ def resolve_import_changes(
         if existing is None:
             errors.append(ServiceError("import.review.missing", ("decisions", handle)))
             continue
-        if decision is HeldImportDecision.USE_SOURCE and import_review.blocking_reconciliations(
-            db, existing, change.incoming_transaction()
-        ):
-            errors.append(
-                ServiceError("import.review.reconciliation_blocks", ("decisions", handle))
+        if decision is HeldImportDecision.USE_SOURCE and _blockers(db, existing, change):
+            code = (
+                "import.review.deletion_referenced"
+                if change.deleted
+                else "import.review.reconciliation_blocks"
             )
+            errors.append(ServiceError(code, ("decisions", handle)))
     if errors:
         return ServiceResult.failure(*errors)
 
@@ -134,6 +143,10 @@ def resolve_import_changes(
                 elif decision is HeldImportDecision.KEEP_LOCAL:
                     updated[handle] = replace(change, status=import_review.HeldStatus.KEPT)
                     kept += 1
+                elif change.deleted:
+                    db.remove_transaction(handle, txn)
+                    del updated[handle]
+                    applied += 1
                 else:
                     existing = db.get_transaction(handle)
                     assert existing is not None
@@ -147,6 +160,15 @@ def resolve_import_changes(
     except UnbalancedError:
         return ServiceResult.failure(ServiceError("import.review.unbalanced", ("decisions",)))
     return ServiceResult.success(HeldImportResolution(kept, applied, deferred))
+
+
+def _blockers(
+    db: DbSQLite, existing: Transaction, held: import_review.HeldChange
+) -> tuple[str, ...]:
+    if held.deleted:
+        return tuple(import_review.deletion_references(db, existing))
+    statements = import_review.blocking_reconciliations(db, existing, held.incoming_transaction())
+    return tuple(_statement_label(db, item) for item in statements)
 
 
 def _statement_label(db: DbSQLite, reconciliation) -> str:

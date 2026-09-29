@@ -70,7 +70,8 @@ class ImportDialog(Gtk.Window):
             label=(
                 "Re-importing GnuCash updates source-owned data and removes transactions "
                 "deleted from the source. Transactions still used by a BreadSched "
-                "reconciliation or FSA claim are retained and reported for review."
+                "reconciliation or FSA claim are retained and reported, and a deleted "
+                "or changed reconciled transaction is held for your decision."
             ),
             xalign=0,
             wrap=True,

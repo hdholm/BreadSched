@@ -44,17 +44,20 @@ _TRADES = {
     "SELLOTHER": "INVSELL",
     "SELLSTOCK": "INVSELL",
 }
-_SKIPPED = (
-    "BUYOPT",
-    "SELLOPT",
-    "CLOSUREOPT",
-    "JRNLFUND",
-    "JRNLSEC",
-    "MARGININTEREST",
-    "RETOFCAP",
-    "SPLIT",
-    "TRANSFER",
-)
+#: Investment activity not imported, named as the import report shows it. Each
+#: is listed on every import (as repeated once seen), for the user to enter.
+_SKIPPED = {
+    "BUYOPT": "an option purchase",
+    "SELLOPT": "an option sale",
+    "CLOSUREOPT": "an option exercise, assignment, or expiry",
+    "JRNLFUND": "a cash move between the account's sub-accounts",
+    "JRNLSEC": "a share move between the account's sub-accounts",
+    "MARGININTEREST": "margin interest",
+    "RETOFCAP": "a return of capital",
+    "SPLIT": "a stock split",
+    "TRANSFER": "a transfer of shares in or out",
+}
+SKIPPED_REASON = "{} is not imported; enter it yourself"
 _COST_TAGS = ("COMMISSION", "FEES", "LOAD", "TAXES")
 
 
@@ -271,9 +274,12 @@ def _record(stmt: _Statement, kind: str, block: str) -> None:
     handle = _handle("transaction", stmt.account_id, identity)
     result.scan("transaction")
     if kind in _SKIPPED:
+        label = _SKIPPED[kind]
+        when = (raw_date or "")[:8]
+        shown = f"{when[:4]}-{when[4:6]}-{when[6:8]}" if len(when) == 8 else "undated"
         result.skip(
-            f"OFX {kind} investment transactions are not imported yet",
-            stmt.tag(block, "MEMO") or kind,
+            SKIPPED_REASON.format(label[0].upper() + label[1:]),
+            f"{shown} {stmt.tag(block, 'MEMO') or kind} (OFX {kind})",
             identity=handle,
             kind="transaction",
         )

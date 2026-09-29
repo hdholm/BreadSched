@@ -287,9 +287,11 @@ each possible-transfer pair. See
 
 ### Review held GnuCash changes
 
-When a re-import holds GnuCash changes to reconciled transactions, the review opens
-after the import and whenever the book opens, before the review of due scheduled
-transactions. Choose each row's decision, then **Apply**.
+When a re-import holds GnuCash changes to (or deletions of) reconciled
+transactions, the review opens after the import and whenever the book opens, before
+the review of due scheduled transactions. Choose each row's decision, then
+**Apply**. A deletion's row offers **Keep the transaction** or **Delete it here
+too**.
 
 ### Write changes back to GnuCash
 

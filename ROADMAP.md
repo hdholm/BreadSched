@@ -48,8 +48,14 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    worth history and its drill-down) and scenario-aware pinned savings goals are
    delivered, as are transaction tags and linked documents. AqBanking was
    investigated and is supported through the reviewed CSV import rather than a
-   built-in link (see `DESIGN.md`). The remaining interoperability items follow
-   below.
+   built-in link (see `DESIGN.md`). GnuCash deletions of reconciled transactions
+   are reviewed. Next, widen GnuCash write-back (XML books, multi-split, account
+   changes, deletions). Further OFX investment activity (options, share transfers,
+   splits, return of capital, margin interest, journals) is not planned while it
+   stays documented and reported as skipped on import.
+3. **Next — Interface, FSA, and scheduling.** After the write-back work, take the
+   GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
+   scheduled transactions and loans (sections below).
 
 
 ## Architecture and correctness
@@ -179,20 +185,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   row). Reject ambiguous mappings rather than inventing ledger accounts or
   balancing splits, as the category, payee, and currency columns already do.
 
-- Extend the held-change review for locally reconciled transactions (#117) to
-  GnuCash deletions. A source-deleted transaction is retained only while a
-  BreadSched reconciliation or FSA claim refers to it, so one reconciled only in
-  GnuCash is removed without review. Decide whether such deletions should be held
-  with the same keep/use-GnuCash/decide-later choices.
-
 - Widen GnuCash write-back (#174) to XML books and wider edits (multi-split,
   account changes, deletions) only with round-trip fixtures that prove
   preservation, and confirm written books open in a real GnuCash in CI. Never
   write to the source during normal import.
-
-- Extend OFX investment import to options, share transfers, stock splits,
-  journal entries, return of capital, and margin interest (reported as skipped
-  today), and consider cost basis once investment lots exist.
 
 - Add reviewed commodity/security mapping where imported identifiers cannot be
   matched safely and extend price import to additional source formats where present.

@@ -3357,6 +3357,41 @@ class TestImportReview:
         assert dialog.apply() == (0, 0)
         assert len(self._dialog(app, window)[1]) == 2
 
+    def test_a_held_deletion_asks_whether_to_delete_it_here_too(
+        self, app, window, tmp_path, gnucash_sqlite_path
+    ):
+        import sqlite3
+
+        from breadsched.cli.main import main as cli
+        from breadsched.gen.services import HeldImportDecision
+
+        source = gnucash_sqlite_path
+        path = tmp_path / "deleted.breadsched"
+        cli(["init", str(path)])
+        cli(["import", str(path), source.path, "--no-infer"])
+        with sqlite3.connect(source.path) as gnucash:
+            guid = gnucash.execute(
+                "SELECT guid FROM transactions WHERE description='Rent'"
+            ).fetchone()[0]
+            gnucash.execute("UPDATE splits SET reconcile_state='y' WHERE tx_guid=?", (guid,))
+        cli(["import", str(path), source.path, "--no-infer"])
+        with sqlite3.connect(source.path) as gnucash:
+            gnucash.execute("DELETE FROM splits WHERE tx_guid=?", (guid,))
+            gnucash.execute("DELETE FROM transactions WHERE guid=?", (guid,))
+        cli(["import", str(path), source.path, "--no-infer"])
+        app.open_book(str(path))
+
+        dialog, [change] = self._dialog(app, window)
+        assert change.deleted and change.transaction == guid
+        chooser = dialog.choosers[0]
+        labels = [
+            chooser.get_model().get_string(i) for i in range(chooser.get_model().get_n_items())
+        ]
+        assert labels == ["Keep the transaction", "Delete it here too", "Decide later"]
+        dialog.select(0, HeldImportDecision.USE_SOURCE)
+        assert dialog.apply() == (0, 1)
+        assert app.db.get_transaction(guid) is None
+
     def test_blocked_change_cannot_use_gnucash_version(self, held_book, window):
         from breadsched.gen.services import HeldImportDecision
 

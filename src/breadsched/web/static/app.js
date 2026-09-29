@@ -1896,12 +1896,15 @@ async function openImportReviewDialog() {
   };
   const labels = { keep:"Keep BreadSched version", "use-source":"Use GnuCash version",
     later:"Decide later" };
+  // A held deletion asks whether to delete the transaction here too.
+  const deletionLabels = { keep:"Keep the transaction", "use-source":"Delete it here too",
+    later:"Decide later" };
   const choosers = data.changes.map((item) => el("select", {
     "aria-label":`Decision for ${item.description}`,
   }, ...["keep", "use-source", "later"]
     .filter((value) => value !== "use-source" || item.can_use_gnucash)
     .map((value) => el("option", { value, selected:value === "later" ? "selected" : null },
-      labels[value]))));
+      (item.deleted ? deletionLabels : labels)[value]))));
   const setAll = (value) => choosers.forEach((chooser) => {
     if ([...chooser.options].some((option) => option.value === value)) chooser.value = value;
   });
@@ -1910,7 +1913,9 @@ async function openImportReviewDialog() {
     el("td", {}, item.description),
     el("td", {}, el("ul", {}, ...item.changes.map((line) => el("li", {}, line)),
       ...(item.blocked_by.length
-        ? [el("li", { class:"neg" }, `Reopen first: ${item.blocked_by.join(", ")}`)] : []))),
+        ? [el("li", { class:"neg" },
+          `${item.deleted ? "Still used by" : "Reopen first"}: ${item.blocked_by.join(", ")}`)]
+        : []))),
     el("td", {}, choosers[index])));
   const apply = async () => {
     const decisions = data.changes
@@ -1927,7 +1932,7 @@ async function openImportReviewDialog() {
   };
   backdrop.append(el("section", { class:"detail-dialog wide" },
     el("div", { class:"detail-heading" }, el("h2", {}, "GnuCash changes to reconciled transactions")),
-    el("p", { class:"note" }, `GnuCash changed ${data.changes.length} transaction(s) that are reconciled in BreadSched. They were left unchanged. Choose what to do with each.`),
+    el("p", { class:"note" }, `GnuCash changed or deleted ${data.changes.length} reconciled transaction(s). They were left unchanged. Choose what to do with each.`),
     el("div", { class:"toolbar" },
       el("button", { class:"action", type:"button", onclick:()=>setAll("keep") },
         "Keep all BreadSched versions"),
@@ -3987,7 +3992,7 @@ async function showImport() {
   return el("div", {},
     el("p", { class:"note" }, "Choose a QIF, OFX, or GnuCash file (up to 32 MiB), or enter a path visible to the BreadSched process. Uploading the same filename again refreshes that source. Auto-detection is recommended; choose an explicit number or date format when the source is ambiguous."),
     el("p", { class:"note" },
-      "Re-importing GnuCash updates source-owned data and removes transactions deleted from the source. Transactions still used by a BreadSched reconciliation or FSA claim are retained and reported for review. GnuCash changes to a transaction reconciled in BreadSched are held for your decision."),
+      "Re-importing GnuCash updates source-owned data and removes transactions deleted from the source. Transactions still used by a BreadSched reconciliation or FSA claim are retained and reported for review. GnuCash changes to, or deletions of, a reconciled transaction are held for your decision."),
     el("div", { class:"toolbar" },
       el("button", { class:"action", type:"button",
         onclick:()=>openImportReviewDialog().catch((error)=>say(error.message, "error")) },
