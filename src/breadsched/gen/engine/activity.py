@@ -1433,6 +1433,13 @@ def _make_periods(
     return found
 
 
+def reporting_periods(
+    start: date, end: date, period: ReportingPeriod
+) -> list[tuple[date, date, str]]:
+    """The ``(start, end, label)`` display buckets Plan uses for this range."""
+    return [(item.start, item.end, item.label) for item in _make_periods(start, end, period)]
+
+
 def _index_for(periods: list[PeriodActivity], when: date) -> PeriodActivity | None:
     for period in periods:
         if period.start <= when <= period.end:

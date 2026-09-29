@@ -2548,6 +2548,28 @@ class TestDerivedPlanView:
         chart.set_data([Series("Actual", [1.0, 2.0, 3.0])])
         assert [chart.index_at(x) for x in (10, 170, 290, 470, 900)] == [0, 0, 1, 2, 2]
 
+    def test_net_worth_history_dialog_charts_complete_points(self, app, window, populated_book):
+        from breadsched.gui.dialogs.net_worth_history_dialog import NetWorthHistoryDialog
+        from breadsched.gui.viewmanager import VIEW_ACTIONS
+
+        assert "net-worth-history" in {item.name for item in VIEW_ACTIONS["dashboard"]}
+        app.open_book(populated_book)
+        dialog = NetWorthHistoryDialog(window, app.db)
+        try:
+            history = dialog.history
+            assert history is not None and history.points
+            complete = [point for point in history.points if point.net_worth is not None]
+            assert [len(series.values) for series in dialog.chart.series] == [len(complete)]
+            assert dialog.table.get_child_at(0, 1).get_label() == history.points[0].label
+            first = history.points[0].net_worth
+            assert dialog.table.get_child_at(4, 1).get_label() == (
+                "Missing quote" if first is None else first.format()
+            )
+            dialog.grouping.set_selected(2)
+            assert dialog.history.period.value == "year"
+        finally:
+            dialog.destroy()
+
     def test_expense_explorer_builds_from_applied_plan(self, app, window, populated_book):
         from breadsched.gen.services.plan import PlanQuery
         from breadsched.gui.dialogs.expense_explorer_dialog import ExpenseExplorerDialog
@@ -5377,7 +5399,7 @@ class TestViewActions:
         window.show_category("register")
         assert tools() == []
         window.show_category("dashboard")
-        assert tools() == ["win.dashboard-configure-groups"]
+        assert tools() == ["win.dashboard-configure-groups", "win.dashboard-net-worth-history"]
 
     @pytest.mark.parametrize(
         ("key", "icons", "gone"),

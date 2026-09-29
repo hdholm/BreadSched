@@ -231,6 +231,8 @@ _SERVICE_MESSAGES = {
     "plan.scenario.not_found": "The selected scenario no longer exists",
     "plan.comparison.not_found": "The comparison scenario no longer exists",
     "plan.comparison.same": "Choose two different scenarios to compare",
+    "net_worth.range.invalid": "The net worth history must not end before it starts",
+    "net_worth.period.invalid": "Group net worth history by month, quarter, or year",
     "schedule.name.required": "Give the scheduled transaction a name",
     "schedule.not_found": "The scheduled transaction no longer exists",
     "schedule.identity.changed": "The schedule identity changed while it was edited",

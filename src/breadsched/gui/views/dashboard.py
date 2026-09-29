@@ -455,6 +455,13 @@ class DashboardView(BaseView):
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
+    def _open_net_worth_history(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.net_worth_history_dialog import NetWorthHistoryDialog
+
+        NetWorthHistoryDialog(self.get_root(), self.db).present()
+
 
 #: Widest a group name (with its note) may ask to be before it ellipsizes.
 _GROUP_LABEL_CHARS = 60

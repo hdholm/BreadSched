@@ -89,6 +89,14 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             "emblem-system-symbolic",
             toolbar=True,
         ),
+        ViewAction(
+            "net-worth-history",
+            "Net Worth _History…",
+            "_open_net_worth_history",
+            "document-open-recent-symbolic",
+            True,
+            caption="History",
+        ),
     ),
     "fsa-dashboard": (
         ViewAction(

@@ -1788,6 +1788,57 @@ def cmd_activity(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_net_worth(args: argparse.Namespace) -> int:
+    """Show market-valued net worth at each period end through the as-of date."""
+    from dataclasses import asdict
+
+    from ..gen.services import query_net_worth_history
+
+    db = open_book(args.book, "r")
+    try:
+        start = parse_date(args.start)
+        end = parse_date(args.end)
+        if start is None or end is None:
+            raise CommandError("net-worth requires --start and --end")
+        result = query_net_worth_history(db, start, end, args.period, parse_date(args.as_of))
+        if result.value is None:
+            raise CommandError(service_error_message(result.errors[0]))
+        history = result.value
+
+        def money(value: Money | None) -> str:
+            return "—" if value is None else value.format(parens_negative=True)
+
+        rows = [
+            [
+                point.label,
+                point.valued_on.isoformat(),
+                money(point.assets),
+                money(point.debts),
+                money(point.net_worth),
+                money(point.change),
+                "; ".join(
+                    part
+                    for part in (
+                        "to date" if point.partial else "",
+                        f"missing quote: {', '.join(point.missing)}" if point.missing else "",
+                    )
+                    if part
+                )
+                or "—",
+            ]
+            for point in history.points
+        ]
+        text = table(
+            rows,
+            ["period", "valued on", "assets", "debts", "net worth", "change", "note"],
+            right={2, 3, 4, 5},
+        )
+        emit(asdict(history), args, text)
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_plan_unresolved(args: argparse.Namespace) -> int:
     """List unresolved scheduled expectations over an exact date horizon."""
     db = open_book(args.book, "r")
@@ -3263,6 +3314,24 @@ def build_parser() -> argparse.ArgumentParser:
         help="date whose exchange-rate quotes convert foreign amounts (default today)",
     )
     activity_cmd.set_defaults(func=cmd_activity)
+
+    net_worth_cmd = add(
+        "net-worth",
+        "Market-valued net worth at each period end, with missing quotes named",
+    )
+    net_worth_cmd.add_argument("--start", required=True, help="first date (YYYY-MM-DD)")
+    net_worth_cmd.add_argument("--end", required=True, help="last date (YYYY-MM-DD)")
+    net_worth_cmd.add_argument(
+        "--period",
+        default="month",
+        choices=[period.value for period in activity.ReportingPeriod],
+        help="value the book at the end of each of these periods",
+    )
+    net_worth_cmd.add_argument(
+        "--as-of",
+        help="last date to value; later periods are omitted (default today)",
+    )
+    net_worth_cmd.set_defaults(func=cmd_net_worth)
 
     plan_unresolved = add(
         "plan-unresolved",

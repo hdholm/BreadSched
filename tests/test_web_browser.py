@@ -391,6 +391,22 @@ def test_a_proposed_reimbursement_is_accepted_on_the_page(page, served):
     assert len(db.get_receivable(receivable.handle).reimbursements) == 1
 
 
+def test_dashboard_shows_net_worth_history_and_regroups_it(page):
+    page.wait_for_selector("text=Pending bills")
+    page.wait_for_selector("h2:has-text('Net worth history')")
+    rows = page.locator(".net-worth-history tbody tr")
+    assert rows.count() >= 1
+    assert page.locator("svg.net-worth-chart path").count() == 1
+    months = rows.count()
+    page.locator(".net-worth-history select").select_option("year")
+    page.wait_for_function(
+        "(count) => document.querySelectorAll('.net-worth-history tbody tr').length < count"
+        " || document.querySelectorAll('.net-worth-history tbody tr').length <= 2",
+        arg=months,
+    )
+    assert "20" in page.locator(".net-worth-history tbody tr").first.inner_text()
+
+
 def test_expense_explorer_shows_spending_over_time_and_selects_a_period(page):
     page.wait_for_selector("text=Pending bills")
     page.get_by_role("button", name="Plan", exact=True).first.click()

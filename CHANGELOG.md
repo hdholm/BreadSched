@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a188 - 2026-09-29
+
+- **Net worth history.** A new shared service values the whole book's assets and
+  debts at the end of each month, quarter, or year, through today. The period
+  containing today is valued on today and marked to date, with the change from
+  the previous period and each top-level account tree's value. A missing quote
+  withholds a point's totals and names the account, and each complete point is
+  asserted to equal the Dashboard's valuation on its date. It is available as the
+  CLI `net-worth` command, the web `/api/net-worth-history` resource with a
+  Dashboard section, a GTK Dashboard **History** dialog, and a printable report.
+  Application version `0.2.0a188`; native schema remains 9.
+
 ## 0.2.0a187 - 2026-09-29
 
 - **Income over time.** Expense Explorer now follows Spending over time with

@@ -1736,6 +1736,30 @@ class TestItServes:
 class TestPlanApi:
     """The web Plan is the same derived event-driven report as GTK."""
 
+    def test_net_worth_history_values_each_month_end_from_the_shared_service(self, client):
+        status, report = client.get("/api/net-worth-history?from=2026-01&through=2026-02")
+        assert status == 200
+        assert report["period"] == "month"
+        assert [point["label"] for point in report["points"]][:1] == ["Jan 2026"]
+        january = report["points"][0]
+        assert Money(january["net_worth"]) == Money(january["assets"]) - Money(january["debts"])
+        assets = sum(
+            (Money(line["value"]) for line in january["lines"] if line["kind"] == "asset"),
+            Money(0),
+        )
+        assert assets == Money(january["assets"])
+        assert january["missing"] == []
+
+        def refused(path: str) -> tuple[int, dict]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(path)
+            return caught.value.code, json.loads(caught.value.read())
+
+        status, error = refused("/api/net-worth-history?from=2026-03&through=2026-01")
+        assert status == 400 and error["code"] == "net_worth.range.invalid"
+        status, error = refused("/api/net-worth-history?from=March")
+        assert status == 400 and error["fields"] == ["from"]
+
     def test_expense_explorer_reconciles_category_and_merchant_actual(self, client):
         status, report = client.get("/api/expense-explorer?from=2026-01&through=2026-01")
         assert status == 200

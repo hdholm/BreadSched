@@ -4485,6 +4485,53 @@ function openDashboardGroupsEditor(config) {
   document.body.append(backdrop);
 }
 
+// Net worth at each period end from the shared service; a missing quote withholds
+// that point's totals and names the account instead of guessing a conversion.
+async function netWorthHistory() {
+  const period = state.netWorthPeriod || "month";
+  const data = await get(`/api/net-worth-history?period=${period}`);
+  const points = data.points;
+  const known = points.filter((item) => item.net_worth !== null);
+  const values = known.map((item) => Number(item.net_worth));
+  const low = Math.min(0, ...values), high = Math.max(1, ...values);
+  const step = 560 / Math.max(1, points.length - 1);
+  const x = (i) => 20 + i * step;
+  const y = (value) => 120 - 110 * (Number(value) - low) / (high - low || 1);
+  const svg = svgEl("svg", { viewBox: "0 0 600 150", role: "img", class: "net-worth-chart",
+    "aria-label": "Net worth at each period end" });
+  let path = "";
+  points.forEach((item, i) => {
+    if (item.net_worth === null) return;
+    path += `${path ? "L" : "M"}${x(i)},${y(item.net_worth)}`;
+  });
+  if (path) {
+    svg.append(svgEl("path", { d: path, fill: "none", stroke: "#2563a4", "stroke-width": "3" }));
+  }
+  const choose = el("select", { onchange: (event) => {
+    state.netWorthPeriod = event.target.value; render();
+  } }, [["month", "Month"], ["quarter", "Quarter"], ["year", "Year"]].map(([value, label]) =>
+    el("option", { value, selected: value === period ? "selected" : null }, label)));
+  const amount = (value) => value === null ? "Missing quote" : money(value);
+  const note = (item) => [item.partial ? "to date" : "",
+    item.missing.length ? `missing quote: ${item.missing.join(", ")}` : ""]
+    .filter(Boolean).join("; ") || "—";
+  return el("section", { class: "net-worth-history" },
+    el("h2", {}, "Net worth history"),
+    el("p", { class: "note" }, "Assets less debts, market-valued at each period end "
+      + `(the last one on ${data.as_of}). A missing quote leaves that point blank `
+      + "rather than guessing a conversion."),
+    el("div", { class: "toolbar" }, el("label", {}, "Group by ", choose)),
+    svg,
+    table(["Period", "Valued on", { label: "Assets", num: true }, { label: "Debts", num: true },
+      { label: "Net worth", num: true }, { label: "Change", num: true }, "Note"],
+      points.map((item) => [
+        el("details", {}, el("summary", {}, item.label),
+          el("ul", {}, ...item.lines.map((line) => el("li", {},
+            `${line.name} (${line.kind}): ${amount(line.value)}`)))),
+        item.valued_on, amount(item.assets), amount(item.debts), amount(item.net_worth),
+        item.change === null ? "—" : money(item.change), note(item)])));
+}
+
 // The dashboard: what is owned and owed, the liquidity verdict, and the bills.
 // The two horizons are inputs rather than fixed constants, because how much must
 // stay liquid and how long the fund should last are the household's judgement,
@@ -4616,7 +4663,8 @@ async function showDashboard() {
     el("h2", {}, `Expected income (${income.length})`),
     table(["Item", "Due", "Due in", "Frequency",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
-           { label: "Annual", num: true }], incomeRows));
+           { label: "Annual", num: true }], incomeRows),
+    await netWorthHistory());
 }
 
 function switchTo(name) { current = name; render(); }

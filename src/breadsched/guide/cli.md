@@ -56,6 +56,18 @@ breadsched sample sample.breadsched --as-of 2026-09-15
 The command refuses an existing path. `--as-of YYYY-MM-DD` chooses a repeatable
 reference month. See [Synthetic sample book](../USER_GUIDE.md#synthetic-sample-book).
 
+## Net worth history
+
+```bash
+breadsched net-worth household.breadsched --start 2026-01-01 --end 2026-12-31 \
+    --period month --as-of 2026-06-30
+```
+
+Each row is one period end (or the `--as-of` date within the last period), with
+assets, debts, net worth, the change, and a note naming any account whose quote
+was missing. `--json` adds each point's top-level account values. See
+[Net worth history](../USER_GUIDE.md#net-worth-history).
+
 ## Exchange rates
 
 ```bash

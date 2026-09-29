@@ -422,6 +422,22 @@ still appear. Every interface and the printed Dashboard share this disclosure.
 Adding a direct or inverse pair quote can restore the totals without changing the
 ledger.
 
+### Net worth history
+
+Net worth history shows how net worth has moved: assets, debts, and net worth
+valued at the end of each month, quarter, or year, with the change from the
+previous period. It uses the same whole-book valuation as the Dashboard's Net
+worth, including market prices for securities and exchange rates as they were on
+each date. The period containing today is valued on today and marked **to date**;
+later periods are not shown, because the ledger has no future balances (use
+Projection for those). If an account needs a quote that did not exist on a date,
+that point shows no totals and names the account instead of guessing a
+conversion, and the change on either side of it is left blank. Each point also
+lists the value of each top-level account tree, such as **Assets** and
+**Liabilities**. Open it from the Dashboard
+([desktop](guide/desktop.md#net-worth-history), [browser](guide/web.md#net-worth-history),
+[command line](guide/cli.md#net-worth-history)).
+
 ## Plan
 
 Choose From, Through, Group by, Show, scenario, and comparison values, then apply

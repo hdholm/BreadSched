@@ -2359,6 +2359,20 @@ reconciliation assertion match spending's; `income_categories` supplies the
 names. GTK, web, and the printable report show it as a second chart and table
 after spending. Selecting one of its periods selects that period for the whole
 explorer; the category comparison and merchant drill-down remain expense-only.
+
+Net worth history (`services/net_worth.query_net_worth_history`) values every
+asset and liability account with `valuation.account_value` on each period's end,
+using Plan's display buckets (`activity.reporting_periods`). The period containing
+the as-of date is valued on that date and marked partial; later periods are
+omitted because the ledger has no future balances (Projection forecasts them).
+Values are summed per top-level account tree and kind; any account without a
+reporting-currency value withholds that point's totals and change and is named in
+`missing`, never converted by guesswork. The service asserts that each complete
+point equals `valuation.net_worth` on its date, so it always matches the
+Dashboard's valuation. The CLI `net-worth` command, the web
+`/api/net-worth-history` resource (typed month parsing only) and Dashboard
+section, the GTK Dashboard **History** dialog, and the printable report all render
+the same points; the GTK chart plots only complete points.
 The view toggle does not mutate historical events or persist a second budget
 ledger. Reimbursable expense
 work must link the original balanced expense, collectible receivable, and later
