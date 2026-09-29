@@ -29,35 +29,98 @@ from typing import Any
 
 TIMEOUT = 60.0
 WM_SETTEXT = 0x000C
+WM_GETTEXT = 0x000D
+WM_COMMAND = 0x0111
+WM_KEYDOWN = 0x0100
+WM_KEYUP = 0x0101
+VK_RETURN = 0x0D
 BM_CLICK = 0x00F5
 IDOK = 1
 
 
-def _user32() -> Any:
-    user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
-    user32.FindWindowW.restype = wintypes.HWND
-    user32.FindWindowW.argtypes = (wintypes.LPCWSTR, wintypes.LPCWSTR)
-    user32.GetDlgItem.restype = wintypes.HWND
-    user32.GetDlgItem.argtypes = (wintypes.HWND, ctypes.c_int)
-    user32.SendMessageW.restype = ctypes.c_ssize_t
-    user32.SendMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPCWSTR)
-    user32.PostMessageW.argtypes = (wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM)
-    user32.GetClassNameW.argtypes = (wintypes.HWND, wintypes.LPWSTR, ctypes.c_int)
-    return user32
+class _Win32:
+    """The few user32 calls needed to find and fill a native file dialog."""
 
+    def __init__(self) -> None:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)  # type: ignore[attr-defined]
+        prototype = ctypes.WINFUNCTYPE  # type: ignore[attr-defined]
+        lresult = ctypes.c_ssize_t
+        hwnd, uint = wintypes.HWND, wintypes.UINT
+        self.find = prototype(hwnd, wintypes.LPCWSTR, wintypes.LPCWSTR)(("FindWindowW", user32))
+        self.parent = prototype(hwnd, hwnd)(("GetParent", user32))
+        self.visible = prototype(wintypes.BOOL, hwnd)(("IsWindowVisible", user32))
+        self.control_id = prototype(ctypes.c_int, hwnd)(("GetDlgCtrlID", user32))
+        self.item = prototype(hwnd, hwnd, ctypes.c_int)(("GetDlgItem", user32))
+        self._class = prototype(ctypes.c_int, hwnd, wintypes.LPWSTR, ctypes.c_int)(
+            ("GetClassNameW", user32)
+        )
+        self._set = prototype(lresult, hwnd, uint, wintypes.WPARAM, wintypes.LPCWSTR)(
+            ("SendMessageW", user32)
+        )
+        self._get = prototype(lresult, hwnd, uint, wintypes.WPARAM, wintypes.LPWSTR)(
+            ("SendMessageW", user32)
+        )
+        self.post = prototype(wintypes.BOOL, hwnd, uint, wintypes.WPARAM, wintypes.LPARAM)(
+            ("PostMessageW", user32)
+        )
+        self._enum_proc = prototype(wintypes.BOOL, hwnd, wintypes.LPARAM)
+        self._enum = prototype(wintypes.BOOL, hwnd, self._enum_proc, wintypes.LPARAM)(
+            ("EnumChildWindows", user32)
+        )
 
-def _descendants(user32: Any, parent: int) -> list[tuple[int, str]]:
-    found: list[tuple[int, str]] = []
-    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)  # type: ignore[attr-defined]
-
-    def visit(hwnd: int, _param: int) -> bool:
+    def class_name(self, window: int) -> str:
         name = ctypes.create_unicode_buffer(256)
-        user32.GetClassNameW(hwnd, name, 256)
-        found.append((hwnd, name.value))
-        return True
+        self._class(window, name, 256)
+        return name.value
 
-    user32.EnumChildWindows(parent, callback_type(visit), 0)
-    return found
+    def text(self, window: int) -> str:
+        buffer = ctypes.create_unicode_buffer(1024)
+        self._get(window, WM_GETTEXT, 1024, buffer)
+        return buffer.value
+
+    def set_text(self, window: int, value: str) -> None:
+        self._set(window, WM_SETTEXT, 0, value)
+
+    def descendants(self, parent: int) -> list[int]:
+        found: list[int] = []
+
+        def visit(window: int, _param: int) -> bool:
+            found.append(window)
+            return True
+
+        self._enum(parent, self._enum_proc(visit), 0)
+        return found
+
+    def file_name_box(self, dialog: int) -> int | None:
+        """The visible Edit of the file-name combo box (Open and Save alike)."""
+        edits = [
+            window
+            for window in self.descendants(dialog)
+            if self.class_name(window) == "Edit" and self.visible(window)
+        ]
+        for window in edits:
+            if self.class_name(self.parent(window)) == "ComboBox":
+                return window
+        return edits[0] if edits else None
+
+    def accept(self, dialog: int, box: int, attempt: int) -> str:
+        """Press the dialog's default button one of three ways; return which."""
+        way = ("command", "enter", "click")[attempt % 3]
+        if way == "command":
+            self.post(dialog, WM_COMMAND, IDOK, 0)
+        elif way == "enter":
+            self.post(box, WM_KEYDOWN, VK_RETURN, 0x001C0001)
+            self.post(box, WM_KEYUP, VK_RETURN, 0xC01C0001)
+        else:
+            self.post(self.item(dialog, IDOK), BM_CLICK, 0, 0)
+        return way
+
+    def describe(self, dialog: int) -> list[str]:
+        return [
+            f"{self.class_name(window)}#{self.control_id(window)}"
+            f"{'' if self.visible(window) else ' (hidden)'}: {self.text(window)!r}"
+            for window in self.descendants(dialog)
+        ]
 
 
 def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
@@ -67,7 +130,8 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
     from breadsched.gui.gi_setup import Gio, GLib
     from breadsched.gui.viewmanager import CATEGORIES, ViewManager
 
-    user32 = _user32()
+    win32 = _Win32()
+    accepted: dict[str, list[str]] = {}
     context = GLib.MainContext.default()
     work = Path(work_dir)
 
@@ -86,18 +150,34 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
         raise AssertionError(f"timed out waiting for {what}")
 
     def choose(title: str, path: Path) -> None:
-        """Type ``path`` into the native dialog titled ``title`` and accept it."""
-        dialog = wait_for(lambda: user32.FindWindowW("#32770", title), f'the "{title}" dialog')
-        # The file-name box is the dialog's first Edit control, in Open and Save alike.
-        controls = wait_for(
-            lambda: [hwnd for hwnd, name in _descendants(user32, dialog) if name == "Edit"],
-            f'the file-name box in "{title}"',
+        """Type ``path`` into the native dialog titled ``title`` and accept it.
+
+        The dialog may still be initializing when it first appears, so the name
+        is set and accepted again until the dialog closes. Accepting rotates
+        through ``WM_COMMAND(IDOK)`` to the dialog (which, unlike a button
+        click, does not need an active window), Enter in the file-name box, and
+        a click on the default button; the report records which ones it took.
+        """
+        dialog = wait_for(lambda: win32.find("#32770", title), f'the "{title}" dialog')
+        attempts: list[str] = []
+        deadline = time.monotonic() + TIMEOUT
+        while time.monotonic() < deadline:
+            if not win32.find("#32770", title):
+                accepted[title] = attempts
+                return
+            box = win32.file_name_box(dialog)
+            if box and win32.find("#32770", title):
+                win32.set_text(box, str(path))
+                if win32.text(box) == str(path):
+                    attempts.append(win32.accept(dialog, box, len(attempts)))
+            pause_until = time.monotonic() + 2.0
+            while time.monotonic() < pause_until and win32.find("#32770", title):
+                settle()
+                time.sleep(0.1)
+        controls = "\n  ".join(win32.describe(dialog))
+        raise AssertionError(
+            f'"{title}" did not accept {path} after {attempts}; controls:\n  {controls}'
         )
-        user32.SendMessageW(controls[0], WM_SETTEXT, 0, str(path))
-        button = user32.GetDlgItem(dialog, IDOK)
-        assert button, f'no default button in "{title}": {_descendants(user32, dialog)}'
-        user32.PostMessageW(button, BM_CLICK, 0, 0)
-        wait_for(lambda: not user32.FindWindowW("#32770", title), f'"{title}" to close')
 
     app = BreadSchedApplication(application_id=f"{APP_ID}.WindowsChecks", unique=False)
     app.register()
@@ -166,6 +246,7 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
         "opened": str(app.book_path),
         "export_header": header,
         "printed": printed,
+        "dialogs": accepted,
     }
     window.destroy()
     if app.db is not None:

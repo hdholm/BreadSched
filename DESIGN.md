@@ -2202,8 +2202,13 @@ After the GTK smoke, `test-installer.ps1` runs `scripts/windows_desktop_checks.p
 with the installed Python to cover what the smoke cannot: the native file chooser
 and printing. It goes through the application's own actions. **Open** shows the
 native Common Item Dialog (found as a `#32770` window by its title), the check
-types another book's path into its first `Edit` control and clicks the default
-button, and the application must then have that book open. **Export
+sets another book's path in the visible `Edit` of its file-name combo box and
+accepts it, and the application must then have that book open. The dialog may
+still be initializing when it appears, so the name is set and accepted again
+until it closes; accepting rotates through `WM_COMMAND(IDOK)` posted to the
+dialog (no active window needed), Enter in the box, and a click on the default
+button, and the report records which were tried. A timeout lists every control's
+class, ID, and text. **Export
 transactions** does the same through the native save dialog and must write the
 CSV. **Print** runs on every printable view: the report must be written, Windows
 must have a default handler for its type, and opening it must succeed. Printing

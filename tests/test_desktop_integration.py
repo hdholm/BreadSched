@@ -206,7 +206,8 @@ def test_windows_installer_drives_the_native_file_chooser_and_printing():
         assert action in script, action
     assert 'choose("Open book", target)' in script
     assert 'choose("Export transactions", export)' in script
-    assert 'FindWindowW("#32770", title)' in script
+    assert 'win32.find("#32770", title)' in script
+    assert "WM_COMMAND, IDOK" in script
     # The chosen book must actually open, and every printed report must have a
     # default handler that opens it.
     assert "Path(app.book_path).resolve() == target" in script
