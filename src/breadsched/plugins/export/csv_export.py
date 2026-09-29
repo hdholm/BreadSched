@@ -76,6 +76,8 @@ def export_projection(projection: Projection, path: str | Path) -> int:
         "holdings",
         "liabilities",
         "net_worth",
+        "goals_set_aside",
+        "cash_after_goals",
     ]
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)

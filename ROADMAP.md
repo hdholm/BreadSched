@@ -44,10 +44,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    installer. Keep wheel/source releases available throughout.
 2. **P2 — Interoperability and analysis.** GnuCash write-back for simple edits
    is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
-   configurable backups). Then broader reporting (spending and income over time
-   and net worth history are delivered),
-   scenario-aware pinned savings targets (goals, their Dashboard hold, and editors in
-   every interface are delivered; Plan/Projection milestones remain). Investigate AqBanking as an optional
+   configurable backups). Broader reporting (spending and income over time, net
+   worth history and its drill-down) and scenario-aware pinned savings goals are
+   delivered. Next, investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
    portability controls. Detailed acceptance contracts follow below.
 
@@ -79,16 +78,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
-
-- **Savings goals, continued.** The model, schema 10, earmark engine, service,
-  CLI, Dashboard hold, GTK and web editors, and per-goal Dashboard rows are
-  delivered: a goal sets aside a prorated share of each income received until its
-  target date, like a pending bill, with extra allocations, and closing releases
-  the earmark. Remaining:
-  - Plan and Projection: show each goal's projected set-aside at its target date
-    as a milestone (nothing is spent), keep goals pinned across scenarios, and
-    let a scenario override a goal's target amount or date;
-  - never count transfers into a goal's account as expenses.
 
 - Carry reimbursable expense and receivable status into Plan, Projection, and
   Dashboard liquidity: distinguish incurred expense, collectible asset, and
@@ -130,6 +119,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 
 ## Projection and scenarios
+
+- Compare savings goals held in non-cash accounts with that account's projected
+  balance (projection rows carry only summed holdings today), and let a scenario
+  model a goal's purchase as a dated one-off after its target date.
 
 - Add a custom per-schedule growth rate only if it can be explained cleanly within
   the scenario-assumption model.

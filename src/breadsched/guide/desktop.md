@@ -220,7 +220,15 @@ money aside on the date you enter. **Close** releases a goal's money (for exampl
 after the purchase), **Reopen** undoes that, and **Delete** removes the goal; Edit →
 Undo restores it. **Show closed goals** includes closed goals in the list. On the
 Dashboard, the **Savings goals** table lists each open goal; activate a row to open
-this window. See [Savings goals](../USER_GUIDE.md#savings-goals).
+this window.
+
+To change a goal in one scenario, load it with **Edit**, choose the scenario after
+**In scenario**, and enter a different target amount or target date, or check
+**Leave out**; then choose **Apply to scenario**. With both fields empty and **Leave
+out** unchecked, the scenario follows the goal unchanged again. **Scenario changes**
+lists every change. Projection shows each goal's target month and what goals have
+set aside in its notes, and Plan lists goals whose target date falls in its range.
+See [Savings goals](../USER_GUIDE.md#savings-goals).
 
 ## Reimbursable expenses
 

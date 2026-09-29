@@ -671,6 +671,25 @@ set aside. When you have used the money (say, after buying the roof), close the 
 to release its earmark. You can reopen a closed goal. Only goals in the reporting
 currency are supported, held in an asset account.
 
+Goals are pinned: every scenario carries every open goal. A scenario can change a
+goal's target amount or target date, or leave the goal out, without changing the goal
+itself or any other scenario. The change applies from the goal's start date, as if
+the scenario's target had always applied.
+
+In **Projection**, each month shows what goals have set aside by its end. The
+projection starts from what each goal has actually set aside, then applies the same
+rule to the scenario's own projected income, month by month, so a scenario with
+more income or a later target sets money aside more slowly. Each goal's target
+month appears as a milestone. It says whether the projected cash then covers
+everything set aside for goals in cash accounts. If cash covers bills but not goal
+money, the projection names the first month that happens. A goal held in a
+non-cash account is listed but not compared with cash. The projection CSV export
+adds each month's goal money and the cash left after it.
+
+In **Plan**, goals whose target date falls in the range are listed with their
+target (as the scenario changes it), what they have set aside so far, and what is
+left. Money moved into a goal's account is a transfer, never an expense.
+
 ### Reimbursable expenses
 
 A receivable tracks an expense you paid out of pocket and what an insurer,

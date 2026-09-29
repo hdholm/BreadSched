@@ -10,7 +10,11 @@ from .gen.services import ServiceError
 
 if TYPE_CHECKING:
     from .gen.engine.fsa_claims import SharedCost
+    from .gen.engine.goal_projection import GoalMilestone
+    from .gen.engine.projection import Projection
     from .gen.engine.savings_goals import GoalProgress
+    from .gen.lib.scenario import GoalOverride
+    from .gen.services.plan import PlanGoalMilestone
 
 _LOCALE_DIR = Path(__file__).with_name("locale")
 _translation: gettext.NullTranslations = gettext.translation(
@@ -328,6 +332,60 @@ def goal_status_text(progress: GoalProgress) -> str:
     if progress.basis == "time":
         return "saving (spread by day: no income scheduled)"
     return "saving"
+
+
+def goal_override_text(scenario_name: str, override: GoalOverride) -> str:
+    """How one scenario changes a pinned goal."""
+    if override.excluded:
+        return f"{scenario_name}: left out"
+    parts = [
+        f"target {override.target_amount.format()}" if override.target_amount else "",
+        f"by {override.target_date.isoformat()}" if override.target_date else "",
+    ]
+    return f"{scenario_name}: " + ", ".join(part for part in parts if part)
+
+
+def projection_goal_notes(result: Projection) -> list[str]:
+    """What savings goals set aside in a projection, in the words every interface shows."""
+    notes: list[str] = []
+    shortfall = result.first_goal_shortfall()
+    if shortfall is not None:
+        notes.append(
+            f"Cash no longer covers what savings goals set aside in {shortfall.label} "
+            f"({shortfall.cash_after_goals.format(parens_negative=True)} after goals)."
+        )
+    notes.extend(f"Goal {goal_milestone_text(item)}." for item in result.goal_milestones)
+    return notes
+
+
+def plan_goal_text(milestone: PlanGoalMilestone) -> str:
+    """A goal reaching its target date within the Plan range."""
+    changed = " (changed in this scenario)" if milestone.overridden else ""
+    return (
+        f"{milestone.goal.name}: {milestone.target.format()} by "
+        f"{milestone.target_date.isoformat()}{changed}; {milestone.set_aside.format()} set "
+        f"aside so far, {milestone.remaining.format()} to go. Contributions are transfers, "
+        "not expenses."
+    )
+
+
+def goal_milestone_text(milestone: GoalMilestone) -> str:
+    """A goal's target date in one projection, in the words every interface shows."""
+    goal = milestone.goal
+    changed = " (changed in this scenario)" if milestone.overridden else ""
+    head = (
+        f"{goal.name}: {milestone.target.format()} by {milestone.target_date.isoformat()}{changed}"
+    )
+    if milestone.month_index is None:
+        return f"{head}; the target date is outside this projection"
+    if milestone.covered is None:
+        return f"{head}; held in a non-cash account, so not compared with projected cash"
+    assert milestone.cash_close is not None and milestone.goals_held is not None
+    verdict = "covers" if milestone.covered else "does not cover"
+    return (
+        f"{head}; projected cash of {milestone.cash_close.format(parens_negative=True)} "
+        f"{verdict} the {milestone.goals_held.format()} set aside for goals then"
+    )
 
 
 def shared_cost_text(shared: SharedCost) -> str:

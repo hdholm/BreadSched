@@ -562,3 +562,34 @@ def test_goals_page_adds_funds_and_closes_a_goal(page, served):
     page.get_by_role("button", name="Close", exact=True).click()
     page.wait_for_selector("text=Closed Roof.")
     assert db.get_savings_goal(goal.handle).closed_on == today
+
+
+def test_goals_page_changes_a_goal_in_a_scenario_and_projection_shows_it(page, served):
+    from breadsched.gen.lib import Money, Scenario
+    from breadsched.gen.services import SaveSavingsGoal, goal_accounts, save_savings_goal
+
+    db, httpd = served
+    today = date.today()
+    handle = next(h for h, _name in goal_accounts(db) if db.get_account(h).atype.is_cash_like)
+    goal = save_savings_goal(
+        db, SaveSavingsGoal("Car", handle, Money(3000), today.replace(year=today.year + 1), today)
+    ).value
+    scenario = Scenario(name="Lean", start=today.replace(day=1), years=2)
+    with db.transaction("Scenario") as txn:
+        db.add_scenario(scenario, txn)
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/?goals#token={httpd.token}")
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Goals", exact=True).first.click()
+    page.wait_for_selector("text=Scenario changes")
+    page.get_by_role("button", name="Edit", exact=True).first.click()
+    overrides = page.locator("form.goal-override")
+    overrides.locator("select[name=scenario]").select_option(label="Lean")
+    overrides.locator("input[name=override_target]").fill("4000")
+    overrides.get_by_role("button", name="Apply to scenario").click()
+    page.wait_for_selector("text=Lean: target 4,000.00.")
+    assert db.get_scenario(scenario.handle).goal_overrides[goal.handle].target_amount == Money(4000)
+    assert "Lean: target 4,000.00" in page.locator("td.goal-changes").first.inner_text()
+
+    page.get_by_role("button", name="Projection", exact=True).first.click()
+    page.wait_for_selector(".projection-goals")
+    assert "Goal Car" in page.locator(".projection-goals").inner_text()

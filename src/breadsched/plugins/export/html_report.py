@@ -7,6 +7,7 @@ the applied view state rather than a subtly different second report.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from html import escape
 from itertools import zip_longest
 
@@ -17,7 +18,8 @@ from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
 from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
-from ...presentation import goal_status_text
+from ...gen.services.plan import PlanGoalMilestone
+from ...presentation import goal_status_text, plan_goal_text, projection_goal_notes
 
 __all__ = ["dashboard_report", "expense_explorer_report", "plan_report", "projection_report"]
 
@@ -525,6 +527,7 @@ def plan_report(
     *,
     scenario_name: str,
     book_name: str = "",
+    goal_milestones: Sequence[PlanGoalMilestone] = (),
 ) -> str:
     """Render the applied Plan horizon, grouping, measure, and scenario."""
     activity = report.activity
@@ -676,10 +679,17 @@ def plan_report(
         f"{activity.start.isoformat()} through {activity.end.isoformat()} · "
         f"{activity.period.value.title()} · {measure.value.title()} · {scenario_name}"
     )
+    goals = (
+        "<section class='plan-goals'><h2>Savings goals reaching their target</h2>"
+        + "".join(f"<p class='note'>{escape(plan_goal_text(item))}</p>" for item in goal_milestones)
+        + "</section>"
+        if goal_milestones
+        else ""
+    )
     return _document(
         "Plan",
         subtitle,
-        f"{cards}{currency}{summary_table}{detail_table}",
+        f"{cards}{currency}{goals}{summary_table}{detail_table}",
         optional_plan_detail=True,
     )
 
@@ -755,12 +765,19 @@ def projection_report(
         for message in row.ledger.escrow_explanations
     ]
     escrow = f"<h2>Escrow treatment</h2><ul>{''.join(escrow_items)}</ul>" if escrow_items else ""
+    goal_notes = projection_goal_notes(result)
+    goals = (
+        "<h2>Savings goals</h2>"
+        + "".join(f"<p class='note'>{escape(note)}</p>" for note in goal_notes)
+        if goal_notes
+        else ""
+    )
     start = result.rows[0].month.isoformat() if result.rows else str(result.scenario.start or "")
     end = result.rows[-1].month.isoformat() if result.rows else ""
     prefix = f"{book_name} · " if book_name else ""
     subtitle = f"{prefix}{result.scenario.name} · {start} through {end}"
     body = (
-        f"{cards}{warnings}{escrow}<h2>Projection chart</h2>{chart}"
+        f"{cards}{warnings}{goals}{escrow}<h2>Projection chart</h2>{chart}"
         f"<h2>Annual assumptions</h2>{assumptions_table}"
         f"{comparison_table}<h2>Year-end values</h2>{annual}"
     )

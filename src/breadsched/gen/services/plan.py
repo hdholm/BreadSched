@@ -14,6 +14,10 @@ from ..engine.activity import (
     ReportingPeriod,
     build_category_report,
 )
+from ..engine.goal_projection import effective_goals
+from ..engine.savings_goals import goal_progress
+from ..lib.money import Money
+from ..lib.savings_goal import SavingsGoal
 from ..lib.scenario import Assumptions, Scenario
 from .assumptions import BASE_ASSUMPTIONS_KEY
 from .contracts import ServiceError, ServiceResult
@@ -50,6 +54,39 @@ class PlanComparison:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanGoalMilestone:
+    """A savings goal whose target date falls in the Plan range, for its scenario."""
+
+    goal: SavingsGoal
+    target: Money
+    target_date: date
+    overridden: bool
+    #: Set aside so far (on the Plan's today) toward this scenario's target.
+    set_aside: Money
+
+    @property
+    def remaining(self) -> Money:
+        return self.target - self.set_aside
+
+
+def plan_goal_milestones(
+    db: DbSQLite, scenario: Scenario, start: date, end: date, today: date
+) -> tuple[PlanGoalMilestone, ...]:
+    """Pinned goals (with this scenario's changes) reaching their target date in range."""
+    return tuple(
+        PlanGoalMilestone(
+            goal,
+            goal.target_amount,
+            goal.target_date,
+            overridden,
+            goal_progress(db, goal, today).set_aside,
+        )
+        for goal, overridden in effective_goals(db, scenario, today)
+        if start <= goal.target_date <= end
+    )
+
+
+@dataclass(frozen=True, slots=True)
 class PlanQueryResult:
     start: date
     end: date
@@ -63,6 +100,7 @@ class PlanQueryResult:
     assumption_sources: dict[str, str]
     report: CategoryReport
     comparison: PlanComparison | None = None
+    goal_milestones: tuple[PlanGoalMilestone, ...] = ()
 
 
 def _month_end(when: date) -> date:
@@ -221,5 +259,6 @@ def query_plan(db: DbSQLite, request: PlanQuery) -> ServiceResult[PlanQueryResul
             assumption_sources=scenario.assumption_sources(start),
             report=report,
             comparison=comparison,
+            goal_milestones=plan_goal_milestones(db, scenario, start, end, today),
         )
     )

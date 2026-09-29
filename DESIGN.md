@@ -1568,8 +1568,52 @@ the web **Goals** page (`web/savings_goal_resource.py`: `/api/savings-goals` and
 results. The Dashboard lists each goal in GTK (a `goals_view` section, refreshed on
 `savings-goal-*` signals), on the web (`goals` in `/api/dashboard`), and in print.
 `presentation.goal_status_text` gives every interface the same status words.
-Plan/Projection milestones with scenario overrides ("pinned" goals) are a planned
-slice.
+
+Goals are pinned across scenarios. `Scenario.goal_overrides` maps a goal handle to a
+`GoalOverride` (target amount, target date, or `excluded`). It is serialized in the
+scenario blob, so it needs no schema change. `engine.goal_projection.effective_goals`
+applies a scenario's overrides to copies of the open goals and never writes the goal
+itself. An override applies from the goal's start date.
+
+`services.savings_goals.set_goal_override` validates and writes one override, or
+clears it when nothing is changed. `delete_savings_goal` removes the goal's
+overrides from every scenario in the same undo step.
+
+`engine.goal_projection.project_goals` runs after the event projection:
+
+- It starts from each goal's actual earmark on the day before the scenario starts.
+- Each month then sets aside the open gap times that month's projected income, over
+  the income projected from that month through the target month. It uses the
+  scenario's own income, so scenario schedules and income growth change the pace.
+- Allocations dated inside the horizon are set aside in their month.
+- With no projected income, the gap is spread by day.
+- From the target month on, the whole target is held, because a milestone spends
+  nothing.
+
+The results are stored on the projection:
+
+- `MonthRow` gains `goals_set_aside`, `goals_held` (cash-account goals only), and
+  `cash_after_goals`. Every projection consumer receives them, and so does the CSV
+  export.
+- `Projection.goal_milestones` records each goal's target row and whether projected
+  cash covers the goal money held then.
+- `first_goal_shortfall` is the first month cash covers bills but not goal money.
+- A goal held in a non-cash account is reported but not compared, because rows do not
+  carry per-account holdings.
+
+`services.plan.query_plan` adds `goal_milestones`: the effective goals whose target
+date falls in the Plan range, with what they have actually set aside today.
+
+`presentation.projection_goal_notes`, `goal_milestone_text`, `plan_goal_text`, and
+`goal_override_text` give GTK, web, CLI, and print the same words. The override
+editors are:
+
+- the GTK Savings Goals window's **In scenario** row;
+- the web Goals page form (`/api/savings-goal/override`);
+- `breadsched goals --override`.
+
+Transfers into a goal's account stay transfers and are never projected as
+expenses; a test guards this.
 
 ## Reimbursable expenses (receivables)
 

@@ -9,6 +9,7 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.activity import PlanMeasure, ReportingPeriod
 from ..gen.lib import AccountClass, Money
 from ..gen.services import PlanQuery, query_plan
+from ..presentation import plan_goal_text
 from .resources import ResourceError
 
 
@@ -261,6 +262,19 @@ def plan_report(
             "scenarios": [{"handle": item.handle, "name": item.name} for item in plan.scenarios],
             "assumption_sources": plan.assumption_sources,
         },
+        "goal_milestones": [
+            {
+                "goal": item.goal.handle,
+                "name": item.goal.name,
+                "target": item.target,
+                "target_date": item.target_date,
+                "overridden": item.overridden,
+                "set_aside": item.set_aside,
+                "remaining": item.remaining,
+                "text": plan_goal_text(item),
+            }
+            for item in plan.goal_milestones
+        ],
         "periods": [
             {
                 "label": item.label,
