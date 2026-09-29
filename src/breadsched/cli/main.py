@@ -103,6 +103,13 @@ from ..gen.services.categorization import (
     preview_category_proposals,
 )
 from ..gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv, preview_csv_import
+from ..gen.services.gnucash_writeback import (
+    ApplyWriteback,
+    apply_writeback,
+    preview_writeback,
+    set_writeback_keep_backups,
+    writeback_keep_backups,
+)
 from ..gen.services.payees import (
     SavePayee,
     apply_payee_proposals,
@@ -1113,6 +1120,89 @@ def cmd_receivables(args: argparse.Namespace) -> int:
             )
             if summaries
             else "No receivables yet. Add one with --add PAYER --incurred DATE.",
+        )
+        return 0
+    finally:
+        db.close()
+
+
+def cmd_gnucash_writeback(args: argparse.Namespace) -> int:
+    """Preview, or write chosen BreadSched changes back to the imported GnuCash book."""
+    writing = bool(args.apply or args.all or args.keep_backups is not None)
+    db = open_book(args.book, "w" if writing else "r")
+    try:
+        if args.keep_backups is not None:
+            kept = set_writeback_keep_backups(db, args.keep_backups)
+            if kept.value is None:
+                raise CommandError(service_error_message(kept.errors[0]))
+            if not (args.apply or args.all):
+                emit({"keep_backups": kept.value}, args, f"Keeping {kept.value} backup(s)")
+                return 0
+        previewed = preview_writeback(db)
+        if previewed.value is None:
+            raise CommandError(service_error_message(previewed.errors[0]))
+        plan = previewed.value
+        if args.apply or args.all:
+            chosen = (
+                [change.transaction for change in plan.changes]
+                if args.all
+                else [_find_transaction(db, reference).handle for reference in args.apply]
+            )
+            applied = apply_writeback(db, ApplyWriteback(tuple(chosen)))
+            if applied.value is None:
+                raise CommandError(service_error_message(applied.errors[0]))
+            outcome = applied.value
+            emit(
+                {
+                    "written": [change.transaction for change in outcome.written],
+                    "backup": outcome.backup,
+                },
+                args,
+                f"Wrote {len(outcome.written)} transaction(s) to {plan.source}; "
+                f"backup {outcome.backup}",
+            )
+            return 0
+        emit(
+            {
+                "source": plan.source,
+                "keep_backups": writeback_keep_backups(db),
+                "changes": [
+                    {
+                        "transaction": change.transaction,
+                        "date": change.post_date,
+                        "description": change.description,
+                        "kinds": list(change.kinds),
+                        "details": list(change.details),
+                    }
+                    for change in plan.changes
+                ],
+                "unsupported": [
+                    {
+                        "transaction": item.transaction,
+                        "date": item.post_date,
+                        "description": item.description,
+                        "reason": item.reason,
+                    }
+                    for item in plan.unsupported
+                ],
+            },
+            args,
+            "\n".join(
+                [f"GnuCash book: {plan.source}"]
+                + (
+                    [
+                        f"{change.post_date} {change.transaction[:8]} {change.description} "
+                        f"[{', '.join(change.kinds)}]\n    " + "\n    ".join(change.details)
+                        for change in plan.changes
+                    ]
+                    or ["Nothing to write."]
+                )
+                + [
+                    f"not written: {item.post_date} {item.transaction[:8]} "
+                    f"{item.description}: {item.reason}"
+                    for item in plan.unsupported
+                ]
+            ),
         )
         return 0
     finally:
@@ -2873,6 +2963,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--use-gnucash-all", action="store_true", help="apply every held GnuCash version"
     )
     held.set_defaults(func=cmd_import_review)
+
+    writeback = add(
+        "gnucash-writeback",
+        "Preview, or write chosen changes back to the imported GnuCash SQLite book",
+    )
+    writeback.add_argument(
+        "--apply",
+        action="append",
+        metavar="TRANSACTION",
+        help="write this previewed transaction's changes (repeatable; handle or prefix)",
+    )
+    writeback.add_argument("--all", action="store_true", help="write every previewed change")
+    writeback.add_argument(
+        "--keep-backups", type=int, metavar="N", help="how many write-back backups to keep"
+    )
+    writeback.set_defaults(func=cmd_gnucash_writeback)
 
     rules_cmd = add(
         "rules",

@@ -54,8 +54,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    run in CI; remaining Linux work (validating GTK file-chooser portals and
    printing inside the sandbox, and publishing the installer) follows the Windows
    installer. Keep wheel/source releases available throughout.
-3. **P2 — Interoperability and analysis.** Scope safe GnuCash write-back for
-   simple user edits, broader reporting (spending over time is delivered), then
+3. **P2 — Interoperability and analysis.** GnuCash write-back for simple edits
+   (#174: SQLite books, previewed, with configurable backups) has its service
+   and CLI; its GTK and web screens remain. Then broader reporting (spending over
+   time is delivered),
    scenario-aware pinned savings targets. Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
    portability controls. Detailed acceptance contracts follow below.
@@ -204,12 +206,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   GnuCash is removed without review. Decide whether such deletions should be held
   with the same keep/use-GnuCash/decide-later choices.
 
-- Define a narrow GnuCash write-back contract for simple supported edits only.
-  Begin with an opt-in preview of exact source changes, source version/conflict
-  checks, an independent backup, atomic write and read-back verification. Keep
-  unsupported schedules, splits, reconciliation, and imported metadata read-only
-  until round-trip fixtures prove preservation; never silently write to the
-  source during normal import.
+- GnuCash write-back (#174): add the GTK and web preview-and-write screens and the
+  backup-retention setting there; later consider XML books and wider edits
+  (multi-split, account changes, deletions) only with round-trip fixtures that
+  prove preservation. Never write to the source during normal import.
 
 - Investigate AqBanking integration through a small optional adapter: supported
   platforms, consent and credential ownership, bank connection maintenance,

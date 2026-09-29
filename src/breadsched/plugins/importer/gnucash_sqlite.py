@@ -227,8 +227,12 @@ def import_book(
     notify: bool = True,
 ) -> ImportResult:
     """Copy a GnuCash SQLite book into an open BreadSched database."""
+    from ..export.gnucash_writeback import file_digest, record_fingerprint
+
     result = ImportResult(source=str(path), source_format="sqlite")
     LOG.info("importing GnuCash SQLite book %s", path)
+    # The exact bytes read, so a later write-back can prove GnuCash is unchanged.
+    digest = file_digest(Path(path))
     conn = open_gnucash_sqlite(path)
     try:
         counts = {
@@ -264,6 +268,7 @@ def import_book(
                 _import_scheduled(conn, sink, db, txn)
             report("Finishing", counts.get("transactions", 0))
             result.finish(db, txn)
+            record_fingerprint(db, path, digest, txn)
     finally:
         conn.close()
     LOG.info("import finished: %s", result.describe())

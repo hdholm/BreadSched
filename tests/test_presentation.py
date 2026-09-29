@@ -18,7 +18,7 @@ from breadsched.web.server import Api
 
 SERVICES = Path(__file__).resolve().parent.parent / "src" / "breadsched" / "gen" / "services"
 SERVICE_CODE = re.compile(
-    r"(?:account|assumptions|claim|import|loan|plan|reconciliation|review|scenario|schedule|transaction)"
+    r"(?:account|assumptions|claim|import|loan|plan|reconciliation|review|scenario|schedule|transaction|writeback)"
     r"\.[a-z0-9_.]+"
 )
 CATALOG = (
