@@ -2,6 +2,7 @@
 .negative       { color: @error_color; }
 .total-row      { font-weight: bold; }
 .dim            { opacity: 0.6; }
+.book-summary   { font-size: 0.85em; }
 .category-title { font-size: 1.4em; font-weight: bold; }
 .summary-value  { font-size: 1.6em; font-weight: bold; }
 .summary-label  { opacity: 0.7; font-size: 0.9em; }

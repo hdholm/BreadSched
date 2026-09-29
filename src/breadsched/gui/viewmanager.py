@@ -1,9 +1,12 @@
 """The main window.
 
 A menu bar and an icon toolbar above a stack of views, each view owning its own
-toolbar. The toolbar carries one icon per view (the View menu lists the same
-views); the icon for the current view stays pressed. A category sidebar used to
-duplicate that list and took width from every view, so it was removed (#155).
+toolbar. The main toolbar is arranged around the current view (#182): after the
+commands that work anywhere come the current view's name and its own commands,
+then one icon for each other view (the View menu lists every view). The current
+view has no icon, since choosing it would do nothing, and the Actions menu lists
+the current view's commands first. A category sidebar used to duplicate the view
+list and took width from every view, so it was removed (#155).
 Registers can also open in independent windows, so several accounts can be
 compared without losing your place in any of them.
 
@@ -229,6 +232,11 @@ class ViewManager(Gtk.ApplicationWindow):
         self._build_body()
         self._show_placeholder()
         self.connect("close-request", self._on_close_request)
+        # With several main windows, the Actions menu follows the focused one.
+        self.connect(
+            "notify::is-active",
+            lambda *_a: self._share_view_actions() if self.is_active() else None,
+        )
         # A window created while a book is already open joins that book rather
         # than showing the start screen with its view actions disabled.
         db = getattr(application, "db", None)
@@ -301,6 +309,25 @@ class ViewManager(Gtk.ApplicationWindow):
             self.tool_buttons[action] = button
             self.toolbar.append(button)
 
+        # The current view's name and its own commands (for example "Manage FSA
+        # claims" on the FSA Dashboard), next to the general commands where they
+        # are easiest to find; rebuilt whenever the view changes (#182).
+        self.view_heading = Gtk.Box(spacing=2)
+        separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        separator.set_margin_start(6)
+        separator.set_margin_end(6)
+        self.view_heading.append(separator)
+        self.view_title = Gtk.Label()
+        self.view_title.add_css_class("heading")
+        self.view_title.set_valign(Gtk.Align.CENTER)
+        self.view_title.set_margin_start(4)
+        self.view_title.set_margin_end(6)
+        self.view_heading.append(self.view_title)
+        self.view_heading.set_visible(False)
+        self.toolbar.append(self.view_heading)
+        self.view_tools = Gtk.Box(spacing=2)
+        self.toolbar.append(self.view_tools)
+
         separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
         separator.set_margin_start(6)
         separator.set_margin_end(6)
@@ -310,18 +337,14 @@ class ViewManager(Gtk.ApplicationWindow):
             self.view_buttons[key] = button
             self.toolbar.append(button)
 
-        # Icons for the current view's own commands (for example "Manage FSA
-        # claims" on the FSA Dashboard); rebuilt whenever the view changes.
-        self.view_tools = Gtk.Box(spacing=2)
-        self.toolbar.append(self.view_tools)
-
-        spacer = Gtk.Box()
-        spacer.set_hexpand(True)
-        self.toolbar.append(spacer)
-
+        # The book summary sits right after the view icons, stacked on two
+        # lines so it takes one short column instead of a long run of text.
         self.status = Gtk.Label(label="No book open")
         self.status.add_css_class("dim")
+        self.status.add_css_class("book-summary")
         self.status.set_valign(Gtk.Align.CENTER)
+        self.status.set_xalign(0)
+        self.status.set_margin_start(8)
         self.toolbar.append(self.status)
 
     def _build_body(self) -> None:
@@ -518,7 +541,7 @@ class ViewManager(Gtk.ApplicationWindow):
         if self.db is None:
             return
         counts = self.db.summary()
-        self.status.set_text(f"{counts['account']} accounts · {counts['txn']} transactions")
+        self.status.set_text(f"{counts['account']} accounts\n{counts['txn']} transactions")
 
     def _on_undo_available(self, available: bool) -> None:
         application = self.get_application()
@@ -550,11 +573,13 @@ class ViewManager(Gtk.ApplicationWindow):
             self.view_tools.remove(child)
             child = following
         tools = [item for item in VIEW_ACTIONS.get(key, ()) if item.toolbar]
-        if tools:
-            separator = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
-            separator.set_margin_start(6)
-            separator.set_margin_end(6)
-            self.view_tools.append(separator)
+        labels = {item_key: label for item_key, label, _icon in CATEGORIES}
+        self.view_title.set_label(labels.get(key, ""))
+        self.view_heading.set_visible(key in labels)
+        # Choosing the view already shown would do nothing, so its icon is hidden.
+        for view_key, button in self.view_buttons.items():
+            button.set_visible(view_key != key)
+        self._share_view_actions()
         for item in tools:
             self.view_tools.append(
                 _tool_button(
@@ -564,6 +589,12 @@ class ViewManager(Gtk.ApplicationWindow):
                     item.label.replace("_", ""),
                 )
             )
+
+    def _share_view_actions(self, *_args) -> None:
+        """Arrange the application's Actions menu around this window's view."""
+        show_actions = getattr(self.get_application(), "show_view_actions", None)
+        if show_actions is not None:
+            show_actions(self.current_category or None)
 
     def _view_for_action(self, key: str):
         self.show_category(key)

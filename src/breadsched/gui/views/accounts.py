@@ -63,8 +63,8 @@ class AccountTreeView(BaseView):
         header.append(title)
 
         # New/Edit account, Security price, and Exchange rate are toolbar icons and
-        # Actions → Accounts menu items; Hide empty and Show hidden are View menu
-        # check items (#156). Double-clicking opens the register, as GnuCash
+        # Actions menu items while Accounts is shown; Hide empty and Show hidden are
+        # View menu check items (#156, #182). Double-clicking opens the register, as GnuCash
         # does, so editing is the explicit Edit Account command.
         self._header = header
 
