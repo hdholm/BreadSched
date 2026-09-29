@@ -2209,8 +2209,10 @@ until it closes; accepting rotates through `WM_COMMAND(IDOK)` posted to the
 dialog (no active window needed), Enter in the box, and a click on the default
 button, and the report records which were tried. A timeout lists every control's
 class, ID, and text. **Export
-transactions** does the same through the native save dialog and must write the
-CSV. **Print** runs on every printable view: the report must be written, Windows
+transactions** accepts the native save dialog, and a fresh CSV must be written at
+the path the dialog returned to the application (recorded by wrapping
+`Gtk.FileDialog.save_finish`); the save dialog keeps its own suggested name when
+the box is set programmatically, while the Open dialog takes the typed path. **Print** runs on every printable view: the report must be written, Windows
 must have a default handler for its type, and opening it must succeed. Printing
 itself stays in that handler (a browser's print dialog), which is not driven.
 

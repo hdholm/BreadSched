@@ -7,8 +7,10 @@ double:
 - **Open** shows the native "Open book" dialog; the check types another book's
   path into its file-name box and presses Open, then requires the application
   to have opened that book.
-- **Export transactions** does the same through the native save dialog and
-  requires the CSV to be written.
+- **Export transactions** accepts the native save dialog and requires a fresh
+  CSV at the path the dialog returned to the application. (The save dialog keeps
+  its own suggested name when the box is set programmatically; the Open dialog
+  takes the typed path.)
 - **Print** runs the Print action on every printable view and requires the
   report to be written, a default handler for it to exist, and opening it to
   succeed.
@@ -245,13 +247,24 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
         "the chosen book to open",
     )
 
-    # Save through the native save dialog.
-    export = work / "exported-transactions.csv"
-    export.unlink(missing_ok=True)
+    # Save through the native save dialog. It keeps its suggested name when the
+    # box is set programmatically, so the CSV is checked where the dialog said.
+    started = time.time()
     app.on_export()
-    choose("Export transactions", export)
-    wait_for(lambda: export.is_file() and export.stat().st_size > 0, "the exported CSV")
+    choose("Export transactions", work / "exported-transactions.csv")
+    saved = wait_for(lambda: finished.get("save"), "the save dialog's result")
+    assert not saved.startswith("error:"), saved
+    export = Path(saved)
+
+    def written() -> bool:
+        if not export.is_file():
+            return False
+        stat = export.stat()
+        return stat.st_size > 0 and stat.st_mtime >= started - 2
+
+    wait_for(written, f"the exported CSV at {export}")
     header = export.read_text(encoding="utf-8").splitlines()[0]
+    assert header.startswith("date,"), header
 
     # Print every printable view through the application's Print action.
     printed: dict[str, dict[str, Any]] = {}
@@ -291,6 +304,7 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
 
     report = {
         "opened": str(app.book_path),
+        "exported": str(export),
         "export_header": header,
         "printed": printed,
         "dialogs": accepted,
