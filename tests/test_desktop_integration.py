@@ -146,14 +146,17 @@ def test_user_path_adds_the_install_directory_once_and_keeps_other_entries():
     original = r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;C:\Tools;"
 
     added = user_path.with_entry(original, install)
-    assert added == original.rstrip(";") + ";" + install
+    assert added == original + install + ";"
     # Already listed (any case, trailing separator): unchanged.
     assert user_path.with_entry(added, install) == added
     assert user_path.with_entry(added, install.upper() + "\\") == added
     assert user_path.with_entry("", install) == install
 
     # Removal restores the original entries, unexpanded variables included.
-    assert user_path.without_entry(added, install) == original.rstrip(";")
+    assert user_path.without_entry(added, install) == original
+    # Without a trailing separator, too, removal is the exact inverse of adding.
+    assert user_path.with_entry("C:\\Tools", install) == f"C:\\Tools;{install}"
+    assert user_path.without_entry(f"C:\\Tools;{install}", install) == "C:\\Tools"
     assert user_path.without_entry(install, install) == ""
     assert user_path.without_entry(f"{install};C:\\Tools;{install}\\", install) == "C:\\Tools"
     # Nothing to remove: the value is returned exactly as it was.

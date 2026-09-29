@@ -20,12 +20,17 @@ def _same(entry: str, directory: str) -> bool:
 
 
 def with_entry(path: str, directory: str) -> str:
-    """Return ``path`` with ``directory`` appended unless it is already listed."""
+    """Return ``path`` with ``directory`` appended unless it is already listed.
+
+    A trailing separator stays trailing, so ``without_entry`` gives back the
+    original value exactly.
+    """
     entries = path.split(";") if path else []
     if any(_same(entry, directory) for entry in entries):
         return path
-    kept = path.rstrip(";")
-    return f"{kept};{directory}" if kept else directory
+    if not path:
+        return directory
+    return f"{path}{directory};" if path.endswith(";") else f"{path};{directory}"
 
 
 def without_entry(path: str, directory: str) -> str:
