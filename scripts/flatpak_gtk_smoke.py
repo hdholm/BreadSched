@@ -49,6 +49,11 @@ def main(book: str, report_path: str) -> int:
     text = guide.text_view.get_buffer().get_property("text")
     assert "BreadSched" in text and len(text) > 1000, "User Guide did not load"
     assert read_user_guide()
+    # Every interface part is installed and shown by the switcher (#181).
+    for part in guide.part_buttons:
+        guide.part_buttons[part].set_active(True)
+        settle()
+        assert guide.part == part and guide.text_view.get_buffer().get_char_count() > 1000, part
 
     display = Gdk.Display.get_default()
     assert display is not None, "no display inside the sandbox"
@@ -60,6 +65,7 @@ def main(book: str, report_path: str) -> int:
     report = {
         "views": rendered,
         "guide_characters": len(text),
+        "guide_parts": list(guide.part_buttons),
         "icon": icon,
         "settings_path": settings_path,
         "last_book_path": app.settings.get("general", "last_book_path"),

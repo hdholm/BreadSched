@@ -217,3 +217,8 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
   body.include-plan-detail .plan-detail { display: block; break-before: page; }
   .plan-cell-button { border: 0; padding: 0; background: transparent; cursor: default; }
 }
+
+/* The user guide (#181): readable line length, scrollable code examples. */
+.guide { max-width: 62rem; line-height: 1.5; }
+.guide pre { overflow-x: auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.guide code { font-family: ui-monospace, monospace; }

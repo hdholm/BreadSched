@@ -72,7 +72,11 @@ messages or pull requests.
 - Keep documentation roles distinct:
   - `README.md` is the product/developer entry point, not a place for feature
     walkthroughs (those belong in the User Guide and DESIGN.md);
-  - `src/breadsched/USER_GUIDE.md` is the packaged task-oriented user guide;
+  - `src/breadsched/USER_GUIDE.md` is the packaged user guide's interface-neutral
+    overview, and `src/breadsched/guide/desktop.md`, `guide/web.md`, and
+    `guide/cli.md` give each interface's steps. Put what a feature does and its
+    rules in the overview and the steps in the matching part, and link between
+    them;
   - `DESIGN.md` records current architecture and rationale;
   - `ROADMAP.md` is the only future-work list; and
   - `CHANGELOG.md` preserves completed milestones.
@@ -138,8 +142,9 @@ Before opening or updating a pull request:
 
 1. Start from the 'main' branch on GitHub.
 2. Make one coherent change at a time. **Every pull request must update tests,
-   `ROADMAP.md`, `CHANGELOG.md`, `DESIGN.md`, `src/breadsched/USER_GUIDE.md`, and
-   `README.md` to reflect every change the pull request makes.** Review and update
+   `ROADMAP.md`, `CHANGELOG.md`, `DESIGN.md`, `src/breadsched/USER_GUIDE.md` (with
+   its `src/breadsched/guide/` parts), and `README.md` to reflect every change the
+   pull request makes.** Review and update
    `AGENTS.md` and `CONTRIBUTING.md` as needed to keep repository instructions
    accurate. Record the disposition of all these files in the pull-request
    description; do not make content-free edits. For internal changes without a new

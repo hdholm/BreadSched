@@ -383,3 +383,22 @@ def test_the_import_page_writes_ticked_changes_back_to_gnucash(page, served, gnu
     ).fetchall()
     conn.close()
     assert description == "Rent via browser"
+
+
+def test_the_guide_page_switches_parts_and_follows_links(page):
+    page.wait_for_selector("text=Pending bills")
+    page.locator("#nav").get_by_role("button", name="Guide", exact=True).click()
+    page.wait_for_selector("article.guide h2:has-text('BreadSched User Guide')")
+    page.get_by_role("tab", name="Command line").click()
+    page.wait_for_selector("article.guide h2:has-text('Command-line guide')")
+    assert page.locator("article.guide pre code").count() > 5
+    # A link into the overview opens it at that heading.
+    page.locator("article.guide a", has_text="Reimbursable expenses").first.click()
+    page.wait_for_selector("article.guide h2:has-text('BreadSched User Guide')")
+    heading = page.locator("#guide-reimbursable-expenses")
+    assert heading.count() == 1
+    page.wait_for_function(
+        "() => { const r = document.getElementById('guide-reimbursable-expenses')"
+        ".getBoundingClientRect(); return r.top >= 0 && r.top < window.innerHeight; }"
+    )
+    assert page.get_by_role("tab", name="Overview").get_attribute("aria-selected") == "true"

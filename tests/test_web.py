@@ -5138,3 +5138,22 @@ class TestGnuCashWritebackRoutes:
         ).fetchall()
         conn.close()
         assert description == "Rent from the browser"
+
+
+class TestGuideRoute:
+    """The browser reads every part of the packaged guide (#181)."""
+
+    def test_each_part_and_rejections(self, client):
+        from breadsched.user_guide import read_guide
+
+        status, overview = client.get("/api/guide")
+        assert status == 200 and overview["part"] == "overview"
+        assert overview["markdown"] == read_guide("overview")
+        assert [item["part"] for item in overview["parts"]] == ["overview", "desktop", "web", "cli"]
+        assert overview["files"]["desktop.md"] == "desktop"
+        status, web = client.get("/api/guide?part=web")
+        assert status == 200 and web["markdown"].startswith("# Browser guide")
+        for query in ("part=missing", "other=1"):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(f"/api/guide?{query}")
+            assert caught.value.code == 400

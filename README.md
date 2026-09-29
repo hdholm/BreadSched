@@ -21,9 +21,11 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
 
 ## Documentation
 
-- [`src/breadsched/USER_GUIDE.md`](src/breadsched/USER_GUIDE.md) is the standalone,
-  task-oriented user guide. The installed GTK application presents the same document
-  from **Help → User Guide** (`F1`).
+- [`src/breadsched/USER_GUIDE.md`](src/breadsched/USER_GUIDE.md) is the user guide's
+  overview, with a part for each interface: [desktop](src/breadsched/guide/desktop.md),
+  [browser](src/breadsched/guide/web.md), and [command line](src/breadsched/guide/cli.md).
+  Every interface shows all of them: **Help → User Guide** (`F1`) on the desktop,
+  **Guide** in the browser, and `breadsched guide` on the command line.
 - [`ROADMAP.md`](ROADMAP.md) is the single source of future work.
 - [`CHANGELOG.md`](CHANGELOG.md) records completed milestones and their durable
   acceptance contracts.

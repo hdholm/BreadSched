@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a177 - 2026-09-28
+
+- **User guide by interface (#181).** The packaged guide is now an
+  interface-neutral overview (`USER_GUIDE.md`: what each feature does and its
+  rules) plus desktop, browser, and command-line parts (`guide/desktop.md`,
+  `guide/web.md`, `guide/cli.md`) with the steps, linked to each other. Every
+  interface shows all four: the desktop guide window gains a part switcher and
+  clickable links, the browser gains a **Guide** page (`GET /api/guide`), and the
+  command line gains `breadsched guide [overview|desktop|web|cli]`. A test keeps
+  every link between the parts pointing at an existing heading. Application
+  version `0.2.0a177`; native schema remains 9.
+
 ## 0.2.0a176 - 2026-09-28
 
 - **Receivable accounts (#170).** What a payer owes back on a reimbursable expense

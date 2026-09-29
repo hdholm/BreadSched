@@ -20,8 +20,9 @@ committing, or submitting work in this repository.
    GitHub Actions on its supported platforms, including the GTK job, is the final
    authority when a required runtime is unavailable locally.
 6. For **each PR**, update tests, `ROADMAP.md`, `CHANGELOG.md`, `DESIGN.md`,
-   `src/breadsched/USER_GUIDE.md`, and `README.md` to reflect all changes in that
-   PR, including changes to workflow and documentation. Read `AGENTS.md` and this
+   `src/breadsched/USER_GUIDE.md` (with the interface parts in
+   `src/breadsched/guide/`), and `README.md` to reflect all changes in that PR,
+   including changes to workflow and documentation. Read `AGENTS.md` and this
    file and update them when their instructions change. Documentation and
    acceptance tests are part of the implementation, not deferred cleanup.
 7. Submit work through the pull-request workflow above, link the relevant issue,
@@ -46,7 +47,8 @@ More-specific `AGENTS.md` files may add instructions for their own subtrees. Whe
 present, follow both sets; the more-specific file governs only its directory scope.
 
 For every pull request, update relevant tests, `ROADMAP.md`, `CHANGELOG.md`,
-`DESIGN.md`, `src/breadsched/USER_GUIDE.md`, and `README.md` to reflect all changes
-in that PR, as described in `CONTRIBUTING.md`. Review this file and
-`CONTRIBUTING.md` for instruction changes, and record each file's disposition in
-the PR description. Keep documentation specific and tests meaningful.
+`DESIGN.md`, `src/breadsched/USER_GUIDE.md` and its `src/breadsched/guide/`
+parts, and `README.md` to reflect all changes in that PR, as described in
+`CONTRIBUTING.md`. Review this file and `CONTRIBUTING.md` for instruction
+changes, and record each file's disposition in the PR description. Keep
+documentation specific and tests meaningful.
