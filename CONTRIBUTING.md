@@ -184,8 +184,10 @@ artifact headings enforced by `scripts/check_release_notes.py`.
 
 After that notes file reaches `main`, the release workflow waits for the complete CI
 push run to succeed and verifies that the tested commit is still the tip of `main`.
-It then builds and installs the distribution, checks the installed application/schema
-report, creates an annotated tag on that exact commit, publishes the human-reviewed
+It then builds and installs the distribution, checks that the installed wheel's
+`breadsched --version` line equals the one `breadsched.versioning.version_summary()`
+gives for the tested source (so the check follows the native schema; it must never
+hard-code a schema window), creates an annotated tag on that exact commit, publishes the human-reviewed
 notes, and attaches the wheel, source distribution, and `SHA256SUMS`. An existing tag
 must resolve to the same commit; an existing release is never overwritten. A later
 `main` commit that keeps an already-tagged version, such as a documentation-only or

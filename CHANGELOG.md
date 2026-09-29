@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a182 - 2026-09-29
+
+- **Releases publish again (#207).** Every release since 0.2.0a133 failed before
+  tagging: the release workflow's wheel check expected the installed version report
+  to say "native schema 7; supports 6–7", which went stale when the schema advanced.
+  It now requires the installed wheel to report exactly the line
+  `breadsched.versioning.version_summary()` gives for the tested source, and a test
+  keeps any schema number out of that check. Versions in between are not published
+  retroactively. Application version `0.2.0a182`; native schema remains 9.
+
 ## 0.2.0a181 - 2026-09-28
 
 - **One bill split between a payer and the FSA (#192).** An FSA claim can name the

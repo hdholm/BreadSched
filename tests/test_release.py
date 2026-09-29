@@ -83,6 +83,21 @@ def test_release_notes_must_match_the_application_and_schema(tmp_path: Path):
     assert any("Upgrade and rollback" in problem for problem in problems)
 
 
+def test_release_smoke_compares_the_installed_version_with_the_source():
+    """The wheel check follows the schema; a hard-coded window stopped every release."""
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    preparation = workflow.split("\n  publish:\n", 1)[0]
+    smoke = preparation.split("      - name: Build and smoke-test release artifacts", 1)[1]
+    smoke = smoke.split("\n      - name:", 1)[0]
+
+    assert "from breadsched.versioning import version_summary" in smoke
+    assert '[[ "$actual" != "$expected" ]]' in smoke
+    assert smoke.index("expected=$(") < smoke.index('pip install "${GITHUB_WORKSPACE}"/dist/*.whl')
+    assert "native schema 7" not in workflow and "supports 6–7" not in workflow
+    for schema in range(1, 100):
+        assert f"native schema {schema}" not in smoke, schema
+
+
 def test_release_workflow_sets_an_annotated_tag_identity():
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
 
