@@ -396,3 +396,17 @@ def test_saving_a_transaction_sets_tags_only_when_given(db, book):
     refused = save_transaction(db, request(("a,b",)))
     assert [error.code for error in refused.errors] == ["tag.invalid"]
     assert db.get_transaction(transaction.handle).tags == ["Home Repair", "Tax"]
+
+
+def test_contained_locations_stay_inside_the_attachment_folder(file_db, file_book, tmp_path):
+    from breadsched.gen.services import contained_location
+
+    folder = tmp_path / "household attachments"
+    (folder / "2026").mkdir(parents=True)
+    assert contained_location(file_db, "https://example.com/r") == "https://example.com/r"
+    assert contained_location(file_db, "2026/./a.pdf") == "2026/a.pdf"
+    assert contained_location(file_db, str(folder / "2026" / "a.pdf")) == "2026/a.pdf"
+    for escape in ("../book.pdf", str(tmp_path / "x.pdf"), "2026/../../x.pdf", "file:x.pdf"):
+        refused = contained_location(file_db, escape)
+        assert getattr(refused, "code", None) == "attachment.outside_folder", escape
+    assert contained_location(file_db, " ").code == "attachment.location.required"

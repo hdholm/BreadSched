@@ -303,7 +303,9 @@ the folder `household attachments`) and links it by its name there, so the book
 and folder can move together. An existing file of the same name is never
 overwritten; the copy gets a numbered name. A file can instead be linked where it
 is, and a web address is only linked, never fetched. Removing a document only
-unlinks it: the file is kept.
+unlinks it: the file is kept. The browser can link only web addresses and files
+inside the attachment folder, so that it cannot be used to read other files on the
+computer; the desktop and command line can link a file anywhere.
 
 A file can go missing: moved, renamed, or on a drive that is not connected. It is
 then marked **missing** wherever documents are shown, and the link is kept so that

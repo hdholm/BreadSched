@@ -176,6 +176,10 @@ _SERVICE_MESSAGES = {
     "attachment.filename.invalid": "Choose a file with an ordinary file name",
     "attachment.file.empty": "That file is empty",
     "attachment.web_address": "A web address opens in the browser, not through BreadSched",
+    "attachment.outside_folder": (
+        "Link a web address or a file inside the attachment folder; attach other files "
+        "to copy them there"
+    ),
     "attachment.missing": "That document cannot be found; restore the file or relink it",
     "savings_goal.name.required": "Give the savings goal a name",
     "savings_goal.account.invalid": (

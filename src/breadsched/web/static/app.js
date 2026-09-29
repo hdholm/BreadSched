@@ -663,7 +663,7 @@ function openTransactionDocuments(row) {
   const tags = el("input", { value:row.tags.join(", "), "aria-label":"Tags",
     placeholder:"Comma-separated, e.g. Tax, Home repair" });
   const list = el("div", { class:"stack" });
-  const address = el("input", { placeholder:"https://… or a path on this computer",
+  const address = el("input", { placeholder:"https://… or a file in the attachment folder",
     "aria-label":"Document address" });
   const file = el("input", { type:"file", "aria-label":"Document file" });
   const act = async (work) => {
@@ -688,7 +688,9 @@ function openTransactionDocuments(row) {
         "Open"),
       item.owner === "breadsched" ? el("button", { class:"action", type:"button",
         onclick:()=>{
-          const to = window.prompt(`Where is ${item.location} now?`, item.path || item.location);
+          const to = window.prompt(
+            `Where is ${item.location} now? Give its place in the attachment folder.`,
+            item.location);
           if (to) act(()=>post("/api/transaction/attachment/relink",
             { transaction:row.handle, location:item.location, to }));
         } }, "Relink…") : null,

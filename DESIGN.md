@@ -1539,7 +1539,15 @@ JSON, and books without them load with empty defaults.
   so that a later Save keeps them; a new transaction must be saved first. The GTK
   register filter matches tags. The web register row returns `tags` and
   `documents`; `web/attachment_resource.py` serves `POST /api/transaction/tags`,
-  `/api/transaction/attachment/link`, `/remove`, and `/relink`. The transport
+  `/api/transaction/attachment/link`, `/remove`, and `/relink`. The browser is a
+  weaker trust boundary than the desktop or CLI (any page holding the token could
+  call it), so link and relink go through `services.contained_location`: a web
+  address, or a location that resolves (symbolic links included) inside the
+  attachment folder and contains no colon, recorded relative to it; anything else
+  is refused as `attachment.outside_folder`. Without that, linking `/etc/passwd`
+  and then fetching it would turn the routes into a file reader. The upload name
+  is checked twice: no separators, then its normalized staging path must stay in
+  the staging directory. The transport
   receives `POST /api/attachment/upload` (an octet-stream body of at most 32 MiB,
   with a plain file name and no client path) and serves
   `GET /api/attachment/content` only for a location the transaction lists, never

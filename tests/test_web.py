@@ -5512,7 +5512,8 @@ class TestTransactionTagsAndDocumentRoutes:
         assert body == b"%PDF-1" and headers["Content-Type"] == "application/pdf"
         assert headers["X-Content-Type-Options"] == "nosniff"
 
-        (folder / "receipt.pdf").rename(book_path.parent / "moved.pdf")
+        (folder / "2026").mkdir()
+        (folder / "receipt.pdf").rename(folder / "2026" / "receipt.pdf")
         _status, register = client.get(f"/api/register?account={account}")
         row = next(item for item in register["rows"] if item["handle"] == transaction.handle)
         assert row["tags"] == ["Tax"]
@@ -5529,17 +5530,16 @@ class TestTransactionTagsAndDocumentRoutes:
             {
                 "transaction": transaction.handle,
                 "location": "receipt.pdf",
-                "to": str(book_path.parent / "moved.pdf"),
+                "to": str(folder / "2026" / "receipt.pdf"),
             },
         )
+        assert relinked["documents"][0]["location"] == "2026/receipt.pdf"
         assert relinked["documents"][0]["missing"] is False
         _status, removed = client.post(
             "/api/transaction/attachment/remove",
             {"transaction": transaction.handle, "location": "https://example.com/r"},
         )
-        assert [item["location"] for item in removed["documents"]] == [
-            str(book_path.parent / "moved.pdf")
-        ]
+        assert [item["location"] for item in removed["documents"]] == ["2026/receipt.pdf"]
 
     def test_rejected_requests_keep_the_stored_transaction(self, client, book_path):
         transaction = next(iter(client.database.iter_transactions()))
@@ -5559,7 +5559,25 @@ class TestTransactionTagsAndDocumentRoutes:
             with pytest.raises(urllib.error.HTTPError) as caught:
                 client.post(path, payload)
             assert json.loads(caught.value.read())["code"] == code
-        for filename in ("../x.pdf", "a\\b.pdf"):
+        folder = book_path.parent / f"{book_path.stem} attachments"
+        folder.mkdir()
+        secret = book_path.parent / "secret.txt"
+        secret.write_text("private")
+        escapes = [str(secret), "../secret.txt", secret.as_uri(), "file:secret.txt"]
+        try:
+            (folder / "escape.txt").symlink_to(secret)
+            escapes.append("escape.txt")
+        except OSError:  # Windows without the symbolic-link privilege
+            pass
+        # The browser can never link, and so never read, a file outside the folder.
+        for location in escapes:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(
+                    "/api/transaction/attachment/link",
+                    {"transaction": transaction.handle, "location": location},
+                )
+            assert json.loads(caught.value.read())["code"] == "attachment.outside_folder"
+        for filename in ("../x.pdf", "a\\b.pdf", ".."):
             with pytest.raises(urllib.error.HTTPError) as caught:
                 self._upload(client, transaction.handle, filename, b"x")
             assert json.loads(caught.value.read())["code"] == "attachment.filename.invalid"
@@ -5567,4 +5585,4 @@ class TestTransactionTagsAndDocumentRoutes:
             self._content(client, transaction.handle, "/etc/passwd")
         assert json.loads(caught.value.read())["code"] == "attachment.not_found"
         assert client.database.get_transaction(transaction.handle).serialize() == before
-        assert not (book_path.parent / f"{book_path.stem} attachments").exists()
+        assert sorted(item.name for item in folder.iterdir()) in ([], ["escape.txt"])

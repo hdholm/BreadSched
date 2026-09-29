@@ -16,8 +16,9 @@ belongs in `ROADMAP.md`.
   folder beside the book (never overwriting a file of the same name), or links it
   where it is; a web address is only linked. A missing file is marked **missing**,
   keeps its link, and can be relinked; removing a document never deletes the
-  file. Documents can be opened from the desktop editor and the browser, and
-  `breadsched attachments` lists them, reports missing ones, and links, relinks, or
+  file. Documents can be opened from the desktop editor and the browser; the
+  browser can link only web addresses and files inside the attachment folder, so
+  it can never be used to read other files. `breadsched attachments` lists them, reports missing ones, and links, relinks, or
   unlinks them.
 - **GnuCash linked documents.** A transaction's GnuCash *Linked Document* is
   imported as a link, never copied, and refreshed on re-import. Relative links

@@ -9,6 +9,7 @@ attachment only unlinks it; the file is never deleted.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from ..engine.attachments import (
     AttachmentStatus,
     attachment_folder,
     copy_into_folder,
+    is_web_address,
     location_for,
     source_link_folder,
     statuses,
@@ -33,6 +35,7 @@ __all__ = [
     "attach_file",
     "attach_location",
     "attachment_report",
+    "contained_location",
     "detach",
     "normalize_tags",
     "relink",
@@ -84,6 +87,32 @@ def normalize_tags(db: DbSQLite, tags: Sequence[str]) -> list[str] | ServiceErro
         return normalized
     known = {count.tag.casefold(): count.tag for count in tag_counts(db)}
     return [known.get(tag.casefold(), tag) for tag in normalized]
+
+
+def contained_location(db: DbSQLite, location: str) -> str | ServiceError:
+    """A web address, or a file location confined to the attachment folder.
+
+    For callers that must not reach the rest of the file system (the browser):
+    the location is resolved against the folder, symbolic links included, and
+    refused unless it stays inside; the result is recorded relative to the folder.
+    """
+    location = location.strip()
+    if not location:
+        return ServiceError("attachment.location.required", ("location",))
+    if is_web_address(location):
+        return location
+    folder = attachment_folder(db)
+    if folder is None:
+        return ServiceError("attachment.folder.unavailable", ("location",))
+    root = os.path.realpath(folder)
+    full = os.path.realpath(os.path.normpath(os.path.join(root, location)))
+    if not full.startswith(root + os.sep):
+        return ServiceError("attachment.outside_folder", ("location",))
+    relative = Path(os.path.relpath(full, root)).as_posix()
+    # A colon would be read back as a URI scheme or a drive letter.
+    if ":" in relative:
+        return ServiceError("attachment.outside_folder", ("location",))
+    return relative
 
 
 def _commit(db: DbSQLite, transaction: Transaction, label: str) -> ServiceResult[Transaction]:

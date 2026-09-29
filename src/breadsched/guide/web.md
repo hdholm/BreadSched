@@ -62,9 +62,12 @@ discarding it. Choose a payee in the row's **Payee** list.
 A register row shows its tags and how many documents it links, in red when one is
 missing. Choose **Tags & documents…** on a row to change them. Type tags separated
 by commas and choose **Save tags**. **Attach file** copies the chosen file into the
-book's attachment folder and links it; **Link** links a web address or a path on
-this computer. **Open** shows a PDF, image, or text file in a new tab and saves any
-other kind, **Relink…** asks where a moved or missing file is now, and **Remove**
+book's attachment folder and links it; **Link** links a web address or a file that
+is already in the attachment folder. For safety, the browser cannot link a file
+anywhere else; use **Attach file**, or the desktop or command line, for those.
+**Open** shows a PDF, image, or text file in a new tab and saves any other kind,
+**Relink…** asks where in the attachment folder a moved or missing file is now, and
+**Remove**
 unlinks a document without deleting the file. A document linked in GnuCash can only
 be opened. See [Tags and linked documents](../USER_GUIDE.md#tags-and-linked-documents).
 

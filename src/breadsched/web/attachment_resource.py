@@ -3,12 +3,15 @@
 This adapter parses the browser's requests into ``services.attachments`` and
 translates the results; validation and every write stay in the service, so a
 rejected request leaves the stored transaction unchanged. A document is served
-only when the transaction lists it, so the route never reads an arbitrary path.
+only when the transaction lists it, and the browser can link or relink only a web
+address or a file inside the attachment folder (``contained_location``), so the
+routes cannot be used to read an arbitrary file.
 """
 
 from __future__ import annotations
 
 import mimetypes
+import os
 import tempfile
 from collections.abc import Mapping
 from pathlib import Path
@@ -17,7 +20,14 @@ from typing import TYPE_CHECKING, Any
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import attachments as attachment_engine
 from ..gen.lib.transaction import Transaction
-from ..gen.services import attach_file, attach_location, detach, relink, set_tags
+from ..gen.services import (
+    attach_file,
+    attach_location,
+    contained_location,
+    detach,
+    relink,
+    set_tags,
+)
 from ..gen.services.contracts import ServiceError
 from ..presentation import service_error_message
 
@@ -86,12 +96,18 @@ def transaction_tags(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     return _changed(api, set_tags(api.db, _text(payload, "transaction"), tags))
 
 
+def _contained(api: Api, location: str) -> str:
+    confined = contained_location(api.db, location)
+    if isinstance(confined, ServiceError):
+        raise api._service_resource_error(confined)
+    return confined
+
+
 def transaction_attachment_link(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    """Link a web address or a path on this computer without copying anything."""
-    return _changed(
-        api,
-        attach_location(api.db, _text(payload, "transaction"), _text(payload, "location")),
-    )
+    """Link a web address or a file already in the attachment folder."""
+    transaction = _text(payload, "transaction")
+    location = _contained(api, _text(payload, "location"))
+    return _changed(api, attach_location(api.db, transaction, location))
 
 
 def transaction_attachment_remove(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -100,16 +116,11 @@ def transaction_attachment_remove(api: Api, payload: Mapping[str, Any]) -> dict[
 
 
 def transaction_attachment_relink(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
-    """Point a moved or missing document at the location it has now."""
-    return _changed(
-        api,
-        relink(
-            api.db,
-            _text(payload, "transaction"),
-            _text(payload, "location"),
-            _text(payload, "to"),
-        ),
-    )
+    """Point a moved or missing document at its place in the attachment folder."""
+    transaction = _text(payload, "transaction")
+    location = _text(payload, "location")
+    target = _contained(api, _text(payload, "to"))
+    return _changed(api, relink(api.db, transaction, location, target))
 
 
 def attachment_upload(
@@ -126,9 +137,12 @@ def attachment_upload(
     if not content:
         raise _refuse(400, "attachment.file.empty", "file")
     with tempfile.TemporaryDirectory(prefix="breadsched-attachment-") as staging:
-        staged = Path(staging) / filename
-        staged.write_bytes(content)
-        return _changed(api, attach_file(db, transaction, staged))
+        root = os.path.realpath(staging)
+        staged = os.path.normpath(os.path.join(root, filename))
+        if not staged.startswith(root + os.sep):
+            raise _refuse(400, "attachment.filename.invalid", "filename")
+        Path(staged).write_bytes(content)
+        return _changed(api, attach_file(db, transaction, Path(staged)))
 
 
 def attachment_content(db: DbSQLite, transaction: str, location: str) -> tuple[bytes, str]:
