@@ -411,8 +411,8 @@ class DbSQLite(DbBase):
         if version < SCHEMA_VERSION:
             if self.readonly:
                 raise DbError(
-                    f"book uses schema {version}; open it writable once to migrate to "
-                    f"schema {SCHEMA_VERSION}"
+                    f"book uses schema {version}; open it writable once (for example with "
+                    f"`breadsched migrate`) to migrate to schema {SCHEMA_VERSION}"
                 )
             self._migrate(version)
 

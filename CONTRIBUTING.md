@@ -216,6 +216,12 @@ be understood during review. If a change uncovers a larger design problem, fix t
 safe, well-understood part and record the remaining work in `ROADMAP.md` rather
 than expanding the patch unpredictably.
 
+The full CI matrix takes roughly half an hour, and every merge to `main` publishes
+a release, so prefer fewer, larger pull requests: a pull request should carry a
+complete feature across its interfaces (service, CLI, GTK, web, and print) as
+separate reviewable commits, rather than one pull request per layer. Keep each
+commit coherent so the review can still follow it step by step.
+
 For changes that affect imported GnuCash data, scheduled transactions, scenarios,
 projection, reconciliation, or persistence, explicitly consider round-trip and
 backward-compatibility behavior before making the data editable.

@@ -263,12 +263,18 @@ scenarios year by year. See
 
 ```bash
 breadsched verify household.breadsched
+breadsched migrate household.breadsched
 breadsched backup household.breadsched household.backup
 breadsched restore household.backup restored-household.breadsched
 breadsched --version
 ```
 
 `breadsched --version` shows the application version and the native schema version.
+After upgrading to an alpha with a newer schema, read-only commands such as
+`verify` and `accounts` refuse an older book instead of changing it; run
+`breadsched migrate` once (or open the book in the desktop application) to bring it
+to the current schema. It first writes a verified backup next to the book, named
+`<book>.pre-migration-v<old schema>.bak`, and `--json` reports it.
 
 ## Troubleshooting
 

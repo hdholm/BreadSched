@@ -2073,6 +2073,11 @@ that compatibility boundary testable. Migration infrastructure is a durable
 architectural capability even when an individual obsolete transformation is allowed
 to expire.
 
+Read-only opens never migrate. `breadsched migrate` opens a book writable once,
+which runs the migration and its pre-migration backup, and reports the old and new
+schema and the backup path; the Windows upgrade test uses it on the book made by
+the previous release.
+
 The supported migration window currently covers four preceding data-format
 versions: the registry retains 6→7, 7→8, 8→9, and 9→10, and the application accepts
 schemas 6 through 10. Versioned fixtures for schemas 6, 7, 8, and 9 prove each step.

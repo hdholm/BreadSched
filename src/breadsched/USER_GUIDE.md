@@ -970,6 +970,12 @@ Verify diagnostics. Regularly:
 - when needed, **restore** a backup as a new book: the backup is verified and
   written to a different path, never over the open live book.
 
+After you upgrade to a version with a newer native schema, a book from an earlier
+alpha is migrated the first time it is opened for writing: the desktop and browser
+do this when they open it, and on the command line `breadsched migrate` does it. A
+verified backup of the old book is written next to it first. Read-only commands
+never migrate; they ask you to migrate instead.
+
 See [desktop](guide/desktop.md#protect-and-recover-a-book) and
 [command line](guide/cli.md#protect-and-recover-a-book).
 

@@ -297,3 +297,33 @@ def test_dashboard_printout_shows_what_goals_set_aside(db, book):
     html = dashboard_report(dashboard.build(db, as_of=date(2026, 6, 15)))
     assert "Set aside for goals" in html and "600.00" in html
     assert "<h2>Savings goals</h2>" in html and "New roof" in html and "saving" in html
+
+
+def test_cli_migrate_brings_an_older_book_to_the_current_schema(tmp_path, capsys):
+    import json
+    import sqlite3
+    from pathlib import Path
+
+    from breadsched.cli.main import main
+
+    path = tmp_path / "old.breadsched"
+    sql = (Path(__file__).parent / "fixtures" / "native" / "schema-9.sql").read_text()
+    with sqlite3.connect(path) as raw:
+        raw.executescript(sql)
+    # A read-only command cannot migrate, and says how to.
+    assert main(["verify", str(path)]) != 0
+    assert main(["accounts", str(path)]) != 0
+    assert "breadsched migrate" in capsys.readouterr().err
+    assert main(["migrate", str(path), "--json"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result == {
+        "schema_before": 9,
+        "schema": 10,
+        "migrated": True,
+        "backup": f"{path}.pre-migration-v9.bak",
+    }
+    assert Path(result["backup"]).exists()
+    assert main(["verify", str(path)]) == 0
+    capsys.readouterr()
+    assert main(["migrate", str(path)]) == 0
+    assert "nothing to migrate" in capsys.readouterr().out

@@ -430,7 +430,7 @@ class TestSchemaCompatibility:
     def test_read_only_schema_6_requires_a_writable_migration(self, tmp_path):
         path = self._schema_6_fixture(tmp_path)
         db = DbSQLite()
-        with pytest.raises(DbError, match="open it writable once to migrate"):
+        with pytest.raises(DbError, match="open it writable once"):
             db.load(str(path), mode="r")
         assert not (tmp_path / "schema-6.breadsched.pre-migration-v6.bak").exists()
 

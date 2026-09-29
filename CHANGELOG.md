@@ -5,17 +5,6 @@ belongs in `ROADMAP.md`.
 
 ## 0.2.0a193 - 2026-09-29
 
-- **Savings goal editors.** The desktop **Savings Goals…** window and the browser
-  **Goals** page add, edit, fund, close, reopen, and delete goals through the shared
-  service. Each goal shows its account, target date, target, amount set aside,
-  what remains, and status, and a rejected edit leaves the goal unchanged. The
-  Dashboard now lists each open goal in a **Savings goals** table on the desktop,
-  in the browser, and in the printout; on the desktop, activating a row opens the
-  goals window. Every interface uses the same status words. Application version
-  `0.2.0a193`; native schema remains 10.
-
-## 0.2.0a192 - 2026-09-29
-
 - **Savings goals.** A goal names an asset account, a target amount, a start date,
   and a target date. Like a pending bill, each income received from the start date
   sets aside a prorated share of what the goal still needs, so the whole target is
@@ -29,9 +18,23 @@ belongs in `ROADMAP.md`.
   in the printout, and in `breadsched dashboard`. For a goal held in a non-cash
   account, only the part not yet moved there is held. The new `breadsched goals`
   command adds, funds, lists, closes, reopens, and deletes goals. Bill reserves and
-  goals now share one rule for what income counts as received. Application version
-  `0.2.0a192`; **native schema 10** adds the `savings_goal` table, and schemas 6–9
-  migrate automatically with a verified backup.
+  goals now share one rule for what income counts as received.
+- **Savings goal editors.** The desktop **Savings Goals…** window and the browser
+  **Goals** page add, edit, fund, close, reopen, and delete goals through the shared
+  service. Each goal shows its account, target date, target, amount set aside,
+  what remains, and status, and a rejected edit leaves the goal unchanged. The
+  Dashboard now lists each open goal in a **Savings goals** table on the desktop,
+  in the browser, and in the printout; on the desktop, activating a row opens the
+  goals window. Every interface uses the same status words.
+- **`breadsched migrate`.** Read-only commands refuse a book from an earlier schema
+  rather than change it, and the command line had no way to migrate one; the new
+  command migrates with the usual verified backup and reports it. The Windows
+  upgrade test migrates the book made by the previous release this way before
+  verifying it, which is what caught the gap.
+- **Contributing.** Prefer fewer, larger pull requests carrying a complete feature
+  across interfaces, since CI and each release take about half an hour.
+  Application version `0.2.0a193`; **native schema 10** adds the `savings_goal`
+  table, and schemas 6–9 migrate automatically with a verified backup.
 
 ## 0.2.0a191 - 2026-09-29
 

@@ -1499,6 +1499,35 @@ def cmd_restore(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_migrate(args: argparse.Namespace) -> int:
+    """Bring a book from an earlier alpha to the current schema, keeping a backup."""
+    from ..gen.db.sqlite import SCHEMA_VERSION
+
+    path = Path(args.book)
+    if not path.exists():
+        raise CommandError(f"no book at {path}")
+    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as raw:
+        row = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
+    before = int(json.loads(row[0])) if row is not None else None
+    db = open_book(str(path), "w")
+    db.close()
+    backup = Path(f"{path}.pre-migration-v{before}.bak")
+    migrated = before is not None and before < SCHEMA_VERSION
+    emit(
+        {
+            "schema_before": before,
+            "schema": SCHEMA_VERSION,
+            "migrated": migrated,
+            "backup": str(backup) if migrated else None,
+        },
+        args,
+        f"Migrated {path} from schema {before} to {SCHEMA_VERSION}; backup at {backup}"
+        if migrated
+        else f"{path} already uses schema {SCHEMA_VERSION}; nothing to migrate",
+    )
+    return 0
+
+
 def cmd_verify(args: argparse.Namespace) -> int:
     """Check SQLite integrity and logical book invariants without modifying the book."""
     report = DbSQLite.verify_path(args.book)
@@ -3482,6 +3511,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     verify = add("verify", "Verify SQLite integrity and financial object relationships")
     verify.set_defaults(func=cmd_verify)
+
+    migrate = add(
+        "migrate",
+        "Bring a book from an earlier alpha to the current schema, keeping a verified backup",
+    )
+    migrate.set_defaults(func=cmd_migrate)
 
     accounts = add("accounts", "Show the chart of accounts with balances")
     accounts.add_argument("--as-of", help="balances as at this date (YYYY-MM-DD)")
