@@ -6,7 +6,9 @@ let state = {
   planPrintDetail: false, expenseCategory: null, expenseIndex: 0, expenseSort: "actual",
   expenseRollover: false,
   scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
-  projectionData: null, projectionHandle: null, projectionCompareHandle: null,
+  // A page opened for one scenario ("Open in new tab") starts on it; "" is Base.
+  projectionData: null, projectionHandle: launchParams.get("scenario"),
+  projectionCompareHandle: null,
   projectionComparison: null,
 };
 let historicalEstimateDialog = null;
@@ -1275,13 +1277,9 @@ async function showRegister() {
 
   return el("div", {},
     el("div", { class: "toolbar" }, picker,
-      el("button", {class:"action", type:"button", onclick:()=>{
-        const url = new URL(window.location.href);
-        url.searchParams.set("view", "Register");
-        url.searchParams.set("account", state.account);
-        url.hash = new URLSearchParams({token:apiToken}).toString();
-        window.open(url.toString(), "_blank", "noopener");
-      }}, "Open in new window"),
+      el("button", {class:"action", type:"button",
+        onclick:()=>openInNewTab("Register", { account: state.account }) },
+        "Open in new tab"),
       el("button", {class:"action", type:"button", onclick:()=>{
         const account = usable.find((item)=>item.handle === state.account);
         if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
@@ -3565,6 +3563,11 @@ async function showProjection() {
       el("button", { class: "action primary", type: "submit" }, "Apply"),
       el("button", {
         class: "action", type: "button",
+        title: "Keep this scenario's projection open in another browser tab",
+        onclick: () => openInNewTab("Projection", { scenario: scenarioData.handle || "" }),
+      }, "Open in new tab"),
+      el("button", {
+        class: "action", type: "button",
         onclick: async () => {
           const values = new FormData(form);
           try {
@@ -5029,6 +5032,15 @@ async function showDashboard() {
 }
 
 function switchTo(name) { current = name; render(); }
+
+// Open a view in another browser tab, which keeps its own place and scenario.
+// The API token travels in the fragment, which the new page removes on load.
+function openInNewTab(view, extra = {}) {
+  const url = new URL(window.location.href);
+  url.search = new URLSearchParams({ view, ...extra }).toString();
+  url.hash = new URLSearchParams({ token: apiToken }).toString();
+  window.open(url.toString(), "_blank", "noopener");
+}
 
 async function render() {
   const nav = document.getElementById("nav");

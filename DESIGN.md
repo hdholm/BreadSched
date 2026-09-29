@@ -1186,8 +1186,10 @@ so the matching icon and menu item show as active however the view was reached
 is open. The toolbar scrolls horizontally rather than setting the window's
 minimum width.
 
-Below the toolbar, a tab bar (#183) lists each view opened in this window and one
-tab per open register. `ViewManager._tabs` holds `_Tab(key, register)` entries;
+Below the toolbar, a tab bar (#183) lists each view opened in this window, one
+tab per open register, and one per scenario Projection. `ViewManager._tabs` holds
+`_Tab(key, view)` entries, where `view` is the tab's own register or scenario
+`ProjectionView` and None for a plain view;
 `show_category()` opens or selects the matching tab. The single `register` stack
 page is itself a stack (`register_stack`) of `RegisterView`s, one per register
 tab, and `_views["register"]` always names the register shown, so view actions and
@@ -1199,6 +1201,27 @@ closing the current tab selects a neighbour, and closing the last shows the
 Dashboard. Closing a view tab keeps its lazily built view for reuse. Opening
 another book closes every tab and register, because they name the old book's
 accounts.
+
+Scenario tabs are extra `ProjectionView(pinned=True, scenario_handle=...)`
+instances added directly to the main stack and listed in `ViewManager._projections`;
+`_views["projection"]` stays the unpinned Projection. `planning_context` notifies
+every view `planning_views()` returns: the unpinned Projection and Plan follow a
+changed selection, while a pinned view keeps its scenario and only recalculates
+(inherited Base assumptions may have changed). A pinned view's own picker never
+calls `select_scenario`, and retitles its tab through `tab_view_changed`.
+`_view_for_action("projection")` returns the scenario tab shown, so toolbar
+commands act on it.
+
+Each book's tabs are kept in `views.ini`, section `open-tabs`, under a digest of
+the book's resolved path: JSON listing each tab as `[key]`, `[register, account]`,
+or `[projection, scenario or "", "scenario"]`, plus the current index. Every tab
+change rewrites it (`_remember_tabs`); `book_opened` restores it after the
+Dashboard opens, skipping unknown views and deleted accounts or scenarios, and
+closing the Dashboard tab if it had been closed. The restore itself writes nothing
+until it finishes. A damaged entry is ignored. The browser has no tab bar of its
+own: `openInNewTab(view, extra)` in `app.js` opens a browser tab at
+`?view=…&account=…` or `?view=…&scenario=…` with the token in the fragment, and
+each page keeps its own state.
 
 View commands are declared once in `viewmanager.VIEW_ACTIONS` (#156). Each
 `ViewAction` becomes a `win.<view>-<name>` action, is listed in **Actions**

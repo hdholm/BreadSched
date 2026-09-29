@@ -621,3 +621,42 @@ def test_a_register_row_is_tagged_and_links_documents(page, served, tmp_path):
     [stored] = [item for item in db.iter_transactions() if item.tags]
     assert stored.description == description
     assert stored.attachments == ["receipt.pdf", "https://example.com/invoice"]
+
+
+def test_a_scenario_projection_opens_in_its_own_browser_tab(page, served):
+    """Like GTK's scenario tabs, each browser tab keeps the scenario it opened with."""
+    from breadsched.gen.lib import Scenario
+
+    db, httpd = served
+    scenario = Scenario(name="Sabbatical", start=date.today().replace(day=1), years=2)
+    with db.transaction("Scenario") as txn:
+        db.add_scenario(scenario, txn)
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/?view=Projection#token={httpd.token}")
+    page.wait_for_selector("select[name=scenario]")
+    page.locator("select[name=scenario]").select_option(label="Sabbatical")
+    chosen = "document.querySelector('select[name=scenario]')?.selectedOptions[0]?.textContent"
+    picked = f"() => {chosen}"
+    page.wait_for_function(f"() => {chosen} === 'Sabbatical'")
+    with page.context.expect_page() as opened:
+        page.get_by_role("button", name="Open in new tab").click()
+    other = opened.value
+    other.wait_for_selector("select[name=scenario]")
+    assert "token=" not in other.url
+    assert other.evaluate(picked) == "Sabbatical"
+    # Moving the first tab back to Base leaves the scenario tab where it was.
+    page.locator("select[name=scenario]").select_option(label="Base scenario")
+    page.wait_for_function(f"() => {chosen} === 'Base scenario'")
+    assert other.evaluate(picked) == "Sabbatical"
+
+
+def test_a_register_opens_in_its_own_browser_tab(page, served):
+    db, httpd = served
+    page.get_by_role("button", name="Register", exact=True).first.click()
+    page.wait_for_selector("text=Open in new tab")
+    account = page.evaluate("() => state.account")
+    with page.context.expect_page() as opened:
+        page.get_by_role("button", name="Open in new tab").click()
+    other = opened.value
+    other.wait_for_selector("text=Open in new tab")
+    assert other.evaluate("() => state.account") == account
+    assert other.evaluate("() => current") == "Register"

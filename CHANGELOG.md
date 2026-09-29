@@ -3,6 +3,23 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a199 - 2026-09-29
+
+- **A Projection tab per scenario.** On the desktop, **New tab** in Projection
+  (**Actions → Open Scenario in New Tab**) keeps the scenario shown in a tab of
+  its own, titled with the scenario's name, so several futures stay one click
+  apart. The main Projection tab still follows the scenario chosen in Plan; a
+  scenario tab keeps its own, choosing another scenario in it retitles it, and
+  Base assumption changes reach every tab that inherits them.
+- **Each book remembers its tabs.** Reopening a book brings back its views,
+  register tabs, and scenario tabs, with the same tab selected; a tab for an
+  account or scenario deleted since is left out, and another book has its own
+  tabs. They are kept with the other interface state in `views.ini`.
+- **Browser tabs for registers and scenarios.** **Open in new tab** in the
+  browser's Register (formerly **Open in new window**) and Projection opens that
+  account or scenario in another browser tab, which keeps its own place.
+  Application version `0.2.0a199`; native schema remains 10.
+
 ## 0.2.0a198 - 2026-09-29
 
 - **Wider GnuCash write-back.** Write-back now works on XML books (GnuCash's

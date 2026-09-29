@@ -56,7 +56,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    stays documented and reported as skipped on import.
 3. **Next — Interface, FSA, and scheduling.** Take the
    GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
-   scheduled transactions and loans (sections below).
+   scheduled transactions and loans (sections below). Scenario Projection tabs,
+   remembered tabs per book, and browser-tab counterparts are delivered.
 
 
 ## Architecture and correctness
@@ -235,10 +236,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## GTK, web parity, and reporting
 
-- **Tabs beyond desktop registers (#183 follow-up).** The desktop keeps opened
-  views and one register per account as tabs. Consider several Projection tabs
-  (one per scenario) and whether the browser should offer the same tabs, and
-  remember open tabs between sessions.
 - Continue real GTK runtime testing for selections, dialogs, focus transitions,
   model replacement, multiple windows, and GTK API-version differences.
 

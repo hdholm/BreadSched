@@ -7,7 +7,9 @@ to understand one is to push on it.
 
 Base scenario assumption changes are persisted in the open book. Changes to a selected
 saved scenario are persisted with "Save scenario changes". Plan and Projection share
-the same scenario selection so both views describe the same future.
+the same scenario selection so both views describe the same future. A scenario tab
+(``pinned``) keeps the scenario it was opened with, so several futures can stay open
+side by side; it still recalculates when shared Base assumptions change.
 """
 
 from __future__ import annotations
@@ -67,11 +69,18 @@ class ProjectionView(BaseView):
         "transaction-add",
     )
 
-    def __init__(self, manager) -> None:
+    def __init__(
+        self, manager, *, pinned: bool = False, scenario_handle: str | None = None
+    ) -> None:
         super().__init__(manager)
+        #: A scenario tab keeps its own scenario instead of following Plan.
+        self.pinned = pinned
         self._baseline = baseline_scenario(manager)
         self.scenario = self._baseline
-        self._scenario_handle: str | None = selected_scenario_handle(manager)
+        self._scenario_handle: str | None = (
+            scenario_handle if pinned else selected_scenario_handle(manager)
+        )
+        self._scenario_name = "Base scenario"
         self._scales: dict[str, Gtk.Scale] = {}
         self._comparison: projection.Projection | None = None
         self._result: projection.Projection | None = None
@@ -256,11 +265,13 @@ class ProjectionView(BaseView):
                 chosen = scenario
         if self._scenario_handle is not None and chosen is None:
             self._scenario_handle = None
-            select_scenario(self.manager, None, source=self)
+            if not self.pinned:
+                select_scenario(self.manager, None, source=self)
         self._baseline = baseline_scenario(self.manager, self.db)
         self.scenario = chosen.clone() if chosen is not None else self._baseline
         self.scenario_picker.set_model(model)
         self.scenario_picker.set_selected(selected)
+        self._set_scenario_name(chosen.name if chosen is not None else "Base scenario")
         self._load_scenario_controls()
         self.save_button.set_label(
             "Save scenario changes" if chosen is not None else "Save base as scenario"
@@ -274,9 +285,39 @@ class ProjectionView(BaseView):
             source = self.scenario.assumption_sources(self.scenario.start)[key]
             scale.set_tooltip_text(f"Effective value from {source}.")
 
+    @property
+    def scenario_handle(self) -> str | None:
+        """The saved scenario shown, or None for the Base scenario."""
+        return self._scenario_handle
+
+    @property
+    def tab_title(self) -> str:
+        """A scenario tab's title names its scenario."""
+        return f"Projection: {self._scenario_name}"
+
+    def _set_scenario_name(self, name: str) -> None:
+        if name == self._scenario_name:
+            return
+        self._scenario_name = name
+        if self.pinned:
+            changed = getattr(self.manager, "tab_view_changed", None)
+            if changed is not None:
+                changed(self)
+
+    def open_in_new_tab(self) -> None:
+        """Keep the scenario shown here in a tab of its own."""
+        opener = getattr(self.manager, "open_projection_tab", None)
+        if opener is not None and self.db is not None:
+            opener(self._scenario_handle)
+
     def planning_scenario_changed(self, handle: str | None) -> None:
-        """Follow the scenario selected in Plan without eagerly projecting hidden data."""
-        self._scenario_handle = handle
+        """Follow the scenario selected in Plan without eagerly projecting hidden data.
+
+        A scenario tab keeps its scenario, but still recalculates, since Base
+        assumptions changed elsewhere feed every scenario that inherits them.
+        """
+        if not self.pinned:
+            self._scenario_handle = handle
         self._projection_dirty = True
         if self._is_visible():
             self.schedule_refresh()
@@ -548,8 +589,10 @@ class ProjectionView(BaseView):
                 self.schedule_refresh()
                 return
         self._scenario_handle = chosen.handle if chosen is not None else None
-        select_scenario(self.manager, self._scenario_handle, source=self)
+        if not self.pinned:
+            select_scenario(self.manager, self._scenario_handle, source=self)
         self.scenario = chosen.clone() if chosen is not None else self._baseline
+        self._set_scenario_name(chosen.name if chosen is not None else "Base scenario")
         self._updating = True
         try:
             self._load_scenario_controls()

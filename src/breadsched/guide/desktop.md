@@ -58,7 +58,7 @@ example, **New Account**, **Edit Account**, **Security Price**, and **Exchange
 Rate** in Accounts, **Manage FSA Claims** on the FSA
 Dashboard, **Configure Dashboard Groups** on the Dashboard, **New Scheduled**,
 **Suggest**, and **New Loan** in Scheduled, **New Scenario**, **Scenarios**, and
-**Explore** in Plan, and **Compare** and **Export** in Projection. **View → Hide
+**Explore** in Plan, and **Compare**, **Export**, and **New tab** in Projection. **View → Hide
 Empty Accounts** and **View → Show Hidden Accounts** filter the account tree.
 Buttons that act on a selected row, such as a schedule's **View / Edit…**, stay
 beside their table.
@@ -93,8 +93,18 @@ Every view you open, and the register of every account you open, gets a tab in t
 bar below the toolbar. Choose a tab to go back to it; each register tab keeps its
 own place, filter, and half-typed entry. Opening an account that already has a tab
 returns to that tab. The × on a tab closes it; closing a register with an unsaved
-entry asks first, and closing the last tab returns to the Dashboard. Opening
-another book starts with fresh tabs.
+entry asks first, and closing the last tab returns to the Dashboard.
+
+In Projection, **New tab** (**Actions → Open Scenario in New Tab**) keeps the
+scenario shown in a tab of its own, titled **Projection:** and the scenario's
+name, so you can switch between futures without choosing again. The main
+**Projection** tab follows the scenario chosen in Plan; a scenario tab keeps its
+own, and choosing another scenario in it retitles the tab. Base assumptions you
+change anywhere reach every tab whose scenario uses them.
+
+Each book remembers its tabs: opening it again brings back the same views,
+registers, and scenario tabs, with the same tab selected. A tab for an account or
+scenario deleted since is left out. Another book has its own tabs.
 
 Registers can also open in independent windows; their account, filter, selection,
 and expanded row do not replace the main window's register state.
@@ -213,7 +223,9 @@ match an actual, mark it unexpected, or review it. The foreign-currency note sit
 under the Plan summary.
 
 Projection runs longer calculations in the background and lets you cancel them.
-Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection.
+Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection. To
+keep several scenarios open at once, use **New tab** in Projection (see
+[Find your way around](#find-your-way-around)).
 
 ### Explore expenses
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import gc
 import importlib
 import itertools
+import shutil
 import threading
 from datetime import date, timedelta
 from decimal import Decimal
@@ -245,10 +246,13 @@ class TestOpeningABook:
     def test_reopening_the_same_category_still_repaints(self, app, window, populated_book):
         """Row 0 is already selected the second time, so selection cannot be relied on."""
         app.open_book(populated_book)
+        assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
         window.show_category("plan")
         app.open_book(populated_book)
-        # Whatever is first in CATEGORIES is what a book opens on.
-        assert window.stack.get_visible_child_name() == CATEGORIES[0][0]
+        # A book opens on whatever is first in CATEGORIES, then returns to the tab
+        # it had selected; both are shown again, not left as stale pages.
+        assert window.stack.get_visible_child_name() == "plan"
+        assert window._views["plan"].db is app.db
 
 
 class TestEveryViewBuilds:
@@ -5677,7 +5681,7 @@ class TestViewActions:
                 ["new-scenario", "manage-scenarios", "explore-expenses"],
                 ["New scenario…", "Manage scenarios…", "Explore expenses…"],
             ),
-            ("projection", ["compare", "export"], ["Compare with…"]),
+            ("projection", ["compare", "export", "open-tab"], ["Compare with…"]),
         ),
     )
     def test_stateless_view_commands_are_toolbar_icons_not_buttons(
@@ -7030,10 +7034,104 @@ class TestTabs:
         assert window.tabs == [("dashboard", "Dashboard")]
         assert window.stack.get_visible_child_name() == "dashboard"
 
-    def test_a_new_book_starts_with_fresh_tabs(self, app, window, populated_book):
+    def test_a_new_book_starts_with_fresh_tabs(self, app, window, populated_book, tmp_path):
+        other = tmp_path / "other.breadsched"
+        shutil.copyfile(populated_book, other)
         app.open_book(populated_book)
         checking, _card = self._accounts(app)
         window.open_register(checking)
-        app.open_book(populated_book)
+        app.open_book(str(other))
         assert window.tabs == [("dashboard", "Dashboard")]
         assert window._registers == []
+
+    def _scenario(self, app, name):
+        from breadsched.gen.lib import Scenario
+
+        scenario = Scenario(name=name, start=date(2026, 1, 1), years=3)
+        with app.db.transaction("Add scenario") as txn:
+            app.db.add_scenario(scenario, txn)
+        return scenario.handle
+
+    def test_each_scenario_can_have_a_projection_tab(self, app, window, populated_book):
+        app.open_book(populated_book)
+        handle = self._scenario(app, "Early retirement")
+        window.show_category("projection")
+        main = window._views["projection"]
+        main.open_in_new_tab()
+        base_tab = window._projections[0]
+        assert base_tab.pinned and base_tab.scenario_handle is None
+        window.open_projection_tab(handle)
+        retire = window._projections[1]
+        assert window.stack.get_visible_child() is retire
+        assert window.tabs[-2:] == [
+            ("projection", "Projection: Base scenario"),
+            ("projection", "Projection: Early retirement"),
+        ]
+        # The toolbar's actions act on the scenario tab shown.
+        assert window._view_for_action("projection") is retire
+        # Choosing a scenario in Plan moves the main Projection, not the tabs.
+        from breadsched.gui.planning_context import select_scenario
+
+        select_scenario(window, handle)
+        assert main.scenario_handle == handle
+        assert base_tab.scenario_handle is None
+        # A scenario tab's own choice retitles it and leaves Plan alone.
+        select_scenario(window, None)
+        base_tab.scenario_picker.set_selected(1)
+        assert base_tab.scenario_handle == handle
+        assert window._tab_for("projection", base_tab).title == "Projection: Early retirement"
+        assert main.scenario_handle is None
+        # Opening a scenario that already has a tab switches to it.
+        assert window.open_projection_tab(handle) is base_tab
+        window.close_tab(window._tab_for("projection", retire))
+        assert retire not in window._projections
+        assert retire.get_parent() is None
+
+    def test_reopening_a_book_restores_its_tabs(self, app, window, populated_book, tmp_path):
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        handle = self._scenario(app, "Sabbatical")
+        window.show_category("plan")
+        window.open_register(checking)
+        window.open_register(card)
+        window.open_projection_tab(handle)
+        window.close_tab(window._tabs[0])  # the Dashboard
+        window._on_tab_clicked(window._tabs[1])
+        expected = list(window.tabs)
+        assert expected == [
+            ("plan", "Plan"),
+            ("register", "Checking Account"),
+            ("register", "Credit Card"),
+            ("projection", "Projection: Sabbatical"),
+        ]
+        other = tmp_path / "other.breadsched"
+        shutil.copyfile(populated_book, other)
+        app.open_book(str(other))
+        assert window.tabs == [("dashboard", "Dashboard")]
+        app.open_book(populated_book)
+        assert window.tabs == expected
+        assert [tab.current for tab in window._tabs] == [False, True, False, False]
+        assert window._views["register"].account_handle == checking
+        # Tabs for what was since deleted are skipped, not reopened empty.
+        app.open_book(str(other))
+        app.open_book(populated_book)
+        with app.db.transaction("Delete scenario") as txn:
+            app.db.remove_scenario(handle, txn)
+        app.open_book(str(other))
+        app.open_book(populated_book)
+        assert window.tabs == expected[:3]
+
+    def test_remembered_tabs_survive_a_damaged_entry(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("plan")
+        settings, key = window._tab_settings()
+        settings.set("open-tabs", key, "{not json")
+        app.open_book(populated_book)
+        assert window.tabs == [("dashboard", "Dashboard")]
+        settings.set(
+            "open-tabs",
+            key,
+            '{"tabs":[["nonsense"],["register","gone"],["accounts"]],"current":7}',
+        )
+        app.open_book(populated_book)
+        assert window.tabs == [("accounts", "Accounts")]

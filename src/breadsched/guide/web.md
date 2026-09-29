@@ -23,6 +23,13 @@ The navigation bar offers the work areas (**Dashboard**, **FSA Dashboard**,
 **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
 or command-line part, and a link to another part opens it there.
 
+**Open in new tab** in Register and Projection opens that account's register, or
+the scenario's projection, in another browser tab. Each browser tab keeps its own
+account, scenario, and place, so you can look at two scenarios side by side while
+the first tab carries on; this is the browser's counterpart of the desktop's
+scenario tabs. Reloading a tab needs the address the server printed at start-up,
+because the page removes its access token from the address bar.
+
 On the Dashboard, a requested liquidity or emergency-fund horizon changes the
 displayed calculation for that request. Reopening the view uses the saved Dashboard
 settings; use the Dashboard settings controls to save a new horizon. Expand a
@@ -102,7 +109,8 @@ the foreign-currency note. Value details follow the chosen scenario.
 **Manage scenarios…** in Plan opens the scenario list, which shows each effective assumption and its source, along with
 the saved dated periods and eligible account-specific rate choices. In
 **Projection**, open a month to inspect its cash movement, holdings and liabilities,
-dated events, and assumption sources.
+dated events, and assumption sources. **Open in new tab** keeps the chosen
+scenario's projection in another browser tab.
 
 ### Explore expenses
 

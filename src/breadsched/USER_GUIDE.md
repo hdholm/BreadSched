@@ -615,6 +615,12 @@ To compare an alternative:
 4. Calculate the scenario and compare it with Base or another saved scenario.
 5. Inspect warnings and detail rather than relying only on the chart.
 
+To keep several scenarios in view, open each one's Projection in a tab of its own:
+**New tab** on the desktop, where the book remembers its tabs for next time, or
+**Open in new tab** in the browser. See the
+[Desktop guide](guide/desktop.md#find-your-way-around) and the
+[Browser guide](guide/web.md#find-your-way-around).
+
 Untouched assumptions inherit through a deterministic, cycle-free scenario chain.
 Later parent edits reach inheriting children; deliberate child overrides remain.
 Dated assumption periods and scenario events belong to their owning scenario.
