@@ -3,6 +3,14 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a179 - 2026-09-28
+
+- **Tabs for open views and registers (#183).** A tab bar below the desktop
+  toolbar lists every view you open and one tab per open register account. Each
+  register tab keeps its own place, filter, and half-typed entry; opening an
+  account with a tab returns to it. Closing a register tab with unsaved typing
+  asks first. Application version `0.2.0a179`; native schema remains 9.
+
 ## 0.2.0a178 - 2026-09-28
 
 - **Desktop chrome follows the current view (#182).** The toolbar names the view

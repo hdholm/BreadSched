@@ -6605,3 +6605,81 @@ class TestViewSpecificChrome:
         label, first = self._sections(app)[0]
         assert label == "Plan" and "win.plan-new-scenario" in _menu_actions(first)
         assert "win.scheduled-new-scheduled" in _menu_actions(self._sections(app)[-1][1])
+
+
+class TestTabs:
+    """#183: opened views and each open register account are tabs below the toolbar."""
+
+    def _accounts(self, app):
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        card = app.db.get_account_by_name("Credit Card")
+        return checking.handle, card.handle
+
+    def test_views_and_registers_open_as_tabs(self, app, window, populated_book):
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        assert window.tabs == [("dashboard", "Dashboard")]
+        window.show_category("accounts")
+        window.open_register(checking)
+        first = window._views["register"]
+        window.open_register(card)
+        second = window._views["register"]
+        assert first is not second
+        assert (first.account_handle, second.account_handle) == (checking, card)
+        assert window.tabs == [
+            ("dashboard", "Dashboard"),
+            ("accounts", "Accounts"),
+            ("register", "Checking Account"),
+            ("register", "Credit Card"),
+        ]
+        # Reopening an account's register returns to its tab.
+        window.open_register(checking)
+        assert window._views["register"] is first
+        assert len(window.tabs) == 4
+        assert window.stack.get_visible_child_name() == "register"
+        assert [tab.current for tab in window._tabs] == [False, False, True, False]
+
+    def test_each_register_tab_keeps_its_own_place(self, app, window, populated_book):
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.open_register(checking)
+        first = window._views["register"]
+        first.blank.description.set_text("Half typed")
+        window.open_register(card)
+        # Switching tabs never discards another register's typing.
+        window._on_tab_clicked(window._tabs[-2])
+        assert window._views["register"] is first
+        assert first.blank.description.get_text() == "Half typed"
+
+    def test_closing_tabs_selects_a_neighbour_and_asks_about_typing(
+        self, app, window, populated_book, monkeypatch
+    ):
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.open_register(checking)
+        window.open_register(card)
+        card_tab = window._tabs[-1]
+        asked = []
+        register = card_tab.register
+        register.blank.description.set_text("Unsaved")
+        monkeypatch.setattr(register, "confirm_leave", lambda proceed: asked.append(proceed))
+        window.close_tab(card_tab)
+        assert len(asked) == 1 and card_tab in window._tabs
+        asked[0]()
+        assert card_tab not in window._tabs and register not in window._registers
+        assert window._views["register"].account_handle == checking
+        assert window.stack.get_visible_child_name() == "register"
+
+        for tab in list(window._tabs):
+            window.close_tab(tab)
+        # Closing the last tab returns to the Dashboard.
+        assert window.tabs == [("dashboard", "Dashboard")]
+        assert window.stack.get_visible_child_name() == "dashboard"
+
+    def test_a_new_book_starts_with_fresh_tabs(self, app, window, populated_book):
+        app.open_book(populated_book)
+        checking, _card = self._accounts(app)
+        window.open_register(checking)
+        app.open_book(populated_book)
+        assert window.tabs == [("dashboard", "Dashboard")]
+        assert window._registers == []

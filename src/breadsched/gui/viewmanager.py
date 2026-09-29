@@ -7,8 +7,10 @@ then one icon for each other view (the View menu lists every view). The current
 view has no icon, since choosing it would do nothing, and the Actions menu lists
 the current view's commands first. A category sidebar used to duplicate the view
 list and took width from every view, so it was removed (#155).
-Registers can also open in independent windows, so several accounts can be
-compared without losing your place in any of them.
+A tab bar below the toolbar keeps every opened view one click away, with one
+tab per open register account (#183): each register tab is its own register,
+with its own place, filter, and half-typed entry. Registers can also open in
+independent windows, so several accounts can be compared side by side.
 
 Views are constructed lazily and told about the book through :meth:`set_db`.  A
 switch of book therefore never rebuilds the window, and a view that has never been
@@ -220,6 +222,10 @@ class ViewManager(Gtk.ApplicationWindow):
         self.set_default_size(1180, 760)
         self.db: DbSQLite | None = None
         self._views: dict[str, Gtk.Widget] = {}
+        #: Every register tab's view; ``_views["register"]`` is the one shown.
+        self._registers: list[Gtk.Widget] = []
+        #: Open tabs in order: (category, register view or None, tab widget).
+        self._tabs: list[_Tab] = []
         self._register_windows: list[tuple[Gtk.Window, Gtk.Widget]] = []
         # Automatic due review is a user-facing startup policy, not required for
         # binding views to a book. Tests and embedded windows can suppress it so
@@ -357,10 +363,25 @@ class ViewManager(Gtk.ApplicationWindow):
         outer.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
         self.set_child(outer)
 
+        # One tab per opened view and per open register account (#183).
+        self.tab_bar = Gtk.Box(spacing=2)
+        self.tab_bar.add_css_class("tab-bar")
+        for side in ("start", "end"):
+            getattr(self.tab_bar, f"set_margin_{side}")(4)
+        self.tab_scroll = Gtk.ScrolledWindow(child=self.tab_bar)
+        self.tab_scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        self.tab_scroll.set_propagate_natural_height(True)
+        self.tab_scroll.set_visible(False)
+        outer.append(self.tab_scroll)
+
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.stack.set_vexpand(True)
         outer.append(self.stack)
+        # The "register" page holds one register per register tab.
+        self.register_stack = Gtk.Stack()
+        self.register_stack.set_vexpand(True)
+        self.stack.add_named(self.register_stack, "register")
 
     def _show_placeholder(self) -> None:
         """The start screen: four ways in, and no book opened behind your back.
@@ -421,8 +442,13 @@ class ViewManager(Gtk.ApplicationWindow):
         if self._due_prompt_source is not None:
             GLib.source_remove(self._due_prompt_source)
             self._due_prompt_source = None
-        for view in self._views.values():
+        for view in self._all_views():
             view.set_db(None)
+        # Tabs name accounts of this book; the next book starts with its own.
+        for tab in list(self._tabs):
+            self._remove_tab(tab)
+        for register in list(self._registers):
+            self._drop_register(register)
         for window, view in list(self._register_windows):
             view.set_db(None)
             window.destroy()
@@ -457,7 +483,7 @@ class ViewManager(Gtk.ApplicationWindow):
         db.connect("undo-available", self._on_undo_available)
         db.connect("redo-available", self._on_redo_available)
         db.connect("database-changed", lambda *_: self._refresh_status())
-        for view in self._views.values():
+        for view in self._all_views():
             view.set_db(db)
         self._refresh_status()
         self._on_undo_available(False)
@@ -529,9 +555,14 @@ class ViewManager(Gtk.ApplicationWindow):
         dialog.connect("close-request", lambda *_: (self._refresh_views(), False)[1])
         dialog.present()
 
+    def _all_views(self) -> list[Gtk.Widget]:
+        """Every view in this window, including every register tab's register."""
+        views = [view for key, view in self._views.items() if key != "register"]
+        return views + list(self._registers)
+
     def refresh_views(self) -> None:
         """Repaint every built view. Used when a book-wide setting changes."""
-        for view in self._views.values():
+        for view in self._all_views():
             view.refresh()
 
     #: Kept for callers that used the private name.
@@ -628,7 +659,12 @@ class ViewManager(Gtk.ApplicationWindow):
         return self.category_action.get_state().get_string()
 
     def show_category(self, key: str) -> None:
-        view = self._views.get(key)
+        if key == "register":
+            # The register tab shown most recently, or a first one.
+            view = self._views.get("register") or self._new_register()
+            self._activate_register(view)
+        else:
+            view = self._views.get(key)
         if view is None:
             view = self._build_view(key)
             if view is None:
@@ -638,6 +674,7 @@ class ViewManager(Gtk.ApplicationWindow):
             if self.db is not None:
                 view.set_db(self.db)
         self.stack.set_visible_child_name(key)
+        self._select_tab(key, view if key == "register" else None)
         # The active icon and menu item follow however the view was reached --
         # toolbar, menu, or a jump from another view.
         self.category_action.set_state(GLib.Variant.new_string(key))
@@ -701,16 +738,130 @@ class ViewManager(Gtk.ApplicationWindow):
             view.select_schedule(schedule_handle)
 
     def open_register(self, account_handle: str) -> None:
-        """Jump to the register view focused on one account.
+        """Show one account's register, in its own tab (#183).
 
-        The sidebar follows from show_category. Selecting a row by index here
-        broke the moment a category was added above it, and silently switched to
-        whichever view had inherited that position.
+        An account that already has a register tab switches to it; otherwise a
+        new register tab opens, so the register you were in keeps its place.
         """
+        register = next(
+            (view for view in self._registers if view.account_handle == account_handle),
+            None,
+        )
+        if register is None:
+            register = self._new_register()
+        self._activate_register(register)
         self.show_category("register")
-        register = self._views.get("register")
-        if register is not None:
-            register.show_account(account_handle)
+        register.show_account(account_handle)
+        self._update_tab_label(register)
+
+    # ------------------------------------------------------------------- tabs
+
+    def _new_register(self):
+        from .views.register import RegisterView
+
+        register = RegisterView(self)
+        self._registers.append(register)
+        self.register_stack.add_child(register)
+        register.account_picker.connect(
+            "notify::selected", lambda *_a: self._update_tab_label(register)
+        )
+        if self.db is not None:
+            register.set_db(self.db)
+        return register
+
+    def _activate_register(self, register) -> None:
+        self._views["register"] = register
+        self.register_stack.set_visible_child(register)
+
+    def _drop_register(self, register) -> None:
+        register.set_db(None)
+        if register in self._registers:
+            self._registers.remove(register)
+        self.register_stack.remove(register)
+        if self._views.get("register") is register:
+            self._views.pop("register")
+            if self._registers:
+                self._activate_register(self._registers[-1])
+
+    def _tab_title(self, key: str, register) -> str:
+        if register is None:
+            return next((label for item, label, _icon in CATEGORIES if item == key), key)
+        handle = register.account_handle
+        account = self.db.get_account(handle) if self.db is not None and handle else None
+        if account is None:
+            return "Register"
+        return account.name
+
+    def _tab_for(self, key: str, register) -> _Tab | None:
+        return next(
+            (tab for tab in self._tabs if tab.key == key and tab.register is register), None
+        )
+
+    def _select_tab(self, key: str, register) -> None:
+        """Mark the tab for what is shown, opening one if needed."""
+        tab = self._tab_for(key, register)
+        if tab is None:
+            tab = _Tab(key, register, self._tab_title(key, register))
+            tab.button.connect("clicked", lambda *_a: self._on_tab_clicked(tab))
+            tab.close.connect("clicked", lambda *_a: self.close_tab(tab))
+            self._tabs.append(tab)
+            self.tab_bar.append(tab.widget)
+        for item in self._tabs:
+            item.set_current(item is tab)
+        self._update_tab_label(register)
+        self.tab_scroll.set_visible(True)
+
+    def _update_tab_label(self, register) -> None:
+        if register is None:
+            return
+        tab = self._tab_for("register", register)
+        if tab is not None:
+            title = self._tab_title("register", register)
+            full = ""
+            if self.db is not None and register.account_handle:
+                account = self.db.get_account(register.account_handle)
+                full = self.db.full_name(account) if account is not None else ""
+            tab.set_title(title, full or title)
+
+    def _on_tab_clicked(self, tab: _Tab) -> None:
+        if tab.register is not None:
+            self._activate_register(tab.register)
+        self.show_category(tab.key)
+
+    @property
+    def tabs(self) -> list[tuple[str, str]]:
+        """(view key, title) of every open tab, in order."""
+        return [(tab.key, tab.title) for tab in self._tabs]
+
+    def close_tab(self, tab: _Tab) -> None:
+        """Close a tab; a register with a half-typed entry asks first."""
+        register = tab.register
+        if register is not None and register.has_unsaved():
+            register.confirm_leave(lambda: self._remove_and_follow(tab))
+            return
+        self._remove_and_follow(tab)
+
+    def _remove_and_follow(self, tab: _Tab) -> None:
+        if tab not in self._tabs:
+            return
+        index = self._tabs.index(tab)
+        was_current = tab.current
+        self._remove_tab(tab)
+        if tab.register is not None:
+            self._drop_register(tab.register)
+        if not was_current or self.db is None:
+            return
+        if self._tabs:
+            following = self._tabs[min(index, len(self._tabs) - 1)]
+            self._on_tab_clicked(following)
+        else:
+            self.show_category(CATEGORIES[0][0])
+
+    def _remove_tab(self, tab: _Tab) -> None:
+        if tab in self._tabs:
+            self._tabs.remove(tab)
+            self.tab_bar.remove(tab.widget)
+        self.tab_scroll.set_visible(bool(self._tabs))
 
     def open_register_window(self, account_handle: str) -> Gtk.Window | None:
         """Open an independently navigable register sharing the current book."""
@@ -757,6 +908,41 @@ class ViewManager(Gtk.ApplicationWindow):
         update_title()
         window.present()
         return window
+
+
+class _Tab:
+    """One tab: a view, or one register, with a close button (#183)."""
+
+    def __init__(self, key: str, register, title: str) -> None:
+        self.key = key
+        self.register = register
+        self.title = title
+        self.current = False
+        self.widget = Gtk.Box(spacing=0)
+        self.widget.add_css_class("linked")
+        self.button = Gtk.Button(label=title)
+        self.button.set_has_frame(False)
+        self.button.get_child().set_ellipsize(Pango.EllipsizeMode.END)
+        self.button.get_child().set_max_width_chars(28)
+        self.close = Gtk.Button.new_from_icon_name("window-close-symbolic")
+        self.close.set_has_frame(False)
+        self.close.set_tooltip_text(f"Close {title}")
+        self.widget.append(self.button)
+        self.widget.append(self.close)
+
+    def set_title(self, title: str, tooltip: str) -> None:
+        self.title = title
+        self.button.set_label(title)
+        self.button.get_child().set_ellipsize(Pango.EllipsizeMode.END)
+        self.button.set_tooltip_text(tooltip)
+        self.close.set_tooltip_text(f"Close {title}")
+
+    def set_current(self, current: bool) -> None:
+        self.current = current
+        if current:
+            self.widget.add_css_class("current-tab")
+        else:
+            self.widget.remove_css_class("current-tab")
 
 
 def _tool_button(label: str, icon: str, action: str, tooltip: str) -> Gtk.Button:
