@@ -105,7 +105,10 @@ jobs:
       - name: Install GnuCash, its Python bindings, and the SQLite driver
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-gnucash libdbd-sqlite3
+          # python3-gnucash does not depend on gnucash, which ships the
+          # libgnc-*.so libraries its bindings load.
+          sudo apt-get install -y --no-install-recommends gnucash python3-gnucash \
+                                  libdbd-sqlite3
           /usr/bin/python3 -c "import gnucash; print(gnucash.__file__)"
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
