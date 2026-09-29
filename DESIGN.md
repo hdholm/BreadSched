@@ -2179,6 +2179,22 @@ The Linux publisher, which never executes what it receives, requires exactly
 the hash, appends it to `SHA256SUMS`, and attaches the installer with the wheel and
 source archive. Code signing is still pending.
 
+Putting the command line on `PATH` is an opt-in `SecPath` component (the Components
+page, or `/ADDTOPATH` for a silent install), remembered as `AddToPath` under
+`HKCU\Software\BreadSched` so a later install keeps the choice unless the user
+changes it; deselecting it on a later install removes the entry. Only the
+installation directory is added, so `breadsched.cmd` and `breadsched-gtk.cmd` are
+found but the bundled `python.exe` and DLLs never shadow anything else on `PATH`.
+NSIS string handling truncates long values and flattens `%VARIABLES%`, so the edit
+is made by `packaging/windows/user_path.py` with the bundled Python: it reads
+`HKCU\Environment\Path` raw, appends or removes only that directory (compared
+case-insensitively, ignoring a trailing separator), writes the value back with its
+original registry type, and broadcasts `WM_SETTINGCHANGE`. The uninstaller always
+runs the removal before deleting the runtime. `test-installer.ps1` requires a
+default install to leave `PATH` alone, `/ADDTOPATH` to add the directory once and
+let a fresh `PATH` resolve `breadsched` to it, a later plain install to keep it,
+and uninstalling to restore the raw value and its type exactly.
+
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
 (`ValueError` from `gi.require_version`) skip the GTK module cleanly; once GTK4 is

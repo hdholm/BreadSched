@@ -9,6 +9,7 @@ software centres.
 from __future__ import annotations
 
 import configparser
+import importlib.util
 import json
 import shutil
 import subprocess
@@ -128,6 +129,63 @@ def test_windows_installer_carries_its_runtime_and_is_tested_in_ci():
     assert '"$hash  $name`n"' in stage
     assert "packaging/windows/stage-release.ps1" in workflow
     assert "sha256sum --check BreadSched-*-setup.exe.sha256" in workflow
+
+
+def _user_path_module():
+    source = ROOT / "packaging" / "windows" / "user_path.py"
+    spec = importlib.util.spec_from_file_location("breadsched_user_path", source)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_user_path_adds_the_install_directory_once_and_keeps_other_entries():
+    user_path = _user_path_module()
+    install = r"C:\Users\A B\AppData\Local\Programs\BreadSched"
+    original = r"%USERPROFILE%\AppData\Local\Microsoft\WindowsApps;C:\Tools;"
+
+    added = user_path.with_entry(original, install)
+    assert added == original.rstrip(";") + ";" + install
+    # Already listed (any case, trailing separator): unchanged.
+    assert user_path.with_entry(added, install) == added
+    assert user_path.with_entry(added, install.upper() + "\\") == added
+    assert user_path.with_entry("", install) == install
+
+    # Removal restores the original entries, unexpanded variables included.
+    assert user_path.without_entry(added, install) == original.rstrip(";")
+    assert user_path.without_entry(install, install) == ""
+    assert user_path.without_entry(f"{install};C:\\Tools;{install}\\", install) == "C:\\Tools"
+    # Nothing to remove: the value is returned exactly as it was.
+    assert user_path.without_entry(original, install) == original
+    # Only the exact directory is removed, not one that merely shares a prefix.
+    assert user_path.without_entry(install + "Beta", install) == install + "Beta"
+    assert user_path.main(["replace", install]) == 2
+
+
+def test_windows_installer_offers_path_as_an_opt_in_that_uninstall_removes():
+    windows = ROOT / "packaging" / "windows"
+    script = (windows / "breadsched.nsi").read_text(encoding="utf-8")
+    build = (windows / "build-installer.sh").read_text(encoding="utf-8")
+    check = (windows / "test-installer.ps1").read_text(encoding="utf-8")
+
+    assert 'cp "$here/user_path.py" "$stage/user_path.py"' in build
+    # Off by default (/o), chosen on the Components page or with /ADDTOPATH.
+    assert 'Section /o "Add the breadsched command to PATH" SecPath' in script
+    assert "!insertmacro MUI_PAGE_COMPONENTS" in script
+    assert '${GetOptions} $1 "/ADDTOPATH" $2' in script
+    assert 'ReadRegDWORD $0 HKCU "Software\\${APP}" "AddToPath"' in script
+    uninstall = script.split('Section "Uninstall"', 1)[1]
+    # The bundled Python removes the entry before the runtime is deleted.
+    assert uninstall.index('remove "$INSTDIR"') < uninstall.index('RMDir /r "$INSTDIR\\runtime"')
+    assert 'Delete "$INSTDIR\\user_path.py"' in uninstall
+    # CI checks default, opt-in, remembered choice, and exact restoration.
+    assert '"a default install changed PATH"' in check
+    assert '@("/ADDTOPATH")' in check
+    assert "Get-Command breadsched" in check
+    assert '"a later install did not keep the PATH choice"' in check
+    assert '"DoNotExpandEnvironmentNames"' in check
+    assert "uninstall did not restore the user PATH" in check
 
 
 @pytest.mark.skipif(shutil.which("desktop-file-validate") is None, reason="validator missing")

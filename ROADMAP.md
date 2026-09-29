@@ -34,8 +34,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    tested in CI (clean install, CLI, desktop smoke, reinstall over itself,
    uninstall keeping books), and each release attaches it with its checksum.
    Every CI run and release also upgrades from the newest published installer.
-   Remaining: code signing, file-chooser and printing checks on Windows, and adding
-   the command line to `PATH` optionally. The Flatpak manifest, its installed-sandbox CLI
+   The command line can optionally be added to the user's `PATH`. Remaining: code
+   signing, and file-chooser and printing checks on Windows. The Flatpak manifest, its installed-sandbox CLI
    gate, desktop entry, AppStream metadata, icon, and sandboxed GTK smoke already
    run in CI; remaining Linux work (validating GTK file-chooser portals and
    printing inside the sandbox, and publishing the installer) follows the Windows

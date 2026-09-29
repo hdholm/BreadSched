@@ -3,6 +3,18 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a185 - 2026-09-29
+
+- **Optional command line on `PATH` in the Windows installer.** A Components-page
+  option (off by default; `/ADDTOPATH` for a silent install) adds the installation
+  folder, and so `breadsched`, to the current user's `PATH`. Later installs keep
+  the choice unless it is changed, and uninstalling removes the entry.
+  `packaging/windows/user_path.py`, run with the bundled Python, edits only that
+  entry and keeps the rest of the value, unexpanded variables, and registry type
+  exactly. CI checks the default, the opt-in, the remembered choice, and that
+  uninstalling restores `PATH` exactly. Ruff now also checks `packaging/`.
+  Application version `0.2.0a185`; native schema remains 9.
+
 ## 0.2.0a184 - 2026-09-29
 
 - **Windows upgrades are tested from the published installer.** Every CI run and

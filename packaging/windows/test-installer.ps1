@@ -4,7 +4,9 @@
 # copy must work with nothing but its own runtime. With -Previous, it first installs
 # that (previously published) installer, makes a book with it, installs this build
 # over it, and requires the upgraded copy to report this version and still read the
-# book, then uninstalls before the clean-install checks. Usage:
+# book, then uninstalls before the clean-install checks. A default install must
+# leave the user PATH alone; /ADDTOPATH adds the directory once, a later install
+# keeps it, and uninstalling restores the PATH value exactly. Usage:
 #   pwsh packaging/windows/test-installer.ps1 dist\windows\BreadSched-<version>-setup.exe
 #   pwsh packaging/windows/test-installer.ps1 <new-setup.exe> -Previous <published-setup.exe>
 param(
@@ -20,9 +22,10 @@ $work = Join-Path $env:RUNNER_TEMP "breadsched-installer-work"
 New-Item -ItemType Directory -Force -Path $work | Out-Null
 $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\BreadSched"
 
-function Install-Once([string]$Setup = $Installer, [string]$Target = $dir) {
+function Install-Once([string]$Setup = $Installer, [string]$Target = $dir, [string[]]$Options = @()) {
     # NSIS takes /D last and unquoted, even with spaces in the path.
-    $p = Start-Process -FilePath $Setup -ArgumentList "/S", "/D=$Target" -Wait -PassThru
+    $arguments = @("/S") + $Options + @("/D=$Target")
+    $p = Start-Process -FilePath $Setup -ArgumentList $arguments -Wait -PassThru
     if ($p.ExitCode -ne 0) { throw "installer $Setup exited with $($p.ExitCode)" }
     foreach ($path in "breadsched.cmd", "Uninstall.exe", "runtime\bin\python.exe",
                       "runtime\bin\pythonw.exe") {
@@ -41,6 +44,21 @@ function Invoke-In([string]$Target) {
     return ($output -join "`n")
 }
 
+function Get-UserPath {
+    # The raw value, with any %VARIABLES% left unexpanded.
+    return [string](Get-Item "HKCU:\Environment").GetValue("Path", "", "DoNotExpandEnvironmentNames")
+}
+
+function Get-UserPathKind {
+    $key = Get-Item "HKCU:\Environment"
+    if ($key.GetValueNames() -notcontains "Path") { return "absent" }
+    return [string]$key.GetValueKind("Path")
+}
+
+function Count-OnPath([string]$Target) {
+    return @((Get-UserPath) -split ";" | Where-Object { $_.TrimEnd("\") -eq $Target.TrimEnd("\") }).Count
+}
+
 function Uninstall-From([string]$Target) {
     # _?= keeps the uninstaller in place so Start-Process can wait for it.
     $p = Start-Process -FilePath (Join-Path $Target "Uninstall.exe") -ArgumentList "/S", "_?=$Target" -Wait -PassThru
@@ -49,6 +67,7 @@ function Uninstall-From([string]$Target) {
     if (Test-Path (Join-Path $Target "runtime")) { throw "runtime left behind after uninstall" }
     if (Test-Path (Join-Path $Target "breadsched.cmd")) { throw "launcher left behind after uninstall" }
     if (Test-Path $uninstallKey) { throw "uninstall registration left behind" }
+    if ((Count-OnPath $Target) -ne 0) { throw "uninstall left $Target on PATH" }
 }
 
 # Nothing from the build environment may leak into the installed copy.
@@ -60,6 +79,8 @@ if ((Split-Path -Leaf $Installer) -notmatch '^BreadSched-(.+)-setup\.exe$') {
     throw "unexpected installer name $Installer"
 }
 $version = $Matches[1]
+$originalPath = Get-UserPath
+$originalKind = Get-UserPathKind
 
 if ($Previous) {
     $Previous = (Resolve-Path $Previous).Path
@@ -89,6 +110,7 @@ if ($Previous) {
 
 Write-Host "== clean install"
 Install-Once
+if ((Count-OnPath $dir) -ne 0) { throw "a default install changed PATH" }
 Invoke-BreadSched --version
 $book = Join-Path $work "household.breadsched"
 Remove-Item -Force -ErrorAction SilentlyContinue $book
@@ -107,8 +129,25 @@ Write-Host "== upgrade in place keeps the book"
 Install-Once
 Invoke-BreadSched verify $book
 
+Write-Host "== optional command line on PATH"
+Install-Once $Installer $dir @("/ADDTOPATH")
+if ((Count-OnPath $dir) -ne 1) { throw "/ADDTOPATH did not add $dir to PATH once" }
+# A new shell finds breadsched through the user PATH alone.
+$bare = $env:PATH
+$env:PATH = "$bare;" + [Environment]::ExpandEnvironmentVariables((Get-UserPath))
+$found = (Get-Command breadsched -CommandType Application | Select-Object -First 1).Source
+if ($found -ne (Join-Path $dir "breadsched.cmd")) { throw "PATH resolves breadsched to '$found'" }
+& breadsched verify $book
+if ($LASTEXITCODE -ne 0) { throw "breadsched from PATH exited with $LASTEXITCODE" }
+$env:PATH = $bare
+Install-Once
+if ((Count-OnPath $dir) -ne 1) { throw "a later install did not keep the PATH choice" }
+
 Write-Host "== uninstall"
 Uninstall-From $dir
 if (-not (Test-Path $book)) { throw "uninstall removed the book" }
+if ((Get-UserPath) -ne $originalPath -or (Get-UserPathKind) -ne $originalKind) {
+    throw "uninstall did not restore the user PATH ($originalKind '$originalPath')"
+}
 $upgraded = if ($Previous) { ", upgrade from $(Split-Path -Leaf $Previous)" } else { "" }
-Write-Host "Installer passed: clean install, CLI, desktop, upgrade, uninstall$upgraded."
+Write-Host "Installer passed: clean install, CLI, desktop, upgrade, PATH option, uninstall$upgraded."

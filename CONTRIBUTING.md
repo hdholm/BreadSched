@@ -200,7 +200,8 @@ the application version to select a new release.
 
 - Keep Ruff import ordering and formatting clean.
 - Run `make fmt` to apply lint fixes and formatting. `make check` and CI enforce
-  `ruff format --check` across source, tests, and examples alongside lint checks.
+  `ruff format --check` across source, tests, examples, scripts, and `packaging/`
+  alongside lint checks.
 - Keep lines within the configured length limit.
 - Avoid mypy type reuse problems such as assigning incompatible meanings to one
   local variable.

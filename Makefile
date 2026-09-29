@@ -32,15 +32,15 @@ cov:
 	pytest --cov=breadsched --cov-report=term-missing
 
 lint:
-	ruff check src tests examples scripts
+	ruff check src tests examples scripts packaging
 
 fmt:
-	ruff check --fix src tests examples scripts
-	ruff format src tests examples scripts
+	ruff check --fix src tests examples scripts packaging
+	ruff format src tests examples scripts packaging
 
 # Keep formatting consistent with `make fmt` in local and CI checks.
 format-check:
-	ruff format --check src tests examples scripts
+	ruff format --check src tests examples scripts packaging
 
 typecheck:
 	mypy src/breadsched/gen src/breadsched/plugins tests/typecheck
