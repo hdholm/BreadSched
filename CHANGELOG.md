@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a196 - 2026-09-29
+
+- **AqBanking decision.** BreadSched will not build in a bank connection or bundle
+  AqBanking: its strength is German and European FinTS/HBCI and EBICS, its US
+  route (OFX Direct Connect) is being withdrawn by major banks, and bundling it
+  would add two C libraries and a second home for banking credentials. The User
+  Guide now shows how to download a statement with `aqbanking-cli`, export it as
+  CSV, and import it with the reviewed CSV import, and an acceptance test imports
+  unedited aqbanking-cli 6.5.4 output with that mapping. Application version
+  `0.2.0a196`; native schema remains 10.
+
 ## 0.2.0a195 - 2026-09-29
 
 - **Transaction tags.** A transaction can carry tags of your own, matched regardless

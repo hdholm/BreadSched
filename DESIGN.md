@@ -2096,6 +2096,32 @@ ticked handles through `apply_writeback`; the web adapter
 `POST /api/gnucash/writeback`, `POST /api/gnucash/writeback/settings`) only
 parses JSON, and a route test proves rejected requests change neither book.
 
+### Direct bank connections: AqBanking is documented, not built in
+
+The roadmap asked whether an optional AqBanking adapter justifies its cost. The
+answer, recorded in 0.2.0a196, is no for now:
+
+- **Reach.** AqBanking's strength is FinTS/HBCI and EBICS (Germany and nearby
+  countries). Its US/Canada route, OFX Direct Connect, is being withdrawn by major
+  banks (Bank of America ended OFX in September 2025; Chase has dropped Direct
+  Connect) in favor of aggregators, so it would not serve the main US household
+  case.
+- **Cost.** It is a C library (GPL-2/GPL-3, compatible with BreadSched's
+  AGPL-3.0-or-later) with Gwenhywfar underneath and no maintained Python binding.
+  An adapter would drive `aqbanking-cli`, and bundling it would add both
+  libraries and their configuration to the Windows installer and the Flatpak.
+- **Credentials.** PINs, TANs, and bank setup would stay in AqBanking's own
+  configuration and prompts, so BreadSched would add a second place where banking
+  secrets live without owning their safety.
+
+The supported route is therefore the existing reviewed CSV import: the user runs
+`aqbanking-cli request` and `aqbanking-cli export --exporter=csv --profile=default`
+and imports the file with the mapping the User Guide gives. The acceptance test
+`test_an_aqbanking_cli_export_imports_with_the_documented_mapping` imports unedited
+aqbanking-cli 6.5.4 output (`tests/fixtures/aqbanking/`) and checks that a
+repeated download adds nothing. Revisit a built-in adapter only with evidence of
+users whose banks AqBanking serves and who cannot use this route.
+
 ### Ambiguous import formats are user-resolvable
 
 Importers should infer date/number conventions from whole-file evidence where possible,

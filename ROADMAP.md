@@ -46,8 +46,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
    configurable backups). Broader reporting (spending and income over time, net
    worth history and its drill-down) and scenario-aware pinned savings goals are
-   delivered, as are transaction tags and linked documents. Next, investigate
-   AqBanking as an optional integration. Detailed acceptance contracts follow
+   delivered, as are transaction tags and linked documents. AqBanking was
+   investigated and is supported through the reviewed CSV import rather than a
+   built-in link (see `DESIGN.md`). The remaining interoperability items follow
    below.
 
 
@@ -188,12 +189,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   account changes, deletions) only with round-trip fixtures that prove
   preservation, and confirm written books open in a real GnuCash in CI. Never
   write to the source during normal import.
-
-- Investigate AqBanking integration through a small optional adapter: supported
-  platforms, consent and credential ownership, bank connection maintenance,
-  transaction identity, failure/retry, and reconciliation against existing
-  imports. Decide whether its dependency and packaging cost justify implementation
-  before committing to a direct bank-link feature.
 
 - Extend OFX investment import to options, share transfers, stock splits,
   journal entries, return of capital, and margin interest (reported as skipped
