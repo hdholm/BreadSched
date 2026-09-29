@@ -2213,7 +2213,13 @@ transactions** accepts the native save dialog, and a fresh CSV must be written a
 the path the dialog returned to the application (recorded by wrapping
 `Gtk.FileDialog.save_finish`); the save dialog keeps its own suggested name when
 the box is set programmatically, while the Open dialog takes the typed path. **Print** runs on every printable view: the report must be written, Windows
-must have a default handler for its type, and opening it must succeed. Printing
+must have a default handler for its type, and opening it must succeed.
+These checks found that GLib starts `runtime\bin\gdbus.exe` as a D-Bus session
+bus that outlives the application and keeps runtime files open, so the next
+upgrade could not replace `runtime\` and uninstalling left it behind. The
+installer (from its temporary plugins directory) and the uninstaller therefore
+run `stop-helpers.ps1` before removing `runtime\`; it stops only `gdbus.exe`
+processes whose executable lies inside this installation's runtime. Printing
 itself stays in that handler (a browser's print dialog), which is not driven.
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing

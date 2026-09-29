@@ -12,6 +12,12 @@ belongs in `ROADMAP.md`.
   dialog and requires the CSV to be written. It prints every printable view and
   requires a written report with a default handler that opens it. The roadmap's
   Windows installer item now leaves only code signing.
+- **Windows upgrades and uninstalls remove the whole runtime.** GLib starts the
+  bundled `gdbus.exe` as a D-Bus session bus that outlives BreadSched and keeps
+  runtime files open, so an upgrade could not fully replace the runtime and
+  uninstalling left it behind. The installer and uninstaller now stop only the
+  `gdbus.exe` running from that installation's runtime before removing it
+  (`packaging/windows/stop-helpers.ps1`).
   Application version `0.2.0a186`; native schema remains 9.
 
 ## 0.2.0a185 - 2026-09-29

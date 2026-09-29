@@ -50,9 +50,17 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
 
+; Runs stop-helpers.ps1, which stops gdbus.exe helpers started from this runtime.
+!define STOP_HELPERS '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File'
+
 Section "BreadSched" SecMain
   SectionIn RO
-  ; An upgrade replaces the whole runtime so no stale module survives.
+  ; An upgrade replaces the whole runtime so no stale module survives. A helper
+  ; still running from the old runtime would keep its files open, so stop it first.
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\stop-helpers.ps1" "${STAGE}\stop-helpers.ps1"
+  nsExec::ExecToLog '${STOP_HELPERS} "$PLUGINSDIR\stop-helpers.ps1" "$INSTDIR"'
+  Pop $0
   RMDir /r "$INSTDIR\runtime"
   SetOutPath "$INSTDIR"
   File /r "${STAGE}\*"
@@ -115,11 +123,14 @@ Section "Uninstall"
   RMDir "$SMPROGRAMS\${APP}"
   nsExec::ExecToLog '${USER_PATH} remove "$INSTDIR"'
   Pop $0
+  nsExec::ExecToLog '${STOP_HELPERS} "$INSTDIR\stop-helpers.ps1" "$INSTDIR"'
+  Pop $0
   RMDir /r "$INSTDIR\runtime"
   Delete "$INSTDIR\breadsched.cmd"
   Delete "$INSTDIR\breadsched-gtk.cmd"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\user_path.py"
+  Delete "$INSTDIR\stop-helpers.ps1"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
