@@ -209,6 +209,19 @@ period's dated income), use **Sort categories** to order the category rows, and 
 **Category trend**. **Carry prior periods** turns rollover on. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
 
+## Savings goals
+
+Choose **Savings Goals…** in the menus. Each goal shows its account, target date,
+target, what is set aside, what remains, and its status. To add a goal, fill in the
+name, the account that holds the money, the target amount, the date to start saving,
+and the target date, then choose **Add goal**. **Edit** loads a goal into the form;
+save it with **Save changes**. With a goal loaded, **Allocate to goal** sets extra
+money aside on the date you enter. **Close** releases a goal's money (for example
+after the purchase), **Reopen** undoes that, and **Delete** removes the goal; Edit →
+Undo restores it. **Show closed goals** includes closed goals in the list. On the
+Dashboard, the **Savings goals** table lists each open goal; activate a row to open
+this window. See [Savings goals](../USER_GUIDE.md#savings-goals).
+
 ## Reimbursable expenses
 
 Select the transaction in a register and choose **Actions → Track as

@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import dashboard as engine
+from .savings_goal_resource import goal_json
 
 
 def dashboard_report(
@@ -29,6 +30,11 @@ def dashboard_report(
         "missing_quotes": list(board.missing_quotes),
         "liquid_missing_quotes": list(board.liquid_missing_quotes),
         "coverage_notes": list(board.coverage_notes),
+        # Allocation detail lives on the goals page; the Dashboard shows progress.
+        "goals": [
+            _plain({key: value for key, value in goal_json(item).items() if key != "allocations"})
+            for item in board.goals
+        ],
         "config": {
             "liquidity_days": config.liquidity_days,
             "emergency_months": config.emergency_months,

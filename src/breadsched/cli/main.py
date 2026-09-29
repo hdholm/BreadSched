@@ -134,7 +134,12 @@ from ..gen.services.receivables import (
     shared_costs,
 )
 from ..gen.utils import logs
-from ..presentation import reimbursement_notice, service_error_message, shared_cost_text
+from ..presentation import (
+    goal_status_text,
+    reimbursement_notice,
+    service_error_message,
+    shared_cost_text,
+)
 
 LOG = logs.get_logger(__name__)
 
@@ -1016,7 +1021,7 @@ def cmd_goals(args: argparse.Namespace) -> int:
                 item.target.format(),
                 item.set_aside.format(),
                 item.remaining.format(),
-                item.status + (f" ({item.basis})" if item.basis == "time" else ""),
+                goal_status_text(item),
             ]
             for item in report.goals
         ]

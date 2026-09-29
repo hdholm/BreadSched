@@ -3113,7 +3113,9 @@ class TestDashboardApi:
             "liquid_missing_quotes",
             "coverage_notes",
             "unavailable_reasons",
+            "goals",
         }
+        assert payload["goals"] == []
         assert payload["unavailable_reasons"]["months_covered"] == "No committed outgoings"
 
     def test_missing_group_quote_suppresses_position_and_preserves_bills(self, client):
@@ -5244,6 +5246,103 @@ class TestReceivablesRoutes:
         salary = db.get_account_by_name("Income:Salary")
         _status, elsewhere = client.get(f"/api/reconciliation?account={salary.handle}")
         assert elsewhere["reimbursement_notice"] is None
+
+
+class TestSavingsGoalRoutes:
+    """Savings goals over the shared service; rejected writes change nothing."""
+
+    def _goal(self, client, **changes):
+        _status, listing = client.get("/api/savings-goals")
+        account = next(item for item in listing["accounts"] if item["name"].endswith("Checking"))
+        body = {
+            "name": "Roof",
+            "account": account["handle"],
+            "target_amount": "1200.00",
+            "start_date": date.today().isoformat(),
+            "target_date": date.today().replace(year=date.today().year + 1).isoformat(),
+        }
+        body.update(changes)
+        return client.post("/api/savings-goal/save", body)
+
+    def test_goals_are_added_funded_listed_closed_and_deleted(self, client):
+        status, saved = self._goal(client)
+        assert status == 200 and saved["name"] == "Roof"
+        status, funded = client.post(
+            "/api/savings-goal/allocate", {"handle": saved["handle"], "amount": "300"}
+        )
+        assert status == 200 and Money(funded["allocated"]) == Money(300)
+        _status, listing = client.get("/api/savings-goals")
+        [goal] = listing["goals"]
+        assert goal["name"] == "Roof" and Money(goal["allocated"]) == Money(300)
+        assert Money(goal["set_aside"]) + Money(goal["remaining"]) == Money(1200)
+        assert goal["status_text"].startswith("saving")
+        assert Money(listing["held"]) == Money(goal["set_aside"])
+        _status, board = client.get("/api/dashboard")
+        assert Money(board["summary"]["goals_set_aside"]) == Money(goal["set_aside"])
+        assert board["goals"][0]["name"] == "Roof"
+
+        assert client.post("/api/savings-goal/close", {"handle": saved["handle"]})[0] == 200
+        assert client.get("/api/savings-goals")[1]["goals"] == []
+        closed = client.get("/api/savings-goals?closed=1")[1]["goals"]
+        assert closed[0]["status"] == "closed"
+        assert client.post("/api/savings-goal/reopen", {"handle": saved["handle"]})[0] == 200
+        assert client.post("/api/savings-goal/delete", {"handle": saved["handle"]})[0] == 200
+        assert client.database.get_savings_goal(saved["handle"]) is None
+
+    def test_rejected_requests_leave_goals_unchanged(self, client):
+        _status, saved = self._goal(client)
+        before = client.database.get_savings_goal(saved["handle"]).serialize()
+        today = date.today().isoformat()
+        for path, body, status, code in [
+            (
+                "/api/savings-goal/save",
+                {"handle": saved["handle"], "name": " "},
+                400,
+                "savings_goal.name.required",
+            ),
+            (
+                "/api/savings-goal/save",
+                {"handle": saved["handle"], "target_date": today},
+                400,
+                "savings_goal.dates.invalid",
+            ),
+            (
+                "/api/savings-goal/save",
+                {"handle": saved["handle"], "target_amount": "0"},
+                400,
+                "savings_goal.target.invalid",
+            ),
+            (
+                "/api/savings-goal/save",
+                {"handle": saved["handle"], "target_date": "soon"},
+                400,
+                None,
+            ),
+            (
+                "/api/savings-goal/allocate",
+                {"handle": saved["handle"], "amount": "5000"},
+                400,
+                "savings_goal.allocation.exceeds_target",
+            ),
+            ("/api/savings-goal/delete", {"handle": "missing"}, 404, "savings_goal.not_found"),
+        ]:
+            if path == "/api/savings-goal/save":
+                _status, listing = client.get("/api/savings-goals")
+                goal = listing["goals"][0]
+                body = {
+                    "name": goal["name"],
+                    "account": goal["account"],
+                    "target_amount": "1200",
+                    "start_date": goal["start_date"],
+                    "target_date": goal["target_date"],
+                    **body,
+                }
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(path, body)
+            assert caught.value.code == status, (path, body)
+            if code is not None:
+                assert json.loads(caught.value.read())["code"] == code
+        assert client.database.get_savings_goal(saved["handle"]).serialize() == before
 
 
 class TestGnuCashWritebackRoutes:

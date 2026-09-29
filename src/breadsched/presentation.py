@@ -10,6 +10,7 @@ from .gen.services import ServiceError
 
 if TYPE_CHECKING:
     from .gen.engine.fsa_claims import SharedCost
+    from .gen.engine.savings_goals import GoalProgress
 
 _LOCALE_DIR = Path(__file__).with_name("locale")
 _translation: gettext.NullTranslations = gettext.translation(
@@ -313,6 +314,20 @@ def reimbursement_notice(count: int) -> str | None:
         f"{count} {noun} like money back on a reimbursable expense; "
         "review them under Reimbursable Expenses."
     )
+
+
+def goal_status_text(progress: GoalProgress) -> str:
+    """One goal's status in the words every interface shows."""
+    if progress.status == "closed":
+        closed = progress.goal.closed_on
+        return f"closed {closed.isoformat()}" if closed is not None else "closed"
+    if progress.status == "not started":
+        return f"starts {progress.goal.start_date.isoformat()}"
+    if progress.status == "reached":
+        return "fully set aside"
+    if progress.basis == "time":
+        return "saving (spread by day: no income scheduled)"
+    return "saving"
 
 
 def shared_cost_text(shared: SharedCost) -> str:

@@ -46,8 +46,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
    configurable backups). Then broader reporting (spending and income over time
    and net worth history are delivered),
-   scenario-aware pinned savings targets (the goal model, Dashboard hold, and CLI
-   are delivered; editors and Plan/Projection milestones remain). Investigate AqBanking as an optional
+   scenario-aware pinned savings targets (goals, their Dashboard hold, and editors in
+   every interface are delivered; Plan/Projection milestones remain). Investigate AqBanking as an optional
    integration, and add transaction tags/attachments with private-data and
    portability controls. Detailed acceptance contracts follow below.
 
@@ -81,11 +81,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   comparison, and Dashboard consistently.
 
 - **Savings goals, continued.** The model, schema 10, earmark engine, service,
-  CLI, and Dashboard hold are delivered: a goal sets aside a prorated share of each
-  income received until its target date, like a pending bill, with extra
-  allocations, and closing releases the earmark. Remaining:
-  - GTK and web goal editors (add, edit, allocate, close) and per-goal Dashboard
-    rows showing set aside, remaining, and status;
+  CLI, Dashboard hold, GTK and web editors, and per-goal Dashboard rows are
+  delivered: a goal sets aside a prorated share of each income received until its
+  target date, like a pending bill, with extra allocations, and closing releases
+  the earmark. Remaining:
   - Plan and Projection: show each goal's projected set-aside at its target date
     as a milestone (nothing is spent), keep goals pinned across scenarios, and
     let a scenario override a goal's target amount or date;

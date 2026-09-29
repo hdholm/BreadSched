@@ -3,6 +3,17 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a193 - 2026-09-29
+
+- **Savings goal editors.** The desktop **Savings Goals…** window and the browser
+  **Goals** page add, edit, fund, close, reopen, and delete goals through the shared
+  service. Each goal shows its account, target date, target, amount set aside,
+  what remains, and status, and a rejected edit leaves the goal unchanged. The
+  Dashboard now lists each open goal in a **Savings goals** table on the desktop,
+  in the browser, and in the printout; on the desktop, activating a row opens the
+  goals window. Every interface uses the same status words. Application version
+  `0.2.0a193`; native schema remains 10.
+
 ## 0.2.0a192 - 2026-09-29
 
 - **Savings goals.** A goal names an asset account, a target amount, a start date,

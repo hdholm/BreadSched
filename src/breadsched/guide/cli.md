@@ -238,8 +238,9 @@ breadsched goals book.breadsched --delete "New roof"
 ```
 
 The list shows each goal's account, target date, target, what is set aside, what
-remains, and its status. A status of **saving (time)** means no income is scheduled
-before the target date, so the gap is spread by day. Below the table are the total
+remains, and its status: **saving**, **fully set aside**, **starts** a later date, or
+**closed**. **saving (spread by day: no income scheduled)** means no income is
+scheduled before the target date, so the gap is spread by day. Below the table are the total
 set aside and the part held from spendable cash. A goal is named by its exact name
 or a unique handle prefix. `breadsched dashboard` shows the same total as **Set
 aside for goals**. See [Savings goals](../USER_GUIDE.md#savings-goals).

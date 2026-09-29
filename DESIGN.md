@@ -1562,8 +1562,14 @@ read-only `query_savings_goals`. A rejected request leaves the stored goal uncha
 Deleting a goal's account is refused by reference verification
 (`savings_goal.missing_account`). The CLI `goals` command, the Dashboard card or tile
 in GTK and web, the printed Dashboard, and `breadsched dashboard` render these
-results. GTK and web editors, and Plan/Projection milestones with scenario overrides
-("pinned" goals), are planned slices.
+results. The GTK **Savings Goals** window (`gui/dialogs/savings_goals_dialog.py`) and
+the web **Goals** page (`web/savings_goal_resource.py`: `/api/savings-goals` and
+`/api/savings-goal/{save,allocate,close,reopen,delete}`) only parse input and render
+results. The Dashboard lists each goal in GTK (a `goals_view` section, refreshed on
+`savings-goal-*` signals), on the web (`goals` in `/api/dashboard`), and in print.
+`presentation.goal_status_text` gives every interface the same status words.
+Plan/Projection milestones with scenario overrides ("pinned" goals) are a planned
+slice.
 
 ## Reimbursable expenses (receivables)
 

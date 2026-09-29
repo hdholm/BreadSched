@@ -1,4 +1,4 @@
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Reimbursables", "Verify", "Guide"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Reimbursables", "Goals", "Verify", "Guide"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -3991,6 +3991,101 @@ async function showPayees() {
       el("div", { class:"toolbar" }, accept)));
 }
 
+// Savings goals from the shared service: each income sets aside a share until the
+// target date, and extra money can be allocated. The page only gathers input.
+async function showGoals() {
+  const showClosed = state.goalsShowClosed ? "?closed=1" : "";
+  const data = await get(`/api/savings-goals${showClosed}`);
+  const refresh = async () => { current = "Goals"; await render(); };
+  const run = (action) => async () => {
+    try { await action(); } catch (error) { say(error.message, "error"); }
+  };
+  const today = new Date().toISOString().slice(0, 10);
+  const name = el("input", { name:"name", placeholder:"New roof" });
+  const account = el("select", { name:"account" },
+    ...data.accounts.map((item) => el("option", { value:item.handle }, item.name)));
+  const target = el("input", { name:"target_amount", inputmode:"decimal", placeholder:"12000.00" });
+  const start = el("input", { name:"start_date", type:"date", value:today });
+  const by = el("input", { name:"target_date", type:"date" });
+  const description = el("input", { name:"description", placeholder:"Optional" });
+  let editing = null;
+  const saveButton = el("button", { class:"action primary", type:"submit" }, "Add goal");
+  const form = el("form", { class:"entry goal-form", onsubmit:(event) => {
+    event.preventDefault();
+    run(async () => {
+      const saved = await post("/api/savings-goal/save", {
+        handle:editing, name:name.value, account:account.value, target_amount:target.value,
+        start_date:start.value, target_date:by.value, description:description.value });
+      say(`Saved ${saved.name}.`);
+      await refresh();
+    })();
+  } },
+    el("label", {}, "Name", name), el("label", {}, "Held in", account),
+    el("label", {}, "Target amount", target), el("label", {}, "Start saving", start),
+    el("label", {}, "Target date", by), el("label", {}, "Description", description),
+    saveButton);
+  const rows = data.goals.map((goal) => {
+    const amount = el("input", { inputmode:"decimal", placeholder:"Amount", size:"8",
+      "aria-label":`Amount to allocate to ${goal.name}` });
+    const closed = goal.status === "closed";
+    return el("tr", {},
+      el("td", {}, goal.name), el("td", {}, goal.account_name), el("td", {}, goal.target_date),
+      el("td", { class:"num" }, money(goal.target)),
+      el("td", { class:"num" }, money(goal.set_aside)),
+      el("td", { class:"num" }, money(goal.remaining)),
+      el("td", {}, goal.status_text),
+      el("td", {},
+        el("button", { class:"action", type:"button", onclick:() => {
+          editing = goal.handle;
+          name.value = goal.name; account.value = goal.account;
+          target.value = goal.target; start.value = goal.start_date; by.value = goal.target_date;
+          description.value = goal.description;
+          saveButton.textContent = "Save changes";
+          name.focus();
+        } }, "Edit"),
+        closed ? null : amount,
+        closed ? null : el("button", { class:"action", type:"button", onclick:run(async () => {
+          await post("/api/savings-goal/allocate", { handle:goal.handle, amount:amount.value });
+          say(`Allocated ${amount.value} to ${goal.name}.`);
+          await refresh();
+        }) }, "Allocate"),
+        el("button", { class:"action", type:"button", onclick:run(async () => {
+          await post(closed ? "/api/savings-goal/reopen" : "/api/savings-goal/close",
+            { handle:goal.handle });
+          say(`${closed ? "Reopened" : "Closed"} ${goal.name}.`);
+          await refresh();
+        }) }, closed ? "Reopen" : "Close"),
+        el("button", { class:"action", type:"button", onclick:run(async () => {
+          if (!window.confirm(`Delete ${goal.name}? No transaction is changed.`)) return;
+          await post("/api/savings-goal/delete", { handle:goal.handle });
+          say(`Deleted ${goal.name}.`);
+          await refresh();
+        }) }, "Delete")));
+  });
+  const toggle = el("input", { type:"checkbox", checked:state.goalsShowClosed ? "checked" : null,
+    onchange:(event) => { state.goalsShowClosed = event.target.checked; refresh(); } });
+  const totals = data.goals.length
+    ? `Set aside for goals: ${money(data.set_aside)}`
+      + (Number(data.held) !== Number(data.set_aside)
+        ? `; held from spendable cash: ${money(data.held)}` : "")
+    : "";
+  return el("div", { class:"savings-goals" },
+    el("p", { class:"note" },
+      "From its start date, each income received sets aside a share of what a goal still "
+      + "needs, so the whole target is set aside by its target date. Extra money you "
+      + "allocate is set aside in full. Goal money is held out of the Dashboard's Available, "
+      + "like a bill's reserve; nothing is spent on the target date. Close a goal to release "
+      + "its money."),
+    el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Savings goals"),
+      el("label", {}, toggle, " Show closed goals"),
+      data.goals.length
+        ? table(["Goal", "Held in", "Target date", { label:"Target", num:true },
+          { label:"Set aside", num:true }, { label:"Remaining", num:true }, "Status", ""], rows)
+        : el("p", { class:"note" }, "No savings goals yet."),
+      totals ? el("p", { class:"note" }, totals) : null,
+      form));
+}
+
 async function showReimbursables() {
   // Every rule and write is in the shared receivables service; this page only
   // gathers input. The service keeps the Receivable-account reclassifications
@@ -4323,7 +4418,7 @@ const RENDERERS = {
   Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
-  Payees: showPayees, Rules: showRules, Reimbursables: showReimbursables, Verify: showVerify,
+  Payees: showPayees, Rules: showRules, Reimbursables: showReimbursables, Goals: showGoals, Verify: showVerify,
   Guide: showGuide,
 };
 
@@ -4749,6 +4844,17 @@ async function showDashboard() {
     table(["Item", "Due", "Due in", "Frequency",
            { label: "Amount", num: true }, { label: "Monthly", num: true },
            { label: "Annual", num: true }], incomeRows),
+    ...((data.goals || []).length
+      ? [el("h2", {}, `Savings goals (${data.goals.length})`),
+        el("div", { class: "dashboard-goals" },
+          table(["Goal", "Target date", { label: "Target", num: true },
+                 { label: "Set aside", num: true }, { label: "Remaining", num: true }, "Status"],
+            data.goals.map((goal) => [
+              el("button", { class: "action", type: "button", onclick: () => switchTo("Goals") },
+                goal.name),
+              goal.target_date, money(goal.target), money(goal.set_aside),
+              money(goal.remaining), goal.status_text])))]
+      : []),
     await netWorthHistory());
 }
 

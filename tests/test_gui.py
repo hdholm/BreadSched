@@ -3805,6 +3805,72 @@ class TestDashboardView:
         [card] = [texts for texts in shown if texts[0] == "Set aside for goals"]
         assert card[1] == view.board.goals_set_aside.format()
 
+    def test_savings_goals_dialog_adds_funds_closes_and_rejects_bad_edits(
+        self, app, window, tmp_path
+    ):
+        from breadsched.gen.sample_book import create_sample_book
+
+        path = tmp_path / "goals-dialog.breadsched"
+        today = date.today()
+        create_sample_book(path, as_of=today)
+        app.open_book(str(path))
+        dialog = app.on_savings_goals()
+        try:
+            assert dialog._accounts
+            dialog.name_entry.set_text("Holiday")
+            dialog.target_entry.set_text("1,200.00")
+            dialog.start_entry.set_text(today.isoformat())
+            dialog.target_date_entry.set_text(today.replace(year=today.year + 1).isoformat())
+            goal = dialog.save()
+            assert goal is not None and dialog.editing == goal.handle
+            assert goal.target_amount == Money(1200)
+
+            stored = app.db.get_savings_goal(goal.handle).serialize()
+            dialog.target_date_entry.set_text(today.isoformat())
+            assert dialog.save() is None
+            assert "after the start date" in dialog.status.get_text()
+            assert app.db.get_savings_goal(goal.handle).serialize() == stored
+            dialog.target_date_entry.set_text("not a date")
+            assert dialog.save() is None and "YYYY-MM-DD" in dialog.status.get_text()
+
+            dialog.allocate_amount.set_text("250")
+            assert dialog.allocate() is not None
+            [row] = dialog.report.goals
+            assert row.allocated == Money(250) and row.set_aside >= Money(250)
+            assert dialog.goal_rows.get_child_at(0, 1).get_label() == "Holiday"
+
+            assert dialog.toggle_closed(goal.handle, closed=False) is not None
+            assert dialog.report.goals == ()
+            dialog.show_closed.set_active(True)
+            assert dialog.report.goals[0].status == "closed"
+            assert dialog.toggle_closed(goal.handle, closed=True) is not None
+            assert dialog.delete(goal.handle)
+            assert app.db.get_savings_goal(goal.handle) is None
+        finally:
+            dialog.destroy()
+
+    def test_dashboard_lists_each_savings_goal(self, app, window, tmp_path):
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gen.services import SaveSavingsGoal, goal_accounts, save_savings_goal
+
+        path = tmp_path / "goals-rows.breadsched"
+        today = date.today()
+        create_sample_book(path, as_of=today)
+        app.open_book(str(path))
+        window.show_category("dashboard")
+        view = window._views["dashboard"]
+        assert not view.goals_section.get_visible()
+        handle, _name = goal_accounts(app.db)[0]
+        save_savings_goal(
+            app.db,
+            SaveSavingsGoal("Roof", handle, Money(900), today.replace(year=today.year + 1), today),
+        )
+        view.refresh()
+        assert view.goals_section.get_visible()
+        model = view.goals_view.get_model()
+        assert model.get_n_items() == 1
+        assert model.get_item(0).payload.goal.name == "Roof"
+
     def test_missed_occurrences_render_as_one_row_per_schedule(self, app, window, tmp_path):
         from datetime import timedelta
 

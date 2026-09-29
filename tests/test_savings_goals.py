@@ -296,3 +296,4 @@ def test_dashboard_printout_shows_what_goals_set_aside(db, book):
     _goal(db, book)
     html = dashboard_report(dashboard.build(db, as_of=date(2026, 6, 15)))
     assert "Set aside for goals" in html and "600.00" in html
+    assert "<h2>Savings goals</h2>" in html and "New roof" in html and "saving" in html

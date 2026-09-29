@@ -45,6 +45,14 @@ from .reconciliation_resource import (
 from .register_entry_resource import register_entry_save
 from .register_resource import register, transaction_add
 from .rules_resource import rule_add, rule_delete, rule_move, rules, rules_accept
+from .savings_goal_resource import (
+    savings_goal_allocate,
+    savings_goal_close,
+    savings_goal_delete,
+    savings_goal_reopen,
+    savings_goal_save,
+    savings_goals,
+)
 
 if TYPE_CHECKING:
     from .server import Api
@@ -240,6 +248,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/payees": payees,
     "/api/gnucash/writeback": gnucash_writeback,
     "/api/receivables": receivables,
+    "/api/savings-goals": savings_goals,
     "/api/guide": guide,
     "/api/rules": rules,
     "/api/entry/suggest": entry_suggestion,
@@ -293,6 +302,11 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/payees/accept": payee_accept,
     "/api/transaction/payee": transaction_payee,
     "/api/register/entry": register_entry_save,
+    "/api/savings-goal/save": savings_goal_save,
+    "/api/savings-goal/allocate": savings_goal_allocate,
+    "/api/savings-goal/close": savings_goal_close,
+    "/api/savings-goal/reopen": savings_goal_reopen,
+    "/api/savings-goal/delete": savings_goal_delete,
     "/api/receivable/save": receivable_save,
     "/api/receivable/link": receivable_link,
     "/api/receivable/unlink": receivable_unlink,

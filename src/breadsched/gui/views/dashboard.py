@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from ...gen.engine import dashboard as engine
 from ...gen.lib.money import Money
+from ...presentation import goal_status_text
 from ..gi_setup import Gio, Gtk, Pango
 from ._base import BaseView, Row, column, sorted_model, table_section
 
@@ -37,6 +38,9 @@ class DashboardView(BaseView):
         "scheduled-update",
         "scheduled-delete",
         "account-update",
+        "savings-goal-add",
+        "savings-goal-update",
+        "savings-goal-delete",
     )
 
     def __init__(self, manager) -> None:
@@ -212,6 +216,43 @@ class DashboardView(BaseView):
         )
         self._add_section(self.income_section)
 
+        # One row per savings goal; activating one opens the goal editor.
+        self.goals_view = Gtk.ColumnView()
+        self.goals_view.add_css_class("data-table")
+        self.goals_view.set_show_row_separators(True)
+        self.goals_view.connect("activate", self._on_goal_activated)
+        self.goals_view.append_column(
+            column("Goal", lambda g: g.goal.name, expand=True, sort_key=lambda g: g.goal.name)
+        )
+        self.goals_view.append_column(
+            column(
+                "Target date",
+                lambda g: g.goal.target_date.isoformat(),
+                sort_key=lambda g: g.goal.target_date,
+            )
+        )
+        for title, value in (
+            ("Target", lambda g: g.target),
+            ("Set aside", lambda g: g.set_aside),
+            ("Remaining", lambda g: g.remaining),
+        ):
+            self.goals_view.append_column(
+                column(
+                    title,
+                    lambda g, value=value: value(g).format(),
+                    sort_key=lambda g, value=value: value(g).to_decimal(),
+                    numeric=True,
+                )
+            )
+        self.goals_view.append_column(column("Status", goal_status_text))
+        self.goals_section = table_section(
+            self.goals_view, "dashboard-goals", self._settings(), title="Savings goals"
+        )
+        self._add_section(self.goals_section)
+
+    def _on_goal_activated(self, _view, _position) -> None:
+        self.manager.get_application().on_savings_goals()
+
     def _add_section(self, section: Gtk.Box) -> None:
         """Size a section to its content, bounded so no row can widen the window."""
         section.add_css_class("dashboard-section")
@@ -269,6 +310,13 @@ class DashboardView(BaseView):
         self.income_view.set_model(
             Gtk.SingleSelection(model=sorted_model(self.income_view, income_store))
         )
+        goal_store = Gio.ListStore.new(Row)
+        for goal in self.board.goals:
+            goal_store.append(Row(goal))
+        self.goals_view.set_model(
+            Gtk.SingleSelection(model=sorted_model(self.goals_view, goal_store))
+        )
+        self.goals_section.set_visible(bool(self.board.goals))
 
     def printable_html(self) -> str | None:
         """Return the currently rendered Dashboard as a print-ready document."""

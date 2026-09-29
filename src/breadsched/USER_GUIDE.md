@@ -408,7 +408,8 @@ not become immediate cash bills, preventing a purchase and its later payment fro
 being counted twice.
 
 **Set aside for goals** shows what your [savings goals](#savings-goals) have set
-aside so far. Available leaves it out, exactly like a bill's reserve. If a goal's
+aside so far, and a **Savings goals** table lists each goal's target date, target,
+amount set aside, what remains, and status. Available leaves it out, exactly like a bill's reserve. If a goal's
 money is kept in a non-cash account (a brokerage account, say), only the part not
 yet moved there is held from Available, and the card says how much that is.
 
@@ -643,8 +644,9 @@ claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
 ### Savings goals
 
 A savings goal is money you want set aside by a date, such as a new roof or a
-holiday ([command line](guide/cli.md#savings-goals); desktop and browser editors
-come in a later alpha). A goal names the account that holds (or will hold) its
+holiday ([desktop](guide/desktop.md#savings-goals),
+[browser](guide/web.md#savings-goals), [command line](guide/cli.md#savings-goals)).
+A goal names the account that holds (or will hold) its
 money, a target amount, a start date, and a target date.
 
 A goal works like a pending bill. From its start date, each income you receive sets
