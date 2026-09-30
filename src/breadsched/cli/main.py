@@ -1282,6 +1282,109 @@ def cmd_attachments(args: argparse.Namespace) -> int:
         db.close()
 
 
+def cmd_claims(args: argparse.Namespace) -> int:
+    """FSA claims grouped by status, account, funding year, or provider."""
+    from ..gen.engine.fsa_claim_report import claim_report
+    from ..gen.engine.fsa_claims import FsaClaimStatus
+
+    db = open_book(args.book, "r")
+    try:
+        status = None
+        if args.status:
+            try:
+                status = FsaClaimStatus(args.status)
+            except ValueError as exc:
+                choices = ", ".join(item.value for item in FsaClaimStatus)
+                raise CommandError(f"--status must be one of {choices}") from exc
+        report = claim_report(
+            db,
+            as_of=parse_date(args.as_of) or date.today(),
+            by=args.by,
+            account=resolve_account(db, args.account).handle if args.account else None,
+            funding_year=parse_date(args.year),
+            provider=args.provider,
+            status=status,
+            attention_only=args.attention,
+        )
+
+        def money(value: Money) -> str:
+            return value.format(parens_negative=True)
+
+        payload = {
+            "as_of": report.as_of,
+            "by": report.by,
+            "groups": [
+                {
+                    "label": group.label,
+                    "claims": group.claims,
+                    "net_paid": group.net_paid,
+                    "reimbursable": group.reimbursable,
+                    "reimbursed": group.reimbursed,
+                    "rejected": group.rejected,
+                    "remaining": group.remaining,
+                    "attention": group.attention,
+                }
+                for group in report.groups
+            ],
+            "claims": [
+                {
+                    "handle": line.handle,
+                    "service_date": line.summary.claim.service_date,
+                    "provider": line.summary.claim.provider,
+                    "account": line.account,
+                    "funding_year": line.funding_year,
+                    "status": line.summary.status.value,
+                    "net_paid": line.summary.net_paid,
+                    "reimbursed": line.summary.reimbursed,
+                    "remaining": line.summary.remaining_reimbursable,
+                    "deadline": line.deadline,
+                    "attention": [
+                        {"code": item.code, "text": item.text} for item in line.attention
+                    ],
+                }
+                for line in report.lines
+            ],
+        }
+        if not report.lines:
+            emit(payload, args, "No FSA claims match.")
+            return 0
+        heading = {
+            "status": "Status",
+            "account": "FSA account",
+            "year": "Funding year",
+            "provider": "Provider",
+        }[report.by]
+        groups = table(
+            [
+                [
+                    group.label,
+                    group.claims,
+                    money(group.net_paid),
+                    money(group.reimbursed),
+                    money(group.rejected),
+                    money(group.remaining),
+                    group.attention or "",
+                ]
+                for group in (*report.groups, report.totals)
+            ],
+            [heading, "Claims", "Net paid", "Reimbursed", "Rejected", "Remaining", "Attention"],
+            right={1, 2, 3, 4, 5, 6},
+        )
+        attention = [
+            f"{line.summary.claim.service_date.isoformat()} "
+            f"{line.summary.claim.provider or '(no provider)'}: {item.text}"
+            for line in report.needing_attention
+            for item in line.attention
+        ]
+        text = groups
+        if attention:
+            text += "\n\nNeeds attention:\n" + "\n".join(f"  {entry}" for entry in attention)
+        emit(payload, args, text)
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_receivables(args: argparse.Namespace) -> int:
     """List reimbursable expenses, add or resolve one, or link ledger splits."""
     read_only = not (
@@ -3181,6 +3284,16 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                 if summary["receivables_owed"] > 0
                 else []
             ),
+            *(
+                [
+                    [
+                        "FSA claims needing attention",
+                        f"{summary['fsa_claims_attention']} (breadsched claims --attention)",
+                    ]
+                ]
+                if summary["fsa_claims_attention"]
+                else []
+            ),
             [
                 f"Emergency fund ({config.emergency_months} months)",
                 shown("emergency_fund", summary["emergency_fund"]),
@@ -3708,6 +3821,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     receivables_cmd.add_argument("--delete", metavar="RECEIVABLE", help="delete a receivable")
     receivables_cmd.set_defaults(func=cmd_receivables)
+
+    claims_cmd = add(
+        "claims",
+        "FSA claims grouped by status, account, funding year, or provider, "
+        "with those needing attention",
+    )
+    claims_cmd.add_argument(
+        "--by",
+        choices=("status", "account", "year", "provider"),
+        default="status",
+        help="how to group claims (default status)",
+    )
+    claims_cmd.add_argument("--account", metavar="ACCOUNT", help="only this FSA account")
+    claims_cmd.add_argument(
+        "--year", metavar="DATE", help="only this funding year (its start date)"
+    )
+    claims_cmd.add_argument("--provider", help="only this provider (ignoring case)")
+    claims_cmd.add_argument(
+        "--status",
+        help="only this status (waiting_eob, open, partial, fully_reimbursed, "
+        "closed_no_funds, needs_review)",
+    )
+    claims_cmd.add_argument(
+        "--attention", action="store_true", help="only claims needing attention"
+    )
+    claims_cmd.add_argument("--as-of", help="report on this date (default today)")
+    claims_cmd.set_defaults(func=cmd_claims)
 
     goals_cmd = add(
         "goals",

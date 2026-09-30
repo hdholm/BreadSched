@@ -42,7 +42,7 @@ from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money
 from ..lib.recurrence import PeriodType, Recurrence
 from ..lib.scheduled import ScheduledTransaction
-from . import fsa, ledger, receivables, savings_goals, schedule, valuation
+from . import fsa, fsa_claim_report, ledger, receivables, savings_goals, schedule, valuation
 from .cash_flow import flow_amounts as _flow_amounts
 from .cash_flow import income_occurrences
 from .currency import reporting_currency_handle, reporting_fraction
@@ -460,6 +460,7 @@ class DashboardSummary(TypedDict):
     receivables_attention: Money
     goals_set_aside: Money
     goals_held: Money
+    fsa_claims_attention: int
 
 
 @dataclass
@@ -491,6 +492,8 @@ class Dashboard:
     receivables_attention: Money = field(default_factory=lambda: Money(0))
     #: Each savings goal's earmark on the as-of date.
     goals: list[savings_goals.GoalProgress] = field(default_factory=list)
+    #: FSA claims with something left to do (see ``fsa_claim_report``).
+    claim_alerts: tuple[fsa_claim_report.ClaimLine, ...] = ()
 
     @property
     def missing_quotes(self) -> tuple[str, ...]:
@@ -740,6 +743,7 @@ class Dashboard:
             "receivables_attention": self.receivables_attention,
             "goals_set_aside": self.goals_set_aside,
             "goals_held": self.goals_held,
+            "fsa_claims_attention": len(self.claim_alerts),
         }
 
 
@@ -802,6 +806,10 @@ def build(
     board.next_income = next_income
     board._income_events = income_events
     _receivables(db, board, today)
+    try:
+        board.claim_alerts = fsa_claim_report.claim_report(db, as_of=today).needing_attention
+    except ValueError as exc:  # a claim naming a removed account or year
+        board.coverage_notes = (*board.coverage_notes, f"FSA claims could not be checked: {exc}")
     board.goals = [
         item
         for item in savings_goals.goals_progress(db, today)

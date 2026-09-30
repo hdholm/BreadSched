@@ -280,6 +280,11 @@ lists credits that clearly belong to one open receivable, checked; choose **Acce
 selected** to link them. Record a dispute or write off part of the balance on the
 same screen. A warning appears when a linked expense is also on an FSA claim.
 
+The FSA Dashboard lists open claims with a **Needs attention** column saying what
+is left to do, under a line counting them; the Dashboard shows the count as **FSA
+claims needing attention**. **Claims report** totals every claim, and **Group by**
+switches between status, FSA account, funding year, and provider.
+
 When the FSA pays what the insurer does not, open **Manage FSA Claims** on the FSA
 Dashboard, choose the receivable under **Payer covers part**, and save the claim.
 The claim and the receivable then show what the payer, the FSA, and you each pay,

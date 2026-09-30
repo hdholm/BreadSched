@@ -3163,7 +3163,59 @@ class TestDashboardApi:
     def test_fsa_information_has_its_own_dashboard_endpoint(self, client):
         status, payload = client.get("/api/fsa/dashboard")
         assert status == 200
-        assert set(payload) == {"years", "claims"}
+        assert set(payload) == {"years", "claims", "report", "attention"}
+        assert payload["report"]["by"] == "status"
+
+    def test_fsa_claims_are_grouped_and_flagged_like_every_interface(self, client):
+        from breadsched.gen.engine import fsa_claims
+        from breadsched.gen.engine.fsa_claim_report import claim_report
+        from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaFundingYear
+
+        db = client.database
+        assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+        account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+        today = date.today()
+        start = today.replace(month=1, day=1)
+        account.fsa_years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+        ]
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+        for provider in ("Clinic", "clinic", "Dentist"):
+            fsa_claims.save_claim(
+                db,
+                FsaClaim(
+                    service_date=today - timedelta(days=60),
+                    provider=provider,
+                    allocations=[FsaClaimAllocation(account.handle, start)],
+                ),
+            )
+        status, payload = client.get("/api/fsa/dashboard?by=provider")
+        assert status == 200
+        expected = claim_report(db, by="provider")
+        assert (
+            [g["label"] for g in payload["report"]["groups"]]
+            == [g.label for g in expected.groups]
+            == ["Clinic", "Dentist"]
+        )
+        assert payload["report"]["totals"]["claims"] == 3
+        assert payload["attention"] == len(expected.needing_attention) == 3
+        assert all(
+            claim["attention"][0].startswith("No EOB entered 60 days")
+            for claim in payload["claims"]
+        )
+        _status, board = client.get("/api/dashboard")
+        assert int(board["summary"]["fsa_claims_attention"]) == 3
+
+        def refused(path):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.get(path)
+            return caught.value.code, json.loads(caught.value.read())
+
+        status, error = refused("/api/fsa/dashboard?by=payer")
+        assert status == 400 and error["fields"] == ["by"]
+        status, _error = refused("/api/fsa/dashboard?sort=x")
+        assert status == 400
 
     def test_it_reports_the_headline_figures(self, client):
         _status, payload = client.get("/api/dashboard")

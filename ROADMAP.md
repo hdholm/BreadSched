@@ -58,7 +58,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
    scheduled transactions and loans (sections below). Scenario Projection tabs,
    remembered tabs per book, browser-tab counterparts, native GTK printing, and
-   bounded GTK view and dialog sizes are delivered.
+   bounded GTK view and dialog sizes are delivered; on FSA, claim reports and
+   Dashboard alerts for claims needing attention are delivered.
 
 
 ## Architecture and correctness
@@ -167,12 +168,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Improve Review suggestions and action explanations.
 
-- Add stronger Dashboard alerts for claims needing attention.
-
 - Handle over-reimbursement, reopened claims, late EOB changes, and correction
   workflows.
-
-- Add claim/report views by account, funding year, provider, and status.
 
 - Support plan-specific carryover rules where applicable.
 

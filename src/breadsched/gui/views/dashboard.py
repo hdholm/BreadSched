@@ -403,6 +403,14 @@ class DashboardView(BaseView):
             if attention > 0:
                 text += f" ({attention.format()} disputed or overdue)"
             self.cards.append(_card("Reimbursements due", text, attention > 0))
+        if summary["fsa_claims_attention"]:
+            self.cards.append(
+                _card(
+                    "FSA claims needing attention",
+                    f"{summary['fsa_claims_attention']} — see the FSA Dashboard",
+                    True,
+                )
+            )
         set_aside, held = summary["goals_set_aside"], summary["goals_held"]
         if set_aside > 0:
             text = set_aside.format()

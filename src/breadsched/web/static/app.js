@@ -4698,7 +4698,8 @@ async function showGuide() {
 }
 
 async function showFsaDashboard() {
-  const data = await get("/api/fsa/dashboard");
+  const by = state.fsaClaimsBy || "status";
+  const data = await get(`/api/fsa/dashboard?by=${encodeURIComponent(by)}`);
   const yearRows = data.years.map((item) => [
     item.account, `${item.start} – ${item.through}`, item.phase, money(item.election),
     money(item.funded), money(item.used), money(item.remaining), money(item.forfeited),
@@ -4706,15 +4707,31 @@ async function showFsaDashboard() {
   const claimRows = data.claims.map((claim) => [
     claim.service_date, claim.provider, claim.status, money(claim.paid),
     money(claim.reimbursed), money(claim.remaining),
+    claim.attention.length
+      ? el("span", { class:"neg" }, claim.attention.join("; ")) : "—",
     el("button", { class:"action", type:"button", onclick:()=>
       openFsaClaimsEditor(claim.handle).catch((error)=>say(error.message,"error")) },
     "Review claim"),
   ]);
+  const report = data.report;
+  const grouping = el("select", { name:"claims_by", onchange:(event)=>{
+    state.fsaClaimsBy = event.target.value;
+    render();
+  } }, [["status", "Status"], ["account", "FSA account"], ["year", "Funding year"],
+        ["provider", "Provider"]].map(([value, label]) => el("option", {
+    value, selected:value === report.by ? "selected" : null }, label)));
+  const groupRow = (group) => [group.label, String(group.claims), money(group.net_paid),
+    money(group.reimbursed), money(group.rejected), money(group.remaining),
+    group.attention ? String(group.attention) : ""];
   return el("div", {},
     el("div", { class:"toolbar" },
       el("button", { class:"action", type:"button", onclick:()=>
         openFsaClaimsEditor().catch((error)=>say(error.message,"error")) },
       "Manage FSA claims…")),
+    data.attention
+      ? el("p", { class:"note neg" },
+        `${data.attention} claim${data.attention === 1 ? " needs" : "s need"} attention.`)
+      : null,
     el("h2", {}, "FSA benefit years"),
     yearRows.length ? table(["Account", "Funding year", "Status",
       {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},
@@ -4723,8 +4740,17 @@ async function showFsaDashboard() {
     el("h2", {}, "Open FSA claims"),
     claimRows.length ? table(["Service date", "Provider", "Status",
       {label:"Paid",num:true},{label:"Reimbursed",num:true},
-      {label:"Remaining",num:true}, "Action"], claimRows)
-      : el("p", { class:"note" }, "No open FSA claims."));
+      {label:"Remaining",num:true}, "Needs attention", "Action"], claimRows)
+      : el("p", { class:"note" }, "No open FSA claims."),
+    el("h2", {}, "Claims report"),
+    el("div", { class:"toolbar" }, el("label", {}, "Group by ", grouping)),
+    report.groups.length
+      ? table([grouping.selectedOptions[0].textContent, {label:"Claims",num:true},
+          {label:"Net paid",num:true}, {label:"Reimbursed",num:true},
+          {label:"Rejected",num:true}, {label:"Remaining",num:true},
+          {label:"Attention",num:true}],
+        [...report.groups.map(groupRow), groupRow(report.totals)])
+      : el("p", { class:"note" }, "No FSA claims yet."));
 }
 
 function openDashboardGroupsEditor(config) {
@@ -4917,6 +4943,10 @@ async function showDashboard() {
           + (Number(s.receivables_attention) > 0
             ? ` (${money(s.receivables_attention)} disputed or overdue)` : ""),
         Number(s.receivables_attention) > 0)
+      : null,
+    // Claims with something left to do; details on the FSA Dashboard.
+    Number(s.fsa_claims_attention) > 0
+      ? tile("FSA claims needing attention", String(s.fsa_claims_attention), true)
       : null,
     // Savings-goal earmarks are held from Available like bill reserves.
     Number(s.goals_set_aside) > 0

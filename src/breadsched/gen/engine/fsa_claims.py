@@ -22,6 +22,7 @@ __all__ = [
     "FsaClaimSuggestion",
     "FsaClaimSummary",
     "SharedCost",
+    "allocation_year",
     "attach_transaction_to_claim",
     "claim_summary",
     "claim_year_window",
@@ -267,6 +268,11 @@ def _missing_link(part: str) -> FsaClaimError:
 
 def _resolve_link(db: DbSQLite, link: FsaClaimSplitLink) -> tuple[Transaction, Split]:
     return split_links.resolve_link(db, link, _missing_link)
+
+
+def allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFundingYear:
+    """The FSA funding year a claim allocation draws on."""
+    return _allocation_year(db, allocation)
 
 
 def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFundingYear:

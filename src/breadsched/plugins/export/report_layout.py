@@ -274,6 +274,15 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
     ]
     if report["emergency_shortfall"] is not None and summary["emergency_shortfall"] > 0:
         cards.append(Card("Short of the fund", money_text(summary["emergency_shortfall"]), True))
+    if summary["receivables_owed"] > 0:
+        owed = money_text(summary["receivables_owed"])
+        if summary["receivables_attention"] > 0:
+            owed += f" ({money_text(summary['receivables_attention'])} disputed or overdue)"
+        cards.append(Card("Reimbursements due", owed, summary["receivables_attention"] > 0))
+    if summary["fsa_claims_attention"]:
+        cards.append(
+            Card("FSA claims needing attention", str(summary["fsa_claims_attention"]), True)
+        )
     if summary["goals_set_aside"] > 0:
         goals_value = money_text(summary["goals_set_aside"])
         if summary["goals_held"] != summary["goals_set_aside"]:
@@ -385,6 +394,25 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
         Heading("Expected income"),
         income,
     ]
+    if board.claim_alerts:
+        blocks += [
+            Heading("FSA claims needing attention"),
+            Table(
+                _columns("Service date", "Provider", "Status", "#Remaining", "Needs attention"),
+                tuple(
+                    TableRow(
+                        (
+                            Cell(line.summary.claim.service_date.isoformat()),
+                            Cell(line.summary.claim.provider),
+                            Cell(line.summary.status.label),
+                            _amount(line.summary.remaining_reimbursable),
+                            Cell("\n".join(item.text for item in line.attention)),
+                        )
+                    )
+                    for line in board.claim_alerts
+                ),
+            ),
+        ]
     if board.goals:
         blocks += [
             Heading("Savings goals"),

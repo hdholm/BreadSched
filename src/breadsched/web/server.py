@@ -168,49 +168,6 @@ class Api:
     def dashboard(self, liquidity_days: int | None, emergency_months: int | None) -> dict:
         return dashboard_report(self.db, liquidity_days, emergency_months)
 
-    def fsa_dashboard(self) -> dict:
-        """FSA benefit-year availability and open healthcare claims."""
-        from ..gen.engine import fsa
-
-        return {
-            "claims": [
-                {
-                    "handle": summary.claim.handle,
-                    "service_date": summary.claim.service_date.isoformat(),
-                    "provider": summary.claim.provider,
-                    "status": summary.status.label,
-                    "paid": str(summary.net_paid.to_decimal()),
-                    "reimbursed": str(summary.reimbursed.to_decimal()),
-                    "rejected": str(summary.rejected.to_decimal()),
-                    "remaining": str(summary.remaining_reimbursable.to_decimal()),
-                }
-                for claim in fsa_claims.iter_claims(self.db)
-                for summary in [fsa_claims.claim_summary(self.db, claim)]
-                if summary.status is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
-            ],
-            "years": [
-                {
-                    "account": self.db.full_name(status.account),
-                    "account_handle": status.account.handle,
-                    "start": status.year.start.isoformat(),
-                    "through": status.year.through.isoformat(),
-                    "runout_through": (
-                        status.year.runout_through.isoformat()
-                        if status.year.runout_through
-                        else None
-                    ),
-                    "election": str(status.year.election.to_decimal()),
-                    "funded": str(status.funded.to_decimal()),
-                    "used": str(status.used.to_decimal()),
-                    "remaining": str(status.remaining.to_decimal()),
-                    "overage": str(status.overage.to_decimal()),
-                    "forfeited": str(status.forfeited.to_decimal()),
-                    "phase": status.phase,
-                }
-                for status in fsa.dashboard_statuses(self.db)
-            ],
-        }
-
     def dashboard_config_save(self, payload: dict) -> dict:
         """Persist the same group paths and account selections edited by GTK."""
         from ..gen.engine import dashboard as engine

@@ -683,6 +683,21 @@ healthcare payments, reimbursements, allocations, refunds, and rejected attempts
 Use FSA Dashboard to review open and recently closed benefit years and unresolved
 claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
 
+A claim needs attention when something is left for you to do:
+
+- its figures disagree and it shows **Needs review**;
+- no EOB has been entered 30 days after the service;
+- money is still to be reimbursed and a funding year it draws on must be claimed
+  within 30 days (by its run-out date, or the plan-year end when there is none);
+- a reimbursement was rejected and money is still to be reimbursed.
+
+The Dashboard counts these claims, and the FSA Dashboard says why each one needs
+attention. Its **Claims report** totals every claim by status, FSA account, funding
+year, or provider: what was paid, reimbursed, rejected, and is still to come. See
+the [desktop](guide/desktop.md#reimbursable-expenses),
+[browser](guide/web.md#reimbursable-expenses), and
+[command-line](guide/cli.md#fsa-claims) guides.
+
 ### Savings goals
 
 A savings goal is money you want set aside by a date, such as a new roof or a

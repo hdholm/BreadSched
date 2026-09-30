@@ -660,3 +660,46 @@ def test_a_register_opens_in_its_own_browser_tab(page, served):
     other.wait_for_selector("text=Open in new tab")
     assert other.evaluate("() => state.account") == account
     assert other.evaluate("() => current") == "Register"
+
+
+def test_fsa_claims_needing_attention_show_on_both_dashboards(page, served):
+    from datetime import timedelta
+
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import (
+        Account,
+        AccountType,
+        FsaClaim,
+        FsaClaimAllocation,
+        FsaFundingYear,
+        Money,
+    )
+
+    db, httpd = served
+    today = date.today()
+    start = today.replace(month=1, day=1)
+    assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+    account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+    account.fsa_years = [
+        FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+    ]
+    with db.transaction("FSA") as txn:
+        db.add_account(account, txn)
+    for provider in ("Clinic", "Dentist"):
+        fsa_claims.save_claim(
+            db,
+            FsaClaim(
+                service_date=today - timedelta(days=45),
+                provider=provider,
+                allocations=[FsaClaimAllocation(account.handle, start)],
+            ),
+        )
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/?claims#token={httpd.token}")
+    page.wait_for_selector("text=FSA claims needing attention")
+    page.get_by_role("button", name="FSA Dashboard", exact=True).first.click()
+    page.wait_for_selector("text=2 claims need attention.")
+    assert page.locator("text=No EOB entered 45 days after the service").count() == 2
+    page.locator("select[name=claims_by]").select_option("provider")
+    page.wait_for_selector("th:text('Provider') >> nth=1")
+    rows = page.locator("table").last.locator("tbody tr").all_inner_texts()
+    assert [row.split("\t")[0] for row in rows] == ["Clinic", "Dentist", "All claims"]
