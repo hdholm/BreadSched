@@ -100,7 +100,7 @@ def test_release_smoke_compares_the_installed_version_with_the_source():
 
 def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit():
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    windows = workflow.split("\n  windows-installer:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    windows = workflow.split("\n  windows-installer:\n", 1)[1].split("\n  flatpak-bundle:\n", 1)[0]
     publication = workflow.split("\n  publish:\n", 1)[1]
 
     assert "needs: prepare" in windows and "runs-on: windows-latest" in windows
@@ -115,10 +115,28 @@ def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit()
     assert windows.index("test-installer.ps1") < stage
     assert "BreadSched-$env:VERSION-setup.exe" in windows
     assert "name: release-installer" in windows
-    assert "needs: [prepare, windows-installer]" in publication
+    assert "needs: [prepare, windows-installer, flatpak-bundle]" in publication
     assert "name: release-installer" in publication
-    assert '"installer/BreadSched-${VERSION}-setup.exe" SHA256SUMS' in publication
+    assert '"installer/BreadSched-${VERSION}-setup.exe" \\' in publication
     assert "test-installer.ps1" not in publication and "build-installer" not in publication
+
+
+def test_release_builds_and_installs_the_flatpak_bundle_from_the_tested_commit():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    bundle = workflow.split("\n  flatpak-bundle:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    publication = workflow.split("\n  publish:\n", 1)[1]
+
+    assert "needs: prepare" in bundle and "contents: write" not in bundle
+    assert "persist-credentials: false" in bundle and "ref: main" in bundle
+    verify = bundle.index('test "$(git rev-parse HEAD)" = "$TESTED_SHA"')
+    assert verify < bundle.index("flatpak-builder --user")
+    assert "--runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo" in bundle
+    install = bundle.index('flatpak install --user --noninteractive --bundle "$bundle"')
+    assert install < bundle.index("sha256sum --check")
+    assert "name: release-flatpak" in bundle
+    assert "name: release-flatpak" in publication
+    assert '"flatpak/BreadSched-${VERSION}.flatpak" SHA256SUMS' in publication
+    assert "flatpak-builder" not in publication
 
 
 def test_release_workflow_sets_an_annotated_tag_identity():
@@ -208,6 +226,12 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
     (installer / setup).write_bytes(b"installer")
     setup_line = f"{hashlib.sha256(b'installer').hexdigest()}  {setup}\n"
     (installer / f"{setup}.sha256").write_text(setup_line, encoding="utf-8")
+    bundle = f"BreadSched-{version}.flatpak"
+    flatpak = root / "flatpak"
+    flatpak.mkdir()
+    (flatpak / bundle).write_bytes(b"bundle")
+    bundle_line = f"{hashlib.sha256(b'bundle').hexdigest()}  {bundle}\n"
+    (flatpak / f"{bundle}.sha256").write_text(bundle_line, encoding="utf-8")
 
     def validate() -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -220,24 +244,29 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
         )
 
     assert validate().returncode == 0, validate().stderr
-    # The published SHA256SUMS then covers the wheel, sdist, and installer.
+    # The published SHA256SUMS then covers the wheel, sdist, installer, and bundle.
     published = (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
-    assert [line.split("  ")[1] for line in published] == [*names, setup]
+    assert [line.split("  ")[1] for line in published] == [*names, setup, bundle]
     (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
 
-    # A tampered installer, a Windows-style checksum line, or a stray file is refused.
+    # A tampered installer or bundle, a Windows-style checksum line, or a stray file
+    # is refused.
     (installer / setup).write_bytes(b"tampered")
     assert validate().returncode != 0
     (installer / setup).write_bytes(b"installer")
     (installer / f"{setup}.sha256").write_text(setup_line.replace("  ", " *"), encoding="utf-8")
     assert validate().returncode != 0
     (installer / f"{setup}.sha256").write_text(setup_line, encoding="utf-8")
+    (flatpak / bundle).write_bytes(b"tampered")
+    assert validate().returncode != 0
+    (flatpak / bundle).write_bytes(b"bundle")
     (installer / "other.exe").write_bytes(b"x")
     assert validate().returncode != 0
     (installer / "other.exe").unlink()
     (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
     assert validate().returncode == 0
-    # Each accepted run appends the installer line; start the next cases clean.
+    # Each accepted run appends the installer and bundle lines; start the next cases
+    # clean.
     (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
 
     extra = dist / "unexpected.whl"

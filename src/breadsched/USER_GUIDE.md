@@ -45,13 +45,9 @@ source archive against the release's `SHA256SUMS` before installing it.
 Release artifacts are built from the tested main commit with read-only repository
 access, then published after their names and checksums are verified. The loopback
 web interface serves only its packaged page, script, and stylesheet.
-An initial Flatpak build manifest is available to developers. CI exercises offline
-CLI creation, import/export, backup, restore, verification, and writer locks inside
-the installed sandbox. A locally built Flatpak also installs a desktop menu entry,
-software-centre metadata, and an icon; CI opens a book, every view, and this guide
-in the sandboxed desktop application and checks that settings persist. No Flatpak
-installer is published yet. Use the verified wheel/source release or a development
-checkout until GTK file portals and printing are validated in the sandbox.
+On Linux, each release also attaches a Flatpak bundle,
+`BreadSched-<version>.flatpak`. See
+[Install on Linux](guide/desktop.md#install-on-linux).
 
 For Windows, each release attaches an installer that carries its own Python and GTK
 runtime (not yet code-signed, so Windows may warn before running it; check it against
@@ -345,7 +341,9 @@ A transaction can also link **documents**: a receipt, statement, or invoice file
 or a web address. As in GnuCash, the files stay outside the book. Attaching a file
 copies it into an **attachment folder** beside the book (for `household.breadsched`,
 the folder `household attachments`) and links it by its name there, so the book
-and folder can move together. An existing file of the same name is never
+and folder can move together. A Flatpak book outside Documents has no default
+attachment folder, because the sandbox cannot use the folder beside it; choose one
+first. An existing file of the same name is never
 overwritten; the copy gets a numbered name. A file can instead be linked where it
 is, and a web address is only linked, never fetched. Removing a document only
 unlinks it: the file is kept. The browser can link only web addresses and files
@@ -1232,8 +1230,11 @@ Verify diagnostics. Regularly:
 After you upgrade to a version with a newer native schema, a book from an earlier
 alpha is migrated the first time it is opened for writing: the desktop and browser
 do this when they open it, and on the command line `breadsched migrate` does it. A
-verified backup of the old book is written next to it first. Read-only commands
-never migrate; they ask you to migrate instead.
+verified backup of the old book is written next to it first (for a book the
+Flatpak reaches only through the file chooser, in BreadSched's data folder; see
+[Install on Linux](guide/desktop.md#install-on-linux)), and the desktop
+application says where. Read-only commands never migrate; they ask you to migrate
+instead.
 
 See [desktop](guide/desktop.md#protect-and-recover-a-book) and
 [command line](guide/cli.md#protect-and-recover-a-book).

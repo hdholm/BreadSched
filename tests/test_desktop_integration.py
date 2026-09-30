@@ -93,6 +93,60 @@ def test_ci_validates_metadata_and_drives_gtk_inside_the_sandbox():
     assert (ROOT / "scripts" / "flatpak_gtk_smoke.py").is_file()
 
 
+def test_ci_uses_books_outside_documents_through_the_real_document_portal():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    check = (ROOT / "scripts" / "flatpak_portal_check.sh").read_text(encoding="utf-8")
+
+    assert "xdg-desktop-portal fuse3 dbus" in workflow
+    assert "dbus-run-session -- bash scripts/flatpak_portal_check.sh" in workflow
+    assert "tests/fixtures/native/schema-6.sql" in workflow
+    # The real document portal grants the installed app one existing book (Open)
+    # and one that does not exist yet (Save).
+    assert "/usr/libexec/xdg-document-portal --replace" in check
+    assert 'document-export --app="$app" -r -w "$old_book"' in check
+    assert 'document-export --app="$app" -r -w -n "$new_book"' in check
+    assert 'run migrate "$old_doc" --json' in check
+    # The backup lands in the app's data folder, and nothing hidden beside the book.
+    assert "/data/breadsched/beside-documents/" in check
+    assert 'name.startswith(".xdp-")' in check
+
+
+def test_ci_drives_the_portal_file_chooser_and_print_dialog_in_the_sandbox():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    harness = (ROOT / "scripts" / "flatpak_desktop_checks.sh").read_text(encoding="utf-8")
+    checks = (ROOT / "scripts" / "flatpak_desktop_checks.py").read_text(encoding="utf-8")
+    backend = (ROOT / "scripts" / "portal_test_backend.py").read_text(encoding="utf-8")
+
+    assert "bash scripts/flatpak_desktop_checks.sh" in workflow
+    assert '--command=python3 "$app"' in workflow
+    assert "python3-gi" in workflow
+    # The real portal frontend sits between the application and the stand-in
+    # backend, which answers only as the person would.
+    assert "/usr/libexec/xdg-desktop-portal --replace" in harness
+    assert "UseIn=breadschedtest" in harness and "default=breadschedtest" in harness
+    for interface in ("impl.portal.FileChooser", "impl.portal.Print"):
+        assert interface in backend and interface in harness
+    for method in ("OpenFile", "SaveFile", "PreparePrint", '"Print"'):
+        assert method in backend, method
+    # The application's own actions, through the portal.
+    for action in ("app.on_open()", "app.on_export", "app.on_backup", "print_action.activate"):
+        assert action in checks, action
+    assert "portal_document_id(opened)" in checks
+    assert "printing.optional_choice_label(document)" in checks
+    # Checked on the host: the caller, where each file went, and every printout.
+    assert '{entry["app_id"] for entry in requests} == {app_id}' in harness
+    assert 'data.startswith(b"%PDF")' in harness
+    assert '"plan" in report["asked"]' in harness
+
+
+def test_the_sandbox_smoke_prints_each_report_through_gtk():
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    smoke = (ROOT / "scripts" / "flatpak_gtk_smoke.py").read_text(encoding="utf-8")
+
+    assert "Gtk.PrintOperationAction.EXPORT" in smoke
+    assert '{"dashboard", "plan", "projection"} <= set(report["printed"])' in workflow
+
+
 def test_windows_installer_carries_its_runtime_and_is_tested_in_ci():
     windows = ROOT / "packaging" / "windows"
     build = (windows / "build-installer.sh").read_text(encoding="utf-8")

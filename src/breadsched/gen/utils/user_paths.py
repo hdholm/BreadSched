@@ -12,7 +12,14 @@ import sys
 from collections.abc import Mapping
 from pathlib import Path
 
-__all__ = ["config_directory", "documents_directory", "sync_service_for_path"]
+__all__ = [
+    "companion_path",
+    "config_directory",
+    "data_directory",
+    "documents_directory",
+    "portal_document_id",
+    "sync_service_for_path",
+]
 
 APP_DIRECTORY = "breadsched"
 
@@ -39,6 +46,85 @@ def config_directory(
     else:
         root = Path(env.get("XDG_CONFIG_HOME", home / ".config"))
     return root / APP_DIRECTORY
+
+
+def data_directory(
+    *,
+    environ: Mapping[str, str] | None = None,
+    home: Path | None = None,
+    platform: str | None = None,
+) -> Path:
+    """Return BreadSched's per-user data directory (inside the sandbox under Flatpak)."""
+    env = _environment(environ)
+    home = Path.home() if home is None else Path(home)
+    platform = sys.platform if platform is None else platform
+
+    if platform == "win32":
+        root = Path(env.get("LOCALAPPDATA", home / "AppData" / "Local"))
+    elif platform == "darwin":
+        root = home / "Library" / "Application Support"
+    else:
+        root = Path(env.get("XDG_DATA_HOME", home / ".local" / "share"))
+    return root / APP_DIRECTORY
+
+
+def _portal_roots(env: Mapping[str, str]) -> list[Path]:
+    runtime = env.get("XDG_RUNTIME_DIR")
+    if not runtime and hasattr(os, "getuid"):
+        runtime = f"/run/user/{os.getuid()}"
+    roots = [Path("/run/flatpak/doc")]
+    if runtime:
+        roots.insert(0, Path(runtime) / "doc")
+    return roots
+
+
+def portal_document_id(path: str | Path, *, environ: Mapping[str, str] | None = None) -> str | None:
+    """The document-portal id of *path*, or ``None`` for an ordinary file.
+
+    A sandboxed application reaches a file the user chose outside the folders it
+    may read directly (for BreadSched's Flatpak, anything outside Documents)
+    through the document portal, as ``$XDG_RUNTIME_DIR/doc/<id>/<name>``. That
+    directory holds only the chosen file: a file created beside it never appears
+    under its own name on the host, so companions such as backups must go
+    elsewhere (:func:`companion_path`).
+    """
+    env = _environment(environ)
+    target = Path(path).expanduser()
+    for root in _portal_roots(env):
+        try:
+            relative = target.relative_to(root)
+        except ValueError:
+            continue
+        parts = relative.parts
+        if parts[:1] == ("by-app",):
+            # The host's view of one application's documents.
+            parts = parts[2:]
+        if len(parts) >= 2:
+            return parts[0]
+    return None
+
+
+def companion_path(
+    path: str | Path,
+    suffix: str,
+    *,
+    environ: Mapping[str, str] | None = None,
+    home: Path | None = None,
+) -> Path:
+    """Where a file that belongs beside *path* (a backup, a log) is written.
+
+    Normally that is ``<path><suffix>`` in the same folder. For a document-portal
+    file it is ``<data directory>/beside-documents/<id>/<name><suffix>``, which the
+    user can find on the host (under ``~/.var/app/<app id>/data`` for Flatpak); that
+    folder is created when needed.
+    """
+    target = Path(path)
+    document = portal_document_id(target, environ=environ)
+    if document is None:
+        return target.with_name(f"{target.name}{suffix}")
+    folder = data_directory(environ=environ, home=home) / "beside-documents" / document
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder / f"{target.name}{suffix}"
 
 
 def _xdg_documents(home: Path, env: Mapping[str, str]) -> Path | None:

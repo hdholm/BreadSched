@@ -16,6 +16,7 @@ from .. import APP_ID, APP_NAME, __version__  # noqa: E402
 from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.utils.logs import get_logger  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
+from ..presentation import book_open_notice  # noqa: E402
 from .gi_setup import Gdk, Gio, GLib, Gtk
 from .user_guide import UserGuideWindow
 from .viewmanager import CATEGORIES as MENU_CATEGORIES  # noqa: E402
@@ -209,6 +210,9 @@ class BreadSchedApplication(Gtk.Application):
         for window in self.get_windows():
             if isinstance(window, ViewManager):
                 window.book_opened(self.db, path)
+        notice = book_open_notice(path, migration_backup=self.db.migration_backup)
+        if notice is not None:
+            self._report(notice)
 
     def require_db(self) -> DbSQLite | None:
         return self.db

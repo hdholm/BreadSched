@@ -365,6 +365,32 @@ def fsa_usage_text(status: FsaYearStatus) -> str:
     return "; ".join(shown) or "—"
 
 
+def book_open_notice(path: str, *, migration_backup: str | None = None) -> str | None:
+    """What to tell the user after opening a book, or ``None`` when nothing needs saying.
+
+    A book reached through the document portal (a sandboxed BreadSched opening a
+    file outside the folders it may use directly) is only that one file, so
+    backups and logs that belong beside it are kept in BreadSched's data folder.
+    """
+    from .gen.utils.user_paths import portal_document_id
+
+    lines = []
+    if migration_backup:
+        lines.append(
+            "This book was upgraded to the current format. A verified copy of it "
+            f"as it was is saved at {migration_backup}."
+        )
+    if path != ":memory:" and portal_document_id(path) is not None:
+        lines.append(
+            "This book is outside the folders BreadSched can use directly, so "
+            "BreadSched can reach only the book file itself. Backups made before "
+            "upgrades and restores are kept in BreadSched's data folder instead of "
+            "beside the book, and attachments need a folder chosen in Attachments. "
+            "Keep books in Documents to avoid this."
+        )
+    return "\n\n".join(lines) or None
+
+
 def reimbursement_notice(count: int) -> str | None:
     """Where deposits arrive (import, reconciliation), point at waiting proposals."""
     if count <= 0:

@@ -2336,9 +2336,36 @@ Flatpak from the checkout, installs it from a local repository, validates the
 desktop files with `desktop-file-validate` and `appstreamcli`, and, with the network
 unshared, runs the CLI (Dashboard, CSV export, backup, restore, imported-book
 integrity, competing-writer lock) and `scripts/flatpak_gtk_smoke.py` (every view,
-every guide part, the icon, and settings under `~/.var/app/<id>/config`). The CI
-runner has no desktop portal service, so file-chooser portals and printing inside
-the sandbox are not validated there.
+every guide part, the icon, settings under `~/.var/app/<id>/config`, and each
+printable report through `Gtk.PrintOperation` to PDF).
+
+Portals are exercised for real. `scripts/flatpak_portal_check.sh` starts the
+document portal, grants the installed app an existing schema 6 book and a book that
+does not exist yet (as Open and Save do), and migrates, writes, and verifies them
+through `/run/user/<uid>/doc/<id>/<name>`. `scripts/flatpak_desktop_checks.sh` puts
+the real `xdg-desktop-portal` frontend in front of `scripts/portal_test_backend.py`,
+a backend that answers FileChooser and Print requests as a person would, and runs
+`scripts/flatpak_desktop_checks.py` in the sandbox: Open, Export Transactions,
+Back Up Book, and Print on every printable view go through the application's own
+actions and the portal, and the host checks the caller's app id, where each file
+landed, and that each report arrived as a PDF.
+
+A document-portal directory holds only the chosen file: a file created beside it is
+kept by the portal as a hidden temporary and never appears under its own name. So
+`user_paths.companion_path` sends every file that belongs beside a book or chosen
+file (pre-migration and pre-restore backups, the web upload folder, import logs)
+to `<data directory>/beside-documents/<document id>/` when
+`user_paths.portal_document_id` recognises a portal path, and
+`attachments.attachment_folder` has no default for such a book. SQLite's own
+`-journal` and the writer lock still live beside the book as portal temporaries,
+which is sufficient while the portal runs. `presentation.book_open_notice` tells
+the desktop user where backups go. The portal's print dialog cannot show an
+application tab, so `printing.print_report` asks about a report's optional section
+first when `uses_print_portal()` (Flatpak, or `GDK_DEBUG=portals`).
+
+The release workflow builds the same manifest from the tested commit into a
+single-file bundle whose runtime comes from Flathub, installs it, checks the
+installed version, and publishes it with its checksum in `SHA256SUMS`.
 
 **Windows installer** (`packaging/windows/`). The installer carries its own runtime
 rather than asking users to assemble Python and GTK: `build-installer.sh` installs

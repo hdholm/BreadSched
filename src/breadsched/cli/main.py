@@ -1962,15 +1962,15 @@ def cmd_migrate(args: argparse.Namespace) -> int:
         row = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
     before = int(json.loads(row[0])) if row is not None else None
     db = open_book(str(path), "w")
+    backup = db.migration_backup
     db.close()
-    backup = Path(f"{path}.pre-migration-v{before}.bak")
     migrated = before is not None and before < SCHEMA_VERSION
     emit(
         {
             "schema_before": before,
             "schema": SCHEMA_VERSION,
             "migrated": migrated,
-            "backup": str(backup) if migrated else None,
+            "backup": backup if migrated else None,
         },
         args,
         f"Migrated {path} from schema {before} to {SCHEMA_VERSION}; backup at {backup}"

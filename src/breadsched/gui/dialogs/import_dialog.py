@@ -25,6 +25,7 @@ from ...gen.services import ImportBook, import_book  # noqa: E402
 from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils import logs  # noqa: E402
 from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
+from ...gen.utils.user_paths import companion_path
 from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
 from ...presentation import reimbursement_notice, service_error_message  # noqa: E402
 from ..background import BackgroundJob  # noqa: E402
@@ -261,7 +262,7 @@ class ImportDialog(BoundedWindow):
         if self.debug_check.get_active():
             log_path = logs.configure(
                 verbosity=2,
-                path=Path(path).with_suffix(".import-log.txt"),
+                path=companion_path(Path(path).with_suffix(""), ".import-log.txt"),
                 stream=False,
             )
 

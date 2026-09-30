@@ -44,6 +44,32 @@ book. Download it from the release page and check it against the release's
 `SHA256SUMS` (in PowerShell, `Get-FileHash BreadSched-<version>-setup.exe`). It is
 not yet code-signed, so Windows SmartScreen may ask you to confirm before it runs.
 
+### Install on Linux
+
+The Flatpak bundle (`BreadSched-<version>.flatpak`) installs BreadSched with its
+own GTK runtime from Flathub. Check it against the release's `SHA256SUMS`
+(`sha256sum BreadSched-<version>.flatpak`), then install it for your user:
+
+```sh
+flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+flatpak install --user BreadSched-<version>.flatpak
+```
+
+BreadSched then appears in your desktop's application menu. Installing a newer
+bundle the same way upgrades it and keeps your books; `flatpak uninstall --user
+org.breadsched.BreadSched` removes the program, never a book. From a terminal,
+`flatpak run org.breadsched.BreadSched` starts the desktop application and
+`flatpak run --command=breadsched org.breadsched.BreadSched` is the
+[command line](cli.md).
+
+The Flatpak may use your **Documents** folder directly, and that is the best place
+for books. A book anywhere else can still be opened, created, or saved through the
+file chooser, but BreadSched can then reach only that one file: backups it makes
+before upgrading or restoring over the book go to
+`~/.var/app/org.breadsched.BreadSched/data/breadsched/beside-documents/` instead of
+beside the book, the book gets no default attachment folder, and BreadSched says so
+when it opens the book.
+
 ## Find your way around
 
 BreadSched fits a small laptop screen however long your account names and notes
@@ -379,7 +405,10 @@ dialog offers it, and set the paper and orientation (landscape at first; your
 choices are kept until you quit). Tables continue across pages
 with their column headings repeated, and each page shows the report name and page
 number. For the Plan, the dialog's **Report** tab has **Include category detail
-when printing**, which adds the budget categories on pages of their own.
+when printing**, which adds the budget categories on pages of their own. The
+Flatpak prints through your desktop's own print dialog, which has no **Report**
+tab, so there BreadSched first asks **Summary only** or **Include category
+detail**.
 
 **File → Print in Browser…** opens the same report as a page in your web browser
 instead, for its own print dialog. The **Print…** buttons in Expense Explorer and

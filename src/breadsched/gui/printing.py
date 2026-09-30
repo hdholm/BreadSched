@@ -5,7 +5,9 @@ Dashboard, Plan, and Projection print through GTK's own print dialog
 :class:`~breadsched.gui.report_printer.ReportPrinter`, and the dialog offers the
 platform's printers, its preview, and printing to a PDF file. A report with an
 optional section (the Plan's category detail) adds a **Report** tab to the dialog
-to include it. :func:`export_pdf` draws the same pages straight to a PDF file.
+to include it. The desktop print portal a sandboxed (Flatpak) BreadSched prints
+through cannot show that tab, so there BreadSched asks first (:func:`print_report`).
+:func:`export_pdf` draws the same pages straight to a PDF file.
 
 The older route, a private self-contained HTML page opened in the default browser,
 stays available as **File → Print in Browser…**; the dialog reports
@@ -15,6 +17,8 @@ stays available as **File → Print in Browser…**; the dialog reports
 from __future__ import annotations
 
 import atexit
+import os
+import re
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
@@ -23,7 +27,7 @@ from typing import Any
 import cairo
 
 from ..plugins.export.report_layout import ReportDocument
-from .gi_setup import Gio, Gtk
+from .gi_setup import Gio, GLib, Gtk
 from .report_printer import ReportPrinter
 
 __all__ = [
@@ -31,6 +35,7 @@ __all__ = [
     "print_document",
     "open_print_preview",
     "print_report",
+    "uses_print_portal",
     "write_print_preview",
 ]
 
@@ -93,10 +98,30 @@ def export_pdf(
     return pages
 
 
+def uses_print_portal() -> bool:
+    """Whether GTK prints through the desktop portal (in Flatpak, or when forced).
+
+    The portal's print dialog belongs to the desktop and cannot show an
+    application's own tab.
+    """
+    forced = re.split(r"[,:\s]+", os.environ.get("GDK_DEBUG", ""))
+    return os.path.exists("/.flatpak-info") or "portals" in forced
+
+
+def optional_choice_label(document: ReportDocument) -> str:
+    """The button that prints a report with its optional section."""
+    label = document.optional_label.removesuffix(" when printing")
+    return label or "Include optional detail"
+
+
 def print_operation(
-    document: ReportDocument, *, include_optional: bool = False
+    document: ReportDocument, *, include_optional: bool = False, custom_tab: bool = True
 ) -> Gtk.PrintOperation:
-    """A print operation that lays out and draws ``document``."""
+    """A print operation that lays out and draws ``document``.
+
+    ``custom_tab`` adds the **Report** tab choosing the optional section; the
+    portal print dialog cannot show it.
+    """
     operation = Gtk.PrintOperation()
     operation.set_job_name(f"BreadSched {document.title}")
     operation.set_unit(Gtk.Unit.POINTS)
@@ -112,7 +137,7 @@ def print_operation(
         operation.set_print_settings(settings)
     state: dict[str, Any] = {"include": include_optional, "printer": None}
 
-    if document.has_optional:
+    if document.has_optional and custom_tab:
         operation.set_custom_tab_label("Report")
 
         def create_widget(_operation):
@@ -155,8 +180,42 @@ def print_report(
     *,
     on_error: Callable[[str], None] | None = None,
 ) -> Gtk.PrintOperationResult:
-    """Show GTK's print dialog for ``document``: print, preview, or save a PDF."""
-    operation = print_operation(document)
+    """Show GTK's print dialog for ``document``: print, preview, or save a PDF.
+
+    Through the print portal, a report with an optional section first asks
+    whether to include it, since the portal's dialog has no **Report** tab; the
+    print dialog then follows the answer (``IN_PROGRESS`` is returned meanwhile).
+    """
+    if document.has_optional and uses_print_portal():
+        choice = Gtk.AlertDialog(
+            message=f"Print {document.title}",
+            detail="Choose what to print; the system print dialog follows.",
+        )
+        choice.set_buttons(["Cancel", "Summary only", optional_choice_label(document)])
+        choice.set_cancel_button(0)
+        choice.set_default_button(2)
+
+        def chosen(dialog: Gtk.AlertDialog, result: Gio.AsyncResult) -> None:
+            try:
+                index = dialog.choose_finish(result)
+            except GLib.Error:
+                return
+            if index in (1, 2):
+                _run_print(parent, document, index == 2, False, on_error)
+
+        choice.choose(parent, None, chosen)
+        return Gtk.PrintOperationResult.IN_PROGRESS
+    return _run_print(parent, document, False, True, on_error)
+
+
+def _run_print(
+    parent: Gtk.Window | None,
+    document: ReportDocument,
+    include_optional: bool,
+    custom_tab: bool,
+    on_error: Callable[[str], None] | None,
+) -> Gtk.PrintOperationResult:
+    operation = print_operation(document, include_optional=include_optional, custom_tab=custom_tab)
     try:
         result = operation.run(Gtk.PrintOperationAction.PRINT_DIALOG, parent)
     except Exception as exc:  # noqa: BLE001 - reported to the user, never lost
