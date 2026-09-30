@@ -1193,7 +1193,10 @@ tab per open register, and one per scenario Projection. `ViewManager._tabs` hold
 `show_category()` opens or selects the matching tab. The single `register` stack
 page is itself a stack (`register_stack`) of `RegisterView`s, one per register
 tab, and `_views["register"]` always names the register shown, so view actions and
-callers that address "the register" keep working. `open_register()` reuses the
+callers that address "the register" keep working. `open_register_tab()` (the
+register's **New tab**, #228) always opens another register tab, on the first
+account without one or on the account given, and remembered tabs reopen through
+it, so two tabs on one account both come back. `open_register()` reuses the
 account's tab or opens a new register, so the register you were in keeps its place
 and half-typed entry. A register tab's label follows its account picker. Closing a
 register tab with unsaved typing goes through `RegisterView.confirm_leave`;
@@ -1230,7 +1233,11 @@ in the toolbar's view-tools area only while its view is current. **Actions** is
 modal (#182): `app.ActionsMenu` rebuilds its model in place whenever the focused
 main window changes view, putting that view's commands first in a section named for
 the view, the commands that work anywhere next, and every other view's commands in
-per-view submenus under **Other Views**, so each command keeps exactly one item. Activating one shows its view and calls the named view method, so menu,
+per-view submenus under **Other Views**, so each command keeps exactly one item.
+It rebuilds only when the view differs from the one it shows (#229): opening a
+submenu moves focus into its popover, which toggles the window's `is-active`, and
+rebuilding the model for the same view then destroyed the open submenu under the
+pointer and crashed GTK. Activating one shows its view and calls the named view method, so menu,
 icon, and view never disagree; all are disabled while no book is open. Accounts
 (New/Edit account, Security price, Exchange rate, Hide empty, Show hidden), the
 FSA Dashboard (Manage FSA claims), and the Dashboard (Configure groups) no longer

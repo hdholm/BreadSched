@@ -622,6 +622,12 @@ class RegisterView(BaseView):
                 continue  # the row being edited keeps its lines open
             tree_row.set_expanded(index == position)
 
+    def open_in_new_tab(self) -> None:
+        """Open another register tab beside this one (#228)."""
+        opener = getattr(self.manager, "open_register_tab", None)
+        if opener is not None and self.db is not None:
+            opener()
+
     def show_account(self, handle: str) -> None:
         if handle == self.account_handle:
             self._scroll_to_end = True

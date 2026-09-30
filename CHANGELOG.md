@@ -3,6 +3,19 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a203 - 2026-09-30
+
+- **Fixed a desktop crash from the Actions menu (#229).** Opening **Actions →
+  Other Views** (reported from the register) printed GTK warnings and then
+  crashed the application. Opening the submenu made the window briefly inactive,
+  and the Actions menu was rebuilt underneath the open submenu; it is now rebuilt
+  only when you change view.
+- **Open another register tab from the register (#228).** **New tab** in the
+  register's toolbar (**Actions → Open Register in New Tab**) opens a second
+  register tab on an account that has no tab yet; its account list switches it
+  to any account. Remembered tabs keep two tabs on one account. Application
+  version `0.2.0a203`; native schema remains 10.
+
 ## 0.2.0a202 - 2026-09-30
 
 - **The desktop fits a small screen.** A book with long account names, notes, and

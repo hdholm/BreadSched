@@ -5684,7 +5684,7 @@ class TestViewActions:
         window.show_category("fsa-dashboard")
         assert tools() == ["win.fsa-dashboard-manage-claims"]
         window.show_category("register")
-        assert tools() == []
+        assert tools() == ["win.register-new-tab"]
         window.show_category("dashboard")
         assert tools() == ["win.dashboard-configure-groups", "win.dashboard-net-worth-history"]
 
@@ -6986,6 +6986,24 @@ class TestViewSpecificChrome:
         assert label == "Plan" and "win.plan-new-scenario" in _menu_actions(first)
         assert "win.scheduled-new-scheduled" in _menu_actions(self._sections(app)[-1][1])
 
+    def test_the_actions_menu_is_not_rebuilt_under_an_open_submenu(
+        self, app, window, populated_book
+    ):
+        """#229: opening Other Views moved focus to its popover, toggling the window's
+        is-active; the menu was then rebuilt for the same view, destroying the open
+        submenu, and GTK crashed. Only a change of view rebuilds the menu now."""
+        app.open_book(populated_book)
+        window.show_category("register")
+        changes = []
+        app.actions_menu.menu.connect("items-changed", lambda *args: changes.append(args))
+        # What an is-active change does, for the view already shown.
+        window._share_view_actions()
+        app.show_view_actions("register")
+        assert changes == []
+        window.show_category("plan")
+        assert changes
+        assert self._sections(app)[0][0] == "Plan"
+
 
 class TestTabs:
     """#183: opened views and each open register account are tabs below the toolbar."""
@@ -7018,6 +7036,23 @@ class TestTabs:
         assert len(window.tabs) == 4
         assert window.stack.get_visible_child_name() == "register"
         assert [tab.current for tab in window._tabs] == [False, False, True, False]
+
+    def test_new_tab_opens_another_register_from_the_register(self, app, window, populated_book):
+        """#228: a second register tab can be opened from the register itself."""
+        app.open_book(populated_book)
+        checking, card = self._accounts(app)
+        window.open_register(checking)
+        first = window._views["register"]
+        window.lookup_action("register-new-tab").activate(None)
+        second = window._views["register"]
+        assert second is not first and len(window._registers) == 2
+        # It shows an account with no tab yet; its picker moves it anywhere.
+        assert second.account_handle not in (None, checking)
+        assert [key for key, _title in window.tabs].count("register") == 2
+        # A tab can show an account another tab already shows.
+        again = window.open_register_tab(checking)
+        assert again.account_handle == checking and len(window._registers) == 3
+        assert first.account_handle == checking
 
     def test_each_register_tab_keeps_its_own_place(self, app, window, populated_book):
         app.open_book(populated_book)

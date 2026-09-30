@@ -584,9 +584,17 @@ class ActionsMenu:
     def __init__(self) -> None:
         self.menu = Gio.Menu()
         self.current: str | None = None
+        self._built = False
         self.show_view(None)
 
     def show_view(self, key: str | None) -> None:
+        # Rebuild only for another view. Opening a submenu moves focus to its
+        # popover, which toggles the window's is-active and asks again for the
+        # same view; rebuilding then destroyed the open submenu under the
+        # pointer, and GTK crashed (#229).
+        if self._built and key == self.current:
+            return
+        self._built = True
         self.current = key
         labels = {item_key: label for item_key, label, _icon in MENU_CATEGORIES}
         self.menu.remove_all()

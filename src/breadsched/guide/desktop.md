@@ -97,7 +97,10 @@ long dialog scrolls its form, and its Save and Cancel buttons stay at the bottom
 Every view you open, and the register of every account you open, gets a tab in the
 bar below the toolbar. Choose a tab to go back to it; each register tab keeps its
 own place, filter, and half-typed entry. Opening an account that already has a tab
-returns to that tab. The × on a tab closes it; closing a register with an unsaved
+returns to that tab. To open another register beside the one you are in, choose
+**New tab** in the register's toolbar (**Actions → Open Register in New Tab**): it
+shows an account that has no tab yet, and its account list switches it to any
+account, including one another tab already shows. The × on a tab closes it; closing a register with an unsaved
 entry asks first, and closing the last tab returns to the Dashboard.
 
 In Projection, **New tab** (**Actions → Open Scenario in New Tab**) keeps the
