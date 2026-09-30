@@ -679,12 +679,13 @@ negative escrow balance visible and warns when an event creates or worsens it.
 
 FSA accounts can hold funding years with election and run-out dates. Benefit
 availability is separate from the custodial ledger balance. A funding year can also
-record the plan's rule for unused money: a **carryover limit** carries up to that
+record the plan's rules for unused money: a **carryover limit** carries up to that
 much of the unused election into the next funding year once the run-out ends (only
-the rest is forfeited), or a **grace period** lets services up to its end date be
-claimed against the earlier year, choosing the funding year on the claim. A plan has
-one or the other, not both. The FSA Dashboard shows what each year carried in and
-carried over. Claims can associate
+the rest is forfeited), and a **grace period** lets services up to its end date be
+claimed against the earlier year, choosing the funding year on the claim. A plan may
+have either or both; with both, grace-period claims use the earlier year first and
+the carryover is what is still unused when the run-out ends. The FSA Dashboard shows
+what each year carried in and carried over. Claims can associate
 healthcare payments, reimbursements, allocations, refunds, and rejected attempts.
 Use FSA Dashboard to review open and recently closed benefit years and unresolved
 claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.

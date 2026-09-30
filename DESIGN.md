@@ -1034,9 +1034,8 @@ engines remain authoritative, and an explicitly configured FSA account can still
 contribute its benefit availability to a user-defined balance group.
 
 **Plan rules.** A funding year (`FsaFundingYear`, stored in the account's JSON, so
-no schema change) may carry a `carryover_limit` or a `grace_through` date, never
-both, as plans offer one or the other; a grace period cannot end before the plan
-year or after its run-out. `engine.fsa.year_status` carries the unused election, up
+no schema change) may carry a `carryover_limit`, a `grace_through` date, or both;
+a grace period cannot end before the plan year or after its run-out. `engine.fsa.year_status` carries the unused election, up
 to the limit, into the account's next funding year (`previous_year`: the year
 ending last before it starts) once the earlier year's run-out ends: the closed
 year reports it as `carried_over` and forfeits only the rest, and the next year
@@ -1044,7 +1043,9 @@ reports it as `carried_in` and adds it to its availability. Before the run-out
 ends nothing is carried, because claims may still use the money. A grace period
 extends `service_through`, the last service date a year pays for: claim windows,
 suggestions, and reimbursement attachment accept a grace-period service against
-either year, so the household chooses the funding year when both apply. GTK's
+either year, so the household chooses the funding year when both apply. With both
+rules, grace-period claims tagged to the earlier year reduce what is left at its
+run-out, so the carryover is only what those claims did not use. GTK's
 account dialog and the web funding-year editor edit both rules, and both FSA
 Dashboards show the carried amounts.
 

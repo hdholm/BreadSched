@@ -65,8 +65,6 @@ class FsaFundingYear:
                 raise ValueError("FSA grace period cannot end before the funding year")
             if self.runout_through is not None and self.grace_through > self.runout_through:
                 raise ValueError("FSA grace period cannot end after the run-out date")
-            if self.carryover_limit is not None:
-                raise ValueError("an FSA plan year has a carryover or a grace period, not both")
 
     @property
     def service_through(self) -> date:

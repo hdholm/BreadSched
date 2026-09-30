@@ -154,8 +154,8 @@ counting the claims that need it; the Dashboard shows the count as a tile.
 **Claims report** totals every claim, grouped by the **Group by** choice: status,
 FSA account, funding year, or provider.
 
-The FSA funding-year editor in Accounts takes each year's carryover limit or
-grace-period end, and the FSA Dashboard shows what each year carried in and carried
+The FSA funding-year editor in Accounts takes each year's carryover limit and
+grace-period end, either or both, and the FSA Dashboard shows what each year carried in and carried
 over.
 
 In the FSA claim editor, a changed EOB is kept in the claim's history with the

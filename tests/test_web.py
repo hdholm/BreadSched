@@ -639,12 +639,9 @@ class TestItServes:
                 ],
             }
 
-        # A plan has a carryover or a grace period, never both.
+        # A grace period must end by the run-out; a refused save changes nothing.
         with pytest.raises(urllib.error.HTTPError) as caught:
-            client.post(
-                "/api/account/fsa-years",
-                years(carryover_limit="640", grace_through="2027-03-15"),
-            )
+            client.post("/api/account/fsa-years", years(grace_through="2027-04-15"))
         assert caught.value.code == 400
         assert client.database.get_account(retirement["handle"]).serialize() == before
         status, _payload = client.post(
@@ -654,10 +651,13 @@ class TestItServes:
         _status, accounts = client.get("/api/accounts")
         stored = next(row for row in accounts if row["name"] == "401(k)")["fsa_years"][0]
         assert (stored["carryover_limit"], stored["grace_through"]) == ("640.00", None)
-        client.post("/api/account/fsa-years", years(grace_through="2027-03-15"))
+        # A plan may have both a carryover and a grace period.
+        client.post(
+            "/api/account/fsa-years", years(carryover_limit="640", grace_through="2027-03-15")
+        )
         _status, accounts = client.get("/api/accounts")
         stored = next(row for row in accounts if row["name"] == "401(k)")["fsa_years"][0]
-        assert (stored["carryover_limit"], stored["grace_through"]) == (None, "2027-03-15")
+        assert (stored["carryover_limit"], stored["grace_through"]) == ("640.00", "2027-03-15")
         _status, board = client.get("/api/fsa/dashboard")
         for row in board["years"]:
             assert {"carried_in", "carried_over", "carryover_limit", "grace_through"} <= set(row)

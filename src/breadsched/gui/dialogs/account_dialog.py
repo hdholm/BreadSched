@@ -211,8 +211,8 @@ class AccountDialog(BoundedWindow):
             label=(
                 "Election availability is tracked separately from the ledger balance. "
                 "Run-out allows explicitly assigned prior-year claims after year-end. "
-                "A plan has either a carryover limit (unused election moves to the next "
-                "year) or a grace period (later services still use this year)."
+                "A plan may have a carryover limit (unused election moves to the next "
+                "year), a grace period (later services still use this year), or both."
             ),
             xalign=0,
             wrap=True,

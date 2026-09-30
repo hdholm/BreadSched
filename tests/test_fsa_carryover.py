@@ -60,15 +60,6 @@ def test_plan_rules_are_checked_and_round_trip():
         FsaFundingYear(FIRST, through, Money(100), grace_through=date(2026, 12, 1))
     with pytest.raises(ValueError, match="after the run-out"):
         FsaFundingYear(FIRST, through, Money(100), runout, grace_through=date(2027, 4, 1))
-    with pytest.raises(ValueError, match="not both"):
-        FsaFundingYear(
-            FIRST,
-            through,
-            Money(100),
-            runout,
-            carryover_limit=Money(640),
-            grace_through=date(2027, 3, 15),
-        )
     year = FsaFundingYear(FIRST, through, Money(100), runout, carryover_limit=Money(640))
     assert FsaFundingYear.from_dict(year.serialize()) == year
     old = year.serialize()
@@ -148,3 +139,22 @@ def test_a_grace_period_service_can_be_claimed_against_the_earlier_year(db, book
     as_of = date(2027, 3, 20)
     assert _status(db, account, 0, as_of).used == Money("90.00")
     assert _status(db, account, 1, as_of).used == Money(0)
+
+
+def test_with_both_rules_grace_period_claims_come_before_the_carryover(db, book):
+    account = _account(db, book, carryover="640.00", grace=date(2027, 3, 15))
+    _used(db, book, account, date(2026, 6, 1), "200.00")
+    # A grace-period service claimed against the first year uses its money first.
+    _used(db, book, account, date(2027, 3, 1), "300.00", year=FIRST)
+    closed = _status(db, account, 0, date(2027, 4, 1))
+    assert (closed.used, closed.carried_over, closed.forfeited) == (
+        Money("500.00"),
+        Money("500.00"),
+        Money(0),
+    )
+    second = _status(db, account, 1, date(2027, 4, 1))
+    assert (second.used, second.carried_in, second.remaining) == (
+        Money(0),
+        Money("500.00"),
+        Money("1000.00"),
+    )

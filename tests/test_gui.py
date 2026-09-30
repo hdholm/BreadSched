@@ -4536,7 +4536,7 @@ class TestAccountDialogConstruction:
         dialog.name_entry.set_text("Something")
         assert dialog.save_button.get_sensitive() is True
 
-    def test_fsa_funding_years_take_a_carryover_or_a_grace_period(
+    def test_fsa_funding_years_take_a_carryover_and_a_grace_period(
         self, app, window, populated_book
     ):
         from datetime import date as day
@@ -4561,10 +4561,11 @@ class TestAccountDialogConstruction:
         assert carryover.get_text() == "640.00"
         assert dialog._fsa_year_values()[0].carryover_limit == Money("640")
         grace.set_text("2027-03-15")
-        with pytest.raises(ValueError, match="not both"):
+        both = dialog._fsa_year_values()[0]
+        assert (both.carryover_limit, both.grace_through) == (Money("640"), day(2027, 3, 15))
+        grace.set_text("2027-04-15")
+        with pytest.raises(ValueError, match="after the run-out"):
             dialog._fsa_year_values()
-        carryover.set_text("")
-        assert dialog._fsa_year_values()[0].grace_through == day(2027, 3, 15)
 
     def test_security_price_dialog_creates_an_exact_dated_quote(self, app, window, populated_book):
         from breadsched.gui.dialogs.security_price_dialog import SecurityPriceDialog
