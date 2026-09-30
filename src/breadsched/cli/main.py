@@ -468,6 +468,77 @@ def _due_references(reviews, reference: str) -> list[tuple[str, date]]:
     return [(review.schedule, when)]
 
 
+def cmd_review(args: argparse.Namespace) -> int:
+    """Unresolved transactions, the planned items Review offers, and why."""
+    from ..gen.engine import review_explain
+    from ..gen.lib.transaction import PlanningResolution
+    from ..presentation import REVIEW_ACTION_HELP
+
+    db = open_book(args.book, "r")
+    try:
+        pending = sorted(
+            (
+                transaction
+                for transaction in db.iter_transactions()
+                if transaction.planning_resolution is PlanningResolution.UNRESOLVED
+            ),
+            key=lambda transaction: (transaction.post_date, transaction.handle),
+        )
+        if args.transaction:
+            pending = [item for item in pending if item.handle.startswith(args.transaction)]
+            if not pending:
+                raise CommandError(f"no unresolved transaction matches {args.transaction!r}")
+        items = []
+        lines: list[str] = []
+        for transaction in pending:
+            explained = review_explain.explain_candidates(db, transaction)
+            hint = review_explain.fsa_hint(db, transaction)
+            reason = None if explained else review_explain.no_candidate_reason(db, transaction)
+            items.append(
+                {
+                    "handle": transaction.handle,
+                    "date": transaction.post_date,
+                    "description": transaction.description,
+                    "fsa_hint": hint,
+                    "no_candidate_reason": reason,
+                    "candidates": [
+                        {
+                            "occurrence": item.candidate.event.key,
+                            "date": item.candidate.event.planned_date,
+                            "description": item.candidate.event.description,
+                            "expected_amount": item.candidate.event.expected_amount,
+                            **item.as_dict(),
+                        }
+                        for item in explained
+                    ],
+                }
+            )
+            lines.append(
+                f"{transaction.post_date.isoformat()}  {transaction.description}  "
+                f"[{transaction.handle[:8]}]"
+            )
+            if hint:
+                lines.append(f"  {hint}")
+            for item in explained:
+                event = item.candidate.event
+                lines.append(
+                    f"  {item.label}: {event.planned_date.isoformat()} {event.description} "
+                    f"(expected {event.expected_amount.format()})"
+                )
+                lines.extend(f"    - {text}" for text in item.reasons)
+            if reason:
+                lines.append(f"  {reason}")
+        if not pending:
+            emit({"transactions": [], "actions": REVIEW_ACTION_HELP}, args, "Nothing to review.")
+            return 0
+        lines.append("")
+        lines.extend(REVIEW_ACTION_HELP[key] for key in ("match", "reject", "skip", "unexpected"))
+        emit({"transactions": items, "actions": REVIEW_ACTION_HELP}, args, "\n".join(lines))
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_due_review(args: argparse.Namespace) -> int:
     """List or decide due and missed scheduled occurrences, grouped by schedule."""
     if args.post_all and args.skip_all:
@@ -3817,6 +3888,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     csv_cmd.add_argument("--preview", action="store_true", help="show rows; write nothing")
     csv_cmd.set_defaults(func=cmd_import_csv)
+
+    review_cmd = add(
+        "review",
+        "List unresolved transactions, the planned items Review offers for each, and why",
+    )
+    review_cmd.add_argument("--transaction", metavar="ID", help="only this transaction (id prefix)")
+    review_cmd.set_defaults(func=cmd_review)
 
     due_review = add(
         "due-review",

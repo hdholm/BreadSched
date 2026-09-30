@@ -25,7 +25,7 @@ from ..gen.engine import (
     fsa_claims,
     ledger,
     loans,
-    planning,
+    review_explain,
     schedule,
     valuation,
 )
@@ -109,7 +109,12 @@ from ..gen.services import (
 )
 from ..gen.services.receivables import reimbursement_proposals
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
-from ..presentation import claim_role_label, reimbursement_notice, service_error_message
+from ..presentation import (
+    REVIEW_ACTION_HELP,
+    claim_role_label,
+    reimbursement_notice,
+    service_error_message,
+)
 from ..versioning import version_details
 from .dashboard_resource import dashboard_report
 from .expense_resource import expense_report
@@ -1814,8 +1819,11 @@ class Api:
                 "description": transaction.description,
                 "amount": actual_amount,
                 "fsa": self._review_fsa_options(transaction),
+                "fsa_hint": review_explain.fsa_hint(self.db, transaction),
+                "no_candidate_reason": None,
             }
-            for candidate in planning.match_candidates(self.db, transaction):
+            for explained in review_explain.explain_candidates(self.db, transaction):
+                candidate = explained.candidate
                 event = candidate.event
                 candidates.append(
                     {
@@ -1828,13 +1836,19 @@ class Api:
                         "amount_difference": candidate.amount_difference,
                         "amount_variance": actual_amount - event.expected_amount,
                         "common_accounts": candidate.common_accounts,
+                        **explained.as_dict(),
                     }
+                )
+            if not candidates:
+                selected["no_candidate_reason"] = review_explain.no_candidate_reason(
+                    self.db, transaction
                 )
 
         return {
             "actuals": actuals,
             "selected": selected,
             "candidates": candidates,
+            "action_help": dict(REVIEW_ACTION_HELP),
         }
 
     def _projection_draft(

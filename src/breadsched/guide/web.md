@@ -100,6 +100,13 @@ Dashboard. Choose each date's action, or one for all of a schedule's dates, then
 **Apply**. See
 [Review due and missed transactions](../USER_GUIDE.md#review-due-and-missed-transactions).
 
+## Review
+
+**Review** lists actual transactions waiting for a decision. Each planned item it
+offers shows **Close match** or **Possible match** and the reasons beneath it; the
+buttons explain themselves on hover, and **What each action does** lists them all.
+When nothing is offered, the page says why.
+
 ## Plan and projection
 
 Set the Plan controls and apply them; they are shared with the desktop application.

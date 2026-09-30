@@ -631,6 +631,18 @@ an actual to an FSA claim validate stable identities before owning their respect
 atomic transaction, schedule, or claim write. Expected stale-state failures use
 stable codes and field paths; candidate ranking remains read-only engine logic.
 
+`engine.review_explain` explains the ranking for every interface. Each candidate gets
+reasons (shared accounts, amount and date offsets, description words in common) and a
+confidence: *close* within two days and 5% of the expected amount, otherwise
+*possible*. With no candidate, `no_candidate_reason` searches 60 days either side for
+an open occurrence sharing an account and reports the first applicable cause: a
+nearby one in another currency, every nearby one rejected, the nearest outside the
+seven-day window, or no schedule using the accounts. `fsa_hint` classifies an FSA
+movement with `fsa_flows` and says whether and how to attach it to a claim. The
+wording for each action is `presentation.REVIEW_ACTION_HELP`; GTK shows it as
+tooltips and a help line, the web as titles and a list, and `breadsched review`
+under its read-only listing.
+
 When an actual resolves a planned occurrence, BreadSched preserves the original
 occurrence identity, planned date, and expected value so later schedule changes do
 not rewrite historical variance.

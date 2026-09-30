@@ -108,6 +108,18 @@ breadsched estimate household.breadsched suggest --json
 breadsched scheduled household.breadsched
 ```
 
+### Review actual transactions
+
+```bash
+breadsched review household.breadsched
+breadsched review household.breadsched --transaction 3f2a --json
+```
+
+`breadsched review` lists each actual transaction waiting for a decision, the
+planned items Review offers with **Close match** or **Possible match** and the
+reasons, or why nothing is offered, and what each action does. Decide in the desktop
+application or the browser.
+
 ### Review due transactions
 
 ```bash

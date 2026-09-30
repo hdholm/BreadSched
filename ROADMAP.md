@@ -135,8 +135,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   and reconciliation; test direct vendor credits, bank reimbursements, and
   insurer/employer payments as distinct flows.
 
-- Improve Review suggestions and action explanations.
-
 - Improve import/reconciliation treatment of external FSA transactions.
 
 - Expand claim/import automation without conflating benefit availability with the

@@ -365,6 +365,31 @@ def fsa_usage_text(status: FsaYearStatus) -> str:
     return "; ".join(shown) or "—"
 
 
+#: What each Review action does, in the words every interface shows.
+REVIEW_ACTION_HELP = {
+    "match": (
+        "Match: this transaction is the selected planned item. The item is marked "
+        "done, and Plan and Projection compare what happened with what was planned."
+    ),
+    "reject": (
+        "Reject: this transaction is not the selected item. The item stays planned "
+        "and is not offered for this transaction again."
+    ),
+    "skip": (
+        "Skip: the selected item will not happen this time. It is removed from the "
+        "plan; the transaction still needs a decision."
+    ),
+    "unexpected": (
+        "Unexpected: this transaction was not planned. It counts as unplanned "
+        "activity and leaves Review."
+    ),
+    "fsa": (
+        "Attach to FSA claim: link this transaction to a claim in the role shown, so "
+        "the claim tracks what was paid, refunded, and reimbursed."
+    ),
+}
+
+
 def book_open_notice(path: str, *, migration_backup: str | None = None) -> str | None:
     """What to tell the user after opening a book, or ``None`` when nothing needs saying.
 

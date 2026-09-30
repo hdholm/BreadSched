@@ -135,6 +135,19 @@ occurrences and actual splits, and use **Resolve actuals** when an actual needs 
 matched, marked unexpected, or reviewed. Correct a posted split's planning purpose
 in the transaction editor; correct a scheduled purpose in the schedule editor.
 
+Review explains its suggestions. Each planned item it offers for an actual is a
+**Close match** (within two days and 5% of the expected amount) or a **Possible
+match**, with the reasons: the accounts it shares, how far the amount and date are
+from the plan, and any words the descriptions share. When nothing is offered, Review
+says why: the nearest planned item using those accounts is outside the seven-day
+window, is planned in another currency, or was rejected, or no schedule uses the
+accounts at all. Each action says what it will do: **Match** marks the planned item
+done, **Reject** stops offering it for this transaction, **Skip** removes the planned
+item from the plan, and **Unexpected** records the transaction as unplanned. A
+transaction that moves FSA money also says which FSA flow it is (payroll funding, a
+payment from the FSA card, a reimbursement, or a provider refund) and whether and how
+to attach it to a claim.
+
 ## Work areas
 
 The desktop application and the browser offer the same work areas:
