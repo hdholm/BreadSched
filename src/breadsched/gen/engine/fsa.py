@@ -8,6 +8,7 @@ from datetime import date
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountType, FsaFundingYear
 from ..lib.money import Money
+from .fsa_flows import FsaFlowKind, classify
 
 __all__ = ["FsaYearStatus", "dashboard_statuses", "previous_year", "year_status"]
 
@@ -29,6 +30,12 @@ class FsaYearStatus:
     carried_in: Money = Money(0)
     #: Unused election this closed year carries into the next; not forfeited.
     carried_over: Money = Money(0)
+    #: The flows behind ``used`` (see :mod:`fsa_flows`): paid from the FSA card
+    #: straight to a provider, paid out to a bank account, and credited back to
+    #: the card by a provider. ``used`` is their net, less ``repaid``.
+    direct_payments: Money = Money(0)
+    reimbursements: Money = Money(0)
+    provider_refunds: Money = Money(0)
 
     @property
     def label(self) -> str:
@@ -66,32 +73,38 @@ def year_status(
 
     Money paid back into the account for a funding year (a claim's repayment,
     whose split carries ``fsa_year_start``) is not payroll funding: it gives
-    that much of the election back.
+    that much of the election back. So does a provider refund credited to the
+    FSA card, while money moved between FSA accounts is neither funding nor use
+    (see :mod:`fsa_flows`).
 
     A plan with a carryover limit carries up to that much of a year's unused
     election into the account's next funding year once the run-out ends; only
     the rest is forfeited. The next year's availability includes it from then.
     """
     when = as_of or date.today()
-    funded = Money(0)
-    used = Money(0)
-    repaid = Money(0)
+    totals = dict.fromkeys(FsaFlowKind, Money(0))
     end = min(when, year.runout_through or year.through)
     if end >= year.start:
+        accounts = {item.handle: item for item in db.iter_accounts()}
         for transaction in db.iter_transactions(account=account.handle, start=year.start, end=end):
             for split in transaction.splits:
                 if split.account != account.handle:
                     continue
-                if split.value > 0 and split.fsa_year_start is not None:
-                    if _belongs(split.fsa_year_start, transaction.post_date, year):
-                        repaid = repaid + split.value
-                elif split.value > 0 and year.start <= transaction.post_date <= year.through:
-                    funded = funded + split.value
-                elif split.value < 0 and _belongs(
-                    split.fsa_year_start, transaction.post_date, year
-                ):
-                    used = used - split.value
-    used = used - repaid
+                kind = classify(transaction, split, accounts)
+                if kind is FsaFlowKind.FUNDING:
+                    counted = year.start <= transaction.post_date <= year.through
+                else:
+                    counted = _belongs(split.fsa_year_start, transaction.post_date, year)
+                if counted:
+                    totals[kind] = totals[kind] + abs(split.value)
+    funded = totals[FsaFlowKind.FUNDING]
+    repaid = totals[FsaFlowKind.REPAYMENT]
+    used = (
+        totals[FsaFlowKind.DIRECT_PAYMENT]
+        + totals[FsaFlowKind.REIMBURSEMENT]
+        - totals[FsaFlowKind.PROVIDER_REFUND]
+        - repaid
+    )
     carried_in = _carried_in(db, account, year, when)
     remaining_raw = year.election + carried_in - used
     available = remaining_raw if remaining_raw > 0 else Money(0)
@@ -115,6 +128,9 @@ def year_status(
         repaid=repaid,
         carried_in=carried_in,
         carried_over=carried_over,
+        direct_payments=totals[FsaFlowKind.DIRECT_PAYMENT],
+        reimbursements=totals[FsaFlowKind.REIMBURSEMENT],
+        provider_refunds=totals[FsaFlowKind.PROVIDER_REFUND],
     )
 
 

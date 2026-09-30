@@ -283,6 +283,11 @@ gives each claim with its `attention` codes and text, and what was repaid to the
 FSA, is still to repay, or was given up. `breadsched dashboard` shows how many
 claims need attention.
 
+`breadsched claims BOOK --years` lists open and recently closed FSA benefit years:
+the election, what was funded and used, **How used** (paid from the card,
+reimbursed, refunded to the card, repaid), and what remains. `--account` and
+`--as-of` apply, and `--json` gives each part as a separate field.
+
 ```sh
 breadsched claims BOOK --close 3f2a --on 2026-05-01 --reason "Not worth appealing"
 breadsched claims BOOK --reopen 3f2a --note "Appeal won"

@@ -57,7 +57,7 @@ from ...gen.services import (
 )
 from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_entry
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message
+from ...presentation import claim_role_label, service_error_message
 from ..gi_setup import Gio, GLib, Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -367,7 +367,7 @@ class TransactionDialog(BoundedWindow):
             )
             fsa_row.append(self.fsa_claim)
             self.fsa_role = bounded_dropdown(
-                ["Healthcare payment", "Provider refund", "FSA reimbursement", "Repaid to the FSA"]
+                [claim_role_label(role) for role in fsa_claims.ATTACHMENT_ROLES]
             )
             fsa_row.append(self.fsa_role)
             box.append(fsa_row)
@@ -770,8 +770,8 @@ class TransactionDialog(BoundedWindow):
             and self.fsa_claim.get_selected() > 0
         ):
             claim = self.fsa_claims[self.fsa_claim.get_selected() - 1]
-            roles = ("payment", "refund", "reimbursement", "repayment")
-            attachment = ClaimAttachment(claim.handle, roles[self.fsa_role.get_selected()])
+            role = fsa_claims.ATTACHMENT_ROLES[self.fsa_role.get_selected()]
+            attachment = ClaimAttachment(claim.handle, role)
         return SaveTransaction(
             TransactionInput(
                 post_date=when,

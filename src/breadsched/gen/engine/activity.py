@@ -21,7 +21,7 @@ from ..lib.recurrence import add_months
 from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
-from . import ledger
+from . import fsa_flows, ledger
 from .completeness import Completeness, Policy
 from .conversion import (
     CurrencyEvidence,
@@ -31,6 +31,7 @@ from .conversion import (
     excluded_activity,
 )
 from .escrow import recognition as escrow_recognition
+from .fsa_flows import FsaFlowKind
 from .planning import (
     EventStatus,
     PlannedEvent,
@@ -1251,10 +1252,22 @@ def _planning_flow_decision(
                 f"Inferred Retirement distributions from a negative split from Retirement "
                 f"account {account.name}.",
             )
-    if account.atype is AccountType.FSA and split.amount > 0:
+    if account.atype is AccountType.FSA:
+        flow = fsa_flows.classify_parts(split.amount, peers)
+        if flow is FsaFlowKind.TRANSFER:
+            return (
+                None,
+                "Money moved between FSA accounts is an ordinary transfer unless a split "
+                "purpose explicitly classifies it.",
+            )
+        # Every other FSA movement is part of the household's net benefit
+        # funding: payroll puts money in, and direct payments and reimbursements
+        # take it out to cover medical costs that are counted once, as expense,
+        # where they were incurred.
         return (
             PlanningFlowKind.BENEFIT_FUNDING,
-            f"Inferred Benefit / FSA funding from a positive split to FSA account {account.name}.",
+            f"Inferred Benefit / FSA funding from an FSA {flow.label.lower()} "
+            f"{'into' if split.amount > 0 else 'out of'} FSA account {account.name}.",
         )
     if account.atype is AccountType.LOAN and split.amount > 0:
         if any(peer and peer.atype is AccountType.LOAN for peer in peers):

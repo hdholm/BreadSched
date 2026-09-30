@@ -3448,7 +3448,7 @@ async function showReview() {
     const roleSelect = el("select", {},
       fsaOptions.roles.map((role) => el("option", {
         value: `${role.role}|${role.split}|${(role.years || []).join(",")}`,
-      }, `${role.role.replace("_", " ")} · ${role.account}`)));
+      }, `${role.label || role.role.replace("_", " ")} · ${role.account}`)));
     const yearSelect = el("select", {}, el("option", { value: "" }, "Auto funding year"));
     const refreshYears = () => {
       const parts = roleSelect.value.split("|");
@@ -3917,7 +3917,9 @@ async function showEntry() {
         el("option", { value: "payment" }, "Healthcare payment"),
         el("option", { value: "refund" }, "Provider refund"),
         el("option", { value: "reimbursement" }, "FSA reimbursement"),
-        el("option", { value: "repayment" }, "Repaid to the FSA"))) : null,
+        el("option", { value: "repayment" }, "Repaid to the FSA"),
+        el("option", { value: "direct_payment" }, "Paid from the FSA card"),
+        el("option", { value: "direct_refund" }, "Refunded to the FSA card"))) : null,
     el("button", { class: "action primary", type: "submit" }, "Post"));
 
   return el("div", {},
@@ -4816,7 +4818,7 @@ async function showFsaDashboard() {
   const data = await get(`/api/fsa/dashboard?by=${encodeURIComponent(by)}`);
   const yearRows = data.years.map((item) => [
     item.account, `${item.start} – ${item.through}`, item.phase, money(item.election),
-    money(item.funded), money(item.used), money(item.remaining),
+    money(item.funded), money(item.used), item.usage_text || "—", money(item.remaining),
     money(item.carried_in), money(item.carried_over), money(item.forfeited),
   ]);
   const claimRows = data.claims.map((claim) => [
@@ -4849,7 +4851,7 @@ async function showFsaDashboard() {
       : null,
     el("h2", {}, "FSA benefit years"),
     yearRows.length ? table(["Account", "Funding year", "Status",
-      {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},
+      {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},"How used",
       {label:"Remaining",num:true},{label:"Carried in",num:true},
       {label:"Carried over",num:true},{label:"Forfeited",num:true}], yearRows)
       : el("p", { class:"note" }, "No open or recently closed FSA benefit years."),

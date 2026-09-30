@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ...gen.engine import fsa
 from ...gen.engine.fsa_claim_report import claim_report
+from ...presentation import fsa_usage_text
 from ..gi_setup import Gtk
 from ..widgets.choice import bounded_dropdown
 from ._base import BaseView
@@ -121,13 +122,15 @@ class FsaDashboardView(BaseView):
             "Election",
             "Funded",
             "Used",
+            "How used",
             "Remaining",
             "Carried in",
             "Carried over",
             "Forfeited",
         )
         for column_index, heading in enumerate(headings):
-            label = Gtk.Label(label=heading, xalign=1 if column_index >= 3 else 0)
+            text_column = column_index < 3 or column_index == 6
+            label = Gtk.Label(label=heading, xalign=0 if text_column else 1)
             label.add_css_class("summary-label")
             self.fsa_grid.attach(label, column_index, 0, 1, 1)
         for row_index, status in enumerate(statuses, start=1):
@@ -138,14 +141,16 @@ class FsaDashboardView(BaseView):
                 status.year.election.format(),
                 status.funded.format(),
                 status.used.format(),
+                fsa_usage_text(status),
                 status.remaining.format(),
                 status.carried_in.format(),
                 status.carried_over.format(),
                 status.forfeited.format(),
             )
             for column_index, value in enumerate(values):
-                label = Gtk.Label(label=value, xalign=1 if column_index >= 3 else 0)
-                if column_index >= 3:
+                text_column = column_index < 3 or column_index == 6
+                label = Gtk.Label(label=value, xalign=0 if text_column else 1)
+                if not text_column:
                     label.add_css_class("numeric")
                 self.fsa_grid.attach(label, column_index, row_index, 1, 1)
 

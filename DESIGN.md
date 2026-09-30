@@ -1565,6 +1565,21 @@ use the money. A grace period extends `service_through`, so a grace-period servi
 be claimed against either year and the household chooses; grace-period claims tagged
 to the earlier year reduce what it can carry over.
 
+**Flows.** `engine.fsa_flows.classify` gives every split on an FSA account one
+`FsaFlowKind` from its sign and the other splits' accounts: positive and tagged with a
+funding year is a claim's *repayment*; positive from an expense account (and no income
+account) is a *provider refund*; any other positive split is *funding*; negative to an
+expense account is a *direct payment*; any other negative split is a
+*reimbursement*; a movement only between FSA accounts is a *transfer*.
+`year_status` counts only funding dated in the plan year as `funded`, and sets
+`used` to direct payments plus reimbursements less provider refunds and repayments,
+each reported separately (`presentation.fsa_usage_text` words them for every
+interface). The medical expense stays on its expense split, so a card charge later
+paid from the bank and reimbursed by the FSA is one expense; the card payment is a
+transfer and the reimbursement a balance-sheet movement. Plan infers every
+non-transfer FSA flow as `BENEFIT_FUNDING`, so the benefit row is the account's net
+movement and the cash bridge has no residual for FSA-paid expense.
+
 **Claims.** An `FsaClaim` is a first-class transactional object (see
 [Presentation settings and financial records](#presentation-settings-and-financial-records))
 linking payments, provider refunds, and per-funding-year allocations with their
@@ -1583,6 +1598,12 @@ cash-like.
   depends on the split. Without that link, a receivable whose expense is also a claim
   payment produces a warning rather than a refusal, because such a split can be
   legitimate.
+- **Paired roles.** `fsa_claims.attachment_roles` lists the roles a transaction can
+  take, paired roles first. `direct_payment` links a direct FSA payment as both the
+  claim's payment and its allocation's reimbursement; `direct_refund` links a provider
+  refund to the FSA card as both a refund and a repayment, so the claim nets to what
+  was actually used. Suggestions rank these ahead of single roles for the same
+  transaction.
 - **Repayments.** Splits paying money back into the allocation's FSA account are
   linked as repayments and tagged with the funding year. `year_status` takes a tagged
   positive split off `used` (reported as `repaid`) instead of treating it as payroll

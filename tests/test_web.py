@@ -3326,6 +3326,41 @@ class TestDashboardApi:
         assert set(payload) == {"years", "claims", "report", "attention"}
         assert payload["report"]["by"] == "status"
 
+    def test_fsa_years_say_how_the_election_was_used(self, client):
+        from breadsched.gen.lib import FsaFundingYear, Transaction
+
+        db = client.database
+        accounts = {a.name: a for a in db.iter_accounts()}
+        today = date.today()
+        start = today.replace(month=1, day=1)
+        account = Account(
+            name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
+        )
+        account.fsa_years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
+        ]
+        medical = Account(
+            name="Medical", atype=AccountType.EXPENSE, parent=accounts["Expenses"].handle
+        )
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+            db.add_account(medical, txn)
+            db.add_transaction(
+                Transaction.simple(start, "Clinic", medical.handle, account.handle, "40"), txn
+            )
+            db.add_transaction(
+                Transaction.simple(start, "Refund", account.handle, medical.handle, "15"), txn
+            )
+        _status, payload = client.get("/api/fsa/dashboard")
+        [year] = [item for item in payload["years"] if item["account_handle"] == account.handle]
+        assert (year["direct_payments"], year["provider_refunds"], year["used"]) == (
+            "40.00",
+            "15.00",
+            "25.00",
+        )
+        assert year["funded"] == "0.00"
+        assert year["usage_text"] == "40.00 paid from the card; 15.00 refunded to the card"
+
     def test_fsa_claims_are_grouped_and_flagged_like_every_interface(self, client):
         from breadsched.gen.engine import fsa_claims
         from breadsched.gen.engine.fsa_claim_report import claim_report

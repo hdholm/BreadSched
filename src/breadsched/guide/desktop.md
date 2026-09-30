@@ -294,7 +294,14 @@ switches between status, FSA account, funding year, and provider.
 An FSA account's funding years are edited in the account dialog. Each year's second
 line takes the plan's **Carryover limit** and **Grace through** date, either or
 both; the FSA Dashboard's **Carried in** and **Carried over** columns show where
-unused election went.
+unused election went, and **How used** shows what was paid from the FSA card,
+reimbursed to your bank, and refunded to the card.
+
+In the transaction editor's **FSA claim (optional)** row and in Review, the role list
+offers only what fits the transaction: **Paid from the FSA card** and **Refunded to
+the FSA card** for money moving between the FSA card and a provider, **Healthcare
+payment** and **Provider refund** for a charge paid another way, and **FSA
+reimbursement** or **Repaid to the FSA** for money between the FSA and your bank.
 
 In **Manage FSA Claims**, a changed EOB is kept in the claim's history with the
 **EOB change note**. Link money you paid back into the FSA under **Repaid to the

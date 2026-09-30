@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from ..gen.engine import fsa
 from ..gen.engine.fsa_claim_report import GROUPINGS, ClaimGroup, claim_report
+from ..presentation import fsa_usage_text
 
 if TYPE_CHECKING:
     from .resources import QueryParams
@@ -81,6 +82,12 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
                 "election": _amount(status.year.election),
                 "funded": _amount(status.funded),
                 "used": _amount(status.used),
+                # The flows behind "used" (see engine/fsa_flows).
+                "direct_payments": _amount(status.direct_payments),
+                "reimbursements": _amount(status.reimbursements),
+                "provider_refunds": _amount(status.provider_refunds),
+                "repaid": _amount(status.repaid),
+                "usage_text": fsa_usage_text(status),
                 "remaining": _amount(status.remaining),
                 "overage": _amount(status.overage),
                 "carryover_limit": (
