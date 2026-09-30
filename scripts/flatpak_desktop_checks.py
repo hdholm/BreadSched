@@ -40,6 +40,7 @@ def main(book: str, print_dir: str, report_path: str) -> int:
     from breadsched.gui.viewmanager import CATEGORIES, ViewManager
 
     finished: dict[str, str | None] = {}
+    reported: list[str] = []
 
     def recording(kind: str, real: Callable[..., Any]) -> Callable[..., Any]:
         def finish(dialog: Any, result: Any) -> Any:
@@ -70,12 +71,13 @@ def main(book: str, print_dir: str, report_path: str) -> int:
             if value:
                 return value
             time.sleep(0.1)
-        raise AssertionError(f"timed out waiting for {what}; results {finished}")
+        raise AssertionError(
+            f"timed out waiting for {what}; results {finished}; reported {reported}"
+        )
 
     app = BreadSchedApplication(application_id=f"{APP_ID}.PortalChecks", unique=False)
     app.register()
     app.do_startup()
-    reported: list[str] = []
     app._report = reported.append  # type: ignore[method-assign]
     window = ViewManager(app, prompt_due_on_open=False)
     app.open_book(book)

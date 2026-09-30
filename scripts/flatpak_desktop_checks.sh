@@ -27,10 +27,25 @@ here=$(cd "$(dirname "$0")" && pwd)
 host_python=${HOST_PYTHON:-/usr/bin/python3}
 expect_app_id=${EXPECT_APP_ID-org.breadsched.BreadSched}
 
-# A private runtime directory: the desktop session (a CI runner has one) may already
-# run its own document portal at $XDG_RUNTIME_DIR/doc, where a second portal
-# cannot mount. Inside the sandbox Flatpak still shows ours as /run/user/UID/doc.
-XDG_RUNTIME_DIR=$(mktemp -d)
+# The file chooser hands the application the host's path to the chosen document
+# ($XDG_RUNTIME_DIR/doc/ID/NAME), and the sandbox shows the document portal at
+# /run/user/UID/doc, so the portal must be mounted at the standard place, as on a
+# desktop. A CI runner's own session may already hold that mount; with
+# PORTAL_TAKE_OVER_RUNTIME set, it is released first (CI only; needs sudo).
+# Otherwise (an unsandboxed local run, where any path works) a private
+# directory is used.
+if [ -n "${PORTAL_TAKE_OVER_RUNTIME:-}" ]; then
+  XDG_RUNTIME_DIR=/run/user/$(id -u)
+  sudo mkdir -p "$XDG_RUNTIME_DIR"
+  sudo chown "$(id -u):$(id -g)" "$XDG_RUNTIME_DIR"
+  echo "document portal mount before the checks:"
+  findmnt "$XDG_RUNTIME_DIR/doc" || echo "  none"
+  if mountpoint -q "$XDG_RUNTIME_DIR/doc"; then
+    sudo umount -l "$XDG_RUNTIME_DIR/doc"
+  fi
+else
+  XDG_RUNTIME_DIR=$(mktemp -d)
+fi
 export XDG_RUNTIME_DIR
 chmod 700 "$XDG_RUNTIME_DIR"
 

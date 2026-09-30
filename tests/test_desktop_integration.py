@@ -121,6 +121,10 @@ def test_ci_drives_the_portal_file_chooser_and_print_dialog_in_the_sandbox():
     backend = (ROOT / "scripts" / "portal_test_backend.py").read_text(encoding="utf-8")
 
     assert "bash scripts/flatpak_desktop_checks.sh" in workflow
+    # The chooser returns the host's document path, which the sandbox shows only
+    # when the portal is mounted at the standard /run/user/UID/doc.
+    assert "PORTAL_TAKE_OVER_RUNTIME=1" in workflow
+    assert "XDG_RUNTIME_DIR=/run/user/$(id -u)" in harness
     assert '--command=python3 "$app"' in workflow
     assert "python3-gi" in workflow
     # The real portal frontend sits between the application and the stand-in

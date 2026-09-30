@@ -412,7 +412,7 @@ jobs:
           cp scripts/flatpak_desktop_checks.py "$work/"
           flatpak run --user --unshare=network --command=breadsched "$app" \
             sample "$work/book.breadsched" --as-of 2026-09-15
-          HOST_PYTHON=/usr/bin/python3 xvfb-run -a dbus-run-session -- \
+          HOST_PYTHON=/usr/bin/python3 PORTAL_TAKE_OVER_RUNTIME=1 xvfb-run -a dbus-run-session -- \
             bash scripts/flatpak_desktop_checks.sh "$work" "$outside" "$work/book.breadsched" -- \
             flatpak run --user --unshare=network --env=GSK_RENDERER=cairo \
             --command=python3 "$app"
