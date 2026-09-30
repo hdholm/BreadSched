@@ -16,6 +16,13 @@ from .attachment_resource import (
 from .autocomplete_resource import entry_suggestion
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
+from .fsa_claim_resource import (
+    fsa_claim_close,
+    fsa_claim_delete,
+    fsa_claim_reopen,
+    fsa_claim_save,
+    fsa_claims,
+)
 from .fsa_resource import fsa_dashboard
 from .gnucash_writeback_resource import (
     gnucash_writeback,
@@ -235,7 +242,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/accounts": _no_query("accounts"),
     "/api/loan/options": _no_query("loan_options"),
     "/api/commodities": _no_query("commodities"),
-    "/api/fsa/claims": _no_query("fsa_claims"),
+    "/api/fsa/claims": fsa_claims,
     "/api/register": register,
     "/api/reconciliation": reconciliation,
     "/api/scheduled": _scheduled,
@@ -290,8 +297,10 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/currency/quote": _currency_quote,
     "/api/plan/settings": _post("plan_settings_save"),
     "/api/account/fsa-years": _post("account_fsa_years_save"),
-    "/api/fsa/claim/save": _post("fsa_claim_save"),
-    "/api/fsa/claim/delete": _post("fsa_claim_delete"),
+    "/api/fsa/claim/save": fsa_claim_save,
+    "/api/fsa/claim/delete": fsa_claim_delete,
+    "/api/fsa/claim/close": fsa_claim_close,
+    "/api/fsa/claim/reopen": fsa_claim_reopen,
     "/api/transaction": transaction_add,
     "/api/reconciliation/start": reconciliation_start,
     "/api/reconciliation/update": reconciliation_update,

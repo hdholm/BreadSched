@@ -3,6 +3,24 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a205 - 2026-09-30
+
+- **Repaying an FSA over-reimbursement.** When a corrected EOB is lower than what
+  the FSA already paid, the claim shows **Over-reimbursed** and says how much to
+  pay back, instead of a general **Needs review**. Link the payment back into the
+  FSA under **Repaid to the FSA** on the claim's allocation (desktop, browser, or
+  Review): it counts against what was reimbursed, and gives that much of the
+  funding year's election back rather than counting as payroll funding.
+- **Late EOB changes and reopened claims.** Changing an EOB already entered is kept
+  in the claim's history with an **EOB change note**. A higher EOB after the FSA
+  has paid reopens the claim for the rest, and it is flagged until reimbursed.
+- **Closing a claim.** **Close claim** stops pursuing what is left to reimburse: the
+  claim shows **Closed** and what it gave up, and needs no more attention.
+  **Reopen** takes it up again; both are kept in the history. The command line
+  gains `breadsched claims --close`, `--reopen`, and `--history`. The browser's
+  claim requests moved into their own adapter. Application version `0.2.0a205`;
+  native schema remains 10.
+
 ## 0.2.0a204 - 2026-09-30
 
 - **FSA claims needing attention.** A claim now says when something is left to

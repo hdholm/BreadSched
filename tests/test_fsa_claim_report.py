@@ -115,11 +115,14 @@ def test_each_kind_of_attention_is_reported(db, claims):
     assert _codes(report, made["done"]) == []
     assert _codes(report, made["waiting"]) == ["eob"]
     assert _codes(report, made["rejected"]) == ["deadline", "rejected"]
-    assert _codes(report, made["over"]) == ["review"]
+    assert _codes(report, made["over"]) == ["over"]
     texts = {item.code: item.text for line in report.lines for item in line.attention}
     assert texts["deadline"] == "Claim by 2027-09-30: 300.00 still to reimburse"
     assert texts["rejected"].startswith("300.00 rejected on 2027-07-01 (No itemized bill)")
-    assert texts["review"] == "Reimbursed 10.00 more than the claim allows"
+    assert texts["over"] == (
+        "Reimbursed 10.00 more than the claim allows: "
+        "repay the FSA and link the repayment, or correct the claim"
+    )
     assert texts["eob"].startswith("No EOB entered 396 days")
     assert {line.handle for line in report.needing_attention} == {
         made["waiting"].handle,
@@ -144,7 +147,7 @@ def test_claims_group_by_status_account_year_and_provider(db, claims):
         "Waiting for EOB",
         "Open",
         "Fully reimbursed",
-        "Needs review",
+        "Over-reimbursed",
     ]
     by_account = claim_report(db, as_of=AS_OF, by="account")
     assert [(g.label, g.claims, g.attention) for g in by_account.groups] == [
@@ -215,6 +218,6 @@ def test_the_command_line_reports_claims_and_attention(db, claims, tmp_path, cap
         "eob",
         "deadline",
         "rejected",
-        "review",
+        "over",
     }
     assert main(["claims", str(path), "--status", "bogus"]) != 0

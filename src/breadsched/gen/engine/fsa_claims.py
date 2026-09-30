@@ -10,7 +10,7 @@ from enum import Enum
 from ..db.base import DbTxn
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass, AccountType, FsaFundingYear
-from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimSplitLink
+from ..lib.fsa_claim import FsaClaim, FsaClaimAllocation, FsaClaimEvent, FsaClaimSplitLink
 from ..lib.money import Money
 from ..lib.receivable import Receivable
 from ..lib.transaction import Split, Transaction
@@ -26,8 +26,10 @@ __all__ = [
     "attach_transaction_to_claim",
     "claim_summary",
     "claim_year_window",
+    "close_claim",
     "delete_claim",
     "iter_claims",
+    "reopen_claim",
     "save_claim",
     "shared_costs_for_receivable",
     "suggest_claims_for_transaction",
@@ -95,6 +97,8 @@ def suggest_claims_for_transaction(
             eligible.append(("refund", split, None))
         if account.atype is AccountType.FSA and split.value < 0:
             eligible.append(("reimbursement", split, account.handle))
+        if account.atype is AccountType.FSA and split.value > 0:
+            eligible.append(("repayment", split, account.handle))
     if not eligible:
         return []
 
@@ -102,14 +106,22 @@ def suggest_claims_for_transaction(
     suggestions: list[FsaClaimSuggestion] = []
     for claim in iter_claims(db):
         summary = claim_summary(db, claim)
-        if summary.status is FsaClaimStatus.FULLY_REIMBURSED:
+        over = summary.status is FsaClaimStatus.OVER_REIMBURSED
+        if summary.status in {FsaClaimStatus.FULLY_REIMBURSED, FsaClaimStatus.CLOSED}:
             continue
 
         best: FsaClaimSuggestion | None = None
         for role, split, reimbursement_account in eligible:
             if role == "refund" and summary.net_paid <= 0:
                 continue
-            if role == "reimbursement":
+            # Only money owed back to the FSA is a repayment.
+            if role == "repayment" and not over:
+                continue
+            if role == "repayment":
+                # Money goes back to an FSA the claim was reimbursed from.
+                if not any(item.account == reimbursement_account for item in claim.allocations):
+                    continue
+            elif role == "reimbursement":
                 account = db.get_account(reimbursement_account or "")
                 if account is None:
                     continue
@@ -150,6 +162,11 @@ def suggest_claims_for_transaction(
                 if {"refund", "credit"} & txn_words:
                     score += 15
                     reasons.append("refund/credit description")
+            elif role == "repayment":
+                target = summary.over_reimbursed
+                role_label = "repayment to the FSA"
+                score += 20
+                reasons.append("claim over-reimbursed")
             else:
                 target = summary.remaining_reimbursable
                 role_label = "FSA reimbursement"
@@ -193,6 +210,13 @@ class FsaClaimStatus(str, Enum):
     FULLY_REIMBURSED = "fully_reimbursed"
     CLOSED_NO_FUNDS = "closed_no_funds"
     NEEDS_REVIEW = "needs_review"
+    OVER_REIMBURSED = "over_reimbursed"
+    CLOSED = "closed"
+
+    @property
+    def settled(self) -> bool:
+        """Nothing more is pursued: fully reimbursed, or closed by the household."""
+        return self in {FsaClaimStatus.FULLY_REIMBURSED, FsaClaimStatus.CLOSED}
 
     @property
     def label(self) -> str:
@@ -203,6 +227,8 @@ class FsaClaimStatus(str, Enum):
             FsaClaimStatus.FULLY_REIMBURSED: "Fully reimbursed",
             FsaClaimStatus.CLOSED_NO_FUNDS: "Closed — no funds",
             FsaClaimStatus.NEEDS_REVIEW: "Needs review",
+            FsaClaimStatus.OVER_REIMBURSED: "Over-reimbursed",
+            FsaClaimStatus.CLOSED: "Closed",
         }[self]
 
 
@@ -245,6 +271,7 @@ class FsaClaimSummary:
     net_paid: Money
     eob_responsibility: Money | None
     reimbursable: Money
+    #: Reimbursed by the FSA, less what was paid back to it.
     reimbursed: Money
     rejected: Money
     remaining_reimbursable: Money
@@ -252,6 +279,15 @@ class FsaClaimSummary:
     status: FsaClaimStatus
     #: The payer/FSA/you allocation when the claim is linked to a receivable.
     shared: SharedCost | None = None
+    #: Paid back to the FSA; already taken off ``reimbursed``.
+    repaid: Money = Money(0)
+    #: How much more the FSA reimbursed than the claim allows, still to repay.
+    over_reimbursed: Money = Money(0)
+    #: What a closed claim gave up: it was never reimbursed.
+    forgone: Money = Money(0)
+    #: The correction that reopened this claim while money is still to come:
+    #: an EOB raised after reimbursement, or the claim reopened by hand.
+    reopened_by: FsaClaimEvent | None = None
 
 
 def iter_claims(db: DbSQLite) -> list[FsaClaim]:
@@ -296,8 +332,20 @@ def _allocation_year(db: DbSQLite, allocation: FsaClaimAllocation) -> FsaFunding
     return year
 
 
-def save_claim(db: DbSQLite, claim: FsaClaim, *, txn: DbTxn | None = None) -> FsaClaim:
-    """Persist a claim and linked split classifications as one atomic edit."""
+def save_claim(
+    db: DbSQLite,
+    claim: FsaClaim,
+    *,
+    txn: DbTxn | None = None,
+    today: date | None = None,
+    eob_note: str = "",
+) -> FsaClaim:
+    """Persist a claim and linked split classifications as one atomic edit.
+
+    A saved claim keeps its stored closing and history: those change only
+    through :func:`close_claim` and :func:`reopen_claim`. Changing an EOB that
+    was already entered records the change, dated ``today``, with ``eob_note``.
+    """
     seen_reimbursements: set[tuple[str, str]] = set()
     assignments: dict[str, list[tuple[str, date]]] = {}
     if claim.receivable is not None:
@@ -361,8 +409,51 @@ def save_claim(db: DbSQLite, claim: FsaClaim, *, txn: DbTxn | None = None) -> Fs
                 )
             if split.fsa_year_start != year.start:
                 assignments.setdefault(transaction.handle, []).append((split.handle, year.start))
+        for link in allocation.repayments:
+            key = (link.transaction, link.split)
+            if key in seen_reimbursements:
+                raise FsaClaimError(
+                    "claim.repayment.duplicate",
+                    ("allocations",),
+                    "an FSA repayment split can only be allocated once",
+                )
+            seen_reimbursements.add(key)
+            transaction, split = _resolve_link(db, link)
+            if split.account != allocation.account:
+                raise FsaClaimError(
+                    "claim.repayment.account.mismatch",
+                    ("allocations",),
+                    "repayment split does not belong to allocation FSA",
+                )
+            if split.value <= 0:
+                raise FsaClaimError(
+                    "claim.repayment.direction",
+                    ("allocations",),
+                    "a repayment must pay money into the FSA",
+                )
+            # Tagging the split with its year keeps it out of payroll funding
+            # and gives the year's election back (engine.fsa.year_status).
+            if split.fsa_year_start != year.start:
+                assignments.setdefault(transaction.handle, []).append((split.handle, year.start))
 
     existing = db.get_fsa_claim(claim.handle)
+    if existing is not None:
+        claim.closed_on = existing.closed_on
+        claim.close_reason = existing.close_reason
+        claim.events = list(existing.events)
+        if (
+            existing.eob_responsibility is not None
+            and claim.eob_responsibility != existing.eob_responsibility
+        ):
+            claim.events.append(
+                FsaClaimEvent(
+                    FsaClaimEvent.EOB_CHANGED,
+                    today or date.today(),
+                    existing.eob_responsibility,
+                    claim.eob_responsibility,
+                    eob_note.strip(),
+                )
+            )
 
     def persist(active: DbTxn) -> None:
         for transaction_handle, split_assignments in assignments.items():
@@ -432,6 +523,7 @@ def attach_transaction_to_claim(
                 and split.value < 0
             )
             or (role == "reimbursement" and account.atype is AccountType.FSA and split.value < 0)
+            or (role == "repayment" and account.atype is AccountType.FSA and split.value > 0)
         )
         if eligible and (split_handle is None or split.handle == split_handle):
             candidates.append((split, account))
@@ -450,12 +542,22 @@ def attach_transaction_to_claim(
     elif role == "refund":
         if link not in claim.refunds:
             claim.refunds.append(link)
-    elif role == "reimbursement":
-        eligible_years = [
-            year
-            for year in account.fsa_years
-            if transaction.post_date <= (year.runout_through or year.through)
-        ]
+    elif role in {"reimbursement", "repayment"}:
+        if role == "repayment":
+            # Money goes back to a year the claim was reimbursed from, whenever
+            # it is repaid.
+            claimed = {
+                item.funding_year_start
+                for item in claim.allocations
+                if item.account == account.handle
+            }
+            eligible_years = [year for year in account.fsa_years if year.start in claimed]
+        else:
+            eligible_years = [
+                year
+                for year in account.fsa_years
+                if transaction.post_date <= (year.runout_through or year.through)
+            ]
         if funding_year_start is not None:
             eligible_years = [year for year in eligible_years if year.start == funding_year_start]
         else:
@@ -482,8 +584,9 @@ def attach_transaction_to_claim(
         if allocation is None:
             allocation = FsaClaimAllocation(account.handle, year.start)
             claim.allocations.append(allocation)
-        if link not in allocation.reimbursements:
-            allocation.reimbursements.append(link)
+        links = allocation.reimbursements if role == "reimbursement" else allocation.repayments
+        if link not in links:
+            links.append(link)
     else:
         raise FsaClaimError(
             "claim.attachment.role.invalid",
@@ -492,6 +595,46 @@ def attach_transaction_to_claim(
         )
 
     return save_claim(db, claim, txn=txn)
+
+
+def close_claim(db: DbSQLite, handle: str, *, on: date, reason: str = "") -> FsaClaim:
+    """Stop pursuing what is left to reimburse; the claim keeps its links and history."""
+    claim = db.get_fsa_claim(handle)
+    if claim is None:
+        raise KeyError(handle)
+    if claim.closed_on is not None:
+        raise FsaClaimError(
+            "claim.close.already_closed", ("handle",), "the claim is already closed"
+        )
+    if on < claim.service_date:
+        raise FsaClaimError(
+            "claim.close.before_service", ("on",), "a claim cannot close before its service date"
+        )
+    claim.closed_on = on
+    claim.close_reason = reason.strip()
+    claim.events.append(FsaClaimEvent(FsaClaimEvent.CLOSED, on, note=claim.close_reason))
+    with db.transaction("Close FSA claim") as txn:
+        db.commit_fsa_claim(claim, txn)
+    return claim
+
+
+def reopen_claim(db: DbSQLite, handle: str, *, on: date, note: str = "") -> FsaClaim:
+    """Pursue a closed claim again, for example after a corrected EOB."""
+    claim = db.get_fsa_claim(handle)
+    if claim is None:
+        raise KeyError(handle)
+    if claim.closed_on is None:
+        raise FsaClaimError("claim.reopen.not_closed", ("handle",), "the claim is not closed")
+    if on < claim.closed_on:
+        raise FsaClaimError(
+            "claim.reopen.before_close", ("on",), "a claim cannot reopen before it was closed"
+        )
+    claim.closed_on = None
+    claim.close_reason = ""
+    claim.events.append(FsaClaimEvent(FsaClaimEvent.REOPENED, on, note=note.strip()))
+    with db.transaction("Reopen FSA claim") as txn:
+        db.commit_fsa_claim(claim, txn)
+    return claim
 
 
 def delete_claim(db: DbSQLite, handle: str) -> None:
@@ -545,6 +688,7 @@ def claim_summary(
     refunds = _sum_links(db, claim.refunds)
     net_paid = paid - refunds
     reimbursed = Money(0)
+    repaid = Money(0)
     rejected = Money(0)
     available = Money(0)
     target_total = Money(0)
@@ -557,6 +701,7 @@ def claim_summary(
         year_status = fsa.year_status(db, account, year, as_of=when)
         available = available + year_status.remaining
         reimbursed = reimbursed + _sum_links(db, allocation.reimbursements)
+        repaid = repaid + _sum_links(db, allocation.repayments)
         for rejection in allocation.rejections:
             if rejection.amount < 0:
                 raise ValueError("rejected reimbursement amount must not be negative")
@@ -577,6 +722,8 @@ def claim_summary(
             eob_part = min(max(net_paid, Money(0)), claim.eob_responsibility)
         over_allocated = max(payer_share + eob_part - net_paid, Money(0))
 
+    # Money paid back to the FSA undoes that much reimbursement.
+    reimbursed = reimbursed - repaid
     if net_paid < 0:
         reimbursable = Money(0)
         status = FsaClaimStatus.NEEDS_REVIEW
@@ -592,7 +739,7 @@ def claim_summary(
         elif has_targets and target_total > reimbursable:
             status = FsaClaimStatus.NEEDS_REVIEW
         elif reimbursed > reimbursable:
-            status = FsaClaimStatus.NEEDS_REVIEW
+            status = FsaClaimStatus.OVER_REIMBURSED
         elif reimbursable > 0 and reimbursed >= reimbursable:
             status = FsaClaimStatus.FULLY_REIMBURSED
         elif available <= 0:
@@ -601,7 +748,22 @@ def claim_summary(
             status = FsaClaimStatus.PARTIAL
         else:
             status = FsaClaimStatus.OPEN
+    over_reimbursed = max(reimbursed - reimbursable, Money(0))
     remaining = max(reimbursable - reimbursed, Money(0))
+    forgone = Money(0)
+    # A closed claim pursues nothing more; what it still owed the household is
+    # given up. Figures that disagree, or money owed back to the FSA, still
+    # need the household whether or not the claim is closed.
+    if claim.closed_on is not None and status not in {
+        FsaClaimStatus.NEEDS_REVIEW,
+        FsaClaimStatus.OVER_REIMBURSED,
+    }:
+        status = FsaClaimStatus.CLOSED
+        forgone = remaining
+        remaining = Money(0)
+    reopened_by = None
+    if remaining > 0 and status in {FsaClaimStatus.OPEN, FsaClaimStatus.PARTIAL}:
+        reopened_by = _reopening(claim, reimbursed)
     shared = None
     if payer is not None:
         shared = SharedCost(
@@ -628,4 +790,29 @@ def claim_summary(
         available_fsa=available,
         status=status,
         shared=shared,
+        repaid=repaid,
+        over_reimbursed=over_reimbursed,
+        forgone=forgone,
+        reopened_by=reopened_by,
     )
+
+
+def _reopening(claim: FsaClaim, reimbursed: Money) -> FsaClaimEvent | None:
+    """The latest correction that reopened the claim, if its money is still to come.
+
+    A claim reopens when it is reopened by hand, or when an EOB is raised after
+    the FSA has reimbursed some of it.
+    """
+    for event in reversed(claim.events):
+        if event.kind == FsaClaimEvent.REOPENED:
+            return event
+        if event.kind == FsaClaimEvent.CLOSED:
+            return None
+        if event.kind == FsaClaimEvent.EOB_CHANGED:
+            raised = (
+                event.previous is not None
+                and event.current is not None
+                and event.current > event.previous
+            )
+            return event if raised and reimbursed > 0 else None
+    return None

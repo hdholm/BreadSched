@@ -22,6 +22,8 @@ class FsaYearStatus:
     overage: Money
     forfeited: Money
     as_of: date
+    #: Money paid back into the FSA for this year (already taken off ``used``).
+    repaid: Money = Money(0)
 
     @property
     def label(self) -> str:
@@ -56,22 +58,31 @@ def year_status(
     availability. The election is available from the start of the plan year and
     qualified usage reduces it. A post-year claim can be assigned explicitly to
     the prior year with ``Split.fsa_year_start`` during the run-out window.
+
+    Money paid back into the account for a funding year (a claim's repayment,
+    whose split carries ``fsa_year_start``) is not payroll funding: it gives
+    that much of the election back.
     """
     when = as_of or date.today()
     funded = Money(0)
     used = Money(0)
+    repaid = Money(0)
     end = min(when, year.runout_through or year.through)
     if end >= year.start:
         for transaction in db.iter_transactions(account=account.handle, start=year.start, end=end):
             for split in transaction.splits:
                 if split.account != account.handle:
                     continue
-                if split.value > 0 and year.start <= transaction.post_date <= year.through:
+                if split.value > 0 and split.fsa_year_start is not None:
+                    if _belongs(split.fsa_year_start, transaction.post_date, year):
+                        repaid = repaid + split.value
+                elif split.value > 0 and year.start <= transaction.post_date <= year.through:
                     funded = funded + split.value
                 elif split.value < 0 and _belongs(
                     split.fsa_year_start, transaction.post_date, year
                 ):
                     used = used - split.value
+    used = used - repaid
     remaining_raw = year.election - used
     available = remaining_raw if remaining_raw > 0 else Money(0)
     overage = -remaining_raw if remaining_raw < 0 else Money(0)
@@ -79,7 +90,9 @@ def year_status(
     closed = when > runout
     remaining = Money(0) if closed else available
     forfeited = available if closed else Money(0)
-    return FsaYearStatus(account, year, funded, used, remaining, overage, forfeited, when)
+    return FsaYearStatus(
+        account, year, funded, used, remaining, overage, forfeited, when, repaid=repaid
+    )
 
 
 def dashboard_statuses(

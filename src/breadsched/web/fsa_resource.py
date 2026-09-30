@@ -11,7 +11,6 @@ from typing import TYPE_CHECKING
 
 from ..gen.engine import fsa
 from ..gen.engine.fsa_claim_report import GROUPINGS, ClaimGroup, claim_report
-from ..gen.engine.fsa_claims import FsaClaimStatus
 
 if TYPE_CHECKING:
     from .resources import QueryParams
@@ -62,7 +61,7 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
                 "attention": [item.text for item in line.attention],
             }
             for line in report.lines
-            if line.attention or line.summary.status is not FsaClaimStatus.FULLY_REIMBURSED
+            if line.attention or not line.summary.status.settled
         ],
         "report": {
             "by": report.by,

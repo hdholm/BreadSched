@@ -1249,9 +1249,7 @@ class DbSQLite(DbBase):
 
     def _verify_fsa_claim_references(self, claim: FsaClaim) -> list[BookIssue]:
         issues: list[BookIssue] = []
-        links = [*claim.payments, *claim.refunds]
-        links.extend(link for allocation in claim.allocations for link in allocation.reimbursements)
-        for link in links:
+        for link in claim.links():
             transaction = self.get_transaction(link.transaction)
             if transaction is None:
                 issues.append(
@@ -1571,11 +1569,7 @@ class DbSQLite(DbBase):
                             )
                         )
             for claim in self.iter_fsa_claims():
-                links = [*claim.payments, *claim.refunds]
-                links.extend(
-                    link for allocation in claim.allocations for link in allocation.reimbursements
-                )
-                if any(link.transaction == handle for link in links):
+                if any(link.transaction == handle for link in claim.links()):
                     issues.append(
                         BookIssue(
                             "fsa_claim.missing_transaction",

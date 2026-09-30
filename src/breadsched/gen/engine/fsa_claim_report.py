@@ -7,9 +7,12 @@ never changes a claim.
 
 A claim *needs attention* when something is left for the household to do:
 
-- ``review`` — its figures disagree (refunds exceed payments, more reimbursed
-  than the claim allows, allocation targets or a payer's share plus the EOB
-  exceeding what was paid);
+- ``review`` — its figures disagree (refunds exceed payments, allocation targets
+  or a payer's share plus the EOB exceeding what was paid);
+- ``over`` — the FSA reimbursed more than the claim allows (often after a lower
+  EOB), so the difference should be repaid to the FSA and the repayment linked;
+- ``reopened`` — the claim was reopened by hand, or its EOB was raised after the
+  FSA reimbursed part of it, and money is still to be reimbursed;
 - ``eob`` — no EOB responsibility has been entered :data:`EOB_WAIT_DAYS` after
   the service date;
 - ``deadline`` — money is still to be reimbursed and a funding year it draws on
@@ -17,6 +20,8 @@ A claim *needs attention* when something is left for the household to do:
   plan-year end when there is none);
 - ``rejected`` — a reimbursement was rejected and money is still to be
   reimbursed, so it should be resubmitted or the claim closed.
+
+A closed claim needs no attention unless the FSA is owed money back.
 
 A claim in several funding years is grouped by its first allocation's account
 and year; its totals are claim-level and are never split between groups.
@@ -29,6 +34,7 @@ from datetime import date
 from typing import Any
 
 from ..db.sqlite import DbSQLite
+from ..lib.fsa_claim import FsaClaimEvent
 from ..lib.money import Money
 from .fsa_claims import FsaClaimStatus, FsaClaimSummary, allocation_year, claim_summary
 
@@ -120,9 +126,6 @@ def _review_reasons(summary: FsaClaimSummary) -> list[str]:
             f"The payer's share and the EOB add up to {shared.over_allocated.format()} "
             "more than was paid"
         )
-    if summary.reimbursed > summary.reimbursable and summary.reimbursable >= 0:
-        excess = summary.reimbursed - summary.reimbursable
-        reasons.append(f"Reimbursed {excess.format()} more than the claim allows")
     targets = [
         allocation.target
         for allocation in summary.claim.allocations
@@ -133,6 +136,32 @@ def _review_reasons(summary: FsaClaimSummary) -> list[str]:
     return reasons or ["The claim's figures need checking"]
 
 
+def _eob_change(event: FsaClaimEvent) -> str:
+    def amount(value: Money | None) -> str:
+        return value.format() if value is not None else "none"
+
+    return (
+        f"the EOB changed on {event.on.isoformat()} "
+        f"from {amount(event.previous)} to {amount(event.current)}"
+    )
+
+
+def _over_text(summary: FsaClaimSummary) -> str:
+    text = f"Reimbursed {summary.over_reimbursed.format()} more than the claim allows"
+    changes = [event for event in summary.claim.events if event.kind == FsaClaimEvent.EOB_CHANGED]
+    if changes:
+        text += f" since {_eob_change(changes[-1])}"
+    return text + ": repay the FSA and link the repayment, or correct the claim"
+
+
+def _reopened_text(summary: FsaClaimSummary, event: FsaClaimEvent) -> str:
+    still = f"{summary.remaining_reimbursable.format()} still to reimburse"
+    if event.kind == FsaClaimEvent.EOB_CHANGED:
+        return f"Reopened: {_eob_change(event)}; {still}"
+    note = f" ({event.note})" if event.note else ""
+    return f"Reopened on {event.on.isoformat()}{note}: {still}"
+
+
 def _attention(
     db: DbSQLite, summary: FsaClaimSummary, deadlines: list[date], when: date
 ) -> tuple[ClaimAttention, ...]:
@@ -140,6 +169,11 @@ def _attention(
     status = summary.status
     if status is FsaClaimStatus.NEEDS_REVIEW:
         found.extend(ClaimAttention("review", text) for text in _review_reasons(summary))
+    if status is FsaClaimStatus.OVER_REIMBURSED:
+        found.append(ClaimAttention("over", _over_text(summary)))
+    reopened = summary.reopened_by
+    if reopened is not None:
+        found.append(ClaimAttention("reopened", _reopened_text(summary, reopened)))
     waited = (when - summary.claim.service_date).days
     if status is FsaClaimStatus.WAITING_EOB and waited > EOB_WAIT_DAYS:
         found.append(ClaimAttention("eob", f"No EOB entered {waited} days after the service"))

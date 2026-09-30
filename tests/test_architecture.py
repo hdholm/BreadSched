@@ -412,14 +412,27 @@ class TestServiceBoundaries:
         (
             ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_save", "save_claim"),
             ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_delete", "delete_claim"),
-            ("web/server.py", "Api", "fsa_claim_save", "save_claim"),
-            ("web/server.py", "Api", "fsa_claim_delete", "delete_claim"),
+            ("gui/dialogs/fsa_claims_dialog.py", "FsaClaimsDialog", "_close_claim", "close_claim"),
+            (
+                "gui/dialogs/fsa_claims_dialog.py",
+                "FsaClaimsDialog",
+                "_reopen_claim",
+                "reopen_claim",
+            ),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_save", "save_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_delete", "delete_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_close", "close_claim"),
+            ("web/fsa_claim_resource.py", None, "fsa_claim_reopen", "reopen_claim"),
         ),
     )
     def test_claim_mutations_use_typed_services(
         self, relative, class_name, method_name, service_call
     ):
-        calls = calls_in_method(SRC / relative, class_name, method_name)
+        calls = (
+            calls_in_function(SRC / relative, method_name)
+            if class_name is None
+            else calls_in_method(SRC / relative, class_name, method_name)
+        )
         assert service_call in calls
         assert calls.isdisjoint(
             {

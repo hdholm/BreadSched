@@ -750,11 +750,14 @@ async function openFsaClaimsEditor(initialHandle=null) {
     onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
   });
   const list = el("div", { class:"stack" });
+  const act = (work) => work().catch((error)=>say(error.message, "error"));
   let editingHandle = null;
   const service = el("input", { type:"date" });
   const provider = el("input", { placeholder:"Provider" });
   const description = el("input", { placeholder:"Description" });
   const eob = el("input", { placeholder:"EOB patient responsibility" });
+  const eobNote = el("input", { placeholder:"Why the EOB changed (kept in the history)",
+    "aria-label":"EOB change note" });
   // A payer covering part of this expense leaves the FSA the rest (#192).
   const payer = el("select", { "aria-label":"Payer covers part",
     title:"A reimbursable expense whose payer covers part of this bill" },
@@ -811,6 +814,8 @@ async function openFsaClaimsEditor(initialHandle=null) {
       el("option", { value:account.handle }, account.name)));
     const yearSelect = el("select");
     const reimburse = el("select", { multiple:"multiple", size:"4" });
+    // Money paid back into the FSA, such as an over-reimbursement.
+    const repay = el("select", { multiple:"multiple", size:"3", "aria-label":"Repaid to the FSA" });
     const target = el("input", { placeholder:"Target amount (optional)" });
     const rejections = el("div", { class:"stack" });
     const addRejection = (value=null) => {
@@ -841,6 +846,13 @@ async function openFsaClaimsEditor(initialHandle=null) {
           value:linkValue(item), "data-date":item.date,
         }, `${item.date} ${item.description} — ${money(item.amount)}`)));
       if (initial) selectLinks(reimburse, initial.reimbursements);
+      const wantedRepayments = initial ? initial.repayments
+        : Array.from(repay.selectedOptions).map((option)=>JSON.parse(option.value));
+      repay.replaceChildren(...(data.candidates.repayments || [])
+        .filter((item)=>item.account === accountSelect.value)
+        .map((item)=>el("option", { value:linkValue(item), "data-date":item.date },
+          `${item.date} ${item.description} — ${money(item.amount)}`)));
+      selectLinks(repay, wantedRepayments);
       focusCandidateDate(reimburse);
     };
     accountSelect.onchange = ()=>{ initial = null; refresh(); };
@@ -850,10 +862,11 @@ async function openFsaClaimsEditor(initialHandle=null) {
         el("button", { class:"action", type:"button", onclick:()=>row.remove() },
           "Remove allocation")),
       el("label", {}, "Reimbursement/payment splits"), reimburse,
+      el("label", {}, "Repaid to the FSA"), repay,
       el("strong", {}, "Rejected/failed reimbursement attempts"), rejections,
       el("button", { class:"action", type:"button", onclick:()=>addRejection() },
         "Add rejected attempt"));
-    row._claimFields = { accountSelect, yearSelect, target, reimburse, rejections };
+    row._claimFields = { accountSelect, yearSelect, target, reimburse, repay, rejections };
     allocations.append(row);
     if (initial) {
       accountSelect.value = initial.account;
@@ -865,6 +878,7 @@ async function openFsaClaimsEditor(initialHandle=null) {
   const clearForm = () => {
     editingHandle = null;
     service.value = ""; provider.value = ""; description.value = ""; eob.value = "";
+    eobNote.value = "";
     payer.value = "";
     refreshClaimCandidates([], []);
     allocations.replaceChildren();
@@ -878,23 +892,60 @@ async function openFsaClaimsEditor(initialHandle=null) {
     refreshClaimCandidates(claim.payments, claim.refunds);
     (claim.allocations || []).forEach((allocation)=>addAllocation(allocation));
   };
+  const eventText = (event) => {
+    const amount = (value) => value === null ? "none" : money(value);
+    const what = event.kind === "eob_changed"
+      ? `EOB changed from ${amount(event.previous)} to ${amount(event.current)}`
+      : (event.kind === "closed" ? "Closed" : "Reopened");
+    return `${event.on} ${what}${event.note ? `: ${event.note}` : ""}`;
+  };
+  const reload = async () => {
+    const fresh = await get("/api/fsa/claims");
+    data.claims = fresh.claims;
+    renderList();
+  };
   const renderList = () => {
-    const claimRows = data.claims.length ? data.claims.map((claim) =>
-      el("div", { class:"card" },
+    const claimRows = data.claims.length ? data.claims.map((claim) => {
+      const why = el("input", { placeholder:claim.closed_on ? "Why reopen" : "Why close",
+        "aria-label":claim.closed_on ? "Why reopen" : "Why close" });
+      const closing = claim.closed_on
+        ? el("button", { class:"action", type:"button", onclick:()=>act(async()=>{
+          await post("/api/fsa/claim/reopen", { handle:claim.handle, note:why.value.trim() });
+          say("FSA claim reopened."); await reload();
+        }) }, "Reopen")
+        : el("button", { class:"action", type:"button",
+          title:"Stop pursuing what is left to reimburse; it is recorded as given up",
+          onclick:()=>act(async()=>{
+            await post("/api/fsa/claim/close", { handle:claim.handle, reason:why.value.trim() });
+            say("FSA claim closed."); await reload();
+          }) }, "Close claim");
+      const owed = [
+        Number(claim.repaid) ? `repaid to the FSA ${money(claim.repaid)}` : null,
+        Number(claim.over_reimbursed) ? `to repay ${money(claim.over_reimbursed)}` : null,
+        claim.closed_on ? `closed ${claim.closed_on}`
+          + (claim.close_reason ? ` (${claim.close_reason})` : "")
+          + `, gave up ${money(claim.forgone)}` : null,
+      ].filter(Boolean);
+      return el("div", { class:"card" },
         el("strong", {}, `${claim.service_date} ${claim.provider || "FSA claim"}`),
         el("span", {}, ` ${claim.status_label} — paid ${money(claim.net_paid)}, `
           + `reimbursed ${money(claim.reimbursed)}, rejected ${money(claim.rejected)}, `
-          + `remaining ${money(claim.remaining)}`),
+          + `remaining ${money(claim.remaining)}`
+          + (owed.length ? `; ${owed.join("; ")}` : "")),
         claim.shared ? el("p", { class:claim.shared.needs_review ? "note negative" : "note" },
           claim.shared.text) : null,
+        (claim.events || []).length ? el("ul", { class:"note claim-history" },
+          ...claim.events.map((event)=>el("li", {}, eventText(event)))) : null,
         el("div", { class:"row" },
+          why, closing,
           el("button", { class:"action", type:"button", onclick:()=>loadClaim(claim) }, "Edit"),
           el("button", { class:"action", type:"button", onclick:async()=>{
             await post("/api/fsa/claim/delete", { handle:claim.handle });
             data.claims = data.claims.filter((item)=>item.handle !== claim.handle);
             if (editingHandle === claim.handle) clearForm();
             renderList();
-          }}, "Delete")))) : [el("p", { class:"note" }, "No FSA claims yet.")];
+          }}, "Delete")));
+    }) : [el("p", { class:"note" }, "No FSA claims yet.")];
     list.replaceChildren(...claimRows);
   };
   const save = async () => {
@@ -915,6 +966,8 @@ async function openFsaClaimsEditor(initialHandle=null) {
         target:targetValue || null,
         reimbursements:Array.from(fields.reimburse.selectedOptions).map(
           (option)=>JSON.parse(option.value)),
+        repayments:Array.from(fields.repay.selectedOptions).map(
+          (option)=>JSON.parse(option.value)),
         rejections,
       };
     });
@@ -925,6 +978,7 @@ async function openFsaClaimsEditor(initialHandle=null) {
       description:description.value.trim(),
       eob_responsibility:eob.value.trim(), payments, refunds, allocations:allocationPayload,
       receivable:payer.value || null,
+      eob_note:eobNote.value.trim(),
     });
     backdrop.remove(); say(editingHandle ? "FSA claim updated." : "FSA claim saved."); render();
   };
@@ -941,6 +995,7 @@ async function openFsaClaimsEditor(initialHandle=null) {
       "Service and EOB information is separate from ledger dates. Provider refunds reduce "
       + "the net amount paid; rejected reimbursement attempts are tracked without creating ledger activity."),
     el("div", { class:"row" }, service, provider, description, eob),
+    el("label", {}, "EOB change note", eobNote),
     el("label", {}, "Payer covers part", payer),
     el("label", {}, "Healthcare payments"), paymentSelect,
     el("label", {}, "Provider refunds / credits"), refundSelect,
@@ -3763,7 +3818,8 @@ async function openProjectionDetail(index) {
 async function showEntry() {
   if (!state.accounts.length) state.accounts = await get("/api/accounts");
   const claimData = await get("/api/fsa/claims");
-  const openClaims = (claimData.claims || []).filter((claim) => claim.status !== "fully_reimbursed");
+  const openClaims = (claimData.claims || []).filter(
+    (claim) => !["fully_reimbursed", "closed"].includes(claim.status));
   const usable = state.accounts.filter((a) => !a.placeholder && !a.hidden && a.depth > 0);
   const options = (name) => el("select", { name },
     usable.map((a) => el("option", { value: a.full_name }, a.full_name)));
@@ -3803,7 +3859,8 @@ async function showEntry() {
       el("select", { name: "fsa_role" },
         el("option", { value: "payment" }, "Healthcare payment"),
         el("option", { value: "refund" }, "Provider refund"),
-        el("option", { value: "reimbursement" }, "FSA reimbursement"))) : null,
+        el("option", { value: "reimbursement" }, "FSA reimbursement"),
+        el("option", { value: "repayment" }, "Repaid to the FSA"))) : null,
     el("button", { class: "action primary", type: "submit" }, "Post"));
 
   return el("div", {},

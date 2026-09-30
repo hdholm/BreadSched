@@ -64,6 +64,13 @@ _SERVICE_MESSAGES = {
         "A reimbursement does not belong to the selected FSA account"
     ),
     "claim.reimbursement.after_runout": "A reimbursement is after the run-out window",
+    "claim.repayment.duplicate": "A repayment can only be allocated once",
+    "claim.repayment.account.mismatch": ("A repayment does not belong to the selected FSA account"),
+    "claim.repayment.direction": "A repayment must pay money into the FSA",
+    "claim.close.already_closed": "The claim is already closed",
+    "claim.close.before_service": "A claim cannot close before its service date",
+    "claim.reopen.not_closed": "The claim is not closed",
+    "claim.reopen.before_close": "A claim cannot reopen before it was closed",
     "reconciliation.not_found": "The reconciliation no longer exists",
     "reconciliation.account.not_found": "The account no longer exists",
     "reconciliation.account.ineligible": (

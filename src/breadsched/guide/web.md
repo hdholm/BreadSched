@@ -154,6 +154,11 @@ counting the claims that need it; the Dashboard shows the count as a tile.
 **Claims report** totals every claim, grouped by the **Group by** choice: status,
 FSA account, funding year, or provider.
 
+In the FSA claim editor, a changed EOB is kept in the claim's history with the
+**EOB change note**, and each allocation links money paid back into the FSA under
+**Repaid to the FSA**. Each claim in the list has **Close claim** or **Reopen**,
+with the reason typed beside it, and lists its history.
+
 When the FSA pays what the insurer does not, open the FSA claim editor, choose the
 receivable under **Payer covers part**, and save the claim. The claim list and the
 receivable then show what the payer, the FSA, and you each pay, and **Needs

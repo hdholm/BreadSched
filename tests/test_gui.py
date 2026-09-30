@@ -3828,6 +3828,78 @@ class TestDashboardView:
         document = dashboard_view.printable_report()
         assert "No EOB entered 45 days" in document.text()
 
+    def test_the_claims_dialog_repays_an_over_reimbursement_and_closes_a_claim(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.engine import fsa_claims
+        from breadsched.gen.lib import (
+            FsaClaim,
+            FsaClaimAllocation,
+            FsaClaimSplitLink,
+            FsaFundingYear,
+            Transaction,
+        )
+        from breadsched.gen.lib.account import AccountClass
+        from breadsched.gui.dialogs.fsa_claims_dialog import FsaClaimsDialog
+
+        app.open_book(populated_book)
+        db = app.db
+        today = date.today()
+        start = today.replace(month=1, day=1)
+        assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+        checking = next(a for a in db.iter_accounts() if a.atype is AccountType.BANK)
+        expense = next(a for a in db.iter_accounts() if a.account_class is AccountClass.EXPENSE)
+        account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+        account.fsa_years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+        ]
+        paid = Transaction.simple(start, "Dentist", expense.handle, checking.handle, "200")
+        credit = Transaction.simple(start, "FSA pays", checking.handle, account.handle, "200")
+        repay = Transaction.simple(start, "Repay FSA", account.handle, checking.handle, "50")
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+            for transaction in (paid, credit, repay):
+                db.add_transaction(transaction, txn)
+        claim = FsaClaim(
+            service_date=start,
+            provider="Dentist",
+            eob_responsibility=Money("200"),
+            payments=[FsaClaimSplitLink(paid.handle, paid.splits[0].handle)],
+            allocations=[
+                FsaClaimAllocation(
+                    account.handle,
+                    start,
+                    reimbursements=[FsaClaimSplitLink(credit.handle, credit.splits[1].handle)],
+                )
+            ],
+        )
+        fsa_claims.save_claim(db, claim)
+        dialog = FsaClaimsDialog(window, db, claim.handle)
+        try:
+            assert dialog.standing.get_text().startswith("Fully reimbursed")
+            assert dialog.reopen_button.get_sensitive() is False
+            # A corrected EOB is lower: the FSA is owed 50.00 back.
+            dialog.eob.set_text("150")
+            dialog.eob_note.set_text("Corrected EOB")
+            dialog._save(None)
+            assert "to repay to the FSA 50.00" in dialog.standing.get_text()
+            assert "EOB changed from 200.00 to 150.00: Corrected EOB" in (dialog.history.get_text())
+            row = dialog._allocation_rows[0]
+            row.repay.set_links([FsaClaimSplitLink(repay.handle, repay.splits[0].handle)])
+            dialog._save(None)
+            assert dialog.standing.get_text().startswith("Fully reimbursed")
+            assert "repaid to the FSA 50.00" in dialog.standing.get_text()
+            dialog.close_reason.set_text("Nothing left")
+            dialog._close_claim(None)
+            assert dialog.status.get_text() == "Claim closed."
+            assert db.get_fsa_claim(claim.handle).closed_on == today
+            assert dialog.close_button.get_sensitive() is False
+            dialog._reopen_claim(None)
+            assert dialog.status.get_text() == "Claim reopened."
+            assert db.get_fsa_claim(claim.handle).closed_on is None
+        finally:
+            dialog.destroy()
+
     def test_bills_and_income_have_separate_lists(self, view):
         bills = view.bills_view.get_model()
         income = view.income_view.get_model()

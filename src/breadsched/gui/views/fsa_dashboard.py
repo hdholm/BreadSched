@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ...gen.engine import fsa, fsa_claims
+from ...gen.engine import fsa
 from ...gen.engine.fsa_claim_report import claim_report
 from ..gi_setup import Gtk
 from ..widgets.choice import bounded_dropdown
@@ -154,12 +154,7 @@ class FsaDashboardView(BaseView):
             f"{waiting} claim{' needs' if waiting == 1 else 's need'} attention." if waiting else ""
         )
         self.attention_label.set_visible(bool(waiting))
-        lines = [
-            line
-            for line in report.lines
-            if line.attention
-            or line.summary.status is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
-        ]
+        lines = [line for line in report.lines if line.attention or not line.summary.status.settled]
         self.claim_heading.set_visible(bool(lines))
         self.claim_grid.set_visible(bool(lines))
         if not lines:

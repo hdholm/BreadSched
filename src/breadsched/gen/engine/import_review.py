@@ -311,8 +311,7 @@ def deletion_references(db: DbSQLite, transaction: Transaction) -> list[str]:
     )
     claim_count = 0
     for claim in db.iter_fsa_claims():
-        links = [*claim.payments, *claim.refunds]
-        links.extend(link for allocation in claim.allocations for link in allocation.reimbursements)
+        links = claim.links()
         if any(
             link.transaction == transaction.handle or link.split in split_handles for link in links
         ):

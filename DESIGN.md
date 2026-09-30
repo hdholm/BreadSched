@@ -1846,6 +1846,47 @@ and the Dashboard tile match; `breadsched claims` prints the groups and reasons;
 the printed Dashboard adds the card (with **Reimbursements due**, which it had
 lacked) and a table of the claims needing attention.
 
+**Claim corrections.** Three additions to the claim's JSON blob (no schema change;
+older blobs load with none of them) cover what happens after a claim is filed:
+
+- **Repayments.** `FsaClaimAllocation.repayments` links splits paying money back
+  into the allocation's FSA account (positive values). `save_claim` refuses one on
+  another account (`claim.repayment.account.mismatch`), paying out of the FSA
+  (`claim.repayment.direction`), or linked twice (`claim.repayment.duplicate`), and
+  tags the split with the allocation's funding year, as it does reimbursements, at
+  any date. `claim_summary.reimbursed` is then net of `repaid`; more than the claim
+  allows is `over_reimbursed`, with the new status *Over-reimbursed* instead of
+  *Needs review*. In `engine.fsa.year_status` a positive split tagged with a
+  funding year is a repayment: it is taken off `used` (and reported as `repaid`)
+  instead of counting as payroll `funded`. Only claim saves set that tag, so
+  untagged payroll funding is unchanged. Review (`attach_transaction_to_claim`,
+  role `repayment`) attaches a repayment to the claim's own allocation year on
+  that account, after run-out too, and suggests it only for an over-reimbursed
+  claim.
+- **History.** `FsaClaim.events` records `FsaClaimEvent`s: `eob_changed` (with the
+  previous and new responsibility and a note), `closed`, and `reopened`.
+  `save_claim` appends `eob_changed` when an EOB already entered changes (the
+  first EOB is not a change), dated by the service's `SaveClaim.changed_on`
+  (today by default) with `ClaimInput.eob_note`. A save never replaces the stored
+  history or closing: those change only through `close_claim` and `reopen_claim`.
+- **Closing.** `close_claim` sets `closed_on` and `close_reason`; the summary is
+  *Closed* with `remaining_reimbursable` zero and the unclaimed rest as `forgone`.
+  Figures that disagree or money owed back to the FSA keep *Needs review* or
+  *Over-reimbursed* even when closed. `reopen_claim` clears it. They refuse
+  closing twice, reopening an open claim, closing before the service date, and
+  reopening before the close, and never change the stored claim when they do.
+
+The report adds two attention codes: `over` (the over-reimbursement, naming the
+last EOB change) and `reopened` (`FsaClaimSummary.reopened_by`: a hand reopening,
+or an EOB raised after some reimbursement, while money is still to come).
+Over-reimbursement is no longer a `review` reason. `FsaClaim.links()` lists every
+linked split for book verification and deletion checks. The web's claim routes
+(`/api/fsa/claims`, `/api/fsa/claim/save`, `delete`, `close`, `reopen`) moved from
+`Api` into `web/fsa_claim_resource.py`, which only parses requests and translates
+service results. GTK's claims dialog and the web claim editor link repayments per
+allocation, take the EOB change note, show the history, and close or reopen a
+claim; `breadsched claims --close`, `--reopen`, and `--history` do the same.
+
 GTK: **Actions → Reimbursable Expenses…** opens `ReceivablesDialog`
 (`gui/dialogs/receivables_dialog.py`), which only gathers input and calls the
 service.

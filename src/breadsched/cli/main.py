@@ -41,6 +41,8 @@ from ..gen.lib import (
     AccountType,
     Amount,
     Assumptions,
+    FsaClaim,
+    FsaClaimEvent,
     Money,
     Payee,
     PeriodType,
@@ -56,6 +58,7 @@ from ..gen.lib import (
 from ..gen.plug import EXPORTER, IMPORTER, PluginManager
 from ..gen.sample_book import create_sample_book
 from ..gen.services import (
+    CloseClaim,
     DeleteAccount,
     DeleteScenario,
     DeleteSchedule,
@@ -63,6 +66,7 @@ from ..gen.services import (
     DueDecision,
     HeldImportDecision,
     ImportBook,
+    ReopenClaim,
     ResolveDue,
     ResolveHeldImports,
     ReviewOccurrence,
@@ -74,6 +78,7 @@ from ..gen.services import (
     SaveTransaction,
     TransactionInput,
     TransactionSplitInput,
+    close_claim,
     delete_account,
     delete_scenario,
     delete_schedule,
@@ -84,6 +89,7 @@ from ..gen.services import (
     pending_due_review,
     pending_import_changes,
     reject_review,
+    reopen_claim,
     resolve_due,
     resolve_import_changes,
     save_account,
@@ -1282,13 +1288,66 @@ def cmd_attachments(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _find_claim(db: DbSQLite, reference: str) -> FsaClaim:
+    """Locate an FSA claim by handle, or by a unique prefix of one."""
+    exact = db.get_fsa_claim(reference)
+    if exact is not None:
+        return exact
+    matches = [item for item in db.iter_fsa_claims() if item.handle.startswith(reference)]
+    if not matches:
+        raise CommandError(f"no FSA claim matches {reference!r}")
+    if len(matches) > 1:
+        raise CommandError(f"{reference!r} matches {len(matches)} claims; use more characters")
+    return matches[0]
+
+
+def _claim_event_text(event: FsaClaimEvent) -> str:
+    def amount(value: Money | None) -> str:
+        return value.format() if value is not None else "none"
+
+    if event.kind == FsaClaimEvent.EOB_CHANGED:
+        text = f"EOB changed from {amount(event.previous)} to {amount(event.current)}"
+    else:
+        text = "Closed" if event.kind == FsaClaimEvent.CLOSED else "Reopened"
+    return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
+
+
 def cmd_claims(args: argparse.Namespace) -> int:
     """FSA claims grouped by status, account, funding year, or provider."""
     from ..gen.engine.fsa_claim_report import claim_report
     from ..gen.engine.fsa_claims import FsaClaimStatus
 
-    db = open_book(args.book, "r")
+    changing = bool(args.close or args.reopen)
+    if args.close and args.reopen:
+        raise CommandError("use --close or --reopen, not both")
+    db = open_book(args.book, "w" if changing else "r")
     try:
+        if changing:
+            claim = _find_claim(db, args.close or args.reopen)
+            on = parse_date(args.on) or date.today()
+            if args.close:
+                result = close_claim(db, CloseClaim(claim.handle, on, args.reason or ""))
+            else:
+                result = reopen_claim(db, ReopenClaim(claim.handle, on, args.note or ""))
+            if result.value is None:
+                raise CommandError(service_error_message(result.errors[0]))
+            name = claim.provider or claim.description or "FSA claim"
+            emit(
+                {"handle": claim.handle},
+                args,
+                f"{'Closed' if args.close else 'Reopened'} the {name} claim "
+                f"of {claim.service_date.isoformat()}",
+            )
+            return 0
+        if args.history:
+            claim = _find_claim(db, args.history)
+            emit(
+                {"handle": claim.handle, "events": [event.serialize() for event in claim.events]},
+                args,
+                "\n".join(_claim_event_text(event) for event in claim.events)
+                or "No EOB changes, closings, or reopenings.",
+            )
+            return 0
         status = None
         if args.status:
             try:
@@ -1336,7 +1395,11 @@ def cmd_claims(args: argparse.Namespace) -> int:
                     "status": line.summary.status.value,
                     "net_paid": line.summary.net_paid,
                     "reimbursed": line.summary.reimbursed,
+                    "repaid": line.summary.repaid,
+                    "over_reimbursed": line.summary.over_reimbursed,
                     "remaining": line.summary.remaining_reimbursable,
+                    "forgone": line.summary.forgone,
+                    "closed_on": line.summary.claim.closed_on,
                     "deadline": line.deadline,
                     "attention": [
                         {"code": item.code, "text": item.text} for item in line.attention
@@ -3841,12 +3904,26 @@ def build_parser() -> argparse.ArgumentParser:
     claims_cmd.add_argument(
         "--status",
         help="only this status (waiting_eob, open, partial, fully_reimbursed, "
-        "closed_no_funds, needs_review)",
+        "closed_no_funds, needs_review, over_reimbursed, closed)",
     )
     claims_cmd.add_argument(
         "--attention", action="store_true", help="only claims needing attention"
     )
     claims_cmd.add_argument("--as-of", help="report on this date (default today)")
+    claims_cmd.add_argument(
+        "--close",
+        metavar="CLAIM",
+        help="stop pursuing what is left to reimburse on a claim (with --on and --reason)",
+    )
+    claims_cmd.add_argument(
+        "--reopen", metavar="CLAIM", help="pursue a closed claim again (with --on and --note)"
+    )
+    claims_cmd.add_argument("--on", metavar="DATE", help="date to close or reopen (default today)")
+    claims_cmd.add_argument("--reason", help="why the claim is closed")
+    claims_cmd.add_argument("--note", help="why the claim is reopened")
+    claims_cmd.add_argument(
+        "--history", metavar="CLAIM", help="list a claim's EOB changes, closings, and reopenings"
+    )
     claims_cmd.set_defaults(func=cmd_claims)
 
     goals_cmd = add(

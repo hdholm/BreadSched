@@ -58,16 +58,17 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
    scheduled transactions and loans (sections below). Scenario Projection tabs,
    remembered tabs per book, browser-tab counterparts, native GTK printing, and
-   bounded GTK view and dialog sizes are delivered; on FSA, claim reports and
-   Dashboard alerts for claims needing attention are delivered.
+   bounded GTK view and dialog sizes are delivered; on FSA, claim reports,
+   Dashboard alerts for claims needing attention, and claim corrections
+   (repayments, late EOB changes, closing and reopening) are delivered.
 
 
 ## Architecture and correctness
 
 - Split oversized modules/functions as part of the service/resource ownership
   work, especially the remaining seams in `web/server.py`: the scheduled, loan,
-  scenario, FSA claim, review, and import handlers still parse JSON inline on
-  `Api` (register, entry, and reconciliation now have resource adapters). Continue
+  scenario, review, and import handlers still parse JSON inline on `Api`
+  (register, entry, reconciliation, and FSA claims now have resource adapters). Continue
   consolidating web control parsers where ownership is clear. Split large GUI test modules
   only when the resulting fixture ownership and runtime isolation improve; do not
   optimize for a line-count threshold alone.
@@ -167,9 +168,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   preserve service dates, funding-year attribution, refunds, and reconciliation.
 
 - Improve Review suggestions and action explanations.
-
-- Handle over-reimbursement, reopened claims, late EOB changes, and correction
-  workflows.
 
 - Support plan-specific carryover rules where applicable.
 
