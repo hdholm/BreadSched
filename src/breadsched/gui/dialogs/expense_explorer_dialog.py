@@ -177,7 +177,7 @@ class ExpenseExplorerDialog(BoundedWindow):
                 for flag, text in (
                     (point.partial, "to date"),
                     (point.future, "future"),
-                    (point.currency_incomplete, "missing quote"),
+                    (point.currency_incomplete, point.completeness.label or "missing quote"),
                 )
                 if flag
             ]
@@ -193,6 +193,9 @@ class ExpenseExplorerDialog(BoundedWindow):
                 if 0 < column < len(cells) - 1:
                     label.set_xalign(1)
                     label.add_css_class("numeric")
+                elif column == len(cells) - 1 and not point.completeness.complete:
+                    # The excluded amounts behind a partial period (#236).
+                    label.set_tooltip_text("\n".join(point.completeness.detail()))
                 grid.attach(label, column, row, 1, 1)
         if income:
             self.income_table = grid

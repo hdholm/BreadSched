@@ -519,8 +519,9 @@ def test_projection_outputs_carry_goal_milestones(db, book, tmp_path):
     path = tmp_path / "projection.csv"
     export_projection(result, path)
     header, first, *_rest = path.read_text(encoding="utf-8").splitlines()
-    assert header.endswith("net_worth,goals_set_aside,cash_after_goals")
-    assert first.split(",")[-2] == "700.0000" or first.split(",")[-2].startswith("700")
+    assert header.endswith("net_worth,goals_set_aside,cash_after_goals,completeness")
+    assert first.split(",")[-3] == "700.0000" or first.split(",")[-3].startswith("700")
+    assert first.split(",")[-1] == "complete"
 
 
 def test_plan_lists_goals_reaching_their_target_in_range(db, book):

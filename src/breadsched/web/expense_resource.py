@@ -72,6 +72,7 @@ def expense_report(
                 "future": point.future,
                 "partial": point.partial,
                 "currency_incomplete": point.currency_incomplete,
+                "completeness": point.completeness.as_dict(),
                 "categories": [
                     {"account": handle, "name": names.get(handle, handle), "actual": amount}
                     for handle, amount in point.categories

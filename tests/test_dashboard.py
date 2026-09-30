@@ -972,6 +972,8 @@ class TestCli:
             "missed_income",
             "missing_quotes",
             "liquid_missing_quotes",
+            "completeness",
+            "liquid_completeness",
             "coverage_notes",
             "unavailable_reasons",
         }

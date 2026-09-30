@@ -2755,6 +2755,21 @@ class TestDerivedPlanView:
         assert view.currency_note.get_text().startswith("Not included in totals")
         assert view.currency_note.has_css_class("negative")
 
+        def grid_texts():
+            texts = []
+            child = view.grid.get_first_child()
+            while child is not None:
+                label = child.get_child() if hasattr(child, "get_child") else child
+                if hasattr(label, "get_text"):
+                    texts.append(label.get_text())
+                child = child.get_next_sibling()
+            return texts
+
+        # #236: the partial period, cell, and totals say so as text.
+        assert view.summary.get_text().startswith("Partial: excludes 1 unconverted amount")
+        assert any(text.endswith("(partial)") for text in grid_texts())
+        assert any(text.endswith(" partial") for text in grid_texts())
+
         valuation.save_currency_quote(
             app.db,
             source_handle=euro.handle,
@@ -2765,6 +2780,8 @@ class TestDerivedPlanView:
         view.refresh()
         assert "EUR amounts are converted to" in view.currency_note.get_text()
         assert not view.currency_note.has_css_class("negative")
+        assert not view.summary.get_text().startswith("Partial")
+        assert not any("partial" in text for text in grid_texts())
 
     def test_detaching_does_not_try_to_read_book_metadata(self, app, window, populated_book):
         app.open_book(populated_book)

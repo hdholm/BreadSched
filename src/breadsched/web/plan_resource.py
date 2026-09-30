@@ -7,6 +7,7 @@ from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.activity import PlanMeasure, ReportingPeriod
+from ..gen.engine.completeness import combine
 from ..gen.lib import AccountClass, Money
 from ..gen.services import PlanQuery, query_plan
 from ..presentation import plan_goal_text
@@ -100,6 +101,8 @@ def plan_report(
             "name": compare_name,
             "assumption_sources": plan.comparison.assumption_sources,
             "currency_notes": list(compare_report.currency_notes),
+            # A difference is only as complete as both of its inputs (#236).
+            "completeness": combine(report.completeness, compare_report.completeness).as_dict(),
             "summary": {
                 "planned_cash": compare_report.activity.planned_cash_change,
                 "planned_cash_through_as_of": compare_report.planned_cash_through_as_of,
@@ -281,9 +284,15 @@ def plan_report(
                 "label": item.label,
                 "start": item.start,
                 "end": item.end,
+                "completeness": item.completeness.as_dict(),
             }
             for item in totals.periods
         ],
+        # Plan totals are subtotals of what converted, labelled partial (#236).
+        "completeness": {
+            "horizon": report.completeness.as_dict(),
+            "through_as_of": report.completeness_through_as_of.as_dict(),
+        },
         "summary": {
             "planned_cash": totals.planned_cash_change,
             "planned_cash_through_as_of": report.planned_cash_through_as_of,
@@ -325,6 +334,9 @@ def plan_report(
                 "actual": row.actual,
                 "variance": row.variance,
                 "totals": {item.value: row.total(item) for item in PlanMeasure},
+                "complete": [
+                    report.cell_complete(row.account, index) for index in range(len(row.planned))
+                ],
             }
             for row in report.categories
         ],

@@ -419,6 +419,17 @@ class DashboardView(BaseView):
             self.cards.append(_card("Set aside for goals", text, False))
         for note in board.coverage_notes:
             self.cards.append(_card("Coverage", note, False))
+        # What each withheld total leaves out and how to include it (#236).
+        for caption, coverage in (
+            ("Net worth withheld", board.completeness),
+            ("Liquid cash withheld", board.liquid_completeness),
+        ):
+            if coverage.complete or (
+                coverage is board.liquid_completeness
+                and coverage.excluded == board.completeness.excluded
+            ):
+                continue
+            self.cards.append(_card(caption, "\n".join(coverage.detail()), True))
 
     def _render_groups(self) -> None:
         _empty(self.groups)
@@ -451,6 +462,7 @@ class DashboardView(BaseView):
             if group.note:
                 tooltip.append(group.note)
             tooltip.extend(group.members)
+            tooltip.extend(group.completeness.detail())
             name.set_tooltip_text("\n".join(tooltip))
             self.groups.attach(name, 0, index, 1, 1)
             self.groups.attach(_amount(group.report_value), 1, index, 1, 1)

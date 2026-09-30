@@ -61,6 +61,7 @@ def net_worth_change(api: Api, query: QueryParams) -> dict[str, object]:
         "revaluation": change.revaluation,
         "transfers": change.transfers,
         "missing": list(change.missing),
+        "completeness": change.completeness.as_dict(),
         "postings": [
             {
                 "transaction": posting.transaction,
@@ -107,6 +108,7 @@ def net_worth_history(api: Api, query: QueryParams) -> dict[str, object]:
                 "net_worth": point.net_worth,
                 "change": point.change,
                 "missing": list(point.missing),
+                "completeness": point.completeness.as_dict(),
                 "lines": [
                     {
                         "account": line.account,

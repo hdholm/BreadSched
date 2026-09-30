@@ -1908,7 +1908,10 @@ class TestPlanApi:
             "cash_bridge",
             "column_totals",
             "goal_milestones",
+            "completeness",
         }
+        assert payload["completeness"]["horizon"]["status"] == "complete"
+        assert all(period["completeness"]["status"] == "complete" for period in payload["periods"])
         assert payload["currency"]["notes"] == []
         assert set(payload["currency"]) == {"as_of", "conversions", "unconverted", "notes"}
         by_name = {row["full_name"]: row for row in payload["categories"]}
@@ -3258,7 +3261,10 @@ class TestDashboardApi:
             "coverage_notes",
             "unavailable_reasons",
             "goals",
+            "completeness",
+            "liquid_completeness",
         }
+        assert payload["completeness"]["status"] == "complete"
         assert payload["goals"] == []
         assert payload["unavailable_reasons"]["months_covered"] == "No committed outgoings"
 
@@ -3291,6 +3297,18 @@ class TestDashboardApi:
         assert payload["groups"][0]["total"] is None
         assert payload["groups"][0]["accounts"][0]["balance"] is None
         assert isinstance(payload["bills"], list)
+        # #236: the withheld totals carry their evidence and corrective action.
+        coverage = payload["completeness"]
+        assert coverage["status"] == "unavailable"
+        assert coverage["policy"] == "withhold"
+        [excluded] = coverage["excluded"]
+        assert (excluded["label"], excluded["currency"], excluded["amount"]) == (
+            "Assets:Foreign cash",
+            "EUR",
+            "10.00",
+        )
+        assert excluded["action"] == "Add a EUR exchange rate in Accounts to include it."
+        assert payload["groups"][0]["completeness"]["status"] == "unavailable"
 
     def test_resource_matches_route_and_query_does_not_save_horizons(self, client):
         _status, original = client.get("/api/dashboard")

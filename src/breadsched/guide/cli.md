@@ -49,6 +49,16 @@ adds `planned_cash_through_as_of`, `actual_cash_through_as_of`,
 `cash_variance_through_as_of`, `conversions`, and `unconverted`. Account output identifies whether a foreign balance used a direct or
 an inverse rate.
 
+Reports that leave out an amount without a quote say so as text (see
+[Complete, partial, and unavailable values](../USER_GUIDE.md#complete-partial-and-unavailable-values)). `activity` and `project` print the partial label and each excluded
+amount with the fix; `dashboard`, `net-worth`, and `net-worth-change` print what a
+withheld total leaves out; `compare` adds a coverage column. In `--json`, the
+activity report, each activity period, projection and its rows, dashboard and its
+groups, and each net worth point and change carry a `completeness` object with
+`status` (`complete`, `partial`, or `unavailable`), `policy`, `label`, `detail`,
+and each `excluded` input's account or event, currency, amount, date, missing
+quote kind, and action. `project --csv` ends each month with its status.
+
 ### Synthetic sample book
 
 ```bash

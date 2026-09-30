@@ -36,6 +36,7 @@ from ..gen.engine import (
 from ..gen.engine import (
     dashboard as dashboard_engine,
 )
+from ..gen.engine.completeness import Completeness
 from ..gen.lib import (
     Account,
     AccountType,
@@ -192,6 +193,8 @@ def _encode(value: Any) -> Any:
         return value.isoformat()
     if isinstance(value, Decimal):
         return str(value)
+    if isinstance(value, Completeness):
+        return value.as_dict()
     raise TypeError(f"cannot serialise {type(value).__name__}")
 
 
@@ -2357,6 +2360,9 @@ def cmd_activity(args: argparse.Namespace) -> int:
                 "everything dated in each period, even after that date."
             )
         notes = activity.currency_notes(db, report)
+        if not report.completeness.complete:
+            # Totals are subtotals of what converted; say so beside them (#236).
+            notes = (f"{report.completeness.label}: totals leave out the amounts below.", *notes)
         if notes:
             text = "\n".join((text, "", *notes))
         emit(report.as_dict(), args, text)
@@ -2410,6 +2416,10 @@ def cmd_net_worth(args: argparse.Namespace) -> int:
             ["period", "valued on", "assets", "debts", "net worth", "change", "note"],
             right={2, 3, 4, 5},
         )
+        # Each withheld point's evidence and corrective action (#236).
+        for point in history.points:
+            if not point.completeness.complete:
+                text += f"\n{point.label} withheld: " + "; ".join(point.completeness.detail())
         emit(asdict(history), args, text)
         return 0
     finally:
@@ -2467,6 +2477,7 @@ def cmd_net_worth_change(args: argparse.Namespace) -> int:
             )
         if change.missing:
             text += f"\nMissing quote: {', '.join(change.missing)}; totals withheld."
+            text += "\n" + "\n".join(change.completeness.detail())
         emit(asdict(change), args, text)
         return 0
     finally:
@@ -2692,7 +2703,11 @@ def cmd_project(args: argparse.Namespace) -> int:
         emit(
             {
                 "summary": summary,
-                "rows": [r.as_dict() for r in result.rows],
+                "completeness": result.completeness,
+                "rows": [
+                    {**r.as_dict(), "completeness": result.month_completeness(index)}
+                    for index, r in enumerate(result.rows)
+                ],
                 "goal_milestones": milestones,
             },
             args,
@@ -2711,6 +2726,10 @@ def cmd_project(args: argparse.Namespace) -> int:
                 print(f"  Lowest cash balance: {result.minimum_cash.format()}")
             for note in projection_goal_notes(result):
                 print(f"  {note}")
+            if not result.completeness.complete:
+                print(f"  {result.completeness.label}: the figures above leave out:")
+                for line in result.completeness.detail():
+                    print(f"    {line}")
             for warning in result.warnings:
                 print(f"  warning: {warning}")
             if args.csv:
@@ -2883,10 +2902,11 @@ def cmd_compare(args: argparse.Namespace) -> int:
                         row["base_net_worth"].format(parens_negative=True),
                         row["other_net_worth"].format(parens_negative=True),
                         row["net_worth_delta"].format(parens_negative=True),
+                        row["completeness"].label,
                     ]
                     for row in yearly
                 ],
-                ["month", args.base, args.other, "difference"],
+                ["month", args.base, args.other, "difference", "coverage"],
                 right={1, 2, 3},
             ),
         )
@@ -3199,6 +3219,8 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                     },
                     "missing_quotes": list(board.missing_quotes),
                     "liquid_missing_quotes": list(board.liquid_missing_quotes),
+                    "completeness": board.completeness,
+                    "liquid_completeness": board.liquid_completeness,
                     "coverage_notes": list(board.coverage_notes),
                     "groups": [
                         {
@@ -3215,6 +3237,7 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
                             "equity": g.report_equity,
                             "loan_to_value": g.report_loan_to_value,
                             "missing_quotes": list(g.missing_quotes),
+                            "completeness": g.completeness,
                             "loan_end": g.loan_end,
                             "accounts": [
                                 {
@@ -3320,7 +3343,9 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
         print()
         for note in board.coverage_notes:
             print(note)
-        if board.coverage_notes:
+        if not board.completeness.complete:
+            print("Net worth withheld: " + "; ".join(board.completeness.detail()))
+        if board.coverage_notes or not board.completeness.complete:
             print()
         headline = [
             ["Net worth", shown("net_worth", summary["net_worth"])],

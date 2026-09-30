@@ -103,11 +103,14 @@ def export_projection(projection: Projection, path: str | Path) -> int:
     ]
     with open(path, "w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(fields)
-        for row in projection.rows:
+        # The last column says whether a month's figures leave out an
+        # unconverted balance or event: "complete" or "partial" (#236).
+        writer.writerow([*fields, "completeness"])
+        for index, row in enumerate(projection.rows):
             writer.writerow(
                 [row.month.isoformat()]
                 + [str(getattr(row, name).to_decimal()) for name in fields[1:]]
+                + [projection.month_completeness(index).status.value]
             )
     return len(projection.rows)
 

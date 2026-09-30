@@ -157,6 +157,9 @@ class NetWorthHistoryDialog(BoundedWindow):
                         )
                         or None
                     )
+                if column == 6 and not point.completeness.complete:
+                    # What the withheld point leaves out and how to include it (#236).
+                    label.set_tooltip_text("\n".join(point.completeness.detail()))
                 grid.attach(label, column, row, 1, 1)
         self.table = grid
         self.content.append(grid)
@@ -190,6 +193,7 @@ class NetWorthHistoryDialog(BoundedWindow):
             )
         if change.missing:
             notes.append(f"Missing quote: {', '.join(change.missing)}. Totals are withheld.")
+            notes.extend(change.completeness.detail())
         for note in notes:
             label = self._label(note)
             label.set_wrap(True)

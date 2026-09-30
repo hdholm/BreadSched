@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 
 from ..db.sqlite import DbSQLite
@@ -13,6 +13,7 @@ from ..engine.activity import (
     PlanMeasure,
     explain_category_period,
 )
+from ..engine.completeness import Completeness
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult
@@ -90,6 +91,8 @@ class SpendingPoint:
     partial: bool
     currency_incomplete: bool
     categories: tuple[tuple[str, Money], ...]
+    #: Partial, with the excluded amounts, when ``currency_incomplete`` (#236).
+    completeness: Completeness = field(default_factory=Completeness)
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +216,7 @@ def _over_time(
             partial=bucket.start <= as_of < bucket.end,
             currency_incomplete=bool(foreign[index] & handles),
             categories=tuple((handle, amounts[index]) for handle, amounts in composition),
+            completeness=bucket.completeness.touching(handles),
         )
         for index, bucket in enumerate(buckets)
     )

@@ -54,6 +54,21 @@ const signedMoney = (value) => {
   return Number(value) > 0 ? `+${rendered}` : rendered;
 };
 const cls = (value) => (Number(value) < 0 ? "num neg" : "num");
+// Valuation completeness (#236): a textual label beside a partial or withheld
+// value, and an expandable list of what was left out and how to include it.
+const completenessFlag = (coverage, prefix = "") => {
+  if (!coverage || coverage.status === "complete") return null;
+  return el("span", {
+    class: `completeness-flag ${coverage.status}`,
+    title: (coverage.detail || []).join("\n"),
+  }, `${prefix}${coverage.label}`);
+};
+const completenessDetails = (coverage, what) => {
+  if (!coverage || coverage.status === "complete") return null;
+  return el("details", { class: `completeness-details ${coverage.status}` },
+    el("summary", {}, `${what}: ${coverage.label}`),
+    el("ul", {}, ...(coverage.detail || []).map((line) => el("li", {}, line))));
+};
 
 const params = new URLSearchParams(window.location.hash.slice(1));
 const apiToken = params.get("token") || "";
@@ -2381,7 +2396,8 @@ function spendingOverTime(data, periodIndex, kind = "spending") {
   const categories = points.length ? points[0].categories : [];
   const slot = el("div", { class: "net-worth-change-slot" });
   const note = (item) => [item.partial ? "to date" : "", item.future ? "future" : "",
-    item.currency_incomplete ? "missing quote" : ""].filter(Boolean).join(", ");
+    item.currency_incomplete ? (item.completeness?.label || "missing quote") : ""]
+    .filter(Boolean).join(", ");
   return el("div", { class: income ? "income-over-time" : "spending-over-time" },
     el("h3", {}, income ? "Income over time" : "Spending over time"),
     el("p", { class: "note" }, `Blue: total plan · Orange: total actual. Actual is posted `
@@ -2607,24 +2623,31 @@ async function showPlan() {
   const summary = data.summary;
   const comparison = data.comparison;
   const summaryDelta = comparison ? comparison.summary : null;
+  const horizon = data.completeness?.horizon;
+  const throughAsOf = data.completeness?.through_as_of;
   const cards = el("div", { class: "cards" },
-    [["Opening spendable cash", summary.opening_cash, null, false],
-     ["Ending spendable cash", summary.ending_cash, null, false],
-     [`Lowest spendable cash (${summary.minimum_cash_date})`, summary.minimum_cash, null, false],
+    [["Opening spendable cash", summary.opening_cash, null, false, horizon],
+     ["Ending spendable cash", summary.ending_cash, null, false, horizon],
+     [`Lowest spendable cash (${summary.minimum_cash_date})`, summary.minimum_cash, null, false,
+       horizon],
      ["Projected change in spendable cash", summary.planned_cash,
-       summaryDelta?.planned_cash_delta, true],
-     ["Planned change through as-of date", summary.planned_cash_through_as_of, null, true],
+       summaryDelta?.planned_cash_delta, true, horizon],
+     ["Planned change through as-of date", summary.planned_cash_through_as_of, null, true,
+       throughAsOf],
      ["Actual change through as-of date", summary.actual_cash,
-       summaryDelta?.actual_cash_delta, true],
+       summaryDelta?.actual_cash_delta, true, throughAsOf],
      ["Variance through as-of date", summary.variance,
-       summaryDelta?.variance_delta, true]].map(([label, value, delta, signed]) =>
+       summaryDelta?.variance_delta, true, throughAsOf]].map(
+      ([label, value, delta, signed, coverage]) =>
       el("div", { class: "card" },
         el("div", { class: "label" }, label),
         el("div", { class: `value ${Number(value) < 0 ? "neg" : ""}` },
           value == null ? "Not applicable" : signed ? signedMoney(value) : money(value)),
+        value == null ? null : completenessFlag(coverage),
         comparison && delta != null ? el("span", {
           class: `plan-delta ${Number(delta) < 0 ? "neg" : ""}`,
-        }, `Δ vs ${comparison.name}: ${money(delta)}`) : null)),
+        }, `Δ vs ${comparison.name}: ${money(delta)}`,
+          completenessFlag(comparison.completeness, " — ")) : null)),
     el("div", { class: "card" },
       el("div", { class: "label" }, "Expected occurrences pending"),
       el("div", { class: "value" }, summary.unresolved_expected)),
@@ -2640,7 +2663,10 @@ async function showPlan() {
     .filter((source) => source !== comparison?.name).length;
 
   const headers = ["Category",
-    ...data.periods.map((item) => ({ label: item.label, num: true })),
+    ...data.periods.map((item) => ({
+      label: item.completeness?.status === "partial" ? `${item.label} (partial)` : item.label,
+      num: true,
+    })),
     { label: "Total", num: true }];
   const summaryRows = [];
   const detailRows = [];
@@ -2696,6 +2722,11 @@ async function showPlan() {
               onclick: () => openPlanDetail(
                 category, data.periods[index], currentPlan.scenario, data.periods[index].label),
             }, value == null ? "—" : money(value),
+              value != null && category.complete && !category.complete[index]
+                ? el("span", {
+                  class: "completeness-flag",
+                  title: (data.periods[index].completeness?.detail || []).join("\n"),
+                }, " partial") : null,
               deltas && deltas[index] != null ? el("span", {
                 class: `plan-delta ${Number(deltas[index]) < 0 ? "neg" : ""}`,
                 title: `Active scenario minus ${comparison.name}`,
@@ -2805,6 +2836,7 @@ async function showPlan() {
   document.body.classList.toggle("include-plan-detail", state.planPrintDetail);
 
   return el("div", {}, controls, cards,
+    completenessDetails(horizon, "Plan totals"),
     ...((data.goal_milestones || []).length
       ? [el("section", { class: "plan-goals" },
         el("h2", {}, "Savings goals reaching their target"),
@@ -3513,6 +3545,16 @@ function chart(rows) {
       "stroke-width": 1.4, opacity: 0.6,
     }));
   }
+  // Months that leave out an unconverted balance or event are shaded and named
+  // in the caption: the lines there are subtotals, not complete values (#236).
+  const firstPartial = rows.findIndex((row) => row.completeness?.status === "partial");
+  if (firstPartial >= 0) {
+    parts.push(svgEl("rect", {
+      x: x(firstPartial), y: pad.t, width: Math.max(width - pad.r - x(firstPartial), 2),
+      height: height - pad.t - pad.b, fill: "#b3261e", opacity: 0.07,
+      class: "chart-partial",
+    }));
+  }
   for (const s of series) {
     const path = rows.map((r, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(Number(r[s.key])).toFixed(1)}`).join("");
     parts.push(svgEl("path", { d: path, fill: "none", stroke: s.colour, "stroke-width": 2 }));
@@ -3538,6 +3580,11 @@ function chart(rows) {
   plot.append(...parts);
   svg.append(plot, ...legend);
   holder.append(svg);
+  if (firstPartial >= 0) {
+    holder.append(el("p", { class: "note neg chart-partial-note" },
+      `Partial from ${rows[firstPartial].label} (shaded): `
+      + `${rows[firstPartial].completeness.label.replace(/^Partial: /, "")}.`));
+  }
   return holder;
 }
 
@@ -3656,7 +3703,8 @@ async function showProjection() {
      ["Lowest cash", s.minimum_cash]].map(([label, value]) =>
       el("div", { class: "card" },
         el("div", { class: "label" }, label),
-        el("div", { class: "value " + (Number(value) < 0 ? "neg" : "") }, money(value)))),
+        el("div", { class: "value " + (Number(value) < 0 ? "neg" : "") }, money(value)),
+        completenessFlag(data.completeness))),
     el("div", { class: "card" },
       el("div", { class: "label" }, "Cash runs out"),
       el("div", { class: "value " + (s.first_shortfall ? "neg" : "") },
@@ -3671,7 +3719,7 @@ async function showProjection() {
   }, money(row[key]));
   const yearly = data.rows.map((row, i) => [row, i])
     .filter(([, i]) => (i + 1) % 12 === 0).map(([row, i]) => el("tr", {},
-      el("td", {}, row.label),
+      el("td", {}, row.label, completenessFlag(row.completeness, " ")),
       el("td", { class: "plan-cell" }, projectionValue(row, i, "income", "income")),
       el("td", { class: "plan-cell" }, projectionValue(row, i, "expense", "expense")),
       el("td", { class: "plan-cell" }, projectionValue(row, i, "cash", "cash")),
@@ -3687,7 +3735,7 @@ async function showProjection() {
       .filter((source) => source !== comparison.scenario.name).length;
     const compareYearly = comparison.rows.filter((_, i) => (i + 1) % 12 === 0)
       .map((row, i) => el("tr", {},
-        el("td", {}, row.label),
+        el("td", {}, row.label, completenessFlag(row.completeness, " ")),
         el("td", { class: cls(data.rows[(i + 1) * 12 - 1].cash) },
           money(data.rows[(i + 1) * 12 - 1].cash)),
         el("td", { class: cls(row.cash) }, money(row.cash)),
@@ -3705,7 +3753,8 @@ async function showProjection() {
           el("div", { class: "card" },
             el("div", { class: "label" }, label),
             el("div", { class: "value " + (Number(value) < 0 ? "neg" : "") },
-              money(value))))),
+              money(value)),
+            completenessFlag(comparison.delta_completeness)))),
       el("p", { class: "note" },
         `Differences are ${scenarioData.name} minus ${comparison.scenario.name}. `
         + `Cash shortfall: ${s.first_shortfall || "never"} vs `
@@ -3729,7 +3778,8 @@ async function showProjection() {
     : null;
   return el("div", {},
     el("h2", {}, "Projection"),
-    form, cards, chart(data.rows), comparisonView, goalNotes, warnings,
+    form, cards, completenessDetails(data.completeness, "Projection"), chart(data.rows),
+    comparisonView, goalNotes, warnings,
     el("p", { class: "note" }, `Scenario "${scenarioData.name}", by year.`),
     table(["Month", { label: "Income", num: true }, { label: "Expense", num: true },
            { label: "Cash", num: true }, { label: "Holdings", num: true },
@@ -4899,15 +4949,28 @@ async function netWorthHistory() {
   if (path) {
     svg.append(svgEl("path", { d: path, fill: "none", stroke: "#2563a4", "stroke-width": "3" }));
   }
+  // A withheld point is marked, never drawn as zero (#236).
+  points.forEach((item, i) => {
+    if (item.net_worth !== null) return;
+    const mark = svgEl("text", { x: x(i), y: 140, "text-anchor": "middle", "font-size": 11,
+      fill: "#b3261e", class: "chart-unavailable" }, "n/a");
+    mark.append(svgEl("title", {}, `${item.label}: ${item.completeness?.label || "unavailable"}`));
+    svg.append(mark);
+  });
   const choose = el("select", { onchange: (event) => {
     state.netWorthPeriod = event.target.value; render();
   } }, [["month", "Month"], ["quarter", "Quarter"], ["year", "Year"]].map(([value, label]) =>
     el("option", { value, selected: value === period ? "selected" : null }, label)));
   const amount = (value) => value === null ? "Missing quote" : money(value);
   const slot = el("div", { class: "net-worth-change-slot" });
-  const note = (item) => [item.partial ? "to date" : "",
-    item.missing.length ? `missing quote: ${item.missing.join(", ")}` : ""]
-    .filter(Boolean).join("; ") || "—";
+  const note = (item) => {
+    const text = [item.partial ? "to date" : "",
+      item.missing.length ? `missing quote: ${item.missing.join(", ")}` : ""]
+      .filter(Boolean).join("; ") || "—";
+    return item.completeness?.status === "complete" ? text
+      : el("details", {}, el("summary", {}, text),
+        el("ul", {}, ...(item.completeness?.detail || []).map((line) => el("li", {}, line))));
+  };
   return el("section", { class: "net-worth-history" },
     el("h2", {}, "Net worth history"),
     el("p", { class: "note" }, "Assets less debts, market-valued at each period end "
@@ -4957,6 +5020,7 @@ async function netWorthChange(point, slot) {
     el("h3", {}, `Net worth change ${data.start} through ${data.closing_on}`
       + (data.partial ? " (to date)" : "")),
     ...notes.map((text) => el("p", { class: "note" }, text)),
+    completenessDetails(data.completeness, "Change"),
     el("div", { class: "toolbar" },
       el("button", { class: "action", type: "button", onclick: download }, "Download CSV"),
       el("button", { class: "action", type: "button",
@@ -5040,7 +5104,8 @@ async function showDashboard() {
     el("div", {
       class:`balance-group ${depthClass("tree-depth", g.depth)} ${g.heading ? "group-heading" : ""}`,
       title:[g.path, ...(g.members || [])].join("\n"),
-    }, el("h3",{},g.name), g.note ? el("p", {class:"note"}, g.note) : null, el("dl",{},
+    }, el("h3",{},g.name), g.note ? el("p", {class:"note"}, g.note) : null,
+    completenessFlag(g.completeness), el("dl",{},
       g.value === null ? null : [el("dt",{},"Value"),el("dd",{},money(g.value))],
       g.debt === null ? null : [el("dt",{},"Owed"),el("dd",{},money(g.debt))],
       el("dt",{},g.equity === null ? "Total" : "Equity"),
@@ -5096,6 +5161,11 @@ async function showDashboard() {
   ]);
 
   return el("div", {}, cards,
+    completenessDetails(data.completeness, "Net worth"),
+    data.liquid_completeness?.status !== "complete"
+      && JSON.stringify(data.liquid_completeness?.excluded)
+        !== JSON.stringify(data.completeness?.excluded)
+      ? completenessDetails(data.liquid_completeness, "Liquid cash") : null,
     ...(data.coverage_notes || []).map((note) => el("p", { class: "note" }, note)), controls,
     el("h2", {}, "Balances"),
     groupCards,

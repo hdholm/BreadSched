@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 from ..db.sqlite import DbSQLite
 from ..engine import ledger, valuation
 from ..engine.activity import ReportingPeriod, reporting_periods
+from ..engine.completeness import Completeness, Excluded, Policy
 from ..engine.currency import reporting_currency_handle
 from ..lib.account import Account, AccountClass
 from ..lib.amount import Amount
@@ -50,6 +51,8 @@ class NetWorthPoint:
     change: Money | None
     missing: tuple[str, ...]
     lines: tuple[NetWorthLine, ...]
+    #: Withheld (unavailable) with the excluded balances when ``missing`` (#236).
+    completeness: Completeness = field(default_factory=Completeness)
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +106,8 @@ class NetWorthChange:
     postings: tuple[NetWorthPosting, ...]
     transfers: int
     missing: tuple[str, ...]
+    #: Withheld (unavailable) with the excluded balances and postings (#236).
+    completeness: Completeness = field(default_factory=Completeness)
 
 
 def _top_level(db: DbSQLite, account: Account, cache: dict[str, str]) -> str:
@@ -130,13 +135,14 @@ def _value_on(
     when: date,
     reporting: str,
     ledgers: dict[str, Amount],
-) -> tuple[dict[tuple[str, str], Money | None], list[str]]:
+) -> tuple[dict[tuple[str, str], Money | None], list[Excluded]]:
     """Sum complete reporting-currency valuations per (top-level account, kind).
 
-    ``ledgers`` holds each account's ledger balance on ``when``.
+    ``ledgers`` holds each account's ledger balance on ``when``. The second value
+    is the evidence for each balance that has no reporting-currency value.
     """
     sums: dict[tuple[str, str], Money | None] = {}
-    missing: list[str] = []
+    missing: list[Excluded] = []
     for account in accounts:
         kind = "asset" if account.account_class is AccountClass.ASSET else "debt"
         key = (tops[account.handle], kind)
@@ -148,13 +154,23 @@ def _value_on(
         if amount is None or not amount:
             continue
         if valued.missing_quote or amount.commodity != reporting:
-            missing.append(db.full_name(account))
+            missing.append(valuation.excluded_valuation(db, account, valued, when))
             sums[key] = None
         else:
             current = sums[key]
             if current is not None:
                 sums[key] = current + amount.value
     return sums, missing
+
+
+def _missing_names(items: list[Excluded]) -> list[str]:
+    """The legacy ``missing`` names: account names, or "date description" postings."""
+    return [
+        f"{item.when.isoformat()} {item.label}"
+        if item.kind == "posting" and item.when is not None
+        else item.label
+        for item in items
+    ]
 
 
 def _balance_sheet_accounts(db: DbSQLite) -> list[Account]:
@@ -168,7 +184,7 @@ def _balance_sheet_accounts(db: DbSQLite) -> list[Account]:
 
 def _net_worth_on(
     db: DbSQLite, accounts: list[Account], when: date, reporting: str, ledgers: dict[str, Amount]
-) -> tuple[Money | None, list[str]]:
+) -> tuple[Money | None, list[Excluded]]:
     """Net worth on ``when`` from each account's ledger balance on that date."""
     tops = {account.handle: account.handle for account in accounts}
     sums, missing = _value_on(db, accounts, tops, when, reporting, ledgers)
@@ -248,7 +264,15 @@ def query_net_worth_change(
             ).amount
             effect = converted.value if converted is not None else None
             if effect is None:
-                missing.append(f"{posted_on.isoformat()} {description}")
+                missing.append(
+                    Excluded(
+                        "posting",
+                        description or "Untitled",
+                        mnemonics[amount.commodity],
+                        amount.value,
+                        posted_on,
+                    )
+                )
         postings.append(
             NetWorthPosting(
                 handle,
@@ -284,7 +308,8 @@ def query_net_worth_change(
             revaluation,
             tuple(postings),
             transfers,
-            tuple(dict.fromkeys(missing)),
+            tuple(dict.fromkeys(_missing_names(missing))),
+            Completeness.of(dict.fromkeys(missing), policy=Policy.WITHHOLD, as_of=closing_on),
         )
     )
 
@@ -364,8 +389,9 @@ def query_net_worth_history(
                 debts,
                 net,
                 net - previous if net is not None and previous is not None else None,
-                tuple(dict.fromkeys(missing)),
+                tuple(dict.fromkeys(_missing_names(missing))),
                 lines,
+                Completeness.of(dict.fromkeys(missing), policy=Policy.WITHHOLD, as_of=valued_on),
             )
         )
         previous = net

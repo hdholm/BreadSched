@@ -29,6 +29,9 @@ def dashboard_report(
         },
         "missing_quotes": list(board.missing_quotes),
         "liquid_missing_quotes": list(board.liquid_missing_quotes),
+        # Withheld totals with each excluded balance and how to include it (#236).
+        "completeness": board.completeness.as_dict(),
+        "liquid_completeness": board.liquid_completeness.as_dict(),
         "coverage_notes": list(board.coverage_notes),
         # Allocation detail lives on the goals page; the Dashboard shows progress.
         "goals": [
@@ -74,6 +77,7 @@ def dashboard_report(
                     else None
                 ),
                 "missing_quotes": list(group.missing_quotes),
+                "completeness": group.completeness.as_dict(),
                 "loan_end": group.loan_end.isoformat() if group.loan_end is not None else None,
                 "accounts": [
                     {
