@@ -286,6 +286,14 @@ class Api:
                                 "runout_through": (
                                     year.runout_through.isoformat() if year.runout_through else None
                                 ),
+                                "carryover_limit": (
+                                    str(year.carryover_limit.to_decimal())
+                                    if year.carryover_limit is not None
+                                    else None
+                                ),
+                                "grace_through": (
+                                    year.grace_through.isoformat() if year.grace_through else None
+                                ),
                             }
                             for year in account.fsa_years
                         ],
@@ -558,13 +566,17 @@ class Api:
             raise ValueError("FSA funding years require an FSA account")
         years: list[FsaFundingYear] = []
         for raw in payload.get("years", []):
-            runout = str(raw.get("runout_through", "")).strip()
+            runout = str(raw.get("runout_through") or "").strip()
+            carryover = str(raw.get("carryover_limit") or "").strip()
+            grace = str(raw.get("grace_through") or "").strip()
             years.append(
                 FsaFundingYear(
                     start=date.fromisoformat(str(raw["start"])),
                     through=date.fromisoformat(str(raw["through"])),
                     election=self._input_money(payload, raw["election"]),
                     runout_through=date.fromisoformat(runout) if runout else None,
+                    carryover_limit=self._input_money(payload, carryover) if carryover else None,
+                    grace_through=date.fromisoformat(grace) if grace else None,
                 )
             )
         years.sort(key=lambda year: year.start)

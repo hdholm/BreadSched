@@ -9,7 +9,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountType, FsaFundingYear
 from ..lib.money import Money
 
-__all__ = ["FsaYearStatus", "year_status", "dashboard_statuses"]
+__all__ = ["FsaYearStatus", "dashboard_statuses", "previous_year", "year_status"]
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,11 @@ class FsaYearStatus:
     as_of: date
     #: Money paid back into the FSA for this year (already taken off ``used``).
     repaid: Money = Money(0)
+    #: Unused election carried in from the previous plan year, once its run-out
+    #: has ended; already part of ``remaining``.
+    carried_in: Money = Money(0)
+    #: Unused election this closed year carries into the next; not forfeited.
+    carried_over: Money = Money(0)
 
     @property
     def label(self) -> str:
@@ -62,6 +67,10 @@ def year_status(
     Money paid back into the account for a funding year (a claim's repayment,
     whose split carries ``fsa_year_start``) is not payroll funding: it gives
     that much of the election back.
+
+    A plan with a carryover limit carries up to that much of a year's unused
+    election into the account's next funding year once the run-out ends; only
+    the rest is forfeited. The next year's availability includes it from then.
     """
     when = as_of or date.today()
     funded = Money(0)
@@ -83,16 +92,48 @@ def year_status(
                 ):
                     used = used - split.value
     used = used - repaid
-    remaining_raw = year.election - used
+    carried_in = _carried_in(db, account, year, when)
+    remaining_raw = year.election + carried_in - used
     available = remaining_raw if remaining_raw > 0 else Money(0)
     overage = -remaining_raw if remaining_raw < 0 else Money(0)
     runout = year.runout_through or year.through
     closed = when > runout
     remaining = Money(0) if closed else available
-    forfeited = available if closed else Money(0)
+    carried_over = Money(0)
+    if closed and year.carryover_limit is not None:
+        carried_over = min(available, year.carryover_limit)
+    forfeited = available - carried_over if closed else Money(0)
     return FsaYearStatus(
-        account, year, funded, used, remaining, overage, forfeited, when, repaid=repaid
+        account,
+        year,
+        funded,
+        used,
+        remaining,
+        overage,
+        forfeited,
+        when,
+        repaid=repaid,
+        carried_in=carried_in,
+        carried_over=carried_over,
     )
+
+
+def previous_year(account: Account, year: FsaFundingYear) -> FsaFundingYear | None:
+    """The account's funding year that ends last before ``year`` starts."""
+    earlier = [item for item in account.fsa_years if item.through < year.start]
+    return max(earlier, key=lambda item: item.through, default=None)
+
+
+def _carried_in(db: DbSQLite, account: Account, year: FsaFundingYear, when: date) -> Money:
+    prior = previous_year(account, year)
+    if prior is None or prior.carryover_limit is None:
+        return Money(0)
+    closes = prior.runout_through or prior.through
+    if when <= closes:
+        # The carryover is known only once the previous year's claims are in.
+        return Money(0)
+    left = year_status(db, account, prior, as_of=closes).remaining
+    return min(left, prior.carryover_limit)
 
 
 def dashboard_statuses(

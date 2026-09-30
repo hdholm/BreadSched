@@ -1033,6 +1033,21 @@ than the general household Dashboard. This separation is presentational: shared 
 engines remain authoritative, and an explicitly configured FSA account can still
 contribute its benefit availability to a user-defined balance group.
 
+**Plan rules.** A funding year (`FsaFundingYear`, stored in the account's JSON, so
+no schema change) may carry a `carryover_limit` or a `grace_through` date, never
+both, as plans offer one or the other; a grace period cannot end before the plan
+year or after its run-out. `engine.fsa.year_status` carries the unused election, up
+to the limit, into the account's next funding year (`previous_year`: the year
+ending last before it starts) once the earlier year's run-out ends: the closed
+year reports it as `carried_over` and forfeits only the rest, and the next year
+reports it as `carried_in` and adds it to its availability. Before the run-out
+ends nothing is carried, because claims may still use the money. A grace period
+extends `service_through`, the last service date a year pays for: claim windows,
+suggestions, and reimbursement attachment accept a grace-period service against
+either year, so the household chooses the funding year when both apply. GTK's
+account dialog and the web funding-year editor edit both rules, and both FSA
+Dashboards show the carried amounts.
+
 Emergency-fund sizing is an explicit household classification, not an inference
 from whether past spending happened to correlate with income. Expense, Loan,
 general Liability, Escrow, and carried-balance Credit card accounts may opt out and

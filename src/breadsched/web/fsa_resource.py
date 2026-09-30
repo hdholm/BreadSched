@@ -83,6 +83,16 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
                 "used": _amount(status.used),
                 "remaining": _amount(status.remaining),
                 "overage": _amount(status.overage),
+                "carryover_limit": (
+                    _amount(status.year.carryover_limit)
+                    if status.year.carryover_limit is not None
+                    else None
+                ),
+                "grace_through": (
+                    status.year.grace_through.isoformat() if status.year.grace_through else None
+                ),
+                "carried_in": _amount(status.carried_in),
+                "carried_over": _amount(status.carried_over),
                 "forfeited": _amount(status.forfeited),
                 "phase": status.phase,
             }

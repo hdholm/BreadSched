@@ -61,7 +61,7 @@ def claim_year_window(db: DbSQLite, service_date: date) -> tuple[date, date] | N
         if account.atype is not AccountType.FSA:
             continue
         matches.extend(
-            year for year in account.fsa_years if year.start <= service_date <= year.through
+            year for year in account.fsa_years if year.start <= service_date <= year.service_through
         )
     if not matches:
         return None
@@ -126,7 +126,7 @@ def suggest_claims_for_transaction(
                 if account is None:
                     continue
                 compatible = any(
-                    year.start <= claim.service_date <= year.through
+                    year.start <= claim.service_date <= year.service_through
                     and transaction.post_date <= (year.runout_through or year.through)
                     for year in account.fsa_years
                 )
@@ -562,7 +562,9 @@ def attach_transaction_to_claim(
             eligible_years = [year for year in eligible_years if year.start == funding_year_start]
         else:
             service_years = [
-                year for year in eligible_years if year.start <= claim.service_date <= year.through
+                year
+                for year in eligible_years
+                if year.start <= claim.service_date <= year.service_through
             ]
             if len(service_years) == 1:
                 eligible_years = service_years

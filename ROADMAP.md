@@ -59,8 +59,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    scheduled transactions and loans (sections below). Scenario Projection tabs,
    remembered tabs per book, browser-tab counterparts, native GTK printing, and
    bounded GTK view and dialog sizes are delivered; on FSA, claim reports,
-   Dashboard alerts for claims needing attention, and claim corrections
-   (repayments, late EOB changes, closing and reopening) are delivered.
+   Dashboard alerts for claims needing attention, claim corrections
+   (repayments, late EOB changes, closing and reopening), and plan carryover
+   and grace-period rules are delivered.
 
 
 ## Architecture and correctness
@@ -168,8 +169,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   preserve service dates, funding-year attribution, refunds, and reconciliation.
 
 - Improve Review suggestions and action explanations.
-
-- Support plan-specific carryover rules where applicable.
 
 - Improve import/reconciliation treatment of external FSA transactions.
 
