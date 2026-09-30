@@ -61,12 +61,7 @@ from ..gen.plug import (
     remembered_import_source,
 )
 from ..gen.services import (
-    ClaimAllocationInput,
-    ClaimInput,
-    ClaimLinkInput,
-    ClaimRejectionInput,
     DeleteAssumptionPeriod,
-    DeleteClaim,
     DeleteScenario,
     DeleteSchedule,
     DueDecision,
@@ -84,14 +79,12 @@ from ..gen.services import (
     SaveAccount,
     SaveAssumptionPeriod,
     SaveBaseAssumptions,
-    SaveClaim,
     SaveLoan,
     SaveScenarioAssumptions,
     ServiceError,
     SuppressScenarioSchedule,
     attach_review_claim,
     delete_assumption_period,
-    delete_claim,
     delete_scenario,
     delete_schedule,
     duplicate_scenario,
@@ -107,7 +100,6 @@ from ..gen.services import (
     save_account,
     save_assumption_period,
     save_base_assumptions,
-    save_claim,
     save_formula_schedule,
     save_loan,
     save_scenario_assumptions,
@@ -128,7 +120,6 @@ from .projection_resource import (
     projection_month_report,
     projection_report,
 )
-from .receivable_resource import shared_cost_json
 from .resources import ResourceError
 from .scenario_resource import scenario_payload, scenarios_report
 from .schedule_write_resource import save_fixed_schedule_request, save_scenario_schedule_request
@@ -588,168 +579,6 @@ class Api:
         if not result.ok:
             raise self._service_resource_error(result.errors[0])
         return {"handle": account.handle, "years": [year.serialize() for year in years]}
-
-    def fsa_claims(self) -> dict:
-        rows = []
-        for claim in fsa_claims.iter_claims(self.db):
-            summary = fsa_claims.claim_summary(self.db, claim)
-            rows.append(
-                {
-                    "handle": claim.handle,
-                    "service_date": claim.service_date.isoformat(),
-                    "provider": claim.provider,
-                    "description": claim.description,
-                    "eob_responsibility": (
-                        str(claim.eob_responsibility.to_decimal())
-                        if claim.eob_responsibility is not None
-                        else None
-                    ),
-                    "paid": str(summary.paid.to_decimal()),
-                    "provider_refunds": str(summary.refunds.to_decimal()),
-                    "net_paid": str(summary.net_paid.to_decimal()),
-                    "reimbursed": str(summary.reimbursed.to_decimal()),
-                    "rejected": str(summary.rejected.to_decimal()),
-                    "remaining": str(summary.remaining_reimbursable.to_decimal()),
-                    "status": summary.status.value,
-                    "status_label": summary.status.label,
-                    "payments": [link.serialize() for link in claim.payments],
-                    "refunds": [link.serialize() for link in claim.refunds],
-                    "receivable": claim.receivable,
-                    "shared": (
-                        shared_cost_json(summary.shared) if summary.shared is not None else None
-                    ),
-                    "allocations": [
-                        {
-                            **allocation.serialize(),
-                            "account_name": (
-                                self.db.full_name(allocation.account)
-                                if self.db.get_account(allocation.account)
-                                else allocation.account
-                            ),
-                        }
-                        for allocation in claim.allocations
-                    ],
-                }
-            )
-        return {"claims": rows, "candidates": self.fsa_claim_candidates()}
-
-    def fsa_claim_candidates(self) -> dict:
-        payments = []
-        refunds = []
-        reimbursements = []
-        fsa_years = [
-            year
-            for account in self.db.iter_accounts()
-            if account.atype is AccountType.FSA
-            for year in account.fsa_years
-        ]
-        candidate_start = min((year.start for year in fsa_years), default=None)
-        for transaction in self.db.iter_transactions():
-            if candidate_start is not None and transaction.post_date < candidate_start:
-                continue
-            for split in transaction.splits:
-                account = self.db.get_account(split.account)
-                if account is None:
-                    continue
-                row = {
-                    "transaction": transaction.handle,
-                    "split": split.handle,
-                    "date": transaction.post_date.isoformat(),
-                    "description": transaction.description,
-                    "account": account.handle,
-                    "account_name": self.db.full_name(account),
-                    "amount": str(abs(split.value).to_decimal()),
-                }
-                if account.account_class is AccountClass.EXPENSE and split.value > 0:
-                    payments.append(row)
-                if account.account_class is AccountClass.EXPENSE and split.value < 0:
-                    refunds.append(row)
-                if account.atype is AccountType.FSA and split.value < 0:
-                    reimbursements.append(row)
-        fsa_accounts = [
-            {
-                "handle": account.handle,
-                "name": self.db.full_name(account),
-                "years": [year.serialize() for year in account.fsa_years],
-            }
-            for account in self.db.iter_accounts()
-            if account.atype is AccountType.FSA
-        ]
-        return {
-            "payments": payments,
-            "refunds": refunds,
-            "reimbursements": reimbursements,
-            "fsa_accounts": fsa_accounts,
-            # A payer covering part of a claim's expense (issue #192).
-            "receivables": [
-                {
-                    "handle": item.handle,
-                    "label": (
-                        f"{item.payer} — {item.description or 'expense'} "
-                        f"({item.incurred_date.isoformat()})"
-                    ),
-                }
-                for item in sorted(
-                    self.db.iter_receivables(), key=lambda item: (item.incurred_date, item.payer)
-                )
-            ],
-        }
-
-    def fsa_claim_save(self, payload: dict) -> dict:
-        eob = str(payload.get("eob_responsibility", "")).strip()
-        handle = str(payload.get("handle") or "").strip() or None
-
-        def link(item: dict) -> ClaimLinkInput:
-            return ClaimLinkInput(str(item["transaction"]), str(item["split"]))
-
-        result = save_claim(
-            self.db,
-            SaveClaim(
-                ClaimInput(
-                    service_date=date.fromisoformat(str(payload["service_date"])),
-                    provider=str(payload.get("provider", "")).strip(),
-                    description=str(payload.get("description", "")).strip(),
-                    eob_responsibility=self._input_money(payload, eob) if eob else None,
-                    payments=tuple(link(item) for item in payload.get("payments", [])),
-                    refunds=tuple(link(item) for item in payload.get("refunds", [])),
-                    allocations=tuple(
-                        ClaimAllocationInput(
-                            account=str(item["account"]),
-                            funding_year_start=date.fromisoformat(str(item["funding_year_start"])),
-                            target=(
-                                self._input_money(payload, item["target"])
-                                if item.get("target") not in (None, "")
-                                else None
-                            ),
-                            reimbursements=tuple(
-                                link(raw_link) for raw_link in item.get("reimbursements", [])
-                            ),
-                            rejections=tuple(
-                                ClaimRejectionInput(
-                                    attempted_on=date.fromisoformat(str(rejection["attempted_on"])),
-                                    amount=self._input_money(payload, rejection["amount"]),
-                                    reason=str(rejection.get("reason", "")),
-                                )
-                                for rejection in item.get("rejections", [])
-                            ),
-                        )
-                        for item in payload.get("allocations", [])
-                    ),
-                    receivable=str(payload.get("receivable") or "").strip() or None,
-                ),
-                existing_handle=handle,
-            ),
-        )
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        return {"handle": result.value.handle}
-
-    def fsa_claim_delete(self, payload: dict) -> dict:
-        handle = str(payload.get("handle", ""))
-        result = delete_claim(self.db, DeleteClaim(handle))
-        if result.value is None:
-            raise self._service_resource_error(result.errors[0])
-        return {"handle": handle}
 
     def historical_estimates(
         self,
@@ -1940,6 +1769,16 @@ class Api:
                             for year in account.fsa_years
                             if transaction.post_date <= (year.runout_through or year.through)
                         ],
+                    }
+                )
+            if account.atype is AccountType.FSA and split.value > 0:
+                # Money paid back into the FSA; it returns to the claim's own year.
+                roles.append(
+                    {
+                        "role": "repayment",
+                        "split": split.handle,
+                        "account": self.db.full_name(account),
+                        "years": [],
                     }
                 )
         claims = []

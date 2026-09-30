@@ -12,6 +12,7 @@ from .money import Money
 __all__ = [
     "FsaClaim",
     "FsaClaimAllocation",
+    "FsaClaimEvent",
     "FsaClaimRejection",
     "FsaClaimSplitLink",
 ]
@@ -56,6 +57,52 @@ class FsaClaimRejection:
         )
 
 
+def _money(value: Money | None) -> list[int] | None:
+    return [value.numerator, value.denominator] if value is not None else None
+
+
+def _unmoney(raw: Any) -> Money | None:
+    return Money(*raw) if raw is not None else None
+
+
+@dataclass(frozen=True)
+class FsaClaimEvent:
+    """One correction in a claim's life: a changed EOB, or the claim closed or reopened.
+
+    ``previous`` and ``current`` are the EOB responsibility before and after an
+    ``eob_changed`` event and are ``None`` for the others.
+    """
+
+    EOB_CHANGED = "eob_changed"
+    CLOSED = "closed"
+    REOPENED = "reopened"
+
+    kind: str
+    on: date
+    previous: Money | None = None
+    current: Money | None = None
+    note: str = ""
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "kind": self.kind,
+            "on": self.on.isoformat(),
+            "previous": _money(self.previous),
+            "current": _money(self.current),
+            "note": self.note,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> FsaClaimEvent:
+        return cls(
+            kind=str(data["kind"]),
+            on=date.fromisoformat(str(data["on"])),
+            previous=_unmoney(data.get("previous")),
+            current=_unmoney(data.get("current")),
+            note=str(data.get("note", "")),
+        )
+
+
 @dataclass
 class FsaClaimAllocation:
     """One FSA funding source participating in a healthcare claim."""
@@ -65,6 +112,9 @@ class FsaClaimAllocation:
     target: Money | None = None
     reimbursements: list[FsaClaimSplitLink] = field(default_factory=list)
     rejections: list[FsaClaimRejection] = field(default_factory=list)
+    #: Money paid back into the FSA for this funding year, such as an
+    #: over-reimbursement returned after a lower EOB.
+    repayments: list[FsaClaimSplitLink] = field(default_factory=list)
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -77,6 +127,7 @@ class FsaClaimAllocation:
             ),
             "reimbursements": [link.serialize() for link in self.reimbursements],
             "rejections": [item.serialize() for item in self.rejections],
+            "repayments": [link.serialize() for link in self.repayments],
         }
 
     @classmethod
@@ -90,6 +141,7 @@ class FsaClaimAllocation:
                 FsaClaimSplitLink.from_dict(item) for item in data.get("reimbursements", [])
             ],
             rejections=[FsaClaimRejection.from_dict(item) for item in data.get("rejections", [])],
+            repayments=[FsaClaimSplitLink.from_dict(item) for item in data.get("repayments", [])],
         )
 
 
@@ -109,6 +161,9 @@ class FsaClaim(PrimaryObject):
         allocations: list[FsaClaimAllocation] | None = None,
         handle: str | None = None,
         receivable: str | None = None,
+        closed_on: date | None = None,
+        close_reason: str = "",
+        events: list[FsaClaimEvent] | None = None,
     ) -> None:
         super().__init__(handle=handle)
         self.service_date = service_date or date.min
@@ -121,6 +176,19 @@ class FsaClaim(PrimaryObject):
         #: A receivable whose payer covers part of this same expense; the FSA
         #: then claims only the remainder (issue #192). Linked from the claim.
         self.receivable = receivable
+        #: Set when the household stops pursuing what is left to reimburse.
+        self.closed_on = closed_on
+        self.close_reason = close_reason
+        #: EOB changes and closings/reopenings, oldest first.
+        self.events = list(events or [])
+
+    def links(self) -> list[FsaClaimSplitLink]:
+        """Every ledger split the claim points at: payments, refunds, and FSA money."""
+        found = [*self.payments, *self.refunds]
+        for allocation in self.allocations:
+            found.extend(allocation.reimbursements)
+            found.extend(allocation.repayments)
+        return found
 
     def _serialize(self) -> dict[str, Any]:
         return {
@@ -136,6 +204,9 @@ class FsaClaim(PrimaryObject):
             "refunds": [link.serialize() for link in self.refunds],
             "allocations": [allocation.serialize() for allocation in self.allocations],
             "receivable": self.receivable,
+            "closed_on": self.closed_on.isoformat() if self.closed_on is not None else None,
+            "close_reason": self.close_reason,
+            "events": [event.serialize() for event in self.events],
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -151,3 +222,7 @@ class FsaClaim(PrimaryObject):
         ]
         raw_receivable = data.get("receivable")
         self.receivable = str(raw_receivable) if raw_receivable else None
+        raw_closed = data.get("closed_on")
+        self.closed_on = date.fromisoformat(str(raw_closed)) if raw_closed else None
+        self.close_reason = str(data.get("close_reason", ""))
+        self.events = [FsaClaimEvent.from_dict(item) for item in data.get("events", [])]

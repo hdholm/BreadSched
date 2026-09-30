@@ -703,3 +703,49 @@ def test_fsa_claims_needing_attention_show_on_both_dashboards(page, served):
     page.wait_for_selector("th:text('Provider') >> nth=1")
     rows = page.locator("table").last.locator("tbody tr").all_inner_texts()
     assert [row.split("\t")[0] for row in rows] == ["Clinic", "Dentist", "All claims"]
+
+
+def test_a_claim_is_closed_and_reopened_in_the_claims_editor(page, served):
+    from breadsched.gen.engine import fsa_claims
+    from breadsched.gen.lib import (
+        Account,
+        AccountType,
+        FsaClaim,
+        FsaClaimAllocation,
+        FsaFundingYear,
+        Money,
+    )
+
+    db, httpd = served
+    today = date.today()
+    start = today.replace(month=1, day=1)
+    assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+    account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+    account.fsa_years = [
+        FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+    ]
+    with db.transaction("FSA") as txn:
+        db.add_account(account, txn)
+    claim = FsaClaim(
+        service_date=start,
+        provider="Clinic",
+        allocations=[FsaClaimAllocation(account.handle, start)],
+    )
+    fsa_claims.save_claim(db, claim)
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/?claims#token={httpd.token}")
+    page.get_by_role("button", name="FSA Dashboard", exact=True).first.click()
+    page.get_by_role("button", name="Manage FSA claims…").click()
+    page.wait_for_selector("h2:text('FSA claims')")
+    page.get_by_label("Why close").fill("Not worth appealing")
+    page.get_by_role("button", name="Close claim").click()
+    page.wait_for_selector("text=FSA claim closed.")
+    page.wait_for_selector("text=Not worth appealing")
+    assert db.get_fsa_claim(claim.handle).close_reason == "Not worth appealing"
+    page.get_by_label("Why reopen").fill("Appeal won")
+    page.get_by_role("button", name="Reopen").click()
+    page.wait_for_selector("text=FSA claim reopened.")
+    page.wait_for_selector("text=Reopened: Appeal won")
+    assert db.get_fsa_claim(claim.handle).closed_on is None
+    # Each allocation can link money paid back into the FSA.
+    page.get_by_role("button", name="Edit").click()
+    page.wait_for_selector("text=Repaid to the FSA")

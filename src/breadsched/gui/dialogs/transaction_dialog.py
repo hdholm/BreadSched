@@ -351,8 +351,7 @@ class TransactionDialog(BoundedWindow):
         self.fsa_claims = [
             claim
             for claim in fsa_claims.iter_claims(db)
-            if fsa_claims.claim_summary(db, claim).status
-            is not fsa_claims.FsaClaimStatus.FULLY_REIMBURSED
+            if not fsa_claims.claim_summary(db, claim).status.settled
         ]
         self.fsa_claim = None
         self.fsa_role = None
@@ -368,7 +367,7 @@ class TransactionDialog(BoundedWindow):
             )
             fsa_row.append(self.fsa_claim)
             self.fsa_role = bounded_dropdown(
-                ["Healthcare payment", "Provider refund", "FSA reimbursement"]
+                ["Healthcare payment", "Provider refund", "FSA reimbursement", "Repaid to the FSA"]
             )
             fsa_row.append(self.fsa_role)
             box.append(fsa_row)
@@ -771,7 +770,7 @@ class TransactionDialog(BoundedWindow):
             and self.fsa_claim.get_selected() > 0
         ):
             claim = self.fsa_claims[self.fsa_claim.get_selected() - 1]
-            roles = ("payment", "refund", "reimbursement")
+            roles = ("payment", "refund", "reimbursement", "repayment")
             attachment = ClaimAttachment(claim.handle, roles[self.fsa_role.get_selected()])
         return SaveTransaction(
             TransactionInput(

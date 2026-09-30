@@ -327,6 +327,9 @@ class ResolutionView(BaseView):
                     if transaction.post_date <= (year.runout_through or year.through)
                 ]
                 roles.append(("reimbursement", split.handle, self.db.full_name(account), years))
+            if account.atype is AccountType.FSA and split.value > 0:
+                # Money paid back into the FSA; it returns to the claim's own year.
+                roles.append(("repayment", split.handle, self.db.full_name(account), []))
         return claims, roles
 
     def _on_fsa_attach(self, _button) -> None:

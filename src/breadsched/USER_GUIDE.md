@@ -686,6 +686,9 @@ claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
 A claim needs attention when something is left for you to do:
 
 - its figures disagree and it shows **Needs review**;
+- the FSA reimbursed more than the claim allows and it shows **Over-reimbursed**;
+- it was reopened, or its EOB was raised after the FSA reimbursed part of it, and
+  money is still to be reimbursed;
 - no EOB has been entered 30 days after the service;
 - money is still to be reimbursed and a funding year it draws on must be claimed
   within 30 days (by its run-out date, or the plan-year end when there is none);
@@ -693,7 +696,18 @@ A claim needs attention when something is left for you to do:
 
 The Dashboard counts these claims, and the FSA Dashboard says why each one needs
 attention. Its **Claims report** totals every claim by status, FSA account, funding
-year, or provider: what was paid, reimbursed, rejected, and is still to come. See
+year, or provider: what was paid, reimbursed, rejected, and is still to come.
+
+Claims change after they are filed. When a corrected EOB arrives, change the
+claim's EOB and say why in **EOB change note**: the claim keeps a history of each
+change. A lower EOB after the FSA has paid leaves the claim **Over-reimbursed** by
+the difference; when you pay that back, record the payment into the FSA account and
+link it under **Repaid to the FSA** on the claim's FSA allocation. A repayment
+counts against what the FSA reimbursed and gives that much of the year's election
+back; it is never counted as payroll funding. A higher EOB reopens a reimbursed
+claim for the rest. **Close claim** stops pursuing what is left (the claim shows
+**Closed** and what it gave up, and needs no more attention), and **Reopen** takes
+it up again; both are kept in the history. See
 the [desktop](guide/desktop.md#reimbursable-expenses),
 [browser](guide/web.md#reimbursable-expenses), and
 [command-line](guide/cli.md#fsa-claims) guides.

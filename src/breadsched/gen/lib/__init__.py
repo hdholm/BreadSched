@@ -15,6 +15,7 @@ from .formula import FormulaError, evaluate
 from .fsa_claim import (
     FsaClaim,
     FsaClaimAllocation,
+    FsaClaimEvent,
     FsaClaimRejection,
     FsaClaimSplitLink,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "Amount",
     "FsaClaim",
     "FsaClaimAllocation",
+    "FsaClaimEvent",
     "FsaClaimRejection",
     "FsaClaimSplitLink",
     "FsaFundingYear",

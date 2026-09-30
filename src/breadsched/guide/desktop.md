@@ -285,6 +285,13 @@ is left to do, under a line counting them; the Dashboard shows the count as **FS
 claims needing attention**. **Claims report** totals every claim, and **Group by**
 switches between status, FSA account, funding year, and provider.
 
+In **Manage FSA Claims**, a changed EOB is kept in the claim's history with the
+**EOB change note**. Link money you paid back into the FSA under **Repaid to the
+FSA** in the claim's allocation. **Close claim** stops pursuing what is left and
+**Reopen claim** takes it up again, each with the reason typed beside them; the line
+above shows the claim's status, anything repaid or still to repay, and what a closed
+claim gave up.
+
 When the FSA pays what the insurer does not, open **Manage FSA Claims** on the FSA
 Dashboard, choose the receivable under **Payer covers part**, and save the claim.
 The claim and the receivable then show what the payer, the FSA, and you each pay,

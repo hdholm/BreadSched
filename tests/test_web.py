@@ -3217,6 +3217,111 @@ class TestDashboardApi:
         status, _error = refused("/api/fsa/dashboard?sort=x")
         assert status == 400
 
+    def test_fsa_claim_corrections_round_trip_through_the_claim_routes(self, client):
+        from breadsched.gen.lib import FsaFundingYear
+
+        db = client.database
+        assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+        checking = next(a for a in db.iter_accounts() if a.name == "Checking")
+        rent = next(a for a in db.iter_accounts() if a.name == "Rent")
+        account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+        start = date(2026, 1, 1)
+        account.fsa_years = [FsaFundingYear(start, date(2026, 12, 31), Money("1000"), None)]
+        paid = Transaction.simple(date(2026, 3, 2), "Dentist", rent.handle, checking.handle, "200")
+        credit = Transaction.simple(
+            date(2026, 3, 20), "FSA reimbursement", checking.handle, account.handle, "200"
+        )
+        repay = Transaction.simple(
+            date(2026, 5, 10), "Repay FSA", account.handle, checking.handle, "50"
+        )
+        with db.transaction("FSA claim books") as txn:
+            db.add_account(account, txn)
+            for transaction in (paid, credit, repay):
+                db.add_transaction(transaction, txn)
+
+        def link(transaction, index):
+            return {"transaction": transaction.handle, "split": transaction.splits[index].handle}
+
+        def body(eob, repayments=(), **extra):
+            return {
+                "service_date": "2026-03-01",
+                "provider": "Dentist",
+                "eob_responsibility": eob,
+                "payments": [link(paid, 0)],
+                "allocations": [
+                    {
+                        "account": account.handle,
+                        "funding_year_start": "2026-01-01",
+                        "reimbursements": [link(credit, 1)],
+                        "repayments": list(repayments),
+                    }
+                ],
+                **extra,
+            }
+
+        def claim_row():
+            _status, payload = client.get("/api/fsa/claims")
+            return payload, next(row for row in payload["claims"] if row["provider"] == "Dentist")
+
+        _status, saved = client.post("/api/fsa/claim/save", body("200"))
+        handle = saved["handle"]
+        client.post("/api/fsa/claim/save", body("150", handle=handle, eob_note="Corrected EOB"))
+        payload, row = claim_row()
+        assert (row["status"], row["over_reimbursed"], row["reimbursed"]) == (
+            "over_reimbursed",
+            "50.00",
+            "200.00",
+        )
+        assert row["events"][0] == {
+            "kind": "eob_changed",
+            "on": date.today().isoformat(),
+            "previous": "200.00",
+            "current": "150.00",
+            "note": "Corrected EOB",
+        }
+        assert link(repay, 0) in [
+            {"transaction": item["transaction"], "split": item["split"]}
+            for item in payload["candidates"]["repayments"]
+        ]
+        client.post("/api/fsa/claim/save", body("150", [link(repay, 0)], handle=handle))
+        _payload, row = claim_row()
+        assert (row["status"], row["repaid"], row["reimbursed"]) == (
+            "fully_reimbursed",
+            "50.00",
+            "150.00",
+        )
+        assert row["allocations"][0]["repayments"] == [link(repay, 0)]
+
+        def refused(path, payload):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(path, payload)
+            return caught.value.code, json.loads(caught.value.read())
+
+        stored = db.get_fsa_claim(handle).serialize()
+        status, error = refused("/api/fsa/claim/reopen", {"handle": handle})
+        assert status == 400 and error["code"] == "claim.reopen.not_closed"
+        status, _error = refused("/api/fsa/claim/close", {"handle": handle, "on": "03/01"})
+        assert status == 400
+        assert db.get_fsa_claim(handle).serialize() == stored
+        client.post(
+            "/api/fsa/claim/close", {"handle": handle, "on": "2026-06-01", "reason": "Done"}
+        )
+        _payload, row = claim_row()
+        assert (row["status"], row["closed_on"], row["close_reason"]) == (
+            "closed",
+            "2026-06-01",
+            "Done",
+        )
+        status, error = refused("/api/fsa/claim/close", {"handle": handle})
+        assert status == 400 and error["code"] == "claim.close.already_closed"
+        # A closed claim is settled: it leaves the FSA Dashboard's open claims.
+        _status, board = client.get("/api/fsa/dashboard")
+        assert handle not in [claim["handle"] for claim in board["claims"]]
+        client.post("/api/fsa/claim/reopen", {"handle": handle, "note": "Oops"})
+        _payload, row = claim_row()
+        assert row["closed_on"] is None
+        assert [event["kind"] for event in row["events"]] == ["eob_changed", "closed", "reopened"]
+
     def test_it_reports_the_headline_figures(self, client):
         _status, payload = client.get("/api/dashboard")
         for key in (

@@ -267,8 +267,19 @@ rejected reimbursement, or figures that need review). `--by account`, `--by year
 or `--by provider` groups them another way; `--account`, `--year` (a funding
 year's start date), `--provider`, and `--status` narrow the list; `--attention`
 keeps only claims needing attention; `--as-of` reports on another day; `--json`
-gives each claim with its `attention` codes and text. `breadsched dashboard` shows
-how many claims need attention.
+gives each claim with its `attention` codes and text, and what was repaid to the
+FSA, is still to repay, or was given up. `breadsched dashboard` shows how many
+claims need attention.
+
+```sh
+breadsched claims BOOK --close 3f2a --on 2026-05-01 --reason "Not worth appealing"
+breadsched claims BOOK --reopen 3f2a --note "Appeal won"
+breadsched claims BOOK --history 3f2a
+```
+
+`--close` stops pursuing what is left to reimburse on a claim (named by its handle
+or the start of one), `--reopen` takes it up again, and `--history` lists the
+claim's EOB changes, closings, and reopenings.
 
 ## Savings goals
 

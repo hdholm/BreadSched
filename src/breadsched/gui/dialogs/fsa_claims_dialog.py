@@ -14,14 +14,19 @@ from ...gen.lib import (
     FsaClaimSplitLink,
     Money,
 )
+from ...gen.lib.fsa_claim import FsaClaimEvent
 from ...gen.services import (
     ClaimAllocationInput,
     ClaimInput,
     ClaimLinkInput,
     ClaimRejectionInput,
+    CloseClaim,
     DeleteClaim,
+    ReopenClaim,
     SaveClaim,
+    close_claim,
     delete_claim,
+    reopen_claim,
     save_claim,
 )
 from ...gen.utils.amount_input import parse_user_amount
@@ -69,8 +74,19 @@ class _LinkList(Gtk.Box):
         return len(self._checks)
 
 
+def _event_text(event: FsaClaimEvent) -> str:
+    def amount(value: Money | None) -> str:
+        return value.format() if value is not None else "none"
+
+    if event.kind == FsaClaimEvent.EOB_CHANGED:
+        text = f"EOB changed from {amount(event.previous)} to {amount(event.current)}"
+    else:
+        text = "Closed" if event.kind == FsaClaimEvent.CLOSED else "Reopened"
+    return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
+
+
 class _AllocationRow(Gtk.Frame):
-    def __init__(self, db: DbSQLite, candidates, allocation=None) -> None:
+    def __init__(self, db: DbSQLite, candidates, allocation=None, repayments=()) -> None:
         super().__init__()
         self.db = db
         self.accounts = [
@@ -91,6 +107,9 @@ class _AllocationRow(Gtk.Frame):
         self.reimburse = _LinkList(candidates)
         scroll = Gtk.ScrolledWindow(child=self.reimburse, min_content_height=90)
         box.append(scroll)
+        box.append(Gtk.Label(label="Repaid to the FSA (money paid back into it)", xalign=0))
+        self.repay = _LinkList(list(repayments))
+        box.append(Gtk.ScrolledWindow(child=self.repay, min_content_height=60))
         box.append(Gtk.Label(label="Rejected/failed attempts (date | amount | reason)", xalign=0))
         self.rejections = Gtk.Entry(placeholder_text="2026-03-01 | 125.00 | receipt required")
         box.append(self.rejections)
@@ -109,6 +128,7 @@ class _AllocationRow(Gtk.Frame):
             if allocation.target is not None:
                 self.target.set_text(str(allocation.target.to_decimal()))
             self.reimburse.set_links(allocation.reimbursements)
+            self.repay.set_links(allocation.repayments)
             self.rejections.set_text(
                 "; ".join(
                     f"{item.attempted_on.isoformat()} | {item.amount.to_decimal()} | {item.reason}"
@@ -153,6 +173,7 @@ class _AllocationRow(Gtk.Frame):
             target=Money(parse_user_amount(target_text)) if target_text else None,
             reimbursements=tuple(self.reimburse.links()),
             rejections=tuple(rejections),
+            repayments=tuple(self.repay.links()),
         )
 
 
@@ -190,6 +211,7 @@ class FsaClaimsDialog(BoundedWindow):
         self.provider = Gtk.Entry(placeholder_text="Provider")
         self.description = Gtk.Entry(placeholder_text="Description")
         self.eob = Gtk.Entry(placeholder_text="EOB patient responsibility")
+        self.eob_note = Gtk.Entry(placeholder_text="Why the EOB changed (kept in the history)")
         # A payer (an insurer) covering part of this same expense leaves the FSA
         # only the rest (issue #192); linked only from here, never inferred.
         self.receivables = sorted(
@@ -212,6 +234,7 @@ class FsaClaimsDialog(BoundedWindow):
                 ("Provider", self.provider),
                 ("Description", self.description),
                 ("EOB responsibility", self.eob),
+                ("EOB change note", self.eob_note),
                 ("Payer covers part", self.payer),
             )
         ):
@@ -222,10 +245,11 @@ class FsaClaimsDialog(BoundedWindow):
         self.shared.set_visible(False)
         outer.append(self.shared)
 
-        payments, refunds, reimbursements = self._candidates()
+        payments, refunds, reimbursements, repayments = self._candidates()
         self._payment_candidates = payments
         self._refund_candidates = refunds
         self.reimbursement_candidates = reimbursements
+        self.repayment_candidates = repayments
         outer.append(Gtk.Label(label="Healthcare payments", xalign=0))
         self.payments = _LinkList(payments)
         self.payments_scroll = Gtk.ScrolledWindow(child=self.payments, min_content_height=90)
@@ -244,6 +268,26 @@ class FsaClaimsDialog(BoundedWindow):
         outer.append(allocation_bar)
         self.allocations = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         outer.append(Gtk.ScrolledWindow(child=self.allocations, min_content_height=180))
+        # Where the saved claim stands, and its corrections (EOB changes,
+        # closings, reopenings), oldest first.
+        self.standing = Gtk.Label(xalign=0, wrap=True)
+        outer.append(self.standing)
+        self.history = Gtk.Label(xalign=0, wrap=True)
+        self.history.add_css_class("dim-label")
+        outer.append(self.history)
+        closing = Gtk.Box(spacing=6)
+        self.close_reason = Gtk.Entry(placeholder_text="Why close, or why reopen", hexpand=True)
+        closing.append(self.close_reason)
+        self.close_button = Gtk.Button(label="Close claim")
+        self.close_button.set_tooltip_text(
+            "Stop pursuing what is left to reimburse; it is recorded as given up"
+        )
+        self.close_button.connect("clicked", self._close_claim)
+        closing.append(self.close_button)
+        self.reopen_button = Gtk.Button(label="Reopen claim")
+        self.reopen_button.connect("clicked", self._reopen_claim)
+        closing.append(self.reopen_button)
+        outer.append(closing)
         self.status = Gtk.Label(xalign=0, wrap=True)
         outer.append(self.status)
         actions = Gtk.Box(spacing=6)
@@ -269,7 +313,7 @@ class FsaClaimsDialog(BoundedWindow):
             self._load(None)
 
     def _candidates(self):
-        payments, refunds, reimbursements = [], [], []
+        payments, refunds, reimbursements, repayments = [], [], [], []
         fsa_years = [
             year
             for account in self.db.iter_accounts()
@@ -293,7 +337,9 @@ class FsaClaimsDialog(BoundedWindow):
                     refunds.append(item)
                 if account.atype is AccountType.FSA and split.value < 0:
                     reimbursements.append(item)
-        return payments, refunds, reimbursements
+                if account.atype is AccountType.FSA and split.value > 0:
+                    repayments.append(item)
+        return payments, refunds, reimbursements, repayments
 
     def _claim_candidates(
         self,
@@ -342,7 +388,9 @@ class FsaClaimsDialog(BoundedWindow):
         self._allocation_rows.clear()
 
     def _add_allocation(self, allocation=None) -> None:
-        row = _AllocationRow(self.db, self.reimbursement_candidates, allocation)
+        row = _AllocationRow(
+            self.db, self.reimbursement_candidates, allocation, self.repayment_candidates
+        )
         self.allocations.append(row)
         self._allocation_rows.append(row)
 
@@ -376,6 +424,8 @@ class FsaClaimsDialog(BoundedWindow):
             if claim and claim.eob_responsibility is not None
             else ""
         )
+        self.eob_note.set_text("")
+        self.close_reason.set_text("")
         service_date = claim.service_date if claim else date.fromisoformat(self.service.get_text())
         self._refresh_claim_candidates(
             service_date, claim.payments if claim else [], claim.refunds if claim else []
@@ -395,6 +445,66 @@ class FsaClaimsDialog(BoundedWindow):
             )
         )
         self._show_shared()
+        self._show_standing()
+
+    def _show_standing(self) -> None:
+        """The saved claim's status, what is owed either way, and its history."""
+        claim = self.current
+        self.close_button.set_sensitive(claim is not None and claim.closed_on is None)
+        self.reopen_button.set_sensitive(claim is not None and claim.closed_on is not None)
+        if claim is None:
+            self.standing.set_text("")
+            self.history.set_text("")
+            return
+        try:
+            summary = fsa_claims.claim_summary(self.db, claim)
+        except (fsa_claims.FsaClaimError, ValueError) as exc:
+            self.standing.set_text(str(exc))
+            return
+        parts = [
+            summary.status.label,
+            f"reimbursed {summary.reimbursed.format()}",
+            f"still to reimburse {summary.remaining_reimbursable.format()}",
+        ]
+        if summary.repaid > 0:
+            parts.append(f"repaid to the FSA {summary.repaid.format()}")
+        if summary.over_reimbursed > 0:
+            parts.append(f"to repay to the FSA {summary.over_reimbursed.format()}")
+        if claim.closed_on is not None:
+            parts.append(
+                f"closed {claim.closed_on.isoformat()}"
+                + (f" ({claim.close_reason})" if claim.close_reason else "")
+                + f", gave up {summary.forgone.format()}"
+            )
+        self.standing.set_text(" — ".join(parts))
+        self.history.set_text("\n".join(_event_text(event) for event in claim.events))
+
+    def _close_claim(self, _button) -> None:
+        if self.current is None:
+            return
+        result = close_claim(
+            self.db,
+            CloseClaim(self.current.handle, date.today(), self.close_reason.get_text().strip()),
+        )
+        self._after_closing(result, "Claim closed.")
+
+    def _reopen_claim(self, _button) -> None:
+        if self.current is None:
+            return
+        result = reopen_claim(
+            self.db,
+            ReopenClaim(self.current.handle, date.today(), self.close_reason.get_text().strip()),
+        )
+        self._after_closing(result, "Claim reopened.")
+
+    def _after_closing(self, result, message: str) -> None:
+        if result.value is None:
+            self.status.set_text(service_error_message(result.errors[0]))
+            return
+        self.current = self.db.get_fsa_claim(result.value.handle)
+        self.close_reason.set_text("")
+        self.status.set_text(message)
+        self._show_standing()
 
     def _show_shared(self) -> None:
         """The payer/FSA/you allocation of the stored claim, when it has a payer."""
@@ -428,6 +538,7 @@ class FsaClaimsDialog(BoundedWindow):
                         refunds=tuple(self.refunds.links()),
                         allocations=tuple(row.value() for row in self._allocation_rows),
                         receivable=self._selected_receivable(),
+                        eob_note=self.eob_note.get_text().strip(),
                     ),
                     existing_handle=self.current.handle if self.current else None,
                 ),
@@ -439,8 +550,10 @@ class FsaClaimsDialog(BoundedWindow):
             self.status.set_text(service_error_message(result.errors[0]))
             return
         self.current = self.db.get_fsa_claim(result.value.handle)
+        self.eob_note.set_text("")
         self.status.set_text("Claim saved.")
         self._show_shared()
+        self._show_standing()
 
     def _delete(self, _button) -> None:
         if self.current is None:
