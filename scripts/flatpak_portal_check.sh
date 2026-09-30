@@ -17,10 +17,11 @@ app=org.breadsched.BreadSched
 old_book=$1
 new_book=$2
 uid=$(id -u)
-if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -w "${XDG_RUNTIME_DIR}" ]; then
-  XDG_RUNTIME_DIR=$(mktemp -d)
-  export XDG_RUNTIME_DIR
-fi
+# A private runtime directory: the desktop session (a CI runner has one) may already
+# run its own document portal at $XDG_RUNTIME_DIR/doc, where a second portal
+# cannot mount. Inside the sandbox Flatpak still shows ours as /run/user/UID/doc.
+XDG_RUNTIME_DIR=$(mktemp -d)
+export XDG_RUNTIME_DIR
 chmod 700 "$XDG_RUNTIME_DIR"
 
 /usr/libexec/xdg-document-portal --replace &
@@ -38,6 +39,10 @@ sandbox_path() {
   # under its own runtime directory.
   local exported=$1
   local id
+  case "$exported" in
+    "$XDG_RUNTIME_DIR"/doc/?*/?*) ;;
+    *) echo "document export failed: '$exported'" >&2; exit 1 ;;
+  esac
   id=$(basename "$(dirname "$exported")")
   printf '/run/user/%s/doc/%s/%s\n' "$uid" "$id" "$(basename "$exported")"
 }
@@ -46,8 +51,10 @@ run() {
   flatpak run --user --unshare=network --command=breadsched "$app" "$@"
 }
 
-old_doc=$(sandbox_path "$(flatpak document-export --app="$app" -r -w "$old_book")")
-new_doc=$(sandbox_path "$(flatpak document-export --app="$app" -r -w -n "$new_book")")
+old_export=$(flatpak document-export --app="$app" -r -w "$old_book")
+new_export=$(flatpak document-export --app="$app" -r -w -n "$new_book")
+old_doc=$(sandbox_path "$old_export")
+new_doc=$(sandbox_path "$new_export")
 echo "old book in sandbox: $old_doc"
 echo "new book in sandbox: $new_doc"
 

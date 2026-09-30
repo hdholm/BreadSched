@@ -27,10 +27,11 @@ here=$(cd "$(dirname "$0")" && pwd)
 host_python=${HOST_PYTHON:-/usr/bin/python3}
 expect_app_id=${EXPECT_APP_ID-org.breadsched.BreadSched}
 
-if [ -z "${XDG_RUNTIME_DIR:-}" ] || [ ! -w "${XDG_RUNTIME_DIR}" ]; then
-  XDG_RUNTIME_DIR=$(mktemp -d)
-  export XDG_RUNTIME_DIR
-fi
+# A private runtime directory: the desktop session (a CI runner has one) may already
+# run its own document portal at $XDG_RUNTIME_DIR/doc, where a second portal
+# cannot mount. Inside the sandbox Flatpak still shows ours as /run/user/UID/doc.
+XDG_RUNTIME_DIR=$(mktemp -d)
+export XDG_RUNTIME_DIR
 chmod 700 "$XDG_RUNTIME_DIR"
 
 mkdir -p "$work/prints" "$work/portals" "$work/portal-config/xdg-desktop-portal"
@@ -65,10 +66,11 @@ documents=$!
 trap 'kill "$backend" "${frontend:-}" "$documents" 2>/dev/null || true
   fusermount3 -u "$XDG_RUNTIME_DIR/doc" 2>/dev/null || true' EXIT
 for _ in $(seq 50); do
-  grep -q '"ready"' "$log" && break
+  grep -q '"ready"' "$log" && mountpoint -q "$XDG_RUNTIME_DIR/doc" && break
   sleep 0.2
 done
 grep -q '"ready"' "$log"
+mountpoint -q "$XDG_RUNTIME_DIR/doc"
 env XDG_CURRENT_DESKTOP=breadschedtest \
   XDG_DESKTOP_PORTAL_DIR="$work/portals" \
   XDG_CONFIG_HOME="$work/portal-config" \
