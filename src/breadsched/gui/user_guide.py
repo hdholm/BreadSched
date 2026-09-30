@@ -12,6 +12,7 @@ import re
 
 from ..user_guide import GUIDE_PARTS, GuideLink, heading_slug, read_guide, resolve_link
 from .gi_setup import Gtk, Pango
+from .widgets.bounded import BoundedWindow
 
 __all__ = ["UserGuideWindow", "read_user_guide"]
 
@@ -114,7 +115,7 @@ def _guide_blocks(markdown: str) -> list[Block]:
     return blocks
 
 
-class UserGuideWindow(Gtk.Window):
+class UserGuideWindow(BoundedWindow):
     """A scrollable, dependency-free presentation of every part of the guide."""
 
     def __init__(self, application, parent) -> None:

@@ -26,6 +26,8 @@ from ...gen.services.receivables import reimbursement_proposals
 from ...plugins.importer.gnucash_common import ImportResult
 from ...presentation import reimbursement_notice, service_error_message
 from ..gi_setup import GLib, Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["CsvImportDialog"]
 
@@ -69,7 +71,7 @@ def _guess(columns: tuple[str, ...], patterns: tuple[str, ...]) -> str | None:
     return None
 
 
-class CsvImportDialog(Gtk.Window):
+class CsvImportDialog(BoundedWindow):
     """Choose a CSV statement, map its columns, preview, then import."""
 
     DATE_FORMATS = ("auto", "iso", "month-first", "day-first")
@@ -127,15 +129,13 @@ class CsvImportDialog(Gtk.Window):
             ),
             key=lambda account: db.full_name(account).casefold(),
         )
-        self.account = Gtk.DropDown.new_from_strings(
-            [db.full_name(account) for account in self.accounts]
-        )
+        self.account = bounded_dropdown([db.full_name(account) for account in self.accounts])
         grid.attach(Gtk.Label(label="Account", xalign=0), 0, 0, 1, 1)
         grid.attach(self.account, 1, 0, 1, 1)
 
         self.pickers: dict[str, Gtk.DropDown] = {}
         for index, field in enumerate(_FIELDS):
-            picker = Gtk.DropDown.new_from_strings(["(none)"])
+            picker = bounded_dropdown(["(none)"])
             self.pickers[field] = picker
             row, column = divmod(index, 2)
             grid.attach(
@@ -143,10 +143,10 @@ class CsvImportDialog(Gtk.Window):
             )
             grid.attach(picker, column * 2 + 1, row + 1, 1, 1)
 
-        self.date_format = Gtk.DropDown.new_from_strings(
+        self.date_format = bounded_dropdown(
             ["Detect date order", "Year first", "Month first", "Day first"]
         )
-        self.number_format = Gtk.DropDown.new_from_strings(
+        self.number_format = bounded_dropdown(
             ["Detect decimal separator", "Period decimal (1,234.56)", "Comma decimal (1.234,56)"]
         )
         grid.attach(Gtk.Label(label="Date order", xalign=0), 0, 4, 1, 1)

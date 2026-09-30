@@ -19,11 +19,12 @@ from ...gen.services.gnucash_writeback import (
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
 
 __all__ = ["GnuCashWritebackDialog"]
 
 
-class GnuCashWritebackDialog(Gtk.Window):
+class GnuCashWritebackDialog(BoundedWindow):
     """One row per writable transaction, each chosen explicitly."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:

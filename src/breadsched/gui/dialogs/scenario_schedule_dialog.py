@@ -43,7 +43,8 @@ from ...gen.services import (
 )
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
-from ..widgets.bounded import scroll_body
+from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.choice import bounded_dropdown
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
@@ -93,7 +94,7 @@ _INVESTMENT_ACTIVITIES = [
 ]
 
 
-class ScenarioScheduleDialog(Gtk.Window):
+class ScenarioScheduleDialog(BoundedWindow):
     """Create a scenario estimate or replace one baseline schedule."""
 
     def __init__(
@@ -169,9 +170,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.name_entry, 1, row, 1, 1)
         row += 1
 
-        self.growth_policy = Gtk.DropDown.new_from_strings(
-            [label for label, _policy in _GROWTH_POLICIES]
-        )
+        self.growth_policy = bounded_dropdown([label for label, _policy in _GROWTH_POLICIES])
         self.growth_policy.set_tooltip_text(
             "Automatic uses income growth when a schedule contains income, "
             "expense inflation for expense-only schedules, and no generic growth "
@@ -181,21 +180,19 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.growth_policy, 1, row, 1, 1)
         row += 1
 
-        self.category = Gtk.DropDown.new_from_strings(self._names)
+        self.category = bounded_dropdown(self._names)
         self.category.connect("notify::selected", self._validate)
         grid.attach(Gtk.Label(label="Category / investment account", xalign=0), 0, row, 1, 1)
         grid.attach(self.category, 1, row, 1, 1)
         row += 1
 
-        self.category_planning_flow = Gtk.DropDown.new_from_strings(
-            [label for label, _kind in _PLANNING_FLOWS]
-        )
+        self.category_planning_flow = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
         self.category_planning_flow.connect("notify::selected", self._validate)
         grid.attach(Gtk.Label(label="Category planning purpose", xalign=0), 0, row, 1, 1)
         grid.attach(self.category_planning_flow, 1, row, 1, 1)
         row += 1
 
-        self.funding = Gtk.DropDown.new_from_strings(self._names)
+        self.funding = bounded_dropdown(self._names)
         self.funding.connect("notify::selected", self._validate)
         if len(self._accounts) > 1:
             self.funding.set_selected(1)
@@ -203,14 +200,12 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.funding, 1, row, 1, 1)
         row += 1
 
-        self.planning_flow = Gtk.DropDown.new_from_strings(
-            [label for label, _kind in _PLANNING_FLOWS]
-        )
+        self.planning_flow = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
         grid.attach(Gtk.Label(label="Planning purpose override", xalign=0), 0, row, 1, 1)
         grid.attach(self.planning_flow, 1, row, 1, 1)
         row += 1
 
-        self.investment_activity = Gtk.DropDown.new_from_strings(
+        self.investment_activity = bounded_dropdown(
             [label for label, _kind in _INVESTMENT_ACTIVITIES]
         )
         self.investment_activity.connect("notify::selected", self._validate)
@@ -269,9 +264,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.occurrence_adjustments_editor, 1, row, 1, 1)
         row += 1
 
-        self.frequency = Gtk.DropDown.new_from_strings(
-            [item[0] for item in self._frequency_options]
-        )
+        self.frequency = bounded_dropdown([item[0] for item in self._frequency_options])
         default_frequency = next(
             (
                 index
@@ -292,7 +285,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.start_entry, 1, row, 1, 1)
         row += 1
 
-        self.ends = Gtk.DropDown.new_from_strings(["Never", "On date", "After occurrences"])
+        self.ends = bounded_dropdown(["Never", "On date", "After occurrences"])
         self.ends.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="Ends", xalign=0), 0, row, 1, 1)
         grid.attach(self.ends, 1, row, 1, 1)
@@ -310,7 +303,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         grid.attach(self.count_entry, 1, row, 1, 1)
         row += 1
 
-        self.weekend = Gtk.DropDown.new_from_strings([item[0] for item in _WEEKEND])
+        self.weekend = bounded_dropdown([item[0] for item in _WEEKEND])
         self.weekend.connect("notify::selected", self._recurrence_changed)
         grid.attach(Gtk.Label(label="If it falls on a weekend", xalign=0), 0, row, 1, 1)
         grid.attach(self.weekend, 1, row, 1, 1)
@@ -993,7 +986,7 @@ class ScenarioScheduleDialog(Gtk.Window):
         self.close()
 
 
-class ScenarioSchedulePickerDialog(Gtk.Window):
+class ScenarioSchedulePickerDialog(BoundedWindow):
     """Choose a baseline schedule before altering or suppressing it."""
 
     def __init__(
@@ -1014,7 +1007,7 @@ class ScenarioSchedulePickerDialog(Gtk.Window):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
         box.append(Gtk.Label(label="Baseline scheduled transaction", xalign=0))
-        self.schedule = Gtk.DropDown.new_from_strings(
+        self.schedule = bounded_dropdown(
             [item.name for item in self._schedules] or ["(none available)"]
         )
         box.append(self.schedule)

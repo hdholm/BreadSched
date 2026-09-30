@@ -33,6 +33,7 @@ from ..planning_context import (
     select_scenario,
     selected_scenario_handle,
 )
+from ..widgets.choice import bounded_dropdown
 from ._base import BaseView
 
 __all__ = ["PlanView"]
@@ -106,11 +107,11 @@ class PlanView(BaseView):
         bar.append(spacer)
         # New scenario, Manage scenarios, and Explore expenses are toolbar icons.
         bar.append(Gtk.Label(label="Scenario"))
-        self.scenario = Gtk.DropDown()
+        self.scenario = bounded_dropdown()
         self.scenario.connect("notify::selected", self._on_scenario_changed)
         bar.append(self.scenario)
         bar.append(Gtk.Label(label="From"))
-        self.start_month = Gtk.DropDown.new_from_strings(list(_MONTHS))
+        self.start_month = bounded_dropdown(list(_MONTHS))
         self.start_month.set_selected(self._start_date.month - 1)
         self.start_month.connect("notify::selected", self._on_controls_changed)
         bar.append(self.start_month)
@@ -119,7 +120,7 @@ class PlanView(BaseView):
         self.start_year.connect("value-changed", self._on_controls_changed)
         bar.append(self.start_year)
         bar.append(Gtk.Label(label="Through"))
-        self.end_month = Gtk.DropDown.new_from_strings(list(_MONTHS))
+        self.end_month = bounded_dropdown(list(_MONTHS))
         self.end_month.set_selected(self._end_date.month - 1)
         self.end_month.connect("notify::selected", self._on_controls_changed)
         bar.append(self.end_month)
@@ -128,12 +129,12 @@ class PlanView(BaseView):
         self.end_year.connect("value-changed", self._on_controls_changed)
         bar.append(self.end_year)
         bar.append(Gtk.Label(label="Group by"))
-        self.period = Gtk.DropDown.new_from_strings(["Month", "Quarter", "Year"])
+        self.period = bounded_dropdown(["Month", "Quarter", "Year"])
         self.period.set_selected(self._period_index)
         self.period.connect("notify::selected", self._on_controls_changed)
         bar.append(self.period)
         bar.append(Gtk.Label(label="Show"))
-        self.measure = Gtk.DropDown.new_from_strings(["Plan", "Actual", "Variance"])
+        self.measure = bounded_dropdown(["Plan", "Actual", "Variance"])
         self.measure.set_selected(self._measure_index)
         self.measure.connect("notify::selected", self._on_controls_changed)
         bar.append(self.measure)
@@ -152,7 +153,7 @@ class PlanView(BaseView):
         schedules = Gtk.Button(label="Edit baseline schedules…")
         schedules.connect("clicked", lambda *_: self.manager.show_category("scheduled"))
         bar.append(schedules)
-        self.append(bar)
+        self.append_toolbar(bar)
 
         self.control_status = Gtk.Label(xalign=0, wrap=True)
         self.control_status.set_margin_start(12)

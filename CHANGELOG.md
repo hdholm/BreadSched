@@ -3,6 +3,20 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a202 - 2026-09-30
+
+- **The desktop fits a small screen.** A book with long account names, notes, and
+  big split transactions no longer pushes the window off the screen. An audit found
+  a register for a long-named account needing a window over 8,000 pixels wide and
+  the Dashboard over 1,500; every view now fits in 1024 × 700. A long name shown
+  in a choice list is shortened in the middle (its list still shows it in full),
+  view toolbars scroll sideways, the Dashboard's summary cards wrap, and leaving
+  a large view lets the window shrink again.
+- **Dialogs open within the screen.** A dialog's opening size is capped to its
+  monitor, so one with a long note no longer opens thousands of pixels wide;
+  Savings Goals scrolls its forms. Application version `0.2.0a202`; native
+  schema remains 10.
+
 ## 0.2.0a201 - 2026-09-30
 
 - **Every desktop printout is native.** **Print…** in Net Worth History, its

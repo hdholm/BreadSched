@@ -5,11 +5,13 @@ from __future__ import annotations
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import estimates
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["HistoricalEstimatesDialog"]
 
 
-class HistoricalEstimatesDialog(Gtk.Window):
+class HistoricalEstimatesDialog(BoundedWindow):
     """Offer historical category estimates without applying them silently."""
 
     def __init__(self, parent: Gtk.Window, db: DbSQLite) -> None:
@@ -33,9 +35,7 @@ class HistoricalEstimatesDialog(Gtk.Window):
         controls.append(self.months)
 
         self.scenarios = list(db.iter_scenarios())
-        self.target = Gtk.DropDown.new_from_strings(
-            ["Base", *[scenario.name for scenario in self.scenarios]]
-        )
+        self.target = bounded_dropdown(["Base", *[scenario.name for scenario in self.scenarios]])
         controls.append(Gtk.Label(label="Add to", xalign=0))
         controls.append(self.target)
         self.target.connect("notify::selected", self._on_target_changed)

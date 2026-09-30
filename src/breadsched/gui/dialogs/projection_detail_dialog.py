@@ -7,11 +7,13 @@ from collections.abc import Sequence
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["ProjectionDetailDialog"]
 
 
-class ProjectionDetailDialog(Gtk.Window):
+class ProjectionDetailDialog(BoundedWindow):
     """Browse reconciled monthly details from an already-calculated projection."""
 
     def __init__(
@@ -32,7 +34,7 @@ class ProjectionDetailDialog(Gtk.Window):
 
         chooser = Gtk.Box(spacing=8)
         chooser.append(Gtk.Label(label="Month", xalign=0))
-        self.month_picker = Gtk.DropDown.new_from_strings([row.label for row in result.rows])
+        self.month_picker = bounded_dropdown([row.label for row in result.rows])
         default = self._default_index()
         self.month_picker.set_selected(default)
         self.month_picker.connect("notify::selected", self._on_month_changed)

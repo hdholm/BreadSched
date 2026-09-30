@@ -33,6 +33,8 @@ from ...gen.lib.money import Money
 from ...gen.services import DueDecision, ResolveDue, resolve_due
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["DueDialog"]
 
@@ -43,7 +45,7 @@ _DECISIONS = {POST: DueDecision.POST, LATER: DueDecision.DEFER, NEVER: DueDecisi
 _GROUP_CHOICES = ["Choose each date", "Post all", "Remind me later for all", "Never, all"]
 
 
-class DueDialog(Gtk.Window):
+class DueDialog(BoundedWindow):
     """One row per due occurrence, each with its own decision."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, occurrences) -> None:
@@ -106,7 +108,7 @@ class DueDialog(Gtk.Window):
             heading.add_css_class("summary-label")
             grid.attach(heading, 0, row, 3, 1)
             if len(items) > 1:
-                group = Gtk.DropDown.new_from_strings(_GROUP_CHOICES)
+                group = bounded_dropdown(_GROUP_CHOICES)
                 group.set_selected(0)
                 size = len(items)
                 group.connect(
@@ -131,7 +133,7 @@ class DueDialog(Gtk.Window):
                 amount.add_css_class("numeric")
                 grid.attach(amount, 2, row, 1, 1)
 
-                chooser = Gtk.DropDown.new_from_strings(_CHOICES)
+                chooser = bounded_dropdown(_CHOICES)
                 # Undecided by default: the safe answer to an unread question is to
                 # ask again, not to write to the ledger.
                 chooser.set_selected(LATER)

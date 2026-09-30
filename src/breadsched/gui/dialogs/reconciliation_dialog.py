@@ -21,11 +21,12 @@ from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import reimbursement_notice, service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
 
 __all__ = ["ReconciliationDialog"]
 
 
-class ReconciliationDialog(Gtk.Window):
+class ReconciliationDialog(BoundedWindow):
     """Thin GTK presentation over the shared reconciliation service."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, account: Account) -> None:

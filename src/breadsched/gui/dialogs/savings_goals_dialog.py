@@ -31,11 +31,13 @@ from ...gen.services.savings_goals import (
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import goal_override_text, goal_status_text, service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["SavingsGoalsDialog"]
 
 
-class SavingsGoalsDialog(Gtk.Window):
+class SavingsGoalsDialog(BoundedWindow):
     """Goal list with each goal's progress, above the goal editor."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, today: date | None = None) -> None:
@@ -78,7 +80,7 @@ class SavingsGoalsDialog(Gtk.Window):
         box.append(Gtk.Label(label="Goal", xalign=0, css_classes=["heading"]))
         form = Gtk.Grid(column_spacing=10, row_spacing=6)
         self.name_entry = Gtk.Entry(hexpand=True, placeholder_text="New roof")
-        self.account_picker = Gtk.DropDown()
+        self.account_picker = bounded_dropdown()
         self.target_entry = Gtk.Entry(placeholder_text="12000.00")
         self.start_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
         self.target_date_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")
@@ -125,7 +127,7 @@ class SavingsGoalsDialog(Gtk.Window):
         # Goals apply to every scenario unless one changes them here.
         override = Gtk.Box(spacing=8)
         override.append(Gtk.Label(label="In scenario"))
-        self.scenario_picker = Gtk.DropDown()
+        self.scenario_picker = bounded_dropdown()
         self.override_target = Gtk.Entry(placeholder_text="Target amount", width_chars=12)
         self.override_date = Gtk.Entry(placeholder_text="Target date", width_chars=12)
         self.override_excluded = Gtk.CheckButton(label="Leave out")
@@ -146,6 +148,8 @@ class SavingsGoalsDialog(Gtk.Window):
 
         self.status = Gtk.Label(xalign=0, wrap=True, selectable=True)
         box.append(self.status)
+        # The list and three forms outgrow a laptop screen; the status stays put.
+        scroll_body(self)
         self._accounts: list[str] = []
         self._scenarios: list[str] = []
         self._load_accounts()

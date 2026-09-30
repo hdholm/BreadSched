@@ -33,6 +33,7 @@ from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
 from .gi_setup import Gio, GLib, Gtk, Pango
 from .paths import default_book_path  # noqa: E402
+from .widgets.bounded import BoundedWindow
 
 __all__ = ["ViewManager"]
 
@@ -415,10 +416,15 @@ class ViewManager(Gtk.ApplicationWindow):
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.stack.set_vexpand(True)
+        # Size to the page shown, so leaving a large view lets the window shrink.
+        self.stack.set_hhomogeneous(False)
+        self.stack.set_vhomogeneous(False)
         outer.append(self.stack)
         # The "register" page holds one register per register tab.
         self.register_stack = Gtk.Stack()
         self.register_stack.set_vexpand(True)
+        self.register_stack.set_hhomogeneous(False)
+        self.register_stack.set_vhomogeneous(False)
         self.stack.add_named(self.register_stack, "register")
 
     def _show_placeholder(self) -> None:
@@ -1079,7 +1085,7 @@ class ViewManager(Gtk.ApplicationWindow):
             return None
         from .views.register import RegisterView
 
-        window = Gtk.Window(transient_for=self)
+        window = BoundedWindow(transient_for=self)
         window.set_destroy_with_parent(True)
         window.set_default_size(1050, 620)
         register = RegisterView(self)

@@ -16,7 +16,9 @@ from ...gen.services.net_worth import (
     query_net_worth_history,
 )
 from ..gi_setup import GLib, Gtk
+from ..widgets.bounded import BoundedWindow
 from ..widgets.chart import LineChart, Series
+from ..widgets.choice import bounded_dropdown
 
 #: Grouping choices and how far back each looks from the current period.
 GROUPINGS = (
@@ -32,7 +34,7 @@ def history_request(months_back: int, today: date) -> tuple[date, date]:
     return add_months(today.replace(day=1), -months_back, day=1), end
 
 
-class NetWorthHistoryDialog(Gtk.Window):
+class NetWorthHistoryDialog(BoundedWindow):
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, today: date | None = None) -> None:
         super().__init__(title="Net Worth History", transient_for=parent)
         self.set_default_size(820, 600)
@@ -47,7 +49,7 @@ class NetWorthHistoryDialog(Gtk.Window):
         controls = Gtk.Box(spacing=8)
         outer.append(controls)
         controls.append(Gtk.Label(label="Group by"))
-        self.grouping = Gtk.DropDown.new_from_strings([label for label, *_ in GROUPINGS])
+        self.grouping = bounded_dropdown([label for label, *_ in GROUPINGS])
         self.grouping.connect("notify::selected", self._update)
         controls.append(self.grouping)
         printing = Gtk.Button(label="Print…")

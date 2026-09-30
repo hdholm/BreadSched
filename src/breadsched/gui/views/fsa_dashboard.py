@@ -35,7 +35,7 @@ class FsaDashboardView(BaseView):
         title.set_hexpand(True)
         bar.append(title)
         # "Manage FSA claims" is a toolbar icon while this view is shown (#156).
-        self.append(bar)
+        self.append_toolbar(bar)
 
         self.fsa_heading = self._heading("FSA benefit years")
         self.append(self.fsa_heading)

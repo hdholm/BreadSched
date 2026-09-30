@@ -25,6 +25,8 @@ from ...gen.services import (
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["ImportReviewDialog"]
 
@@ -41,7 +43,7 @@ _DELETION_LABELS = {
 }
 
 
-class ImportReviewDialog(Gtk.Window):
+class ImportReviewDialog(BoundedWindow):
     """One row per held GnuCash change, each with its own decision."""
 
     def __init__(
@@ -110,7 +112,7 @@ class ImportReviewDialog(Gtk.Window):
                 if change.can_use_source or decision is not HeldImportDecision.USE_SOURCE
             ]
             labels = _DELETION_LABELS if change.deleted else _LABELS
-            chooser = Gtk.DropDown.new_from_strings([labels[item] for item in options])
+            chooser = bounded_dropdown([labels[item] for item in options])
             # Undecided by default: an unread question is asked again.
             chooser.set_selected(options.index(HeldImportDecision.LATER))
             self.choosers.append(chooser)

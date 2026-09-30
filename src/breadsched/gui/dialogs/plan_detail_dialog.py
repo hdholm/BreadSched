@@ -11,6 +11,7 @@ from ...gen.engine.activity import (
     PlanningFlowPeriodDetail,
 )
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
 
 __all__ = ["PlanDetailDialog"]
 
@@ -22,7 +23,7 @@ _SOURCE_NAMES = {
 }
 
 
-class PlanDetailDialog(Gtk.Window):
+class PlanDetailDialog(BoundedWindow):
     """Show the exact planned and actual activity behind a Plan cell."""
 
     def __init__(

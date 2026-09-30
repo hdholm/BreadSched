@@ -36,7 +36,8 @@ from ...gen.services.receivables import (
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message, shared_cost_text
 from ..gi_setup import Gtk
-from ..widgets.bounded import scroll_body
+from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["ReceivablesDialog"]
 
@@ -64,7 +65,7 @@ def _amount(value: Money) -> Gtk.Label:
     return label
 
 
-class ReceivablesDialog(Gtk.Window):
+class ReceivablesDialog(BoundedWindow):
     """List, create, link, dispute, and write off reimbursable expenses."""
 
     def __init__(
@@ -118,7 +119,7 @@ class ReceivablesDialog(Gtk.Window):
         self.expected_entry = Gtk.Entry(placeholder_text="Optional", xalign=1)
         self.expected_entry.add_css_class("numeric")
         self.cash_date_entry = Gtk.Entry(placeholder_text="Optional YYYY-MM-DD")
-        self.account_picker = Gtk.DropDown()
+        self.account_picker = bounded_dropdown()
         self.account_picker.set_tooltip_text(
             "The Receivable account holding what is owed; by default one per currency, "
             "created when the book has none"
@@ -179,7 +180,7 @@ class ReceivablesDialog(Gtk.Window):
         self.detail.append(self.shared)
 
         link_row = Gtk.Box(spacing=8)
-        self.cost_picker = Gtk.DropDown()
+        self.cost_picker = bounded_dropdown()
         self.cost_picker.set_hexpand(True)
         self.cost_picker.set_tooltip_text("An expense split recording money spent")
         link_cost = Gtk.Button(label="Link expense")
@@ -188,7 +189,7 @@ class ReceivablesDialog(Gtk.Window):
         link_row.append(link_cost)
         self.detail.append(link_row)
         credit_row = Gtk.Box(spacing=8)
-        self.credit_picker = Gtk.DropDown()
+        self.credit_picker = bounded_dropdown()
         self.credit_picker.set_hexpand(True)
         self.credit_picker.set_tooltip_text(
             "An expense split crediting money back, as an ordinary refund"

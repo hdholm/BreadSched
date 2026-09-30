@@ -38,7 +38,9 @@ from ..planning_context import (
     select_scenario,
     selected_scenario_handle,
 )
+from ..widgets.bounded import BoundedWindow
 from ..widgets.chart import LineChart, Series  # noqa: E402
+from ..widgets.choice import bounded_dropdown
 from ._base import BaseView  # noqa: E402
 
 __all__ = ["ProjectionView"]
@@ -97,7 +99,7 @@ class ProjectionView(BaseView):
     # ------------------------------------------------------------------ layout
 
     def _build(self) -> None:
-        self.append(self._build_toolbar())
+        self.append_toolbar(self._build_toolbar())
 
         split = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         split.set_position(880)
@@ -142,7 +144,7 @@ class ProjectionView(BaseView):
         for side in ("top", "bottom", "start", "end"):
             getattr(bar, f"set_margin_{side}")(8)
 
-        self.scenario_picker = Gtk.DropDown()
+        self.scenario_picker = bounded_dropdown()
         self.scenario_picker.connect("notify::selected", self._on_scenario_chosen)
         bar.append(Gtk.Label(label="Scenario"))
         bar.append(self.scenario_picker)
@@ -455,7 +457,7 @@ class ProjectionView(BaseView):
     def _open_progress(self) -> None:
         """Create and paint the projection calculation popup."""
         root = self.get_root()
-        window = Gtk.Window(title="Calculating projection…", modal=True)
+        window = BoundedWindow(title="Calculating projection…", modal=True)
         if isinstance(root, Gtk.Window):
             window.set_transient_for(root)
             window.set_destroy_with_parent(True)
@@ -615,8 +617,8 @@ class ProjectionView(BaseView):
         if self.db is None or not getattr(self, "_scenarios", []):
             return
         names = [s.name for s in self._scenarios]
-        picker = Gtk.DropDown.new_from_strings(["None", *names])
-        dialog = Gtk.Window(title="Compare with", transient_for=self.get_root(), modal=True)
+        picker = bounded_dropdown(["None", *names])
+        dialog = BoundedWindow(title="Compare with", transient_for=self.get_root(), modal=True)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(16)
