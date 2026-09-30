@@ -108,7 +108,7 @@ def attach_review_claim(
         return ServiceResult.failure(ServiceError("review.transaction.not_found", ("transaction",)))
     if db.get_fsa_claim(request.claim) is None:
         return ServiceResult.failure(ServiceError("review.claim.not_found", ("claim",)))
-    if request.role not in {"payment", "refund", "reimbursement", "repayment"}:
+    if request.role not in fsa_claims.ATTACHMENT_ROLES:
         return ServiceResult.failure(ServiceError("claim.attachment.role.invalid", ("role",)))
     try:
         claim = fsa_claims.attach_transaction_to_claim(

@@ -12,6 +12,22 @@ section. Commits and pull requests hold the complete history.
 
 ## 0.2.0a210 - 2026-09-30
 
+- **FSA funding, direct payments, reimbursements, and provider refunds are each
+  counted once.** A new `engine.fsa_flows` classifies every FSA split as funding,
+  direct payment, reimbursement, provider refund, repayment, or transfer. Benefit
+  years report `direct_payments`, `reimbursements`, and `provider_refunds`, and
+  `used` is their net less repayments. Corrections: a provider refund credited to
+  the FSA card was counted as payroll funding and did not restore the election; Plan
+  treated it as benefit funding, and it left FSA-paid expense as an unexplained
+  cash-bridge residual. Plan now shows one net Benefit funding row per FSA account.
+  Claims gain paired roles, **Paid from the FSA card** (`direct_payment`) and
+  **Refunded to the FSA card** (`direct_refund`), which link both sides of a card
+  payment or refund so the claim is neither under-reimbursed nor over-reimbursed;
+  Review and the transaction editors offer only roles that fit the transaction, with
+  the paired role first. The FSA Dashboard (GTK and web) adds a **How used** column,
+  the web FSA years gain the usage fields, and `breadsched claims --years` lists
+  benefit years with the same breakdown. No schema change.
+
 - **DESIGN describes the implemented architecture; the changelog is condensed
   (#237).** `DESIGN.md` is reorganized into product boundary, architecture and an
   ownership map, domain and exact money, storage and recovery, dated planning,

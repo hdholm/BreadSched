@@ -109,7 +109,7 @@ from ..gen.services import (
 )
 from ..gen.services.receivables import reimbursement_proposals
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
-from ..presentation import reimbursement_notice, service_error_message
+from ..presentation import claim_role_label, reimbursement_notice, service_error_message
 from ..versioning import version_details
 from .dashboard_resource import dashboard_report
 from .expense_resource import expense_report
@@ -1749,50 +1749,16 @@ class Api:
         return total
 
     def _review_fsa_options(self, transaction: Transaction) -> dict:
-        roles: list[dict[str, object]] = []
-        for split in transaction.splits:
-            account = self.db.get_account(split.account)
-            if account is None:
-                continue
-            if account.account_class is AccountClass.EXPENSE and split.value > 0:
-                roles.append(
-                    {
-                        "role": "payment",
-                        "split": split.handle,
-                        "account": self.db.full_name(account),
-                    }
-                )
-            if account.account_class is AccountClass.EXPENSE and split.value < 0:
-                roles.append(
-                    {
-                        "role": "refund",
-                        "split": split.handle,
-                        "account": self.db.full_name(account),
-                    }
-                )
-            if account.atype is AccountType.FSA and split.value < 0:
-                roles.append(
-                    {
-                        "role": "reimbursement",
-                        "split": split.handle,
-                        "account": self.db.full_name(account),
-                        "years": [
-                            year.start.isoformat()
-                            for year in account.fsa_years
-                            if transaction.post_date <= (year.runout_through or year.through)
-                        ],
-                    }
-                )
-            if account.atype is AccountType.FSA and split.value > 0:
-                # Money paid back into the FSA; it returns to the claim's own year.
-                roles.append(
-                    {
-                        "role": "repayment",
-                        "split": split.handle,
-                        "account": self.db.full_name(account),
-                        "years": [],
-                    }
-                )
+        roles: list[dict[str, object]] = [
+            {
+                "role": item.role,
+                "label": claim_role_label(item.role),
+                "split": item.split,
+                "account": self.db.full_name(item.account),
+                "years": [year.isoformat() for year in item.years],
+            }
+            for item in fsa_claims.attachment_roles(self.db, transaction)
+        ]
         claims = []
         for suggestion in fsa_claims.suggest_claims_for_transaction(self.db, transaction):
             claim = suggestion.claim

@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date
 
 from ...gen.engine import fsa_claims, planning
-from ...gen.lib import AccountClass, AccountType
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import PlanningResolution
 from ...gen.services import (
@@ -18,7 +17,7 @@ from ...gen.services import (
     reject_review,
     skip_review,
 )
-from ...presentation import service_error_message
+from ...presentation import claim_role_label, service_error_message
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -311,25 +310,10 @@ class ResolutionView(BaseView):
         if self.db is None:
             return [], []
         claims = fsa_claims.suggest_claims_for_transaction(self.db, transaction)
-        roles: list[tuple[str, str, str, list[date]]] = []
-        for split in transaction.splits:
-            account = self.db.get_account(split.account)
-            if account is None:
-                continue
-            if account.account_class is AccountClass.EXPENSE and split.value > 0:
-                roles.append(("payment", split.handle, self.db.full_name(account), []))
-            if account.account_class is AccountClass.EXPENSE and split.value < 0:
-                roles.append(("refund", split.handle, self.db.full_name(account), []))
-            if account.atype is AccountType.FSA and split.value < 0:
-                years = [
-                    year.start
-                    for year in account.fsa_years
-                    if transaction.post_date <= (year.runout_through or year.through)
-                ]
-                roles.append(("reimbursement", split.handle, self.db.full_name(account), years))
-            if account.atype is AccountType.FSA and split.value > 0:
-                # Money paid back into the FSA; it returns to the claim's own year.
-                roles.append(("repayment", split.handle, self.db.full_name(account), []))
+        roles: list[tuple[str, str, str, list[date]]] = [
+            (item.role, item.split, self.db.full_name(item.account), list(item.years))
+            for item in fsa_claims.attachment_roles(self.db, transaction)
+        ]
         return claims, roles
 
     def _on_fsa_attach(self, _button) -> None:
@@ -359,10 +343,7 @@ class ResolutionView(BaseView):
             ]
         )
         role_pick = bounded_dropdown(
-            [
-                f"{role.replace('_', ' ').title()} · {account}"
-                for role, _split, account, _years in roles
-            ]
+            [f"{claim_role_label(role)} · {account}" for role, _split, account, _years in roles]
         )
         year_pick = bounded_dropdown(
             ["Auto funding year"]

@@ -788,6 +788,27 @@ The Dashboard counts these claims, and the FSA Dashboard says why each one needs
 attention. Its **Claims report** totals every claim by status, FSA account, funding
 year, or provider: what was paid, reimbursed, rejected, and is still to come.
 
+FSA money moves in several ways, and each is counted once. **Funding** (payroll or
+a contribution into the FSA) adds to the account but never changes what the
+election lets you spend. A **direct payment** from the FSA card to a provider and a
+**reimbursement** from the FSA to your bank account both use the election; a
+**provider refund** credited back to the FSA card gives that much back. The FSA
+Dashboard's **How used** column shows each part, for example "80.00 paid from the
+card; 200.00 reimbursed; 30.00 refunded to the card". The medical expense is counted
+where it was charged, whichever way it was paid: a charge on a credit card that you
+later pay from the bank, then claim from the FSA, is one expense, and neither the
+card payment nor the reimbursement is a second one. In Plan, an FSA account's
+funding and spending appear as one net **Benefit funding** row, so the cash bridge
+explains every dollar the FSA covered.
+
+When you link a transaction to a claim, BreadSched offers the roles that fit it. A
+payment made with the FSA card is **Paid from the FSA card**: the claim records it as
+both the healthcare payment and its reimbursement. A provider refund to the FSA card
+is **Refunded to the FSA card**: the claim records it as a refund and as money
+repaid to the FSA, so the claim is not left over-reimbursed. A charge paid by card or
+bank is a **Healthcare payment**, and the money the FSA later sends to your bank is
+an **FSA reimbursement**.
+
 Claims change after they are filed. When a corrected EOB arrives, change the
 claim's EOB and say why in **EOB change note**: the claim keeps a history of each
 change. A lower EOB after the FSA has paid leaves the claim **Over-reimbursed** by

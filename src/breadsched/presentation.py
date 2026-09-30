@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from .gen.services import ServiceError
 
 if TYPE_CHECKING:
+    from .gen.engine.fsa import FsaYearStatus
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone
     from .gen.engine.projection import Projection
@@ -335,6 +336,33 @@ _SERVICE_MESSAGES = {
     "assumptions.scenario.not_found": "The scenario no longer exists",
     "assumptions.period.not_found": "The dated assumption period no longer exists",
 }
+
+
+#: How each FSA claim attachment role reads in every interface.
+CLAIM_ROLE_LABELS = {
+    "direct_payment": "Paid from the FSA card",
+    "direct_refund": "Refunded to the FSA card",
+    "payment": "Healthcare payment",
+    "refund": "Provider refund",
+    "reimbursement": "FSA reimbursement",
+    "repayment": "Repaid to the FSA",
+}
+
+
+def claim_role_label(role: str) -> str:
+    return CLAIM_ROLE_LABELS.get(role, role.replace("_", " "))
+
+
+def fsa_usage_text(status: FsaYearStatus) -> str:
+    """How an FSA year's election was used, in the words every interface shows."""
+    parts = [
+        (status.direct_payments, "paid from the card"),
+        (status.reimbursements, "reimbursed"),
+        (status.provider_refunds, "refunded to the card"),
+        (status.repaid, "repaid"),
+    ]
+    shown = [f"{amount.format()} {words}" for amount, words in parts if amount]
+    return "; ".join(shown) or "—"
 
 
 def reimbursement_notice(count: int) -> str | None:

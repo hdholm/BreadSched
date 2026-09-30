@@ -136,13 +136,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   and reconciliation; test direct vendor credits, bank reimbursements, and
   insurer/employer payments as distinct flows.
 
-- **Funding, direct payment, and indirect reimbursement flows.** Model payroll
-  splits funding an FSA separately from benefit availability and medical expense.
-  Cover direct FSA-to-medical-expense payments, FSA reimbursements through a bank
-  account, and medical charges paid via bank/credit-card chains. Link the claim,
-  payment, and reimbursement without counting expense or benefit usage twice;
-  preserve service dates, funding-year attribution, refunds, and reconciliation.
-
 - Improve Review suggestions and action explanations.
 
 - Improve import/reconciliation treatment of external FSA transactions.

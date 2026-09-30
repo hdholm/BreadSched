@@ -1315,6 +1315,72 @@ def _claim_event_text(event: FsaClaimEvent) -> str:
     return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
 
 
+def _fsa_years(db, args: argparse.Namespace) -> int:
+    """Open and recently closed FSA benefit years, with how each was used."""
+    from ..gen.engine import fsa
+    from ..presentation import fsa_usage_text
+
+    statuses = fsa.dashboard_statuses(db, as_of=parse_date(args.as_of) or date.today())
+    if args.account:
+        handle = resolve_account(db, args.account).handle
+        statuses = [status for status in statuses if status.account.handle == handle]
+    payload = [
+        {
+            "account": db.full_name(status.account),
+            "start": status.year.start,
+            "through": status.year.through,
+            "runout_through": status.year.runout_through,
+            "phase": status.phase,
+            "election": status.year.election,
+            "funded": status.funded,
+            "direct_payments": status.direct_payments,
+            "reimbursements": status.reimbursements,
+            "provider_refunds": status.provider_refunds,
+            "repaid": status.repaid,
+            "used": status.used,
+            "remaining": status.remaining,
+            "overage": status.overage,
+            "forfeited": status.forfeited,
+        }
+        for status in statuses
+    ]
+    if not statuses:
+        emit({"years": payload}, args, "No open FSA benefit years.")
+        return 0
+    rows = [
+        [
+            db.full_name(status.account),
+            status.label,
+            status.phase,
+            status.year.election.format(),
+            status.funded.format(),
+            status.used.format(),
+            status.remaining.format(),
+            fsa_usage_text(status),
+        ]
+        for status in statuses
+    ]
+    emit(
+        {"years": payload},
+        args,
+        table(
+            rows,
+            [
+                "FSA account",
+                "Plan year",
+                "Phase",
+                "Election",
+                "Funded",
+                "Used",
+                "Remaining",
+                "How used",
+            ],
+            right={3, 4, 5, 6},
+        ),
+    )
+    return 0
+
+
 def cmd_claims(args: argparse.Namespace) -> int:
     """FSA claims grouped by status, account, funding year, or provider."""
     from ..gen.engine.fsa_claim_report import claim_report
@@ -1342,6 +1408,8 @@ def cmd_claims(args: argparse.Namespace) -> int:
                 f"of {claim.service_date.isoformat()}",
             )
             return 0
+        if args.years:
+            return _fsa_years(db, args)
         if args.history:
             claim = _find_claim(db, args.history)
             emit(
@@ -3959,6 +4027,12 @@ def build_parser() -> argparse.ArgumentParser:
     claims_cmd.add_argument("--on", metavar="DATE", help="date to close or reopen (default today)")
     claims_cmd.add_argument("--reason", help="why the claim is closed")
     claims_cmd.add_argument("--note", help="why the claim is reopened")
+    claims_cmd.add_argument(
+        "--years",
+        action="store_true",
+        help="list open FSA benefit years: funded, used (paid from the card, reimbursed, "
+        "refunded to the card), and remaining",
+    )
     claims_cmd.add_argument(
         "--history", metavar="CLAIM", help="list a claim's EOB changes, closings, and reopenings"
     )

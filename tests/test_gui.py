@@ -3795,6 +3795,40 @@ class TestDashboardView:
         assert window.stack.get_visible_child_name() == "fsa-dashboard"
         assert window._views["fsa-dashboard"].fsa_grid is not None
 
+    def test_fsa_years_say_how_the_election_was_used(self, app, window, populated_book):
+        from breadsched.gen.lib import FsaFundingYear, Transaction
+
+        app.open_book(populated_book)
+        db = app.db
+        accounts = {a.name: a for a in db.iter_accounts()}
+        start = date.today().replace(month=1, day=1)
+        account = Account(
+            name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
+        )
+        account.fsa_years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
+        ]
+        medical = Account(
+            name="Medical", atype=AccountType.EXPENSE, parent=accounts["Expenses"].handle
+        )
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+            db.add_account(medical, txn)
+            db.add_transaction(
+                Transaction.simple(start, "Clinic", medical.handle, account.handle, "40"), txn
+            )
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        view.refresh()
+        assert view.fsa_grid.get_child_at(6, 0).get_label() == "How used"
+        rows = [
+            view.fsa_grid.get_child_at(6, row).get_label()
+            for row in range(1, 10)
+            if view.fsa_grid.get_child_at(0, row) is not None
+            and view.fsa_grid.get_child_at(0, row).get_label().endswith("Health FSA")
+        ]
+        assert rows == ["40.00 paid from the card"]
+
     def test_fsa_claims_needing_attention_are_flagged_and_reported(
         self, app, window, populated_book
     ):

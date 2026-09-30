@@ -164,7 +164,12 @@ FSA account, funding year, or provider.
 
 The FSA funding-year editor in Accounts takes each year's carryover limit and
 grace-period end, either or both, and the FSA Dashboard shows what each year carried in and carried
-over.
+over, and under **How used** what was paid from the FSA card, reimbursed to your
+bank, and refunded to the card.
+
+When entering a transaction or resolving it in Review, the **FSA claim** role list
+includes **Paid from the FSA card** and **Refunded to the FSA card**, which record
+both sides of a card payment or refund on the claim at once.
 
 In the FSA claim editor, a changed EOB is kept in the claim's history with the
 **EOB change note**, and each allocation links money paid back into the FSA under

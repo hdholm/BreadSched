@@ -101,6 +101,12 @@ def suggest_claims_for_transaction(
             eligible.append(("repayment", split, account.handle))
     if not eligible:
         return []
+    # One transaction on both sides is a paired role (see PAIRED_ROLES).
+    for paired, (first, second) in PAIRED_ROLES.items():
+        firsts = [item for item in eligible if item[0] == first]
+        seconds = [item for item in eligible if item[0] == second]
+        if len(firsts) == 1 and len(seconds) == 1:
+            eligible.append((paired, seconds[0][1], seconds[0][2]))
 
     txn_words = _transaction_words(transaction)
     suggestions: list[FsaClaimSuggestion] = []
@@ -117,11 +123,13 @@ def suggest_claims_for_transaction(
             # Only money owed back to the FSA is a repayment.
             if role == "repayment" and not over:
                 continue
-            if role == "repayment":
+            if role == "direct_refund" and summary.net_paid <= 0:
+                continue
+            if role in {"repayment", "direct_refund"}:
                 # Money goes back to an FSA the claim was reimbursed from.
                 if not any(item.account == reimbursement_account for item in claim.allocations):
                     continue
-            elif role == "reimbursement":
+            elif role in {"reimbursement", "direct_payment"}:
                 account = db.get_account(reimbursement_account or "")
                 if account is None:
                     continue
@@ -162,6 +170,16 @@ def suggest_claims_for_transaction(
                 if {"refund", "credit"} & txn_words:
                     score += 15
                     reasons.append("refund/credit description")
+            elif role == "direct_payment":
+                target = claim.eob_responsibility or summary.remaining_reimbursable
+                role_label = "provider payment from the FSA card"
+                score += 25
+                reasons.append("paid from the FSA card")
+            elif role == "direct_refund":
+                target = summary.net_paid
+                role_label = "provider refund to the FSA card"
+                score += 20
+                reasons.append("refunded to the FSA card")
             elif role == "repayment":
                 target = summary.over_reimbursed
                 role_label = "repayment to the FSA"
@@ -488,6 +506,69 @@ def save_claim(
     return claim
 
 
+#: Roles one split can play on a claim, and the two that link a pair of splits
+#: from a single transaction: a provider paid straight from the FSA card is both
+#: the claim's payment and its reimbursement, and a provider refund credited
+#: back to the card is both its refund and its repayment to the FSA.
+SINGLE_ROLES = ("payment", "refund", "reimbursement", "repayment")
+PAIRED_ROLES = {
+    "direct_payment": ("payment", "reimbursement"),
+    "direct_refund": ("refund", "repayment"),
+}
+ATTACHMENT_ROLES = (*SINGLE_ROLES, *PAIRED_ROLES)
+
+
+@dataclass(frozen=True)
+class AttachmentRole:
+    """One way a transaction can attach to a claim, for review and entry screens."""
+
+    role: str
+    split: str
+    account: str
+    #: Funding years a reimbursement could draw on (empty: decided by the claim).
+    years: tuple[date, ...] = ()
+
+
+def _role_eligible(role: str, account, split: Split) -> bool:
+    expense = account.account_class is AccountClass.EXPENSE
+    fsa = account.atype is AccountType.FSA
+    return (
+        (role == "payment" and expense and split.value > 0)
+        or (role == "refund" and expense and split.value < 0)
+        or (role == "reimbursement" and fsa and split.value < 0)
+        or (role == "repayment" and fsa and split.value > 0)
+    )
+
+
+def attachment_roles(db: DbSQLite, transaction: Transaction) -> list[AttachmentRole]:
+    """Every role this transaction's splits can play, paired roles first."""
+    single: list[AttachmentRole] = []
+    by_role: dict[str, list[AttachmentRole]] = {}
+    for split in transaction.splits:
+        account = db.get_account(split.account)
+        if account is None:
+            continue
+        for role in SINGLE_ROLES:
+            if not _role_eligible(role, account, split):
+                continue
+            years: tuple[date, ...] = ()
+            if role == "reimbursement":
+                years = tuple(
+                    year.start
+                    for year in account.fsa_years
+                    if transaction.post_date <= (year.runout_through or year.through)
+                )
+            option = AttachmentRole(role, split.handle, account.handle, years)
+            single.append(option)
+            by_role.setdefault(role, []).append(option)
+    paired: list[AttachmentRole] = []
+    for role, (first, second) in PAIRED_ROLES.items():
+        if len(by_role.get(first, ())) == 1 and len(by_role.get(second, ())) == 1:
+            fsa_side = by_role[second][0]
+            paired.append(AttachmentRole(role, fsa_side.split, fsa_side.account, fsa_side.years))
+    return paired + single
+
+
 def attach_transaction_to_claim(
     db: DbSQLite,
     claim_handle: str,
@@ -498,105 +579,108 @@ def attach_transaction_to_claim(
     funding_year_start: date | None = None,
     txn: DbTxn | None = None,
 ) -> FsaClaim:
-    """Attach one ledger split to an existing claim from entry/review workflows."""
+    """Attach one ledger split (or a paired role's two splits) to an existing claim.
+
+    A paired role links both sides of one transaction in a single save:
+    ``direct_payment`` (the expense paid and the FSA money that paid it) and
+    ``direct_refund`` (the expense credited and the FSA money it returned).
+    ``split_handle`` then names the FSA split, if given.
+    """
     claim = next((item for item in iter_claims(db) if item.handle == claim_handle), None)
     if claim is None:
         raise KeyError(claim_handle)
     transaction = db.get_transaction(transaction_handle)
     if transaction is None:
         raise KeyError(transaction_handle)
-
-    candidates = []
-    for split in transaction.splits:
-        account = db.get_account(split.account)
-        if account is None:
-            continue
-        eligible = (
-            (
-                role == "payment"
-                and account.account_class is AccountClass.EXPENSE
-                and split.value > 0
-            )
-            or (
-                role == "refund"
-                and account.account_class is AccountClass.EXPENSE
-                and split.value < 0
-            )
-            or (role == "reimbursement" and account.atype is AccountType.FSA and split.value < 0)
-            or (role == "repayment" and account.atype is AccountType.FSA and split.value > 0)
-        )
-        if eligible and (split_handle is None or split.handle == split_handle):
-            candidates.append((split, account))
-    if len(candidates) != 1:
-        raise FsaClaimError(
-            "claim.attachment.split.ineligible",
-            ("split",),
-            "choose exactly one eligible transaction split",
-        )
-    split, account = candidates[0]
-    link = FsaClaimSplitLink(transaction.handle, split.handle)
-
-    if role == "payment":
-        if link not in claim.payments:
-            claim.payments.append(link)
-    elif role == "refund":
-        if link not in claim.refunds:
-            claim.refunds.append(link)
-    elif role in {"reimbursement", "repayment"}:
-        if role == "repayment":
-            # Money goes back to a year the claim was reimbursed from, whenever
-            # it is repaid.
-            claimed = {
-                item.funding_year_start
-                for item in claim.allocations
-                if item.account == account.handle
-            }
-            eligible_years = [year for year in account.fsa_years if year.start in claimed]
-        else:
-            eligible_years = [
-                year
-                for year in account.fsa_years
-                if transaction.post_date <= (year.runout_through or year.through)
-            ]
-        if funding_year_start is not None:
-            eligible_years = [year for year in eligible_years if year.start == funding_year_start]
-        else:
-            service_years = [
-                year
-                for year in eligible_years
-                if year.start <= claim.service_date <= year.service_through
-            ]
-            if len(service_years) == 1:
-                eligible_years = service_years
-        if len(eligible_years) != 1:
-            raise FsaClaimError(
-                "claim.attachment.funding_year.required",
-                ("funding_year",),
-                "choose an FSA funding year for this reimbursement",
-            )
-        year = eligible_years[0]
-        allocation = next(
-            (
-                item
-                for item in claim.allocations
-                if item.account == account.handle and item.funding_year_start == year.start
-            ),
-            None,
-        )
-        if allocation is None:
-            allocation = FsaClaimAllocation(account.handle, year.start)
-            claim.allocations.append(allocation)
-        links = allocation.reimbursements if role == "reimbursement" else allocation.repayments
-        if link not in links:
-            links.append(link)
-    else:
+    if role not in ATTACHMENT_ROLES:
         raise FsaClaimError(
             "claim.attachment.role.invalid",
             ("role",),
             "unknown FSA claim attachment role",
         )
-
+    parts = PAIRED_ROLES.get(role, (role,))
+    for part in parts:
+        fsa_side = part in {"reimbursement", "repayment"}
+        chosen = split_handle if (len(parts) == 1 or fsa_side) else None
+        candidates = []
+        for split in transaction.splits:
+            account = db.get_account(split.account)
+            if account is None or not _role_eligible(part, account, split):
+                continue
+            if chosen is None or split.handle == chosen:
+                candidates.append((split, account))
+        if len(candidates) != 1:
+            raise FsaClaimError(
+                "claim.attachment.split.ineligible",
+                ("split",),
+                "choose exactly one eligible transaction split",
+            )
+        split, account = candidates[0]
+        _link(claim, part, transaction, split, account, funding_year_start)
     return save_claim(db, claim, txn=txn)
+
+
+def _link(
+    claim: FsaClaim,
+    role: str,
+    transaction: Transaction,
+    split: Split,
+    account,
+    funding_year_start: date | None,
+) -> None:
+    link = FsaClaimSplitLink(transaction.handle, split.handle)
+    if role == "payment":
+        if link not in claim.payments:
+            claim.payments.append(link)
+        return
+    if role == "refund":
+        if link not in claim.refunds:
+            claim.refunds.append(link)
+        return
+    if role == "repayment":
+        # Money goes back to a year the claim was reimbursed from, whenever it
+        # is repaid.
+        claimed = {
+            item.funding_year_start for item in claim.allocations if item.account == account.handle
+        }
+        eligible_years = [year for year in account.fsa_years if year.start in claimed]
+    else:
+        eligible_years = [
+            year
+            for year in account.fsa_years
+            if transaction.post_date <= (year.runout_through or year.through)
+        ]
+    if funding_year_start is not None:
+        eligible_years = [year for year in eligible_years if year.start == funding_year_start]
+    else:
+        service_years = [
+            year
+            for year in eligible_years
+            if year.start <= claim.service_date <= year.service_through
+        ]
+        if len(service_years) == 1:
+            eligible_years = service_years
+    if len(eligible_years) != 1:
+        raise FsaClaimError(
+            "claim.attachment.funding_year.required",
+            ("funding_year",),
+            "choose an FSA funding year for this reimbursement",
+        )
+    year = eligible_years[0]
+    allocation = next(
+        (
+            item
+            for item in claim.allocations
+            if item.account == account.handle and item.funding_year_start == year.start
+        ),
+        None,
+    )
+    if allocation is None:
+        allocation = FsaClaimAllocation(account.handle, year.start)
+        claim.allocations.append(allocation)
+    links = allocation.reimbursements if role == "reimbursement" else allocation.repayments
+    if link not in links:
+        links.append(link)
 
 
 def close_claim(db: DbSQLite, handle: str, *, on: date, reason: str = "") -> FsaClaim:
