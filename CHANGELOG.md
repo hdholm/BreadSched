@@ -3,6 +3,23 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a208 - 2026-09-30
+
+- **Contributor policy: review every document, change only what the change
+  affects (#239).** Each pull request records a disposition for every major
+  document: updated, reviewed with no change needed, or not applicable, each with a
+  reason. Documents must be changed when a pull request makes them inaccurate, and
+  are no longer edited only to satisfy an "update every file" rule. The
+  pull-request template lists the documents, and a test keeps the template and the
+  policy in agreement. Documentation-only work relies on the existing documentation
+  checks rather than tests written to assert wording.
+- **Release policy and roadmap match reality (#238).** The contributor guide no
+  longer says every merge publishes a release: a release is published only for a
+  version whose notes reach `main`. The roadmap now lists only unfinished work:
+  delivered Windows installer, GnuCash write-back, reporting, tab, and FSA
+  descriptions were removed, the browser-guide item was narrowed to contextual help
+  links, and the remaining Linux packaging and macOS work was kept.
+
 ## 0.2.0a207 - 2026-09-30
 
 - **Every read sees one saved state (#234).** A browser page, a report, or a desktop

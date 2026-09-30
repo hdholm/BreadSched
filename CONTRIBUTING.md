@@ -59,12 +59,11 @@ messages or pull requests.
   cannot safely reproduce a structure, expose it read-only rather than silently
   normalizing or discarding it.
 - Maintain GTK/web parity when a feature is intended to exist on both surfaces.
-- Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog.
-  Every pull request must update the roadmap to reflect its effect on pending
-  work and move completed outcomes and acceptance contracts to
-  [`CHANGELOG.md`](CHANGELOG.md). Remove a roadmap bullet once its outcome is
-  delivered rather than appending status to it; the roadmap lists only work that
-  remains.
+- Treat the repository's [`ROADMAP.md`](ROADMAP.md) as the canonical backlog of
+  unfinished work. When a pull request delivers part or all of a roadmap outcome,
+  remove what it delivered (narrowing a bullet to what remains) rather than
+  appending status to it, and record the delivered outcome in
+  [`CHANGELOG.md`](CHANGELOG.md).
 - Record each changelog entry under a `## VERSION - YYYY-MM-DD` heading for the
   application version that ships it, newest first. A pull request that advances
   the version adds that heading; one that does not adds its entry to the next
@@ -80,16 +79,19 @@ messages or pull requests.
   - `DESIGN.md` records current architecture and rationale;
   - `ROADMAP.md` is the only future-work list; and
   - `CHANGELOG.md` preserves completed milestones.
-  Update the documents in every pull request to reflect all changes made by
-  that pull request, including documentation-only or maintenance work.
+  Every pull request reviews these documents and records a disposition for each,
+  as described in [Document review](#document-review).
 
 ## Tests are part of the change
 
-Every pull request must update relevant tests and run them. For documentation-only
-changes, strengthen or add a focused test for a documented contract, example, or
-documentation integration; keep tests meaningful rather than asserting wording.
-Prefer a focused regression test that fails for the original defect and passes after
-the fix.
+Every pull request that changes behavior must add or update tests for that behavior
+and run them. Prefer a focused regression test that fails for the original defect
+and passes after the fix. Documentation-only work is validated by the existing
+documentation checks (local links, packaged guide parts and their links, release
+notes); add a test when the change introduces a contract such checks can hold, such
+as a new executable example, packaged file, or cross-document link. Never write a
+test that asserts preferred wording, and never edit a test file only to satisfy a
+rule.
 
 Tests must be generic. Do not copy names, account identifiers, transaction labels,
 amounts, dates, memos, institutions, or other user-specific data into fixtures just
@@ -141,19 +143,13 @@ slice cannot close the issue prematurely.
 Before opening or updating a pull request:
 
 1. Start from the 'main' branch on GitHub.
-2. Make one coherent change at a time. **Every pull request must update tests,
-   `ROADMAP.md`, `CHANGELOG.md`, `DESIGN.md`, `src/breadsched/USER_GUIDE.md` (with
-   its `src/breadsched/guide/` parts), and `README.md` to reflect every change the
-   pull request makes.** Review and update
-   `AGENTS.md` and `CONTRIBUTING.md` as needed to keep repository instructions
-   accurate. Record the disposition of all these files in the pull-request
-   description; do not make content-free edits. For internal changes without a new
-   user action, update the user-facing documents with a brief, accurate status or
-   clarification rather than inventing a feature.
-   Advance the application alpha version when a commit changes code or runtime
-   behavior. Documentation-only commits do not require a version change.
-3. Add or update focused tests that verify the relevant behavior or documented
-   contract, including for documentation-only work.
+2. Make one coherent change at a time. Review every major document and record its
+   disposition in the pull-request description, as described in
+   [Document review](#document-review). Advance the application alpha version when
+   a commit changes code or runtime behavior; documentation-only commits do not
+   require a version change.
+3. Add or update focused tests for changed behavior (see
+   [Tests are part of the change](#tests-are-part-of-the-change)).
 4. Run `git diff --check` while developing and `git show --check` on the final
    commit.
 5. Compile changed Python modules.
@@ -175,12 +171,63 @@ Before opening or updating a pull request:
 11. Monitor the complete GitHub Actions run. Correct failures on the same branch and
     refresh every dependent stacked branch so its parent is exact.
 
+## Document review
+
+Every pull request **reviews** each of these documents against its changes and
+records a **disposition** for each one in the pull-request description:
+
+- `README.md`, `AGENTS.md`, `CONTRIBUTING.md`, `DESIGN.md`, `ROADMAP.md`,
+  `CHANGELOG.md`, `src/breadsched/USER_GUIDE.md`, and each part in
+  `src/breadsched/guide/` (`desktop.md`, `web.md`, `cli.md`).
+
+A disposition is one of:
+
+- **Updated** — what changed and why.
+- **Reviewed; no change needed** — with a short, concrete reason, such as "no
+  command-line behavior changed" or "makes no claim this change affects".
+- **Not applicable** — only when the document cannot be affected, with the reason.
+
+A document must be changed when the pull request makes it inaccurate or
+incomplete: new or changed user behavior needs its rules in the User Guide overview
+and its steps in each affected interface part; architecture, invariants, and
+decisions need `DESIGN.md`; delivered roadmap outcomes leave `ROADMAP.md`; every
+code or runtime change needs a `CHANGELOG.md` entry (and a version and release notes
+as described below); a changed workflow or instruction needs `CONTRIBUTING.md` or
+`AGENTS.md`. Otherwise "reviewed; no change needed" is the right answer: do not add
+status sentences, restate implementation history, or make content-free edits just
+to touch a document. A no-change disposition is still a review, not a blanket
+exemption, and the documents must be accurate when the pull request merges.
+
+Examples:
+
+- **Runtime feature** (for example a new Dashboard card): User Guide overview and
+  the desktop and web parts updated; the command-line part "reviewed; no change
+  needed — no command-line behavior changed"; `DESIGN.md` updated if it adds or
+  changes architecture; `CHANGELOG.md`, version, and release notes updated;
+  `ROADMAP.md` updated if it delivers a listed outcome; `README.md` "reviewed; no
+  change needed" unless it changes what the README promises.
+- **Internal refactor** with no behavior change: `DESIGN.md` updated if module
+  ownership or boundaries moved; the User Guide and its parts "reviewed; no change
+  needed — no user-visible behavior changed"; `CHANGELOG.md` and the version
+  updated because code changed.
+- **CI or packaging change**: `CONTRIBUTING.md` or `DESIGN.md` updated where they
+  describe the changed workflow; User Guide install steps updated only if what
+  users download or run changed.
+- **Documentation-only correction**: the corrected document updated; the others
+  "reviewed; no change needed" unless they repeat the corrected claim; no version
+  change; existing documentation checks run.
+
+Report any verification gap (a platform or runtime not run locally) in the
+pull-request description.
+
 ## Releases
 
-Releases are opt-in, not automatic for every alpha increment. To select a tested
-application version for release, add `docs/releases/vVERSION.md` using the exact
-application version and the required compatibility, upgrade/rollback, and verified-
-artifact headings enforced by `scripts/check_release_notes.py`.
+Releases are opt-in, not automatic for every merge or alpha increment. To select a
+tested application version for release, add `docs/releases/vVERSION.md` using the
+exact application version and the required compatibility, upgrade/rollback, and
+verified-artifact headings enforced by `scripts/check_release_notes.py`. A merge to
+`main` whose version has no notes, or whose version is already tagged at an earlier
+commit, runs the release workflow but publishes nothing.
 
 After that notes file reaches `main`, the release workflow waits for the complete CI
 push run to succeed and verifies that the tested commit is still the tip of `main`.
@@ -216,8 +263,8 @@ be understood during review. If a change uncovers a larger design problem, fix t
 safe, well-understood part and record the remaining work in `ROADMAP.md` rather
 than expanding the patch unpredictably.
 
-The full CI matrix takes roughly half an hour, and every merge to `main` publishes
-a release, so prefer fewer, larger pull requests: a pull request should carry a
+The full CI matrix takes roughly half an hour on every pull request and again on
+`main`, so prefer fewer, larger pull requests: a pull request should carry a
 complete feature across its interfaces (service, CLI, GTK, web, and print) as
 separate reviewable commits, rather than one pull request per layer. Keep each
 commit coherent so the review can still follow it step by step.
