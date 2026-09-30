@@ -211,7 +211,8 @@ balance. Account chart rollups and cash/net-worth summaries require a direct or
 inverse pair quote for each nonzero foreign balance. If one is absent, the total
 reads **Missing reporting-currency quote**, and the browser and command-line data
 list the affected accounts. Once quotes exist, exact converted amounts are summed
-before display. Other reports have not yet adopted this complete-total rule.
+before display. Other reports follow the policies in
+[Complete, partial, and unavailable values](#complete-partial-and-unavailable-values).
 
 An eligible direct dated quote is preferred; if none exists, the latest eligible
 reverse pair is inverted. The direct quote wins even when the reverse quote is newer.
@@ -235,6 +236,50 @@ exchange quote and the purchase is posted in the account's currency at that rate
 Plan totals and Expense Explorer convert foreign amounts with these rates (see
 [Plan](#plan)). Other views still require a compatible reporting-currency value.
 Review the quote date and source before treating a market-valued total as current.
+
+### Complete, partial, and unavailable values
+
+Every value in the reporting currency is in one of four states:
+
+- **Complete:** every amount it covers was converted. An old quote still counts;
+  its date and source stay visible in the currency note or quote evidence.
+- **Genuine zero:** nothing to convert, such as a foreign account with a zero
+  balance, which needs no quote. A zero is always complete.
+- **Partial:** a subtotal of the amounts that converted, labelled
+  **Partial: excludes N unconverted amounts** beside the number.
+- **Unavailable:** withheld rather than shown partial, labelled
+  **Unavailable: N amounts lack a quote**, or with the older wording
+  **Missing reporting-currency quote**.
+
+Each report applies one policy:
+
+| Report | Policy when an amount has no quote |
+|---|---|
+| Plan totals, period columns, category cells, and the cash bridge | Partial subtotal; a period or cell that leaves something out is marked **partial** |
+| Plan summary through the as-of date | Partial, counting only exclusions dated on or before the as-of date |
+| Expense Explorer charts and tables | Partial for each period; **Remaining** is unavailable ("Currency conversion unavailable"), and rollover stops at that period |
+| Projection and its chart | Partial from the first month that leaves out a balance or event; the chart shades those months |
+| Scenario comparisons (Plan and Projection) | As complete as both scenarios together: a difference between partial values is partial |
+| Accounts rollups, Dashboard net worth and liquid cash, Dashboard groups | Unavailable |
+| Net worth history and net worth change | Unavailable for that point or change; the chart marks it **n/a** rather than drawing zero |
+
+A partial or unavailable value comes with a list of what it leaves out. The browser
+shows the list when you expand the label, the desktop application shows it in the
+tooltip or note, and printed reports, `--json` output, and the command-line notes
+include it. Each entry gives the account or event, its unconverted amount and
+currency, the date, and whether an exchange rate or a security price is missing,
+followed by the fix: for example, "Add a EUR exchange rate in Accounts to include
+it." A security with no price at all lacks a *price*; one priced only in another
+currency lacks an *exchange rate*.
+
+For example, a Plan for October with a 1,000.00 USD rent and a 500.00 EUR rent,
+and no EUR quote, shows rent of 1,000.00 marked partial and a note listing
+"Flat in Lyon 500.00 EUR (planned 2026-10-03): no exchange rate". The EUR amount is
+never counted as dollars. After you enter a EUR→USD rate of 1.10 dated before the
+as-of date, the same cell reads 1,550.00 and the label disappears. Being
+unavailable because of a missing quote is different from being **not applicable**
+(**—**) because a period has not started yet (see
+[Reporting terms](#reporting-terms)).
 
 ### Security prices and current value
 
@@ -459,8 +504,9 @@ asset and loan to show equity, loan-to-value, and a bounded repayment date toget
 When an account needs a reporting-currency quote, Dashboard marks Net worth (and
 that account's group row) unavailable. If a cash-like account needs a quote,
 Liquid, Available, emergency shortfall, and Months covered are unavailable too.
-Account rows identify the missing quote; unaffected bills, reserves, and income
-still appear. Every interface and the printed Dashboard share this disclosure.
+Account rows identify the missing quote, and each withheld total lists the
+balances it leaves out and the quote to add (see [Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)); unaffected bills,
+reserves, and income still appear. Every interface and the printed Dashboard share this disclosure.
 Adding a direct or inverse pair quote can restore the totals without changing the
 ledger.
 
@@ -474,7 +520,9 @@ each date. The period containing today is valued on today and marked **to date**
 later periods are not shown, because the ledger has no future balances (use
 Projection for those). If an account needs a quote that did not exist on a date,
 that point shows no totals and names the account instead of guessing a
-conversion, and the change on either side of it is left blank. Each point also
+conversion, the chart marks it **n/a** instead of drawing zero, and the change on
+either side of it is left blank (see
+[Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)). Each point also
 lists the value of each top-level account tree, such as **Assets** and
 **Liabilities**. Open it from the Dashboard
 ([desktop](guide/desktop.md#net-worth-history), [browser](guide/web.md#net-worth-history),
@@ -556,8 +604,10 @@ the Plan states the rate, its date, source, and age on the as-of date, and wheth
 it was inverted. Judge an old rate yourself; BreadSched does not reject it.
 Converted amounts are not rounded to cents before they are added up. When no rate
 applies, those amounts are **not included in totals**: the note lists each one with
-its currency and date rather than counting euros as dollars. Add an exchange rate in
-Accounts to include them.
+its currency and date rather than counting euros as dollars, and the totals, periods,
+and cells they affect are marked partial (see
+[Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)).
+Add an exchange rate in Accounts to include them.
 
 Open a Plan value to inspect its dated planned occurrences and actual transactions,
 including matching status and explanations. Category values show their account
@@ -670,8 +720,10 @@ applies to schedules, estimates, scenario events, and foreign-currency account
 balances. Projection warnings state the rate, its date, source, and age, and whether
 it was inverted. When no rate applies, the amount or opening balance is left out of
 the projection and listed in the warnings; it is never counted as reporting
-currency. Add an exchange rate in Accounts, then recalculate, to include it.
-Scenario comparisons use each scenario's converted projection. Compare scenarios
+currency. The summary figures are then marked partial, and the chart shades the
+months from the first one affected (see [Complete, partial, and unavailable values](#complete-partial-and-unavailable-values)). Add an exchange rate in Accounts,
+then recalculate, to include it. Scenario comparisons use each scenario's converted
+projection, and a difference is marked partial when either scenario is. Compare scenarios
 over the same horizon to read month-by-month cash and net-worth differences.
 
 Schedule and scenario events have a growth policy:

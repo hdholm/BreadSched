@@ -582,15 +582,20 @@ class PlanView(BaseView):
             f"{position.minimum_date:%b} {position.minimum_date.day}, {position.minimum_date.year}"
         )
         as_of_date = f"{self._report.as_of:%b} {self._report.as_of.day}, {self._report.as_of.year}"
+        horizon = self._report.completeness
+        through = self._report.completeness_through_as_of
         self.summary.set_text(
-            f"Opening spendable cash {position.opening.format(parens_negative=True)}   ·   "
+            (f"{horizon.label} (see the currency note)   ·   " if not horizon.complete else "")
+            + f"Opening spendable cash {position.opening.format(parens_negative=True)}   ·   "
             f"Ending spendable cash {position.closing.format(parens_negative=True)}   ·   "
             f"Lowest {position.minimum.format(parens_negative=True)} on {minimum_date}   ·   "
             f"Projected change {_signed_money(activity.planned_cash_change)}   ·   "
             f"Through {as_of_date}: planned "
             f"{_signed_money(self._report.planned_cash_through_as_of)}, actual "
             f"{_signed_money(self._report.actual_cash_through_as_of)}, variance "
-            f"{_signed_money(self._report.cash_variance_through_as_of)}   ·   "
+            f"{_signed_money(self._report.cash_variance_through_as_of)}"
+            + (f" ({through.label.lower()})" if not through.complete else "")
+            + "   ·   "
             f"{activity.unresolved_count} expected occurrences pending   ·   "
             f"{activity.unresolved_actual_count} actuals to review"
         )
@@ -666,9 +671,16 @@ class PlanView(BaseView):
         heading.add_css_class("heading")
         self.grid.attach(heading, 0, 0, 1, 1)
         for col, period in enumerate(periods, 1):
-            label = Gtk.Label(label=period.label, xalign=1)
+            coverage = period.completeness
+            label = Gtk.Label(
+                label=period.label if coverage.complete else f"{period.label} (partial)",
+                xalign=1,
+            )
             label.add_css_class("heading")
             label.add_css_class("numeric")
+            if not coverage.complete:
+                label.add_css_class("negative")
+                label.set_tooltip_text("\n".join((coverage.label, *coverage.detail())))
             self.grid.attach(label, col, 0, 1, 1)
         total_heading = Gtk.Label(label="Total", xalign=1)
         total_heading.add_css_class("heading")
@@ -708,14 +720,21 @@ class PlanView(BaseView):
                 values = category.values(measure)
                 for col, value in enumerate(values, 1):
                     period = periods[col - 1]
+                    complete = self._report.cell_complete(category.account, col - 1)
+                    text = value.format(parens_negative=True) if value is not None else "—"
                     label = Gtk.Label(
-                        label=(value.format(parens_negative=True) if value is not None else "—"),
+                        label=text if complete or value is None else f"{text} partial",
                         xalign=1,
                     )
                     label.add_css_class("numeric")
+                    if not complete:
+                        label.add_css_class("negative")
                     button = Gtk.Button()
                     button.set_child(label)
-                    button.set_tooltip_text(f"Explain {category.full_name} — {period.label}")
+                    button.set_tooltip_text(
+                        f"Explain {category.full_name} — {period.label}"
+                        + ("" if complete else f"\n{period.completeness.label}")
+                    )
                     button.connect("clicked", self._on_plan_cell_clicked, category, period)
                     self.grid.attach(button, col, row_index, 1, 1)
                 self._attach_total(category.total(measure), len(periods) + 1, row_index)

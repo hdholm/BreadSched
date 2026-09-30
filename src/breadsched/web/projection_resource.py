@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection
+from ..gen.engine.completeness import combine
 from ..gen.lib import Scenario
 from ..presentation import projection_goal_notes
 
@@ -95,6 +96,8 @@ def projection_report(
             ],
         },
         "summary": result.summary(),
+        # A labelled subtotal when a foreign balance or event lacks a rate (#236).
+        "completeness": result.completeness.as_dict(),
         "warnings": list(result.warnings),
         "goal_notes": projection_goal_notes(result),
         "goal_milestones": [
@@ -121,8 +124,9 @@ def projection_report(
                 "holdings": row.holdings,
                 "liabilities": row.liabilities,
                 "net_worth": row.net_worth,
+                "completeness": result.month_completeness(index).as_dict(),
             }
-            for row in result.rows
+            for index, row in enumerate(result.rows)
         ],
     }
 
@@ -156,6 +160,11 @@ def projection_comparison_report(
                 "assumption_sources": comparison.assumption_sources(comparison.start),
             },
             "summary": comparison_summary,
+            "completeness": comparison_result.completeness.as_dict(),
+            # A difference is only as complete as both of its inputs.
+            "delta_completeness": combine(
+                primary_result.completeness, comparison_result.completeness
+            ).as_dict(),
             "summary_delta": {
                 "ending_net_worth": difference(
                     primary_summary["ending_net_worth"],
@@ -177,8 +186,14 @@ def projection_comparison_report(
                     "net_worth": right.net_worth,
                     "cash_delta": difference(left.cash_close, right.cash_close),
                     "net_worth_delta": difference(left.net_worth, right.net_worth),
+                    "completeness": combine(
+                        primary_result.month_completeness(index),
+                        comparison_result.month_completeness(index),
+                    ).as_dict(),
                 }
-                for left, right in zip(primary_result.rows, comparison_result.rows, strict=True)
+                for index, (left, right) in enumerate(
+                    zip(primary_result.rows, comparison_result.rows, strict=True)
+                )
             ],
         },
     }

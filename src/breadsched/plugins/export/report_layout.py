@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from itertools import zip_longest
 
 from ...gen.engine.activity import CategoryReport, PlanMeasure
+from ...gen.engine.completeness import Completeness, combine
 from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
@@ -226,6 +227,16 @@ def _notes(lines, *, warning: bool = False) -> tuple[Paragraph, ...]:
     return tuple(Paragraph(line, warning=warning) for line in lines if line)
 
 
+def _completeness(coverage: Completeness, what: str) -> tuple[Paragraph, ...]:
+    """A partial or withheld value's label, what it leaves out, and the fix (#236)."""
+    if coverage.complete:
+        return ()
+    return (
+        Paragraph(f"{what}: {coverage.label}.", warning=True),
+        *_notes(coverage.detail(), warning=True),
+    )
+
+
 # -------------------------------------------------------------- Dashboard
 
 
@@ -389,6 +400,12 @@ def dashboard_layout(board: Dashboard, *, book_name: str = "") -> ReportDocument
         Heading("Balances"),
         balances,
         *_notes(board.coverage_notes),
+        *_completeness(board.completeness, "Net worth"),
+        *(
+            _completeness(board.liquid_completeness, "Liquid cash")
+            if board.liquid_completeness.excluded != board.completeness.excluded
+            else ()
+        ),
         Heading("Pending bills"),
         bills,
         Heading("Expected income"),
@@ -572,7 +589,11 @@ def plan_layout(
             )
 
     total_column = (Column("Total", True),)
-    lead: list[Block] = [cards, *_notes(report.currency_notes)]
+    lead: list[Block] = [
+        cards,
+        *_completeness(report.completeness, "Plan totals"),
+        *_notes(report.currency_notes),
+    ]
     sections = [Section(tuple(lead))]
     if goal_milestones:
         sections.append(
@@ -689,7 +710,15 @@ def projection_layout(
             for row in result.rows[11::12]
         ),
     )
-    blocks: list[Block] = [cards]
+    blocks: list[Block] = [
+        cards,
+        *_completeness(
+            combine(
+                result.completeness, *(() if comparison is None else (comparison.completeness,))
+            ),
+            "Projection",
+        ),
+    ]
     if result.warnings:
         blocks.append(Paragraph("  ".join(result.warnings), warning=True))
     goal_notes = projection_goal_notes(result)
@@ -757,6 +786,13 @@ def _projection_comparison(result: Projection, comparison: Projection) -> list[B
                     _amount(primary.net_worth),
                     _amount(compared.net_worth),
                     _amount(primary.net_worth - compared.net_worth),
+                    Cell(
+                        combine(
+                            result.month_completeness(primary.index),
+                            comparison.month_completeness(compared.index),
+                        ).label
+                        or "—"
+                    ),
                 )
             )
         )
@@ -772,6 +808,7 @@ def _projection_comparison(result: Projection, comparison: Projection) -> list[B
                 f"#{name} net worth",
                 f"#{other} net worth",
                 "#Net worth difference",
+                "Coverage",
             ),
             tuple(rows),
         ),
@@ -793,7 +830,7 @@ def _over_time(
             for flag, text in (
                 (point.partial, "to date"),
                 (point.future, "future"),
-                (point.currency_incomplete, "missing quote"),
+                (point.currency_incomplete, point.completeness.label or "missing quote"),
             )
             if flag
         ]
@@ -971,6 +1008,7 @@ def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
             for text in (
                 "to date" if point.partial else "",
                 f"missing quote: {', '.join(point.missing)}" if point.missing else "",
+                *point.completeness.detail(),
             )
             if text
         ]
@@ -1063,6 +1101,7 @@ def net_worth_change_layout(change: NetWorthChange) -> ReportDocument:
         notes.append(f"Missing quote: {', '.join(change.missing)}. Totals are withheld.")
     blocks: tuple[Block, ...] = (
         *_notes(notes),
+        *_completeness(change.completeness, "Change"),
         Table(
             _columns("Date", "Description", "Accounts", "Currency", "#Net worth effect", "Note"),
             tuple(rows),

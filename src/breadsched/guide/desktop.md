@@ -231,7 +231,10 @@ match an actual, mark it unexpected, or review it. The Plan summary gives planne
 actual, and variance through the as-of date; **Show** chooses Plan, Period actual,
 or Period variance for the table (see
 [Reporting terms](../USER_GUIDE.md#reporting-terms)). The foreign-currency note sits
-under the Plan summary.
+under the Plan summary. A period or cell that leaves out an amount without a quote
+reads **partial**, and its tooltip lists what is left out; Projection, the
+Dashboard, net worth history, and Expense Explorer show the same labels and lists
+(see [Complete, partial, and unavailable values](../USER_GUIDE.md#complete-partial-and-unavailable-values)).
 
 Projection runs longer calculations in the background and lets you cancel them.
 Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection. To

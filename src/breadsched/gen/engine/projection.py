@@ -22,7 +22,13 @@ from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
 from ..lib.transaction import InvestmentActivityKind
 from . import investment, planning, valuation
-from .conversion import ReportingConverter, UnconvertedActivity, conversion_notes
+from .completeness import Completeness, Excluded, Policy, combine
+from .conversion import (
+    ReportingConverter,
+    UnconvertedActivity,
+    conversion_notes,
+    excluded_activity,
+)
 from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
 from .goal_projection import GoalMilestone, project_goals
@@ -396,6 +402,30 @@ class Projection:
     warnings: list[str] = field(default_factory=list)
     #: Each savings goal's target date in this scenario (pinned unless overridden).
     goal_milestones: list[GoalMilestone] = field(default_factory=list)
+    #: Opening balances and events left out for lack of an exchange rate (#236).
+    excluded: tuple[Excluded, ...] = ()
+
+    @property
+    def completeness(self) -> Completeness:
+        """The projection is a labelled subtotal of what converted."""
+        start = self.rows[0].month if self.rows else None
+        return Completeness.of(self.excluded, policy=Policy.SUBTOTAL, as_of=start)
+
+    def month_completeness(self, index: int) -> Completeness:
+        """Coverage of month ``index``: balances carry exclusions forward.
+
+        An excluded opening balance affects every month; an excluded event
+        affects its own month and, through the balances it would have moved,
+        every later one.
+        """
+        if not 0 <= index < len(self.rows):
+            return Completeness()
+        end = add_months(self.rows[index].month, 1, day=1) - timedelta(days=1)
+        return Completeness.of(
+            (item for item in self.excluded if item.when is None or item.when <= end),
+            policy=Policy.SUBTOTAL,
+            as_of=self.rows[index].month,
+        )
 
     # ------------------------------------------------------------------ series
 
@@ -1035,6 +1065,7 @@ def _project_events(
         day_before,
     ):
         _warn_once(result, note)
+    result.excluded = excluded_activity(db, unconverted)
     for event in all_events:
         if event.source not in (
             planning.EventSource.SCHEDULED,
@@ -1203,6 +1234,8 @@ class ComparisonRow(TypedDict):
     net_worth_delta: Money
     base_net_worth: Money
     other_net_worth: Money
+    #: Coverage of both inputs: a delta between subtotals is itself partial (#236).
+    completeness: Completeness
 
 
 def compare(base: Projection, other: Projection) -> list[ComparisonRow]:
@@ -1218,6 +1251,9 @@ def compare(base: Projection, other: Projection) -> list[ComparisonRow]:
                 "net_worth_delta": right.net_worth - left.net_worth,
                 "base_net_worth": left.net_worth,
                 "other_net_worth": right.net_worth,
+                "completeness": combine(
+                    base.month_completeness(index), other.month_completeness(index)
+                ),
             }
         )
     return rows

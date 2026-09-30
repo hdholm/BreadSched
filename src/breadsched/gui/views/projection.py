@@ -21,6 +21,7 @@ from time import monotonic
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
+from ...gen.engine.completeness import combine
 from ...gen.lib import Assumptions, Scenario  # noqa: E402
 from ...gen.services import (
     SaveScenarioAssumptions,
@@ -512,16 +513,39 @@ class ProjectionView(BaseView):
         self.chart.set_data(series, labels)
 
         shortfall = result.first_shortfall()
+        # A projection that leaves out an unconverted balance or event is a
+        # labelled subtotal, and a comparison is only as complete as both (#236).
+        coverage = combine(
+            result.completeness,
+            *(() if self._comparison is None else (self._comparison.completeness,)),
+        )
+        partial = "" if coverage.complete else " (partial)"
         cards = [
-            ("Ending net worth", result.ending_net_worth.format(parens_negative=True)),
-            ("Ending cash", result.ending_cash.format(parens_negative=True)),
-            ("Lowest cash", result.minimum_cash.format(parens_negative=True)),
+            ("Ending net worth", result.ending_net_worth.format(parens_negative=True) + partial),
+            ("Ending cash", result.ending_cash.format(parens_negative=True) + partial),
+            ("Lowest cash", result.minimum_cash.format(parens_negative=True) + partial),
             ("Total growth", result.total("investment_growth").format()),
             ("Cash runs out", shortfall.label if shortfall else "Never"),
         ]
         self._render_summary(cards, alarm=shortfall is not None)
+        first_partial = next(
+            (
+                row.label
+                for index, row in enumerate(result.rows)
+                if not result.month_completeness(index).complete
+            ),
+            None,
+        )
+        coverage_notes = (
+            []
+            if coverage.complete
+            else [
+                f"{coverage.label}, from {first_partial or 'the first month'}: "
+                + "; ".join(coverage.detail())
+            ]
+        )
         self._show_projection_notes(
-            [*projection_goal_notes(result), *result.warnings], bullets=True
+            [*coverage_notes, *projection_goal_notes(result), *result.warnings], bullets=True
         )
 
     def _show_projection_notes(self, notes: list[str], *, bullets: bool = False) -> None:

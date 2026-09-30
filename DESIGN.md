@@ -2346,8 +2346,7 @@ for the account chart, cash, and net worth now sum exact tagged values only when
 every nonzero component is in the reporting currency with any required pair quote.
 The aggregate result carries missing-quote account handles and returns no total
 when incomplete. Presentation does not replace a missing total with zero or add
-ledger fallbacks in another currency. Plan, Projection, and their printable
-reports need this contract separately before claiming complete currency support.
+ledger fallbacks in another currency.
 Dashboard's configured group valuation uses the same exact aggregate result for
 each selected account subtree. A missing quote is propagated through generated
 group headings; position totals and dependent liquidity outputs are suppressed
@@ -2355,6 +2354,40 @@ at the report boundary rather than presenting a partial internal calculation.
 Fallback spendable cash uses the same aggregate. The remaining bill and income
 rows are independent of current-balance valuation and stay visible. GTK, web,
 CLI, and print share the missing-account disclosure; no imported quote is edited.
+
+### Valuation completeness (#236)
+
+`engine/completeness` gives every reporting-currency result one structured
+coverage value: `Completeness(status, policy, excluded, as_of)`. The status is
+**complete** (every input converted, including a genuine zero, which needs no
+quote), **partial** (a subtotal of what converted), or **unavailable** (withheld).
+Each `Excluded` item records the kind (balance, planned, actual, posting), the
+account or event label, the unconverted amount in its own commodity, the date,
+whether an exchange rate or a security price is missing, and the involved account
+handles, and derives the corrective action. Adapters render `label` and `detail()`
+and serialize `as_dict()`; none infers coverage from note text, and the web
+transport stays free of engine imports, so resources call `as_dict()` themselves.
+
+The policy is chosen per report rather than forced to be uniform. Plan, Expense
+Explorer and Projection use `SUBTOTAL`: a plan with one unconvertible schedule is
+still useful for everything else, provided the gap is labelled beside the number.
+Balances, net worth, and the Dashboard use `WITHHOLD`, because a net worth that
+silently omits an account is a wrong answer rather than a smaller one. A comparison
+uses `combine()`, which keeps the worse status and both sides' evidence, so a
+difference between two partial values is never shown as complete. Projection
+coverage is per month: an excluded opening balance affects every month, and an
+excluded event affects its month and every later one, since balances carry it
+forward. Plan coverage is per period and per category cell (from the existing
+`unconverted_accounts`), and the through-as-of summary counts only exclusions dated
+by the as-of date. Missing valuation and temporal non-applicability stay separate:
+a future period's variance is `None` (not applicable) whether or not its inputs
+converted.
+
+A security without any price was already reported as a missing quote; its
+evidence now says *price* and gives the unit quantity, while a security priced only
+in another currency says *exchange rate* and gives the foreign market value.
+Projection still opens an unpriced security at its ledger value, as it did before;
+only foreign-currency balances without a rate are excluded there.
 
 Money is exact rational arithmetic. Its core constructor accepts a single, unambiguous numeric syntax; locale-aware parsing belongs at UI/import boundaries. GTK and web user entry therefore pass through the shared amount-input boundary: unambiguous decimal conventions are detected from the text, GTK uses the process numeric locale only as an ambiguity tie-breaker, and the web client sends its browser decimal convention explicitly. User-entered amounts remain text until exact server-side parsing; JavaScript floating-point conversion is not part of financial input. Strict English thousands grouping is accepted for backward compatibility, but ambiguous comma-decimal forms must be rejected rather than silently re-scaled. Equality with Python numeric values must obey Python's equality/hash contract; textual representations are not numeric equality. ``Money * Money`` is deliberately rejected. ``Money / Money`` produces an exact ``Fraction`` ratio, while projection assumptions use ``Rate`` so percentages cannot masquerade as ledger amounts.
 

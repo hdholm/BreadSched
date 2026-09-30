@@ -11,6 +11,7 @@ from ..lib.amount import Amount
 from ..lib.commodity import Commodity, CommodityPrice
 from ..lib.money import Money
 from . import ledger
+from .completeness import Completeness, Excluded, Policy
 from .currency import book_currency, commodity_fraction, reporting_currency_handle
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     "account_value",
     "book_currency",
     "convert_currency",
+    "excluded_valuation",
     "latest_price",
     "net_worth",
     "quantity_balance",
@@ -79,6 +81,14 @@ class ValuationAggregate:
     amount: Amount | None
     missing_quotes: tuple[str, ...] = ()
     incompatible_accounts: tuple[str, ...] = ()
+    #: Evidence for each balance in ``missing_quotes`` or ``incompatible_accounts``.
+    excluded: tuple[Excluded, ...] = ()
+    as_of: date | None = None
+
+    @property
+    def completeness(self) -> Completeness:
+        """A balance total is withheld, never shown partial (#236)."""
+        return Completeness.of(self.excluded, policy=Policy.WITHHOLD, as_of=self.as_of)
 
 
 def quote_age_label(days: int) -> str:
@@ -102,6 +112,7 @@ def aggregate_value(
     total = Amount(Money(0), reporting)
     missing: list[str] = []
     incompatible: list[str] = []
+    excluded: list[Excluded] = []
     for account in accounts if accounts is not None else db.iter_accounts():
         if account.is_root or (
             net_worth and account.account_class not in {AccountClass.ASSET, AccountClass.LIABILITY}
@@ -113,8 +124,10 @@ def aggregate_value(
             continue
         if valued.missing_quote:
             missing.append(account.handle)
+            excluded.append(excluded_valuation(db, account, valued, as_of))
         elif amount.commodity != reporting:
             incompatible.append(account.handle)
+            excluded.append(excluded_valuation(db, account, valued, as_of))
         else:
             sign = -1 if net_worth and account.account_class == AccountClass.LIABILITY else 1
             total += amount * sign
@@ -122,6 +135,8 @@ def aggregate_value(
         None if missing or incompatible else total,
         tuple(missing),
         tuple(incompatible),
+        tuple(excluded),
+        as_of,
     )
 
 
@@ -309,6 +324,34 @@ def _any_currency_price(
         if quote_currency is not None and quote_currency.is_currency:
             return price
     return None
+
+
+def excluded_valuation(
+    db: DbSQLite, account: Account, valued: AccountValuation, when: date | None
+) -> Excluded:
+    """Completeness evidence for a balance that has no reporting-currency value.
+
+    A security with no price lacks a *price* and is described by its quantity; a
+    foreign balance, or a security priced only in another currency, lacks an
+    *exchange rate* and is described by its unconverted amount.
+    """
+    label = db.full_name(account)
+    if valued.commodity is not None and valued.source != "market":
+        quantity = quantity_balance(db, account, as_of=when)
+        return Excluded(
+            "balance", label, valued.commodity.mnemonic, quantity, when, "price", (account.handle,)
+        )
+    amount = valued.total_amount
+    unit = db.get_commodity(amount.commodity) if amount is not None else None
+    code = unit.mnemonic if unit is not None else (amount.commodity if amount else "")
+    return Excluded(
+        "balance",
+        label,
+        code,
+        amount.value if amount is not None else None,
+        when,
+        accounts=(account.handle,),
+    )
 
 
 def quote_evidence(db: DbSQLite, valued: AccountValuation) -> str:

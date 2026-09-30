@@ -22,11 +22,13 @@ from ..lib.scenario import Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import PlanningFlowKind, PlanningResolution, Transaction
 from . import ledger
+from .completeness import Completeness, Policy
 from .conversion import (
     CurrencyEvidence,
     ReportingConverter,
     UnconvertedActivity,
     conversion_notes,
+    excluded_activity,
 )
 from .escrow import recognition as escrow_recognition
 from .planning import (
@@ -235,6 +237,8 @@ class PeriodActivity:
     #: Planned cash change of the expectations dated on or before the report's
     #: as-of date (whole dated events; nothing is prorated).
     planned_cash_through_as_of: Money = field(default_factory=lambda: Money(0))
+    #: Whether this period's figures include every foreign amount (#236).
+    completeness: Completeness = field(default_factory=Completeness)
 
     @property
     def amount_variance(self) -> Money:
@@ -294,6 +298,7 @@ class PeriodActivity:
             "planned_events": [event.as_dict() for event in self.planned_events],
             "actual_transactions": [item.as_dict() for item in self.actual_transactions],
             "unconverted": [item.as_dict() for item in self.unconverted],
+            "completeness": self.completeness.as_dict(),
         }
 
 
@@ -307,6 +312,10 @@ class ActivityReport:
     periods: list[PeriodActivity]
     conversions: tuple[CurrencyEvidence, ...] = ()
     as_of: date | None = None
+    #: Plan and actual totals over the horizon are subtotals of what converted.
+    completeness: Completeness = field(default_factory=Completeness)
+    #: The same for the through-as-of figures: only exclusions dated by ``as_of``.
+    completeness_through_as_of: Completeness = field(default_factory=Completeness)
 
     @property
     def unconverted(self) -> tuple[UnconvertedActivity, ...]:
@@ -397,6 +406,8 @@ class ActivityReport:
             "planned_cash_through_as_of": self.planned_cash_through_as_of,
             "actual_cash_through_as_of": self.actual_cash_through_as_of,
             "cash_variance_through_as_of": self.cash_variance_through_as_of,
+            "completeness": self.completeness.as_dict(),
+            "completeness_through_as_of": self.completeness_through_as_of.as_dict(),
             "unresolved_count": self.unresolved_count,
             "unresolved_actual_count": self.unresolved_actual_count,
             "unexpected_count": self.unexpected_count,
@@ -628,6 +639,23 @@ class CategoryReport:
     unconverted_accounts: list[frozenset[str]] = field(default_factory=list)
     """Per period, income/expense categories (with ancestors) missing foreign activity."""
     currency_notes: tuple[str, ...] = ()
+    #: Horizon totals, including the opening cash position (#236).
+    completeness: Completeness = field(default_factory=Completeness)
+
+    @property
+    def completeness_through_as_of(self) -> Completeness:
+        """Coverage of the through-as-of summary figures."""
+        return self.activity.completeness_through_as_of
+
+    @property
+    def period_completeness(self) -> tuple[Completeness, ...]:
+        return tuple(period.completeness for period in self.activity.periods)
+
+    def cell_complete(self, account: str, index: int) -> bool:
+        """False when this category's value in period ``index`` omits foreign activity."""
+        return not (
+            index < len(self.unconverted_accounts) and account in self.unconverted_accounts[index]
+        )
 
     @property
     def cash_variance(self) -> Money:
@@ -1847,6 +1875,11 @@ def build_activity_report(
         bucket.actual_income = bucket.actual_income + actual.income
         bucket.actual_expense = bucket.actual_expense + actual.expense
 
+    for bucket in periods:
+        bucket.completeness = Completeness.of(
+            excluded_activity(db, bucket.unconverted), policy=Policy.SUBTOTAL, as_of=effective_as_of
+        )
+    unconverted = [item for bucket in periods for item in bucket.unconverted]
     return ActivityReport(
         start=start,
         end=end,
@@ -1854,6 +1887,14 @@ def build_activity_report(
         periods=periods,
         conversions=tuple(converter.used[key] for key in sorted(converter.used)),
         as_of=effective_as_of,
+        completeness=Completeness.of(
+            excluded_activity(db, unconverted), policy=Policy.SUBTOTAL, as_of=effective_as_of
+        ),
+        completeness_through_as_of=Completeness.of(
+            excluded_activity(db, (item for item in unconverted if item.when <= effective_as_of)),
+            policy=Policy.SUBTOTAL,
+            as_of=effective_as_of,
+        ),
     )
 
 
@@ -2230,6 +2271,11 @@ def build_category_report(
         as_of=effective_as_of,
         unconverted_accounts=unconverted_accounts,
         currency_notes=currency_notes(db, activity, before=position.unconverted_before),
+        completeness=Completeness.of(
+            excluded_activity(db, (*position.unconverted_before, *activity.unconverted)),
+            policy=Policy.SUBTOTAL,
+            as_of=effective_as_of,
+        ),
     )
     for measure in (PlanMeasure.PLANNED, PlanMeasure.ACTUAL):
         if report.cash_bridge_totals(measure) != report.cash_totals(measure):

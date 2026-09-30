@@ -45,6 +45,7 @@ from ..lib.scheduled import ScheduledTransaction
 from . import fsa, fsa_claim_report, ledger, receivables, savings_goals, schedule, valuation
 from .cash_flow import flow_amounts as _flow_amounts
 from .cash_flow import income_occurrences
+from .completeness import Completeness, Policy, combine
 from .currency import reporting_currency_handle, reporting_fraction
 from .escrow import recognition as escrow_recognition
 
@@ -226,6 +227,8 @@ class GroupResult:
     _debts: Money = field(default_factory=lambda: Money(0), repr=False)
     missing_quotes: tuple[str, ...] = ()
     liquid_missing_quotes: tuple[str, ...] = ()
+    #: Withheld when ``missing_quotes`` is set, with each excluded balance (#236).
+    completeness: Completeness = field(default_factory=Completeness)
 
     @property
     def report_total(self) -> Money | None:
@@ -484,6 +487,10 @@ class Dashboard:
     book_assets: Money = field(default_factory=lambda: Money(0))
     book_debts: Money = field(default_factory=lambda: Money(0))
     book_missing_quotes: tuple[str, ...] = ()
+    #: Net worth, assets and debts: withheld with the excluded balances (#236).
+    completeness: Completeness = field(default_factory=Completeness)
+    #: Liquid cash and what depends on it.
+    liquid_completeness: Completeness = field(default_factory=Completeness)
     coverage_notes: tuple[str, ...] = ()
     #: Reimbursements still owed in the reporting currency (issue #170). Held in
     #: Receivable accounts: part of net worth, never of liquidity.
@@ -796,6 +803,8 @@ def build(
     )
     board.liquid = cash.amount.value if cash.amount is not None else Money(0)
     board.liquid_missing_quotes = cash.missing_quotes
+    board.completeness = combine(owned.completeness, owed.completeness)
+    board.liquid_completeness = cash.completeness
     pending, estimates, income_per_month, income_with_estimates, next_income, income_events = (
         _pending_cash_flow(db, today, horizon_days, paid_off, fraction)
     )
@@ -1140,6 +1149,7 @@ def _build_group_node(
         _debts=debts,
         missing_quotes=tuple(dict.fromkeys(missing)),
         liquid_missing_quotes=tuple(dict.fromkeys(liquid_missing)),
+        completeness=_withheld(db, tuple(dict.fromkeys(missing)), today),
     )
     return [result, *child_rows]
 
@@ -1190,6 +1200,17 @@ def _direct_group_totals(
         if kind == "liquid":
             liquid = liquid + amount
     return lines, assets, debts, liquid, notes, missing, liquid_missing
+
+
+def _withheld(db: DbSQLite, handles: tuple[str, ...], today: date) -> Completeness:
+    """A group total is withheld with the evidence for each unvalued account."""
+    excluded = []
+    for handle in handles:
+        account = db.get_account(handle)
+        if account is not None:
+            valued = valuation.account_value(db, account, as_of=today)
+            excluded.append(valuation.excluded_valuation(db, account, valued, today))
+    return Completeness.of(excluded, policy=Policy.WITHHOLD, as_of=today)
 
 
 def _account_group_result(db: DbSQLite, account: Account, today: date) -> GroupAccountResult:

@@ -18,6 +18,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.amount import Amount
 from ..lib.money import Money
 from . import valuation
+from .completeness import Excluded
 from .currency import reporting_currency_handle
 from .planning import PlannedEvent, PlannedSplit
 
@@ -26,6 +27,7 @@ __all__ = [
     "ReportingConverter",
     "UnconvertedActivity",
     "conversion_notes",
+    "excluded_activity",
 ]
 
 
@@ -71,6 +73,26 @@ class UnconvertedActivity:
             "currency": self.currency,
             "accounts": list(self.accounts),
         }
+
+
+def excluded_activity(db: DbSQLite, items: Iterable[UnconvertedActivity]) -> tuple[Excluded, ...]:
+    """Completeness evidence for activity left out for lack of an exchange rate."""
+
+    def code(handle: str) -> str:
+        commodity = db.get_commodity(handle)
+        return commodity.mnemonic if commodity is not None else handle
+
+    return tuple(
+        Excluded(
+            item.kind,
+            item.description or "Untitled",
+            code(item.currency),
+            item.amount,
+            item.when,
+            accounts=item.accounts,
+        )
+        for item in items
+    )
 
 
 class ReportingConverter:

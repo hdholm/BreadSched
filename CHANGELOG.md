@@ -3,6 +3,22 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a209 - 2026-09-30
+
+- **Every reported value says whether it is complete (#236).** A shared
+  `Completeness` result (complete, partial, or unavailable, with each excluded
+  balance, event, or posting, its currency, amount, date, the missing rate or price,
+  and the fix) is attached to Plan periods, cells, totals, and through-as-of
+  figures; Expense Explorer periods; Projection months and scenario comparisons;
+  Dashboard net worth, liquid cash, and groups; balance aggregates; and net worth
+  history points and changes. Plan, Explorer, and Projection show labelled partial
+  subtotals; balances, net worth, and the Dashboard withhold. GTK, the browser, the
+  command line, `--json`, printed reports, and the Projection CSV show the status
+  as text beside the value; the Projection chart shades partial months and the net
+  worth chart marks withheld points **n/a** instead of zero. A comparison is only as
+  complete as both inputs. The User Guide gains "Complete, partial, and unavailable
+  values" with each report's policy and an example.
+
 ## 0.2.0a208 - 2026-09-30
 
 - **One meaning for each reporting term (#235).** The Plan summary variance is now

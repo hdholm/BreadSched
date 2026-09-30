@@ -749,3 +749,41 @@ def test_a_claim_is_closed_and_reopened_in_the_claims_editor(page, served):
     # Each allocation can link money paid back into the FSA.
     page.get_by_role("button", name="Edit").click()
     page.wait_for_selector("text=Repaid to the FSA")
+
+
+def test_a_withheld_net_worth_names_what_it_leaves_out(page, served):
+    """#236: the label is text beside the value, with the evidence one click away."""
+    from breadsched.gen.lib import Account, AccountType, Commodity, Money, Split, Transaction
+
+    db, _httpd = served
+    assets = db.get_account_by_name("Assets")
+    equity = next(account for account in db.iter_accounts() if account.name == "Equity")
+    assert assets is not None
+    euro = Commodity(namespace="CURRENCY", mnemonic="EUR", fullname="Euro")
+    cash = Account(name="Euro cash", atype=AccountType.BANK, parent=assets.handle)
+    cash.commodity = euro.handle
+    opening = Transaction(post_date=date.today().replace(day=1), description="Euro opening")
+    opening.currency = euro.handle
+    opening.splits = [Split(cash.handle, Money(25)), Split(equity.handle, Money(-25))]
+    with db.transaction("Euro cash") as txn:
+        if db.get_commodity_by_mnemonic("EUR") is None:
+            db.add_commodity(euro, txn)
+        else:
+            cash.commodity = db.get_commodity_by_mnemonic("EUR").handle
+            opening.currency = cash.commodity
+        db.add_account(cash, txn)
+        db.add_transaction(opening, txn)
+
+    # Leave and return so the Dashboard is fetched again with the new account.
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Accounts", exact=True).first.click()
+    page.get_by_role("button", name="Dashboard", exact=True).first.click()
+    summary = page.locator("details.completeness-details summary").first
+    summary.wait_for()
+    assert summary.inner_text() == "Net worth: Unavailable: 1 amount lacks a quote"
+    summary.click()
+    detail = page.locator("details.completeness-details li").first.inner_text()
+    assert detail.startswith("Assets:Euro cash 25.00 EUR")
+    assert detail.endswith("no exchange rate")
+    page.wait_for_selector("h2:has-text('Net worth history')")
+    assert page.locator("svg.net-worth-chart text.chart-unavailable").count() >= 1

@@ -107,7 +107,12 @@ The Plan response carries a `currency` object with the conversion evidence shown
 the foreign-currency note. The summary cards give planned change, actual, and
 variance through the as-of date; **Show** chooses Plan, Period actual, or Period
 variance for the table (see [Reporting terms](../USER_GUIDE.md#reporting-terms)).
-Value details follow the chosen scenario.
+Value details follow the chosen scenario. A card, period, or cell that leaves out an
+amount without a quote carries a **Partial** label; expand the label under the
+cards to see each excluded amount and the rate or price to add. Projection, the
+Dashboard, net worth history, and Expense Explorer use the same labels, and the
+Projection chart shades partial months (see [Complete, partial, and unavailable values](../USER_GUIDE.md#complete-partial-and-unavailable-values)). Each resource carries a
+`completeness` object for the value it describes.
 
 **Manage scenarios…** in Plan opens the scenario list, which shows each effective assumption and its source, along with
 the saved dated periods and eligible account-specific rate choices. In
