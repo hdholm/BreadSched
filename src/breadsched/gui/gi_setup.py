@@ -30,13 +30,14 @@ import warnings
 
 import gi
 
-__all__ = ["Gdk", "Gio", "GLib", "GObject", "Gtk", "Pango", "UPSTREAM_NOISE"]
+__all__ = ["Gdk", "Gio", "GLib", "GObject", "Gtk", "Pango", "PangoCairo", "UPSTREAM_NOISE"]
 
 # Pin every namespace before anything imports it. A namespace left unpinned loads
 # whichever version is installed, silently, with a warning aimed at the wrong file.
 gi.require_version("Gtk", "4.0")
 gi.require_version("Gdk", "4.0")
 gi.require_version("Pango", "1.0")
+gi.require_version("PangoCairo", "1.0")
 
 #: Message patterns raised by PyGObject itself that no change here can prevent.
 #: Matched as regular expressions against the start of the warning text.
@@ -48,9 +49,9 @@ def _import_repository():
     with warnings.catch_warnings():
         for pattern in UPSTREAM_NOISE:
             warnings.filterwarnings("ignore", message=pattern, category=DeprecationWarning)
-        from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango
+        from gi.repository import Gdk, Gio, GLib, GObject, Gtk, Pango, PangoCairo
 
-        return Gdk, Gio, GLib, GObject, Gtk, Pango
+        return Gdk, Gio, GLib, GObject, Gtk, Pango, PangoCairo
 
 
-Gdk, Gio, GLib, GObject, Gtk, Pango = _import_repository()
+Gdk, Gio, GLib, GObject, Gtk, Pango, PangoCairo = _import_repository()

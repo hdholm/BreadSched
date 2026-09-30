@@ -318,20 +318,20 @@ class DashboardView(BaseView):
         )
         self.goals_section.set_visible(bool(self.board.goals))
 
-    def printable_html(self) -> str | None:
-        """Return the currently rendered Dashboard as a print-ready document."""
+    def printable_report(self):
+        """The currently rendered Dashboard, laid out for printing."""
         if self.board is None:
             return None
-        from pathlib import Path
+        from ...plugins.export.report_layout import dashboard_layout
 
-        from ...plugins.export.html_report import dashboard_report
+        return dashboard_layout(self.board, book_name=self.book_name())
 
-        application = self.manager.get_application()
-        book_path = getattr(application, "book_path", None)
-        return dashboard_report(
-            self.board,
-            book_name=Path(book_path).name if book_path else "",
-        )
+    def printable_html(self) -> str | None:
+        """The same report as a web page, for printing from a browser."""
+        from ...plugins.export.html_report import render_html
+
+        document = self.printable_report()
+        return render_html(document) if document is not None else None
 
     def _render_cards(self) -> None:
         _empty(self.cards)

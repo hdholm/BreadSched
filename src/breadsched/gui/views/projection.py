@@ -529,21 +529,22 @@ class ProjectionView(BaseView):
         self.warning_label.set_text(text)
         self.warning_scroller.set_visible(bool(text))
 
-    def printable_html(self) -> str | None:
-        """Return the current projection calculation and visible comparison."""
+    def printable_report(self):
+        """The current projection calculation and visible comparison, laid out."""
         if self._result is None:
             return None
-        from pathlib import Path
+        from ...plugins.export.report_layout import projection_layout
 
-        from ...plugins.export.html_report import projection_report
-
-        application = self.manager.get_application()
-        book_path = getattr(application, "book_path", None)
-        return projection_report(
-            self._result,
-            comparison=self._comparison,
-            book_name=Path(book_path).name if book_path else "",
+        return projection_layout(
+            self._result, comparison=self._comparison, book_name=self.book_name()
         )
+
+    def printable_html(self) -> str | None:
+        """The same report as a web page, for printing from a browser."""
+        from ...plugins.export.html_report import render_html
+
+        document = self.printable_report()
+        return render_html(document) if document is not None else None
 
     def _render_summary(self, cards, alarm: bool) -> None:
         child = self.summary.get_first_child()

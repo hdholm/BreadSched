@@ -335,10 +335,18 @@ differently; every proposal starts checked. Clear any you do not want and choose
 ## Print and export
 
 Print Dashboard, Plan, or Projection from the toolbar or **File → Print Current
-View** (`Ctrl+P`). BreadSched opens a self-contained preview in the default browser;
-use the browser print dialog for a printer or PDF. In Expense Explorer, **Print…**
-previews spending and income over time, the selected category and period with
-merchant detail, and the chosen Income detail. Use **File → Export Transactions** for transaction data.
+View** (`Ctrl+P`). The system print dialog opens: choose a printer or print to a
+PDF file (on Windows, **Microsoft Print to PDF**), preview the pages where the
+dialog offers it, and set the paper and orientation (landscape at first; your
+choices are kept until you quit). Tables continue across pages
+with their column headings repeated, and each page shows the report name and page
+number. For the Plan, the dialog's **Report** tab has **Include category detail
+when printing**, which adds the budget categories on pages of their own.
+
+**File → Print in Browser…** opens the same report as a page in your web browser
+instead, for its own print dialog. In Expense Explorer and the net worth change,
+**Print…** uses the browser: it previews spending and income over time, the
+selected category and period with merchant detail, and the chosen Income detail. Use **File → Export Transactions** for transaction data.
 
 ## Protect and recover a book
 

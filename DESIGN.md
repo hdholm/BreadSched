@@ -2472,15 +2472,19 @@ class, ID, and text. **Export
 transactions** accepts the native save dialog, and a fresh CSV must be written at
 the path the dialog returned to the application (recorded by wrapping
 `Gtk.FileDialog.save_finish`); the save dialog keeps its own suggested name when
-the box is set programmatically, while the Open dialog takes the typed path. **Print** runs on every printable view: the report must be written, Windows
-must have a default handler for its type, and opening it must succeed.
+the box is set programmatically, while the Open dialog takes the typed path.
+**Print** runs on every printable view; the native print dialog is modal, so the
+check replaces it with `printing.export_pdf` of the same report (the dialog's
+"Print to File") and requires real PDF pages from the installed Pango and cairo.
+**Print in Browser** must then write the HTML report, find a default Windows
+handler for its type, and open it.
 These checks found that GLib starts `runtime\bin\gdbus.exe` as a D-Bus session
 bus that outlives the application and keeps runtime files open, so the next
 upgrade could not replace `runtime\` and uninstalling left it behind. The
 installer (from its temporary plugins directory) and the uninstaller therefore
 run `stop-helpers.ps1` before removing `runtime\`; it stops only `gdbus.exe`
-processes whose executable lies inside this installation's runtime. Printing
-itself stays in that handler (a browser's print dialog), which is not driven.
+processes whose executable lies inside this installation's runtime. Neither the
+native print dialog nor the browser's is driven.
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
@@ -2504,14 +2508,36 @@ layers should own presentation, interaction state, and platform-specific concern
 Printing is a presentation of an already calculated view, not another financial
 engine. A printable Dashboard, Plan, or Projection consumes the same structured
 engine result held by the visible GTK view, so printing cannot silently substitute
-different dates, grouping, measure, scenario, assumptions, or values. The GTK
-application emits a private self-contained HTML preview and delegates printer/PDF
-selection to the system browser; this avoids a separate GTK-only pagination model
-and remains usable on GTK4 versions without a native printing API. Temporary
-previews are owner-readable and removed when the application exits. A synchronous
-print boundary waits for an in-flight background calculation before it reads the
-visible view's result; a bounded timeout reports failure instead of reusing a stale
-or previously opened report.
+different dates, grouping, measure, scenario, assumptions, or values. A synchronous
+print boundary (`ViewManager._printable_view`) waits for an in-flight background
+calculation before it reads the visible view's result; a bounded timeout reports
+failure instead of reusing a stale or previously opened report.
+
+Each report is laid out once, in `plugins/export/report_layout.py`, as a
+renderer-neutral `ReportDocument`: sections of headings, paragraphs, summary cards,
+tables (columns flagged numeric; cells carrying text, sign, indent, a note inline or
+below, and hover text; rows styled heading/section/total/grand), and a line chart.
+`html_report.render_html` renders it for the browser, and `gui/report_printer.py`
+draws it natively, so both routes print the same words and numbers. A view offers
+`printable_report()` and derives `printable_html()` from it.
+
+**Print** (`Ctrl+P`) runs a `Gtk.PrintOperation` in points, landscape by default,
+with the page setup and settings chosen earlier in the session. Its dialog offers
+the platform's printers, preview, and printing to a PDF file; a report with an
+optional section adds a **Report** tab (`create-custom-widget`) with its checkbox.
+`ReportPrinter.paginate` measures every block with a Pango context at 72 dpi, so
+one unit is one point, and flows items onto pages: tables split only between rows
+and repeat their heading row on each continued page, a heading keeps with the
+content after it, an optional section starts a new page, and every page carries
+"title · page N of M" at its foot. Column widths start from each column's widest
+content (bold rows measured bold); text columns take spare width or wrap down to a
+floor, numbers never wrap, and a table that still does not fit shrinks its type
+toward a 5.5 pt minimum and then scales. `printing.export_pdf` draws the same pages
+straight to a PDF 1.4 file, which tests and the Windows installer check use.
+**File → Print in Browser…** keeps the earlier route as a fallback: a private,
+owner-readable HTML preview opened in the default browser and removed when the
+application exits. The smaller dialog reports (net worth change, Expense Explorer)
+still print only through that route.
 
 Plan printing has two explicit layers. The default print surface contains the
 scenario/horizon context, liquidity cards, and signed cash bridge needed to locate

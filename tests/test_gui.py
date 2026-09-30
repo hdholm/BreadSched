@@ -15,10 +15,12 @@ from __future__ import annotations
 import gc
 import importlib
 import itertools
+import re
 import shutil
 import threading
 from datetime import date, timedelta
 from decimal import Decimal
+from html import escape
 from pathlib import Path
 
 import pytest
@@ -1183,7 +1185,11 @@ class TestMenuBarAndToolbar:
         from breadsched.gui import printing
 
         opened = []
+        printed = []
         monkeypatch.setattr(printing, "open_print_preview", opened.append)
+        monkeypatch.setattr(
+            printing, "print_report", lambda parent, document, **_kw: printed.append(document)
+        )
         app.open_book(populated_book)
 
         for key, heading in (
@@ -1193,13 +1199,21 @@ class TestMenuBarAndToolbar:
         ):
             window.show_category(key)
             assert window.print_action.get_enabled() is True
-            previews_before = len(opened)
+            assert window.print_browser_action.get_enabled() is True
             window.print_action.activate(None)
-            assert len(opened) == previews_before + 1
+            # Print goes through GTK printing with the view's report layout ...
+            assert printed[-1].title == heading
+            # ... and Print in Browser renders the same layout as a web page.
+            window.print_browser_action.activate(None)
             assert f"<h1>{heading}</h1>" in opened[-1]
+            cards = printed[-1].sections[0].blocks[0]
+            for card in cards.items:
+                assert escape(card.label) in opened[-1] and escape(card.value) in opened[-1]
+        assert len(printed) == len(opened) == 3
 
         window.show_category("accounts")
         assert window.print_action.get_enabled() is False
+        assert window.print_browser_action.get_enabled() is False
 
     def test_every_menu_action_is_registered(self, app):
         """A menu item pointing at a missing action is silently dead on screen."""
@@ -7135,3 +7149,145 @@ class TestTabs:
         )
         app.open_book(populated_book)
         assert window.tabs == [("accounts", "Accounts")]
+
+
+class TestNativePrinting:
+    """Reports print through GTK: paginated, headed, and fitted to the page."""
+
+    def _document(self, rows=120, *, optional=True, periods=12):
+        from breadsched.plugins.export.report_layout import (
+            Card,
+            Cards,
+            Cell,
+            Column,
+            Heading,
+            ReportDocument,
+            Section,
+            Table,
+            TableRow,
+        )
+
+        columns = (
+            Column("Category"),
+            *(Column(f"Month {n} 2026", True) for n in range(1, periods + 1)),
+            Column("Total", True),
+        )
+
+        def table(prefix):
+            return Table(
+                columns,
+                tuple(
+                    TableRow(
+                        (
+                            Cell(f"{prefix} row {n}", indent=n % 3),
+                            *(
+                                Cell(f"(1,234,567.{n % 100:02d})", numeric=True, negative=True)
+                                for _ in range(periods)
+                            ),
+                            Cell("12,345,678.00", numeric=True),
+                        ),
+                        "total" if n == rows - 1 else "",
+                    )
+                    for n in range(rows)
+                ),
+            )
+
+        sections = [
+            Section(
+                (
+                    Cards(tuple(Card(f"Card {n}", f"{n},000.00", n == 2) for n in range(9))),
+                    Heading("Cash outlook"),
+                    table("Summary"),
+                )
+            )
+        ]
+        if optional:
+            sections.append(
+                Section((Heading("Detail"), table("Detail")), name="detail", optional=True)
+            )
+        return ReportDocument("Plan", "A long report", tuple(sections), "Include detail")
+
+    def _printer(self, document, include_optional=False):
+        import cairo
+
+        from breadsched.gui.report_printer import ReportPrinter
+
+        surface = cairo.RecordingSurface(cairo.Content.COLOR_ALPHA, None)
+        cr = cairo.Context(surface)
+        printer = ReportPrinter(document, include_optional=include_optional)
+        return printer, printer.paginate(cr, 774.0, 527.0)
+
+    def test_long_tables_repeat_their_headings_on_every_page(self):
+        printer, pages = self._printer(self._document())
+        assert pages > 2
+        heading = "Category | Month 1 2026"
+        for number in range(pages):
+            text = printer.page_text(number)
+            assert text.count(heading) == 1, number
+        first = printer.page_text(0)
+        assert first.startswith("Plan\nA long report") and "Card 2 2,000.00" in first
+        every_row = "\n".join(printer.page_text(n) for n in range(pages))
+        assert all(f"Summary row {n} " in every_row for n in range(120))
+        assert "Detail row" not in every_row
+
+    def test_an_optional_section_starts_its_own_page_when_included(self):
+        document = self._document()
+        without, fewer = self._printer(document)
+        printer, pages = self._printer(document, include_optional=True)
+        assert pages > fewer
+        starts = [n for n in range(pages) if printer.page_text(n).startswith("Detail")]
+        assert len(starts) == 1
+        assert "Summary row" not in printer.page_text(starts[0])
+
+    def test_wide_tables_shrink_to_the_page_width(self):
+        from breadsched.plugins.export.report_layout import Table
+
+        printer, _pages = self._printer(self._document(rows=3, periods=24, optional=False))
+        table = next(
+            block
+            for section in printer.document.sections
+            for block in section.blocks
+            if isinstance(block, Table)
+        )
+        size, widths = printer._fit_columns(table)
+        assert size < 9 and sum(widths) <= printer.width + 0.01
+
+    def test_a_heading_is_never_left_at_the_foot_of_a_page(self):
+        printer, pages = self._printer(self._document(rows=40, optional=False))
+        for number in range(pages):
+            placed = printer.pages[number].placed
+            assert not placed[-1][1].keep_with_next or number == pages - 1
+
+    def test_gtk_print_operation_exports_the_pages(self, tmp_path):
+        from breadsched.gui import printing
+
+        document = self._document(rows=60)
+        target = tmp_path / "plan.pdf"
+        operation = printing.print_operation(document)
+        operation.set_export_filename(str(target))
+        result = operation.run(Gtk.PrintOperationAction.EXPORT, None)
+        assert result == Gtk.PrintOperationResult.APPLY
+        content = target.read_bytes()
+        assert content.startswith(b"%PDF")
+        assert operation.get_property("n-pages") >= 2
+
+    def test_export_pdf_draws_every_page(self, tmp_path):
+        from breadsched.gui import printing
+
+        target = tmp_path / "report.pdf"
+        pages = printing.export_pdf(self._document(), target, include_optional=True)
+        assert pages >= 4
+        content = target.read_bytes()
+        assert content.startswith(b"%PDF")
+        assert len(re.findall(rb"/Type\s*/Page\b", content)) == pages
+
+    def test_real_views_print_natively_to_pdf(self, app, window, populated_book, tmp_path):
+        from breadsched.gui import printing
+
+        app.open_book(populated_book)
+        for key in ("dashboard", "plan", "projection"):
+            window.show_category(key)
+            view = window._printable_view()
+            document = view.printable_report()
+            pages = printing.export_pdf(document, tmp_path / f"{key}.pdf", include_optional=True)
+            assert pages >= 1 and (tmp_path / f"{key}.pdf").stat().st_size > 1000
