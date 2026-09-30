@@ -19,7 +19,7 @@ import pytest
 
 from breadsched.gen.db.sqlite import DbSQLite, is_portal_book, migration_backup_path
 from breadsched.gen.engine import attachments
-from breadsched.gen.utils.user_paths import companion_path, portal_document_id
+from breadsched.gen.utils.user_paths import companion_path, data_directory, portal_document_id
 from breadsched.presentation import book_open_notice
 
 FIXTURE = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
@@ -28,12 +28,15 @@ FIXTURE = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
 @pytest.fixture
 def portal(tmp_path, monkeypatch):
     runtime = tmp_path / "runtime"
-    data = tmp_path / "data"
+    home = tmp_path / "home"
+    # Every platform's data folder lives under this fake home.
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
-    monkeypatch.setenv("XDG_DATA_HOME", str(data))
     document = runtime / "doc" / "4f2a9c1e"
     document.mkdir(parents=True)
-    return document, data / "breadsched" / "beside-documents" / "4f2a9c1e"
+    return document, data_directory() / "beside-documents" / "4f2a9c1e"
 
 
 def test_portal_paths_are_recognised_inside_and_outside_the_sandbox(tmp_path, portal):

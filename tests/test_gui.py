@@ -7623,9 +7623,14 @@ class TestNativePrinting:
         from breadsched.presentation import book_open_notice
 
         fixture = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
+        from breadsched.gen.utils.user_paths import data_directory
+
         runtime = tmp_path / "runtime"
+        home = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+        monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
         monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
-        monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
         document = runtime / "doc" / "9c1e"
         document.mkdir(parents=True)
         book = document / "old.breadsched"
@@ -7636,7 +7641,7 @@ class TestNativePrinting:
 
         app.open_book(str(book))
 
-        backup = tmp_path / "data" / "breadsched" / "beside-documents" / "9c1e"
+        backup = data_directory() / "beside-documents" / "9c1e"
         [notice] = reported
         assert f"saved at {backup / 'old.breadsched.pre-migration-v6.bak'}" in notice
         assert "Keep books in Documents" in notice
