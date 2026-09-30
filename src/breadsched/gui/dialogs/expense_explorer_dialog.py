@@ -35,7 +35,7 @@ class ExpenseExplorerDialog(BoundedWindow):
         self.category = bounded_dropdown([item.full_name for item in self._report.categories])
         controls.append(self.category)
         controls.append(Gtk.Label(label="Sort categories"))
-        self.sort = bounded_dropdown(["Actual", "Plan", "Variance", "Name"])
+        self.sort = bounded_dropdown(["Period actual", "Plan", "Period variance", "Name"])
         controls.append(self.sort)
         controls.append(Gtk.Label(label="Income detail"))
         self.income_category = bounded_dropdown(
@@ -285,8 +285,8 @@ class ExpenseExplorerDialog(BoundedWindow):
         )
         self.content.append(
             self._label(
-                "First bar: plan; second bar: full-period actual. "
-                "Remaining uses actual through as-of."
+                "First bar: plan; second bar: period actual (everything dated in the "
+                "period). Remaining uses actual through as-of."
             )
         )
         grid = Gtk.Grid(column_spacing=12, row_spacing=5)
@@ -307,8 +307,8 @@ class ExpenseExplorerDialog(BoundedWindow):
             carry = value.carry_in.format() if value.carry_in is not None else "—"
             grid.attach(
                 self._label(
-                    f"Plan {value.planned.format()} · Actual {value.actual.format()} · "
-                    f"Variance {variance} · Carry {carry} · Remaining {remaining}"
+                    f"Plan {value.planned.format()} · Period actual {value.actual.format()} · "
+                    f"Period variance {variance} · Carry {carry} · Remaining {remaining}"
                 ),
                 2,
                 i,

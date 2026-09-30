@@ -134,7 +134,7 @@ class PlanView(BaseView):
         self.period.connect("notify::selected", self._on_controls_changed)
         bar.append(self.period)
         bar.append(Gtk.Label(label="Show"))
-        self.measure = bounded_dropdown(["Plan", "Actual", "Variance"])
+        self.measure = bounded_dropdown(["Plan", "Period actual", "Period variance"])
         self.measure.set_selected(self._measure_index)
         self.measure.connect("notify::selected", self._on_controls_changed)
         bar.append(self.measure)
@@ -587,9 +587,10 @@ class PlanView(BaseView):
             f"Ending spendable cash {position.closing.format(parens_negative=True)}   ·   "
             f"Lowest {position.minimum.format(parens_negative=True)} on {minimum_date}   ·   "
             f"Projected change {_signed_money(activity.planned_cash_change)}   ·   "
-            f"Actual through {as_of_date} "
-            f"{_signed_money(self._report.actual_cash_through_as_of)}   ·   "
-            f"Variance {_signed_money(self._report.cash_variance_through_as_of)}   ·   "
+            f"Through {as_of_date}: planned "
+            f"{_signed_money(self._report.planned_cash_through_as_of)}, actual "
+            f"{_signed_money(self._report.actual_cash_through_as_of)}, variance "
+            f"{_signed_money(self._report.cash_variance_through_as_of)}   ·   "
             f"{activity.unresolved_count} expected occurrences pending   ·   "
             f"{activity.unresolved_actual_count} actuals to review"
         )

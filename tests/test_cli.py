@@ -727,6 +727,43 @@ class TestPlanningAndProjection:
         assert result["actual_amount"] == "25.00"
         assert result["unexpected_count"] == 1
 
+    def test_activity_footer_stops_both_sides_at_the_as_of_date(self, capsys, book_path):
+        from datetime import date
+
+        from breadsched.gen.db.sqlite import DbSQLite
+        from breadsched.gen.lib import Account, AccountType, Transaction
+
+        run(capsys, "init", book_path)
+        db = DbSQLite()
+        db.load(book_path)
+        try:
+            assets = db.get_account_by_name("Assets")
+            expenses = db.get_account_by_name("Expenses")
+            assert assets is not None and expenses is not None
+            with db.transaction("September") as txn:
+                checking = Account(name="Checking", atype=AccountType.BANK, parent=assets.handle)
+                db.add_account(checking, txn)
+                for day, amount in ((5, "40.00"), (25, "100.00")):
+                    db.add_transaction(
+                        Transaction.simple(
+                            date(2026, 9, day), "Spending", expenses.handle, checking.handle, amount
+                        ),
+                        txn,
+                    )
+        finally:
+            db.close()
+        argv = ("activity", book_path, "--start", "2026-09-01", "--end", "2026-09-30")
+        code, out = run(capsys, *argv, "--as-of", "2026-09-15")
+        assert code == 0, out
+        assert (
+            "Through 2026-09-15: planned cash 0.00, actual cash (40.00), variance (40.00)." in out
+        )
+        assert "Period columns include everything dated in each period" in out
+        result = run_json(capsys, *argv, "--as-of", "2026-09-15")
+        assert result["actual_cash_change"] == "-140.00"
+        assert result["actual_cash_through_as_of"] == "-40.00"
+        assert result["cash_variance_through_as_of"] == "-40.00"
+
     def test_plan_resolution_commands_preserve_user_decisions(self, capsys, book_path):
         from datetime import date
 

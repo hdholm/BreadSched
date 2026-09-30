@@ -515,8 +515,38 @@ mixed grand total. Mortgage cash requirements show the whole payment while the
 interest, escrow, principal, and fee components retain their classifications; never
 add the whole-payment row to its components.
 
-Actual and variance totals stop at the report's as-of date. Future-only actual and
-variance summaries are not applicable rather than zero.
+### Reporting terms
+
+Plan, Expense Explorer, `breadsched activity`, and printed or exported reports use
+these terms with one meaning each. The **as-of date** defaults to today.
+
+| Measure | Time window | Operands and sign | Dated after the as-of date | Shown as **—** or not applicable |
+|---|---|---|---|---|
+| **Plan** | Every occurrence dated in the period or horizon | Expected amounts of scheduled occurrences and estimates, as positive income or expense | Included: it is the plan | Never; zero when nothing is planned |
+| **Period actual** | Every posting dated in the period | Recorded splits; refunds reduce it; income and expense are positive magnitudes | Included | Never; zero when nothing is posted |
+| **Period variance** | Periods that have started by the as-of date | Period actual less Plan: positive means more spent (expense) or more received (income) | Included, because Period actual includes it | Periods that start after the as-of date |
+| **Planned through as-of** | Occurrences dated on or before the as-of date | Planned change in spendable cash (income adds, spending subtracts); occurrences count whole on their dates, never prorated | Excluded | Horizons that start after the as-of date |
+| **Actual through as-of** | Postings dated on or before the as-of date | Actual change in spendable cash, same signs | Excluded | Horizons that start after the as-of date |
+| **Variance** (Plan summary) | Through the as-of date | Actual through as-of less planned through as-of: positive means more cash than planned | Excluded on both sides | Horizons that start after the as-of date |
+| **Remaining** (Expense Explorer) | The full period, with optional carry-in | Carry-in plus Plan less actuals posted through the as-of date; negative means overspent | Excluded until that date passes | Future periods, and categories with an unconverted currency |
+
+None of these is a bank balance. A matched occurrence
+counts once on each side: its expected amount stays in Plan on its planned date and
+the matching transaction counts as actual on its posting date, so the two never add
+up to twice the bill. An unresolved occurrence and an estimate both remain in Plan
+until their dates, whether or not an actual arrives. Amounts in another currency with
+no applicable exchange rate are left out of every measure and named in the currency
+note rather than counted as zero (see below).
+
+For example, with nothing planned in September, 40 spent on September 5 and 100
+entered ahead for September 25, and an as-of date of September 15, the September
+column shows a period actual of 140 and a period variance of 140. The summary shows
+planned 0.00, actual (40.00), and variance (40.00) through September 15, and the
+detail for the September 25 transaction says it is counted in the period figures
+but not through as-of. Because occurrences count whole on their dates, a bill paid
+before its planned date shows as spending ahead of plan until that date passes.
+Through-as-of summaries are not applicable, rather than zero, when the whole
+horizon starts after the as-of date.
 
 Schedules and transactions in another currency are converted to the reporting
 currency before any Plan value is added up. Each currency uses one exchange rate:
@@ -563,8 +593,8 @@ the as-of date. Open it from Plan
   each receipt with its date and amount, grouped by payer. A receipt with no
   description is grouped as **Unknown payer**.
 - The **Period** comparison shows a plan bar and an actual bar for each category,
-  plus exact Plan, Actual, Variance, and Remaining values, sorted by Actual, Plan,
-  Variance, or name.
+  plus exact Plan, Period actual, Period variance, and Remaining values, sorted by
+  Period actual, Plan, Period variance, or name.
 - **Category trend** compares one category's plan and actual across all periods in
   the applied Plan range, and stays on that category when you change the comparison
   period or sort order.
@@ -572,8 +602,8 @@ the as-of date. Open it from Plan
   period, each group with an actual total and its dated transactions.
 
 Category values and section totals come from Plan; category hierarchy rows can
-include child accounts, so do not add parent and child rows together. Variance may
-show **—** where actuals are not yet applicable, including future-only periods.
+include child accounts, so do not add parent and child rows together. Period
+variance may show **—** where actuals are not yet applicable, including future-only periods.
 Merchant groups are temporary views of transaction descriptions, trimmed and matched
 without regard to case; blank descriptions appear as **Unknown merchant**. They
 include refunds in the same actual total. A category plan is never split into
@@ -583,8 +613,9 @@ The explorer does not create or save merchant rules or change the ledger.
 
 Remaining answers how much of the selected full-period expense plan is left after
 actuals posted through the as-of date. A refund increases it; overspending shows a
-negative amount. Actual and Variance still describe the full selected period, so a
-future-dated transaction may appear in Actual before it affects Remaining. A
+negative amount. Period actual and Period variance still describe the full selected
+period, so a future-dated transaction may appear in Period actual before it affects
+Remaining (see [Reporting terms](#reporting-terms)). A
 future-only period says “Future period.” Foreign-currency amounts use Plan's
 converted values; a category with an amount that no exchange rate converts says
 “Currency conversion unavailable,” and rollover stops there. Remaining has no

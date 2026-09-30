@@ -104,7 +104,10 @@ Dashboard. Choose each date's action, or one for all of a schedule's dates, then
 
 Set the Plan controls and apply them; they are shared with the desktop application.
 The Plan response carries a `currency` object with the conversion evidence shown in
-the foreign-currency note. Value details follow the chosen scenario.
+the foreign-currency note. The summary cards give planned change, actual, and
+variance through the as-of date; **Show** chooses Plan, Period actual, or Period
+variance for the table (see [Reporting terms](../USER_GUIDE.md#reporting-terms)).
+Value details follow the chosen scenario.
 
 **Manage scenarios…** in Plan opens the scenario list, which shows each effective assumption and its source, along with
 the saved dated periods and eligible account-specific rate choices. In
@@ -119,7 +122,7 @@ below the cash outlook. Choose a period in the **Spending over time** or **Incom
 over time** chart or table to make it the comparison period (the **Income detail**
 list below the income chart shows that period's dated income), use **Sort by** to order the category rows, and
 choose a **Category trend**. The chart labels plan in blue and actual in orange. The
-page also shows the selected category's Plan, Actual, and Variance beneath the
+page also shows the selected category's Plan, Period actual, and Period variance beneath the
 merchant table. **Carry prior periods** turns rollover on. See
 [Explore expenses](../USER_GUIDE.md#explore-expenses).
 

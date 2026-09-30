@@ -30,9 +30,7 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Now — reporting semantics and documentation structure.** In this order:
-   [#235](https://github.com/hdholm/BreadSched/issues/235) (one definition of Actual,
-   actual through as-of, forecast, Remaining, and Variance across reports), then
+1. **Now — reporting completeness and documentation structure.** In this order:
    [#236](https://github.com/hdholm/BreadSched/issues/236) (a shared, visible
    completeness state for totals that lack a currency conversion), then
    [#237](https://github.com/hdholm/BreadSched/issues/237) (DESIGN organized around the

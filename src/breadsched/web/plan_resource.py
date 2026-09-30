@@ -102,6 +102,7 @@ def plan_report(
             "currency_notes": list(compare_report.currency_notes),
             "summary": {
                 "planned_cash": compare_report.activity.planned_cash_change,
+                "planned_cash_through_as_of": compare_report.planned_cash_through_as_of,
                 "actual_cash": compare_report.actual_cash_through_as_of,
                 "variance": compare_report.cash_variance_through_as_of,
                 "opening_cash": compare_report.cash_position.opening,
@@ -285,6 +286,7 @@ def plan_report(
         ],
         "summary": {
             "planned_cash": totals.planned_cash_change,
+            "planned_cash_through_as_of": report.planned_cash_through_as_of,
             "actual_cash": report.actual_cash_through_as_of,
             "variance": report.cash_variance_through_as_of,
             "opening_cash": report.cash_position.opening,

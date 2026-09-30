@@ -2343,6 +2343,19 @@ def cmd_activity(args: argparse.Namespace) -> int:
             ],
             right={1, 2, 3, 4, 5, 6, 7, 8},
         )
+        if report.through_as_of_applies:
+            assert report.as_of is not None
+
+            def signed(value: Money | None) -> str:
+                return value.format(parens_negative=True) if value is not None else "—"
+
+            text += (
+                f"\n\nThrough {report.as_of.isoformat()}: planned cash "
+                f"{signed(report.planned_cash_through_as_of)}, actual cash "
+                f"{signed(report.actual_cash_through_as_of)}, variance "
+                f"{signed(report.cash_variance_through_as_of)}. Period columns include "
+                "everything dated in each period, even after that date."
+            )
         notes = activity.currency_notes(db, report)
         if notes:
             text = "\n".join((text, "", *notes))
@@ -4113,7 +4126,10 @@ def build_parser() -> argparse.ArgumentParser:
     )
     activity_cmd.add_argument(
         "--as-of",
-        help="date whose exchange-rate quotes convert foreign amounts (default today)",
+        help=(
+            "date that ends the 'through' totals and whose exchange-rate quotes "
+            "convert foreign amounts (default today)"
+        ),
     )
     activity_cmd.set_defaults(func=cmd_activity)
 
