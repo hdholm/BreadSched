@@ -103,8 +103,11 @@ def test_ci_uses_books_outside_documents_through_the_real_document_portal():
     # The real document portal grants the installed app one existing book (Open)
     # and one that does not exist yet (Save).
     assert "/usr/libexec/xdg-document-portal --replace" in check
-    assert 'document-export --app="$app" -r -w "$old_book"' in check
-    assert 'document-export --app="$app" -r -w -n "$new_book"' in check
+    exporter = (ROOT / "scripts" / "portal_export.py").read_text(encoding="utf-8")
+    assert 'export_document "$old_book"' in check
+    assert 'export_document "$new_book" --new' in check
+    for call in ('"Add"', '"AddNamed"', '"GrantPermissions"'):
+        assert call in exporter, call
     assert 'run migrate "$old_doc" --json' in check
     # The backup lands in the app's data folder, and nothing hidden beside the book.
     assert "/data/breadsched/beside-documents/" in check

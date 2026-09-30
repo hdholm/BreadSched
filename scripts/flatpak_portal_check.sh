@@ -34,27 +34,26 @@ for _ in $(seq 50); do
 done
 mountpoint -q "$XDG_RUNTIME_DIR/doc"
 
-sandbox_path() {
-  # document-export prints the host path; the sandbox sees the same document
-  # under its own runtime directory.
-  local exported=$1
+here=$(cd "$(dirname "$0")" && pwd)
+host_python=${HOST_PYTHON:-/usr/bin/python3}
+
+export_document() {
+  # Grant the app one file as the file chooser does; print the sandbox's path.
   local id
-  case "$exported" in
-    "$XDG_RUNTIME_DIR"/doc/?*/?*) ;;
-    *) echo "document export failed: '$exported'" >&2; exit 1 ;;
+  id=$("$host_python" "$here/portal_export.py" "$app" "$@")
+  case "$id" in
+    ?*) ;;
+    *) echo "document export failed for $1" >&2; exit 1 ;;
   esac
-  id=$(basename "$(dirname "$exported")")
-  printf '/run/user/%s/doc/%s/%s\n' "$uid" "$id" "$(basename "$exported")"
+  printf '/run/user/%s/doc/%s/%s\n' "$uid" "$id" "$(basename "$1")"
 }
 
 run() {
   flatpak run --user --unshare=network --command=breadsched "$app" "$@"
 }
 
-old_export=$(flatpak document-export --app="$app" -r -w "$old_book")
-new_export=$(flatpak document-export --app="$app" -r -w -n "$new_book")
-old_doc=$(sandbox_path "$old_export")
-new_doc=$(sandbox_path "$new_export")
+old_doc=$(export_document "$old_book")
+new_doc=$(export_document "$new_book" --new)
 echo "old book in sandbox: $old_doc"
 echo "new book in sandbox: $new_doc"
 
