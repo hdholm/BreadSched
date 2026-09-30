@@ -30,14 +30,11 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Now — documentation structure.**
-   [#237](https://github.com/hdholm/BreadSched/issues/237) (DESIGN organized around the
-   implemented architecture, older changelog entries condensed).
-2. **Linux packaging.** Validate GTK file-chooser portals and printing inside the
+1. **Linux packaging.** Validate GTK file-chooser portals and printing inside the
    Flatpak sandbox and publish the Flatpak. The manifest, installed-sandbox CLI
    gate, desktop entry, AppStream metadata, icon, and sandboxed GTK smoke already
    run in CI. Keep wheel/source releases available throughout.
-3. **Next — Interface, FSA, and scheduling.** Take the GTK/web parity and
+2. **Next — Interface, FSA, and scheduling.** Take the GTK/web parity and
    reporting items, then FSA/benefit accounts and claims, then scheduled
    transactions and loans (sections below).
 
