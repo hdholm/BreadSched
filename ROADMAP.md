@@ -5,7 +5,8 @@ Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
 Published alpha releases are listed on the repository's GitHub Releases page; each
 carries GitHub pre-release metadata as well as versioned notes and verified
-artifacts. A version is released only from the commit that first carries its notes.
+artifacts. A version is released only when `main` carries its release notes; a merge
+without new notes publishes nothing.
 
 
 ## Product direction
@@ -29,51 +30,20 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-0. **Now — correctness and documentation issues.** In this order:
-   [#239](https://github.com/hdholm/BreadSched/issues/239) (review every major
-   document and allow a justified no-change disposition) and
-   [#238](https://github.com/hdholm/BreadSched/issues/238) (make release policy match
-   the release workflow and keep this roadmap to unfinished work); then
+1. **Now — reporting semantics and documentation structure.** In this order:
    [#235](https://github.com/hdholm/BreadSched/issues/235) (one definition of Actual,
-   actual through as-of, forecast, Remaining, and Variance across reports) followed by
+   actual through as-of, forecast, Remaining, and Variance across reports), then
    [#236](https://github.com/hdholm/BreadSched/issues/236) (a shared, visible
-   completeness state for totals that lack a currency conversion); then
+   completeness state for totals that lack a currency conversion), then
    [#237](https://github.com/hdholm/BreadSched/issues/237) (DESIGN organized around the
-   implemented architecture, older changelog entries condensed). These come before
-   the remaining priority 3 work.
-1. **P0 — Windows installer.** Prioritized over further Linux packaging. A
-   per-user NSIS installer with its own MSYS2 Python and GTK runtime is built and
-   tested in CI (clean install, CLI, desktop smoke, reinstall over itself,
-   uninstall keeping books), and each release attaches it with its checksum.
-   Every CI run and release also upgrades from the newest published installer.
-   The command line can optionally be added to the user's `PATH`, and CI drives
-   the native file chooser and printing in the installed copy. Code signing is
-   deferred until a beta release is reasonable (see Packaging and release
-   quality). The Flatpak manifest, its installed-sandbox CLI
+   implemented architecture, older changelog entries condensed).
+2. **Linux packaging.** Validate GTK file-chooser portals and printing inside the
+   Flatpak sandbox and publish the Flatpak. The manifest, installed-sandbox CLI
    gate, desktop entry, AppStream metadata, icon, and sandboxed GTK smoke already
-   run in CI; remaining Linux work (validating GTK file-chooser portals and
-   printing inside the sandbox, and publishing the installer) follows the Windows
-   installer. Keep wheel/source releases available throughout.
-2. **P2 — Interoperability and analysis.** GnuCash write-back for simple edits
-   is delivered (#174: SQLite books, previewed in GTK, web, and CLI, with
-   configurable backups). Broader reporting (spending and income over time, net
-   worth history and its drill-down) and scenario-aware pinned savings goals are
-   delivered, as are transaction tags and linked documents. AqBanking was
-   investigated and is supported through the reviewed CSV import rather than a
-   built-in link (see `DESIGN.md`). GnuCash deletions of reconciled transactions
-   are reviewed, and write-back covers XML books, multi-split transactions,
-   amount and account changes, and deletions, checked in real GnuCash in CI.
-   Further OFX investment activity (options, share transfers,
-   splits, return of capital, margin interest, journals) is not planned while it
-   stays documented and reported as skipped on import.
-3. **Next — Interface, FSA, and scheduling.** Take the
-   GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
-   scheduled transactions and loans (sections below). Scenario Projection tabs,
-   remembered tabs per book, browser-tab counterparts, native GTK printing, and
-   bounded GTK view and dialog sizes are delivered; on FSA, claim reports,
-   Dashboard alerts for claims needing attention, claim corrections
-   (repayments, late EOB changes, closing and reopening), and plan carryover
-   and grace-period rules are delivered.
+   run in CI. Keep wheel/source releases available throughout.
+3. **Next — Interface, FSA, and scheduling.** Take the GTK/web parity and
+   reporting items, then FSA/benefit accounts and claims, then scheduled
+   transactions and loans (sections below).
 
 
 ## Architecture and correctness
@@ -196,9 +166,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Add reviewed commodity/security mapping where imported identifiers cannot be
   matched safely and extend price import to additional source formats where present.
-  GnuCash re-import now matches namespace and mnemonic together, accepts equivalent
-  currency namespaces, and rejects ambiguous bare mnemonic quote references;
-  broader reviewed mappings remain open.
 
 - Import scheduled transactions from additional formats where represented
   reliably.
@@ -286,15 +253,15 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Add a multiple-scenario walkthrough that duplicates Base and compares alternate
   assumptions/scheduled estimates.
 
-- Surface the packaged shared guide from the web interface and add contextual
-  links from complex GTK/web workflows where they materially improve discovery.
+- Add contextual help links from complex GTK and browser workflows into the
+  packaged guide (already available in both) where they materially improve
+  discovery.
 
 
 ## Packaging and release quality
 
-- Deliver Flatpak and Windows installation per the prioritized acceptance contract.
-  Keep macOS behavior isolated behind a small platform layer and evaluate a native
-  macOS artifact after the Linux/Windows paths are reliable.
+- Keep macOS behavior isolated behind a small platform layer and evaluate a native
+  macOS artifact once the Flatpak (see Prioritized delivery) is published.
 
 - **Before the first beta: sign Windows releases.** Sign `setup.exe` and the
   installed launchers through a hardware-backed signing service (Azure Artifact
@@ -307,8 +274,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Add property-based monetary arithmetic tests and fuzz-style malformed-import
   tests where they add useful coverage.
 
-- Keep documentation, versioning, and release notes synchronized with actual
-  behavior.
 
 
 ## Project governance and community health
