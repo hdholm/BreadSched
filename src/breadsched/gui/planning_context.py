@@ -60,9 +60,21 @@ def select_scenario(manager, handle: str | None, *, source=None) -> None:
     if selected_scenario_handle(manager) == handle:
         return
     manager._planning_scenario_handle = handle
-    for name in ("plan", "projection"):
-        view = getattr(manager, "_views", {}).get(name)
-        if view is None or view is source:
+    _notify(manager, handle, source)
+
+
+def _planning_views(manager) -> list:
+    """Plan, Projection, and every scenario tab's Projection."""
+    listing = getattr(manager, "planning_views", None)
+    if listing is not None:
+        return list(listing())
+    views = getattr(manager, "_views", {})
+    return [views[name] for name in ("plan", "projection") if name in views]
+
+
+def _notify(manager, handle: str | None, source) -> None:
+    for view in _planning_views(manager):
+        if view is source:
             continue
         callback = getattr(view, "planning_scenario_changed", None)
         if callback is not None:
@@ -71,11 +83,4 @@ def select_scenario(manager, handle: str | None, *, source=None) -> None:
 
 def notify_planning_scenario_changed(manager, *, source=None) -> None:
     """Tell planning views that the currently selected scenario changed in place."""
-    handle = selected_scenario_handle(manager)
-    for name in ("plan", "projection"):
-        view = getattr(manager, "_views", {}).get(name)
-        if view is None or view is source:
-            continue
-        callback = getattr(view, "planning_scenario_changed", None)
-        if callback is not None:
-            callback(handle)
+    _notify(manager, selected_scenario_handle(manager), source)

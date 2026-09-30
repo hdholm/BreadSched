@@ -9,8 +9,11 @@ the current view's commands first. A category sidebar used to duplicate the view
 list and took width from every view, so it was removed (#155).
 A tab bar below the toolbar keeps every opened view one click away, with one
 tab per open register account (#183): each register tab is its own register,
-with its own place, filter, and half-typed entry. Registers can also open in
-independent windows, so several accounts can be compared side by side.
+with its own place, filter, and half-typed entry. Projection can also open one
+tab per scenario, each keeping its scenario while the main Projection tab follows
+Plan. Each book's tabs are remembered in ``views.ini`` and reopened with the book.
+Registers can also open in independent windows, so several accounts can be
+compared side by side.
 
 Views are constructed lazily and told about the book through :meth:`set_db`.  A
 switch of book therefore never rebuilds the window, and a view that has never been
@@ -19,11 +22,15 @@ looked at costs nothing.
 
 from __future__ import annotations
 
+import hashlib
 import inspect
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from .. import APP_NAME  # noqa: E402
 from ..gen.db.sqlite import DbSQLite  # noqa: E402
+from ..gen.utils.settings import Settings  # noqa: E402
 from .gi_setup import Gio, GLib, Gtk, Pango
 from .paths import default_book_path  # noqa: E402
 
@@ -214,8 +221,21 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             True,
             caption="Export",
         ),
+        ViewAction(
+            "open-tab",
+            "Open Scenario in New _Tab",
+            "open_in_new_tab",
+            "tab-new-symbolic",
+            True,
+            caption="New tab",
+        ),
     ),
 }
+
+
+#: The ``views.ini`` section keeping each book's open tabs. Keys are a digest of
+#: the book's path, since a path's colons would split an INI key.
+TAB_SECTION = "open-tabs"
 
 
 def view_action_name(key: str, action: ViewAction) -> str:
@@ -232,8 +252,13 @@ class ViewManager(Gtk.ApplicationWindow):
         self._views: dict[str, Gtk.Widget] = {}
         #: Every register tab's view; ``_views["register"]`` is the one shown.
         self._registers: list[Gtk.Widget] = []
-        #: Open tabs in order: (category, register view or None, tab widget).
+        #: Extra Projection tabs, each keeping its own scenario;
+        #: ``_views["projection"]`` is the one that follows Plan.
+        self._projections: list[Gtk.Widget] = []
+        #: Open tabs in order: (category, own view or None, tab widget).
         self._tabs: list[_Tab] = []
+        #: Opening a book restores its tabs; nothing is remembered meanwhile.
+        self._restoring_tabs = False
         self._register_windows: list[tuple[Gtk.Window, Gtk.Widget]] = []
         # Automatic due review is a user-facing startup policy, not required for
         # binding views to a book. Tests and embedded windows can suppress it so
@@ -457,6 +482,8 @@ class ViewManager(Gtk.ApplicationWindow):
             self._remove_tab(tab)
         for register in list(self._registers):
             self._drop_register(register)
+        for projection in list(self._projections):
+            self._drop_projection(projection)
         for window, view in list(self._register_windows):
             view.set_db(None)
             window.destroy()
@@ -499,7 +526,12 @@ class ViewManager(Gtk.ApplicationWindow):
         self.category_action.set_enabled(True)
         for action in self.view_actions.values():
             action.set_enabled(True)
-        self.show_category(CATEGORIES[0][0])
+        self._restoring_tabs = True
+        try:
+            self.show_category(CATEGORIES[0][0])
+        finally:
+            self._restoring_tabs = False
+        self._restore_tabs()
         if self._prompt_due_on_open:
             self._schedule_due_prompt()
 
@@ -566,7 +598,12 @@ class ViewManager(Gtk.ApplicationWindow):
     def _all_views(self) -> list[Gtk.Widget]:
         """Every view in this window, including every register tab's register."""
         views = [view for key, view in self._views.items() if key != "register"]
-        return views + list(self._registers)
+        return views + list(self._registers) + list(self._projections)
+
+    def planning_views(self) -> list[Gtk.Widget]:
+        """Plan and every Projection, for scenario notifications."""
+        views = [self._views[key] for key in ("plan", "projection") if key in self._views]
+        return views + list(self._projections)
 
     def refresh_views(self) -> None:
         """Repaint every built view. Used when a book-wide setting changes."""
@@ -636,6 +673,9 @@ class ViewManager(Gtk.ApplicationWindow):
             show_actions(self.current_category or None)
 
     def _view_for_action(self, key: str):
+        shown = self.stack.get_visible_child()
+        if shown in self._projections and key == "projection":
+            return shown  # a scenario tab acts on its own scenario
         self.show_category(key)
         return self._views.get(key)
 
@@ -771,7 +811,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self._registers.append(register)
         self.register_stack.add_child(register)
         register.account_picker.connect(
-            "notify::selected", lambda *_a: self._update_tab_label(register)
+            "notify::selected", lambda *_a: self.tab_view_changed(register)
         )
         if self.db is not None:
             register.set_db(self.db)
@@ -791,49 +831,96 @@ class ViewManager(Gtk.ApplicationWindow):
             if self._registers:
                 self._activate_register(self._registers[-1])
 
-    def _tab_title(self, key: str, register) -> str:
-        if register is None:
+    def open_projection_tab(self, scenario_handle: str | None) -> Gtk.Widget:
+        """Show a Projection of one scenario in a tab of its own.
+
+        The main Projection tab follows the scenario chosen in Plan; these extra
+        tabs keep theirs, so two futures can be looked at side by side. A scenario
+        that already has a tab switches to it.
+        """
+        from .views.projection import ProjectionView
+
+        projection = next(
+            (view for view in self._projections if view.scenario_handle == scenario_handle),
+            None,
+        )
+        if projection is None:
+            projection = ProjectionView(self, pinned=True, scenario_handle=scenario_handle)
+            self._projections.append(projection)
+            self.stack.add_child(projection)
+            if self.db is not None:
+                projection.set_db(self.db)
+        self._show_projection(projection)
+        return projection
+
+    def _show_projection(self, projection) -> None:
+        self.stack.set_visible_child(projection)
+        self._select_tab("projection", projection)
+        self.category_action.set_state(GLib.Variant.new_string("projection"))
+        self._show_view_tools("projection")
+        projection.refresh()
+        self.print_action.set_enabled(self.db is not None)
+
+    def _drop_projection(self, projection) -> None:
+        projection.set_db(None)
+        if projection in self._projections:
+            self._projections.remove(projection)
+        if projection.get_parent() is self.stack:
+            self.stack.remove(projection)
+
+    def tab_view_changed(self, view) -> None:
+        """A tab's register or scenario Projection now shows something else."""
+        self._update_tab_label(view)
+        self._remember_tabs()
+
+    def _tab_title(self, key: str, view) -> str:
+        if view is None:
             return next((label for item, label, _icon in CATEGORIES if item == key), key)
-        handle = register.account_handle
+        if key != "register":
+            return view.tab_title
+        handle = view.account_handle
         account = self.db.get_account(handle) if self.db is not None and handle else None
         if account is None:
             return "Register"
         return account.name
 
-    def _tab_for(self, key: str, register) -> _Tab | None:
-        return next(
-            (tab for tab in self._tabs if tab.key == key and tab.register is register), None
-        )
+    def _tab_for(self, key: str, view) -> _Tab | None:
+        return next((tab for tab in self._tabs if tab.key == key and tab.view is view), None)
 
-    def _select_tab(self, key: str, register) -> None:
+    def _select_tab(self, key: str, view) -> None:
         """Mark the tab for what is shown, opening one if needed."""
-        tab = self._tab_for(key, register)
+        tab = self._tab_for(key, view)
         if tab is None:
-            tab = _Tab(key, register, self._tab_title(key, register))
+            tab = _Tab(key, view, self._tab_title(key, view))
             tab.button.connect("clicked", lambda *_a: self._on_tab_clicked(tab))
             tab.close.connect("clicked", lambda *_a: self.close_tab(tab))
             self._tabs.append(tab)
             self.tab_bar.append(tab.widget)
         for item in self._tabs:
             item.set_current(item is tab)
-        self._update_tab_label(register)
+        self._update_tab_label(view)
         self.tab_scroll.set_visible(True)
+        self._remember_tabs()
 
-    def _update_tab_label(self, register) -> None:
-        if register is None:
+    def _update_tab_label(self, view) -> None:
+        if view is None:
             return
-        tab = self._tab_for("register", register)
-        if tab is not None:
-            title = self._tab_title("register", register)
-            full = ""
-            if self.db is not None and register.account_handle:
-                account = self.db.get_account(register.account_handle)
-                full = self.db.full_name(account) if account is not None else ""
-            tab.set_title(title, full or title)
+        tab = next((item for item in self._tabs if item.view is view), None)
+        if tab is None:
+            return
+        title = self._tab_title(tab.key, view)
+        full = ""
+        if tab.key == "register" and self.db is not None and view.account_handle:
+            account = self.db.get_account(view.account_handle)
+            full = self.db.full_name(account) if account is not None else ""
+        tab.set_title(title, full or title)
 
     def _on_tab_clicked(self, tab: _Tab) -> None:
-        if tab.register is not None:
-            self._activate_register(tab.register)
+        if tab.key == "register":
+            self._activate_register(tab.view)
+        elif tab.view is not None:
+            self._show_projection(tab.view)
+            return
         self.show_category(tab.key)
 
     @property
@@ -857,7 +944,10 @@ class ViewManager(Gtk.ApplicationWindow):
         self._remove_tab(tab)
         if tab.register is not None:
             self._drop_register(tab.register)
+        elif tab.view is not None:
+            self._drop_projection(tab.view)
         if not was_current or self.db is None:
+            self._remember_tabs()
             return
         if self._tabs:
             following = self._tabs[min(index, len(self._tabs) - 1)]
@@ -870,6 +960,88 @@ class ViewManager(Gtk.ApplicationWindow):
             self._tabs.remove(tab)
             self.tab_bar.remove(tab.widget)
         self.tab_scroll.set_visible(bool(self._tabs))
+
+    # ------------------------------------------------------ remembered tabs
+
+    def _tab_settings(self) -> tuple[Settings, str] | None:
+        """The interface-state file and this book's key in it, if any."""
+        settings = getattr(self.get_application(), "view_settings", None)
+        path = getattr(self.db, "path", None) if self.db is not None else None
+        if settings is None or not path or path == ":memory:":
+            return None
+        digest = hashlib.sha256(str(Path(path).resolve()).encode("utf-8")).hexdigest()
+        return settings, digest[:24]
+
+    def _remember_tabs(self) -> None:
+        """Keep this book's open tabs, so reopening it brings them back."""
+        if self._restoring_tabs or not self._tabs:
+            return
+        place = self._tab_settings()
+        if place is None:
+            return
+        settings, key = place
+        entries = []
+        for tab in self._tabs:
+            if tab.key == "register":
+                entries.append([tab.key, tab.view.account_handle or ""])
+            elif tab.view is not None:
+                entries.append([tab.key, tab.view.scenario_handle or "", "scenario"])
+            else:
+                entries.append([tab.key])
+        current = next((i for i, tab in enumerate(self._tabs) if tab.current), 0)
+        stored = json.dumps({"tabs": entries, "current": current}, separators=(",", ":"))
+        if settings.get(TAB_SECTION, key) != stored:
+            settings.set(TAB_SECTION, key, stored)
+            settings.save()
+
+    def _restore_tabs(self) -> None:
+        """Reopen the tabs this book had; anything since deleted is skipped."""
+        place = self._tab_settings()
+        if place is None or self.db is None:
+            return
+        settings, key = place
+        try:
+            stored = json.loads(settings.get(TAB_SECTION, key) or "{}")
+            entries = [list(entry) for entry in stored.get("tabs", [])]
+            current = int(stored.get("current", 0))
+        except (TypeError, ValueError, AttributeError):
+            return
+        known = {item for item, _label, _icon in CATEGORIES}
+        opened: list[_Tab | None] = []
+        self._restoring_tabs = True
+        try:
+            for entry in entries:
+                opened.append(self._reopen_tab(entry, known))
+            wanted = opened[current] if 0 <= current < len(opened) else None
+            restored = [tab for tab in opened if tab is not None]
+            # The Dashboard opened with the book; drop it if it was closed before.
+            first = self._tab_for(CATEGORIES[0][0], None)
+            if restored and first is not None and first not in restored:
+                self._remove_tab(first)
+            if wanted is not None or restored:
+                self._on_tab_clicked(wanted or restored[-1])
+        finally:
+            self._restoring_tabs = False
+        self._remember_tabs()
+
+    def _reopen_tab(self, entry: list, known: set[str]) -> _Tab | None:
+        if self.db is None or not entry or not isinstance(entry[0], str):
+            return None
+        if entry[0] not in known:
+            return None
+        key = entry[0]
+        reference = entry[1] if len(entry) > 1 and isinstance(entry[1], str) else ""
+        if key == "register":
+            if not reference or self.db.get_account(reference) is None:
+                return None
+            self.open_register(reference)
+            return self._tab_for("register", self._views.get("register"))
+        if len(entry) > 2 and key == "projection":
+            if reference and self.db.get_scenario(reference) is None:
+                return None
+            return self._tab_for(key, self.open_projection_tab(reference or None))
+        self.show_category(key)
+        return self._tab_for(key, None)
 
     def open_register_window(self, account_handle: str) -> Gtk.Window | None:
         """Open an independently navigable register sharing the current book."""
@@ -919,11 +1091,12 @@ class ViewManager(Gtk.ApplicationWindow):
 
 
 class _Tab:
-    """One tab: a view, or one register, with a close button (#183)."""
+    """One tab: a view, one register, or one scenario's Projection (#183)."""
 
-    def __init__(self, key: str, register, title: str) -> None:
+    def __init__(self, key: str, view, title: str) -> None:
         self.key = key
-        self.register = register
+        #: The register or scenario Projection this tab owns; None for a view.
+        self.view = view
         self.title = title
         self.current = False
         self.widget = Gtk.Box(spacing=0)
@@ -937,6 +1110,11 @@ class _Tab:
         self.close.set_tooltip_text(f"Close {title}")
         self.widget.append(self.button)
         self.widget.append(self.close)
+
+    @property
+    def register(self):
+        """The register this tab owns, if it is a register tab."""
+        return self.view if self.key == "register" else None
 
     def set_title(self, title: str, tooltip: str) -> None:
         self.title = title
