@@ -78,8 +78,8 @@ shows the total (see [Savings goals](../USER_GUIDE.md#savings-goals)).
 
 Choose the **History** toolbar icon (or **Net Worth History…** in the menus) while
 the Dashboard is shown. **Group by** switches between months, quarters, and years;
-hover over a period to see its top-level account values, and **Print…** previews the
-table. Choose a period's **Change** (or **Explain** for the first period) to list the
+hover over a period to see its top-level account values, and **Print…** prints the
+table through the system print dialog. Choose a period's **Change** (or **Explain** for the first period) to list the
 postings behind it below the table; that section has its own **Print…** and
 **Export CSV…**. See [Net worth history](../USER_GUIDE.md#net-worth-history).
 
@@ -344,9 +344,12 @@ number. For the Plan, the dialog's **Report** tab has **Include category detail
 when printing**, which adds the budget categories on pages of their own.
 
 **File → Print in Browser…** opens the same report as a page in your web browser
-instead, for its own print dialog. In Expense Explorer and the net worth change,
-**Print…** uses the browser: it previews spending and income over time, the
-selected category and period with merchant detail, and the chosen Income detail. Use **File → Export Transactions** for transaction data.
+instead, for its own print dialog. The **Print…** buttons in Expense Explorer and
+Net Worth History use the system print dialog too: Expense Explorer prints
+spending and income over time, the selected category and period with merchant
+detail, and the chosen Income detail. If the system print dialog cannot be used,
+these open in your web browser instead. Use **File → Export Transactions** for
+transaction data.
 
 ## Protect and recover a book
 

@@ -71,8 +71,8 @@ class ExpenseExplorerDialog(Gtk.Window):
             self._update()
 
     def _print(self, _button) -> None:
-        from ...plugins.export.html_report import expense_explorer_report
-        from ..printing import open_print_preview
+        from ...plugins.export.report_layout import expense_explorer_layout
+        from .. import printing
 
         category_index = self.category.get_selected()
         period_index = self.period.get_selected()
@@ -99,7 +99,7 @@ class ExpenseExplorerDialog(Gtk.Window):
                 rollover=self.rollover.get_active(),
             )
             income_detail = income.value.drilldown if income.value is not None else None
-        open_print_preview(expense_explorer_report(result.value, income_detail))
+        printing.print_document(self, expense_explorer_layout(result.value, income_detail))
 
     @staticmethod
     def _label(text: str, *, heading: bool = False) -> Gtk.Label:

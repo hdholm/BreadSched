@@ -2632,10 +2632,13 @@ class TestDerivedPlanView:
             assert change is not None and change.change == last.change
             rows = len(change.postings) + 5
             assert dialog.change_table.get_child_at(1, rows).get_label() == "Change"
-            printed: list[str] = []
-            monkeypatch.setattr(printing, "open_print_preview", printed.append)
+            printed = []
+            monkeypatch.setattr(
+                printing, "print_report", lambda _parent, doc, **_kw: printed.append(doc)
+            )
             dialog._print_change(None)
-            assert "Market and exchange-rate changes" in printed[0]
+            assert "Market and exchange-rate changes" in printed[0].text()
+            assert printing.export_pdf(printed[0], tmp_path / "change.pdf") >= 1
             exported = tmp_path / "change.csv"
             dialog.export_change(str(exported))
             total = exported.read_text(encoding="utf-8").splitlines()[-1].split(",")
@@ -2695,10 +2698,12 @@ class TestDerivedPlanView:
             # Print adds the chosen income category's detail for the selected period.
             from breadsched.gui import printing
 
-            printed: list[str] = []
-            monkeypatch.setattr(printing, "open_print_preview", printed.append)
+            printed = []
+            monkeypatch.setattr(
+                printing, "print_report", lambda _parent, doc, **_kw: printed.append(doc)
+            )
             dialog._print(None)
-            assert len(printed) == 1 and "Income detail — " in printed[0]
+            assert len(printed) == 1 and "Income detail — " in printed[0].text()
             if len(dialog._report.totals) > 1:
                 dialog.period.set_selected(1)
                 assert dialog.spending_chart.selected_index == 1
@@ -7291,3 +7296,49 @@ class TestNativePrinting:
             document = view.printable_report()
             pages = printing.export_pdf(document, tmp_path / f"{key}.pdf", include_optional=True)
             assert pages >= 1 and (tmp_path / f"{key}.pdf").stat().st_size > 1000
+
+    def test_spanning_cells_and_line_breaks_print(self):
+        from breadsched.plugins.export.report_layout import (
+            Cell,
+            Column,
+            ReportDocument,
+            Section,
+            Table,
+            TableRow,
+        )
+
+        table = Table(
+            (Column("Date"), Column("Description"), Column("Effect", True), Column("Note")),
+            (
+                TableRow(
+                    (Cell("2026-01-02"), Cell("Pay\nsecond line"), Cell("5.00", True), Cell(""))
+                ),
+                TableRow(
+                    (Cell("Opening net worth", span=2), Cell("10.00", True), Cell("")), "total"
+                ),
+            ),
+        )
+        printer, pages = self._printer(ReportDocument("Net worth change", "", (Section((table,)),)))
+        text = printer.page_text(0)
+        assert pages == 1
+        assert "Pay\nsecond line" in text and "Opening net worth | 10.00" in text
+
+    def test_dialog_reports_fall_back_to_the_browser_when_printing_fails(self, monkeypatch):
+        from breadsched.gui import printing
+
+        document = self._document(rows=2, optional=False)
+        opened = []
+        monkeypatch.setattr(printing, "open_print_preview", opened.append)
+
+        def failing(_parent, _document, *, on_error=None):
+            on_error("no printer backend")
+            return Gtk.PrintOperationResult.ERROR
+
+        monkeypatch.setattr(printing, "print_report", failing)
+        printing.print_document(None, document)
+        assert len(opened) == 1 and "<h1>Plan</h1>" in opened[0]
+        monkeypatch.setattr(
+            printing, "print_report", lambda *_a, **_k: Gtk.PrintOperationResult.CANCEL
+        )
+        printing.print_document(None, document)
+        assert len(opened) == 1
