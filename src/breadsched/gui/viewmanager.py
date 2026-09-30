@@ -147,6 +147,14 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
         ViewAction("full-editor", "New Transaction in _Editor…", "_on_add_clicked"),
         ViewAction("new-window", "Open in New _Window", "_on_open_window_clicked"),
         ViewAction("reconcile", "_Reconcile…", "_on_reconcile_clicked"),
+        ViewAction(
+            "new-tab",
+            "Open Register in New _Tab",
+            "open_in_new_tab",
+            "tab-new-symbolic",
+            True,
+            caption="New tab",
+        ),
     ),
     # A command whose button changes with the view's state (Review due,
     # Reconcile, Save as scenario) stays in its view; the register keeps its own
@@ -838,6 +846,30 @@ class ViewManager(Gtk.ApplicationWindow):
         register.show_account(account_handle)
         self._update_tab_label(register)
 
+    def open_register_tab(self, account_handle: str | None = None):
+        """Open another register tab, even for an account that already has one (#228).
+
+        Without an account it shows the first account, in the picker's order, that
+        has no register tab yet (or the current register's account when every
+        account has one); its account picker then moves it to any account.
+        """
+        if account_handle is None and self.db is not None:
+            open_accounts = {view.account_handle for view in self._registers}
+            candidates = sorted(
+                (a for a in self.db.iter_accounts() if not a.is_root and not a.placeholder),
+                key=self.db.full_name,
+            )
+            spare = next((a.handle for a in candidates if a.handle not in open_accounts), None)
+            current = self._views.get("register")
+            account_handle = spare or (current.account_handle if current is not None else None)
+        register = self._new_register()
+        self._activate_register(register)
+        self.show_category("register")
+        if account_handle is not None:
+            register.show_account(account_handle)
+        self._update_tab_label(register)
+        return register
+
     # ------------------------------------------------------------------- tabs
 
     def _new_register(self):
@@ -1070,8 +1102,8 @@ class ViewManager(Gtk.ApplicationWindow):
         if key == "register":
             if not reference or self.db.get_account(reference) is None:
                 return None
-            self.open_register(reference)
-            return self._tab_for("register", self._views.get("register"))
+            # Every remembered register tab comes back, even two on one account.
+            return self._tab_for("register", self.open_register_tab(reference))
         if len(entry) > 2 and key == "projection":
             if reference and self.db.get_scenario(reference) is None:
                 return None
