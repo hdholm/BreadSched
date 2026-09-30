@@ -70,15 +70,20 @@ messages or pull requests.
   version's section, creating the heading with the version it will ship in.
 - Keep documentation roles distinct:
   - `README.md` is the product/developer entry point, not a place for feature
-    walkthroughs (those belong in the User Guide and DESIGN.md);
+    walkthroughs (those belong in the User Guide);
   - `src/breadsched/USER_GUIDE.md` is the packaged user guide's interface-neutral
     overview, and `src/breadsched/guide/desktop.md`, `guide/web.md`, and
     `guide/cli.md` give each interface's steps. Put what a feature does and its
     rules in the overview and the steps in the matching part, and link between
     them;
-  - `DESIGN.md` records current architecture and rationale;
+  - `DESIGN.md` records the implemented architecture, ownership, invariants, and
+    rationale, not development history or future work;
   - `ROADMAP.md` is the only future-work list; and
-  - `CHANGELOG.md` preserves completed milestones.
+  - `CHANGELOG.md` records completed changes concisely. Recent versions keep their
+    full entries; older versions are condensed to one line each that names their
+    outcomes and links `docs/releases/`, keeping schema, compatibility, security,
+    and financial-correction notes. Condense further when the recent section grows
+    past about twenty versions.
   Every pull request reviews these documents and records a disposition for each,
   as described in [Document review](#document-review).
 

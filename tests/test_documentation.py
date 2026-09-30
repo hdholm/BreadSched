@@ -9,7 +9,14 @@ from urllib.parse import unquote
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_LINK = re.compile(r"\[[^]]+]\(([^)]+)\)")
 HEADING = re.compile(r"^#{1,6} (.+)$", re.MULTILINE)
-DOCUMENTS = ("README.md", "ROADMAP.md", "CONTRIBUTING.md", "AGENTS.md")
+DOCUMENTS = (
+    "README.md",
+    "ROADMAP.md",
+    "CONTRIBUTING.md",
+    "AGENTS.md",
+    "DESIGN.md",
+    "CHANGELOG.md",
+)
 
 
 def _slug(heading: str) -> str:

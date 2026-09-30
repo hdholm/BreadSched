@@ -27,8 +27,8 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
   Every interface shows all of them: **Help → User Guide** (`F1`) on the desktop,
   **Guide** in the browser, and `breadsched guide` on the command line.
 - [`ROADMAP.md`](ROADMAP.md) is the single source of future work.
-- [`CHANGELOG.md`](CHANGELOG.md) records completed milestones and their durable
-  acceptance contracts.
+- [`CHANGELOG.md`](CHANGELOG.md) records completed changes by version; older
+  versions are condensed and link their release notes.
 - [`DESIGN.md`](DESIGN.md) explains the current architecture and design rationale.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) defines the development and pull-request
   workflow.
