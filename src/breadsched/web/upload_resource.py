@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.utils.user_paths import companion_path
 from .resources import ResourceError
 from .server import Api
 
@@ -40,7 +41,8 @@ def import_upload(
     suffix = Path(filename).suffix.lower()
     if suffix not in {".qif", ".ofx", ".qfx", ".gnucash", ".xml", ".sqlite", ".db", ".csv"}:
         raise ResourceError(400, "import.format.unrecognized", ("filename",))
-    directory = book.parent / f"{book.name}.uploads"
+    # Beside the book, or in the data folder for a document-portal book.
+    directory = companion_path(book, ".uploads")
     directory.mkdir(mode=0o700, exist_ok=True)
     name = hashlib.sha256(filename.encode("utf-8")).hexdigest() + suffix
     target = directory / name

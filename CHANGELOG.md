@@ -10,6 +10,27 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a211 - 2026-09-30
+
+- **Linux releases attach a tested Flatpak bundle; the sandbox's file chooser,
+  printing, and books outside Documents are validated.** The release workflow
+  builds `BreadSched-<version>.flatpak` from the tested commit, installs it, checks
+  its version, and publishes it with its checksum in `SHA256SUMS`. CI now runs the
+  real document portal and `xdg-desktop-portal` frontend beside the installed
+  Flatpak: a stand-in portal backend answers as a person would while the
+  application's own Open, Export Transactions, Back Up Book, and Print actions go
+  through the portal. It also creates, migrates, writes, and verifies books outside
+  Documents through the document portal, and the GTK smoke prints each report to PDF.
+  Corrections found this way: a book reached through the document portal is only
+  that file, so a pre-migration or pre-restore backup written beside it became a
+  hidden portal temporary and never reached the named file; such backups, the web
+  upload folder, and import logs now go to
+  `~/.var/app/org.breadsched.BreadSched/data/breadsched/beside-documents/`, the book
+  gets no default attachment folder, and the desktop says where backups go. The
+  portal's print dialog cannot show the Plan's **Report** tab, so the Flatpak now
+  asks **Summary only** or **Include category detail** before printing.
+  `breadsched migrate` reports the backup it actually wrote. No schema change.
+
 ## 0.2.0a210 - 2026-09-30
 
 - **FSA funding, direct payments, reimbursements, and provider refunds are each

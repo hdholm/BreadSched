@@ -233,7 +233,8 @@ jobs:
       - name: Install Flatpak builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder xvfb desktop-file-utils appstream
+          sudo apt-get install -y flatpak flatpak-builder xvfb desktop-file-utils appstream \
+            xdg-desktop-portal fuse3 dbus python3-gi gir1.2-glib-2.0 libglib2.0-bin
           flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
 
       - name: Validate desktop entry and AppStream metadata
@@ -349,6 +350,21 @@ jobs:
           run_offline import "$imported" "$source" --no-infer
           run_offline verify "$imported"
 
+      - name: Use books outside Documents through the document portal
+        shell: bash
+        run: |
+          set -euo pipefail
+          outside=$(mktemp -d "$HOME/outside-documents.XXXXXX")
+          python3 - "$outside/old.breadsched" tests/fixtures/native/schema-6.sql <<'PY'
+          import sqlite3
+          import sys
+
+          with sqlite3.connect(sys.argv[1]) as raw:
+              raw.executescript(open(sys.argv[2], encoding="utf-8").read())
+          PY
+          dbus-run-session -- bash scripts/flatpak_portal_check.sh \
+            "$outside/old.breadsched" "$outside/new.breadsched"
+
       - name: Drive the GTK interface offline inside the sandbox
         shell: bash
         run: |
@@ -379,11 +395,27 @@ jobs:
           assert report["icon"] is True
           assert {"dashboard", "register", "plan", "projection"} <= set(report["views"])
           assert report["guide_characters"] > 1000
+          assert {"dashboard", "plan", "projection"} <= set(report["printed"]), report["printed"]
           expected = os.path.expanduser(f"~/.var/app/{app}/config/breadsched/settings.ini")
           assert report["settings_path"] == expected, report["settings_path"]
           assert os.path.isfile(expected), expected
           assert report["last_book_path"] == os.path.realpath(book), report["last_book_path"]
           PY
+
+      - name: Drive the portal file chooser and print dialog inside the sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=org.breadsched.BreadSched
+          work=$(mktemp -d "$HOME/Documents/breadsched-portal.XXXXXX")
+          outside=$(mktemp -d "$HOME/outside-portal.XXXXXX")
+          cp scripts/flatpak_desktop_checks.py "$work/"
+          flatpak run --user --unshare=network --command=breadsched "$app" \
+            sample "$work/book.breadsched" --as-of 2026-09-15
+          HOST_PYTHON=/usr/bin/python3 PORTAL_TAKE_OVER_RUNTIME=1 xvfb-run -a dbus-run-session -- \
+            bash scripts/flatpak_desktop_checks.sh "$work" "$outside" "$work/book.breadsched" -- \
+            flatpak run --user --unshare=network --env=GSK_RENDERER=cairo \
+            --command=python3 "$app"
 
   missing-gtk-runtime:
     name: PyGObject without GTK4 typelib

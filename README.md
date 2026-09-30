@@ -35,15 +35,13 @@ for money and **Sched** is a diminutive of schedule; together they also rhyme.
 
 Alpha releases provide a wheel, source archive, a per-user Windows installer with
 its own Python and GTK runtime (`BreadSched-<version>-setup.exe`, built and tested
-on Windows from the released commit; not yet code-signed), and checksums covering
-all three. A native Linux installer is planned. Read the release notes and verify the checksums
+on Windows from the released commit; not yet code-signed), a Linux Flatpak bundle
+(`BreadSched-<version>.flatpak`, built and installed from the released commit), and
+checksums covering all of them. Read the release notes and verify the checksums
 before installing. The [User Guide](src/breadsched/USER_GUIDE.md) covers current
 workflows and their limits, including exchange rates, imports, and recovery.
-The source tree includes a Flatpak manifest, desktop entry, AppStream metadata, and
-icon, with CI checks for installed, offline CLI book, file, and writer-lock
-workflows and a sandboxed GTK smoke (views, help, icon, settings) under Documents
-access. GTK file portals and printing remain to be validated before an installer
-is published.
+CI tests the Flatpak in its sandbox, including the file chooser and printing
+through the desktop portal and books kept outside Documents.
 
 ## Install and run for development
 

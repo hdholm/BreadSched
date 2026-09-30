@@ -7565,6 +7565,111 @@ class TestNativePrinting:
         assert pages == 1
         assert "Pay\nsecond line" in text and "Opening net worth | 10.00" in text
 
+    def test_the_print_portal_asks_about_the_optional_section_first(self, app, window, monkeypatch):
+        """The portal's print dialog cannot show the Report tab (Flatpak)."""
+        import time
+
+        from breadsched.gui import printing
+
+        runs = []
+
+        def run(_parent, _document, include_optional, custom_tab, _on_error):
+            runs.append((include_optional, custom_tab))
+            return Gtk.PrintOperationResult.APPLY
+
+        monkeypatch.setattr(printing, "_run_print", run)
+        monkeypatch.setattr(printing, "uses_print_portal", lambda: True)
+        window.present()
+        document = self._document(rows=2)
+        assert printing.optional_choice_label(document) == "Include detail"
+
+        def answer(label):
+            context = GLib.MainContext.default()
+            for _ in range(200):
+                while context.pending():
+                    context.iteration(False)
+                for toplevel in Gtk.Window.list_toplevels():
+                    if toplevel is window or not toplevel.get_visible():
+                        continue
+                    for widget in _descendants(toplevel):
+                        if isinstance(widget, Gtk.Button) and widget.get_label() == label:
+                            widget.emit("clicked")
+                            while context.pending():
+                                context.iteration(False)
+                            return
+                time.sleep(0.01)
+            raise AssertionError(f"no {label!r} button")
+
+        pending = Gtk.PrintOperationResult.IN_PROGRESS
+        assert printing.print_report(window, document) == pending
+        answer("Include detail")
+        assert printing.print_report(window, document) == pending
+        answer("Summary only")
+        assert printing.print_report(window, document) == pending
+        answer("Cancel")
+        # The portal dialog gets no Report tab; the answer decides instead.
+        assert runs == [(True, False), (False, False)]
+
+        printing.print_report(window, self._document(rows=2, optional=False))
+        monkeypatch.setattr(printing, "uses_print_portal", lambda: False)
+        printing.print_report(window, document)
+        assert runs[2:] == [(False, True), (False, True)]
+
+    def test_opening_an_upgraded_or_portal_book_says_where_backups_go(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        import sqlite3
+
+        from breadsched.presentation import book_open_notice
+
+        fixture = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
+        from breadsched.gen.utils.user_paths import data_directory
+
+        runtime = tmp_path / "runtime"
+        home = tmp_path / "home"
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+        monkeypatch.setenv("XDG_DATA_HOME", str(home / ".local" / "share"))
+        monkeypatch.setenv("XDG_RUNTIME_DIR", str(runtime))
+        document = runtime / "doc" / "9c1e"
+        document.mkdir(parents=True)
+        book = document / "old.breadsched"
+        with sqlite3.connect(book) as raw:
+            raw.executescript(fixture.read_text(encoding="utf-8"))
+        reported = []
+        monkeypatch.setattr(app, "_report", reported.append)
+
+        app.open_book(str(book))
+
+        backup = data_directory() / "beside-documents" / "9c1e"
+        [notice] = reported
+        assert f"saved at {backup / 'old.breadsched.pre-migration-v6.bak'}" in notice
+        assert "Keep books in Documents" in notice
+        reported.clear()
+        app.open_book(str(book))
+        assert reported == [book_open_notice(str(book))]
+
+    def test_the_print_portal_is_detected_in_flatpak_or_when_forced(self, monkeypatch):
+        from breadsched.gui import printing
+
+        monkeypatch.setattr(printing.os.path, "exists", lambda path: False)
+        monkeypatch.setenv("GDK_DEBUG", "")
+        assert not printing.uses_print_portal()
+        monkeypatch.setenv("GDK_DEBUG", "events,portals")
+        assert printing.uses_print_portal()
+        monkeypatch.setenv("GDK_DEBUG", "")
+        monkeypatch.setattr(printing.os.path, "exists", lambda path: path == "/.flatpak-info")
+        assert printing.uses_print_portal()
+
+    def test_a_portal_print_operation_has_no_report_tab(self):
+        from breadsched.gui import printing
+
+        document = self._document(rows=2)
+        tab = printing.print_operation(document).get_property("custom-tab-label")
+        assert tab == "Report"
+        portal = printing.print_operation(document, custom_tab=False)
+        assert portal.get_property("custom-tab-label") is None
+
     def test_dialog_reports_fall_back_to_the_browser_when_printing_fails(self, monkeypatch):
         from breadsched.gui import printing
 

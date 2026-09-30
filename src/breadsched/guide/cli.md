@@ -355,7 +355,10 @@ After upgrading to an alpha with a newer schema, read-only commands such as
 `verify` and `accounts` refuse an older book instead of changing it; run
 `breadsched migrate` once (or open the book in the desktop application) to bring it
 to the current schema. It first writes a verified backup next to the book, named
-`<book>.pre-migration-v<old schema>.bak`, and `--json` reports it.
+`<book>.pre-migration-v<old schema>.bak` (in the Flatpak, for a book reached only
+through the file chooser, under
+`~/.var/app/org.breadsched.BreadSched/data/breadsched/beside-documents/`), and
+prints where; `--json` reports it as `backup`.
 
 ## Troubleshooting
 

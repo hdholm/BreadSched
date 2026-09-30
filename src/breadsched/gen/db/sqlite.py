@@ -36,14 +36,14 @@ from ..lib.scenario import Assumptions, Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction, UnbalancedError
 from ..utils.logs import get_logger
-from ..utils.user_paths import sync_service_for_path
+from ..utils.user_paths import companion_path, portal_document_id, sync_service_for_path
 from .base import DbBase, DbError, DbReadonlyError, DbTxn
 from .migrations import MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
 from .verification import BookIssue, BookVerification, verify_domain
 
 LOG = get_logger(__name__)
 
-__all__ = ["DbSQLite"]
+__all__ = ["DbSQLite", "is_portal_book", "migration_backup_path"]
 
 SCHEMA_VERSION = 10
 T = TypeVar("T", bound=PrimaryObject)
@@ -161,6 +161,20 @@ _TABLES: dict[str, tuple[type, str]] = {
 }
 
 
+def migration_backup_path(book: str | Path, version: int) -> Path:
+    """Where the verified backup made before migrating ``book`` from ``version`` goes.
+
+    Beside the book, or in BreadSched's data folder when the book was reached
+    through the document portal and nothing can be written beside it.
+    """
+    return companion_path(book, f".pre-migration-v{version}.bak")
+
+
+def is_portal_book(path: str | Path | None) -> bool:
+    """Whether ``path`` is a file the sandbox reaches only through the document portal."""
+    return bool(path) and path != ":memory:" and portal_document_id(str(path)) is not None
+
+
 def _snapshot_of(source: sqlite3.Connection) -> sqlite3.Connection:
     """An in-memory copy of ``source``'s one committed generation; closes ``source``.
 
@@ -195,6 +209,8 @@ class DbSQLite(DbBase):
         self._verification_load_issues: dict[tuple[str, str], BookIssue] = {}
         self._book_lock_path: Path | None = None
         self._book_lock_token: str | None = None
+        #: Where the verified backup made before the last migration was written.
+        self.migration_backup: str | None = None
 
     # ------------------------------------------------------------- life cycle
 
@@ -539,9 +555,11 @@ class DbSQLite(DbBase):
 
     def _backup_before_migration(self, version: int) -> str | None:
         """Preserve a verified snapshot before the first migration write."""
-        if self.path in {None, ":memory:"}:
+        if self.path is None or self.path == ":memory:":
             return None
-        return self.backup_to(f"{self.path}.pre-migration-v{version}.bak", overwrite=True)
+        target = migration_backup_path(self.path, version)
+        self.migration_backup = str(target)
+        return self.backup_to(str(target), overwrite=True)
 
     @classmethod
     def restore_backup(cls, source: str, destination: str, *, overwrite: bool = False) -> str:
@@ -591,7 +609,7 @@ class DbSQLite(DbBase):
                 old = cls()
                 old.load(str(target), mode="r")
                 try:
-                    old.backup_to(str(target) + ".pre-restore.bak", overwrite=True)
+                    old.backup_to(str(companion_path(target, ".pre-restore.bak")), overwrite=True)
                 finally:
                     old.close()
 

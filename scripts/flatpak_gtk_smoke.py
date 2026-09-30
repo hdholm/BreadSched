@@ -5,7 +5,8 @@ with the network unshared, and with the Windows installer's own Python
 (``packaging/windows/test-installer.ps1``). It proves the offline desktop path
 that command-line checks cannot: the GTK runtime starts, the installed themed icon resolves, a book
 under Documents opens and every view renders, the packaged User Guide loads, and
-settings persist in the sandbox's own configuration directory.
+settings persist in the sandbox's own configuration directory, and each printable
+report prints through GTK's print operation to a PDF.
 
 Usage: python3 flatpak_gtk_smoke.py BOOK REPORT
 """
@@ -44,6 +45,31 @@ def main(book: str, report_path: str) -> int:
         assert window.stack.get_visible_child_name() == key, key
         rendered.append(key)
 
+    # Print each report through GTK's own print operation, exported to PDF: the
+    # print path the dialog's "Print to File" takes inside the sandbox.
+    from pathlib import Path
+
+    from breadsched.gui import printing
+
+    printed = {}
+    for key, *_rest in CATEGORIES:
+        view = window._views.get(key)
+        if not getattr(view, "PRINTABLE", False):
+            continue
+        window.show_category(key)
+        settle()
+        document = view.printable_report()
+        target = Path(report_path).with_name(f"print-{key}.pdf")
+        operation = printing.print_operation(document)
+        operation.set_export_filename(str(target))
+        result = operation.run(Gtk.PrintOperationAction.EXPORT, window)
+        settle()
+        assert result == Gtk.PrintOperationResult.APPLY, (key, result)
+        data = target.read_bytes()
+        assert data.startswith(b"%PDF") and len(data) > 1000, key
+        printed[key] = len(data)
+    assert printed, "no printable views"
+
     guide = UserGuideWindow(app, window)
     guide.present()
     settle()
@@ -65,6 +91,7 @@ def main(book: str, report_path: str) -> int:
     settings_path = str(app.settings.path)
     report = {
         "views": rendered,
+        "printed": printed,
         "guide_characters": len(text),
         "guide_parts": list(guide.part_buttons),
         "icon": icon,

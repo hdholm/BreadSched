@@ -171,9 +171,71 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  flatpak-bundle:
+    name: Build and test the Flatpak bundle for release
+    needs: prepare
+    if: needs.prepare.outputs.selected == 'true'
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+      TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          ref: main
+
+      - name: Require the tested main checkout before running source code
+        shell: bash
+        run: |
+          [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+
+      - name: Install Flatpak builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      - name: Build the bundle
+        shell: bash
+        run: |
+          flatpak-builder --user --install-deps-from=flathub --force-clean \
+            --repo="$RUNNER_TEMP/flatpak-repo" "$RUNNER_TEMP/flatpak-build" \
+            org.breadsched.BreadSched.json
+          mkdir -p release-flatpak
+          # The bundle names Flathub as the source of its GNOME runtime, so
+          # installing it fetches the runtime once and updates it from there.
+          flatpak build-bundle \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo \
+            "$RUNNER_TEMP/flatpak-repo" "release-flatpak/BreadSched-${VERSION}.flatpak" \
+            org.breadsched.BreadSched
+
+      - name: Install the bundle and check the installed version
+        shell: bash
+        run: |
+          bundle="release-flatpak/BreadSched-${VERSION}.flatpak"
+          flatpak install --user --noninteractive --bundle "$bundle"
+          actual=$(flatpak run --user --command=breadsched org.breadsched.BreadSched --version)
+          case "$actual" in
+            "breadsched ${VERSION} (native schema "*) ;;
+            *) echo "installed bundle reports '$actual'"; exit 1 ;;
+          esac
+          cd release-flatpak
+          sha256sum "BreadSched-${VERSION}.flatpak" > "BreadSched-${VERSION}.flatpak.sha256"
+          sha256sum --check "BreadSched-${VERSION}.flatpak.sha256"
+
+      - name: Transfer only the tested bundle as data
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-flatpak
+          path: release-flatpak/
+          if-no-files-found: error
+          retention-days: 1
+
   publish:
     name: Tag and publish verified artifacts
-    needs: [prepare, windows-installer]
+    needs: [prepare, windows-installer, flatpak-bundle]
     if: needs.prepare.outputs.selected == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -202,6 +264,11 @@ jobs:
         with:
           name: release-installer
           path: release-inputs/installer
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-flatpak
+          path: release-inputs/flatpak
 
       - name: Validate transferred files without executing them
         shell: bash
@@ -237,13 +304,24 @@ jobs:
           assert all(p.is_file() and not p.is_symlink() for p in installer)
           line = Path("installer", f"{setup}.sha256").read_text(encoding="utf-8")
           assert re.fullmatch(r"[0-9a-f]{64}  " + re.escape(setup) + r"\n", line)
+
+          # The Flatpak bundle, built and installed from the same commit.
+          bundle = f"BreadSched-{version}.flatpak"
+          flatpak = list(Path("flatpak").iterdir())
+          assert {p.name for p in flatpak} == {bundle, f"{bundle}.sha256"}
+          assert all(p.is_file() and not p.is_symlink() for p in flatpak)
+          line = Path("flatpak", f"{bundle}.sha256").read_text(encoding="utf-8")
+          assert re.fullmatch(r"[0-9a-f]{64}  " + re.escape(bundle) + r"\n", line)
           PY
           cd dist
           sha256sum --check ../SHA256SUMS
           cd ../installer
           sha256sum --check "BreadSched-${VERSION}-setup.exe.sha256"
+          cd ../flatpak
+          sha256sum --check "BreadSched-${VERSION}.flatpak.sha256"
           # SHA256SUMS then covers every published file.
-          cat "BreadSched-${VERSION}-setup.exe.sha256" >> ../SHA256SUMS
+          cat "../installer/BreadSched-${VERSION}-setup.exe.sha256" \
+            "BreadSched-${VERSION}.flatpak.sha256" >> ../SHA256SUMS
 
       - name: Create or verify the accepted-main tag
         env:
@@ -285,7 +363,8 @@ jobs:
           gh release create "$TAG" \
             "dist/breadsched-${VERSION}-py3-none-any.whl" \
             "dist/breadsched-${VERSION}.tar.gz" \
-            "installer/BreadSched-${VERSION}-setup.exe" SHA256SUMS "${release_flags[@]}" \
+            "installer/BreadSched-${VERSION}-setup.exe" \
+            "flatpak/BreadSched-${VERSION}.flatpak" SHA256SUMS "${release_flags[@]}" \
             --repo "$GITHUB_REPOSITORY" --verify-tag \
             --title "BreadSched $TAG" \
             --notes-file "docs/releases/${TAG}.md"

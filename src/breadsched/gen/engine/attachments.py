@@ -23,6 +23,7 @@ from urllib.parse import unquote, urlparse
 
 from ..db.sqlite import DbSQLite
 from ..lib.transaction import Transaction
+from ..utils.user_paths import portal_document_id
 
 __all__ = [
     "AttachmentStatus",
@@ -78,7 +79,10 @@ def _default_folder(book: Path) -> Path:
 
 
 def attachment_folder(db: DbSQLite) -> Path | None:
-    """The folder relative locations resolve against, or ``None`` without a book file."""
+    """The folder relative locations resolve against.
+
+    ``None`` without a book file, or for a document-portal book with no folder chosen.
+    """
     path = db.path
     if not path or path == ":memory:":
         configured = db.get_metadata(FOLDER_KEY, None)
@@ -86,7 +90,9 @@ def attachment_folder(db: DbSQLite) -> Path | None:
     book = Path(path)
     configured = db.get_metadata(FOLDER_KEY, None)
     if not configured:
-        return _default_folder(book)
+        # A document-portal book is only the one file: no folder beside it can be
+        # created or read, so attachments need a folder the user chooses.
+        return None if portal_document_id(book) is not None else _default_folder(book)
     folder = Path(str(configured)).expanduser()
     return folder if folder.is_absolute() else book.parent / folder
 
