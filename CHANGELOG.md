@@ -5,6 +5,16 @@ belongs in `ROADMAP.md`.
 
 ## 0.2.0a208 - 2026-09-30
 
+- **One meaning for each reporting term (#235).** The Plan summary variance is now
+  actual through the as-of date less planned through the as-of date. Previously it
+  summed period variances, so a transaction dated later in the current period
+  appeared in the variance but not in the actual beside it. Planned amounts count
+  whole on their dates, never prorated. Period cells keep whole-period figures,
+  now labelled **Period actual** and **Period variance** in GTK, the browser,
+  Expense Explorer, and printed reports; their detail marks postings dated after the
+  as-of date. The browser, print layout, and `breadsched activity` (text and JSON)
+  add planned change through the as-of date, and the User Guide gains a Reporting
+  terms table with a worked example.
 - **Contributor policy: review every document, change only what the change
   affects (#239).** Each pull request records a disposition for every major
   document: updated, reviewed with no change needed, or not applicable, each with a

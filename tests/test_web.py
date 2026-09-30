@@ -1918,6 +1918,7 @@ class TestPlanApi:
         assert Money(by_name["Expenses:Rent"]["actual"][0]) == Money("1800.00")
         assert set(payload["summary"]) == {
             "planned_cash",
+            "planned_cash_through_as_of",
             "actual_cash",
             "variance",
             "opening_cash",
@@ -1932,6 +1933,47 @@ class TestPlanApi:
             payload["column_totals"]["cash_bridge"]["planned"]
             == payload["column_totals"]["net_cash"]["planned"]
         )
+
+    def test_a_posting_after_today_changes_period_actual_but_not_the_summary(self, client):
+        # #235: the summary variance stops actual and plan at the as-of date (today).
+        db = client.database
+        accounts = {account.name: account for account in db.iter_accounts()}
+        today = date.today()
+        later = today + timedelta(days=1)
+        month = f"{today:%Y-%m}"
+        through = f"{later:%Y-%m}"
+        query = f"/api/plan?from={month}&through={through}"
+        _status, before = client.get(query)
+
+        with db.transaction("future-dated spending") as txn:
+            db.add_transaction(
+                Transaction.simple(
+                    later,
+                    "Entered ahead",
+                    accounts["Rent"].handle,
+                    accounts["Checking"].handle,
+                    "100.00",
+                ),
+                txn,
+            )
+        status, after = client.get(query)
+
+        assert status == 200
+        summary = after["summary"]
+        for key in ("planned_cash_through_as_of", "actual_cash", "variance"):
+            assert summary[key] == before["summary"][key]
+        assert Money(summary["variance"]) == Money(summary["actual_cash"]) - Money(
+            summary["planned_cash_through_as_of"]
+        )
+        index = max(
+            i for i, row in enumerate(after["periods"]) if row["start"] <= later.isoformat()
+        )
+
+        def rent_actual(payload) -> Money:
+            rows = [row for row in payload["categories"] if row["full_name"] == "Expenses:Rent"]
+            return Money(rows[0]["actual"][index]) if rows else Money(0)
+
+        assert rent_actual(after) == rent_actual(before) + Money("100.00")
 
     def test_grouping_changes_display_buckets(self, client):
         _status, payload = client.get("/api/plan?from=2026-01&through=2026-12&period=quarter")

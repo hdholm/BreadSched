@@ -232,6 +232,9 @@ class PeriodActivity:
     planned_events: list[PlannedEvent] = field(default_factory=list)
     actual_transactions: list[ActualActivity] = field(default_factory=list)
     unconverted: list[UnconvertedActivity] = field(default_factory=list)
+    #: Planned cash change of the expectations dated on or before the report's
+    #: as-of date (whole dated events; nothing is prorated).
+    planned_cash_through_as_of: Money = field(default_factory=lambda: Money(0))
 
     @property
     def amount_variance(self) -> Money:
@@ -335,6 +338,40 @@ class ActivityReport:
         return self.actual_cash_change - self.planned_cash_change
 
     @property
+    def through_as_of_applies(self) -> bool:
+        """Through-as-of figures exist once the horizon has started by ``as_of``."""
+        return self.as_of is not None and self.start <= self.as_of
+
+    @property
+    def planned_cash_through_as_of(self) -> Money | None:
+        """Planned cash of expectations dated through ``as_of`` (no proration)."""
+        if not self.through_as_of_applies:
+            return None
+        return _sum_money(period.planned_cash_through_as_of for period in self.periods)
+
+    @property
+    def actual_cash_through_as_of(self) -> Money | None:
+        """Actual cash posted through ``as_of``; later postings are left out."""
+        if not self.through_as_of_applies:
+            return None
+        assert self.as_of is not None
+        return _sum_money(
+            item.cash_change
+            for period in self.periods
+            for item in period.actual_transactions
+            if item.post_date <= self.as_of
+        )
+
+    @property
+    def cash_variance_through_as_of(self) -> Money | None:
+        """Actual through ``as_of`` less planned through ``as_of`` (#235)."""
+        actual = self.actual_cash_through_as_of
+        planned = self.planned_cash_through_as_of
+        if actual is None or planned is None:
+            return None
+        return actual - planned
+
+    @property
     def unresolved_count(self) -> int:
         return sum(len(period.unresolved) for period in self.periods)
 
@@ -357,6 +394,9 @@ class ActivityReport:
             "planned_cash_change": self.planned_cash_change,
             "actual_cash_change": self.actual_cash_change,
             "cash_variance": self.cash_variance,
+            "planned_cash_through_as_of": self.planned_cash_through_as_of,
+            "actual_cash_through_as_of": self.actual_cash_through_as_of,
+            "cash_variance_through_as_of": self.cash_variance_through_as_of,
             "unresolved_count": self.unresolved_count,
             "unresolved_actual_count": self.unresolved_actual_count,
             "unexpected_count": self.unexpected_count,
@@ -591,28 +631,35 @@ class CategoryReport:
 
     @property
     def cash_variance(self) -> Money:
-        """Actual minus planned cash only through the current reporting period."""
+        """Period variance summed over periods that have started by ``as_of``.
+
+        Each period compares everything posted in it, future-dated postings
+        included, with its whole plan. For how the household is doing *so far*,
+        use :attr:`cash_variance_through_as_of`.
+        """
         return _sum_money(
             period.cash_variance for period in self.activity.periods if period.start <= self.as_of
         )
 
     @property
+    def planned_cash_through_as_of(self) -> Money | None:
+        """Planned cash of expectations dated through ``as_of``; future-only is N/A."""
+        return self.activity.planned_cash_through_as_of
+
+    @property
     def actual_cash_through_as_of(self) -> Money | None:
         """Actual cash inside the horizon through ``as_of``; future-only is N/A."""
-        if self.activity.start > self.as_of:
-            return None
-        return _sum_money(
-            item.cash_change
-            for period in self.activity.periods
-            for item in period.actual_transactions
-            if item.post_date <= self.as_of
-        )
+        return self.activity.actual_cash_through_as_of
 
     @property
     def cash_variance_through_as_of(self) -> Money | None:
-        if self.activity.start > self.as_of:
-            return None
-        return self.cash_variance
+        """Actual through ``as_of`` less planned through ``as_of`` (#235).
+
+        Both operands stop at the same date: postings dated later, even inside
+        the current period, and expectations dated later are left out, and no
+        planned amount is prorated.
+        """
+        return self.activity.cash_variance_through_as_of
 
     @property
     def income(self) -> tuple[CategoryActivity, ...]:
@@ -834,7 +881,7 @@ def explain_category_period(
                     variance=value - matched_expected if matched_expected is not None else None,
                     date_variance_days=actual.date_variance_days,
                     explanation=_unique_explanations(
-                        _actual_resolution_explanation(actual),
+                        _actual_resolution_explanation(actual, as_of or date.today()),
                         _category_explanations(
                             splits,
                             included,
@@ -991,7 +1038,7 @@ def explain_planning_flow_period(
                     variance=value - matched_expected if matched_expected is not None else None,
                     date_variance_days=actual.date_variance_days,
                     explanation=_unique_explanations(
-                        _actual_resolution_explanation(actual),
+                        _actual_resolution_explanation(actual, as_of or date.today()),
                         flow_explanations(splits),
                         escrow_recognition(
                             ((split.account, split.amount) for split in splits),
@@ -1103,7 +1150,7 @@ def explain_mortgage_payment_period(
                     variance=(value - matched_expected if matched_expected is not None else None),
                     date_variance_days=actual.date_variance_days,
                     explanation=_unique_explanations(
-                        _actual_resolution_explanation(actual),
+                        _actual_resolution_explanation(actual, as_of or date.today()),
                         _mortgage_payment_explanations(splits, accounts),
                     ),
                 )
@@ -1259,7 +1306,21 @@ def _planned_resolution_explanation(event: PlannedEvent) -> tuple[str, ...]:
     return (f"Resolution: linked to an actual transaction posted {posted}.",)
 
 
-def _actual_resolution_explanation(actual: ActualActivity) -> tuple[str, ...]:
+def _actual_resolution_explanation(actual: ActualActivity, as_of: date) -> tuple[str, ...]:
+    return _resolution_explanation(actual) + _future_dated_explanation(actual, as_of)
+
+
+def _future_dated_explanation(actual: ActualActivity, as_of: date) -> tuple[str, ...]:
+    """Say when a posting counts in the period actual but not through as-of (#235)."""
+    if actual.post_date <= as_of:
+        return ()
+    return (
+        f"Dated after the as-of date ({as_of.isoformat()}): counted in the period "
+        "actual and period variance, but not in actual through as-of or Remaining.",
+    )
+
+
+def _resolution_explanation(actual: ActualActivity) -> tuple[str, ...]:
     if actual.planning_resolution is PlanningResolution.UNRESOLVED:
         return (
             "Resolution: this actual has not been matched to a planned occurrence. Use "
@@ -1748,6 +1809,8 @@ def build_activity_report(
         bucket.planned_events.append(event)
         bucket.planned_amount = bucket.planned_amount + event.expected_amount
         bucket.planned_cash_change = bucket.planned_cash_change + cash
+        if event.planned_date <= effective_as_of:
+            bucket.planned_cash_through_as_of = bucket.planned_cash_through_as_of + cash
         bucket.planned_income = bucket.planned_income + income
         bucket.planned_expense = bucket.planned_expense + expense
 

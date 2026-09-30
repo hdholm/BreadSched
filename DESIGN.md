@@ -566,9 +566,27 @@ retirement-distribution purpose on both the investment source and cash destinati
 the cash leg is only the counterpart and must not appear as a second logical flow.
 The non-cash source remains the inspectable planning-purpose row, while the bridge
 shows the distribution once as a positive cash contribution. Planned totals cover
-the selected horizon; variance and actual summary totals include only the applicable
-horizon through the report's as-of date. A wholly future horizon reports those two
-summary values as not applicable, not zero.
+the selected horizon.
+
+Reporting terms have one definition, computed once in `engine/activity` and only
+labelled by GTK, web, CLI, and export (#235). Period cells are whole-period figures:
+**period actual** includes every posting dated in the period, even after the as-of
+date, and **period variance** compares it with the whole period's plan for periods
+that have started. The summary instead stops both operands at the same date:
+`planned_cash_through_as_of` sums the cash change of expectations dated on or before
+the as-of date, `actual_cash_through_as_of` sums postings on or before it, and
+`cash_variance_through_as_of` is their difference. Before #235 the summary variance
+was the sum of period variances, so a future-dated posting in the current period
+appeared in it but not in the actual beside it. Expectations count whole on their
+dates rather than being prorated across a period: proration would invent daily
+spending for bills that fall on one date, and it would differ between month, quarter,
+and year grouping, whereas dated expectations give the same through-as-of figures
+under every grouping. The accepted consequence is that a bill paid before its planned
+date reads as spending ahead of plan until that date. Period actual keeps
+future-dated postings so that a period's column still reconciles to its register,
+and a posting's detail says when it is counted in period figures but not through
+as-of. A wholly future horizon reports the through-as-of values as not applicable,
+not zero.
 
 Classification decisions are report data, not presentation guesses. Plan detail
 names the account type and accounting class that caused an Income/Expense split to

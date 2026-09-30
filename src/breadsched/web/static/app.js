@@ -2455,7 +2455,7 @@ async function expenseExplorerPanel(currentPlan) {
   }, item.full_name)));
   const sortSelect = el("select", { onchange: (event) => {
     state.expenseSort = event.target.value; render();
-  } }, [["actual", "Actual"], ["planned", "Plan"], ["variance", "Variance"],
+  } }, [["actual", "Period actual"], ["planned", "Plan"], ["variance", "Period variance"],
     ["name", "Category"]].map(([value, label]) => el("option", {
     value, selected: value === state.expenseSort ? "selected" : null,
   }, label)));
@@ -2477,8 +2477,8 @@ async function expenseExplorerPanel(currentPlan) {
     : Number(b.periods[index][state.expenseSort] || 0)
       - Number(a.periods[index][state.expenseSort] || 0));
   panel.append(expenseBars(ordered, index),
-    table(["Category", {label:"Plan",num:true}, {label:"Actual",num:true},
-      {label:"Variance",num:true}, {label:"Carry in",num:true},
+    table(["Category", {label:"Plan",num:true}, {label:"Period actual",num:true},
+      {label:"Period variance",num:true}, {label:"Carry in",num:true},
       {label:"Remaining",num:true}], ordered.map((item) => el("tr", {},
       el("td", {}, item.full_name),
       ...["planned", "actual", "variance"].map((key) => el("td", {class:"num"},
@@ -2488,8 +2488,8 @@ async function expenseExplorerPanel(currentPlan) {
       el("td", {class:"num"}, item.periods[index].remaining == null
         ? item.periods[index].remaining_reason || "—" : String(item.periods[index].remaining))))));
   panel.append(el("h3", {}, `${selected.full_name} trend`), expenseTrend(selected),
-    table(["Period", {label:"Plan",num:true}, {label:"Actual",num:true},
-      {label:"Variance",num:true}, {label:"Carry in",num:true},
+    table(["Period", {label:"Plan",num:true}, {label:"Period actual",num:true},
+      {label:"Period variance",num:true}, {label:"Carry in",num:true},
       {label:"Remaining",num:true}], selected.periods.map((item) => el("tr", {},
       el("td", {}, item.label), ...["planned", "actual", "variance"].map((key) =>
         el("td", {class:"num"}, item[key] == null ? "—" : String(item[key]))),
@@ -2563,7 +2563,7 @@ async function showPlan() {
     [["month", "Month"], ["quarter", "Quarter"], ["year", "Year"]].map(([value, label]) =>
       el("option", { value, selected: value === currentPlan.period ? "selected" : null }, label)));
   const measure = el("select", { name: "measure" },
-    [["planned", "Plan"], ["actual", "Actual"], ["variance", "Variance"]].map(([value, label]) =>
+    [["planned", "Plan"], ["actual", "Period actual"], ["variance", "Period variance"]].map(([value, label]) =>
       el("option", { value, selected: value === currentPlan.measure ? "selected" : null }, label)));
 
   const controls = el("form", { class: "toolbar", onsubmit: async (event) => {
@@ -2613,6 +2613,7 @@ async function showPlan() {
      [`Lowest spendable cash (${summary.minimum_cash_date})`, summary.minimum_cash, null, false],
      ["Projected change in spendable cash", summary.planned_cash,
        summaryDelta?.planned_cash_delta, true],
+     ["Planned change through as-of date", summary.planned_cash_through_as_of, null, true],
      ["Actual change through as-of date", summary.actual_cash,
        summaryDelta?.actual_cash_delta, true],
      ["Variance through as-of date", summary.variance,
@@ -2826,7 +2827,8 @@ async function showPlan() {
       + "The signed spendable-cash bridge counts each cash dollar once. Income and "
       + "expense details remain positive budget magnitudes; Income less expenses exposes "
       + "their signed operating result. Balance-sheet classifications are informational "
-      + "and have no mixed grand total. Variance totals include only applicable periods."),
+      + "and have no mixed grand total. Period variance totals include only periods that "
+      + "have started; the through-as-of cards stop both plan and actual at the as-of date."),
     inheritedAssumptions ? el("p", { class: "note plan-method-note" },
       `${inheritedAssumptions} annual assumption(s) inherited through the parent chain.`) : null,
     comparedInheritedAssumptions ? el("p", { class: "note plan-method-note" },

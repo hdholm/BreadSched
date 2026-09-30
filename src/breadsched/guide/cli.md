@@ -42,9 +42,11 @@ Start the other interfaces on the same book with `breadsched gui household.bread
 
 `breadsched dashboard --json` lists every missed date and amount of a schedule
 shown once on the Dashboard (`missed_bills` and `missed_income`). `breadsched
-activity` prints the foreign-currency note after the Plan activity; `--as-of DATE`
-chooses which exchange rates apply, and its JSON adds `conversions` and
-`unconverted`. Account output identifies whether a foreign balance used a direct or
+activity` ends with planned cash, actual cash, and variance through the as-of date
+(see [Reporting terms](../USER_GUIDE.md#reporting-terms)), then the foreign-currency
+note; `--as-of DATE` sets that date and chooses which exchange rates apply. Its JSON
+adds `planned_cash_through_as_of`, `actual_cash_through_as_of`,
+`cash_variance_through_as_of`, `conversions`, and `unconverted`. Account output identifies whether a foreign balance used a direct or
 an inverse rate.
 
 ### Synthetic sample book

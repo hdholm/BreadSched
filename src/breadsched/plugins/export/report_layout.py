@@ -470,6 +470,11 @@ def plan_layout(
                 activity.planned_cash_change < 0,
             ),
             Card(
+                f"Planned change through {report.as_of.isoformat()}",
+                signed_money_text(report.planned_cash_through_as_of),
+                (report.planned_cash_through_as_of or Money(0)) < 0,
+            ),
+            Card(
                 f"Actual change through {report.as_of.isoformat()}",
                 signed_money_text(report.actual_cash_through_as_of),
                 (report.actual_cash_through_as_of or Money(0)) < 0,
@@ -890,7 +895,7 @@ def expense_explorer_layout(
         )
 
     index = next(i for i, item in enumerate(category.periods) if item.start == selected.start)
-    value_columns = ("#Plan", "#Actual", "#Variance", "#Carry in", "#Remaining")
+    value_columns = ("#Plan", "#Period actual", "#Period variance", "#Carry in", "#Remaining")
     as_of = explorer.plan.report.as_of.isoformat()
     blocks: list[Block] = [
         *_over_time(
@@ -907,8 +912,9 @@ def expense_explorer_layout(
         ),
         Heading("Category comparison"),
         Paragraph(
-            "Remaining uses actual through the as-of date; Actual and Variance show "
-            "full-period values. Carry in is shown only when rollover is enabled."
+            "Remaining uses actual through the as-of date; Period actual and Period "
+            "variance count everything dated in the period, even after that date. "
+            "Carry in is shown only when rollover is enabled."
         ),
         Table(
             _columns("Category", *value_columns),
