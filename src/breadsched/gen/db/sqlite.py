@@ -161,6 +161,26 @@ _TABLES: dict[str, tuple[type, str]] = {
 }
 
 
+def _snapshot_of(source: sqlite3.Connection) -> sqlite3.Connection:
+    """An in-memory copy of ``source``'s one committed generation; closes ``source``.
+
+    SQLite's backup copies every page under one shared lock (restarting if the
+    writer commits meanwhile), so the copy never mixes generations. The copy is
+    detached from the file: later commits are invisible to it and it never holds
+    up the writer, at the cost of the book's size in memory.
+    """
+    snapshot = sqlite3.connect(":memory:", check_same_thread=False)
+    try:
+        source.backup(snapshot)
+        snapshot.execute("PRAGMA query_only=ON")
+    except Exception:
+        snapshot.close()
+        raise
+    finally:
+        source.close()
+    return snapshot
+
+
 class DbSQLite(DbBase):
     """Single-file SQLite store."""
 
@@ -285,6 +305,15 @@ class DbSQLite(DbBase):
             pass
 
     def load(self, path: str, mode: str = "w") -> None:
+        """Open ``path`` writable (``"w"``) or as a read-only snapshot (``"r"``).
+
+        A read-only open copies the whole book into memory in one SQLite backup,
+        so everything read through it — accounts, transactions, schedules,
+        prices, metadata — belongs to the single committed generation that
+        existed when it opened. A write committed afterwards is not seen until
+        the next open, and the writer is never held up by a long reader: the
+        copy takes a shared lock only while it runs (#234).
+        """
         self._load(path, mode, tolerate_malformed=False)
 
     def load_for_verification(self, path: str) -> None:
@@ -295,9 +324,11 @@ class DbSQLite(DbBase):
         to diagnose damaged books, so it must be able to get past one bad object and
         report the rest of the damage without modifying anything.
         """
-        self._load(path, "r", tolerate_malformed=True)
+        self._load(path, "r", tolerate_malformed=True, snapshot=False)
 
-    def _load(self, path: str, mode: str, *, tolerate_malformed: bool) -> None:
+    def _load(
+        self, path: str, mode: str, *, tolerate_malformed: bool, snapshot: bool = True
+    ) -> None:
         if mode not in {"r", "w"}:
             raise ValueError("mode must be 'r' or 'w'")
 
@@ -329,7 +360,12 @@ class DbSQLite(DbBase):
         try:
             if self.readonly and path != ":memory:":
                 uri = Path(path).resolve().as_uri() + "?mode=ro"
-                self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+                source = sqlite3.connect(uri, uri=True, check_same_thread=False)
+                if snapshot:
+                    self._conn = _snapshot_of(source)
+                else:
+                    # Verification diagnoses the file itself, damage included.
+                    self._conn = source
             else:
                 self._conn = sqlite3.connect(path, check_same_thread=False)
         except Exception:

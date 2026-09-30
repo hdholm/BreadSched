@@ -184,11 +184,10 @@ fixed filename and verifies it remains beneath the static root before checking o
 reading it; arbitrary request paths cannot select a filesystem file.
 
 The server owns exactly one writable database connection and serializes every write
-through it. Each file-backed GET opens a short-lived SQLite read-only connection,
-giving projection and other read work an isolated snapshot without holding the global
-request lock; closing that connection neither acquires nor releases the writer's book
-lock. In-memory books cannot be reopened, so their GET requests deliberately fall back
-to the serialized writer connection.
+through it. Each file-backed GET opens its own read-only snapshot (see **Read
+snapshots** below) without holding the global request lock; closing it neither
+acquires nor releases the writer's book lock. In-memory books cannot be reopened, so
+their GET requests deliberately fall back to the serialized writer connection.
 
 ## Persistence verification
 
@@ -2428,13 +2427,37 @@ delivers one coalesced database/undo-state notification on the GTK main loop. A
 worker must never invoke a callback that can rebuild a GTK model.
 
 Native books deliberately use SQLite `DELETE` journaling with `synchronous=FULL`,
-not WAL. BreadSched has one explicit writer, while short-lived read-only projection
-connections may coexist between commits. Keeping rollback journaling preserves the
+not WAL. BreadSched has one explicit writer, while read-only snapshots may be taken
+between its commits. Keeping rollback journaling preserves the
 single-file book model, avoids persistent `-wal`/`-shm` companions that are easy to
 separate during manual copying or cloud synchronization, and gives interrupted
 writes SQLite's established rollback recovery path. Any future WAL change requires
 tested checkpoint, backup, sidecar, and crash-recovery semantics rather than being a
 performance toggle.
+
+**Read snapshots (#234).** One calculation must read one committed generation of the
+book: accounts, transactions and splits, schedules, scenarios, prices, and metadata.
+A read-only open (`DbSQLite.load(path, "r")`, used by every web GET and the GTK
+projection worker) therefore copies the whole file into an in-memory database with
+SQLite's backup API and closes the file connection. The backup copies all pages
+under one shared lock and restarts if the writer commits during it, so the copy is
+one generation; the account cache is loaded from the copy, and the copy is
+`query_only`. A write committed later is invisible to that reader and visible to the
+next open. Two alternatives were rejected. A plain read-only connection (the earlier
+behavior) saw each query's own generation, so one request could combine an old
+account cache with new rows, or a balance read before and after a write. A read
+transaction held for the whole calculation would be one generation too, but under
+`DELETE` journaling it keeps a shared lock that stops the writer committing for as
+long as the read runs, and the writer's busy timeout would then fail saves during a
+long projection; a detached copy holds the lock only while copying. The cost is the
+book's size in memory per open reader and a copy on each open, measured at about the
+same time as the integrity check every open already runs (0.23 s either way on a
+60 MB book of 30,000 transactions). The full integrity check stays on every open,
+snapshot copies included, as a deliberate choice for data safety even though on a
+large book it costs more than the copy (232 ms against 76 ms for the copy alone on
+that book); revisit only if open time becomes a real problem. `load_for_verification`
+still reads the file itself, so damage is diagnosed where it is. Tests: `tests/test_db.py`
+`TestReadSnapshots` and the web `test_one_get_reads_one_generation_even_when_a_write_lands_midway`.
 
 Backup and restore use SQLite's backup API rather than filesystem copying. Restore
 verifies the source logically and physically, holds the same canonical destination

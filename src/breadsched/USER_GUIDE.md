@@ -1136,7 +1136,10 @@ See [desktop](guide/desktop.md#protect-and-recover-a-book) and
 
 A writable book has a sidecar lock. A second process may open it read-only but
 cannot become a competing writer. A stale same-host lock is reclaimed when its
-recorded process no longer exists.
+recorded process no longer exists. A read-only open, each browser page, and each
+desktop projection works from a copy of the book taken when it starts, so what it
+shows belongs to one saved state even if another window saves meanwhile; the next
+read shows the save.
 
 Do not keep the only copy of a book in a synchronization location that is unsafe for
 SQLite. BreadSched warns about recognized OneDrive, iCloud Drive, Dropbox, and Google

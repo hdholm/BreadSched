@@ -2306,6 +2306,58 @@ class TestThreadSafety:
         )
         assert refreshed_expense["emergency_fund_included"] is False
 
+    def test_one_get_reads_one_generation_even_when_a_write_lands_midway(self, client, monkeypatch):
+        """#234: accounts and ledger rows read in one request come from one commit."""
+        from breadsched.gen.engine import ledger
+
+        _status, accounts = client.get("/api/accounts")
+        checking = next(row for row in accounts if row["name"] == "Checking")
+        halfway = threading.Event()
+        written = threading.Event()
+        seen: list[tuple] = []
+
+        def calculation(api, query):
+            query.finish()
+            name = api.db.get_account(checking["handle"]).name
+            balance = ledger.balance(api.db, checking["handle"])
+            halfway.set()
+            assert written.wait(timeout=REQUEST_TIMEOUT)
+            # Read again after the write committed: still the same generation.
+            seen.append(
+                (
+                    name,
+                    balance,
+                    api.db.get_account(checking["handle"]).name,
+                    ledger.balance(api.db, checking["handle"]),
+                )
+            )
+            return {}
+
+        monkeypatch.setitem(GET_ROUTES, "/api/summary", calculation)
+        reader = threading.Thread(target=lambda: client.get("/api/summary"))
+        reader.start()
+        assert halfway.wait(timeout=REQUEST_TIMEOUT)
+        status, _saved = client.post(
+            "/api/transaction",
+            {
+                "date": "2026-09-02",
+                "description": "Midway",
+                "from": "Assets:Checking",
+                "to": "Expenses:Rent",
+                "amount": "25.00",
+            },
+        )
+        assert status == 200
+        written.set()
+        reader.join(timeout=REQUEST_TIMEOUT)
+        name, balance, name_again, balance_again = seen[0]
+        assert (name_again, balance_again) == (name, balance)
+        monkeypatch.undo()
+        # A later request sees the committed write.
+        _status, refreshed = client.get("/api/accounts")
+        after = next(row for row in refreshed if row["handle"] == checking["handle"])
+        assert Decimal(str(after["own_balance"])) == Decimal(str(balance.to_decimal())) - 25
+
     def test_read_snapshots_close_without_disturbing_the_writer_lock(self, book_path, monkeypatch):
         db = DbSQLite()
         db.load(str(book_path))

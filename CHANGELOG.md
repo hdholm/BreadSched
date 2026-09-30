@@ -3,6 +3,16 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a207 - 2026-09-30
+
+- **Every read sees one saved state (#234).** A browser page, a report, or a desktop
+  projection that ran while another window saved could combine data from before and
+  after the save, such as an account's old name with its new balance. Each read now
+  works from a copy of the book taken at one moment, so its results always belong to
+  a single saved state; the next read sees the save. The book stays a single file,
+  and a long read never holds up saving. Application version `0.2.0a207`; native
+  schema remains 10.
+
 ## 0.2.0a206 - 2026-09-30
 
 - **FSA carryover and grace periods.** A funding year can record the plan's rules
