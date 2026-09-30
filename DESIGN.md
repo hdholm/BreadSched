@@ -1824,6 +1824,28 @@ claim in the same database transaction, and `verify_book` reports
 receivable side the same allocations, and `presentation.shared_cost_text` words
 them for GTK, the web (as `text`), and the CLI.
 
+**Claim reports and attention.** `engine.fsa_claim_report.claim_report` summarises
+every claim with `claim_summary` and groups the results by status (in
+`FsaClaimStatus` order), FSA account, funding year, or provider (ignoring case and
+surrounding space; the label is the spelling most claims use). A claim in several
+funding years is grouped by its first allocation, and totals are claim-level, never
+split. Filters match any allocation's account or funding-year start, the provider,
+or the status. Each `ClaimLine` carries the reasons it needs attention, with stable
+codes: `review` (the claim is *Needs review*, worded from its figures), `eob` (no
+EOB 30 days after the service, `EOB_WAIT_DAYS`), `deadline` (money still to
+reimburse and a funding year's run-out date, or plan-year end, within 30 days,
+`DEADLINE_WARNING_DAYS`), and `rejected` (a rejected reimbursement with money
+still to reimburse). The report never writes. `dashboard.build` keeps the claims
+needing attention as `Dashboard.claim_alerts` and counts them in
+`summary()["fsa_claims_attention"]`; a claim naming a removed account becomes a
+coverage note rather than an error. GTK shows a Dashboard card and, on the FSA
+Dashboard, a banner, a **Needs attention** column, and a **Claims report** with a
+**Group by** choice; the web's `/api/fsa/dashboard?by=` (`web/fsa_resource.py`,
+extracted from `Api`) returns the same claims, groups, and totals, and its page
+and the Dashboard tile match; `breadsched claims` prints the groups and reasons;
+the printed Dashboard adds the card (with **Reimbursements due**, which it had
+lacked) and a table of the claims needing attention.
+
 GTK: **Actions → Reimbursable Expenses…** opens `ReceivablesDialog`
 (`gui/dialogs/receivables_dialog.py`), which only gathers input and calls the
 service.

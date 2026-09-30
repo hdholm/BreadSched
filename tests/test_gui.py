@@ -3778,6 +3778,56 @@ class TestDashboardView:
         assert window.stack.get_visible_child_name() == "fsa-dashboard"
         assert window._views["fsa-dashboard"].fsa_grid is not None
 
+    def test_fsa_claims_needing_attention_are_flagged_and_reported(
+        self, app, window, populated_book
+    ):
+        from breadsched.gen.engine import fsa_claims
+        from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaFundingYear
+
+        app.open_book(populated_book)
+        db = app.db
+        today = date.today()
+        start = today.replace(month=1, day=1)
+        assets = next(a for a in db.iter_accounts() if a.name == "Assets")
+        account = Account(name="Health FSA", atype=AccountType.FSA, parent=assets.handle)
+        account.fsa_years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("1000"), None)
+        ]
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+        for provider in ("Clinic", "Dentist"):
+            fsa_claims.save_claim(
+                db,
+                FsaClaim(
+                    service_date=today - timedelta(days=45),
+                    provider=provider,
+                    allocations=[FsaClaimAllocation(account.handle, start)],
+                ),
+            )
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        view.refresh()
+        assert view.attention_label.get_label() == "2 claims need attention."
+        note = view.claim_grid.get_child_at(7, 1)
+        assert note.get_label().startswith("No EOB entered 45 days")
+        # The report groups by status first, then by the chosen grouping.
+        assert view.report_grid.get_child_at(0, 1).get_label() == "Waiting for EOB"
+        view.report_by.set_selected(3)
+        labels = [view.report_grid.get_child_at(0, row).get_label() for row in (1, 2, 3)]
+        assert labels == ["Clinic", "Dentist", "All claims"]
+        window.show_category("dashboard")
+        dashboard_view = window._views["dashboard"]
+        dashboard_view.refresh()
+        texts = []
+        child = dashboard_view.cards.get_first_child()
+        while child is not None:
+            card = child.get_child()
+            texts.append(card.get_first_child().get_label())
+            child = child.get_next_sibling()
+        assert "FSA claims needing attention" in texts
+        document = dashboard_view.printable_report()
+        assert "No EOB entered 45 days" in document.text()
+
     def test_bills_and_income_have_separate_lists(self, view):
         bills = view.bills_view.get_model()
         income = view.income_view.get_model()

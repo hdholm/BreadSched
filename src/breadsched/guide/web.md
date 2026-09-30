@@ -149,6 +149,11 @@ receivable, checked; choose **Accept selected** to link them. A warning appears 
 a linked expense is also on an FSA claim, and the open receivable shows what is
 owed and the account holding it.
 
+**FSA Dashboard** lists open claims with a **Needs attention** column, under a line
+counting the claims that need it; the Dashboard shows the count as a tile.
+**Claims report** totals every claim, grouped by the **Group by** choice: status,
+FSA account, funding year, or provider.
+
 When the FSA pays what the insurer does not, open the FSA claim editor, choose the
 receivable under **Payer covers part**, and save the claim. The claim list and the
 receivable then show what the payer, the FSA, and you each pay, and **Needs

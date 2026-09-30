@@ -259,6 +259,17 @@ browser), a line under the table shows what the payer, the FSA, and you each pay
 and `--json` lists it under `shared_costs`. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
+## FSA claims
+
+`breadsched claims BOOK` totals FSA claims by status, then lists each claim that
+needs attention and why (no EOB after 30 days, a claim deadline within 30 days, a
+rejected reimbursement, or figures that need review). `--by account`, `--by year`,
+or `--by provider` groups them another way; `--account`, `--year` (a funding
+year's start date), `--provider`, and `--status` narrow the list; `--attention`
+keeps only claims needing attention; `--as-of` reports on another day; `--json`
+gives each claim with its `attention` codes and text. `breadsched dashboard` shows
+how many claims need attention.
+
 ## Savings goals
 
 ```sh

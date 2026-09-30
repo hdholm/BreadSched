@@ -16,6 +16,7 @@ from .attachment_resource import (
 from .autocomplete_resource import entry_suggestion
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
+from .fsa_resource import fsa_dashboard
 from .gnucash_writeback_resource import (
     gnucash_writeback,
     gnucash_writeback_apply,
@@ -229,7 +230,7 @@ def _optional_text(method: str, field: str) -> GetRoute:
 
 GET_ROUTES: dict[str, GetRoute] = {
     "/api/dashboard": _dashboard,
-    "/api/fsa/dashboard": _no_query("fsa_dashboard"),
+    "/api/fsa/dashboard": fsa_dashboard,
     "/api/summary": _no_query("summary"),
     "/api/accounts": _no_query("accounts"),
     "/api/loan/options": _no_query("loan_options"),

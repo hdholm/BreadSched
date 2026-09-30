@@ -3,6 +3,22 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a204 - 2026-09-30
+
+- **FSA claims needing attention.** A claim now says when something is left to
+  do: its figures need review, no EOB has been entered 30 days after the service,
+  money is still to be reimbursed and a funding year's claim deadline is within
+  30 days, or a reimbursement was rejected. The Dashboard counts these claims
+  (desktop card, browser tile, `breadsched dashboard`, and the printout, which
+  also lists them and now shows **Reimbursements due**), and the FSA Dashboard
+  gives each one's reasons in a **Needs attention** column.
+- **FSA claims report.** The FSA Dashboard (desktop and browser) totals every
+  claim by status, FSA account, funding year, or provider: paid, reimbursed,
+  rejected, and still to come. The new `breadsched claims` command prints the same
+  report, filters it by account, funding year, provider, status, or attention,
+  and lists why each claim needs attention. Application version `0.2.0a204`;
+  native schema remains 10.
+
 ## 0.2.0a203 - 2026-09-30
 
 - **Fixed a desktop crash from the Actions menu (#229).** Opening **Actions →
