@@ -86,6 +86,106 @@ class TestWriterLock:
         assert not lock_path.exists()
 
 
+class TestReadSnapshots:
+    """A read-only open sees one committed generation for its whole life (#234)."""
+
+    def _book(self, tmp_path):
+        path = str(tmp_path / "snapshot.breadsched")
+        writer = DbSQLite()
+        writer.load(path)
+        with writer.transaction("Chart") as txn:
+            checking = Account(name="Before", atype=AccountType.BANK)
+            expense = Account(name="Groceries", atype=AccountType.EXPENSE)
+            writer.add_account(checking, txn)
+            writer.add_account(expense, txn)
+            writer.add_transaction(
+                Transaction.simple(date(2026, 9, 1), "Shop", expense.handle, checking.handle, "10"),
+                txn,
+            )
+        return path, writer, checking, expense
+
+    def _view(self, reader, checking):
+        """Everything a calculation might read, through cached and SQL-backed paths."""
+        rows = reader._conn.execute("SELECT name FROM account WHERE handle=?", (checking.handle,))
+        return (
+            reader.get_account(checking.handle).name,
+            rows.fetchone()[0],
+            sorted(item.description for item in reader.iter_transactions()),
+        )
+
+    def test_a_reader_never_mixes_generations_and_a_new_reader_sees_the_write(self, tmp_path):
+        path, writer, checking, expense = self._book(tmp_path)
+        reader = DbSQLite()
+        reader.load(path, mode="r")
+        try:
+            before = self._view(reader, checking)
+            assert before == ("Before", "Before", ["Shop"])
+            # The writer renames an account and adds a transaction mid-calculation.
+            with writer.transaction("Change") as txn:
+                checking.name = "After"
+                writer.commit_account(checking, txn)
+                writer.add_transaction(
+                    Transaction.simple(
+                        date(2026, 9, 2), "Later", expense.handle, checking.handle, "5"
+                    ),
+                    txn,
+                )
+            assert self._view(reader, checking) == before
+            fresh = DbSQLite()
+            fresh.load(path, mode="r")
+            try:
+                assert self._view(fresh, checking) == ("After", "After", ["Later", "Shop"])
+            finally:
+                fresh.close()
+        finally:
+            reader.close()
+            writer.close()
+
+    def test_a_reader_is_read_only_and_does_not_hold_up_the_writer(self, tmp_path):
+        path, writer, checking, _expense = self._book(tmp_path)
+        reader = DbSQLite()
+        reader.load(path, mode="r")
+        try:
+            with pytest.raises(sqlite3.OperationalError):
+                reader._conn.execute("DELETE FROM account")
+            # An open reader holds no lock on the file: the writer commits at once.
+            with writer.transaction("Rename") as txn:
+                checking.name = "Renamed"
+                writer.commit_account(checking, txn)
+            assert reader.get_account(checking.handle).name == "Before"
+            assert reader.path == path
+        finally:
+            reader.close()
+            writer.close()
+
+    def test_a_failed_copy_closes_the_source_connection(self):
+        from breadsched.gen.db.sqlite import _snapshot_of
+
+        class Source:
+            closed = False
+
+            def backup(self, _target):
+                raise sqlite3.OperationalError("disk I/O error")
+
+            def close(self):
+                Source.closed = True
+
+        with pytest.raises(sqlite3.OperationalError):
+            _snapshot_of(Source())
+        assert Source.closed
+
+    def test_verification_still_reads_the_file_itself(self, tmp_path):
+        path, writer, _checking, _expense = self._book(tmp_path)
+        writer.close()
+        reader = DbSQLite()
+        reader.load_for_verification(path)
+        try:
+            (name,) = reader._conn.execute("PRAGMA database_list").fetchone()[2:3]
+            assert name.endswith("snapshot.breadsched")
+        finally:
+            reader.close()
+
+
 class TestSyncedPathWarning:
     def test_opening_book_under_known_sync_root_warns(self, tmp_path, monkeypatch, breadsched_logs):
         synced = tmp_path / "OneDrive"

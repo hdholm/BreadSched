@@ -29,6 +29,18 @@ Each slice should use shared calculations and cover GTK, web, CLI, and printable
 output wherever that behavior is exposed. Preserve GnuCash source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
+0. **Now — correctness and documentation issues.** In this order:
+   [#239](https://github.com/hdholm/BreadSched/issues/239) (review every major
+   document and allow a justified no-change disposition) and
+   [#238](https://github.com/hdholm/BreadSched/issues/238) (make release policy match
+   the release workflow and keep this roadmap to unfinished work); then
+   [#235](https://github.com/hdholm/BreadSched/issues/235) (one definition of Actual,
+   actual through as-of, forecast, Remaining, and Variance across reports) followed by
+   [#236](https://github.com/hdholm/BreadSched/issues/236) (a shared, visible
+   completeness state for totals that lack a currency conversion); then
+   [#237](https://github.com/hdholm/BreadSched/issues/237) (DESIGN organized around the
+   implemented architecture, older changelog entries condensed). These come before
+   the remaining priority 3 work.
 1. **P0 — Windows installer.** Prioritized over further Linux packaging. A
    per-user NSIS installer with its own MSYS2 Python and GTK runtime is built and
    tested in CI (clean install, CLI, desktop smoke, reinstall over itself,
