@@ -29,6 +29,8 @@ from ...gen.services import (
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gio, Gtk, Pango
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 from ._base import BaseView, Row, column, sorted_model, table_section, unwrap
 
 __all__ = ["ScheduledView", "UpcomingView", "ScheduleSplitRow"]
@@ -137,7 +139,7 @@ class ScheduledView(BaseView):
 
         self.definitions_view = self._definitions_view()
         self.estimates_view = self._definitions_view()
-        self.append(bar)
+        self.append_toolbar(bar)
         # Each table carries its own column chooser in its heading (#153).
         for view, view_id, title in (
             (self.definitions_view, "scheduled-commitments", "Commitments and account payments"),
@@ -452,7 +454,7 @@ class ScheduledView(BaseView):
         dialog.present()
 
 
-class ScheduleDuplicateDialog(Gtk.Window):
+class ScheduleDuplicateDialog(BoundedWindow):
     """Name and confirm an exact copy of a protected schedule definition."""
 
     def __init__(self, parent, db, scheduled, reason: str, saved_callback) -> None:
@@ -511,7 +513,7 @@ class ScheduleDuplicateDialog(Gtk.Window):
         self.saved_callback()
 
 
-class ScheduleDeleteDialog(Gtk.Window):
+class ScheduleDeleteDialog(BoundedWindow):
     """Confirm removal while explaining what remains and what may return."""
 
     def __init__(self, parent, db, scheduled, deleted_callback) -> None:
@@ -584,7 +586,7 @@ class UpcomingView(BaseView):
         bar.append(title)
 
         bar.append(Gtk.Label(label="Look ahead"))
-        self.horizon_picker = Gtk.DropDown.new_from_strings(
+        self.horizon_picker = bounded_dropdown(
             ["Due now", "7 days", "30 days", "90 days", "1 year"]
         )
         self.horizon_picker.set_selected(2)
@@ -609,7 +611,7 @@ class UpcomingView(BaseView):
         self.upcoming_view.append_column(
             column("Amount", lambda o: o.amount.format(), numeric=True)
         )
-        self.append(bar)
+        self.append_toolbar(bar)
 
         self.status = Gtk.Label(xalign=0)
         self.status.add_css_class("dim")

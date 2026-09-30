@@ -46,6 +46,11 @@ not yet code-signed, so Windows SmartScreen may ask you to confirm before it run
 
 ## Find your way around
 
+BreadSched fits a small laptop screen however long your account names and notes
+are: a long name in a choice list is shortened in the middle when chosen (the list
+shows it in full), wide toolbars scroll sideways, the Dashboard's summary cards wrap
+onto more rows, and dialogs open within the screen and scroll inside.
+
 The toolbar starts with the commands that work anywhere (open, import, undo, redo,
 new transaction, and print). Next come the name of the view you are in and that
 view's own command icons, then one icon for each other work area; the view you are

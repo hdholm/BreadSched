@@ -7,6 +7,7 @@ from collections.abc import Callable, Iterable
 from datetime import date
 
 from ..gi_setup import Gtk
+from .choice import bounded_dropdown
 
 __all__ = [
     "DateListEditor",
@@ -79,7 +80,7 @@ class DatedAmountListEditor(_ListEditor):
         current = when.isoformat() if when is not None else None
         if current is not None and current not in choices:
             choices.insert(0, current)
-        dropdown = Gtk.DropDown.new_from_strings(choices or ["(no occurrences)"])
+        dropdown = bounded_dropdown(choices or ["(no occurrences)"])
         dropdown.set_hexpand(True)
         if current in choices:
             dropdown.set_selected(choices.index(current))
@@ -129,7 +130,7 @@ class MonthAmountListEditor(_ListEditor):
 
     def add_row(self, month: int = 1, amount: str = "") -> None:
         row = Gtk.Box(spacing=6)
-        month_control = Gtk.DropDown.new_from_strings(list(calendar.month_name)[1:])
+        month_control = bounded_dropdown(list(calendar.month_name)[1:])
         month_control.set_selected(max(0, min(11, month - 1)))
         amount_entry = Gtk.Entry(placeholder_text="Amount", hexpand=True)
         amount_entry.set_text(amount)
@@ -188,7 +189,7 @@ class DateListEditor(_ListEditor):
         else:
             if current is not None and current not in choices:
                 choices.insert(0, current)
-            date_entry = Gtk.DropDown.new_from_strings(choices or ["(no occurrences)"])
+            date_entry = bounded_dropdown(choices or ["(no occurrences)"])
             date_entry.set_hexpand(True)
             if current in choices:
                 date_entry.set_selected(choices.index(current))
@@ -261,16 +262,16 @@ class PlanningSplitListEditor(_ListEditor):
         direction_index: int = 0,
     ) -> None:
         row = Gtk.Box(spacing=6)
-        account = Gtk.DropDown.new_from_strings(self._account_names)
+        account = bounded_dropdown(self._account_names)
         account.set_hexpand(True)
         account.set_selected(account_index)
         value = Gtk.Entry(placeholder_text="Amount")
         value.set_text(amount)
-        purpose = Gtk.DropDown.new_from_strings(self._purpose_labels)
+        purpose = bounded_dropdown(self._purpose_labels)
         purpose.set_selected(purpose_index)
-        activity = Gtk.DropDown.new_from_strings(self._activity_labels)
+        activity = bounded_dropdown(self._activity_labels)
         activity.set_selected(activity_index)
-        direction = Gtk.DropDown.new_from_strings(["Normal direction", "Opposite direction"])
+        direction = bounded_dropdown(["Normal direction", "Opposite direction"])
         direction.set_selected(direction_index)
         direction.set_tooltip_text(
             "Use opposite direction only when the stored ledger leg intentionally runs "
@@ -340,7 +341,7 @@ class SplitAmountTimelineEditor(_ListEditor):
 
     def add_row(self, account_index: int = 0, when: date | None = None, amount: str = "") -> None:
         row = Gtk.Box(spacing=6)
-        account = Gtk.DropDown.new_from_strings(self._account_names)
+        account = bounded_dropdown(self._account_names)
         account.set_hexpand(True)
         account.set_selected(account_index)
         when_entry = Gtk.Entry(placeholder_text="YYYY-MM-DD")

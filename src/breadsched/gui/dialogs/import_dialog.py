@@ -29,6 +29,8 @@ from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
 from ...presentation import reimbursement_notice, service_error_message  # noqa: E402
 from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["ImportDialog"]
 
@@ -38,7 +40,7 @@ LOG = logs.get_logger(__name__)
 WARNING_LIMIT = 50
 
 
-class ImportDialog(Gtk.Window):
+class ImportDialog(BoundedWindow):
     """Choose a GnuCash file, check what it is, then import it."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
@@ -95,10 +97,10 @@ class ImportDialog(Gtk.Window):
         box.append(self.detected_label)
 
         self.format_box = Gtk.Box(spacing=8)
-        self.number_format = Gtk.DropDown.new_from_strings(
+        self.number_format = bounded_dropdown(
             ["Auto-detect number format", "Period decimal (1,234.56)", "Comma decimal (1.234,56)"]
         )
-        self.date_format = Gtk.DropDown.new_from_strings(
+        self.date_format = bounded_dropdown(
             ["Auto-detect QIF date order", "Month first (MM/DD)", "Day first (DD/MM)"]
         )
         self.format_box.append(self.number_format)

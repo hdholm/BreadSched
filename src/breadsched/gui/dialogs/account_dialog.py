@@ -28,7 +28,8 @@ from ...gen.services import DeleteAccount, SaveAccount, delete_account, save_acc
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
-from ..widgets.bounded import scroll_body
+from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["AccountDialog"]
 
@@ -39,7 +40,7 @@ _TYPES: list[AccountType] = [
 ]
 
 
-class AccountDialog(Gtk.Window):
+class AccountDialog(BoundedWindow):
     """Create a new account, or change one that exists."""
 
     def __init__(
@@ -90,7 +91,7 @@ class AccountDialog(Gtk.Window):
         self.types = list(_TYPES)
         if account is not None and account.atype not in self.types:
             self.types.append(account.atype)
-        self.type_picker = Gtk.DropDown.new_from_strings([t.value for t in self.types])
+        self.type_picker = bounded_dropdown([t.value for t in self.types])
         if account is not None:
             self.type_picker.set_selected(self.types.index(account.atype))
         self.type_picker.connect("notify::selected", self._on_type_changed)
@@ -123,7 +124,7 @@ class AccountDialog(Gtk.Window):
         if account is not None and account.commodity not in self.commodity_handles:
             commodity_labels.append(f"Imported commodity ({account.commodity})")
             self.commodity_handles.append(account.commodity)
-        self.commodity_picker = Gtk.DropDown.new_from_strings(commodity_labels)
+        self.commodity_picker = bounded_dropdown(commodity_labels)
         if account is not None and account.commodity:
             self.commodity_picker.set_selected(self.commodity_handles.index(account.commodity))
         self.commodity_picker.set_tooltip_text("Currency or security associated with this account")
@@ -143,7 +144,7 @@ class AccountDialog(Gtk.Window):
         grid.attach(self.commodity_scu_entry, 1, row, 1, 1)
         row += 1
 
-        self.parent_picker = Gtk.DropDown.new_from_strings(
+        self.parent_picker = bounded_dropdown(
             [db.full_name(a) or a.name for a in self.parents] or ["(none)"]
         )
         chosen = account.parent if account is not None else default_parent
@@ -331,7 +332,7 @@ class AccountDialog(Gtk.Window):
 
     def _build_loan_controls(self, box: Gtk.Box, account: Account | None) -> None:
         self.loan_box = Gtk.Box(spacing=8)
-        self.asset_picker = Gtk.DropDown.new_from_strings(
+        self.asset_picker = bounded_dropdown(
             ["(none)"] + [self.db.full_name(a) for a in self.assets]
         )
         if account is not None and account.linked_asset:
@@ -367,7 +368,7 @@ class AccountDialog(Gtk.Window):
         card_grid.attach(Gtk.Label(label="Payment day", xalign=0), 0, 1, 1, 1)
         card_grid.attach(self.day_spin, 1, 1, 1, 1)
 
-        self.card_payment_picker = Gtk.DropDown.new_from_strings(
+        self.card_payment_picker = bounded_dropdown(
             ["(choose when recording payment)"]
             + [self.db.full_name(item) for item in self.payment_accounts]
         )
@@ -402,7 +403,7 @@ class AccountDialog(Gtk.Window):
         """Show imported provenance without making source-owned fields editable."""
         if self.account is None:
             return
-        window = Gtk.Window(
+        window = BoundedWindow(
             title="Imported account details",
             transient_for=self,
             modal=True,

@@ -18,6 +18,7 @@ from datetime import date
 from ...gen.engine import ledger  # noqa: E402
 from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
 from ..gi_setup import Gdk, Gio, GLib, Gtk, Pango
+from ..widgets.choice import bounded_dropdown
 from ._base import (  # noqa: E402
     BaseView,
     Row,
@@ -106,7 +107,7 @@ class RegisterView(BaseView):
         for side in ("top", "bottom", "start", "end"):
             getattr(bar, f"set_margin_{side}")(8)
 
-        self.account_picker = Gtk.DropDown()
+        self.account_picker = bounded_dropdown()
         self.account_picker.set_hexpand(True)
         self.account_picker.connect("notify::selected", self._on_account_changed)
         bar.append(self.account_picker)
@@ -212,7 +213,7 @@ class RegisterView(BaseView):
             )
         )
 
-        self.append(bar)
+        self.append_toolbar(bar)
 
         # The column chooser sits in the table's own header, not the toolbar (#153).
         self.table = table_section(

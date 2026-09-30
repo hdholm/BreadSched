@@ -7,11 +7,12 @@ from ...gen.db.verification import BookVerification
 from ...gen.utils.cancellation import OperationCancelled
 from ..background import BackgroundJob
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
 
 __all__ = ["VerificationDialog"]
 
 
-class VerificationDialog(Gtk.Window):
+class VerificationDialog(BoundedWindow):
     """Verify one native book without freezing or modifying its open writer."""
 
     def __init__(self, parent: Gtk.Window | None, path: str) -> None:

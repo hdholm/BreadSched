@@ -20,6 +20,8 @@ from ...gen.services import (
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gtk, Pango
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 from ._base import BaseView
 
 __all__ = ["ResolutionView"]
@@ -336,12 +338,14 @@ class ResolutionView(BaseView):
         claims, roles = self._fsa_options(transaction)
         if not claims or not roles:
             return
-        dialog = Gtk.Window(title="Attach to FSA claim", transient_for=self.get_root(), modal=True)
+        dialog = BoundedWindow(
+            title="Attach to FSA claim", transient_for=self.get_root(), modal=True
+        )
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(12)
         dialog.set_child(box)
-        claim_pick = Gtk.DropDown.new_from_strings(
+        claim_pick = bounded_dropdown(
             [
                 (
                     f"{item.claim.service_date} "
@@ -351,13 +355,13 @@ class ResolutionView(BaseView):
                 for item in claims
             ]
         )
-        role_pick = Gtk.DropDown.new_from_strings(
+        role_pick = bounded_dropdown(
             [
                 f"{role.replace('_', ' ').title()} · {account}"
                 for role, _split, account, _years in roles
             ]
         )
-        year_pick = Gtk.DropDown.new_from_strings(
+        year_pick = bounded_dropdown(
             ["Auto funding year"]
             + sorted(
                 {year.isoformat() for _role, _split, _account, years in roles for year in years}

@@ -64,6 +64,7 @@ from breadsched.gen.lib import (  # noqa: E402
     ScheduledMonthAmount,
     ScheduledSplit,
     ScheduledTransaction,
+    Split,
     Transaction,
 )
 from breadsched.gui.app import BreadSchedApplication  # noqa: E402
@@ -3891,7 +3892,7 @@ class TestDashboardView:
         shown = []
         child = view.cards.get_first_child()
         while child is not None:
-            label = child.get_first_child()
+            label = child.get_child().get_first_child()
             texts = []
             while label is not None:
                 texts.append(label.get_text())
@@ -6615,10 +6616,12 @@ class TestDialogsFitTheScreen:
         ("historical_estimates_dialog", "HistoricalEstimatesDialog", None),
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),
+        ("net_worth_history_dialog", "NetWorthHistoryDialog", None),
         ("payee_dialog", "PayeesDialog", None),
         ("receivables_dialog", "ReceivablesDialog", None),
         ("reconciliation_dialog", "ReconciliationDialog", "checking"),
         ("rules_dialog", "RulesDialog", None),
+        ("savings_goals_dialog", "SavingsGoalsDialog", None),
         ("scenario_dialog", "SaveScenarioDialog", "scenario"),
         ("scenario_manager_dialog", "ScenarioManagerDialog", "manager"),
         ("scenario_schedule_dialog", "ScenarioScheduleDialog", "scenario"),
@@ -7342,3 +7345,175 @@ class TestNativePrinting:
         )
         printing.print_document(None, document)
         assert len(opened) == 1
+
+
+class TestBoundedSizes:
+    """Long names, notes, and big split editors must not push a window off screen.
+
+    A small laptop work area is taken as 1024 × 700: no view or dialog may need more
+    than that as its minimum, whatever the book holds; larger content wraps,
+    shortens, or scrolls inside.
+    """
+
+    SMALL = (1024, 700)
+    LONG = "Very long household account name for stress testing layout bounds " * 3
+    NOTE = "A long note line that goes on and on without any natural break. " * 30
+
+    @pytest.fixture
+    def stress(self, app, window, tmp_path):
+        from breadsched.gen.sample_book import create_sample_book
+
+        path = tmp_path / "stress.breadsched"
+        create_sample_book(path, as_of=date(2026, 9, 15))
+        app.open_book(str(path))
+        db = app.db
+        with db.transaction("Stress") as txn:
+            parent = next(a for a in db.iter_accounts() if a.name == "Expenses").handle
+            chain = []
+            for depth in range(6):
+                account = Account(
+                    name=f"{self.LONG} {depth}",
+                    atype=AccountType.EXPENSE,
+                    parent=parent,
+                    description=self.NOTE,
+                )
+                db.add_account(account, txn)
+                chain.append(account.handle)
+                parent = account.handle
+            bank = next(a for a in db.iter_accounts() if a.atype == AccountType.BANK)
+            for number in range(12):
+                splits = [
+                    Split(chain[k % 6], Money("1.25"), memo=self.NOTE[:300]) for k in range(30)
+                ]
+                splits.append(Split(bank.handle, Money("-37.50")))
+                transaction = Transaction(
+                    post_date=date(2026, 8, 1 + number),
+                    description=f"{self.LONG} {number}",
+                    splits=splits,
+                )
+                transaction.notes = self.NOTE
+                db.add_transaction(transaction, txn)
+            db.add_scheduled(
+                ScheduledTransaction(
+                    name=f"{self.LONG} schedule",
+                    description=self.NOTE,
+                    recurrence=Recurrence(PeriodType.MONTH, start=date(2026, 10, 1)),
+                    splits=[
+                        ScheduledSplit(chain[-1], Money("10")),
+                        ScheduledSplit(bank.handle, Money("-10")),
+                    ],
+                ),
+                txn,
+            )
+        return db, chain, bank
+
+    @staticmethod
+    def _minimum(widget):
+        width = Gtk.Widget.measure(widget, Gtk.Orientation.HORIZONTAL, -1)[0]
+        height = Gtk.Widget.measure(widget, Gtk.Orientation.VERTICAL, -1)[0]
+        return width, height
+
+    def _fits(self, size):
+        return size[0] <= self.SMALL[0] and size[1] <= self.SMALL[1]
+
+    def test_every_view_fits_a_small_screen(self, app, window, stress):
+        _db, chain, _bank = stress
+        for key in CATEGORY_KEYS:
+            window.show_category(key)
+            view = window._views[key]
+            view.flush_refresh()
+            if hasattr(view, "wait_for_background"):
+                view.wait_for_background()
+            assert self._fits(self._minimum(window)), (key, self._minimum(window))
+        window.open_register(chain[-1])
+        assert self._fits(self._minimum(window)), self._minimum(window)
+
+    def test_leaving_a_large_view_lets_the_window_shrink(self, app, window, stress):
+        window.show_category("dashboard")
+        large = self._minimum(window)[0]
+        # The FSA Dashboard of a book without FSA accounts is small; the window may
+        # shrink to it rather than keep the Dashboard's width.
+        window.show_category("fsa-dashboard")
+        small = self._minimum(window)[0]
+        assert small < large
+        window.show_category("dashboard")
+        assert self._minimum(window)[0] == large
+
+    def test_dialogs_open_within_the_screen(self, app, window, stress):
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
+        from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
+        from breadsched.gui.dialogs.dashboard_dialog import DashboardDialog
+        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
+        from breadsched.gui.dialogs.reconciliation_dialog import ReconciliationDialog
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+        from breadsched.gui.dialogs.savings_goals_dialog import SavingsGoalsDialog
+        from breadsched.gui.dialogs.schedule_dialog import ScheduleDialog
+        from breadsched.gui.dialogs.transaction_dialog import TransactionDialog
+        from breadsched.gui.widgets.bounded import fit_to_screen
+
+        db, chain, bank = stress
+        busy = next(t for t in db.iter_transactions() if len(t.splits) > 20)
+        schedule = next(s for s in db.iter_scheduled() if s.name.startswith("Very long"))
+        makers = {
+            "account": lambda: AccountDialog(window, db, db.get_account(chain[-1])),
+            "csv-import": lambda: CsvImportDialog(window, db),
+            "dashboard-groups": lambda: DashboardDialog(window, db),
+            "payees": lambda: PayeesDialog(window, db),
+            "reconcile": lambda: ReconciliationDialog(window, db, bank),
+            "rules": lambda: RulesDialog(window, db),
+            "goals": lambda: SavingsGoalsDialog(window, db),
+            "schedule": lambda: ScheduleDialog(window, db, schedule),
+            "transaction": lambda: TransactionDialog(window, db, transaction=busy),
+        }
+        for name, make in makers.items():
+            dialog = make()
+            try:
+                # Minimum sizes are checked by TestDialogsFitTheScreen; here the
+                # natural size, which a long wrapped note makes huge, is capped.
+                width, height = fit_to_screen(dialog, self.SMALL)
+                assert width <= self.SMALL[0] and height <= self.SMALL[1], name
+            finally:
+                dialog.destroy()
+
+    def test_a_long_choice_is_shortened_but_listed_in_full(self):
+        from breadsched.gui.widgets.choice import bounded_dropdown
+
+        long = "Expenses:" + ":".join(f"Level {n} of a deep account tree" for n in range(20))
+        plain = Gtk.DropDown.new_from_strings([long, "Short"])
+        bounded = bounded_dropdown([long, "Short"])
+        holder = Gtk.Window()
+        row = Gtk.Box()
+        row.append(plain)
+        row.append(bounded)
+        holder.set_child(row)
+        holder.present()
+        try:
+            context = GLib.MainContext.default()
+            for _ in range(100):
+                if not context.iteration(False):
+                    break
+            assert self._minimum(bounded)[0] < 400 < self._minimum(plain)[0]
+            # The list shows the whole name; only the chosen one is shortened.
+            assert bounded.get_list_factory() is not None
+            assert bounded.get_factory() is not bounded.get_list_factory()
+            bounded.set_selected(1)
+            assert bounded.get_selected_item().get_string() == "Short"
+        finally:
+            holder.destroy()
+
+    def test_fit_to_screen_caps_the_opening_size_but_not_below_the_minimum(self):
+        from breadsched.gui.widgets.bounded import BoundedWindow, fit_to_screen
+
+        window = BoundedWindow()
+        label = Gtk.Label(label=self.NOTE, wrap=True)
+        window.set_child(label)
+        try:
+            natural = Gtk.Widget.measure(window, Gtk.Orientation.HORIZONTAL, -1)[1]
+            assert natural > 800
+            assert fit_to_screen(window, (800, 600))[0] == 800
+            window.set_default_size(300, 200)
+            width, height = fit_to_screen(window, (100, 100))
+            minimum = self._minimum(window)
+            assert width >= minimum[0] and height >= minimum[1]
+        finally:
+            window.destroy()

@@ -24,13 +24,15 @@ from ...gen.services.categorization import (
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["RulesDialog"]
 
 MATCH_KINDS = ("description", "payee")
 
 
-class RulesDialog(Gtk.Window):
+class RulesDialog(BoundedWindow):
     """Ordered rule list and editor above the proposals awaiting acceptance."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
@@ -74,15 +76,15 @@ class RulesDialog(Gtk.Window):
             key=lambda account: db.full_name(account).casefold(),
         )
         form = Gtk.Box(spacing=8)
-        self.kind_picker = Gtk.DropDown.new_from_strings(["Description", "Payee"])
+        self.kind_picker = bounded_dropdown(["Description", "Payee"])
         self.kind_picker.connect("notify::selected", lambda *_args: self._sync_kind())
         self.description_entry = Gtk.Entry(
             hexpand=True, placeholder_text="Example description, e.g. CORNER GROCER #1234"
         )
-        self.payee_picker = Gtk.DropDown.new_from_strings(
+        self.payee_picker = bounded_dropdown(
             [payee.name for payee in self.payees] or ["(no payees)"]
         )
-        self.category_picker = Gtk.DropDown.new_from_strings(
+        self.category_picker = bounded_dropdown(
             [db.full_name(account) for account in self.categories] or ["(no categories)"]
         )
         add_button = Gtk.Button(label="Add rule")

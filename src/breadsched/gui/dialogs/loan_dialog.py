@@ -21,11 +21,13 @@ from ...gen.services import SaveLoan, save_loan
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["LoanDialog"]
 
 
-class LoanDialog(Gtk.Window):
+class LoanDialog(BoundedWindow):
     """Enter a loan's terms and create its scheduled payment."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
@@ -145,9 +147,7 @@ class LoanDialog(Gtk.Window):
         ]
 
     def _picker(self, accounts: list) -> Gtk.DropDown:
-        picker = Gtk.DropDown.new_from_strings(
-            [self.db.full_name(a) for a in accounts] or ["(none available)"]
-        )
+        picker = bounded_dropdown([self.db.full_name(a) for a in accounts] or ["(none available)"])
         picker.connect("notify::selected", self._recalculate)
         return picker
 

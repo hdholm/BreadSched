@@ -28,6 +28,7 @@ from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gdk, GLib, Gtk
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["BLANK", "BLANK_PAYLOADS", "BlankEntry", "BlankEntryRow", "ImbalanceLine", "SplitLine"]
 
@@ -66,7 +67,7 @@ class SplitLine:
         self.handle: str | None = None
         self.memo = Gtk.Entry(placeholder_text="Memo")
         self.memo.set_hexpand(True)
-        self.account = Gtk.DropDown()
+        self.account = bounded_dropdown()
         self.account.set_hexpand(True)
         self.increase = _amount_entry()
         self.decrease = _amount_entry()
@@ -156,8 +157,8 @@ class BlankEntryRow:
         self.num.set_width_chars(4)
         self.description = Gtk.Entry(placeholder_text="Description")
         self.description.set_hexpand(True)
-        self.payee = Gtk.DropDown.new_from_strings(["(no payee)"])
-        self.transfer = Gtk.DropDown()
+        self.payee = bounded_dropdown(["(no payee)"])
+        self.transfer = bounded_dropdown()
         self.transfer.set_hexpand(True)
         self.transfer.set_tooltip_text("Other side of this two-split transaction")
         self.increase = _amount_entry()

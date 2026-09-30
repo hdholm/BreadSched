@@ -54,6 +54,19 @@ class BaseView(Gtk.Box):
         self._refresh_pending = False
         self._refresh_source_id: int | None = None
 
+    def append_toolbar(self, bar: Gtk.Widget) -> Gtk.ScrolledWindow:
+        """Add a row of controls that scrolls sideways on a narrow window.
+
+        A plain row sets the window's minimum width to the width of every control
+        in it; in a horizontal scroller it no longer does.
+        """
+        scroller = Gtk.ScrolledWindow(child=bar)
+        scroller.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        scroller.set_propagate_natural_height(True)
+        scroller.set_propagate_natural_width(True)
+        self.append(scroller)
+        return scroller
+
     def book_name(self) -> str:
         """The open book's file name, for report subtitles."""
         book_path = getattr(self.manager.get_application(), "book_path", None)

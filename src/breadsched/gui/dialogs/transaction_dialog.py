@@ -59,6 +59,8 @@ from ...gen.services.autocomplete import EntrySuggestion, SuggestEntry, suggest_
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gio, GLib, Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["TransactionDialog"]
 
@@ -87,7 +89,7 @@ class SplitEditor:
         self.fsa_year_start = split.fsa_year_start if split else None
 
         self.box = Gtk.Box(spacing=8)
-        self.account = Gtk.DropDown.new_from_strings(dialog.account_names or ["(none)"])
+        self.account = bounded_dropdown(dialog.account_names or ["(none)"])
         self.account.set_hexpand(True)
         self.account.connect("notify::selected", dialog.revalidate)
         self.box.append(self.account)
@@ -102,9 +104,7 @@ class SplitEditor:
         self.amount.connect("changed", dialog.revalidate)
         self.box.append(self.amount)
 
-        self.planning_purpose = Gtk.DropDown.new_from_strings(
-            [label for label, _kind in _PLANNING_FLOWS]
-        )
+        self.planning_purpose = bounded_dropdown([label for label, _kind in _PLANNING_FLOWS])
         self.planning_purpose.set_size_request(180, -1)
         self.planning_purpose.set_tooltip_text(
             "Override the planning purpose; Ordinary lets the account type and context decide"
@@ -112,7 +112,7 @@ class SplitEditor:
         self.planning_purpose.connect("notify::selected", dialog.revalidate)
         self.box.append(self.planning_purpose)
 
-        self.investment_activity = Gtk.DropDown.new_from_strings(
+        self.investment_activity = bounded_dropdown(
             [label for label, _kind in _INVESTMENT_ACTIVITIES]
         )
         self.investment_activity.set_tooltip_text(
@@ -184,7 +184,7 @@ class SplitEditor:
         return _PLANNING_FLOWS[self.planning_purpose.get_selected()][1]
 
 
-class TransactionDialog(Gtk.Window):
+class TransactionDialog(BoundedWindow):
     """Create a transaction, or change one that already exists."""
 
     def __init__(
@@ -262,9 +262,7 @@ class TransactionDialog(Gtk.Window):
 
         # The payee is BreadSched's own reference; the description is never rewritten.
         self.payees = list(db.iter_payees())
-        self.payee_picker = Gtk.DropDown.new_from_strings(
-            ["(no payee)", *(payee.name for payee in self.payees)]
-        )
+        self.payee_picker = bounded_dropdown(["(no payee)", *(payee.name for payee in self.payees)])
         current = transaction.payee if transaction is not None else None
         handles = [payee.handle for payee in self.payees]
         if current in handles:
@@ -361,7 +359,7 @@ class TransactionDialog(Gtk.Window):
         if self.fsa_claims and not editing:
             fsa_row = Gtk.Box(spacing=8)
             fsa_row.append(Gtk.Label(label="FSA claim (optional)", xalign=0))
-            self.fsa_claim = Gtk.DropDown.new_from_strings(
+            self.fsa_claim = bounded_dropdown(
                 ["Do not attach"]
                 + [
                     f"{claim.service_date} {claim.provider or claim.description or 'FSA claim'}"
@@ -369,7 +367,7 @@ class TransactionDialog(Gtk.Window):
                 ]
             )
             fsa_row.append(self.fsa_claim)
-            self.fsa_role = Gtk.DropDown.new_from_strings(
+            self.fsa_role = bounded_dropdown(
                 ["Healthcare payment", "Provider refund", "FSA reimbursement"]
             )
             fsa_row.append(self.fsa_role)

@@ -80,12 +80,19 @@ class DashboardView(BaseView):
 
         # Group configuration is a toolbar icon and Actions menu item (#156).
         self._bar = bar
-        self.append(bar)
+        self.append_toolbar(bar)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         for side in ("start", "end", "bottom"):
             getattr(content, f"set_margin_{side}")(12)
-        self.cards = Gtk.Box(spacing=14)
+        # Cards wrap onto more rows on a narrow window instead of widening it.
+        self.cards = Gtk.FlowBox()
+        self.cards.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.cards.set_homogeneous(False)
+        self.cards.set_column_spacing(14)
+        self.cards.set_row_spacing(10)
+        self.cards.set_max_children_per_line(12)
+        self.cards.set_valign(Gtk.Align.START)
         content.append(self.cards)
 
         # Groups, bills, and income are separate sections, each sized to its own

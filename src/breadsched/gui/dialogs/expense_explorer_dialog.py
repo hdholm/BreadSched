@@ -7,10 +7,12 @@ from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseExplorer, query_expense_explorer
 from ...gen.services.plan import PlanQuery
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
 from ..widgets.chart import LineChart, Series
+from ..widgets.choice import bounded_dropdown
 
 
-class ExpenseExplorerDialog(Gtk.Window):
+class ExpenseExplorerDialog(BoundedWindow):
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, request: PlanQuery) -> None:
         super().__init__(title="Expense Explorer", transient_for=parent)
         self.set_default_size(1000, 720)
@@ -27,18 +29,16 @@ class ExpenseExplorerDialog(Gtk.Window):
         controls = Gtk.Box(spacing=8)
         outer.append(controls)
         controls.append(Gtk.Label(label="Period"))
-        self.period = Gtk.DropDown.new_from_strings([item.label for item in self._report.totals])
+        self.period = bounded_dropdown([item.label for item in self._report.totals])
         controls.append(self.period)
         controls.append(Gtk.Label(label="Category trend"))
-        self.category = Gtk.DropDown.new_from_strings(
-            [item.full_name for item in self._report.categories]
-        )
+        self.category = bounded_dropdown([item.full_name for item in self._report.categories])
         controls.append(self.category)
         controls.append(Gtk.Label(label="Sort categories"))
-        self.sort = Gtk.DropDown.new_from_strings(["Actual", "Plan", "Variance", "Name"])
+        self.sort = bounded_dropdown(["Actual", "Plan", "Variance", "Name"])
         controls.append(self.sort)
         controls.append(Gtk.Label(label="Income detail"))
-        self.income_category = Gtk.DropDown.new_from_strings(
+        self.income_category = bounded_dropdown(
             [item.full_name for item in self._report.income_categories]
         )
         self.income_category.set_sensitive(bool(self._report.income_categories))

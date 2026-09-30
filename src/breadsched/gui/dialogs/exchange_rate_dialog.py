@@ -17,11 +17,13 @@ from ...gen.lib.commodity import CommodityPrice
 from ...gen.lib.money import Money
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["ExchangeRateDialog"]
 
 
-class ExchangeRateDialog(Gtk.Window):
+class ExchangeRateDialog(BoundedWindow):
     """Choose two currencies, a date, and an exact rate."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
@@ -56,11 +58,11 @@ class ExchangeRateDialog(Gtk.Window):
         box.append(grid)
         labels = [f"{item.mnemonic} — {item.fullname}" for item in self.currencies]
 
-        self.source_picker = Gtk.DropDown.new_from_strings(labels)
+        self.source_picker = bounded_dropdown(labels)
         grid.attach(Gtk.Label(label="From currency", xalign=0), 0, 0, 1, 1)
         grid.attach(self.source_picker, 1, 0, 1, 1)
 
-        self.target_picker = Gtk.DropDown.new_from_strings(labels)
+        self.target_picker = bounded_dropdown(labels)
         grid.attach(Gtk.Label(label="To currency", xalign=0), 0, 1, 1, 1)
         grid.attach(self.target_picker, 1, 1, 1, 1)
         reporting = reporting_currency_handle(db)

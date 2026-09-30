@@ -20,11 +20,12 @@ from ...gen.services.payees import (
 )
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
 
 __all__ = ["PayeesDialog"]
 
 
-class PayeesDialog(Gtk.Window):
+class PayeesDialog(BoundedWindow):
     """Payee list and editor above the proposals awaiting acceptance."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:

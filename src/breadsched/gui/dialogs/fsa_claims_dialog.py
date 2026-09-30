@@ -27,7 +27,8 @@ from ...gen.services import (
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message, shared_cost_text
 from ..gi_setup import GLib, Gtk
-from ..widgets.bounded import scroll_body
+from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["FsaClaimsDialog"]
 
@@ -78,12 +79,10 @@ class _AllocationRow(Gtk.Frame):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.set_child(box)
         top = Gtk.Box(spacing=6)
-        self.account = Gtk.DropDown.new_from_strings(
-            [db.full_name(account) for account in self.accounts]
-        )
+        self.account = bounded_dropdown([db.full_name(account) for account in self.accounts])
         self.account.connect("notify::selected", self._refresh_years)
         top.append(self.account)
-        self.year = Gtk.DropDown.new_from_strings([])
+        self.year = bounded_dropdown([])
         top.append(self.year)
         self.target = Gtk.Entry(placeholder_text="Target amount (optional)")
         top.append(self.target)
@@ -157,7 +156,7 @@ class _AllocationRow(Gtk.Frame):
         )
 
 
-class FsaClaimsDialog(Gtk.Window):
+class FsaClaimsDialog(BoundedWindow):
     """GTK maintenance surface for FSA claims and reconciliation links."""
 
     def __init__(self, parent: Gtk.Window, db: DbSQLite, claim_handle: str | None = None) -> None:
@@ -173,7 +172,7 @@ class FsaClaimsDialog(Gtk.Window):
         self.set_child(outer)
 
         top = Gtk.Box(spacing=6)
-        self.claim_select = Gtk.DropDown.new_from_strings(
+        self.claim_select = bounded_dropdown(
             [f"{claim.service_date} {claim.provider or 'FSA claim'}" for claim in self.claims]
         )
         self.claim_select.connect("notify::selected", self._load_selected)
@@ -196,7 +195,7 @@ class FsaClaimsDialog(Gtk.Window):
         self.receivables = sorted(
             db.iter_receivables(), key=lambda item: (item.incurred_date, item.payer)
         )
-        self.payer = Gtk.DropDown.new_from_strings(
+        self.payer = bounded_dropdown(
             ["None"]
             + [
                 f"{item.payer} — {item.description or 'expense'} ({item.incurred_date})"

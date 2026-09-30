@@ -11,6 +11,8 @@ from __future__ import annotations
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.dashboard import DashboardConfig, GroupConfig, default_config
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["DashboardDialog"]
 
@@ -25,7 +27,7 @@ _EXPLANATION = {
 }
 
 
-class DashboardDialog(Gtk.Window):
+class DashboardDialog(BoundedWindow):
     """Add, remove and populate the dashboard's groups."""
 
     def __init__(
@@ -104,7 +106,7 @@ class DashboardDialog(Gtk.Window):
             name.set_text(group.name)
         header.append(name)
 
-        kind = Gtk.DropDown.new_from_strings([f"{k} - {_EXPLANATION[k]}" for k in KINDS])
+        kind = bounded_dropdown([f"{k} - {_EXPLANATION[k]}" for k in KINDS])
         kind.set_selected(KINDS.index(group.kind) if group else 0)
         header.append(kind)
 

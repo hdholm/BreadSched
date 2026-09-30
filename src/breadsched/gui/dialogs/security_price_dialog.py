@@ -9,11 +9,13 @@ from ...gen.engine import valuation
 from ...gen.lib.money import Money
 from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
+from ..widgets.bounded import BoundedWindow
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["SecurityPriceDialog"]
 
 
-class SecurityPriceDialog(Gtk.Window):
+class SecurityPriceDialog(BoundedWindow):
     """Small price editor shared conceptually with the web write boundary."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite) -> None:
@@ -43,7 +45,7 @@ class SecurityPriceDialog(Gtk.Window):
         box.append(grid)
         row = 0
 
-        self.security_picker = Gtk.DropDown.new_from_strings(
+        self.security_picker = bounded_dropdown(
             ["New security…"] + [f"{item.mnemonic} — {item.fullname}" for item in self.securities]
         )
         grid.attach(Gtk.Label(label="Security", xalign=0), 0, row, 1, 1)
@@ -73,7 +75,7 @@ class SecurityPriceDialog(Gtk.Window):
         grid.attach(self.fraction_entry, 1, row, 1, 1)
         row += 1
 
-        self.currency_picker = Gtk.DropDown.new_from_strings(
+        self.currency_picker = bounded_dropdown(
             [f"{item.mnemonic} — {item.fullname}" for item in self.currencies]
             or ["USD — US Dollar (create)"]
         )

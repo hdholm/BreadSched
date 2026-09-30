@@ -1287,7 +1287,29 @@ child but the last into a vertical scroller that asks for its natural height, an
 keeps the button row and the original margins outside it. The Account, FSA claims,
 Save scenario, Manage scenarios, and scenario schedule dialogs use it. Dialogs
 whose height comes from a growable list lower that list's minimum instead of
-nesting scrollers (Payees, Import).
+nesting scrollers (Payees, Import). Savings Goals scrolls its body too.
+
+Views stay within a 1024×700 work area whatever the book holds
+(`TestBoundedSizes`, with a six-deep chain of long account names, long notes and
+descriptions, and 31-split transactions). Four causes were found and bounded:
+
+- Every drop-down is built by `widgets.choice.bounded_dropdown` (or passed through
+  `bound_dropdown`). GTK's default factory made a drop-down's minimum width its
+  longest shown string, so one long account path widened a register to thousands
+  of pixels. The button's label now ellipsizes in the middle (keeping a path's root
+  and leaf) at 36 characters; a separate list factory shows each choice in full,
+  wrapped at 72 characters, with a check that follows the selection.
+- View toolbars go through `BaseView.append_toolbar`, a horizontal scroller, so a
+  row of controls (the Plan's reached 1,450 px) no longer sets the window's width.
+- The Dashboard's summary cards are a `Gtk.FlowBox`, so they wrap onto more rows.
+- The main and register `Gtk.Stack`s are not homogeneous, so the window's minimum is
+  the shown page's, and switching away from a large view lets the window shrink.
+
+A window opens at its natural size, and a wrapping label's natural width is its
+whole text on one line, so dialogs with long notes opened thousands of pixels wide.
+Every dialog (and every other secondary window) is a `widgets.bounded.BoundedWindow`,
+whose `present()` first calls `fit_to_screen`: the opening size is the window's
+default (or natural) size capped to 90% of its monitor, never below its minimum.
 
 ## Register presentation and basic entry
 

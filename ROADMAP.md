@@ -57,8 +57,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 3. **Next — Interface, FSA, and scheduling.** Take the
    GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
    scheduled transactions and loans (sections below). Scenario Projection tabs,
-   remembered tabs per book, browser-tab counterparts, and native GTK printing of
-   Dashboard, Plan, and Projection are delivered.
+   remembered tabs per book, browser-tab counterparts, native GTK printing, and
+   bounded GTK view and dialog sizes are delivered.
 
 
 ## Architecture and correctness
@@ -255,13 +255,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   controls and tables, text/UI scaling, and contrast. Add automated coverage where
   reliable and keep a short manual GTK checklist; accessibility remains required
   for release quality but is intentionally below the current financial workflows.
-
-- Audit the remaining GTK views and dialogs for bounded natural sizes (the Dashboard
-  group and card text were bounded for #140). Large content must scroll
-  inside the current monitor work area, primary actions/window controls must remain
-  reachable, and switching away from a large view must allow the main window to
-  shrink again. Cover long notes, complex split editors, tables, and small-screen GTK
-  behavior with runtime regressions.
 
 - **Decide on the browser print fallback.** Every desktop printout now prints
   through GTK from the shared report layout. Decide whether **Print in Browser**

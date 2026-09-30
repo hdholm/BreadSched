@@ -7,12 +7,12 @@ from ...gen.lib import Scenario  # noqa: E402
 from ...gen.services import SaveScenario, save_scenario  # noqa: E402
 from ...presentation import service_error_message  # noqa: E402
 from ..gi_setup import Gtk
-from ..widgets.bounded import scroll_body
+from ..widgets.bounded import BoundedWindow, scroll_body
 
 __all__ = ["SaveScenarioDialog"]
 
 
-class SaveScenarioDialog(Gtk.Window):
+class SaveScenarioDialog(BoundedWindow):
     """Name a set of assumptions so it can be compared against later.
 
     Saving under an existing name updates that scenario rather than creating a

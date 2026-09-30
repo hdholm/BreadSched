@@ -26,7 +26,8 @@ from ..planning_context import (
     notify_planning_scenario_changed,
     persist_baseline_assumptions,
 )
-from ..widgets.bounded import scroll_body
+from ..widgets.bounded import BoundedWindow, scroll_body
+from ..widgets.choice import bounded_dropdown
 
 __all__ = ["ScenarioManagerDialog"]
 
@@ -40,7 +41,7 @@ _ASSUMPTIONS = (
 )
 
 
-class ScenarioManagerDialog(Gtk.Window):
+class ScenarioManagerDialog(BoundedWindow):
     """Rename, duplicate, delete, and edit a saved scenario's base assumptions."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, manager) -> None:
@@ -74,7 +75,7 @@ class ScenarioManagerDialog(Gtk.Window):
 
         picker_row = Gtk.Box(spacing=8)
         picker_row.append(Gtk.Label(label="Scenario"))
-        self.picker = Gtk.DropDown()
+        self.picker = bounded_dropdown()
         self.picker.set_hexpand(True)
         self.picker.connect("notify::selected", self._on_selected)
         picker_row.append(self.picker)
@@ -101,7 +102,7 @@ class ScenarioManagerDialog(Gtk.Window):
         parent_row = Gtk.Box(spacing=8)
         self.parent_label = Gtk.Label(label="Inherit assumptions from", xalign=0)
         parent_row.append(self.parent_label)
-        self.parent_picker = Gtk.DropDown()
+        self.parent_picker = bounded_dropdown()
         self.parent_picker.set_hexpand(True)
         parent_row.append(self.parent_picker)
         self.editor.append(parent_row)
@@ -424,7 +425,7 @@ class ScenarioManagerDialog(Gtk.Window):
         self.status.add_css_class("negative")
 
 
-class AccountAssumptionsDialog(Gtk.Window):
+class AccountAssumptionsDialog(BoundedWindow):
     """Edit optional annual Projection rates for individual accounts."""
 
     def __init__(self, parent, db, accounts, values, callback) -> None:
@@ -495,7 +496,7 @@ class AccountAssumptionsDialog(Gtk.Window):
         self.close()
 
 
-class AssumptionTimelineDialog(Gtk.Window):
+class AssumptionTimelineDialog(BoundedWindow):
     """List and edit dated overrides for one saved scenario."""
 
     def __init__(
@@ -532,7 +533,7 @@ class AssumptionTimelineDialog(Gtk.Window):
         )
 
         row = Gtk.Box(spacing=8)
-        self.picker = Gtk.DropDown()
+        self.picker = bounded_dropdown()
         self.picker.set_hexpand(True)
         row.append(self.picker)
         add = Gtk.Button(label="Add…")
@@ -633,7 +634,7 @@ class AssumptionTimelineDialog(Gtk.Window):
         self._reload(selected)
 
 
-class AssumptionPeriodDialog(Gtk.Window):
+class AssumptionPeriodDialog(BoundedWindow):
     """Edit one dated set of optional annual-rate overrides."""
 
     def __init__(
@@ -761,7 +762,7 @@ class AssumptionPeriodDialog(Gtk.Window):
         self.close()
 
 
-class ScenarioDeleteDialog(Gtk.Window):
+class ScenarioDeleteDialog(BoundedWindow):
     """Confirm destructive removal of one saved scenario."""
 
     def __init__(
