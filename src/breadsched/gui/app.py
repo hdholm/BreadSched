@@ -648,6 +648,7 @@ def build_menu_model(actions_menu: ActionsMenu | None = None) -> Gio.Menu:
     file_menu.append_section(None, safety)
     quit_section = Gio.Menu()
     quit_section.append("_Print Current View…", "win.print-view")
+    quit_section.append("Print in _Browser…", "win.print-browser")
     quit_section.append("_Quit", "app.quit")
     file_menu.append_section(None, quit_section)
     menubar.append_submenu("_File", file_menu)

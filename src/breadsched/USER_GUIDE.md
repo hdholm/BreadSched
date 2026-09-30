@@ -1065,11 +1065,13 @@ until you accept, and accepting is one undo step.
 
 ## Print, export, and inspect
 
-Dashboard, Plan, and Projection can be printed as a self-contained preview that uses
-the controls and calculation already applied in the view; use the browser print
-dialog for a printer or PDF ([desktop](guide/desktop.md#print-and-export),
-[browser](guide/web.md#print)). Plan printing leads with the cash outlook and omits
-the private book path. Optional category detail begins on a new page. Transactions
+Dashboard, Plan, and Projection print what the view shows, with the controls and
+calculation already applied. The desktop prints through the system print dialog,
+for a printer, a preview, or a PDF file, and can also open the same report in your
+web browser; the browser interface prints its page
+([desktop](guide/desktop.md#print-and-export), [browser](guide/web.md#print)).
+Plan printing leads with the cash outlook and omits the private book path.
+Optional category detail begins on a new page. Transactions
 can be exported, and Projection exposes its dated state and explanations in its
 supported outputs.
 

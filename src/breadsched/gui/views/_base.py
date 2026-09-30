@@ -9,6 +9,8 @@ import fired a hundred of them.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ...gen.db.sqlite import DbSQLite  # noqa: E402
 from ...gen.lib.money import Money  # noqa: E402
 from ..gi_setup import GLib, GObject, Gtk, Pango
@@ -51,6 +53,11 @@ class BaseView(Gtk.Box):
         self._handlers: list[int] = []
         self._refresh_pending = False
         self._refresh_source_id: int | None = None
+
+    def book_name(self) -> str:
+        """The open book's file name, for report subtitles."""
+        book_path = getattr(self.manager.get_application(), "book_path", None)
+        return Path(book_path).name if book_path else ""
 
     def set_db(self, db: DbSQLite | None) -> None:
         """Attach to ``db``, or detach when ``None`` is supplied.

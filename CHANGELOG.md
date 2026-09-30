@@ -3,6 +3,21 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a200 - 2026-09-30
+
+- **Native printing.** On the desktop, **Print** (`Ctrl+P`) for Dashboard, Plan,
+  and Projection now opens the system print dialog instead of a browser page:
+  print, preview where the dialog offers it, or save a PDF, on landscape pages by
+  default. Tables continue across pages with their headings repeated, a heading
+  is never stranded at the foot of a page, wide Plan tables shrink to fit, and
+  every page shows the report name and page number. The Plan's category detail
+  is a checkbox on the dialog's **Report** tab and starts on a new page.
+- **One layout for every printout.** The three reports are laid out once and
+  drawn either natively or as the HTML page, so both say the same thing; **File
+  → Print in Browser…** keeps the browser route. The Windows installer check
+  now prints every report through the native renderer to PDF. Application
+  version `0.2.0a200`; native schema remains 10.
+
 ## 0.2.0a199 - 2026-09-29
 
 - **A Projection tab per scenario.** On the desktop, **New tab** in Projection

@@ -11,9 +11,11 @@ double:
   CSV at the path the dialog returned to the application. (The save dialog keeps
   its own suggested name when the box is set programmatically; the Open dialog
   takes the typed path.)
-- **Print** runs the Print action on every printable view and requires the
-  report to be written, a default handler for it to exist, and opening it to
-  succeed.
+- **Print** runs the Print action on every printable view. The native print
+  dialog is modal, so the check stands in for it by drawing the view's report
+  with the same native renderer straight to a PDF (the dialog's "Print to File")
+  and requires real pages. **Print in Browser** then requires the HTML report to
+  be written, a default handler for it to exist, and opening it to succeed.
 
 Usage: python windows_desktop_checks.py BOOK OTHER_BOOK WORK_DIR REPORT
 """
@@ -266,10 +268,19 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
     header = export.read_text(encoding="utf-8").splitlines()[0]
     assert header.startswith("date,"), header
 
-    # Print every printable view through the application's Print action.
+    # Print every printable view through the application's Print actions.
     printed: dict[str, dict[str, Any]] = {}
+    native: dict[str, dict[str, Any]] = {}
     current = {"view": ""}
     real_open = printing.open_print_preview
+    real_print = printing.print_report
+
+    def recording_print(parent: Any, document: Any, **_kwargs: Any) -> Any:
+        target = Path(work_dir) / f"print-{current['view']}.pdf"
+        pages = printing.export_pdf(document, target, include_optional=True)
+        assert pages >= 1 and target.read_bytes().startswith(b"%PDF"), target
+        native[current["view"]] = {"pages": pages, "bytes": target.stat().st_size}
+        return Gtk.PrintOperationResult.APPLY
 
     def recording_open(document: str) -> Path:
         path = printing.write_print_preview(document)
@@ -285,6 +296,7 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
         return path
 
     printing.open_print_preview = recording_open
+    printing.print_report = recording_print
     try:
         for key, *_rest in CATEGORIES:
             window.show_category(key)
@@ -293,12 +305,16 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
             if not getattr(view, "PRINTABLE", False):
                 continue
             current["view"] = key
-            # The Print action writes and opens the report before it returns.
+            # Both actions finish their report before they return.
             window.print_action.activate(None)
+            settle()
+            assert key in native, (key, reported)
+            window.print_browser_action.activate(None)
             settle()
             assert key in printed, (key, reported)
     finally:
         printing.open_print_preview = real_open
+        printing.print_report = real_print
     assert not reported, reported
     assert printed, "no printable view was printed"
 
@@ -307,6 +323,7 @@ def main(book: str, other_book: str, work_dir: str, report_path: str) -> int:
         "exported": str(export),
         "export_header": header,
         "printed": printed,
+        "native_printed": native,
         "dialogs": accepted,
         "results": finished,
     }

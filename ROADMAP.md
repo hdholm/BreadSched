@@ -57,7 +57,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 3. **Next — Interface, FSA, and scheduling.** Take the
    GTK/web parity and reporting items, then FSA/benefit accounts and claims, then
    scheduled transactions and loans (sections below). Scenario Projection tabs,
-   remembered tabs per book, and browser-tab counterparts are delivered.
+   remembered tabs per book, browser-tab counterparts, and native GTK printing of
+   Dashboard, Plan, and Projection are delivered.
 
 
 ## Architecture and correctness
@@ -262,12 +263,11 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   shrink again. Cover long notes, complex split editors, tables, and small-screen GTK
   behavior with runtime regressions.
 
-- **Add native GTK printing.** Render the current structured Dashboard, Plan, and
-  Projection state through a GTK-native/system print path without an HTML/browser
-  intermediary. Share report layout inputs with existing output, paginate tables and
-  notes with repeatable headings, support preview/printer/PDF destinations where the
-  platform provides them, and keep the current HTML route as a compatibility fallback
-  until the native path is available and tested on supported GTK runtimes.
+- **Native printing for the dialog reports.** Dashboard, Plan, and Projection print
+  through GTK from a shared report layout. Move the net worth change and Expense
+  Explorer printouts to that layout too, then decide whether **Print in Browser**
+  is still needed once the native path has been used on macOS and inside the
+  Flatpak sandbox.
 
 ## In-application help and documentation
 

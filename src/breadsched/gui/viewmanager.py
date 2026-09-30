@@ -300,6 +300,11 @@ class ViewManager(Gtk.ApplicationWindow):
         self.print_action.connect("activate", self._on_print_view)
         self.print_action.set_enabled(False)
         self.add_action(self.print_action)
+        # The HTML report in the system browser, kept as a fallback.
+        self.print_browser_action = Gio.SimpleAction.new("print-browser", None)
+        self.print_browser_action.connect("activate", self._on_print_in_browser)
+        self.print_browser_action.set_enabled(False)
+        self.add_action(self.print_browser_action)
         self.view_actions: dict[str, Gio.SimpleAction] = {}
         for key, actions in VIEW_ACTIONS.items():
             for item in actions:
@@ -490,6 +495,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self._register_windows.clear()
         self.db = None
         self.print_action.set_enabled(False)
+        self.print_browser_action.set_enabled(False)
         self.category_action.set_enabled(False)
         for action in self.view_actions.values():
             action.set_enabled(False)
@@ -728,31 +734,55 @@ class ViewManager(Gtk.ApplicationWindow):
         self.category_action.set_state(GLib.Variant.new_string(key))
         self._show_view_tools(key)
         view.refresh()
-        self.print_action.set_enabled(
-            bool(self.db is not None and getattr(view, "PRINTABLE", False))
-        )
+        self._enable_printing(view)
 
-    def _on_print_view(self, *_args) -> None:
-        """Print the applied state of a report-capable current view."""
+    def _enable_printing(self, view) -> None:
+        printable = bool(self.db is not None and getattr(view, "PRINTABLE", False))
+        self.print_action.set_enabled(printable)
+        self.print_browser_action.set_enabled(printable)
+
+    def _printable_view(self):
+        """The shown report-capable view, once its applied state is current."""
         view = self.stack.get_visible_child()
         if view is None or not getattr(view, "PRINTABLE", False):
-            return
+            return None
+        view.flush_refresh()
+        wait_for_background = getattr(view, "wait_for_background", None)
+        if callable(wait_for_background) and not wait_for_background():
+            raise TimeoutError("the current report is still calculating")
+        return view
+
+    def _report_error(self, message: str) -> None:
+        reporter = getattr(self.get_application(), "_report", None)
+        if reporter is not None:
+            reporter(message)
+
+    def _on_print_view(self, *_args) -> None:
+        """Print the applied state of the current report through GTK printing."""
         try:
-            view.flush_refresh()
-            wait_for_background = getattr(view, "wait_for_background", None)
-            if callable(wait_for_background) and not wait_for_background():
-                raise TimeoutError("the current report is still calculating")
-            document = view.printable_html()
+            view = self._printable_view()
+            document = view.printable_report() if view is not None else None
+        except Exception as exc:  # noqa: BLE001 - reported, never lost
+            self._report_error(f"Could not prepare the report: {exc}")
+            return
+        if document is None:
+            return
+        from . import printing
+
+        printing.print_report(self, document, on_error=self._report_error)
+
+    def _on_print_in_browser(self, *_args) -> None:
+        """Open the current report as a web page, for the browser's print dialog."""
+        try:
+            view = self._printable_view()
+            document = view.printable_html() if view is not None else None
             if not document:
                 return
-            from .printing import open_print_preview
+            from . import printing
 
-            open_print_preview(document)
+            printing.open_print_preview(document)
         except Exception as exc:  # noqa: BLE001 - opening the desktop handler may fail
-            application = self.get_application()
-            reporter = getattr(application, "_report", None)
-            if reporter is not None:
-                reporter(f"Could not open the print preview: {exc}")
+            self._report_error(f"Could not open the print preview: {exc}")
 
     def _build_view(self, key: str):
         from .views.accounts import AccountTreeView
@@ -859,7 +889,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self.category_action.set_state(GLib.Variant.new_string("projection"))
         self._show_view_tools("projection")
         projection.refresh()
-        self.print_action.set_enabled(self.db is not None)
+        self._enable_printing(projection)
 
     def _drop_projection(self, projection) -> None:
         projection.set_db(None)

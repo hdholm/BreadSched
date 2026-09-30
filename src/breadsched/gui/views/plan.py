@@ -626,24 +626,27 @@ class PlanView(BaseView):
             ),
         ).present()
 
-    def printable_html(self) -> str | None:
-        """Return the applied Plan state, not un-applied control edits."""
+    def printable_report(self):
+        """The applied Plan state, not un-applied control edits, laid out."""
         if self._report is None:
             return None
-        from pathlib import Path
-
-        from ...plugins.export.html_report import plan_report
+        from ...plugins.export.report_layout import plan_layout
 
         selected = self._selected_scenario()
-        application = self.manager.get_application()
-        book_path = getattr(application, "book_path", None)
-        return plan_report(
+        return plan_layout(
             self._report,
             self._measure(),
             scenario_name=selected.name if selected is not None else "Base scenario",
-            book_name=Path(book_path).name if book_path else "",
+            book_name=self.book_name(),
             goal_milestones=getattr(self, "goal_milestones", ()),
         )
+
+    def printable_html(self) -> str | None:
+        """The same report as a web page, for printing from a browser."""
+        from ...plugins.export.html_report import render_html
+
+        document = self.printable_report()
+        return render_html(document) if document is not None else None
 
     def _clear_grid(self) -> None:
         child = self.grid.get_first_child()
