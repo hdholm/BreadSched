@@ -19,6 +19,8 @@ from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
+from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
+from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ...gen.services.plan import PlanGoalMilestone
 from ...presentation import goal_status_text, plan_goal_text, projection_goal_notes
 
@@ -36,6 +38,9 @@ __all__ = [
     "Table",
     "TableRow",
     "dashboard_layout",
+    "expense_explorer_layout",
+    "net_worth_change_layout",
+    "net_worth_history_layout",
     "money_text",
     "plan_layout",
     "projection_layout",
@@ -85,7 +90,8 @@ class Cell:
     """One table cell.
 
     ``indent`` is a nesting depth; ``note`` follows the text in a quieter style,
-    and ``below`` puts it on its own line; ``hint`` is hover text on screen.
+    and ``below`` puts it on its own line; ``hint`` is hover text on screen. Text
+    may hold line breaks. ``span`` is how many columns the cell covers.
     """
 
     text: str
@@ -95,6 +101,7 @@ class Cell:
     note: str = ""
     below: bool = False
     hint: str = ""
+    span: int = 1
 
 
 @dataclass(frozen=True)
@@ -736,3 +743,298 @@ def _projection_comparison(result: Projection, comparison: Projection) -> list[B
             tuple(rows),
         ),
     ]
+
+
+# ------------------------------------------------------ Expense Explorer
+
+
+def _over_time(
+    title: str, points: tuple[SpendingPoint, ...], names: dict[str, str], as_of: str
+) -> list[Block]:
+    """Total plan and actual by period, with actual split by top-level category."""
+    parts = points[0].categories if points else ()
+    rows = []
+    for point in points:
+        notes = [
+            text
+            for flag, text in (
+                (point.partial, "to date"),
+                (point.future, "future"),
+                (point.currency_incomplete, "missing quote"),
+            )
+            if flag
+        ]
+        rows.append(
+            TableRow(
+                (
+                    Cell(point.label),
+                    _amount(point.planned),
+                    _amount(point.actual),
+                    *(_amount(amount) for _handle, amount in point.categories),
+                    Cell(", ".join(notes) or "—"),
+                )
+            )
+        )
+    return [
+        Heading(title),
+        Paragraph(
+            "Total plan and actual by period, with actual split by top-level category. "
+            f"Actual is posted through {as_of}."
+        ),
+        Table(
+            (
+                Column("Period"),
+                Column("Plan", True),
+                Column("Actual", True),
+                *(Column(names.get(handle, handle), True) for handle, _ in parts),
+                Column("Note"),
+            ),
+            tuple(rows),
+        ),
+    ]
+
+
+def _income_detail(explorer: ExpenseExplorer, detail: ExpenseDrilldown) -> list[Block]:
+    """The dated planned occurrences and receipts behind one income period."""
+    name = next(
+        (row.full_name for row in explorer.income_categories if row.account == detail.account),
+        detail.account,
+    )
+    return [
+        Heading(f"Income detail — {name} — {detail.period.label}"),
+        Table(
+            _columns("Planned date", "Scheduled", "#Expected"),
+            tuple(
+                TableRow(
+                    (
+                        Cell(item.planned_date.isoformat()),
+                        Cell(item.description),
+                        _amount(item.expected),
+                    )
+                )
+                for item in detail.planned_events
+            ),
+        ),
+        Table(
+            _columns("Received", "Payer", "#Actual"),
+            tuple(
+                TableRow((Cell(item.post_date.isoformat()), Cell(group.name), _amount(item.amount)))
+                for group in detail.merchants
+                for item in group.transactions
+            ),
+        ),
+        Paragraph(
+            f"Planned {money_text(detail.period.planned)}; "
+            f"actual {money_text(detail.period.actual)}."
+        ),
+    ]
+
+
+def expense_explorer_layout(
+    explorer: ExpenseExplorer, income_detail: ExpenseDrilldown | None = None
+) -> ReportDocument:
+    """The selected expense cell and its shared Plan breakdown.
+
+    ``income_detail``, an income category's drilldown for the same period, adds the
+    dated occurrences and receipts behind it.
+    """
+    detail = explorer.drilldown
+    if detail is None:
+        raise ValueError("expense printout requires a selected category and period")
+    category = next(item for item in explorer.categories if item.account == detail.account)
+    selected = detail.period
+
+    def remaining(item) -> Cell:
+        if item.remaining is not None:
+            return _amount(item.remaining)
+        return Cell(item.remaining_reason or "—", numeric=True)
+
+    def values(label: str, item) -> TableRow:
+        return TableRow(
+            (
+                Cell(label),
+                _amount(item.planned),
+                _amount(item.actual),
+                _amount(item.variance),
+                _amount(item.carry_in),
+                remaining(item),
+            )
+        )
+
+    index = next(i for i, item in enumerate(category.periods) if item.start == selected.start)
+    value_columns = ("#Plan", "#Actual", "#Variance", "#Carry in", "#Remaining")
+    as_of = explorer.plan.report.as_of.isoformat()
+    blocks: list[Block] = [
+        *_over_time(
+            "Spending over time",
+            explorer.spending,
+            {row.account: row.full_name for row in explorer.categories},
+            as_of,
+        ),
+        *_over_time(
+            "Income over time",
+            explorer.income,
+            {row.account: row.full_name for row in explorer.income_categories},
+            as_of,
+        ),
+        Heading("Category comparison"),
+        Paragraph(
+            "Remaining uses actual through the as-of date; Actual and Variance show "
+            "full-period values. Carry in is shown only when rollover is enabled."
+        ),
+        Table(
+            _columns("Category", *value_columns),
+            tuple(values(row.full_name, row.periods[index]) for row in explorer.categories),
+        ),
+        Heading(f"{category.full_name} trend"),
+        Table(
+            _columns("Period", *value_columns),
+            tuple(values(item.label, item) for item in category.periods),
+        ),
+        Heading("Merchants — actual only"),
+        Paragraph("Category plan is unallocated across merchants."),
+        Table(
+            _columns("Merchant", "#Actual", "Transactions"),
+            tuple(
+                TableRow(
+                    (
+                        Cell(group.name),
+                        _amount(group.amount),
+                        Cell(
+                            "\n".join(
+                                f"{item.post_date.isoformat()} · "
+                                f"{item.description.strip() or 'Unknown merchant'} · "
+                                f"{money_text(item.amount)}"
+                                for item in group.transactions
+                            )
+                        ),
+                    )
+                )
+                for group in detail.merchants
+            ),
+        ),
+    ]
+    if income_detail is not None and income_detail.income:
+        blocks += _income_detail(explorer, income_detail)
+    subtitle = (
+        f"{explorer.plan.scenario.name} · {explorer.plan.start.isoformat()} through "
+        f"{explorer.plan.end.isoformat()} · {selected.label}"
+    )
+    return ReportDocument(
+        "Expense Explorer", subtitle, (Section(tuple(blocks)),), kind="expense-explorer"
+    )
+
+
+# -------------------------------------------------------------- Net worth
+
+
+def net_worth_history_layout(history: NetWorthHistory) -> ReportDocument:
+    """Net worth at each period end, with each point's top-level breakdown."""
+    rows = []
+    for point in history.points:
+        notes = [
+            text
+            for text in (
+                "to date" if point.partial else "",
+                f"missing quote: {', '.join(point.missing)}" if point.missing else "",
+            )
+            if text
+        ]
+        breakdown = "\n".join(
+            f"{line.name} ({line.kind}): {money_text(line.value)}" for line in point.lines
+        )
+        rows.append(
+            TableRow(
+                (
+                    Cell(point.label),
+                    Cell(point.valued_on.isoformat()),
+                    _amount(point.assets),
+                    _amount(point.debts),
+                    _amount(point.net_worth),
+                    _amount(point.change, signed=True),
+                    Cell("; ".join(notes) or "—"),
+                    Cell(breakdown or "—"),
+                )
+            )
+        )
+    blocks: tuple[Block, ...] = (
+        Paragraph(
+            "Assets less debts, market-valued at each period end. A point with a missing "
+            "quote shows — and names the account rather than guessing a conversion."
+        ),
+        Table(
+            _columns(
+                "Period",
+                "Valued on",
+                "#Assets",
+                "#Debts",
+                "#Net worth",
+                "#Change",
+                "Note",
+                "Top-level accounts",
+            ),
+            tuple(rows),
+        ),
+    )
+    subtitle = (
+        f"{history.start.isoformat()} through {history.end.isoformat()} · "
+        f"by {history.period.value} · valued through {history.as_of.isoformat()}"
+    )
+    return ReportDocument(
+        "Net worth history", subtitle, (Section(blocks),), kind="net-worth-history"
+    )
+
+
+def net_worth_change_layout(change: NetWorthChange) -> ReportDocument:
+    """The postings behind one net worth change and what they reconcile to."""
+    rows = [
+        TableRow(
+            (
+                Cell(posting.posted.isoformat()),
+                Cell(posting.description),
+                Cell("; ".join(posting.accounts)),
+                Cell(posting.currency),
+                _amount(posting.effect),
+                Cell("missing quote" if posting.effect is None else ""),
+            )
+        )
+        for posting in change.postings
+    ]
+    for number, (label, value) in enumerate(
+        (
+            (f"Opening net worth ({change.opening_on.isoformat()})", change.opening),
+            ("Postings", change.posted),
+            ("Market and exchange-rate changes", change.revaluation),
+            (f"Closing net worth ({change.closing_on.isoformat()})", change.closing),
+            ("Change", change.change),
+        )
+    ):
+        rows.append(
+            TableRow(
+                (Cell(label, span=4), _amount(value), Cell("")),
+                "total" if number == 0 else "heading",
+            )
+        )
+    notes = [
+        "Each posting is the net of its splits in asset and debt accounts, converted "
+        "with the quote applicable on its date. Market and exchange-rate changes are "
+        "the rest of the change."
+    ]
+    if change.transfers:
+        notes.append(
+            f"{change.transfers} transfer(s) between your own accounts left out: "
+            "they do not change net worth."
+        )
+    if change.missing:
+        notes.append(f"Missing quote: {', '.join(change.missing)}. Totals are withheld.")
+    blocks: tuple[Block, ...] = (
+        *_notes(notes),
+        Table(
+            _columns("Date", "Description", "Accounts", "Currency", "#Net worth effect", "Note"),
+            tuple(rows),
+        ),
+    )
+    subtitle = f"{change.start.isoformat()} through {change.closing_on.isoformat()}" + (
+        " · to date" if change.partial else ""
+    )
+    return ReportDocument("Net worth change", subtitle, (Section(blocks),), kind="net-worth-change")

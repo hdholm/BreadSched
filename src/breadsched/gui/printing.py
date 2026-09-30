@@ -8,8 +8,8 @@ optional section (the Plan's category detail) adds a **Report** tab to the dialo
 to include it. :func:`export_pdf` draws the same pages straight to a PDF file.
 
 The older route, a private self-contained HTML page opened in the default browser,
-stays available as **File → Print in Browser…** and for the smaller reports that
-have no native layout yet.
+stays available as **File → Print in Browser…**; the dialog reports
+(:func:`print_document`) fall back to it when GTK printing fails.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from .report_printer import ReportPrinter
 
 __all__ = [
     "export_pdf",
+    "print_document",
     "open_print_preview",
     "print_report",
     "write_print_preview",
@@ -166,6 +167,16 @@ def print_report(
         _SESSION["settings"] = operation.get_print_settings()
         _SESSION["page_setup"] = operation.get_default_page_setup()
     return result
+
+
+def print_document(parent: Gtk.Window | None, document: ReportDocument) -> None:
+    """Print natively; if GTK printing fails, open the report in the browser."""
+    failures: list[str] = []
+    result = print_report(parent, document, on_error=failures.append)
+    if result == Gtk.PrintOperationResult.ERROR:
+        from ..plugins.export.html_report import render_html
+
+        open_print_preview(render_html(document))
 
 
 @atexit.register

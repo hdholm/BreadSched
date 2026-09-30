@@ -263,10 +263,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   shrink again. Cover long notes, complex split editors, tables, and small-screen GTK
   behavior with runtime regressions.
 
-- **Native printing for the dialog reports.** Dashboard, Plan, and Projection print
-  through GTK from a shared report layout. Move the net worth change and Expense
-  Explorer printouts to that layout too, then decide whether **Print in Browser**
-  is still needed once the native path has been used on macOS and inside the
+- **Decide on the browser print fallback.** Every desktop printout now prints
+  through GTK from the shared report layout. Decide whether **Print in Browser**
+  is still needed once native printing has been used on macOS and inside the
   Flatpak sandbox.
 
 ## In-application help and documentation

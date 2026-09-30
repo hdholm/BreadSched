@@ -73,6 +73,19 @@ class _Page:
         return "\n".join(item.text for _y, item in self.placed if item.text)
 
 
+def _cell_at(row, column: int) -> Cell | None:
+    """The cell that alone occupies ``column`` in ``row``; None under a span."""
+    start = 0
+    for cell in row.cells:
+        span = max(1, cell.span)
+        if start == column:
+            return cell if span == 1 else None
+        if start < column < start + span:
+            return None
+        start += span
+    return None
+
+
 class ReportPrinter:
     """Paginate and draw one report on pages of ``width`` × ``height`` points."""
 
@@ -287,9 +300,9 @@ class ReportPrinter:
             for index, column in enumerate(table.columns):
                 natural = self._natural(column.label, size * _SMALL / _BODY, bold=True)
                 for row in table.rows:
-                    if row.style == "section" or index >= len(row.cells):
+                    cell = _cell_at(row, index)
+                    if row.style == "section" or cell is None:
                         continue
-                    cell = row.cells[index]
                     text = self._cell_text(cell)
                     if cell.note and not cell.below:
                         text = f"{text} {cell.note}"
@@ -357,10 +370,15 @@ class ReportPrinter:
         if row.style == "section":
             spans = [(row.cells[0], sum(widths), False)]
         else:
-            spans = [
-                (cell, widths[index], table.columns[index].numeric)
-                for index, cell in enumerate(row.cells[: len(widths)])
-            ]
+            spans = []
+            start = 0
+            for cell in row.cells:
+                if start >= len(widths):
+                    break
+                end = min(len(widths), start + max(1, cell.span))
+                numeric = end - start == 1 and table.columns[start].numeric
+                spans.append((cell, sum(widths[start:end]), numeric))
+                start = end
         laid = []
         for cell, width, numeric in spans:
             text = self._cell_text(cell)

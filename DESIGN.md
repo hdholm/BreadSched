@@ -2536,8 +2536,11 @@ toward a 5.5 pt minimum and then scales. `printing.export_pdf` draws the same pa
 straight to a PDF 1.4 file, which tests and the Windows installer check use.
 **File → Print in Browser…** keeps the earlier route as a fallback: a private,
 owner-readable HTML preview opened in the default browser and removed when the
-application exits. The smaller dialog reports (net worth change, Expense Explorer)
-still print only through that route.
+application exits. The dialog reports (Net Worth History, its change detail, and
+Expense Explorer) have layouts of their own and print through
+`printing.print_document`, which opens the browser preview only when GTK printing
+fails. A cell may span columns (`Cell.span`, used by the net worth change totals)
+and hold line breaks (merchant transactions, top-level account values).
 
 Plan printing has two explicit layers. The default print surface contains the
 scenario/horizon context, liquidity cards, and signed cash bridge needed to locate

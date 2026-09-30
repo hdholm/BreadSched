@@ -235,11 +235,11 @@ class NetWorthHistoryDialog(Gtk.Window):
         self.change_box.append(scroll)
 
     def _print_change(self, _button) -> None:
-        from ...plugins.export.html_report import net_worth_change_report
-        from ..printing import open_print_preview
+        from ...plugins.export.report_layout import net_worth_change_layout
+        from .. import printing
 
         if self.change is not None:
-            open_print_preview(net_worth_change_report(self.change))
+            printing.print_document(self, net_worth_change_layout(self.change))
 
     def export_change(self, path: str) -> None:
         from ...plugins.export.csv_export import export_net_worth_change
@@ -265,8 +265,8 @@ class NetWorthHistoryDialog(Gtk.Window):
         dialog.save(self, None, on_saved)
 
     def _print(self, _button) -> None:
-        from ...plugins.export.html_report import net_worth_history_report
-        from ..printing import open_print_preview
+        from ...plugins.export.report_layout import net_worth_history_layout
+        from .. import printing
 
         if self.history is not None:
-            open_print_preview(net_worth_history_report(self.history))
+            printing.print_document(self, net_worth_history_layout(self.history))

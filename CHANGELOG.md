@@ -3,6 +3,15 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a201 - 2026-09-30
+
+- **Every desktop printout is native.** **Print…** in Net Worth History, its
+  change detail, and Expense Explorer now uses the system print dialog with the
+  same paginated layout as Dashboard, Plan, and Projection, and opens the browser
+  page only if GTK printing fails. The net worth change totals span their label
+  columns, and merchant transactions and top-level account values keep one line
+  each. Application version `0.2.0a201`; native schema remains 10.
+
 ## 0.2.0a200 - 2026-09-30
 
 - **Native printing.** On the desktop, **Print** (`Ctrl+P`) for Dashboard, Plan,
