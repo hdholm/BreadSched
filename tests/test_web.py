@@ -67,6 +67,11 @@ def raw_http(client, request: bytes) -> tuple[int, dict]:
     return status, json.loads(body)
 
 
+#: Seconds a test request may take. A loaded Windows CI runner has stalled one
+#: small request past ten seconds, so this allows for slow machines.
+REQUEST_TIMEOUT = 60
+
+
 @pytest.fixture
 def book_path(tmp_path, capsys):
     source = create_book(
@@ -113,14 +118,14 @@ def client(book_path):
         database = db
 
         def raw(self, path: str):
-            with urllib.request.urlopen(base + path, timeout=10) as response:
+            with urllib.request.urlopen(base + path, timeout=REQUEST_TIMEOUT) as response:
                 return response.status, response.read(), response.headers
 
         def get(self, path: str):
             request = urllib.request.Request(
                 base + path, headers={"X-BreadSched-Token": self.token}
             )
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
                 return response.status, json.loads(response.read())
 
         def post(self, path: str, payload: dict):
@@ -133,7 +138,7 @@ def client(book_path):
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
                 return response.status, json.loads(response.read())
 
         def upload(self, filename: str, content: bytes, **options):
@@ -196,7 +201,7 @@ def review_client(book_path):
             request = urllib.request.Request(
                 base + path, headers={"X-BreadSched-Token": self.token}
             )
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
                 return response.status, json.loads(response.read())
 
         def post(self, path: str, payload: dict):
@@ -209,7 +214,7 @@ def review_client(book_path):
                 },
                 method="POST",
             )
-            with urllib.request.urlopen(request, timeout=10) as response:
+            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as response:
                 return response.status, json.loads(response.read())
 
     try:
@@ -613,6 +618,49 @@ class TestItServes:
         _status, accounts = client.get("/api/accounts")
         fsa_account = next(row for row in accounts if row["name"] == "401(k)")
         assert fsa_account["fsa_years"][0]["election"] == "3000.00"
+
+    def test_fsa_plan_rules_are_saved_shown_and_checked(self, client):
+        _status, accounts = client.get("/api/accounts")
+        retirement = next(row for row in accounts if row["name"] == "401(k)")
+        client.post("/api/account/type", {"handle": retirement["handle"], "type": "FSA"})
+        before = client.database.get_account(retirement["handle"]).serialize()
+
+        def years(**rules):
+            return {
+                "handle": retirement["handle"],
+                "years": [
+                    {
+                        "start": "2026-01-01",
+                        "through": "2026-12-31",
+                        "election": "1000.00",
+                        "runout_through": "2027-03-31",
+                        **rules,
+                    }
+                ],
+            }
+
+        # A grace period must end by the run-out; a refused save changes nothing.
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/account/fsa-years", years(grace_through="2027-04-15"))
+        assert caught.value.code == 400
+        assert client.database.get_account(retirement["handle"]).serialize() == before
+        status, _payload = client.post(
+            "/api/account/fsa-years", years(carryover_limit="640", grace_through=None)
+        )
+        assert status == 200
+        _status, accounts = client.get("/api/accounts")
+        stored = next(row for row in accounts if row["name"] == "401(k)")["fsa_years"][0]
+        assert (stored["carryover_limit"], stored["grace_through"]) == ("640.00", None)
+        # A plan may have both a carryover and a grace period.
+        client.post(
+            "/api/account/fsa-years", years(carryover_limit="640", grace_through="2027-03-15")
+        )
+        _status, accounts = client.get("/api/accounts")
+        stored = next(row for row in accounts if row["name"] == "401(k)")["fsa_years"][0]
+        assert (stored["carryover_limit"], stored["grace_through"]) == ("640.00", "2027-03-15")
+        _status, board = client.get("/api/fsa/dashboard")
+        for row in board["years"]:
+            assert {"carried_in", "carried_over", "carryover_limit", "grace_through"} <= set(row)
 
     def test_the_account_tree_has_one_root(self, client):
         """The two-roots bug would show here as a second top-level branch."""

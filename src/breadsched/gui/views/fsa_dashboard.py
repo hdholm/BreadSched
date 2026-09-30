@@ -122,6 +122,8 @@ class FsaDashboardView(BaseView):
             "Funded",
             "Used",
             "Remaining",
+            "Carried in",
+            "Carried over",
             "Forfeited",
         )
         for column_index, heading in enumerate(headings):
@@ -137,6 +139,8 @@ class FsaDashboardView(BaseView):
                 status.funded.format(),
                 status.used.format(),
                 status.remaining.format(),
+                status.carried_in.format(),
+                status.carried_over.format(),
                 status.forfeited.format(),
             )
             for column_index, value in enumerate(values):

@@ -44,6 +44,12 @@ class FsaFundingYear:
     through: date
     election: Money
     runout_through: date | None = None
+    #: The most of the year's unused election the plan carries into the next plan
+    #: year once the run-out ends; the rest is forfeited. ``None``: no carryover.
+    carryover_limit: Money | None = None
+    #: The last day of a grace period after the plan year: services up to it may
+    #: still be claimed against this year. ``None``: no grace period.
+    grace_through: date | None = None
 
     def __post_init__(self) -> None:
         if self.through < self.start:
@@ -52,6 +58,18 @@ class FsaFundingYear:
             raise ValueError("FSA election cannot be negative")
         if self.runout_through is not None and self.runout_through < self.through:
             raise ValueError("FSA run-out date cannot precede funding-year end")
+        if self.carryover_limit is not None and self.carryover_limit < 0:
+            raise ValueError("FSA carryover limit cannot be negative")
+        if self.grace_through is not None:
+            if self.grace_through < self.through:
+                raise ValueError("FSA grace period cannot end before the funding year")
+            if self.runout_through is not None and self.grace_through > self.runout_through:
+                raise ValueError("FSA grace period cannot end after the run-out date")
+
+    @property
+    def service_through(self) -> date:
+        """The last service date this year can pay for, grace period included."""
+        return self.grace_through or self.through
 
     def serialize(self) -> dict[str, object]:
         return {
@@ -59,16 +77,26 @@ class FsaFundingYear:
             "through": self.through.isoformat(),
             "election": [self.election.numerator, self.election.denominator],
             "runout_through": (self.runout_through.isoformat() if self.runout_through else None),
+            "carryover_limit": (
+                [self.carryover_limit.numerator, self.carryover_limit.denominator]
+                if self.carryover_limit is not None
+                else None
+            ),
+            "grace_through": self.grace_through.isoformat() if self.grace_through else None,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> FsaFundingYear:
         raw_runout = data.get("runout_through")
+        raw_carryover = data.get("carryover_limit")
+        raw_grace = data.get("grace_through")
         return cls(
             start=date.fromisoformat(str(data["start"])),
             through=date.fromisoformat(str(data["through"])),
             election=Money(*data["election"]),
             runout_through=date.fromisoformat(str(raw_runout)) if raw_runout else None,
+            carryover_limit=Money(*raw_carryover) if raw_carryover is not None else None,
+            grace_through=date.fromisoformat(str(raw_grace)) if raw_grace else None,
         )
 
 

@@ -348,7 +348,11 @@ function openFsaYearsEditor(account) {
       el("input", { type:"date", value:year.start || "", title:"Funding year start" }),
       el("input", { type:"date", value:year.through || "", title:"Funding year through" }),
       el("input", { value:year.election || "", placeholder:"Election" }),
-      el("input", { type:"date", value:year.runout_through || "", title:"Run-out through" }));
+      el("input", { type:"date", value:year.runout_through || "", title:"Run-out through" }),
+      el("input", { value:year.carryover_limit || "", placeholder:"Carryover limit",
+        title:"The most unused election the plan carries into the next plan year" }),
+      el("input", { type:"date", value:year.grace_through || "",
+        title:"Grace period through: services up to it may be claimed against this year" }));
     row.append(el("button", { class:"action", type:"button", onclick:()=>row.remove() }, "Remove"));
     rows.append(row);
   };
@@ -359,6 +363,7 @@ function openFsaYearsEditor(account) {
       return {
         start: inputs[0].value, through: inputs[1].value,
         election: inputs[2].value.trim(), runout_through: inputs[3].value,
+        carryover_limit: inputs[4].value.trim() || null, grace_through: inputs[5].value || null,
       };
     });
     await post("/api/account/fsa-years", { handle:account.handle, years });
@@ -4759,7 +4764,8 @@ async function showFsaDashboard() {
   const data = await get(`/api/fsa/dashboard?by=${encodeURIComponent(by)}`);
   const yearRows = data.years.map((item) => [
     item.account, `${item.start} – ${item.through}`, item.phase, money(item.election),
-    money(item.funded), money(item.used), money(item.remaining), money(item.forfeited),
+    money(item.funded), money(item.used), money(item.remaining),
+    money(item.carried_in), money(item.carried_over), money(item.forfeited),
   ]);
   const claimRows = data.claims.map((claim) => [
     claim.service_date, claim.provider, claim.status, money(claim.paid),
@@ -4792,7 +4798,8 @@ async function showFsaDashboard() {
     el("h2", {}, "FSA benefit years"),
     yearRows.length ? table(["Account", "Funding year", "Status",
       {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},
-      {label:"Remaining",num:true},{label:"Forfeited",num:true}], yearRows)
+      {label:"Remaining",num:true},{label:"Carried in",num:true},
+      {label:"Carried over",num:true},{label:"Forfeited",num:true}], yearRows)
       : el("p", { class:"note" }, "No open or recently closed FSA benefit years."),
     el("h2", {}, "Open FSA claims"),
     claimRows.length ? table(["Service date", "Provider", "Status",

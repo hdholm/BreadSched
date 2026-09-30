@@ -3,6 +3,20 @@
 This file records completed BreadSched milestones. Current and proposed work
 belongs in `ROADMAP.md`.
 
+## 0.2.0a206 - 2026-09-30
+
+- **FSA carryover and grace periods.** A funding year can record the plan's rules
+  for unused money, either or both. With a **carryover limit**, up to that much of
+  the unused election moves into the account's next funding year once the run-out
+  ends, and only the rest is forfeited. With a **grace period**, services up to its
+  end can still be claimed against the earlier year, choosing the year on the
+  claim; with both, the carryover is what grace-period claims left. Both are edited
+  with the funding years (desktop account dialog, browser editor), and
+  the FSA Dashboard shows what each year carried in and carried over.
+- The browser test client allows slow machines more time per request, after a
+  loaded Windows runner stalled one small request past ten seconds. Application
+  version `0.2.0a206`; native schema remains 10.
+
 ## 0.2.0a205 - 2026-09-30
 
 - **Repaying an FSA over-reimbursement.** When a corrected EOB is lower than what

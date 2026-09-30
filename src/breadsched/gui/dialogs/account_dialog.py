@@ -210,7 +210,9 @@ class AccountDialog(BoundedWindow):
         fsa_note = Gtk.Label(
             label=(
                 "Election availability is tracked separately from the ledger balance. "
-                "Run-out allows explicitly assigned prior-year claims after year-end."
+                "Run-out allows explicitly assigned prior-year claims after year-end. "
+                "A plan may have a carryover limit (unused election moves to the next "
+                "year), a grace period (later services still use this year), or both."
             ),
             xalign=0,
             wrap=True,
@@ -449,20 +451,39 @@ class AccountDialog(BoundedWindow):
         return self.types[self.type_picker.get_selected()]
 
     def _add_fsa_year_row(self, funding_year: FsaFundingYear | None = None) -> None:
-        row = Gtk.Box(spacing=6)
+        # Two lines per year, so the plan rules do not widen the dialog.
+        row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        dates = Gtk.Box(spacing=6)
+        rules = Gtk.Box(spacing=6)
+        row.append(dates)
+        row.append(rules)
         start = Gtk.Entry(placeholder_text="Start YYYY-MM-DD")
         through = Gtk.Entry(placeholder_text="Through YYYY-MM-DD")
         election = Gtk.Entry(placeholder_text="Election")
         runout = Gtk.Entry(placeholder_text="Run-out through (optional)")
+        carryover = Gtk.Entry(placeholder_text="Carryover limit (optional)")
+        carryover.set_tooltip_text(
+            "The most unused election the plan carries into the next plan year"
+        )
+        grace = Gtk.Entry(placeholder_text="Grace through (optional)")
+        grace.set_tooltip_text("Services up to this date may still be claimed against this year")
         if funding_year is not None:
             start.set_text(funding_year.start.isoformat())
             through.set_text(funding_year.through.isoformat())
             election.set_text(f"{funding_year.election.to_decimal():.2f}")
             if funding_year.runout_through:
                 runout.set_text(funding_year.runout_through.isoformat())
-        for widget in (start, through, election, runout):
-            widget.connect("changed", self._validate)
-            row.append(widget)
+            if funding_year.carryover_limit is not None:
+                carryover.set_text(f"{funding_year.carryover_limit.to_decimal():.2f}")
+            if funding_year.grace_through:
+                grace.set_text(funding_year.grace_through.isoformat())
+        for line, widgets in (
+            (dates, (start, through, election, runout)),
+            (rules, (carryover, grace)),
+        ):
+            for widget in widgets:
+                widget.connect("changed", self._validate)
+                line.append(widget)
         remove = Gtk.Button(label="Remove")
 
         def remove_row(*_args) -> None:
@@ -470,8 +491,8 @@ class AccountDialog(BoundedWindow):
             self._validate()
 
         remove.connect("clicked", remove_row)
-        row.append(remove)
-        row._fsa_fields = (start, through, election, runout)
+        rules.append(remove)
+        row._fsa_fields = (start, through, election, runout, carryover, grace)
         self.fsa_rows.append(row)
         self._validate()
 
@@ -481,7 +502,9 @@ class AccountDialog(BoundedWindow):
         years: list[FsaFundingYear] = []
         child = self.fsa_rows.get_first_child()
         while child is not None:
-            start, through, election, runout = child._fsa_fields
+            start, through, election, runout, carryover, grace = child._fsa_fields
+            carryover_text = carryover.get_text().strip()
+            grace_text = grace.get_text().strip()
             years.append(
                 FsaFundingYear(
                     date.fromisoformat(start.get_text().strip()),
@@ -490,6 +513,10 @@ class AccountDialog(BoundedWindow):
                     date.fromisoformat(runout.get_text().strip())
                     if runout.get_text().strip()
                     else None,
+                    carryover_limit=(
+                        Money(parse_user_amount(carryover_text)) if carryover_text else None
+                    ),
+                    grace_through=date.fromisoformat(grace_text) if grace_text else None,
                 )
             )
             child = child.get_next_sibling()
