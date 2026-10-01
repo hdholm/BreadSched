@@ -622,6 +622,36 @@ class TestProjectionView:
         assert view.explain_button.get_sensitive() is True
         assert "events" in view.explain_button.get_tooltip_text()
 
+    def test_projection_explanation_shows_each_stock_reconciling(self, app, window, populated_book):
+        from breadsched.gui.dialogs.projection_detail_dialog import (
+            ProjectionDetailDialog,
+            _children,
+        )
+
+        app.open_book(populated_book)
+        window.show_category("projection")
+        view = _projection(window)
+        dialog = ProjectionDetailDialog(window, app.db, view._result)
+        try:
+
+            def texts(widget):
+                for child in _children(widget):
+                    if isinstance(child, Gtk.Label):
+                        yield child.get_text()
+                    yield from texts(child)
+
+            shown = list(texts(dialog.content))
+            assert "How this month reconciles" in shown
+            assert "Across the whole projection" in shown
+            for label in ("Cash", "Investments", "Debts", "Net worth"):
+                assert label in shown
+            assert shown.count("Reconciles exactly") == 8
+            assert "Investment performance" in shown
+            dialog.month_picker.set_selected(0)
+            assert list(texts(dialog.content)).count("Reconciles exactly") == 8
+        finally:
+            dialog.destroy()
+
     def test_many_projection_notes_are_separated_and_height_bounded(
         self, app, window, populated_book
     ):

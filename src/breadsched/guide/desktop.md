@@ -276,6 +276,11 @@ reads **partial**, and its tooltip lists what is left out; Projection, the
 Dashboard, net worth history, and Expense Explorer show the same labels and lists
 (see [Complete, partial, and unavailable values](../USER_GUIDE.md#complete-partial-and-unavailable-values)).
 
+In Projection, **Explain month…** opens a month: its **How this month reconciles** section
+shows the Cash, Investments, Debts, and Net worth bridges for that month, and
+**Across the whole projection** the same from the first month to the last (see
+[How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)).
+
 Projection runs longer calculations in the background and lets you cancel them.
 Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection. To
 keep several scenarios open at once, use **New tab** in Projection (see

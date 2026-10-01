@@ -370,6 +370,10 @@ breadsched scenario household.breadsched list
 breadsched compare household.breadsched Base "Lower returns"
 ```
 
+`project --bridge` adds the Cash, Investments, Debts, and Net worth bridges across
+the whole projection, and `--bridge 2027-03` those for one month; with `--json` they
+are under `bridges` (see
+[How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)).
 `scenario` also reparents and deletes scenarios; `compare` compares two saved
 scenarios year by year. See
 [Projection and scenarios](../USER_GUIDE.md#projection-and-scenarios).

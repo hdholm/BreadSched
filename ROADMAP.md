@@ -118,10 +118,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   pensions/Social Security, temporary expenses, mortgage payoff, changing return or
   inflation regimes) instead of hard-coded special cases.
 
-- Expose the verified projection-conservation identity in user-facing detail:
-  opening state + dated flows + interest/performance/assumption effects = closing
-  state. Keep the engine invariant executable while making every term inspectable.
-
 
 ## FSA / benefit accounts and claims
 

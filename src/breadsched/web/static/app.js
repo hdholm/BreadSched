@@ -3792,10 +3792,34 @@ async function showProjection() {
     el("h2", {}, "Projection"),
     form, cards, completenessDetails(data.completeness, "Projection"), chart(data.rows),
     comparisonView, goalNotes, warnings,
+    (data.bridges || []).length ? el("details", { class: "projection-bridge" },
+      el("summary", {}, "How the projection reconciles"),
+      el("p", { class: "note" }, "From the first month's opening to the last month's "
+        + "closing: planned events plus cash interest, investment performance, and debt "
+        + "interest explain every change. Choose a month for its own breakdown."),
+      ...bridgeTables(data.bridges)) : null,
     el("p", { class: "note" }, `Scenario "${scenarioData.name}", by year.`),
     table(["Month", { label: "Income", num: true }, { label: "Expense", num: true },
            { label: "Cash", num: true }, { label: "Holdings", num: true },
            { label: "Liabilities", num: true }, { label: "Net worth", num: true }], yearly));
+}
+
+// Opening + planned events + assumption effects = closing, one table per stock.
+function bridgeTables(bridges) {
+  return (bridges || []).map((bridge) => el("div", { class: "bridge" },
+    el("h4", {}, bridge.label),
+    table(["", { label: "Amount", num: true }, "Basis"], [
+      ...bridge.terms.map((term) => el("tr", { class: term.kind === "opening"
+          || term.kind === "closing" ? "subtotal" : null },
+        el("td", {}, term.label),
+        el("td", { class: cls(term.amount) }, money(term.amount)),
+        el("td", { class: "muted" }, term.note || (term.kind === "effect"
+          ? "Assumption effect" : "")))),
+      el("tr", {}, el("td", {}, "Unexplained"),
+        el("td", { class: cls(bridge.unexplained) }, money(bridge.unexplained)),
+        el("td", { class: bridge.reconciles ? "muted" : "neg" }, bridge.reconciles
+          ? "Reconciles exactly" : "Does not reconcile; please report this")),
+    ])));
 }
 
 async function openProjectionDetail(index) {
@@ -3862,6 +3886,10 @@ async function openProjectionDetail(index) {
         el("div", { class: "value" },
           `${(Number(data.assumptions[field]) * 100).toFixed(2)}%`),
         el("div", { class: "note" }, `From ${data.assumption_sources[field]}`)))),
+      el("h3", {}, "How this month reconciles"),
+      el("p", { class: "note" }, "Each closing balance is its opening balance plus the "
+        + "planned events and the interest and performance the assumptions produce."),
+      ...bridgeTables(data.bridges),
       el("h3", {}, "Exact planned events"),
       ...(data.escrow_explanations || []).map((line) =>
         el("p", { class: "note" }, line)),

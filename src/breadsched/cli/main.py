@@ -38,6 +38,7 @@ from ..gen.engine import (
 )
 from ..gen.engine.completeness import Completeness
 from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine, paycheck_breakdown
+from ..gen.engine.projection_bridge import month_bridges, projection_bridges
 from ..gen.lib import (
     Account,
     AccountType,
@@ -3076,6 +3077,10 @@ def cmd_project(args: argparse.Namespace) -> int:
                 right={1, 2, 3, 4},
             )
 
+        bridges = _projection_bridges(result, args.bridge) if args.bridge else None
+        if bridges is not None:
+            text += "\n\n" + _bridge_text(bridges[0], bridges[1])
+
         summary = result.summary()
         if not args.json:
             assumptions = scenario.effective_assumptions()
@@ -3111,6 +3116,14 @@ def cmd_project(args: argparse.Namespace) -> int:
                     for index, r in enumerate(result.rows)
                 ],
                 "goal_milestones": milestones,
+                **(
+                    {
+                        "bridge_period": bridges[0],
+                        "bridges": [item.as_dict() for item in bridges[1]],
+                    }
+                    if bridges is not None
+                    else {}
+                ),
             },
             args,
             text,
@@ -3139,6 +3152,36 @@ def cmd_project(args: argparse.Namespace) -> int:
         return 0
     finally:
         db.close()
+
+
+def _projection_bridges(result, which: str):
+    """(period label, bridges) for ``which``: "all" or a month as YYYY-MM."""
+    if which == "all":
+        whole = projection_bridges(result)
+        if whole is None:
+            raise CommandError("the projection has no months")
+        first, last = result.rows[0], result.rows[-1]
+        return f"{first.label} through {last.label}", whole
+    index = next((row.index for row in result.rows if f"{row.month:%Y-%m}" == which), None)
+    if index is None:
+        raise CommandError(f"no projected month {which!r}; use YYYY-MM within the projection")
+    return result.rows[index].label, month_bridges(result, index)
+
+
+def _bridge_text(period: str, bridges) -> str:
+    lines = [f"How the projection reconciles, {period}:"]
+    for bridge in bridges:
+        rows = [[term.label, term.amount.format(parens_negative=True)] for term in bridge.terms]
+        rows.append(
+            [
+                "Unexplained",
+                bridge.unexplained.format(parens_negative=True)
+                + ("" if bridge.reconciles else "  (does not reconcile)"),
+            ]
+        )
+        lines.append("")
+        lines.append(table(rows, [bridge.label, "amount"], right={1}))
+    return "\n".join(lines)
 
 
 def _scenario_for(db: DbSQLite, args: argparse.Namespace) -> Scenario:
@@ -4776,6 +4819,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     project_cmd.add_argument("--csv", help="also write the monthly rows to this file")
     assumption_flags(project_cmd)
+    project_cmd.add_argument(
+        "--bridge",
+        nargs="?",
+        const="all",
+        metavar="YYYY-MM",
+        help="show how opening balances, planned events, and interest and performance "
+        "reach each closing balance (the whole projection, or one month)",
+    )
     project_cmd.set_defaults(func=cmd_project)
 
     scenario = add("scenario", "Save, list, reparent or delete projection scenarios")

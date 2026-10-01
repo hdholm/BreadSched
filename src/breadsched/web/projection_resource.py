@@ -5,6 +5,7 @@ from __future__ import annotations
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection
 from ..gen.engine.completeness import combine
+from ..gen.engine.projection_bridge import month_bridges, projection_bridges
 from ..gen.lib import Scenario
 from ..presentation import projection_goal_notes
 
@@ -64,6 +65,7 @@ def projection_month_report(db: DbSQLite, scenario: Scenario, month_index: int) 
         "assumption_sources": detail.assumption_sources,
         "events": [event.as_dict() for event in detail.events],
         "escrow_explanations": list(detail.escrow_explanations),
+        "bridges": [item.as_dict() for item in month_bridges(result, month_index)],
     }
 
 
@@ -96,6 +98,8 @@ def projection_report(
             ],
         },
         "summary": result.summary(),
+        # Opening + planned events + assumption effects = closing, over the horizon.
+        "bridges": [item.as_dict() for item in projection_bridges(result) or ()],
         # A labelled subtotal when a foreign balance or event lacks a rate (#236).
         "completeness": result.completeness.as_dict(),
         "warnings": list(result.warnings),

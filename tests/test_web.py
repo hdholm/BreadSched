@@ -1617,6 +1617,28 @@ class TestItServes:
         assert "accounts" in payload["liabilities"]
         assert payload["assumptions"]["investment_return"] == "0.06"
         assert payload["escrow_explanations"] == []
+        bridges = {item["key"]: item for item in payload["bridges"]}
+        assert list(bridges) == ["cash", "investments", "debts", "net_worth"]
+        assert all(item["reconciles"] for item in bridges.values())
+        assert bridges["cash"]["opening"] == payload["cash"]["opening"]
+        assert bridges["cash"]["closing"] == payload["cash"]["closing"]
+        assert bridges["net_worth"]["closing"] == payload["net_worth"]
+        assert bridges["net_worth"]["unexplained"] == "0.00"
+
+    def test_the_projection_carries_its_whole_horizon_bridge(self, client):
+        status, payload = client.get("/api/projection?years=2")
+        assert status == 200
+        bridges = {item["key"]: item for item in payload["bridges"]}
+        assert all(item["reconciles"] for item in bridges.values())
+        assert bridges["net_worth"]["closing"] == payload["rows"][-1]["net_worth"]
+        assert [term["kind"] for term in bridges["net_worth"]["terms"]] == [
+            "opening",
+            "flow",
+            "effect",
+            "effect",
+            "effect",
+            "closing",
+        ]
 
     def test_month_explanation_resource_matches_route_and_leaves_book_unchanged(self, client):
         from breadsched.web.server import Api
