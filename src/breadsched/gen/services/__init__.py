@@ -34,6 +34,7 @@ from .attachments import (
     transactions_with_tag,
 )
 from .claims import (
+    AcceptedClaimLinks,
     ClaimAllocationInput,
     ClaimInput,
     ClaimLinkInput,
@@ -43,7 +44,9 @@ from .claims import (
     ReopenClaim,
     SaveClaim,
     SavedClaim,
+    accept_claim_links,
     build_claim,
+    claim_link_proposals,
     close_claim,
     delete_claim,
     reopen_claim,
@@ -182,6 +185,9 @@ from .transactions import (
 )
 
 __all__ = [
+    "AcceptedClaimLinks",
+    "accept_claim_links",
+    "claim_link_proposals",
     "BASE_ASSUMPTIONS_KEY",
     "BASE_SCENARIO",
     "ClaimAllocationInput",

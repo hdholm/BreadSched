@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine import fsa_claims
+from ..engine import fsa_claim_proposals, fsa_claims
 from ..lib.base import create_handle
 from ..lib.fsa_claim import (
     FsaClaim,
@@ -162,3 +162,54 @@ def reopen_claim(db: DbSQLite, request: ReopenClaim) -> ServiceResult[SavedClaim
     except fsa_claims.FsaClaimError as exc:
         return ServiceResult.failure(ServiceError(exc.code, exc.fields))
     return ServiceResult.success(SavedClaim(request.handle))
+
+
+def claim_link_proposals(
+    db: DbSQLite, *, account: str | None = None
+) -> ServiceResult[tuple[fsa_claim_proposals.FsaClaimProposal, ...]]:
+    """Unlinked FSA movements that clearly belong on one claim; writes nothing.
+
+    ``account`` keeps only movements touching that account, such as the account
+    being reconciled.
+    """
+    return ServiceResult.success(
+        tuple(fsa_claim_proposals.propose_claim_links(db, account=account))
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class AcceptedClaimLinks:
+    linked: int
+    #: Chosen links that are no longer proposed (already linked, or changed).
+    unchanged: int
+
+
+def accept_claim_links(
+    db: DbSQLite, chosen: tuple[tuple[str, str, str], ...]
+) -> ServiceResult[AcceptedClaimLinks]:
+    """Link the chosen (claim, transaction, split) proposals still on offer.
+
+    Proposals are recomputed first, so a stale choice is skipped rather than
+    linked on outdated evidence; each link goes through the claim's own checks.
+    """
+    current = {
+        (item.claim, item.transaction, item.split): item
+        for item in fsa_claim_proposals.propose_claim_links(db)
+    }
+    linked = 0
+    for key in chosen:
+        proposal = current.get(key)
+        if proposal is None:
+            continue
+        try:
+            fsa_claims.attach_transaction_to_claim(
+                db,
+                proposal.claim,
+                proposal.transaction,
+                role=proposal.role,
+                split_handle=proposal.split,
+            )
+        except fsa_claims.FsaClaimError:
+            continue
+        linked += 1
+    return ServiceResult.success(AcceptedClaimLinks(linked, len(chosen) - linked))

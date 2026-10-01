@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from ...gen.engine import fsa
 from ...gen.engine.fsa_claim_report import claim_report
-from ...presentation import fsa_usage_text
+from ...gen.services import accept_claim_links, claim_link_proposals
+from ...presentation import claim_role_label, fsa_usage_text
 from ..gi_setup import Gtk
 from ..widgets.choice import bounded_dropdown
 from ._base import BaseView
@@ -60,6 +61,23 @@ class FsaDashboardView(BaseView):
         self.attention_label.set_margin_top(8)
         content.append(self.attention_label)
 
+        # Statement lines that clearly belong on one claim, ready to link.
+        self.proposal_heading = self._heading("Proposed claim links")
+        content.append(self.proposal_heading)
+        self.proposal_grid = self._grid()
+        content.append(self.proposal_grid)
+        proposal_actions = Gtk.Box(spacing=8)
+        proposal_actions.set_margin_start(12)
+        proposal_actions.set_margin_top(6)
+        self.link_selected = Gtk.Button(label="Link selected")
+        self.link_selected.connect("clicked", self._on_link_selected)
+        proposal_actions.append(self.link_selected)
+        self.proposal_status = Gtk.Label(xalign=0, wrap=True)
+        proposal_actions.append(self.proposal_status)
+        self.proposal_actions = proposal_actions
+        content.append(proposal_actions)
+        self._proposal_checks: list[tuple[Gtk.CheckButton, tuple[str, str, str]]] = []
+
         self.fsa_heading = self._heading("FSA benefit years")
         content.append(self.fsa_heading)
         self.fsa_grid = self._grid()
@@ -103,9 +121,59 @@ class FsaDashboardView(BaseView):
     def refresh(self) -> None:
         if self.db is None:
             return
+        self._render_proposals()
         self._render_years()
         self._render_claims()
         self._render_report()
+
+    def _render_proposals(self) -> None:
+        _empty(self.proposal_grid)
+        self._proposal_checks = []
+        assert self.db is not None
+        proposals = claim_link_proposals(self.db).value or ()
+        for widget in (self.proposal_heading, self.proposal_grid, self.proposal_actions):
+            widget.set_visible(bool(proposals))
+        if not proposals:
+            return
+        headings = ("", "Date", "Transaction", "Amount", "Claim", "As", "Why")
+        for column_index, heading in enumerate(headings):
+            label = Gtk.Label(label=heading, xalign=1 if column_index == 3 else 0)
+            label.add_css_class("summary-label")
+            self.proposal_grid.attach(label, column_index, 0, 1, 1)
+        for row_index, item in enumerate(proposals, start=1):
+            check = Gtk.CheckButton(active=True)
+            self.proposal_grid.attach(check, 0, row_index, 1, 1)
+            self._proposal_checks.append((check, (item.claim, item.transaction, item.split)))
+            values = (
+                item.when.isoformat(),
+                item.description,
+                item.amount.format(),
+                item.claim_label,
+                claim_role_label(item.role),
+                item.reason,
+            )
+            for column_index, value in enumerate(values, start=1):
+                label = Gtk.Label(label=value, xalign=1 if column_index == 3 else 0)
+                if column_index == 3:
+                    label.add_css_class("numeric")
+                self.proposal_grid.attach(label, column_index, row_index, 1, 1)
+
+    def _on_link_selected(self, _button=None) -> None:
+        if self.db is None:
+            return
+        chosen = tuple(key for check, key in self._proposal_checks if check.get_active())
+        if not chosen:
+            return
+        result = accept_claim_links(self.db, chosen)
+        accepted = result.value
+        assert accepted is not None
+        self.refresh()
+        noun = "link" if accepted.linked == 1 else "links"
+        text = f"Linked {accepted.linked} claim {noun}."
+        if accepted.unchanged:
+            text += f" {accepted.unchanged} no longer applied."
+        self.proposal_status.set_label(text)
+        self.proposal_actions.set_visible(True)
 
     def _render_years(self) -> None:
         _empty(self.fsa_grid)

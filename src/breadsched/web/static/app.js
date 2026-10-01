@@ -1255,6 +1255,7 @@ async function openReconciliation(account) {
   const body = el("section", {class:"detail-dialog wide"},
     el("h2", {}, `Reconcile — ${data.account.name}`),
     data.reimbursement_notice ? el("p", {class:"note"}, data.reimbursement_notice) : null,
+    data.claim_link_notice ? el("p", {class:"note"}, data.claim_link_notice) : null,
     content,
     el("div", {class:"toolbar"}, el("span", {class:"spacer"}),
       el("button", {class:"action", type:"button", onclick:()=>backdrop.remove()}, "Close")));
@@ -4063,7 +4064,8 @@ async function csvImportPanel() {
           + `${result.possible_duplicates} possible duplicate(s) `
           + `${result.duplicates_included ? "included" : "held back"}; `
           + `${result.transfers_linked} transfer(s) linked; ${result.skipped} skipped.`
-          + (result.reimbursement_notice ? ` ${result.reimbursement_notice}` : ""));
+          + (result.reimbursement_notice ? ` ${result.reimbursement_notice}` : "")
+          + (result.claim_link_notice ? ` ${result.claim_link_notice}` : ""));
         await showPreview();
       }) }, "Import")),
     layout, preview);
@@ -4109,7 +4111,8 @@ async function showImport() {
         return;
       }
       result.textContent = `${response.format}\n\n${response.detail}`
-        + (response.reimbursement_notice ? `\n\n${response.reimbursement_notice}` : "");
+        + (response.reimbursement_notice ? `\n\n${response.reimbursement_notice}` : "")
+        + (response.claim_link_notice ? `\n\n${response.claim_link_notice}` : "");
       say("Import finished.");
       if (response.held) await openImportReviewDialog();
     } catch (error) { say(error.message, "error"); }
@@ -4848,6 +4851,25 @@ async function showFsaDashboard() {
   } }, [["status", "Status"], ["account", "FSA account"], ["year", "Funding year"],
         ["provider", "Provider"]].map(([value, label]) => el("option", {
     value, selected:value === report.by ? "selected" : null }, label)));
+  const proposals = data.proposals || [];
+  const proposalChecks = proposals.map((item) => el("input", {
+    type:"checkbox", checked:"checked", "aria-label":`Link ${item.description}`,
+  }));
+  const proposalRows = proposals.map((item, index) => [
+    proposalChecks[index], item.date, item.description, money(item.amount),
+    item.claim_label, item.role_label, item.reason,
+  ]);
+  const linkSelected = async () => {
+    const links = proposals.filter((_item, index) => proposalChecks[index].checked)
+      .map((item) => [item.claim, item.transaction, item.split]);
+    if (!links.length) return;
+    try {
+      const result = await post("/api/fsa/claim-links/accept", { links });
+      say(`Linked ${result.linked} claim link${result.linked === 1 ? "" : "s"}.`
+        + (result.unchanged ? ` ${result.unchanged} no longer applied.` : ""));
+      render();
+    } catch (error) { say(error.message, "error"); }
+  };
   const groupRow = (group) => [group.label, String(group.claims), money(group.net_paid),
     money(group.reimbursed), money(group.rejected), money(group.remaining),
     group.attention ? String(group.attention) : ""];
@@ -4860,6 +4882,12 @@ async function showFsaDashboard() {
       ? el("p", { class:"note neg" },
         `${data.attention} claim${data.attention === 1 ? " needs" : "s need"} attention.`)
       : null,
+    proposalRows.length ? el("h2", {}, "Proposed claim links") : null,
+    proposalRows.length ? table(["", "Date", "Transaction", {label:"Amount",num:true},
+      "Claim", "As", "Why"], proposalRows) : null,
+    proposalRows.length ? el("div", { class:"toolbar" },
+      el("button", { class:"action primary", type:"button", onclick:linkSelected },
+        "Link selected")) : null,
     el("h2", {}, "FSA benefit years"),
     yearRows.length ? table(["Account", "Funding year", "Status",
       {label:"Election",num:true},{label:"Funded",num:true},{label:"Used",num:true},"How used",

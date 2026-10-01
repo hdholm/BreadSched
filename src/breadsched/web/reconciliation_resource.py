@@ -12,6 +12,7 @@ from datetime import date
 from typing import TYPE_CHECKING, Any
 
 from ..gen.engine import reconciliation as reconciliation_engine
+from ..gen.services.claims import claim_link_proposals
 from ..gen.services.receivables import reimbursement_proposals
 from ..gen.services.reconciliations import (
     ReconciliationAction,
@@ -23,7 +24,7 @@ from ..gen.services.reconciliations import (
     start_reconciliation,
     update_reconciliation,
 )
-from ..presentation import reimbursement_notice
+from ..presentation import claim_link_notice, reimbursement_notice
 
 if TYPE_CHECKING:
     from .resources import QueryParams
@@ -53,6 +54,10 @@ def reconciliation(api: Api, query: QueryParams) -> dict[str, object]:
         "account": {"handle": account.handle, "name": api.db.full_name(account)},
         # A deposit being reconciled may be money back on a reimbursable expense.
         "reimbursement_notice": reimbursement_notice(len(proposals)),
+        # An FSA statement line may belong on a claim.
+        "claim_link_notice": claim_link_notice(
+            len(claim_link_proposals(api.db, account=account_handle).value or ())
+        ),
         "open": (
             {
                 "handle": current.handle,

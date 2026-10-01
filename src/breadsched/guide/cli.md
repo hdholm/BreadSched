@@ -295,6 +295,10 @@ gives each claim with its `attention` codes and text, and what was repaid to the
 FSA, is still to repay, or was given up. `breadsched dashboard` shows how many
 claims need attention.
 
+`breadsched claims BOOK --proposals` lists FSA transactions, such as imported
+statement lines, that clearly belong on one claim, with the claim, role, and why;
+`--link-proposals` links them all. `--account` narrows either to one account.
+
 `breadsched claims BOOK --years` lists open and recently closed FSA benefit years:
 the election, what was funded and used, **How used** (paid from the card,
 reimbursed, refunded to the card, repaid), and what remains. `--account` and

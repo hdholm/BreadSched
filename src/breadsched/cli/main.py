@@ -1386,6 +1386,63 @@ def _claim_event_text(event: FsaClaimEvent) -> str:
     return f"{event.on.isoformat()} {text}" + (f": {event.note}" if event.note else "")
 
 
+def _claim_link_proposals(db, args: argparse.Namespace) -> int:
+    """FSA statement lines that clearly belong on one claim; link them all if asked."""
+    from ..gen.services import accept_claim_links, claim_link_proposals
+    from ..presentation import claim_role_label
+
+    account = resolve_account(db, args.account).handle if args.account else None
+    proposals = claim_link_proposals(db, account=account).value or ()
+    payload: dict[str, object] = {
+        "proposals": [
+            {
+                "claim": item.claim,
+                "claim_label": item.claim_label,
+                "transaction": item.transaction,
+                "split": item.split,
+                "role": item.role,
+                "date": item.when,
+                "description": item.description,
+                "amount": item.amount,
+                "reason": item.reason,
+            }
+            for item in proposals
+        ]
+    }
+    if args.link_proposals:
+        chosen = tuple((item.claim, item.transaction, item.split) for item in proposals)
+        accepted = accept_claim_links(db, chosen).value
+        assert accepted is not None
+        payload["linked"] = accepted.linked
+        payload["unchanged"] = accepted.unchanged
+        noun = "link" if accepted.linked == 1 else "links"
+        emit(payload, args, f"Linked {accepted.linked} claim {noun}.")
+        return 0
+    if not proposals:
+        emit(payload, args, "No proposed claim links.")
+        return 0
+    emit(
+        payload,
+        args,
+        table(
+            [
+                [
+                    item.when.isoformat(),
+                    item.description,
+                    item.amount.format(),
+                    item.claim_label,
+                    claim_role_label(item.role),
+                    item.reason,
+                ]
+                for item in proposals
+            ],
+            ["Date", "Transaction", "Amount", "Claim", "As", "Why"],
+            right={2},
+        ),
+    )
+    return 0
+
+
 def _fsa_years(db, args: argparse.Namespace) -> int:
     """Open and recently closed FSA benefit years, with how each was used."""
     from ..gen.engine import fsa
@@ -1460,7 +1517,7 @@ def cmd_claims(args: argparse.Namespace) -> int:
     changing = bool(args.close or args.reopen)
     if args.close and args.reopen:
         raise CommandError("use --close or --reopen, not both")
-    db = open_book(args.book, "w" if changing else "r")
+    db = open_book(args.book, "w" if changing or args.link_proposals else "r")
     try:
         if changing:
             claim = _find_claim(db, args.close or args.reopen)
@@ -1481,6 +1538,8 @@ def cmd_claims(args: argparse.Namespace) -> int:
             return 0
         if args.years:
             return _fsa_years(db, args)
+        if args.proposals or args.link_proposals:
+            return _claim_link_proposals(db, args)
         if args.history:
             claim = _find_claim(db, args.history)
             emit(
@@ -4105,6 +4164,15 @@ def build_parser() -> argparse.ArgumentParser:
     claims_cmd.add_argument("--on", metavar="DATE", help="date to close or reopen (default today)")
     claims_cmd.add_argument("--reason", help="why the claim is closed")
     claims_cmd.add_argument("--note", help="why the claim is reopened")
+    claims_cmd.add_argument(
+        "--proposals",
+        action="store_true",
+        help="list FSA transactions (such as imported statement lines) that clearly "
+        "belong on one claim",
+    )
+    claims_cmd.add_argument(
+        "--link-proposals", action="store_true", help="link every proposed claim link"
+    )
     claims_cmd.add_argument(
         "--years",
         action="store_true",

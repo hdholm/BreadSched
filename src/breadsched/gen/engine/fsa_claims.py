@@ -113,11 +113,16 @@ def suggest_claims_for_transaction(
     for claim in iter_claims(db):
         summary = claim_summary(db, claim)
         over = summary.status is FsaClaimStatus.OVER_REIMBURSED
-        if summary.status in {FsaClaimStatus.FULLY_REIMBURSED, FsaClaimStatus.CLOSED}:
+        if summary.status is FsaClaimStatus.CLOSED:
             continue
+        # A fully reimbursed claim takes no more payments or reimbursements, but a
+        # provider refund often arrives after the FSA has paid.
+        settled = summary.status is FsaClaimStatus.FULLY_REIMBURSED
 
         best: FsaClaimSuggestion | None = None
         for role, split, reimbursement_account in eligible:
+            if settled and role not in {"refund", "direct_refund"}:
+                continue
             if role == "refund" and summary.net_paid <= 0:
                 continue
             # Only money owed back to the FSA is a repayment.

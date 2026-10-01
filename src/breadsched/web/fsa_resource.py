@@ -7,11 +7,13 @@ parses the grouping and serializes.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from ..gen.engine import fsa
 from ..gen.engine.fsa_claim_report import GROUPINGS, ClaimGroup, claim_report
-from ..presentation import fsa_usage_text
+from ..gen.services.claims import accept_claim_links, claim_link_proposals
+from ..presentation import claim_role_label, fsa_usage_text
 
 if TYPE_CHECKING:
     from .resources import QueryParams
@@ -70,6 +72,22 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
             "totals": _group(report.totals),
         },
         "attention": len(report.needing_attention),
+        # Statement lines that clearly belong on one claim (writes nothing).
+        "proposals": [
+            {
+                "claim": item.claim,
+                "claim_label": item.claim_label,
+                "transaction": item.transaction,
+                "split": item.split,
+                "role": item.role,
+                "role_label": claim_role_label(item.role),
+                "date": item.when.isoformat(),
+                "description": item.description,
+                "amount": _amount(item.amount),
+                "reason": item.reason,
+            }
+            for item in claim_link_proposals(api.db).value or ()
+        ],
         "years": [
             {
                 "account": api.db.full_name(status.account),
@@ -106,3 +124,16 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
             for status in fsa.dashboard_statuses(api.db)
         ],
     }
+
+
+def fsa_claim_links_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
+    """Link the chosen claim-link proposals that are still on offer."""
+    raw = payload.get("links")
+    if not isinstance(raw, list) or not all(
+        isinstance(item, list) and len(item) == 3 and all(isinstance(part, str) for part in item)
+        for item in raw
+    ):
+        raise ValueError("links must be a list of [claim, transaction, split]")
+    accepted = accept_claim_links(api.db, tuple((item[0], item[1], item[2]) for item in raw))
+    assert accepted.value is not None
+    return {"linked": accepted.value.linked, "unchanged": accepted.value.unchanged}

@@ -17,9 +17,10 @@ from ...gen.services import (
     start_reconciliation,
     update_reconciliation,
 )
+from ...gen.services.claims import claim_link_proposals
 from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import reimbursement_notice, service_error_message
+from ...presentation import claim_link_notice, reimbursement_notice, service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 
@@ -67,6 +68,13 @@ class ReconciliationDialog(BoundedWindow):
             self.reimbursement_note = Gtk.Label(label=notice, xalign=0, wrap=True)
             self.reimbursement_note.add_css_class("dim")
             self.body.append(self.reimbursement_note)
+        # An FSA statement line may belong on a claim.
+        claims = claim_link_proposals(self.db, account=self.account.handle).value or ()
+        self.claim_link_note: Gtk.Label | None = None
+        if claim_notice := claim_link_notice(len(claims)):
+            self.claim_link_note = Gtk.Label(label=claim_notice, xalign=0, wrap=True)
+            self.claim_link_note.add_css_class("dim")
+            self.body.append(self.claim_link_note)
         current = reconciliation.open_for_account(self.db, self.account.handle)
         if current is None:
             self._render_start()
