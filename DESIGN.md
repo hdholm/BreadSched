@@ -920,6 +920,20 @@ Changing Base then flows through every inherited field without disturbing local
 overrides. Plan, Projection, comparisons, and both scenario managers expose whether
 an effective value came from Base, the saved scenario, or one of its dated overrides.
 
+Each reporting month's `MonthLedger` records opening and closing stocks per account
+and the exact flows and effects between them, and the engine raises rather than
+return a month whose `reconciles()` check fails. `engine.projection_bridge` states
+that identity for people without recomputing anything: from one ledger, or a run of
+consecutive ledgers (a month or the whole horizon), it builds a `StockBridge` for
+Cash (opening + planned cash flow + cash interest), Investments (opening + planned
+movements + performance), Debts (opening + principal movement + interest), and Net
+worth (cash + investments − debts, so planned flows net of transfers + cash interest
++ performance − debt interest). Each bridge reports its explained total and the
+unexplained difference, which is zero for any month the engine accepted; the terms
+are summed from the ledgers, so a defect would show as a non-zero difference rather
+than being absorbed. GTK's month explanation, the web month report and projection
+response (`bridges`), and `breadsched project --bridge` all render these bridges.
+
 Scenario records persist an explicit inheritance flag and stable sets of field/account overrides;
 cached projection results are never stored. A saved scenario may name Base or another
 saved scenario as its assumption parent. Resolution walks that chain from Base through

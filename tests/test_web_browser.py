@@ -680,6 +680,23 @@ def test_a_scenario_projection_opens_in_its_own_browser_tab(page, served):
     assert other.evaluate(picked) == "Sabbatical"
 
 
+def test_projection_shows_how_each_balance_reconciles(page, served):
+    _db, httpd = served
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/?view=Projection#token={httpd.token}")
+    page.wait_for_selector("summary:has-text('How the projection reconciles')")
+    page.locator("summary:has-text('How the projection reconciles')").click()
+    bridge = page.locator("details.projection-bridge")
+    for label in ("Cash", "Investments", "Debts", "Net worth"):
+        assert bridge.locator(f"h4:has-text('{label}')").count() == 1
+    assert bridge.locator("td:has-text('Reconciles exactly')").count() == 4
+
+    page.locator("button.plan-cell-button").first.click()
+    dialog = page.locator(".detail-dialog")
+    dialog.locator("h3:has-text('How this month reconciles')").wait_for()
+    assert dialog.locator("td:has-text('Reconciles exactly')").count() == 4
+    assert dialog.locator("td:has-text('Planned events, net of transfers')").count() == 1
+
+
 def test_a_register_opens_in_its_own_browser_tab(page, served):
     db, httpd = served
     page.get_by_role("button", name="Register", exact=True).first.click()

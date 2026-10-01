@@ -134,7 +134,10 @@ Projection chart shades partial months (see [Complete, partial, and unavailable 
 **Manage scenarios…** in Plan opens the scenario list, which shows each effective assumption and its source, along with
 the saved dated periods and eligible account-specific rate choices. In
 **Projection**, open a month to inspect its cash movement, holdings and liabilities,
-dated events, and assumption sources. **Open in new tab** keeps the chosen
+dated events, and assumption sources; **How this month reconciles** shows its Cash,
+Investments, Debts, and Net worth bridges, and **How the projection reconciles**
+under the chart shows them across the whole projection (see
+[How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)). **Open in new tab** keeps the chosen
 scenario's projection in another browser tab.
 
 ### Explore expenses

@@ -6,6 +6,7 @@ from collections.abc import Sequence
 
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine import projection
+from ...gen.engine.projection_bridge import StockBridge, month_bridges, projection_bridges
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -98,6 +99,37 @@ class ProjectionDetailDialog(BoundedWindow):
                 grid.attach(label, col, row_index, 1, 1)
         return grid
 
+    def _bridges(self, bridges: Sequence[StockBridge]) -> Gtk.Widget:
+        """Opening + planned events + assumption effects = closing, per stock."""
+        box = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, max_children_per_line=2)
+        box.set_column_spacing(24)
+        box.set_row_spacing(10)
+        for bridge in bridges:
+            rows = [
+                (term.label, term.note or "", self._money(term.amount)) for term in bridge.terms
+            ]
+            rows.append(
+                (
+                    "Unexplained",
+                    "Reconciles exactly"
+                    if bridge.reconciles
+                    else "Does not reconcile; please report this",
+                    self._money(bridge.unexplained),
+                )
+            )
+            section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            title = Gtk.Label(label=bridge.label, xalign=0)
+            title.add_css_class("heading")
+            section.append(title)
+            table = self._table(("", "Basis", "Amount"), rows, left_columns=2)
+            for child in _children(table):
+                if isinstance(child, Gtk.Label) and len(child.get_text()) > 40:
+                    child.set_wrap(True)
+                    child.set_max_width_chars(40)
+            section.append(table)
+            box.append(section)
+        return box
+
     def _render(self, index: int) -> None:
         self._clear()
         if not self.result.rows:
@@ -138,6 +170,13 @@ class ProjectionDetailDialog(BoundedWindow):
                 xalign=0,
             )
         )
+
+        self.content.append(Gtk.Label(label="How this month reconciles", xalign=0))
+        self.content.append(self._bridges(month_bridges(self.result, index)))
+        whole = projection_bridges(self.result)
+        if whole is not None:
+            self.content.append(Gtk.Label(label="Across the whole projection", xalign=0))
+            self.content.append(self._bridges(whole))
 
         self.content.append(Gtk.Label(label="Exact planned events", xalign=0))
         if detail.escrow_explanations:
@@ -252,3 +291,10 @@ class ProjectionDetailDialog(BoundedWindow):
             )
         else:
             self.content.append(Gtk.Label(label="No projected liabilities."))
+
+
+def _children(widget: Gtk.Widget):
+    child = widget.get_first_child()
+    while child is not None:
+        yield child
+        child = child.get_next_sibling()

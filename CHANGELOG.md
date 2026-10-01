@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a215 - 2026-10-01
+
+- **Projections show how every balance reconciles.** A new
+  `engine.projection_bridge` states the engine's conservation check for people: for
+  a month or the whole horizon, Cash, Investments, Debts, and Net worth each show
+  opening + planned events + interest, performance, or debt interest = closing, with
+  an **Unexplained** line that is always zero. GTK's month explanation adds **How this
+  month reconciles** and **Across the whole projection**; the web month report and
+  `/api/projection` gain `bridges`, shown in the month dialog and under the chart;
+  `breadsched project --bridge [YYYY-MM]` prints them. No schema change.
+
 ## 0.2.0a214 - 2026-10-01
 
 - **Payroll templates and pay changes.** A new `engine.payroll` reads any schedule

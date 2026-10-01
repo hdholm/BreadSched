@@ -758,6 +758,32 @@ clock. A calculation from edited draft controls remains temporary until you
 explicitly save those controls. The Projection summary and scenario comparison use
 the same dated calculation.
 
+### How a projection reconciles
+
+Every projected balance is explained, not estimated from a total. For each month,
+and across the whole projection, BreadSched shows four bridges
+([desktop](guide/desktop.md#plan-and-projection),
+[browser](guide/web.md#plan-and-projection),
+[command line](guide/cli.md#projection-and-scenarios)):
+
+- **Cash**: opening cash, plus the planned events into and out of cash, plus cash
+  interest, equals closing cash.
+- **Investments**: opening investments, plus planned movements (contributions,
+  withdrawals and distributions, reinvested income, fees, rollovers), plus
+  investment performance, equals closing investments.
+- **Debts**: opening debts, plus principal borrowed less repaid, plus debt
+  interest, equals closing debts.
+- **Net worth**: opening net worth, plus the planned events net of transfers, plus
+  cash interest and investment performance, less debt interest, equals closing net
+  worth. A contribution leaves cash and enters investments, and a principal payment
+  leaves cash and reduces a debt, so those moves cancel here.
+
+Interest and performance are the effects of the scenario's assumptions; the month's
+detail lists each account's rate and where it came from. Every bridge ends with
+**Unexplained**, which is always zero: the projection refuses to produce a month
+whose balances its terms do not explain, so a non-zero value would be a defect to
+report.
+
 Amounts in another currency are converted once with the exchange rate known on the
 day before the projection starts, the same date used for opening balances. This
 applies to schedules, estimates, scenario events, and foreign-currency account
