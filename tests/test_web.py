@@ -2245,7 +2245,7 @@ class TestPlanApi:
     def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
         _status, body, _headers = client.raw("/app.js")
         page = body.decode()
-        assert '"Scheduled", "Plan", "Review", "Projection"' in page
+        assert '"Scheduled", "Payroll", "Plan", "Review", "Projection"' in page
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
@@ -5232,6 +5232,124 @@ class TestRules:
 
         _status, after = client.get("/api/rules")
         assert after["rules"] == before["rules"]
+
+
+class TestPayroll:
+    """Paychecks, pay changes, and templates through the shared payroll service."""
+
+    def _template(self, client):
+        db = client.database
+        return {
+            "name": "Acme",
+            "income_account": db.get_account_by_name("Income:Salary").handle,
+            "deposit_account": db.get_account_by_name("Assets:Checking").handle,
+            "gross": "3000.00",
+            "lines": [
+                {"account": db.get_account_by_name("Assets:401(k)").handle, "percent": "5%"},
+                {"account": db.get_account_by_name("Expenses:Rent").handle, "amount": "85.50"},
+            ],
+        }
+
+    def test_template_paycheck_and_pay_change(self, client):
+        status, empty = client.get("/api/payroll")
+        assert status == 200 and empty["paychecks"] == [] and empty["templates"] == []
+        assert {item["name"] for item in empty["line_accounts"]} >= {
+            "Assets:401(k)",
+            "Expenses:Rent",
+        }
+        assert [item["name"] for item in empty["deposit_accounts"]] == ["Assets:Checking"]
+
+        status, saved = client.post("/api/payroll/template/save", self._template(client))
+        assert status == 200
+        assert [line["percent"] for line in saved["lines"]] == ["5", None]
+        status, created = client.post(
+            "/api/payroll/create",
+            {"template": "acme", "name": "Acme pay", "start": "2026-01-02", "period": "biweekly"},
+        )
+        assert status == 200
+        _status, listed = client.get("/api/payroll?as_of=2026-01-02")
+        [paycheck] = listed["paychecks"]
+        assert paycheck["schedule"] == created["handle"]
+        assert (paycheck["gross"], paycheck["net"]) == ("3000.00", "2764.50")
+        assert paycheck["totals"]["saved"] == "150.00"
+
+        rent = client.database.get_account_by_name("Expenses:Rent").handle
+        retirement = client.database.get_account_by_name("Assets:401(k)").handle
+        change = {
+            "schedule": created["handle"],
+            "start": "2026-04-10",
+            "gross": "3300",
+            "scaled": [retirement],
+            "amounts": {rent: "90"},
+        }
+        status, preview = client.post("/api/payroll/change/preview", change)
+        assert status == 200 and preview["net_after"] == "3045.00"
+        assert client.database.get_scheduled(created["handle"]).splits[0].amount_changes == []
+        status, applied = client.post("/api/payroll/change", change)
+        assert status == 200 and applied == preview
+        _status, later = client.get("/api/payroll?as_of=2026-04-10")
+        assert later["paychecks"][0]["net"] == "3045.00"
+
+        status, described = client.post(
+            "/api/payroll/template/from-schedule",
+            {"schedule": created["handle"], "name": "Copy"},
+        )
+        assert status == 200 and described["gross"] == "3000.00"
+        status, _deleted = client.post("/api/payroll/template/delete", {"name": "Acme"})
+        assert status == 200
+        assert client.get("/api/payroll")[1]["templates"] == []
+
+    def test_rejected_requests_leave_the_book_unchanged(self, client):
+        status, _saved = client.post("/api/payroll/template/save", self._template(client))
+        assert status == 200
+        status, created = client.post(
+            "/api/payroll/create", {"template": "Acme", "name": "Acme pay", "start": "2026-01-02"}
+        )
+        assert status == 200
+        stored = client.database.get_scheduled(created["handle"]).serialize()
+        _status, before = client.get("/api/payroll")
+        overdrawn = {**self._template(client), "name": "Other", "gross": "80"}
+        for path, body, status, code in [
+            ("/api/payroll/template/save", self._template(client), 400, "payroll.name.duplicate"),
+            ("/api/payroll/template/save", overdrawn, 400, "payroll.net.non_positive"),
+            (
+                "/api/payroll/template/save",
+                {**overdrawn, "lines": [{"account": "x", "percent": "abc"}]},
+                400,
+                "payroll.percent.invalid",
+            ),
+            (
+                "/api/payroll/template/delete",
+                {"name": "missing"},
+                404,
+                "payroll.template.not_found",
+            ),
+            (
+                "/api/payroll/change",
+                {"schedule": created["handle"], "start": "2025-01-01", "gross": "3300"},
+                400,
+                "payroll.change.before_start",
+            ),
+            (
+                "/api/payroll/change",
+                {"schedule": created["handle"], "start": "2026-04-10", "gross": "100"},
+                400,
+                "payroll.net.non_positive",
+            ),
+            (
+                "/api/payroll/create",
+                {"template": "Acme", "name": "X", "start": "2026-01-02", "period": "hourly"},
+                400,
+                None,
+            ),
+        ]:
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post(path, body)
+            assert caught.value.code == status
+            if code is not None:
+                assert json.loads(caught.value.read())["code"] == code
+        assert client.database.get_scheduled(created["handle"]).serialize() == stored
+        assert client.get("/api/payroll")[1] == before
 
 
 class TestEntrySuggestion:

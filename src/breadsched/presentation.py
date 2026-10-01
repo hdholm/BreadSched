@@ -153,6 +153,38 @@ _SERVICE_MESSAGES = {
         "GnuCash would not read the change back exactly as written; the book was restored"
     ),
     "writeback.keep_backups.invalid": "Keep between 1 and 1000 backups",
+    "payroll.name.required": "Enter a template name",
+    "payroll.name.duplicate": "Another payroll template already has that name",
+    "payroll.template.not_found": "That payroll template no longer exists",
+    "payroll.income.invalid": "Choose an income account that is not a placeholder for gross pay",
+    "payroll.deposit.invalid": "Choose a bank or cash account for the net deposit",
+    "payroll.line.account_invalid": (
+        "Each line out of gross pay must go to an expense, a non-cash asset such as a "
+        "retirement or FSA account, or a liability, other than the income and deposit accounts"
+    ),
+    "payroll.line.duplicate": "Each account may appear on only one payroll line",
+    "payroll.line.amount_or_percent": "Give each payroll line either an amount or a percentage",
+    "payroll.line.non_positive": "Each payroll line must take out more than zero",
+    "payroll.line.not_found": "That account is not on this paycheck",
+    "payroll.percent.invalid": "Enter a percentage greater than 0 and less than 100",
+    "payroll.gross.non_positive": "Gross pay must be greater than zero",
+    "payroll.net.non_positive": "The taxes and deductions take all of the gross pay",
+    "payroll.schedule.not_paycheck": (
+        "That schedule is not a paycheck: it needs an income account for gross pay, a bank "
+        "or cash deposit, and only taxes, deductions, savings, or repayments besides"
+    ),
+    "payroll.schedule.formula": "A paycheck with formula amounts cannot take a pay change",
+    "payroll.schedule.whole_amounts": (
+        "Remove the schedule's future, seasonal, or one-time whole amounts from that date "
+        "before adding a pay change"
+    ),
+    "payroll.schedule.repeated_account": (
+        "A paycheck that uses one account on two lines cannot take a pay change"
+    ),
+    "payroll.change.before_start": "A pay change cannot start before the schedule's first date",
+    "payroll.change.later_exists": (
+        "This paycheck already changes after that date; change the latest pay change instead"
+    ),
     "rule.match.required": "Match a rule on either a payee or a description, not both",
     "rule.match.empty": (
         "A description match must contain at least one word without digits, such as the "

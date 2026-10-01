@@ -77,8 +77,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   identity, bounded generation, import mapping, editing, and round trip are all
   unambiguous.
 
-- Add payroll templates and richer payroll editing.
-
 - Consider richer formula assistance only on top of the existing safe formula
   language; never add Python `eval` or a second formula dialect.
 

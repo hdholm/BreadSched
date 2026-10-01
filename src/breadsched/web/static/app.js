@@ -1,4 +1,4 @@
-const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Reimbursables", "Goals", "Verify", "Guide"];
+const VIEWS = ["Dashboard", "FSA Dashboard", "Accounts", "Register", "Scheduled", "Payroll", "Plan", "Review", "Projection", "Enter", "Import", "Payees", "Rules", "Reimbursables", "Goals", "Verify", "Guide"];
 const launchParams = new URLSearchParams(window.location.search);
 let current = VIEWS.includes(launchParams.get("view")) ? launchParams.get("view") : "Dashboard";
 let state = {
@@ -4602,6 +4602,223 @@ async function showReimbursables() {
     detail);
 }
 
+const PAY_PERIOD_LABELS = {
+  biweekly:"Every 2 weeks", weekly:"Weekly",
+  semimonthly:"Twice a month (15th and last day)", monthly:"Monthly",
+};
+
+async function showPayroll() {
+  const today = new Date().toISOString().slice(0, 10);
+  const asOf = state.payrollAsOf || today;
+  const data = await get(`/api/payroll?as_of=${encodeURIComponent(asOf)}`);
+  const refresh = async () => { current = "Payroll"; await render(); };
+  const run = (action) => async () => {
+    try { await action(); } catch (error) { say(error.message, "error"); }
+  };
+  const options = (items, chosen) => items.map((item) => el("option",
+    { value:item.handle, selected:item.handle === chosen ? "selected" : null }, item.name));
+  const paycheck = data.paychecks.find((item) => item.schedule === state.payrollSchedule)
+    || data.paychecks[0] || null;
+
+  // Paychecks and the selected one's lines.
+  const asOfInput = el("input", { type:"date", value:asOf, "aria-label":"As of" });
+  asOfInput.addEventListener("change", run(async () => {
+    state.payrollAsOf = asOfInput.value || null;
+    await refresh();
+  }));
+  const summaryRows = data.paychecks.map((item) => el("tr", {},
+    el("td", {}, el("button", { class:"action", type:"button", onclick:run(async () => {
+      state.payrollSchedule = item.schedule;
+      await refresh();
+    }) }, item.name)),
+    el("td", { class:"num" }, money(item.gross)),
+    el("td", { class:"num" }, money(item.withheld)),
+    el("td", { class:"num" }, money(item.net)),
+    el("td", { class:"num" }, `${item.take_home_percent}%`)));
+  const legRows = paycheck ? paycheck.legs.map((leg) => [leg.kind_label, leg.name, money(leg.amount)]) : [];
+  const paycheckPanel = el("div", { class:"panel panel-pad-16" },
+    el("h2", {}, "Paychecks"),
+    el("label", {}, "As of ", asOfInput),
+    data.paychecks.length
+      ? table(["Paycheck", { label:"Gross", num:true }, { label:"Withheld", num:true },
+        { label:"Net", num:true }, { label:"Take-home", num:true }], summaryRows)
+      : el("p", { class:"note" }, "No schedule reads as a paycheck. Create one from a "
+        + "template below, or add a schedule with gross pay into an income account and the "
+        + "net into a bank account."),
+    paycheck ? el("h3", {}, paycheck.name) : null,
+    paycheck ? table(["Line", "Account", { label:"Amount", num:true }], legRows) : null);
+
+  // Pay change for the selected paycheck.
+  let changePanel = null;
+  if (paycheck) {
+    const start = el("input", { type:"date", value:today, "aria-label":"Pay change from" });
+    const gross = el("input", { inputmode:"decimal", value:paycheck.gross,
+      "aria-label":"New gross pay" });
+    const choices = {};
+    const rows = paycheck.legs.map((leg) => {
+      if (leg.kind === "gross" || leg.kind === "net") {
+        return el("tr", {}, el("td", {}, leg.kind_label), el("td", {}, leg.name),
+          el("td", { class:"num" }, money(leg.amount)), el("td", {}, "—"), el("td", {}, ""),
+          el("td", { class:"num", "data-after":leg.account }, ""));
+      }
+      const how = el("select", { "aria-label":`Change ${leg.name}` },
+        el("option", { value:"keep" }, "Keep"),
+        el("option", { value:"scale", selected:leg.kind === "tax" ? "selected" : null },
+          "Scale with gross"),
+        el("option", { value:"set" }, "Set to"));
+      const amount = el("input", { inputmode:"decimal", "aria-label":`New amount for ${leg.name}`,
+        disabled:"disabled" });
+      how.addEventListener("change", () => { amount.disabled = how.value !== "set"; });
+      choices[leg.account] = { how, amount };
+      return el("tr", {}, el("td", {}, leg.kind_label), el("td", {}, leg.name),
+        el("td", { class:"num" }, money(leg.amount)), el("td", {}, how), el("td", {}, amount),
+        el("td", { class:"num", "data-after":leg.account }, ""));
+    });
+    const changeTable = table(["Line", "Account", { label:"Now", num:true }, "Change",
+      "Amount", { label:"After", num:true }], rows);
+    const body = () => {
+      const scaled = [];
+      const amounts = {};
+      for (const [account, choice] of Object.entries(choices)) {
+        if (choice.how.value === "scale") scaled.push(account);
+        if (choice.how.value === "set") amounts[account] = choice.amount.value;
+      }
+      return { schedule:paycheck.schedule, start:start.value, gross:gross.value, scaled, amounts };
+    };
+    const showPlan = (plan) => {
+      for (const line of plan.lines) {
+        const cell = changeTable.querySelector(`[data-after="${line.account}"]`);
+        if (cell) cell.textContent = money(line.after);
+      }
+    };
+    changePanel = el("div", { class:"panel panel-pad-16" },
+      el("h2", {}, `Pay change: ${paycheck.name}`),
+      el("p", { class:"note" }, "A pay change applies from its date onward; earlier paychecks "
+        + "keep their amounts. Taxes scale with gross by default, other lines stay the same, "
+        + "and the net deposit takes the difference."),
+      el("div", { class:"entry" }, el("label", {}, "From", start),
+        el("label", {}, "New gross", gross)),
+      changeTable,
+      el("div", { class:"toolbar" },
+        el("button", { class:"action", type:"button", onclick:run(async () => {
+          const plan = await post("/api/payroll/change/preview", body());
+          showPlan(plan);
+          say(`From ${plan.start}: take-home ${money(plan.net_after)}. Nothing is saved until `
+            + "you choose Save pay change.");
+        }) }, "Preview"),
+        el("button", { class:"action primary", type:"button", onclick:run(async () => {
+          const plan = await post("/api/payroll/change", body());
+          await refresh();
+          say(`Saved the pay change from ${plan.start}: take-home ${money(plan.net_after)}.`);
+        }) }, "Save pay change")));
+  }
+
+  // Templates: list, editor, and new paycheck.
+  const editing = state.payrollTemplate || null;
+  const name = el("input", { "aria-label":"Template name", value:editing?.name || "" });
+  const income = el("select", { "aria-label":"Gross pay into" },
+    ...options(data.income_accounts, editing?.income_account));
+  const deposit = el("select", { "aria-label":"Net deposit to" },
+    ...options(data.deposit_accounts, editing?.deposit_account));
+  const usual = el("input", { inputmode:"decimal", "aria-label":"Usual gross",
+    value:editing?.gross || "" });
+  const lines = el("div", { class:"stack" });
+  const addLine = (line) => {
+    const account = el("select", { "aria-label":"Line account" },
+      ...options(data.line_accounts, line?.account));
+    const amount = el("input", { "aria-label":"Line amount or percentage",
+      placeholder:"85.50 or 6.2%",
+      value:line ? (line.percent != null ? `${line.percent}%` : line.amount) : "" });
+    const row = el("div", { class:"row" }, account, amount,
+      el("button", { class:"action", type:"button", onclick:() => row.remove() }, "Remove"));
+    row.lineFields = { account, amount };
+    lines.append(row);
+  };
+  (editing?.lines || []).forEach(addLine);
+  const templateBody = () => ({
+    name:name.value, existing_name:editing?.existing_name || null,
+    income_account:income.value, deposit_account:deposit.value, gross:usual.value,
+    lines:[...lines.children].map((row) => {
+      const text = row.lineFields.amount.value.trim();
+      return text.endsWith("%")
+        ? { account:row.lineFields.account.value, percent:text }
+        : { account:row.lineFields.account.value, amount:text };
+    }),
+  });
+  const templateRows = data.templates.map((item) => el("tr", {},
+    el("td", {}, item.name),
+    el("td", {}, item.deposit_name),
+    el("td", { class:"num" }, money(item.gross)),
+    el("td", {}, item.lines.map((line) =>
+      `${line.name}: ${line.percent != null ? `${line.percent}%` : money(line.amount)}`).join("; ")
+      || "—"),
+    el("td", {},
+      el("button", { class:"action", type:"button", onclick:run(async () => {
+        state.payrollTemplate = { ...item, existing_name:item.name };
+        await refresh();
+      }) }, "Edit"),
+      el("button", { class:"action", type:"button", onclick:run(async () => {
+        await post("/api/payroll/template/delete", { name:item.name });
+        if (state.payrollTemplate?.existing_name === item.name) state.payrollTemplate = null;
+        await refresh();
+        say(`Deleted payroll template ${item.name}.`);
+      }) }, "Delete"))));
+  const editor = el("div", { class:"stack" },
+    el("h3", {}, editing?.existing_name ? `Edit ${editing.existing_name}` : "New template"),
+    el("div", { class:"entry" }, el("label", {}, "Name", name),
+      el("label", {}, "Gross pay into", income), el("label", {}, "Net deposit to", deposit),
+      el("label", {}, "Usual gross", usual)),
+    el("p", { class:"note" }, "Lines out of gross: an amount such as 85.50, or a percentage "
+      + "such as 6.2%."),
+    lines,
+    el("div", { class:"toolbar" },
+      el("button", { class:"action", type:"button", onclick:() => addLine(null) }, "Add line"),
+      paycheck ? el("button", { class:"action", type:"button", onclick:run(async () => {
+        const filled = await post("/api/payroll/template/from-schedule",
+          { schedule:paycheck.schedule, name:paycheck.name });
+        state.payrollTemplate = filled;
+        await refresh();
+        say("Filled the template from the paycheck. Save template to keep it.");
+      }) }, "Fill from paycheck") : null,
+      el("button", { class:"action primary", type:"button", onclick:run(async () => {
+        const saved = await post("/api/payroll/template/save", templateBody());
+        state.payrollTemplate = null;
+        await refresh();
+        say(`Saved payroll template ${saved.name}.`);
+      }) }, "Save template")));
+  const createTemplate = el("select", { "aria-label":"Template for the new paycheck" },
+    ...data.templates.map((item) => el("option", { value:item.name }, item.name)));
+  const createName = el("input", { "aria-label":"Paycheck schedule name",
+    placeholder:"Schedule name" });
+  const createStart = el("input", { type:"date", value:today, "aria-label":"First payday" });
+  const createPeriod = el("select", { "aria-label":"Pay period" },
+    ...data.periods.map((key) => el("option", { value:key }, PAY_PERIOD_LABELS[key] || key)));
+  const createGross = el("input", { inputmode:"decimal", "aria-label":"Gross (optional)",
+    placeholder:"Gross (optional)" });
+  const createForm = data.templates.length ? el("div", { class:"stack" },
+    el("h3", {}, "New paycheck from a template"),
+    el("div", { class:"entry" }, el("label", {}, "Template", createTemplate),
+      el("label", {}, "Name", createName), el("label", {}, "First payday", createStart),
+      el("label", {}, "Pay period", createPeriod), el("label", {}, "Gross", createGross),
+      el("button", { class:"action primary", type:"button", onclick:run(async () => {
+        const created = await post("/api/payroll/create", {
+          template:createTemplate.value, name:createName.value || createTemplate.value,
+          start:createStart.value, period:createPeriod.value, gross:createGross.value || null,
+        });
+        state.payrollSchedule = created.handle;
+        await refresh();
+        say(`Added paycheck ${created.name}.`);
+      }) }, "Create paycheck"))) : null;
+  const templatePanel = el("div", { class:"panel panel-pad-16" },
+    el("h2", {}, "Payroll templates"),
+    data.templates.length
+      ? table(["Template", "Deposit", { label:"Gross", num:true }, "Lines", ""], templateRows)
+      : el("p", { class:"note" }, "No payroll templates yet."),
+    editor, createForm);
+
+  return el("div", {}, paycheckPanel, changePanel, templatePanel);
+}
+
 async function showRules() {
   const data = await get("/api/rules");
   const refresh = async () => { current = "Rules"; await render(); };
@@ -4718,7 +4935,7 @@ async function showVerify() {
 }
 
 const RENDERERS = {
-  Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled,
+  Dashboard: showDashboard, Accounts: showAccounts, Register: showRegister, Scheduled: showScheduled, Payroll: showPayroll,
   "FSA Dashboard": showFsaDashboard, Plan: showPlan, Scenarios: showScenarios,
   Review: showReview, Projection: showProjection, Enter: showEntry, Import: showImport,
   Payees: showPayees, Rules: showRules, Reimbursables: showReimbursables, Goals: showGoals, Verify: showVerify,

@@ -183,6 +183,37 @@ def test_rules_view_adds_a_rule_and_accepts_its_proposal(page, served, tmp_path)
     assert stored.description == "City Power"
 
 
+def test_payroll_view_fills_a_template_creates_a_paycheck_and_previews_a_raise(page, served):
+    from breadsched.gen.engine.payroll import paycheck_breakdown
+
+    db, _httpd = served
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Payroll", exact=True).first.click()
+    page.wait_for_selector("text=Sample wages")
+    page.get_by_role("button", name="Fill from paycheck").click()
+    page.wait_for_selector("text=Filled the template from the paycheck")
+    page.fill("input[aria-label='Template name']", "Job")
+    page.get_by_role("button", name="Save template").click()
+    page.wait_for_selector("td:has-text('Job')")
+
+    page.fill("input[aria-label='Paycheck schedule name']", "Job pay")
+    page.fill("input[aria-label='Gross (optional)']", "5000")
+    page.get_by_role("button", name="Create paycheck").click()
+    page.wait_for_selector("text=Added paycheck Job pay")
+    page.wait_for_selector("h2:has-text('Pay change: Job pay')")
+    page.fill("input[aria-label='New gross pay']", "5500")
+    page.get_by_role("button", name="Preview").click()
+    page.wait_for_selector("text=take-home 5,500.00")
+    [schedule] = [item for item in db.iter_scheduled() if item.name == "Job pay"]
+    assert all(not split.amount_changes for split in schedule.splits)
+
+    page.get_by_role("button", name="Save pay change").click()
+    page.wait_for_selector("text=Saved the pay change")
+    stored = db.get_scheduled(schedule.handle)
+    later = paycheck_breakdown(db, stored, max(date.today(), stored.recurrence.start))
+    assert later.gross.format() == "5,500.00"
+
+
 def _open_register(page):
     page.wait_for_selector("text=Pending bills")
     page.get_by_role("button", name="Register", exact=True).first.click()

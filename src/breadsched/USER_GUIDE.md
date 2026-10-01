@@ -446,6 +446,39 @@ Dashboard, Scheduled, and Upcoming. An explicit or imported payment schedule tak
 precedence. The generated account-linked row is informational and is not posted
 automatically.
 
+### Paychecks and pay changes
+
+A paycheck is an ordinary schedule whose gross pay goes into an income account and
+whose net reaches a bank or cash account; every other line takes money out of the
+gross. **Payroll** ([desktop](guide/desktop.md#paychecks-and-pay-changes),
+[browser](guide/web.md#paychecks-and-pay-changes),
+[command line](guide/cli.md#paychecks-and-pay-changes)) reads each such schedule as
+of a date and groups its lines:
+
+- **Taxes**: an expense account with “tax” anywhere in its full name, such as
+  *Expenses:Taxes:Federal*;
+- **Deductions**: any other expense, such as a health insurance premium;
+- **Saved**: a retirement, FSA, investment, or other non-cash asset account;
+- **Repayments**: a liability, such as a 401(k) loan;
+- **Net deposit**: what reaches the bank, so gross minus all of the above.
+
+A **pay change** sets a new gross from a date. Taxes scale with gross unless you
+choose otherwise; you may also scale any other line, set it to a new amount, or keep
+it. The net deposit takes the difference. The change is saved as per-line future
+amounts, so earlier paychecks, and the Plan and Projection before that date, keep
+their amounts. A paycheck already changing after that date, one with formula
+amounts, or one with whole-schedule future, seasonal, or later one-time amounts is
+refused with a reason, and nothing is written.
+
+A **payroll template** describes one employer's paycheck: the income and deposit
+accounts, a usual gross, and each line as a fixed amount or a percentage of gross
+(for example 6.2% for Social Security). **Fill from paycheck** describes an existing
+paycheck; tax lines become percentages when a percentage reproduces the amount to
+the cent. A new paycheck schedule from a template takes a name, first payday, pay
+period (weekly, every two weeks, twice a month on the 15th and last day, or monthly),
+and optionally a different gross. Templates are kept in the book; each save or
+delete is one undo step.
+
 ### Create a loan
 
 A new loan takes the amount borrowed, annual rate, term, first payment, loan

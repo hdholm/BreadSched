@@ -5567,6 +5567,123 @@ class TestRulesDialog:
             opened.destroy()
 
 
+class TestPayrollDialog:
+    """Paycheck breakdown, pay change, and templates through the shared service."""
+
+    @pytest.fixture
+    def dialog(self, app, window, tmp_path):
+        from datetime import date
+        from decimal import Decimal
+
+        from breadsched.gen.engine.payroll import PayrollLine, PayrollTemplate
+        from breadsched.gen.lib import Account, AccountType, Money
+        from breadsched.gen.lib.recurrence import PeriodType, Recurrence
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gen.services.payroll import (
+            CreatePaycheck,
+            SavePayrollTemplate,
+            create_paycheck_schedule,
+            save_payroll_template,
+        )
+        from breadsched.gui.dialogs.payroll_dialog import PayrollDialog
+
+        path = tmp_path / "payroll.breadsched"
+        create_sample_book(path, as_of=date(2026, 9, 1))
+        app.open_book(str(path))
+        db = app.db
+        expenses = db.get_account_by_name("Expenses")
+        tax = Account(name="Federal Tax", atype=AccountType.EXPENSE, parent=expenses.handle)
+        with db.transaction("Tax") as txn:
+            db.add_account(tax, txn)
+        template = PayrollTemplate(
+            "Job",
+            db.get_account_by_name("Income:Wages").handle,
+            db.get_account_by_name("Assets:Checking").handle,
+            Money("4000.00"),
+            (PayrollLine(tax.handle, percent=Decimal("15")),),
+        )
+        assert save_payroll_template(db, SavePayrollTemplate(template)).ok
+        start = date.today()
+        saved = create_paycheck_schedule(
+            db,
+            CreatePaycheck("Job", "Job pay", Recurrence(PeriodType.WEEK, interval=2, start=start)),
+        )
+        assert saved.ok
+        dialog = PayrollDialog(window, db, saved.value.handle)
+        dialog.tax = tax.handle
+        dialog.handle = saved.value.handle
+        yield dialog
+        dialog.destroy()
+
+    def test_breakdown_and_pay_change(self, dialog, app):
+        from datetime import date, timedelta
+
+        from breadsched.gen.engine.payroll import paycheck_breakdown
+
+        assert dialog.selected_paycheck().schedule == dialog.handle
+        assert "take-home 3,400.00 (85.0% of gross)" in dialog.summary.get_text()
+        later = date.today() + timedelta(days=28)
+        dialog.change_start_entry.set_text(later.isoformat())
+        dialog.change_gross_entry.set_text("4400")
+
+        plan = dialog.preview_change()
+        assert plan is not None
+        assert {line.account: line.after for line in plan.lines}[dialog.tax].format() == "660.00"
+        assert "Nothing is saved" in dialog.status.get_text()
+        assert app.db.get_scheduled(dialog.handle).splits[0].amount_changes == []
+
+        dialog.set_line_change(dialog.tax, "set", "700")
+        assert dialog.save_change() is not None
+        stored = paycheck_breakdown(app.db, app.db.get_scheduled(dialog.handle), later)
+        assert (stored.gross.format(), stored.net.format()) == ("4,400.00", "3,700.00")
+        assert "Edit → Undo reverses it" in dialog.status.get_text()
+
+    def test_refused_pay_change_explains_and_writes_nothing(self, dialog, app):
+        before = app.db.get_scheduled(dialog.handle).serialize()
+        dialog.change_start_entry.set_text("2000-01-01")
+        assert dialog.save_change() is None
+        assert "cannot start before" in dialog.status.get_text()
+        assert app.db.get_scheduled(dialog.handle).serialize() == before
+
+    def test_templates_fill_save_create_and_delete(self, dialog, app):
+        from breadsched.gen.services.payroll import list_payroll_templates
+
+        filled = dialog.fill_from_paycheck()
+        assert filled is not None and filled.lines[0].percent is not None
+        dialog.template_name_entry.set_text("Copy")
+        dialog.add_template_line(dialog.tax, "15%")
+        assert dialog.save_template() is None  # one account on two lines
+        assert "only one payroll line" in dialog.status.get_text()
+        dialog._remove_template_line(dialog.template_rows[-1])
+        saved = dialog.save_template()
+        assert saved is not None and saved.name == "Copy"
+        assert [item.name for item in list_payroll_templates(app.db)] == ["Copy", "Job"]
+
+        dialog.new_name_entry.set_text("Copy pay")
+        dialog.new_period_picker.set_selected(2)
+        dialog.new_gross_entry.set_text("5000")
+        handle = dialog.create_paycheck()
+        assert handle is not None
+        created = app.db.get_scheduled(handle)
+        assert created.recurrence.second_day_of_month == -1
+        assert dialog.selected_paycheck().schedule == handle
+        assert dialog.selected_paycheck().gross.format() == "5,000.00"
+
+        dialog.select_template("Copy")
+        assert dialog.delete_template() is not None
+        assert [item.name for item in list_payroll_templates(app.db)] == ["Job"]
+
+    def test_scheduled_view_action_opens_payroll(self, app, window, dialog):
+        from breadsched.gui.dialogs.payroll_dialog import PayrollDialog
+
+        window.show_category("scheduled")
+        opened = window._views["scheduled"]._on_payroll_clicked()
+        try:
+            assert isinstance(opened, PayrollDialog)
+        finally:
+            opened.destroy()
+
+
 class TestBlankRowAutocomplete:
     """Leaving the description proposes the latest matching entry; nothing posts."""
 
@@ -5967,7 +6084,7 @@ class TestViewActions:
         (
             (
                 "scheduled",
-                ["new-scheduled", "suggest", "new-loan"],
+                ["new-scheduled", "suggest", "new-loan", "payroll"],
                 ["New scheduled…", "Suggest from history…", "New loan…"],
             ),
             (

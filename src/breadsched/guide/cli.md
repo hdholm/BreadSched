@@ -108,6 +108,24 @@ breadsched estimate household.breadsched suggest --json
 breadsched scheduled household.breadsched
 ```
 
+### Paychecks and pay changes
+
+```bash
+breadsched payroll household.breadsched
+breadsched payroll household.breadsched --show "Acme paycheck" --as-of 2026-04-10
+breadsched payroll household.breadsched --save-template Acme --from-schedule "Acme paycheck"
+breadsched payroll household.breadsched --create "Acme paycheck 2" --template Acme \
+    --start 2026-10-02 --every week --interval 2 --gross 3100
+breadsched payroll household.breadsched --pay-change "Acme paycheck" --gross 3300 \
+    --start 2026-04-10 --scale "Expenses:Taxes:Federal" --set "Expenses:Health=90" --preview
+```
+
+With no option, `breadsched payroll` lists every paycheck (gross, withheld, net,
+take-home) and the saved templates. `--pay-change` scales the taxes by default; each
+`--scale ACCOUNT` replaces that default with the accounts named, and `--set
+ACCOUNT=AMOUNT` sets a line. Leave out `--preview` to save. `--json` gives the same
+data. See [Paychecks and pay changes](../USER_GUIDE.md#paychecks-and-pay-changes).
+
 ### Review actual transactions
 
 ```bash

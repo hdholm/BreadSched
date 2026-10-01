@@ -453,6 +453,20 @@ class ScheduledView(BaseView):
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
+    def _on_payroll_clicked(self, _button=None):
+        """Open Payroll on the selected schedule when it is a paycheck."""
+        if self.db is None:
+            return None
+        from ..dialogs.payroll_dialog import PayrollDialog
+
+        selected = self._selected_schedule()
+        dialog = PayrollDialog(
+            self.get_root(), self.db, selected.handle if selected is not None else None
+        )
+        dialog.connect("close-request", self.refresh_on_close)
+        dialog.present()
+        return dialog
+
 
 class ScheduleDuplicateDialog(BoundedWindow):
     """Name and confirm an exact copy of a protected schedule definition."""
