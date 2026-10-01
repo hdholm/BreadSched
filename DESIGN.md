@@ -748,6 +748,39 @@ due dialog, the web review panel, and the `due-review` command are adapters over
 service; the older unreviewed post-all helpers remain for callers that explicitly
 post automatic schedules.
 
+### Payroll
+
+`engine.payroll` reads a paycheck from an ordinary schedule; there is no payroll
+schedule type. A schedule is a paycheck as of a date when, with its amounts resolved
+for that date, it credits at least one income account (gross), debits at least one
+Bank or Cash account (net deposit), and every other leg is a debit into an expense
+(**tax** when the full account name contains "tax", otherwise **deduction**), a
+non-cash asset (**saved**), or a liability (**repayment**). Anything else, including
+an unresolvable formula, is not a paycheck, and the breakdown is `None` rather than a
+guess. The tax rule is a naming heuristic; it only chooses a group label and the
+default lines a pay change scales. `services.payroll.paychecks` lists enabled,
+usable schedules whose recurrence has not ended before the date.
+
+A `PayrollTemplate` (income account, deposit account, usual gross, lines each a fixed
+amount or a percentage of gross) is BreadSched-owned book metadata under
+`payroll_templates`, saved and deleted by `services.payroll` in one undoable metadata
+transaction; names are unique ignoring case. `compute_paycheck` rounds each
+percentage line to the cent and refuses a non-positive line or net. A paycheck
+created from a template goes through `save_fixed_schedule` as an ordinary fixed
+schedule; an investment-account line is classified as a contribution and a liability
+line pays it down.
+
+A pay change (`plan_pay_change`) is computed from the breakdown on its start date:
+the new gross (several income legs are scaled in proportion), each other line set,
+scaled by new/old gross, or kept, the first deposit absorbing the difference. The
+service saves it as `ScheduledSplitAmountChange` entries on each changed leg at the
+start date (gross, net, and every changed line), through `save_schedule`, so the
+schedule's balance validation and undo apply and earlier occurrences keep their
+amounts. It refuses a start before the recurrence, formula legs, whole-schedule
+amount changes, seasonal amounts, one-time amounts on or after the start (all of
+which would rescale the legs), an account on two legs, and any per-leg change after
+the start, rather than reinterpreting them.
+
 ### Loans and mortgages
 
 Loan creation is an application-service workflow around `LoanTerms`: GTK and web

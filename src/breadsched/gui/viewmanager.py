@@ -184,6 +184,14 @@ VIEW_ACTIONS: dict[str, tuple[ViewAction, ...]] = {
             True,
             caption="New Loan",
         ),
+        ViewAction(
+            "payroll",
+            "_Payroll…",
+            "_on_payroll_clicked",
+            "x-office-address-book-symbolic",
+            True,
+            caption="Payroll",
+        ),
     ),
     "upcoming": (ViewAction("review-due", "_Review Due…", "_on_post_clicked"),),
     "plan": (

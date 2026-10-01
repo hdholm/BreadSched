@@ -242,6 +242,18 @@ Use **New Scheduled** for a fixed or formula-driven commitment or estimate, and
 toolbar icon in Scheduled to create a loan (see
 [Create a loan](../USER_GUIDE.md#create-a-loan)).
 
+### Paychecks and pay changes
+
+Choose the **Payroll** toolbar icon in Scheduled (or **Payroll…** in the Actions
+menu); it opens on the selected schedule when that is a paycheck. **Breakdown** shows
+the paycheck's lines as of a date and its take-home share. **Pay change** takes the
+date and new gross, and for each line **Keep**, **Scale with gross**, or **Set to** an
+amount; **Preview** fills the After column without saving, and **Save pay change**
+saves it as one undo step. **Templates** edits payroll templates (each line an amount
+such as 85.50 or a percentage such as 6.2%), fills one from the selected paycheck, and
+creates a new paycheck from one. See
+[Paychecks and pay changes](../USER_GUIDE.md#paychecks-and-pay-changes).
+
 ### Review due transactions
 
 BreadSched asks when a book opens (after any held GnuCash changes), and **Review

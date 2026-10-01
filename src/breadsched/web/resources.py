@@ -38,6 +38,15 @@ from .payee_resource import (
     payees,
     transaction_payee,
 )
+from .payroll_resource import (
+    payroll,
+    payroll_change,
+    payroll_change_preview,
+    payroll_create,
+    payroll_template_delete,
+    payroll_template_from_schedule,
+    payroll_template_save,
+)
 from .receivable_resource import (
     receivable_accept,
     receivable_delete,
@@ -266,6 +275,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/savings-goals": savings_goals,
     "/api/guide": guide,
     "/api/rules": rules,
+    "/api/payroll": payroll,
     "/api/entry/suggest": entry_suggestion,
 }
 
@@ -338,6 +348,12 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/receivables/accept": receivable_accept,
     "/api/fsa/claim-links/accept": fsa_claim_links_accept,
     "/api/rule/add": rule_add,
+    "/api/payroll/template/save": payroll_template_save,
+    "/api/payroll/template/delete": payroll_template_delete,
+    "/api/payroll/template/from-schedule": payroll_template_from_schedule,
+    "/api/payroll/create": payroll_create,
+    "/api/payroll/change/preview": payroll_change_preview,
+    "/api/payroll/change": payroll_change,
     "/api/rule/delete": rule_delete,
     "/api/rule/move": rule_move,
     "/api/rules/accept": rules_accept,

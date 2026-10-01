@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a214 - 2026-10-01
+
+- **Payroll templates and pay changes.** A new `engine.payroll` reads any schedule
+  shaped like a paycheck (gross into income, net into Bank or Cash, and taxes,
+  deductions, savings, or repayments between) as of a date, groups its lines, and
+  computes take-home. `services.payroll` keeps payroll templates in the book (each
+  line a fixed amount or a percentage of gross), describes an existing paycheck as a
+  template, creates a fixed paycheck schedule from one, and previews or saves a pay
+  change from a date as per-leg future amounts (taxes scale with gross by default;
+  any line can be scaled, set, or kept; the net deposit balances). GTK adds
+  **Payroll…** to Scheduled; the web adds a **Payroll** view and `/api/payroll`
+  routes; the new `breadsched payroll` command does the same. No schema change.
+
 ## 0.2.0a213 - 2026-10-01
 
 - **FSA statement lines are proposed for their claims.** A new

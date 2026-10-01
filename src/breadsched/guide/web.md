@@ -93,6 +93,16 @@ exceptions, additional splits, and optional planning classifications. Review the
 result before relying on a projection. Scenario-only estimates and scenario changes
 to baseline schedules are made in the same view.
 
+### Paychecks and pay changes
+
+**Payroll** lists each schedule that reads as a paycheck as of a date, with gross,
+withheld, net, and take-home share; choose one to see its lines. Below it, **Pay
+change** takes a date and new gross, and for each line **Keep**, **Scale with gross**,
+or **Set to** an amount: **Preview** shows the result without saving and **Save pay
+change** saves it. **Payroll templates** lists, edits, and deletes templates, fills
+one from the selected paycheck, and creates a new paycheck from one. See
+[Paychecks and pay changes](../USER_GUIDE.md#paychecks-and-pay-changes).
+
 ### Review due transactions
 
 **Review due transactions…** is in Scheduled and, when something is due, on

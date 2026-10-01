@@ -37,6 +37,7 @@ from ..gen.engine import (
     dashboard as dashboard_engine,
 )
 from ..gen.engine.completeness import Completeness
+from ..gen.engine.payroll import PaycheckBreakdown, PayrollLine, paycheck_breakdown
 from ..gen.lib import (
     Account,
     AccountType,
@@ -77,6 +78,7 @@ from ..gen.services import (
     SaveScenarioAssumptions,
     SaveSchedule,
     SaveTransaction,
+    ServiceError,
     TransactionInput,
     TransactionSplitInput,
     close_claim,
@@ -123,6 +125,19 @@ from ..gen.services.payees import (
     delete_payee,
     preview_payee_proposals,
     save_payee,
+)
+from ..gen.services.payroll import (
+    CreatePaycheck,
+    PayChange,
+    SavePayrollTemplate,
+    apply_pay_change,
+    create_paycheck_schedule,
+    delete_payroll_template,
+    list_payroll_templates,
+    paychecks,
+    preview_pay_change,
+    save_payroll_template,
+    template_from_schedule,
 )
 from ..gen.services.receivables import (
     RecordWriteOff,
@@ -2500,6 +2515,195 @@ def cmd_scheduled(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _find_schedule(db: DbSQLite, reference: str) -> ScheduledTransaction:
+    """Locate a schedule by handle, unique handle prefix, or exact name."""
+    exact = db.get_scheduled(reference)
+    if exact is not None:
+        return exact
+    schedules = list(db.iter_scheduled())
+    named = [item for item in schedules if item.name.casefold() == reference.casefold()]
+    matches = named or [item for item in schedules if item.handle.startswith(reference)]
+    if not matches:
+        raise CommandError(f"no schedule matches {reference!r}")
+    if len(matches) > 1:
+        raise CommandError(f"{reference!r} matches {len(matches)} schedules; use its handle")
+    return matches[0]
+
+
+def _payroll_line_text(db: DbSQLite, line: PayrollLine) -> str:
+    amount = (
+        f"{line.percent}% of gross"
+        if line.percent is not None
+        else line.amount.format()
+        if line.amount is not None
+        else ""
+    )
+    return f"{db.full_name(line.account) or line.account}: {amount}"
+
+
+def _paycheck_text(breakdown: PaycheckBreakdown) -> str:
+    rows = [[leg.kind.label, leg.name, leg.amount.format()] for leg in breakdown.legs]
+    when = f" on {breakdown.when.isoformat()}" if breakdown.when else ""
+    return (
+        f"{breakdown.name}{when}: gross {breakdown.gross.format()}, take-home "
+        f"{breakdown.net.format()} ({breakdown.take_home_percent}%)\n"
+        + table(rows, ["line", "account", "amount"], right={2})
+    )
+
+
+def cmd_payroll(args: argparse.Namespace) -> int:
+    """Show paychecks, manage payroll templates, create paychecks, and change pay."""
+    writes = (
+        args.save_template or args.delete_template or args.create or args.pay_change
+    ) and not args.preview
+    db = open_book(args.book, "w" if writes else "r")
+
+    def check(result):
+        if result.value is None:
+            raise CommandError(service_error_message(result.errors[0]))
+        return result.value
+
+    try:
+        as_of = parse_date(args.as_of)
+        if args.save_template:
+            if not args.from_schedule:
+                raise CommandError("--from-schedule is required with --save-template")
+            source = _find_schedule(db, args.from_schedule)
+            template = check(
+                template_from_schedule(db, source.handle, args.save_template, when=as_of)
+            )
+            saved = check(save_payroll_template(db, SavePayrollTemplate(template)))
+            emit(
+                saved.serialize(),
+                args,
+                f"Saved payroll template {saved.name!r} from {source.name!r}"
+                + "".join(f"\n  {_payroll_line_text(db, line)}" for line in saved.lines),
+            )
+            return 0
+        if args.delete_template:
+            removed = check(delete_payroll_template(db, args.delete_template))
+            emit({"deleted": removed.name}, args, f"Deleted payroll template {removed.name!r}")
+            return 0
+        if args.create:
+            if not args.template:
+                raise CommandError("--template is required with --create")
+            recurrence = Recurrence(
+                period=args.every,
+                interval=args.interval,
+                start=parse_date(args.start) or date.today(),
+            )
+            created = check(
+                create_paycheck_schedule(
+                    db,
+                    CreatePaycheck(
+                        args.template,
+                        args.create,
+                        recurrence,
+                        gross=Money(args.gross) if args.gross else None,
+                        auto_create=args.auto_create,
+                    ),
+                )
+            )
+            schedule = db.get_scheduled(created.handle)
+            assert schedule is not None
+            breakdown = paycheck_breakdown(db, schedule, recurrence.start)
+            emit(
+                breakdown.as_dict() if breakdown else {"handle": created.handle},
+                args,
+                f"Added paycheck {created.name!r} {recurrence.describe()}\n"
+                + (_paycheck_text(breakdown) if breakdown else ""),
+            )
+            return 0
+        if args.pay_change:
+            if not args.gross or not args.start:
+                raise CommandError("--gross and --start are required with --pay-change")
+            schedule = _find_schedule(db, args.pay_change)
+            scaled = None
+            if args.scale is not None:
+                scaled = frozenset(resolve_account(db, item).handle for item in args.scale)
+            amounts: dict[str, Money] = {}
+            for item in args.set or ():
+                account, _sep, amount = item.rpartition("=")
+                if not account:
+                    raise CommandError(f"--set takes ACCOUNT=AMOUNT, not {item!r}")
+                amounts[resolve_account(db, account).handle] = Money(amount)
+            request = PayChange(
+                schedule.handle,
+                parse_date(args.start) or date.today(),
+                Money(args.gross),
+                scaled=scaled,
+                amounts=amounts,
+            )
+            plan = check(
+                preview_pay_change(db, request) if args.preview else apply_pay_change(db, request)
+            )
+            rows = [
+                [line.kind.label, line.name, line.before.format(), line.after.format(), line.how]
+                for line in plan.lines
+            ]
+            verb = "Pay change preview" if args.preview else "Saved pay change"
+            emit(
+                plan.as_dict(),
+                args,
+                f"{verb} for {schedule.name!r} from {plan.start.isoformat()}:\n"
+                + table(rows, ["line", "account", "before", "after", "how"], right={2, 3}),
+            )
+            return 0
+        if args.show:
+            schedule = _find_schedule(db, args.show)
+            breakdown = paycheck_breakdown(
+                db, schedule, as_of or max(date.today(), schedule.recurrence.start)
+            )
+            if breakdown is None:
+                raise CommandError(
+                    service_error_message(ServiceError("payroll.schedule.not_paycheck"))
+                )
+            emit(breakdown.as_dict(), args, _paycheck_text(breakdown))
+            return 0
+        templates = list_payroll_templates(db)
+        found = paychecks(db, as_of)
+        emit(
+            {
+                "paychecks": [item.as_dict() for item in found],
+                "templates": [item.serialize() for item in templates],
+            },
+            args,
+            (
+                table(
+                    [
+                        [
+                            item.name,
+                            item.gross.format(),
+                            item.withheld.format(),
+                            item.net.format(),
+                            f"{item.take_home_percent}%",
+                        ]
+                        for item in found
+                    ],
+                    ["paycheck", "gross", "withheld", "net", "take-home"],
+                    right={1, 2, 3, 4},
+                )
+                if found
+                else "No schedule reads as a paycheck."
+            )
+            + "\n\n"
+            + (
+                "Payroll templates:\n"
+                + "\n".join(
+                    f"  {item.name}: gross {item.gross.format()}; "
+                    + "; ".join(_payroll_line_text(db, line) for line in item.lines)
+                    for item in templates
+                )
+                if templates
+                else "No payroll templates. Save one with --save-template NAME "
+                "--from-schedule SCHEDULE."
+            ),
+        )
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_activity(args: argparse.Namespace) -> int:
     """Show event-driven plan versus actuals in display-only time buckets."""
     db = open_book(args.book, "r")
@@ -4485,6 +4689,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dash.add_argument("--limit", type=int, default=40, help="bills and income rows to list")
     dash.set_defaults(func=cmd_dashboard)
+
+    payroll_cmd = add(
+        "payroll",
+        "Show paychecks, manage payroll templates, create paychecks, and change pay",
+    )
+    payroll_cmd.add_argument("--show", metavar="SCHEDULE", help="one paycheck's lines")
+    payroll_cmd.add_argument("--as-of", help="read paychecks as of this date (YYYY-MM-DD)")
+    payroll_cmd.add_argument(
+        "--save-template", metavar="NAME", help="save a template from --from-schedule"
+    )
+    payroll_cmd.add_argument("--from-schedule", metavar="SCHEDULE")
+    payroll_cmd.add_argument("--delete-template", metavar="NAME")
+    payroll_cmd.add_argument(
+        "--create", metavar="NAME", help="add a paycheck schedule from --template"
+    )
+    payroll_cmd.add_argument("--template", metavar="NAME")
+    payroll_cmd.add_argument("--gross", help="gross pay (default: the template's)")
+    payroll_cmd.add_argument("--start", help="first paycheck, or the pay change's date")
+    payroll_cmd.add_argument(
+        "--every", default="week", choices=[p.value for p in PeriodType], help="pay period"
+    )
+    payroll_cmd.add_argument(
+        "--interval", type=int, default=2, help="periods between paychecks (default: 2)"
+    )
+    payroll_cmd.add_argument("--auto-create", action="store_true")
+    payroll_cmd.add_argument(
+        "--pay-change", metavar="SCHEDULE", help="change gross pay from --start"
+    )
+    payroll_cmd.add_argument(
+        "--scale",
+        action="append",
+        metavar="ACCOUNT",
+        help="a line that scales with gross (repeatable; default: the taxes)",
+    )
+    payroll_cmd.add_argument(
+        "--set", action="append", metavar="ACCOUNT=AMOUNT", help="a line's new amount"
+    )
+    payroll_cmd.add_argument(
+        "--preview", action="store_true", help="show the pay change without saving it"
+    )
+    payroll_cmd.set_defaults(func=cmd_payroll)
 
     estimate = add("estimate", "Recurring Plan estimates that never post")
     estimate.add_argument("action", choices=["list", "suggest", "add", "remove"])
