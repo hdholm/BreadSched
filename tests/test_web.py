@@ -3320,6 +3320,49 @@ class TestDashboardApi:
         _status, restored = client.get("/api/dashboard")
         assert restored["config"] == original["config"]
 
+    def test_review_explains_candidates_and_actions(self, client):
+        from breadsched.gen.lib import (
+            PeriodType,
+            Recurrence,
+            ScheduledSplit,
+            ScheduledTransaction,
+            Transaction,
+        )
+        from breadsched.presentation import REVIEW_ACTION_HELP
+
+        db = client.database
+        accounts = {a.name: a for a in db.iter_accounts()}
+        power = Account(name="Power", atype=AccountType.EXPENSE, parent=accounts["Expenses"].handle)
+        with db.transaction("Power") as txn:
+            db.add_account(power, txn)
+        checking = accounts["Checking"].handle
+        bill = ScheduledTransaction(
+            name="Power bill",
+            recurrence=Recurrence(PeriodType.ONCE, start=date(2026, 5, 7)),
+            splits=[
+                ScheduledSplit(power.handle, Money("80")),
+                ScheduledSplit(checking, Money("-80")),
+            ],
+        )
+        matched = Transaction.simple(date(2026, 5, 8), "Power bill", power.handle, checking, "80")
+        lonely = Transaction.simple(date(2026, 8, 8), "Power", power.handle, checking, "5")
+        with db.transaction("plan") as txn:
+            db.add_scheduled(bill, txn)
+            db.add_transaction(matched, txn)
+            db.add_transaction(lonely, txn)
+
+        _status, payload = client.get(f"/api/review?transaction={matched.handle}")
+        [candidate] = payload["candidates"]
+        assert candidate["confidence"] == "close" and candidate["label"] == "Close match"
+        assert "Same amount" in candidate["reasons"]
+        assert payload["action_help"] == REVIEW_ACTION_HELP
+        assert payload["selected"]["no_candidate_reason"] is None
+        _status, payload = client.get(f"/api/review?transaction={lonely.handle}")
+        assert payload["candidates"] == []
+        assert "Mark this Unexpected" in payload["selected"]["no_candidate_reason"] or (
+            "Mark it Unexpected" in payload["selected"]["no_candidate_reason"]
+        )
+
     def test_fsa_information_has_its_own_dashboard_endpoint(self, client):
         status, payload = client.get("/api/fsa/dashboard")
         assert status == 200

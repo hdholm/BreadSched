@@ -10,6 +10,21 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a212 - 2026-09-30
+
+- **Review explains its suggestions and actions.** A new
+  `engine.review_explain` gives each candidate planned item a confidence (**Close
+  match** within two days and 5%, otherwise **Possible match**) and its reasons:
+  shared accounts, amount and date offsets, and description words in common. When
+  there is no candidate it says why (nearest item outside the seven-day window, in
+  another currency, all rejected, or no schedule uses the accounts). A transaction
+  that moves FSA money names its flow and how to attach it to a claim. Match,
+  Reject, Skip, Unexpected, and Attach to FSA claim each explain what they do
+  (`presentation.REVIEW_ACTION_HELP`). GTK Resolve actuals and the web Review show
+  the reasons, hints, and help; `/api/review` carries `confidence`, `label`,
+  `reasons`, `no_candidate_reason`, `fsa_hint`, and `action_help`; the new
+  `breadsched review` lists the same read-only. No schema change.
+
 ## 0.2.0a211 - 2026-09-30
 
 - **Linux releases attach a tested Flatpak bundle; the sandbox's file chooser,

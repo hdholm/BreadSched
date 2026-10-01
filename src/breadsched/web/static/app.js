@@ -3388,20 +3388,25 @@ async function showReview() {
   }
 
   const selected = data.selected;
+  const help = data.action_help || {};
   const candidateRows = data.candidates.map((candidate) => {
     const variance = Number(candidate.amount_variance);
     const varianceText = `${variance > 0 ? "+" : ""}${money(candidate.amount_variance)}`;
     const dateText = `${candidate.date_variance_days >= 0 ? "+" : ""}${candidate.date_variance_days} day(s)`;
     return el("tr", {},
       el("td", {}, candidate.date),
-      el("td", {}, candidate.description),
+      el("td", {},
+        el("div", {}, candidate.description),
+        el("div", { class: "note" }, candidate.label),
+        el("ul", { class: "review-reasons" },
+          (candidate.reasons || []).map((reason) => el("li", {}, reason)))),
       el("td", { class: "num" }, money(candidate.expected_amount)),
       el("td", { class: cls(candidate.amount_variance) }, varianceText),
       el("td", { class: "num" }, dateText),
       el("td", {},
         el("div", { class: "review-actions" },
           el("button", {
-            class: "action primary", type: "button",
+            class: "action primary", type: "button", title: help.match,
             onclick: async () => {
               try {
                 await post("/api/review/match", {
@@ -3414,7 +3419,7 @@ async function showReview() {
             },
           }, "Match"),
           el("button", {
-            class: "action", type: "button",
+            class: "action", type: "button", title: help.reject,
             onclick: async () => {
               try {
                 await post("/api/review/reject", {
@@ -3426,7 +3431,7 @@ async function showReview() {
             },
           }, "Reject candidate"),
           el("button", {
-            class: "action", type: "button",
+            class: "action", type: "button", title: help.skip,
             onclick: async () => {
               try {
                 await post("/api/review/skip", {
@@ -3472,7 +3477,7 @@ async function showReview() {
     fsaAttach = el("div", { class: "panel panel-pad-10-top" },
       el("strong", {}, "FSA claim"),
       el("div", { class: "review-actions" }, claimSelect, roleSelect, yearSelect,
-        el("button", { class: "action", type: "button", onclick: async () => {
+        el("button", { class: "action", type: "button", title: help.fsa, onclick: async () => {
           const [role, split] = roleSelect.value.split("|");
           try {
             await post("/api/review/fsa-attach", {
@@ -3488,15 +3493,17 @@ async function showReview() {
     el("h2", {}, "Resolve actual"),
     el("p", {}, `${selected.date} · ${selected.description}`),
     el("p", { class: "note" }, `Actual amount: ${money(selected.amount)}`),
+    selected.fsa_hint ? el("p", { class: "note" }, selected.fsa_hint) : null,
     fsaAttach,
     data.candidates.length
       ? table(["Planned", "Description", { label: "Expected", num: true },
                { label: "Amount variance", num: true }, { label: "Date variance", num: true },
                "Action"], candidateRows)
-      : el("p", { class: "note" }, "No candidate within the matching window."),
+      : el("p", { class: "note" }, selected.no_candidate_reason
+        || "No candidate within the matching window."),
     el("div", { class: "review-actions" },
       el("button", {
-        class: "action", type: "button",
+        class: "action", type: "button", title: help.unexpected,
         onclick: async () => {
           try {
             await post("/api/review/unexpected", { transaction: selected.handle });
@@ -3505,7 +3512,11 @@ async function showReview() {
             render();
           } catch (error) { say(error.message, "error"); }
         },
-      }, "Mark unexpected")));
+      }, "Mark unexpected")),
+    el("details", { class: "review-help" },
+      el("summary", {}, "What each action does"),
+      el("ul", {}, ["match", "reject", "skip", "unexpected", "fsa"]
+        .filter((key) => help[key]).map((key) => el("li", {}, help[key])))));
 
   return el("div", {},
     el("h2", {}, "Review"),

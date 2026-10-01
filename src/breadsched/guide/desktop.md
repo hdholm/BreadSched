@@ -253,7 +253,9 @@ of a schedule's dates, then **Apply**. See
 
 Set the Plan controls and apply them; they are shared with the browser. Select a
 value to inspect its occurrences and actual splits, and use **Resolve actuals…** to
-match an actual, mark it unexpected, or review it. The Plan summary gives planned,
+match an actual, mark it unexpected, or review it. In **Resolve actuals**, each
+candidate lists why it is offered, the buttons explain themselves on hover, and the
+line under them says what the available actions do. The Plan summary gives planned,
 actual, and variance through the as-of date; **Show** chooses Plan, Period actual,
 or Period variance for the table (see
 [Reporting terms](../USER_GUIDE.md#reporting-terms)). The foreign-currency note sits

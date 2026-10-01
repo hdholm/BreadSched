@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ...gen.engine import fsa_claims, planning
+from ...gen.engine import fsa_claims, review_explain
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import PlanningResolution
 from ...gen.services import (
@@ -17,7 +17,7 @@ from ...gen.services import (
     reject_review,
     skip_review,
 )
-from ...presentation import claim_role_label, service_error_message
+from ...presentation import REVIEW_ACTION_HELP, claim_role_label, service_error_message
 from ..gi_setup import Gtk, Pango
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
@@ -96,6 +96,12 @@ class ResolutionView(BaseView):
         self.actual_summary.add_css_class("summary-value")
         detail.append(self.actual_summary)
 
+        # What an FSA movement is and what to do with it (empty otherwise).
+        self.fsa_hint = Gtk.Label(xalign=0, wrap=True)
+        self.fsa_hint.add_css_class("dim")
+        self.fsa_hint.set_visible(False)
+        detail.append(self.fsa_hint)
+
         candidates_label = Gtk.Label(label="Candidate scheduled occurrences", xalign=0)
         candidates_label.add_css_class("heading")
         detail.append(candidates_label)
@@ -128,6 +134,18 @@ class ResolutionView(BaseView):
         self.unexpected_button.connect("clicked", self._on_unexpected)
         buttons.append(self.unexpected_button)
         detail.append(buttons)
+        for key, button in (
+            ("match", self.match_button),
+            ("reject", self.reject_button),
+            ("skip", self.skip_button),
+            ("fsa", self.fsa_button),
+            ("unexpected", self.unexpected_button),
+        ):
+            button.set_tooltip_text(REVIEW_ACTION_HELP[key])
+        # The selected action's explanation, so it can be read without hovering.
+        self.action_help = Gtk.Label(xalign=0, wrap=True)
+        self.action_help.add_css_class("dim")
+        detail.append(self.action_help)
         self._set_action_sensitivity()
 
     def _clear_list(self, widget: Gtk.ListBox) -> None:
@@ -209,15 +227,18 @@ class ResolutionView(BaseView):
             f"{transaction.post_date.isoformat()} · {transaction.description}\n"
             f"Actual amount: {amount.format()}"
         )
-        for candidate in planning.match_candidates(self.db, transaction):
+        hint = review_explain.fsa_hint(self.db, transaction)
+        self.fsa_hint.set_text(hint or "")
+        self.fsa_hint.set_visible(hint is not None)
+        for explained in review_explain.explain_candidates(self.db, transaction):
+            candidate = explained.candidate
             row = Gtk.ListBoxRow()
             row.candidate = candidate
             event = candidate.event
             text = (
                 f"{event.planned_date.isoformat()}  {event.description}\n"
-                f"Expected {event.expected_amount.format()} · "
-                f"{candidate.date_distance} day(s) · "
-                f"amount difference {candidate.amount_difference.format()}"
+                f"{explained.label} · expected {event.expected_amount.format()}\n"
+                + "\n".join(f"• {reason}" for reason in explained.reasons)
             )
             label = Gtk.Label(label=text, xalign=0, wrap=True)
             label.set_margin_top(6)
@@ -230,7 +251,7 @@ class ResolutionView(BaseView):
         if first is not None:
             self.candidate_list.select_row(first)
         else:
-            self.variance.set_text("No candidate within the matching window.")
+            self.variance.set_text(review_explain.no_candidate_reason(self.db, transaction))
             self._set_action_sensitivity()
 
     def _on_candidate_selected(self, _listbox, row) -> None:
@@ -269,6 +290,16 @@ class ResolutionView(BaseView):
             has_fsa = transaction is not None and bool(self._fsa_options(transaction)[1])
         self.fsa_button.set_sensitive(has_fsa)
         self.unexpected_button.set_sensitive(has_actual)
+        help_keys: tuple[str, ...]
+        if has_actual and has_candidate:
+            help_keys = ("match", "reject", "skip", "unexpected")
+        elif has_actual:
+            help_keys = ("unexpected",)
+        else:
+            help_keys = ()
+        if has_fsa:
+            help_keys = (*help_keys, "fsa")
+        self.action_help.set_text("\n".join(REVIEW_ACTION_HELP[key] for key in help_keys))
 
     def _on_match(self, _button) -> None:
         if self.db is None or self._transaction_handle is None or self._candidate_key is None:

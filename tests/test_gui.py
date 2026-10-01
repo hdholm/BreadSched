@@ -3740,6 +3740,31 @@ class TestResolutionView:
         assert resolved.planned_occurrence == occurrence_key
         assert all(txn.handle != actual_handle for txn in view._unresolved_transactions())
 
+    def test_candidates_and_actions_are_explained(self, app, window, populated_book):
+        from breadsched.presentation import REVIEW_ACTION_HELP
+
+        actual_handle, _occurrence_key = self._add_matching_actual(populated_book)
+        app.open_book(populated_book)
+        window.show_category("resolution")
+        view = window._views["resolution"]
+        view._transaction_handle = actual_handle
+        view._refresh_candidates()
+        candidate_row = view.candidate_list.get_row_at_index(0)
+        text = candidate_row.get_child().get_label()
+        assert "match · expected" in text
+        assert "• 1 day after the planned date" in text
+        view.candidate_list.select_row(candidate_row)
+        assert view.match_button.get_tooltip_text() == REVIEW_ACTION_HELP["match"]
+        assert REVIEW_ACTION_HELP["reject"] in view.action_help.get_text()
+        assert not view.fsa_hint.get_visible()
+
+        view._on_reject(None)
+        # With nothing left to offer, Review says why and what remains to do.
+        assert view.variance.get_text().startswith("You rejected 1 candidate")
+        help_lines = view.action_help.get_text().splitlines()
+        assert help_lines[0] == REVIEW_ACTION_HELP["unexpected"]
+        assert REVIEW_ACTION_HELP["match"] not in help_lines
+
     def test_reject_then_unexpected_is_persistent(self, app, window, populated_book):
         from breadsched.gen.lib import PlanningResolution
 
