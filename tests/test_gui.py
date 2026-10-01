@@ -3854,6 +3854,51 @@ class TestDashboardView:
         ]
         assert rows == ["40.00 paid from the card"]
 
+    def test_fsa_dashboard_links_proposed_statement_lines(self, app, window, populated_book):
+        from breadsched.gen.engine import fsa_claims
+        from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaFundingYear, Transaction
+
+        app.open_book(populated_book)
+        db = app.db
+        accounts = {a.name: a for a in db.iter_accounts()}
+        start = date.today().replace(month=1, day=1)
+        account = Account(
+            name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
+        )
+        account.fsa_years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
+        ]
+        medical = Account(
+            name="Medical", atype=AccountType.EXPENSE, parent=accounts["Expenses"].handle
+        )
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+            db.add_account(medical, txn)
+        claim = fsa_claims.save_claim(
+            db,
+            FsaClaim(
+                service_date=start,
+                provider="Clinic",
+                eob_responsibility=Money("40"),
+                allocations=[FsaClaimAllocation(account.handle, start)],
+            ),
+        )
+        with db.transaction("statement") as txn:
+            db.add_transaction(
+                Transaction.simple(start, "Clinic card", medical.handle, account.handle, "40"),
+                txn,
+            )
+        window.show_category("fsa-dashboard")
+        view = window._views["fsa-dashboard"]
+        view.refresh()
+        assert view.proposal_heading.get_visible()
+        assert view.proposal_grid.get_child_at(5, 1).get_label() == "Paid from the FSA card"
+        view._on_link_selected()
+        assert view.proposal_status.get_label() == "Linked 1 claim link."
+        assert not view.proposal_heading.get_visible()
+        summary = fsa_claims.claim_summary(db, db.get_fsa_claim(claim.handle))
+        assert summary.paid == Money("40.00")
+
     def test_fsa_claims_needing_attention_are_flagged_and_reported(
         self, app, window, populated_book
     ):

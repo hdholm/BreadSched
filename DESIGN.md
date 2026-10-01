@@ -1610,6 +1610,15 @@ cash-like.
   depends on the split. Without that link, a receivable whose expense is also a claim
   payment produces a warning rather than a refusal, because such a split can be
   legitimate.
+- **Proposed links.** `engine.fsa_claim_proposals.propose_claim_links` finds FSA
+  splits no claim links whose flow needs a claim (direct payment, reimbursement,
+  provider refund) and proposes the one claim that suggests it in that flow's role
+  with an amount match, oldest first and at most one movement per claim per batch;
+  anything ambiguous is left to Review. `services.claims.accept_claim_links`
+  recomputes before linking, as `accept_reimbursements` does for receivables, and
+  import and reconciliation surfaces report waiting proposals through
+  `presentation.claim_link_notice`. `suggest_claims_for_transaction` considers a fully
+  reimbursed claim only for refunds, which often arrive after the FSA has paid.
 - **Paired roles.** `fsa_claims.attachment_roles` lists the roles a transaction can
   take, paired roles first. `direct_payment` links a direct FSA payment as both the
   claim's payment and its allocation's reimbursement; `direct_refund` links a provider

@@ -820,6 +820,17 @@ repaid to the FSA, so the claim is not left over-reimbursed. A charge paid by ca
 bank is a **Healthcare payment**, and the money the FSA later sends to your bank is
 an **FSA reimbursement**.
 
+An FSA administrator's statement, imported or reconciled, brings FSA transactions
+you did not enter yourself. When one clearly belongs on a claim, the FSA Dashboard
+lists it under **Proposed claim links** with the claim and the role it takes
+(**Paid from the FSA card**, **FSA reimbursement**, or **Refunded to the FSA card**)
+and why; select **Link selected** to link the checked ones. A line is proposed only
+when exactly one claim fits it with a matching amount, and each claim is proposed at
+most once at a time; anything else waits for you in Review. A reimbursement is
+proposed once the claim has the payment you made, and a refund to the FSA card even
+after the claim is fully reimbursed. Import and reconciliation say when proposals are
+waiting.
+
 Claims change after they are filed. When a corrected EOB arrives, change the
 claim's EOB and say why in **EOB change note**: the claim keeps a history of each
 change. A lower EOB after the FSA has paid leaves the claim **Over-reimbursed** by

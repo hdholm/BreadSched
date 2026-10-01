@@ -3366,7 +3366,7 @@ class TestDashboardApi:
     def test_fsa_information_has_its_own_dashboard_endpoint(self, client):
         status, payload = client.get("/api/fsa/dashboard")
         assert status == 200
-        assert set(payload) == {"years", "claims", "report", "attention"}
+        assert set(payload) == {"years", "claims", "report", "attention", "proposals"}
         assert payload["report"]["by"] == "status"
 
     def test_fsa_years_say_how_the_election_was_used(self, client):
@@ -3403,6 +3403,51 @@ class TestDashboardApi:
         )
         assert year["funded"] == "0.00"
         assert year["usage_text"] == "40.00 paid from the card; 15.00 refunded to the card"
+
+    def test_fsa_dashboard_proposes_and_links_statement_lines(self, client):
+        from breadsched.gen.engine import fsa_claims
+        from breadsched.gen.lib import FsaClaim, FsaClaimAllocation, FsaFundingYear, Transaction
+
+        db = client.database
+        accounts = {a.name: a for a in db.iter_accounts()}
+        start = date.today().replace(month=1, day=1)
+        account = Account(
+            name="Health FSA", atype=AccountType.FSA, parent=accounts["Assets"].handle
+        )
+        account.fsa_years = [
+            FsaFundingYear(start, start.replace(month=12, day=31), Money("500"), None)
+        ]
+        medical = Account(
+            name="Medical", atype=AccountType.EXPENSE, parent=accounts["Expenses"].handle
+        )
+        with db.transaction("FSA") as txn:
+            db.add_account(account, txn)
+            db.add_account(medical, txn)
+        claim = fsa_claims.save_claim(
+            db,
+            FsaClaim(
+                service_date=start,
+                provider="Clinic",
+                eob_responsibility=Money("40"),
+                allocations=[FsaClaimAllocation(account.handle, start)],
+            ),
+        )
+        line = Transaction.simple(start, "Clinic card", medical.handle, account.handle, "40")
+        with db.transaction("statement") as txn:
+            db.add_transaction(line, txn)
+
+        _status, payload = client.get("/api/fsa/dashboard")
+        [proposal] = payload["proposals"]
+        assert (proposal["claim"], proposal["transaction"]) == (claim.handle, line.handle)
+        assert proposal["role_label"] == "Paid from the FSA card"
+        links = [[proposal["claim"], proposal["transaction"], proposal["split"]]]
+        status, result = client.post("/api/fsa/claim-links/accept", {"links": links})
+        assert status == 200 and result == {"linked": 1, "unchanged": 0}
+        _status, payload = client.get("/api/fsa/dashboard")
+        assert payload["proposals"] == []
+        with pytest.raises(urllib.error.HTTPError) as refused:
+            client.post("/api/fsa/claim-links/accept", {"links": "all"})
+        assert refused.value.code == 400
 
     def test_fsa_claims_are_grouped_and_flagged_like_every_interface(self, client):
         from breadsched.gen.engine import fsa_claims

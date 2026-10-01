@@ -107,10 +107,12 @@ from ..gen.services import (
     suppress_scenario_schedule,
     validate_loan,
 )
+from ..gen.services.claims import claim_link_proposals
 from ..gen.services.receivables import reimbursement_proposals
 from ..gen.utils.amount_input import NumberFormat, parse_user_amount
 from ..presentation import (
     REVIEW_ACTION_HELP,
+    claim_link_notice,
     claim_role_label,
     reimbursement_notice,
     service_error_message,
@@ -2208,6 +2210,7 @@ class Api:
             "reimbursement_notice": reimbursement_notice(
                 len(reimbursement_proposals(self.db).value or ())
             ),
+            "claim_link_notice": claim_link_notice(len(claim_link_proposals(self.db).value or ())),
         }
 
     def import_review(self) -> dict:

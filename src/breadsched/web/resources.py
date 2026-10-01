@@ -23,7 +23,7 @@ from .fsa_claim_resource import (
     fsa_claim_save,
     fsa_claims,
 )
-from .fsa_resource import fsa_dashboard
+from .fsa_resource import fsa_claim_links_accept, fsa_dashboard
 from .gnucash_writeback_resource import (
     gnucash_writeback,
     gnucash_writeback_apply,
@@ -336,6 +336,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/receivable/write-off": receivable_write_off,
     "/api/receivable/delete": receivable_delete,
     "/api/receivables/accept": receivable_accept,
+    "/api/fsa/claim-links/accept": fsa_claim_links_accept,
     "/api/rule/add": rule_add,
     "/api/rule/delete": rule_delete,
     "/api/rule/move": rule_move,

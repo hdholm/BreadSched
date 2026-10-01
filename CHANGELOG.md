@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a213 - 2026-10-01
+
+- **FSA statement lines are proposed for their claims.** A new
+  `engine.fsa_claim_proposals` proposes a claim link for each unlinked FSA payment
+  from the card, reimbursement, or provider refund that exactly one claim fits with a
+  matching amount (one movement per claim per batch; the rest stays in Review).
+  `accept_claim_links` recomputes before linking. The GTK and web FSA Dashboards list
+  **Proposed claim links** with checkboxes and **Link selected**
+  (`POST /api/fsa/claim-links/accept`); import and reconciliation, in GTK and the
+  web, say when proposals are waiting; `breadsched claims --proposals` lists them
+  and `--link-proposals` links them. Correction: claim suggestions skipped fully
+  reimbursed claims entirely, so a provider refund arriving after the FSA had paid
+  was never suggested, in Review or elsewhere. No schema change.
+
 ## 0.2.0a212 - 2026-09-30
 
 - **Review explains its suggestions and actions.** A new

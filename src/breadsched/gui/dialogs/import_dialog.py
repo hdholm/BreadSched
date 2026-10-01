@@ -22,12 +22,17 @@ from ...gen.plug import (  # noqa: E402
     remembered_import_source,
 )
 from ...gen.services import ImportBook, import_book  # noqa: E402
+from ...gen.services.claims import claim_link_proposals
 from ...gen.services.receivables import reimbursement_proposals
 from ...gen.utils import logs  # noqa: E402
 from ...gen.utils.cancellation import OperationCancelled  # noqa: E402
 from ...gen.utils.user_paths import companion_path
 from ...plugins.importer.gnucash_common import ImportResult  # noqa: E402
-from ...presentation import reimbursement_notice, service_error_message  # noqa: E402
+from ...presentation import (  # noqa: E402
+    claim_link_notice,
+    reimbursement_notice,
+    service_error_message,
+)
 from ..background import BackgroundJob  # noqa: E402
 from ..gi_setup import Gio, GLib, Gtk, Pango
 from ..widgets.bounded import BoundedWindow
@@ -318,6 +323,9 @@ class ImportDialog(BoundedWindow):
         if notice:
             # Imported deposits may be money back on a reimbursable expense.
             text += f"\n\n{notice}"
+        if claim_notice := claim_link_notice(len(claim_link_proposals(self.db).value or ())):
+            # An imported FSA statement line may belong on a claim.
+            text += f"\n\n{claim_notice}"
         self.result_view.set_text(text)
         self.import_button.set_label("Import again")
         self._finish_import()

@@ -314,6 +314,10 @@ lists credits that clearly belong to one open receivable, checked; choose **Acce
 selected** to link them. Record a dispute or write off part of the balance on the
 same screen. A warning appears when a linked expense is also on an FSA claim.
 
+When FSA statement lines clearly belong on claims, the FSA Dashboard lists them
+first under **Proposed claim links**, each checked; **Link selected** links them.
+Import and reconciliation results say when proposals are waiting.
+
 The FSA Dashboard lists open claims with a **Needs attention** column saying what
 is left to do, under a line counting them; the Dashboard shows the count as **FSA
 claims needing attention**. **Claims report** totals every claim, and **Group by**

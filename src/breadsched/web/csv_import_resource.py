@@ -10,6 +10,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, cast
 
+from ..gen.services.claims import claim_link_proposals
 from ..gen.services.csv_import import (
     CsvImportRequest,
     CsvInspection,
@@ -20,7 +21,7 @@ from ..gen.services.csv_import import (
     preview_csv_import,
 )
 from ..gen.services.receivables import reimbursement_proposals
-from ..presentation import reimbursement_notice
+from ..presentation import claim_link_notice, reimbursement_notice
 
 if TYPE_CHECKING:
     from .server import Api
@@ -176,4 +177,5 @@ def csv_import(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         "reimbursement_notice": reimbursement_notice(
             len(reimbursement_proposals(api.db).value or ())
         ),
+        "claim_link_notice": claim_link_notice(len(claim_link_proposals(api.db).value or ())),
     }

@@ -416,6 +416,17 @@ def book_open_notice(path: str, *, migration_backup: str | None = None) -> str |
     return "\n\n".join(lines) or None
 
 
+def claim_link_notice(count: int) -> str | None:
+    """Where FSA statements arrive (import, reconciliation), point at proposed links."""
+    if count <= 0:
+        return None
+    if count == 1:
+        found = "1 FSA transaction looks like it belongs on a claim"
+    else:
+        found = f"{count} FSA transactions look like they belong on claims"
+    return f"{found}; review the proposed claim links on the FSA Dashboard."
+
+
 def reimbursement_notice(count: int) -> str | None:
     """Where deposits arrive (import, reconciliation), point at waiting proposals."""
     if count <= 0:
