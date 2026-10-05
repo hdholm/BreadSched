@@ -16,8 +16,8 @@ from ..gen.services.claims import accept_claim_links, claim_link_proposals
 from ..presentation import claim_role_label, fsa_usage_text
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def _amount(value) -> str:

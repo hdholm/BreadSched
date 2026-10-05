@@ -10,6 +10,25 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a216 - 2026-10-05
+
+- **Every web request handler is a resource adapter.** The scheduled, historical
+  estimate, due-review, loan, scenario (assumptions, dated periods, events), Review,
+  import, account, security, book summary, Dashboard settings, Plan settings, and
+  projection handlers moved off `web.server.Api` into `web/*_resource.py` modules
+  (new `schedule_resource`, `loan_resource`, `review_resource`, `import_resource`,
+  `account_resource`, `book_resource`; `scenario_resource`, `projection_resource`,
+  `plan_resource`, and `dashboard_resource` gained their writes). Routes call those
+  functions directly; `web.context.Api` now carries only the open book, and
+  `web.server` re-exports the entry points. Shared browser controls have one parser:
+  `web.controls` (amounts, service errors, `ResourceError`) and
+  `web.schedule_controls` (recurrence, exceptions, split rows), replacing the
+  `schedule_write_resource` protocol over `Api` helpers and two duplicate recurrence
+  parsers. Removed dead Plan date helpers and a `transport`/`server` import cycle.
+  Behavior is unchanged except that a one-time schedule's editor may now leave the
+  end date or count filled; both are ignored, as the scenario editor already did.
+  No schema change.
+
 ## 0.2.0a215 - 2026-10-01
 
 - **Projections show how every balance reconciles.** A new

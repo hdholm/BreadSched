@@ -143,20 +143,28 @@ not make presentation code an owner of ledger or planning semantics.
 
 ### Web adapters and transport
 
-The web presentation is split into three boundaries. ``web.server.Api`` translates
-plain request values to application/domain calls, ``web.resources`` declares routes
-and strictly parses one typed value per query field, and ``web.transport`` owns HTTP
-authentication, framing, body limits, status mapping, and static delivery. The
+The web presentation is split into three boundaries. ``web.resources`` declares
+routes and strictly parses one typed value per query field, each resource module
+translates plain request values to application/domain calls, and ``web.transport``
+owns HTTP authentication, framing, body limits, status mapping, and static delivery.
+Every route calls a resource-module function directly with the request context,
+``web.context.Api``, which carries only the open book; ``web.server`` re-exports the
+entry points. The
 transport never returns unexpected exception text: it logs the exception with a
 correlation identifier and returns only that identifier with a stable error code.
-Each resource module (`web/*_resource.py`: Plan, Plan detail, Expense Explorer,
-Dashboard, Projection, scenarios, schedules, registers, reconciliation, FSA, claims,
-receivables, goals, payees, rules, tags and documents, imports, write-back, net worth,
-guide) is a thin adapter. A read translates typed query values into a shared service
+Each resource module (`web/*_resource.py`: book summary and verification, accounts
+and securities, Plan, Plan detail, Expense Explorer, Dashboard, Projection, scenarios,
+schedules and due review, loans, Review, registers, reconciliation, FSA, claims,
+receivables, goals, payroll, payees, rules, tags and documents, imports, write-back,
+net worth, guide) is a thin adapter. Controls several adapters share have one parser:
+``web.controls`` turns a browser amount into `Money` and a `ServiceError` into a
+resource error with presentation-owned wording, and ``web.schedule_controls`` parses
+the recurrence, exception, and split controls of the baseline and scenario schedule
+editors. A read translates typed query values into a shared service
 or engine call and serializes the typed result; a write parses JSON into the
 service's typed request and maps its `ServiceResult` to a response. Neither
-calculates financial totals nor validates what the service validates, `Api` only
-delegates, and route tests prove that a rejected write leaves the stored object
+calculates financial totals nor validates what the service validates, and route
+tests prove that a rejected write leaves the stored object
 unchanged. Detached drafts (Projection controls, scenario explanations) are
 calculated without being saved; only explicit save routes persist them.
 

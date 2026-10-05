@@ -22,9 +22,10 @@ from ..gen.services.csv_import import (
 )
 from ..gen.services.receivables import reimbursement_proposals
 from ..presentation import claim_link_notice, reimbursement_notice
+from .controls import service_error
 
 if TYPE_CHECKING:
-    from .server import Api
+    from .context import Api
 
 _TEXT_FIELDS = (
     "date",
@@ -112,7 +113,7 @@ def csv_inspect(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         )
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     inspection: CsvInspection = result.value
     return {
         "encoding": inspection.encoding,
@@ -125,7 +126,7 @@ def csv_inspect(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
 def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     result = preview_csv_import(api.db, _request(payload))
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     preview = result.value
     payee_names = {payee.handle: payee.name for payee in api.db.iter_payees()}
     return {
@@ -163,7 +164,7 @@ def csv_import(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     request = _request(payload)
     result = import_csv(api.db, request)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     imported = result.value
     return {
         "new": imported.result.transactions_new,

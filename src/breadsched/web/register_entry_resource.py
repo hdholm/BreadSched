@@ -22,9 +22,10 @@ from ..gen.services import (
     save_transaction,
     transaction_currency,
 )
+from .controls import input_money, service_error
 
 if TYPE_CHECKING:
-    from .server import Api
+    from .context import Api
 
 
 def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> str | None:
@@ -76,7 +77,7 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
                 raise ValueError("value must be decimal text or [numerator, denominator]")
         elif not isinstance(raw_value, str):
             raise ValueError("value must be decimal text or [numerator, denominator]")
-        value = api._input_money(dict(payload), raw_value)
+        value = input_money(dict(payload), raw_value)
         splits.append(
             TransactionSplitInput(
                 account,
@@ -104,5 +105,5 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
     )
     result = save_transaction(db, request)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"handle": result.value.handle, "date": result.value.post_date}

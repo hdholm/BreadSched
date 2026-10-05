@@ -29,11 +29,12 @@ from ..gen.services import (
     reopen_claim,
     save_claim,
 )
+from .controls import input_money, service_error
 from .receivable_resource import shared_cost_json
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def _decimal(value) -> str:
@@ -191,7 +192,7 @@ def _link(item: Mapping[str, Any]) -> ClaimLinkInput:
 
 def _result(api: Api, result) -> Any:
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return result.value
 
 
@@ -201,7 +202,7 @@ def fsa_claim_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     eob = _text(payload, "eob_responsibility")
 
     def money(raw: object):
-        return api._input_money(body, raw)
+        return input_money(body, raw)
 
     definition = ClaimInput(
         service_date=date.fromisoformat(str(payload["service_date"])),

@@ -35,10 +35,11 @@ from ..gen.services.payroll import (
     save_payroll_template,
     template_from_schedule,
 )
+from .controls import input_money, service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 #: Pay periods a new paycheck may use: key -> (period, interval).
 PAY_PERIODS = {
@@ -67,7 +68,7 @@ def _date(payload: Mapping[str, Any], key: str) -> date:
 
 def _result(api: Api, result) -> Any:
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return result.value
 
 
@@ -140,20 +141,16 @@ def _template(api: Api, payload: Mapping[str, Any]) -> PayrollTemplate:
             try:
                 lines.append(PayrollLine(account, percent=parse_percent(str(percent))))
             except PayrollError as exc:
-                raise api._service_resource_error(
-                    ServiceError(exc.code, (f"lines.{index}.percent",))
-                ) from None
+                raise service_error(ServiceError(exc.code, (f"lines.{index}.percent",))) from None
         elif amount not in (None, ""):
-            lines.append(PayrollLine(account, amount=api._input_money(dict(payload), amount)))
+            lines.append(PayrollLine(account, amount=input_money(dict(payload), amount)))
         else:
-            raise api._service_resource_error(
-                ServiceError("payroll.line.amount_or_percent", (f"lines.{index}",))
-            )
+            raise service_error(ServiceError("payroll.line.amount_or_percent", (f"lines.{index}",)))
     return PayrollTemplate(
         name=_text(payload, "name") or "",
         income_account=_text(payload, "income_account") or "",
         deposit_account=_text(payload, "deposit_account") or "",
-        gross=api._input_money(dict(payload), payload.get("gross")),
+        gross=input_money(dict(payload), payload.get("gross")),
         lines=tuple(lines),
     )
 
@@ -202,9 +199,7 @@ def payroll_create(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
                 name=_text(payload, "name") or "",
                 recurrence=recurrence,
                 gross=(
-                    api._input_money(dict(payload), raw_gross)
-                    if raw_gross not in (None, "")
-                    else None
+                    input_money(dict(payload), raw_gross) if raw_gross not in (None, "") else None
                 ),
             ),
         ),
@@ -224,10 +219,10 @@ def _change(api: Api, payload: Mapping[str, Any]) -> PayChange:
     return PayChange(
         schedule=_text(payload, "schedule") or "",
         start=_date(payload, "start"),
-        gross=api._input_money(dict(payload), payload.get("gross")),
+        gross=input_money(dict(payload), payload.get("gross")),
         scaled=frozenset(raw_scaled) if raw_scaled is not None else None,
         amounts={
-            str(account): api._input_money(dict(payload), value)
+            str(account): input_money(dict(payload), value)
             for account, value in raw_amounts.items()
         },
     )

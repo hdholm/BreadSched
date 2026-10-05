@@ -31,11 +31,12 @@ from ..gen.services.receivables import (
     shared_costs,
 )
 from ..presentation import shared_cost_text
+from .controls import input_money, service_error
 
 if TYPE_CHECKING:
     from ..gen.engine.fsa_claims import SharedCost
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def shared_cost_json(shared: SharedCost) -> dict[str, object]:
@@ -58,7 +59,7 @@ def shared_cost_json(shared: SharedCost) -> dict[str, object]:
 def _shared(api: Api, handle: str) -> list[dict[str, object]]:
     result = shared_costs(api.db, handle)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return [shared_cost_json(item) for item in result.value]
 
 
@@ -83,7 +84,7 @@ def _date(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> da
 
 def _result(api: Api, result) -> Any:
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return result.value
 
 
@@ -183,9 +184,7 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
 def receivable_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Create or update a receivable, optionally linking a first expense split."""
     raw_expected = payload.get("expected_amount")
-    expected = (
-        api._input_money(dict(payload), raw_expected) if raw_expected not in (None, "") else None
-    )
+    expected = input_money(dict(payload), raw_expected) if raw_expected not in (None, "") else None
     request = SaveReceivable(
         incurred_date=_date(payload, "incurred_date") or date.today(),
         payer=_text(payload, "payer") or "",
@@ -266,7 +265,7 @@ def receivable_write_off(api: Api, payload: Mapping[str, Any]) -> dict[str, obje
             api.db,
             RecordWriteOff(
                 _text(payload, "receivable") or "",
-                api._input_money(dict(payload), raw_amount),
+                input_money(dict(payload), raw_amount),
                 _date(payload, "written_off_on") or date.today(),
                 _text(payload, "reason", optional=True) or "",
             ),

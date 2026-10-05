@@ -8,7 +8,7 @@ from datetime import date
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine.activity import ReportingPeriod
 from ..gen.services import PlanQuery, query_expense_explorer
-from .resources import ResourceError
+from .controls import ResourceError
 
 
 def expense_report(

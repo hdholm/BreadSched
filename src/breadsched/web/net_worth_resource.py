@@ -13,10 +13,11 @@ from typing import TYPE_CHECKING
 from ..gen.lib.recurrence import add_months
 from ..gen.services import query_net_worth_change, query_net_worth_history
 from ..plugins.export.csv_export import net_worth_change_csv
+from .controls import service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def _month(text: str | None, field: str) -> date | None:
@@ -46,7 +47,7 @@ def net_worth_change(api: Api, query: QueryParams) -> dict[str, object]:
     query.finish()
     result = query_net_worth_change(api.db, start, through, date.today())
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     change = result.value
     return {
         "start": change.start,
@@ -89,7 +90,7 @@ def net_worth_history(api: Api, query: QueryParams) -> dict[str, object]:
     end = date(through.year, through.month, monthrange(through.year, through.month)[1])
     result = query_net_worth_history(api.db, start, end, period, today)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     history = result.value
     return {
         "start": history.start,

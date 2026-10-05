@@ -20,10 +20,11 @@ from ..gen.services.categorization import (
     move_rule,
     preview_category_proposals,
 )
+from .controls import service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> str | None:
@@ -110,21 +111,21 @@ def rule_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         ),
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"handle": result.value.handle, "key": result.value.key}
 
 
 def rule_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     result = delete_rule(api.db, _text(payload, "handle") or "")
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"deleted": result.value.handle}
 
 
 def rule_move(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     result = move_rule(api.db, _text(payload, "handle") or "", _position(payload, "position") or 0)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"moved": result.value.handle}
 
 
@@ -137,5 +138,5 @@ def rules_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         raise ValueError("transactions must be a list of text")
     result = apply_category_proposals(api.db, tuple(raw) if raw is not None else None)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"assigned": result.value.assigned, "unchanged": result.value.unchanged}

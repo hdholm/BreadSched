@@ -26,11 +26,12 @@ from ..gen.services.savings_goals import (
     set_goal_override,
 )
 from ..presentation import goal_override_text, goal_status_text
+from .controls import input_money, service_error
 
 if TYPE_CHECKING:
     from ..gen.engine.savings_goals import GoalProgress
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> str | None:
@@ -54,7 +55,7 @@ def _date(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> da
 
 def _result(api: Api, result) -> Any:
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return result.value
 
 
@@ -122,7 +123,7 @@ def savings_goal_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]
     request = SaveSavingsGoal(
         name=_text(payload, "name") or "",
         account=_text(payload, "account") or "",
-        target_amount=api._input_money(dict(payload), payload.get("target_amount")),
+        target_amount=input_money(dict(payload), payload.get("target_amount")),
         target_date=_date(payload, "target_date") or date.today(),
         start_date=_date(payload, "start_date", optional=True) or date.today(),
         description=_text(payload, "description", optional=True) or "",
@@ -135,7 +136,7 @@ def savings_goal_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]
 def savings_goal_allocate(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     request = AllocateToGoal(
         goal=_text(payload, "handle") or "",
-        amount=api._input_money(dict(payload), payload.get("amount")),
+        amount=input_money(dict(payload), payload.get("amount")),
         allocated_on=_date(payload, "date", optional=True) or date.today(),
         memo=_text(payload, "memo", optional=True) or "",
     )
@@ -169,7 +170,7 @@ def savings_goal_override(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         scenario=_text(payload, "scenario") or "",
         goal=_text(payload, "handle") or "",
         target_amount=(
-            api._input_money(dict(payload), raw_target) if raw_target not in (None, "") else None
+            input_money(dict(payload), raw_target) if raw_target not in (None, "") else None
         ),
         target_date=_date(payload, "target_date", optional=True),
         excluded=excluded,

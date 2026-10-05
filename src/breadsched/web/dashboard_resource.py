@@ -1,12 +1,16 @@
-"""Read-only Dashboard response over the shared dashboard engine."""
+"""Dashboard response over the shared dashboard engine, and its group settings."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import dashboard as engine
 from .savings_goal_resource import goal_json
+
+if TYPE_CHECKING:
+    from .context import Api
 
 
 def dashboard_report(
@@ -172,3 +176,46 @@ def _plain(values: Mapping[str, object]) -> dict[str, str | None]:
         else:
             out[key] = str(value) if value is not None else None
     return out
+
+
+def dashboard_config_save(api: Api, payload: dict) -> dict:
+    """Persist the same group paths and account selections edited by GTK."""
+    allowed_kinds = {"liquid", "retirement", "asset", "property", "liability"}
+    groups: list[engine.GroupConfig] = []
+    raw_groups = payload.get("groups", [])
+    if not isinstance(raw_groups, list):
+        raise ValueError("dashboard groups must be a list")
+    for raw in raw_groups:
+        if not isinstance(raw, dict):
+            raise ValueError("each dashboard group must be an object")
+        name = str(raw.get("name", "")).strip()
+        if not name:
+            raise ValueError("dashboard group name cannot be empty")
+        kind = str(raw.get("kind", "asset"))
+        if kind not in allowed_kinds:
+            raise ValueError("choose a valid dashboard group kind")
+        handles: list[str] = []
+        raw_handles = raw.get("accounts", [])
+        if not isinstance(raw_handles, list):
+            raise ValueError("dashboard group accounts must be a list")
+        for raw_handle in raw_handles:
+            handle = str(raw_handle)
+            account = api.db.get_account(handle)
+            if account is None or account.is_root:
+                raise ValueError("dashboard group references an unknown account")
+            if handle not in handles:
+                handles.append(handle)
+        groups.append(engine.GroupConfig(name, handles, kind))
+
+    config = engine.DashboardConfig.load(api.db)
+    config.groups = groups
+    if "liquidity_days" in payload:
+        config.liquidity_days = min(365, max(1, int(payload["liquidity_days"])))
+    if "emergency_months" in payload:
+        config.emergency_months = min(36, max(1, int(payload["emergency_months"])))
+    config.save(api.db)
+    return {
+        "groups": [group.serialize() for group in config.groups],
+        "liquidity_days": config.liquidity_days,
+        "emergency_months": config.emergency_months,
+    }

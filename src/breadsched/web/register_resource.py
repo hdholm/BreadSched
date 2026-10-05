@@ -24,10 +24,11 @@ from ..gen.services import (
     transaction_currency,
 )
 from .attachment_resource import document_json
+from .controls import ResourceError, input_money, service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 __all__ = ["register", "transaction_add"]
 
@@ -84,14 +85,13 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
 
 def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Post a two-split transaction from the simple entry form."""
-    from .resources import ResourceError  # resources imports this module
 
     debit = api.db.get_account_by_name(payload["to"])
     credit = api.db.get_account_by_name(payload["from"])
     if debit is None or credit is None:
         raise ResourceError(400, "transaction.account.not_found", ("from", "to"))
     when = date.fromisoformat(payload.get("date") or date.today().isoformat())
-    amount = api._input_money(dict(payload), payload["amount"])
+    amount = input_money(dict(payload), payload["amount"])
     if amount <= 0:
         raise ResourceError(400, "transaction.amount.non_positive", ("amount",))
     description = str(payload.get("description") or "").strip()
@@ -138,5 +138,5 @@ def transaction_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         ),
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"handle": result.value.handle, "date": when, "amount": amount}

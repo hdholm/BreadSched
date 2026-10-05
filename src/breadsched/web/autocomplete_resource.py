@@ -10,10 +10,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ..gen.services.autocomplete import SuggestEntry, suggest_entry
+from .controls import service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def entry_suggestion(api: Api, query: QueryParams) -> dict[str, object]:
@@ -25,7 +26,7 @@ def entry_suggestion(api: Api, query: QueryParams) -> dict[str, object]:
     query.finish()
     result = suggest_entry(api.db, request)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     suggestion = result.value.suggestion
     if suggestion is None:
         return {"suggestion": None}

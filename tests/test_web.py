@@ -1566,10 +1566,10 @@ class TestItServes:
         assert payload["scenario"]["years"] == 3
 
     def test_projection_report_resource_preserves_controls_and_summary(self, client):
-        from breadsched.web.server import Api
+        from breadsched.web.projection_resource import projection_draft
 
         expected = projection_report(
-            client.database, Api(client.database)._projection_draft(years=2), base=True
+            client.database, projection_draft(client.database, years=2), base=True
         )
         status, actual = client.get("/api/projection?years=2")
         assert status == 200
@@ -1577,12 +1577,11 @@ class TestItServes:
         assert len(actual["rows"]) == 24
 
     def test_comparison_resource_preserves_accounting_deltas(self, client):
-        from breadsched.web.server import Api
+        from breadsched.web.projection_resource import projection_draft
 
         _status, clone = client.post("/api/scenario/duplicate", {"handle": None})
-        api = Api(client.database)
-        primary = api._projection_draft(years=1)
-        comparison = api._projection_draft(clone["handle"], years=1)
+        primary = projection_draft(client.database, years=1)
+        comparison = projection_draft(client.database, clone["handle"], years=1)
         expected = projection_comparison_report(
             client.database, primary, comparison, primary_base=True, comparison_base=False
         )
@@ -1641,10 +1640,9 @@ class TestItServes:
         ]
 
     def test_month_explanation_resource_matches_route_and_leaves_book_unchanged(self, client):
-        from breadsched.web.server import Api
+        from breadsched.web.projection_resource import projection_draft
 
-        api = Api(client.database)
-        scenario = api._projection_draft(years=2)
+        scenario = projection_draft(client.database, years=2)
         before = scenario.effective_assumptions().serialize()
         expected = projection_month_report(client.database, scenario, 5)
         status, actual = client.post(
@@ -1655,7 +1653,9 @@ class TestItServes:
         assert actual == json.loads(json.dumps(expected, default=str))
         assert actual["index"] == 5
         assert actual["cash"]["closing"] is not None
-        assert api._projection_draft(years=2).effective_assumptions().serialize() == before
+        assert (
+            projection_draft(client.database, years=2).effective_assumptions().serialize() == before
+        )
 
     def test_projection_draft_calculation_does_not_persist_saved_changes(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
@@ -3863,11 +3863,9 @@ class TestScenarioManagementApi:
         client.post("/api/scenario/duplicate", {"handle": None})
 
         _status, listing = client.get("/api/scenarios")
-        from breadsched.web.server import Api
+        from breadsched.web.scenario_resource import management_base_scenario
 
-        expected = scenarios_report(
-            client.database, Api(client.database)._management_base_scenario()
-        )
+        expected = scenarios_report(client.database, management_base_scenario(client.database))
         assert listing == json.loads(json.dumps(expected, default=str))
         assert listing["scenarios"][1]["assumption_sources"]["income_growth"] == "Base"
         names = [item["name"].casefold() for item in listing["projection_accounts"]]

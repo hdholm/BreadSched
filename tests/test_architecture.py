@@ -59,8 +59,13 @@ def imported_names(path: Path) -> set[str]:
     return found
 
 
-def calls_in_method(path: Path, class_name: str, method_name: str) -> set[str]:
-    """Return the simple and qualified call names made below one adapter method."""
+def calls_in_method(path: Path, class_name: str | None, method_name: str) -> set[str]:
+    """Return the simple and qualified call names made below one adapter method.
+
+    ``class_name`` None names a module-level function (a web resource adapter).
+    """
+    if class_name is None:
+        return calls_in_function(path, method_name)
     tree = ast.parse(path.read_text(encoding="utf-8"))
     class_node = next(
         node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == class_name
@@ -230,9 +235,9 @@ class TestServiceBoundaries:
         ("gui/dialogs/schedule_dialog.py", "ScheduleDialog", "_on_save"),
         ("gui/dialogs/scenario_schedule_dialog.py", "ScenarioScheduleDialog", "build"),
         ("gui/dialogs/scenario_schedule_dialog.py", "ScenarioScheduleDialog", "_on_save"),
-        ("web/server.py", "Api", "scenario_event_save"),
-        ("web/server.py", "Api", "scheduled_save"),
-        ("web/server.py", "Api", "scheduled_formula_save"),
+        ("web/scenario_resource.py", None, "scenario_event_save"),
+        ("web/schedule_resource.py", None, "scheduled_save"),
+        ("web/schedule_resource.py", None, "scheduled_formula_save"),
     )
 
     @pytest.mark.parametrize(
@@ -272,7 +277,7 @@ class TestServiceBoundaries:
                 "_on_save",
                 {"save_fixed_scenario_schedule", "save_formula_scenario_schedule"},
             ),
-            ("web/server.py", "Api", "scheduled_formula_save", {"save_formula_schedule"}),
+            ("web/schedule_resource.py", None, "scheduled_formula_save", {"save_formula_schedule"}),
         ),
     )
     def test_schedule_writes_call_the_typed_service(
@@ -281,25 +286,21 @@ class TestServiceBoundaries:
         calls = calls_in_method(SRC / relative, class_name, method_name)
         assert expected <= calls
 
-    def test_web_fixed_schedule_write_delegates_to_service_backed_resource(self):
-        api_calls = calls_in_method(SRC / "web/server.py", "Api", "scheduled_save")
-        resource_calls = calls_in_function(
-            SRC / "web/schedule_write_resource.py", "save_fixed_schedule_request"
-        )
-
-        assert "save_fixed_schedule_request" in api_calls
-        assert "save_fixed_schedule" not in api_calls
-        assert "save_fixed_schedule" in resource_calls
-
-    def test_web_scenario_schedule_write_delegates_to_service_backed_resource(self):
-        api_calls = calls_in_method(SRC / "web/server.py", "Api", "scenario_event_save")
-        resource_calls = calls_in_function(
-            SRC / "web/schedule_write_resource.py", "save_scenario_schedule_request"
-        )
-
-        assert "save_scenario_schedule_request" in api_calls
-        assert "save_fixed_scenario_schedule" not in api_calls
-        assert "save_fixed_scenario_schedule" in resource_calls
+    def test_web_schedule_writes_live_in_service_backed_resources(self):
+        """Neither write remains on ``Api``; each resource calls its typed service."""
+        server = ast.parse((SRC / "web/context.py").read_text(encoding="utf-8"))
+        api_methods = {
+            node.name
+            for item in server.body
+            if isinstance(item, ast.ClassDef) and item.name == "Api"
+            for node in item.body
+            if isinstance(node, ast.FunctionDef)
+        }
+        assert {"scheduled_save", "scenario_event_save"}.isdisjoint(api_methods)
+        fixed = calls_in_function(SRC / "web/schedule_resource.py", "scheduled_save")
+        scenario = calls_in_function(SRC / "web/scenario_resource.py", "scenario_event_save")
+        assert "save_fixed_schedule" in fixed
+        assert "save_fixed_scenario_schedule" in scenario
 
     def test_gui_plan_consumes_the_typed_query_service(self):
         calls = calls_in_method(SRC / "gui/views/plan.py", "PlanView", "refresh")
@@ -307,11 +308,11 @@ class TestServiceBoundaries:
         assert "build_category_report" not in calls
 
     def test_web_plan_delegates_to_a_service_backed_resource(self):
-        api_calls = calls_in_method(SRC / "web/server.py", "Api", "plan")
+        route_calls = calls_in_function(SRC / "web/resources.py", "_plan")
         resource_calls = calls_in_function(SRC / "web/plan_resource.py", "plan_report")
 
-        assert "plan_report" in api_calls
-        assert "query_plan" not in api_calls
+        assert "plan_report" in route_calls
+        assert "query_plan" not in route_calls
         assert "query_plan" in resource_calls
         assert "build_category_report" not in resource_calls
 
@@ -450,7 +451,7 @@ class TestServiceBoundaries:
         ("relative", "class_name", "method_name"),
         (
             ("gui/dialogs/loan_dialog.py", "LoanDialog", "_on_save"),
-            ("web/server.py", "Api", "loan_save"),
+            ("web/loan_resource.py", None, "loan_save"),
         ),
     )
     def test_loan_mutations_use_the_typed_service(self, relative, class_name, method_name):
@@ -464,7 +465,7 @@ class TestServiceBoundaries:
         ("relative", "class_name", "method_name"),
         (
             ("gui/dialogs/import_dialog.py", "ImportDialog", "_on_import"),
-            ("web/server.py", "Api", "import_local"),
+            ("web/import_resource.py", None, "import_local"),
         ),
     )
     def test_import_adapters_use_the_typed_service(self, relative, class_name, method_name):
@@ -497,11 +498,11 @@ class TestServiceBoundaries:
                 "_on_fsa_attach",
                 "attach_review_claim",
             ),
-            ("web/server.py", "Api", "review_match", "match_review"),
-            ("web/server.py", "Api", "review_reject", "reject_review"),
-            ("web/server.py", "Api", "review_skip", "skip_review"),
-            ("web/server.py", "Api", "review_unexpected", "mark_review_unexpected"),
-            ("web/server.py", "Api", "review_fsa_attach", "attach_review_claim"),
+            ("web/review_resource.py", None, "review_match", "match_review"),
+            ("web/review_resource.py", None, "review_reject", "reject_review"),
+            ("web/review_resource.py", None, "review_skip", "skip_review"),
+            ("web/review_resource.py", None, "review_unexpected", "mark_review_unexpected"),
+            ("web/review_resource.py", None, "review_fsa_attach", "attach_review_claim"),
         ),
     )
     def test_review_adapters_use_typed_services(
@@ -569,12 +570,12 @@ class TestServiceBoundaries:
                 "_suppress_baseline_schedule",
                 "suppress_scenario_schedule",
             ),
-            ("web/server.py", "Api", "scenario_save", "save_scenario_assumptions"),
-            ("web/server.py", "Api", "scenario_duplicate", "duplicate_scenario"),
-            ("web/server.py", "Api", "scenario_delete", "delete_scenario"),
+            ("web/scenario_resource.py", None, "scenario_save", "save_scenario_assumptions"),
+            ("web/scenario_resource.py", None, "scenario_duplicate", "duplicate_scenario"),
+            ("web/scenario_resource.py", None, "scenario_delete", "delete_scenario"),
             (
-                "web/server.py",
-                "Api",
+                "web/scenario_resource.py",
+                None,
                 "scenario_event_suppress",
                 "suppress_scenario_schedule",
             ),
@@ -623,8 +624,13 @@ class TestServiceBoundaries:
                 "_on_save_clicked",
                 "save_scenario_assumptions",
             ),
-            ("web/server.py", "Api", "scenario_period_save", "save_assumption_period"),
-            ("web/server.py", "Api", "scenario_period_delete", "delete_assumption_period"),
+            ("web/scenario_resource.py", None, "scenario_period_save", "save_assumption_period"),
+            (
+                "web/scenario_resource.py",
+                None,
+                "scenario_period_delete",
+                "delete_assumption_period",
+            ),
         ),
     )
     def test_projection_assumption_adapters_use_typed_services(
@@ -640,8 +646,11 @@ class TestServiceBoundaries:
         )
         assert "save_base_assumptions" in helper_calls
         assert "set_metadata" not in helper_calls
-        for method_name in ("scenario_save", "projection_save"):
-            calls = calls_in_method(SRC / "web/server.py", "Api", method_name)
+        for relative, class_name, method_name in (
+            ("web/scenario_resource.py", None, "scenario_save"),
+            ("web/projection_resource.py", None, "projection_save"),
+        ):
+            calls = calls_in_method(SRC / relative, class_name, method_name)
             assert "save_base_assumptions" in calls
             assert "save_scenario_assumptions" in calls
             assert "set_metadata" not in calls
@@ -687,10 +696,10 @@ class TestServiceBoundaries:
         (
             ("gui/dialogs/account_dialog.py", "AccountDialog", "_on_save", "save_account"),
             ("gui/dialogs/account_dialog.py", "AccountDialog", "_on_delete", "delete_account"),
-            ("web/server.py", "Api", "account_type_save", "save_account"),
-            ("web/server.py", "Api", "account_emergency_fund_save", "save_account"),
-            ("web/server.py", "Api", "account_card_save", "save_account"),
-            ("web/server.py", "Api", "account_fsa_years_save", "save_account"),
+            ("web/account_resource.py", None, "account_type_save", "save_account"),
+            ("web/account_resource.py", None, "account_emergency_fund_save", "save_account"),
+            ("web/account_resource.py", None, "account_card_save", "save_account"),
+            ("web/account_resource.py", None, "account_fsa_years_save", "save_account"),
         ),
     )
     def test_account_adapters_use_typed_services(
@@ -730,8 +739,8 @@ class TestServiceBoundaries:
                 "_confirm",
                 "delete_schedule",
             ),
-            ("web/server.py", "Api", "scheduled_duplicate", "duplicate_schedule"),
-            ("web/server.py", "Api", "scheduled_delete", "delete_schedule"),
+            ("web/schedule_resource.py", None, "scheduled_duplicate", "duplicate_schedule"),
+            ("web/schedule_resource.py", None, "scheduled_delete", "delete_schedule"),
         ),
     )
     def test_schedule_lifecycle_adapters_use_typed_services(
@@ -750,6 +759,15 @@ class TestServiceBoundaries:
 
 
 class TestWebBoundaries:
+    def test_the_request_context_holds_only_the_book(self):
+        """Every handler is a resource adapter; ``Api`` carries the open book alone."""
+        tree = ast.parse((SRC / "web/context.py").read_text(encoding="utf-8"))
+        [api] = [node for node in tree.body if isinstance(node, ast.ClassDef)]
+        methods = [node.name for node in api.body if isinstance(node, ast.FunctionDef)]
+        assert methods == ["__init__"]
+        resources = (SRC / "web/resources.py").read_text(encoding="utf-8")
+        assert "getattr(api" not in resources
+
     def test_financial_api_does_not_own_http_transport_or_route_tables(self):
         source = (SRC / "web/server.py").read_text(encoding="utf-8")
         assert "class Handler(" not in source

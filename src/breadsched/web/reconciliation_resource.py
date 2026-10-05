@@ -25,10 +25,11 @@ from ..gen.services.reconciliations import (
     update_reconciliation,
 )
 from ..presentation import claim_link_notice, reimbursement_notice
+from .controls import input_money, service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 __all__ = [
     "reconciliation",
@@ -107,13 +108,13 @@ def reconciliation_start(api: Api, payload: Mapping[str, Any]) -> dict[str, obje
         statement_date = date.fromisoformat(str(payload.get("statement_date") or ""))
     except ValueError as exc:
         raise ValueError("enter a valid statement date") from exc
-    ending = api._input_money(dict(payload), payload.get("ending_balance", ""))
+    ending = input_money(dict(payload), payload.get("ending_balance", ""))
     result = start_reconciliation(
         api.db,
         StartReconciliation(account, statement_date, ending),
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     started = result.value.reconciliation
     return {"handle": started.handle, "status": started.status.value}
 
@@ -124,7 +125,7 @@ def reconciliation_update(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
     if not isinstance(raw_splits, list) or not all(isinstance(item, str) for item in raw_splits):
         raise ValueError("selected_splits must be a list of split handles")
     ending = (
-        api._input_money(dict(payload), payload["ending_balance"])
+        input_money(dict(payload), payload["ending_balance"])
         if "ending_balance" in payload
         else None
     )
@@ -137,7 +138,7 @@ def reconciliation_update(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         ),
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     state = result.value
     return {"handle": handle, "difference": state.difference, "balanced": state.balanced}
 
@@ -148,7 +149,7 @@ def reconciliation_complete(api: Api, payload: Mapping[str, Any]) -> dict[str, o
         ReconciliationAction(str(payload.get("handle") or "")),
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     completed = result.value
     return {"handle": completed.handle, "status": completed.status.value}
 
@@ -159,7 +160,7 @@ def reconciliation_cancel(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         ReconciliationAction(str(payload.get("handle") or "")),
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     cancelled = result.value
     return {"handle": cancelled.handle, "status": cancelled.status.value}
 
@@ -170,6 +171,6 @@ def reconciliation_reopen(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         ReconciliationAction(str(payload.get("handle") or "")),
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     reopened = result.value
     return {"handle": reopened.handle, "status": reopened.status.value}

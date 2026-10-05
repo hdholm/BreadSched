@@ -42,9 +42,11 @@ messages or pull requests.
   layers. GTK, web, and CLI code should present shared services rather than
   reimplement financial logic. Apply presentation changes consistently to GTK,
   web, CLI, API, and printable output wherever that behavior is exposed.
-- Keep web route parsing in `web.resources` and read-only response adapters outside
-  the main `Api` class. A boundary extraction should preserve the full response,
-  saved controls, scenario comparison, and error contract in route-level tests.
+- Keep web route parsing in `web.resources` and every request handler in a
+  `web/*_resource.py` adapter; the `web.context.Api` request context carries only
+  the open book. Parse controls several adapters share once, in `web.controls` or
+  `web.schedule_controls`. Moving a handler should preserve the full response, saved
+  controls, scenario comparison, and error contract in route-level tests.
 - For web financial writes, presentation adapters may assemble typed service inputs,
   but the shared service must own financial validation and the entire transaction.
   Cover a rejected request with a before/after persistence assertion.
@@ -244,7 +246,7 @@ creates an annotated tag on that exact commit, publishes the human-reviewed
 notes, and attaches the wheel, source distribution, the Windows installer
 (built, installed over the newest published installer, exercised, and
 uninstalled on Windows from the same commit by the workflow's
-`windows-installer` job), and `SHA256SUMS` overing all three. An existing tag
+`windows-installer` job), and `SHA256SUMS` covering all three. An existing tag
 must resolve to the same commit; an existing release is never overwritten. A
 later `main` commit that keeps an already-tagged version, such as a
 documentation-only or CI change, is reported as not selected rather than

@@ -14,7 +14,7 @@ from breadsched.presentation import (
     service_error_message,
     service_error_templates,
 )
-from breadsched.web.server import Api
+from breadsched.web.controls import service_error
 
 SERVICES = Path(__file__).resolve().parent.parent / "src" / "breadsched" / "gen" / "services"
 SERVICE_CODE = re.compile(
@@ -53,7 +53,7 @@ def test_gettext_catalog_translates_the_shared_gtk_and_web_message_seam():
     try:
         configure_language(["es"])
         assert service_error_message(error) == "Una cuenta programada ya no existe"
-        assert Api._service_resource_error(error).message == ("Una cuenta programada ya no existe")
+        assert service_error(error).message == ("Una cuenta programada ya no existe")
     finally:
         configure_language(["C"])
 

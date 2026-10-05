@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "breadsched"
 dynamic = ["version"]
-description = "Event-driven cash-flow planning and multi-year projection personal financial managemnt tool"
+description = "Event-driven cash-flow planning and multi-year projection personal financial management tool"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"

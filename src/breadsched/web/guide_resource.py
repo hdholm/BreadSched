@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 from ..user_guide import GUIDE_PARTS, guide_part, read_guide
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def guide(api: Api, query: QueryParams) -> dict[str, object]:
