@@ -1,44 +1,29 @@
-# BreadSched roadmap
+# BreadSched Household Financial Manager roadmap
 
-This file is the **single authoritative source for unfinished BreadSched work**.
+This file is the **authoritative source for unfinished BreadSched feaure work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
-Published alpha releases are listed on the repository's GitHub Releases page; each
+Published releases are listed on the repository's GitHub Releases page; each
 carries GitHub pre-release metadata as well as versioned notes and verified
-artifacts. A version is released only when `main` carries its release notes; a merge
-without new notes publishes nothing.
-
-
-## Product direction
-
-BreadSched aims to become a **general household-finance application**. It should
-cover accounts and registers, reconciliation, scheduled transactions, planning,
-scenarios, projection, investments and retirement, and common imports. GnuCash
-compatibility matters while these household workflows mature; business accounting
-features remain outside the product scope.
-
-Until that household feature set is sufficiently complete, **GnuCash compatibility
-is a first-class requirement**. GTK4 is the canonical interface and Linux is the
-primary native desktop target; the web interface remains a supported parity surface.
-Cross-cutting workflow logic belongs in shared services rather than presentation code.
-
+artifacts. A version is released only when `main` carries its release notes; a
+merge without new notes publishes nothing.
 
 ## Prioritized delivery
 
 These are the current priorities, subject to review as field evidence changes.
 Each slice should use shared calculations and cover GTK, web, CLI, and printable
-output wherever that behavior is exposed. Preserve GnuCash source ownership and
+output wherever that behavior is exposed. Preserve imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Linux packaging.** Submit the Flatpak to Flathub (the maintainer's account and
-   review; releases already attach a tested bundle). Keep wheel/source releases
-   available throughout.
+1. **Linux packaging.** Submit the Flatpak to Flathub (the maintainer's account
+   and review; releases already attach a tested bundle). Keep wheel/source
+   releases available throughout.
 2. **Next — Interface, FSA, and scheduling.** Take the GTK/web parity and
    reporting items, then FSA/benefit accounts and claims, then scheduled
    transactions and loans (sections below).
 
 
-## Architecture and correctness
+## Architecture
 
 - Split oversized modules/functions as part of the service/resource ownership
   work, especially the remaining seams in `web/server.py`: the scheduled, loan,
@@ -71,7 +56,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 ## Scheduled transactions and loans
 
 - Continue widening safe editing only where complete split/recurrence/import
-  semantics can be round-tripped without guessing.
+  semantics can be round-tripped accurately.
 
 - Consider additional custom recurrence patterns only when their occurrence
   identity, bounded generation, import mapping, editing, and round trip are all
@@ -100,23 +85,23 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Projection and scenarios
 
+- Add richer charts, cash-runway comparisons, and deeper account explanations.
+
 - Compare savings goals held in non-cash accounts with that account's projected
   balance (projection rows carry only summed holdings today), and let a scenario
   model a goal's purchase as a dated one-off after its target date.
 
-- Add a custom per-schedule growth rate only if it can be explained cleanly within
-  the scenario-assumption model.
+- Evolve assumptions toward extensible dated rules (salary changes, retirement,
+  pensions/Social Security, temporary expenses, mortgage payoff, changing
+  return or inflation regimes) instead of hard-coded special cases.
+
+- Add a custom per-schedule growth rate only if it can be explained cleanly
+  within the scenario-assumption model.
 
 - Improve projection caching/reuse without storing stale calculated scenario
   results.
 
-- Add richer charts, cash-runway comparisons, and deeper account explanations.
-
 - Polish Plan/Projection scenario comparisons.
-
-- Evolve assumptions toward extensible dated rules (salary changes, retirement,
-  pensions/Social Security, temporary expenses, mortgage payoff, changing return or
-  inflation regimes) instead of hard-coded special cases.
 
 
 ## FSA / benefit accounts and claims
@@ -132,8 +117,14 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Expand claim/import automation without conflating benefit availability with the
   custodial account ledger balance.
 
+- Expand FSA semantics to accomodate Dependent Care FSAs (e.g., no EOB
+  involvement.)
 
 ## Import and GnuCash interoperability
+
+- Continue representative GnuCash compatibility fixtures for accounts,
+  transactions, reconciliation, commodities, schedules, formula loans, and unusual
+  but valid structures.
 
 - Extend CSV import mapping to split columns (several category/amount pairs per
   row). Reject ambiguous mappings rather than inventing ledger accounts or
@@ -150,10 +141,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Improve import summaries/problem reporting.
 
 - Cover richer transfer/category mapping and real-world QIF/OFX deviations.
-
-- Continue representative GnuCash compatibility fixtures for accounts,
-  transactions, reconciliation, commodities, schedules, formula loans, and unusual
-  but valid structures.
 
 - Investigate/cover older GnuCash SQLite timezone/date conventions.
 

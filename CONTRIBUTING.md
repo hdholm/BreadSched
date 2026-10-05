@@ -150,7 +150,7 @@ Before opening or updating a pull request:
 1. Start from the 'main' branch on GitHub.
 2. Make one coherent change at a time. Review every major document and record its
    disposition in the pull-request description, as described in
-   [Document review](#document-review). Advance the application alpha version when
+   [Document review](#document-review). Advance the application version when
    a commit changes code or runtime behavior; documentation-only commits do not
    require a version change.
 3. Add or update focused tests for changed behavior (see
@@ -165,16 +165,16 @@ Before opening or updating a pull request:
    `make typecheck-extended` gate covers CLI, web, and GUI modules, including
    diagnostics from their imports. GTK runtime tests remain necessary: dynamic
    PyGObject APIs without type stubs cannot be fully checked by mypy.
-8. Preserve a single coherent commit where practical and verify its parent and tree
-   before publication.
-9. Verify every commit has the required DCO sign-off and add `Assisted-by:` whenever
-   an AI tool materially contributed. Parse both adjacent trailers with
+8. Preserve a single coherent commit where practical and verify its parent and
+   tree before publication.
+9. Verify every commit has the required DCO sign-off and add `Assisted-by:`
+   whenever an AI tool materially contributed. Parse both adjacent trailers with
    `git interpret-trailers --parse` and check the remote commit message.
 10. Push a named feature branch and open a pull request against `main` or the exact
    preceding branch in a documented stack. Record scope, tests, version, related
    issues, and dependency/merge order in the description.
-11. Monitor the complete GitHub Actions run. Correct failures on the same branch and
-    refresh every dependent stacked branch so its parent is exact.
+11. Monitor the complete GitHub Actions run. Correct failures on the same branch
+    and refresh every dependent stacked branch so its parent is exact.
 
 ## Document review
 
@@ -234,19 +234,22 @@ verified-artifact headings enforced by `scripts/check_release_notes.py`. A merge
 `main` whose version has no notes, or whose version is already tagged at an earlier
 commit, runs the release workflow but publishes nothing.
 
-After that notes file reaches `main`, the release workflow waits for the complete CI
-push run to succeed and verifies that the tested commit is still the tip of `main`.
-It then builds and installs the distribution, checks that the installed wheel's
-`breadsched --version` line equals the one `breadsched.versioning.version_summary()`
-gives for the tested source (so the check follows the native schema; it must never
-hard-code a schema window), creates an annotated tag on that exact commit, publishes the human-reviewed
-notes, and attaches the wheel, source distribution, the Windows installer (built,
-installed over the newest published installer, exercised, and uninstalled on Windows
-from the same commit by the workflow's `windows-installer` job), and `SHA256SUMS` covering all three. An existing tag
-must resolve to the same commit; an existing release is never overwritten. A later
-`main` commit that keeps an already-tagged version, such as a documentation-only or
-CI change, is reported as not selected rather than failing the release run; advance
-the application version to select a new release.
+After that notes file reaches `main`, the release workflow waits for the
+complete CI push run to succeed and verifies that the tested commit is still
+the tip of `main`. It then builds and installs the distribution, checks that
+the installed wheel's `breadsched --version` line equals the one
+`breadsched.versioning.version_summary()` gives for the tested source (so the
+check follows the native schema; it must never hard-code a schema window),
+creates an annotated tag on that exact commit, publishes the human-reviewed
+notes, and attaches the wheel, source distribution, the Windows installer
+(built, installed over the newest published installer, exercised, and
+uninstalled on Windows from the same commit by the workflow's
+`windows-installer` job), and `SHA256SUMS` overing all three. An existing tag
+must resolve to the same commit; an existing release is never overwritten. A
+later `main` commit that keeps an already-tagged version, such as a
+documentation-only or CI change, is reported as not selected rather than
+failing the release run; advance the application version to select a new
+release.
 
 ## Static and style hygiene
 

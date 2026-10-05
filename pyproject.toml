@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "breadsched"
 dynamic = ["version"]
-description = "Event-driven cash-flow planning and multi-year projection tool with GnuCash compatibility"
+description = "Event-driven cash-flow planning and multi-year projection personal financial managemnt tool"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
-authors = [{ name = "BreadSched contributors" }]
-keywords = ["finance", "budget", "cashflow", "gnucash", "gtk4"]
+authors = [{ name = "Howard Holm" }]
+keywords = ["finance", "budget", "cashflow", "gtk4"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: X11 Applications :: GTK",

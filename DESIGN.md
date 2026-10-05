@@ -1,4 +1,4 @@
-# BreadSched design
+# BreadSched Household Financial Manager design
 
 This document describes BreadSched as it is implemented: its boundaries, who owns
 each concern, the invariants the code keeps, and the reasons for its main choices.
