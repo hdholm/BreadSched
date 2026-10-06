@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import secrets
 import threading
-from collections.abc import Mapping
 from datetime import date
 from decimal import Decimal
 from functools import partial
@@ -18,8 +17,9 @@ from ..gen.db.sqlite import DbSQLite
 from ..gen.lib import Money, Rate
 from ..gen.utils.logs import get_logger
 from .attachment_resource import MAX_ATTACHMENT_BYTES, attachment_content, attachment_upload
-from .resources import GET_ROUTES, POST_ROUTES, QueryError, QueryParams, ResourceError
-from .server import Api
+from .context import Api
+from .controls import ResourceError
+from .resources import GET_ROUTES, POST_ROUTES, QueryError, QueryParams
 from .upload_resource import import_upload
 
 LOG = get_logger(__name__)
@@ -264,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, UnicodeDecodeError):
             self._error(400, "request.body.json_invalid", ("body",))
             return
-        if not isinstance(body, Mapping):
+        if not isinstance(body, dict):
             self._error(400, "request.body.object_required", ("body",))
             return
         try:

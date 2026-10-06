@@ -1,17 +1,21 @@
-"""Read-only web Plan query and response projection over the shared service."""
+"""Web Plan query and response projection over the shared service, and its saved controls."""
 
 from __future__ import annotations
 
 from calendar import monthrange
 from datetime import date
+from typing import TYPE_CHECKING
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.engine.activity import PlanMeasure, ReportingPeriod
+from ..gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 from ..gen.engine.completeness import combine
 from ..gen.lib import AccountClass, Money
 from ..gen.services import PlanQuery, query_plan
 from ..presentation import plan_goal_text
-from .resources import ResourceError
+from .controls import ResourceError
+
+if TYPE_CHECKING:
+    from .context import Api
 
 
 def plan_report(
@@ -419,3 +423,28 @@ def plan_report(
             },
         },
     }
+
+
+def plan_settings_save(api: Api, payload: dict) -> dict:
+    """Validate and persist the shared per-book Plan presentation."""
+    result = plan_report(
+        api.db,
+        str(payload.get("from", "")) or None,
+        str(payload.get("through", "")) or None,
+        str(payload.get("period", "")) or None,
+        str(payload["scenario"]) if payload.get("scenario") else None,
+        str(payload["compare"]) if payload.get("compare") else None,
+        str(payload.get("measure", "")) or None,
+    )
+    controls = result["controls"]
+    start = date.fromisoformat(f"{controls['from']}-01")
+    through = date.fromisoformat(f"{controls['through']}-01")
+    PlanSettings(
+        start=start,
+        end=date(through.year, through.month, monthrange(through.year, through.month)[1]),
+        period=ReportingPeriod(str(controls["period"])),
+        measure=PlanMeasure(str(controls["measure"])),
+        scenario=controls["scenario"],
+        compare=(str(payload.get("compare")) if payload.get("compare") else None),
+    ).save(api.db)
+    return controls

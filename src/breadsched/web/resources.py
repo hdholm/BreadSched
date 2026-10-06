@@ -7,6 +7,15 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qs
 
+from .account_resource import (
+    account_card_save,
+    account_emergency_fund_save,
+    account_fsa_years_save,
+    account_type_save,
+    accounts,
+    commodities,
+    commodity_price_save,
+)
 from .attachment_resource import (
     transaction_attachment_link,
     transaction_attachment_relink,
@@ -14,8 +23,11 @@ from .attachment_resource import (
     transaction_tags,
 )
 from .autocomplete_resource import entry_suggestion
+from .book_resource import summary, verify
 from .csv_import_resource import csv_import, csv_inspect, csv_preview
 from .currency_quote_resource import save_currency_quote
+from .dashboard_resource import dashboard_config_save, dashboard_report
+from .expense_resource import expense_report
 from .fsa_claim_resource import (
     fsa_claim_close,
     fsa_claim_delete,
@@ -30,6 +42,8 @@ from .gnucash_writeback_resource import (
     gnucash_writeback_settings,
 )
 from .guide_resource import guide
+from .import_resource import import_defaults, import_local, import_review, import_review_resolve
+from .loan_resource import loan_options, loan_preview, loan_save
 from .net_worth_resource import net_worth_change, net_worth_history
 from .payee_resource import (
     payee_accept,
@@ -46,6 +60,15 @@ from .payroll_resource import (
     payroll_template_delete,
     payroll_template_from_schedule,
     payroll_template_save,
+)
+from .plan_detail_resource import plan_detail_report
+from .plan_resource import plan_report, plan_settings_save
+from .projection_resource import (
+    projection_calculate,
+    projection_compare,
+    projection_explain,
+    projection_save,
+    scenario_projection,
 )
 from .receivable_resource import (
     receivable_accept,
@@ -67,6 +90,14 @@ from .reconciliation_resource import (
 )
 from .register_entry_resource import register_entry_save
 from .register_resource import register, transaction_add
+from .review_resource import (
+    review,
+    review_fsa_attach,
+    review_match,
+    review_reject,
+    review_skip,
+    review_unexpected,
+)
 from .rules_resource import rule_add, rule_delete, rule_move, rules, rules_accept
 from .savings_goal_resource import (
     savings_goal_allocate,
@@ -77,9 +108,34 @@ from .savings_goal_resource import (
     savings_goal_save,
     savings_goals,
 )
+from .scenario_resource import (
+    scenario_delete,
+    scenario_duplicate,
+    scenario_event_save,
+    scenario_event_suppress,
+    scenario_events,
+    scenario_period_delete,
+    scenario_period_save,
+    scenario_save,
+    scenarios,
+)
+from .schedule_resource import (
+    due_review,
+    due_review_resolve,
+    historical_estimate_accept,
+    historical_estimates,
+    post_scheduled,
+    scheduled,
+    scheduled_delete,
+    scheduled_draft,
+    scheduled_duplicate,
+    scheduled_formula_save,
+    scheduled_occurrence_options,
+    scheduled_save,
+)
 
 if TYPE_CHECKING:
-    from .server import Api
+    from .context import Api
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,16 +144,6 @@ class QueryError(ValueError):
 
     code: str
     fields: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class ResourceError(Exception):
-    """A resource-adapter failure with a stable HTTP representation."""
-
-    status: int
-    code: str
-    fields: tuple[str, ...] = ()
-    message: str | None = None
 
 
 class QueryParams:
@@ -159,7 +205,7 @@ class QueryParams:
 
 
 GetRoute = Callable[["Api", QueryParams], object]
-PostRoute = Callable[["Api", Mapping[str, Any]], object]
+PostRoute = Callable[["Api", dict[str, Any]], object]
 
 
 def _dashboard(api: Api, query: QueryParams) -> object:
@@ -167,14 +213,14 @@ def _dashboard(api: Api, query: QueryParams) -> object:
     emergency = query.integer("emergency_months", default=0, minimum=0, maximum=1200)
     query.finish()
     assert liquidity is not None and emergency is not None
-    return api.dashboard(liquidity, emergency)
+    return dashboard_report(api.db, liquidity, emergency)
 
 
 def _scheduled(api: Api, query: QueryParams) -> object:
     days = query.integer("days", default=60, minimum=0, maximum=36500)
     query.finish()
     assert days is not None
-    return api.scheduled(days)
+    return scheduled(api, days)
 
 
 def _historical_estimates(api: Api, query: QueryParams) -> object:
@@ -183,7 +229,7 @@ def _historical_estimates(api: Api, query: QueryParams) -> object:
     scenario = query.text("scenario")
     query.finish()
     assert months is not None and active is not None
-    return api.historical_estimates(months, active, scenario)
+    return historical_estimates(api, months, active, scenario)
 
 
 def _plan(api: Api, query: QueryParams) -> object:
@@ -191,7 +237,7 @@ def _plan(api: Api, query: QueryParams) -> object:
         query.text(name) for name in ("from", "through", "period", "scenario", "compare", "measure")
     )
     query.finish()
-    return api.plan(*values)
+    return plan_report(api.db, *values)
 
 
 def _plan_detail(api: Api, query: QueryParams) -> object:
@@ -203,7 +249,7 @@ def _plan_detail(api: Api, query: QueryParams) -> object:
     requirement_kind = query.text("requirement_kind")
     query.finish()
     assert account is not None and start is not None and end is not None
-    return api.plan_detail(account, start, end, scenario, flow_kind, requirement_kind)
+    return plan_detail_report(api.db, account, start, end, scenario, flow_kind, requirement_kind)
 
 
 def _expense_explorer(api: Api, query: QueryParams) -> object:
@@ -217,29 +263,32 @@ def _expense_explorer(api: Api, query: QueryParams) -> object:
     if rollover not in (None, "0", "1"):
         raise QueryError("query.invalid", ("rollover",))
     query.finish()
-    return api.expense_explorer(start, through, period, scenario, account, index, rollover == "1")
+    return expense_report(api.db, start, through, period, scenario, account, index, rollover == "1")
 
 
 def _projection(api: Api, query: QueryParams) -> object:
     scenario = query.text("scenario")
     years = query.integer("years", minimum=1, maximum=100)
     query.finish()
-    return api.projection(scenario, years)
+    return scenario_projection(api, scenario, years)
 
 
-def _no_query(method: str) -> GetRoute:
+def _review(api: Api, query: QueryParams) -> object:
+    transaction = query.text("transaction")
+    query.finish()
+    return review(api, transaction)
+
+
+def _scenario_events(api: Api, query: QueryParams) -> object:
+    handle = query.text("handle")
+    query.finish()
+    return scenario_events(api, handle)
+
+
+def _without_query(route: Callable[[Api], object]) -> GetRoute:
     def call(api: Api, query: QueryParams) -> object:
         query.finish()
-        return getattr(api, method)()
-
-    return call
-
-
-def _optional_text(method: str, field: str) -> GetRoute:
-    def call(api: Api, query: QueryParams) -> object:
-        value = query.text(field)
-        query.finish()
-        return getattr(api, method)(value)
+        return route(api)
 
     return call
 
@@ -247,10 +296,10 @@ def _optional_text(method: str, field: str) -> GetRoute:
 GET_ROUTES: dict[str, GetRoute] = {
     "/api/dashboard": _dashboard,
     "/api/fsa/dashboard": fsa_dashboard,
-    "/api/summary": _no_query("summary"),
-    "/api/accounts": _no_query("accounts"),
-    "/api/loan/options": _no_query("loan_options"),
-    "/api/commodities": _no_query("commodities"),
+    "/api/summary": _without_query(summary),
+    "/api/accounts": _without_query(accounts),
+    "/api/loan/options": _without_query(loan_options),
+    "/api/commodities": _without_query(commodities),
     "/api/fsa/claims": fsa_claims,
     "/api/register": register,
     "/api/reconciliation": reconciliation,
@@ -261,14 +310,14 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/expense-explorer": _expense_explorer,
     "/api/net-worth-history": net_worth_history,
     "/api/net-worth-change": net_worth_change,
-    "/api/review": _optional_text("review", "transaction"),
-    "/api/scenarios": _no_query("scenarios"),
-    "/api/scenario/events": _optional_text("scenario_events", "handle"),
+    "/api/review": _review,
+    "/api/scenarios": _without_query(scenarios),
+    "/api/scenario/events": _scenario_events,
     "/api/projection": _projection,
-    "/api/import": _no_query("import_defaults"),
-    "/api/import/review": _no_query("import_review"),
-    "/api/due-review": _no_query("due_review"),
-    "/api/verify": _no_query("verify"),
+    "/api/import": _without_query(import_defaults),
+    "/api/import/review": _without_query(import_review),
+    "/api/due-review": _without_query(due_review),
+    "/api/verify": _without_query(verify),
     "/api/payees": payees,
     "/api/gnucash/writeback": gnucash_writeback,
     "/api/receivables": receivables,
@@ -280,16 +329,9 @@ GET_ROUTES: dict[str, GetRoute] = {
 }
 
 
-def _post(method: str) -> PostRoute:
-    def call(api: Api, body: Mapping[str, Any]) -> object:
-        return getattr(api, method)(body)
-
-    return call
-
-
-def _post_without_body(method: str) -> PostRoute:
+def _without_body(route: Callable[[Api], object]) -> PostRoute:
     def call(api: Api, _body: Mapping[str, Any]) -> object:
-        return getattr(api, method)()
+        return route(api)
 
     return call
 
@@ -299,14 +341,14 @@ def _currency_quote(api: Api, body: Mapping[str, Any]) -> object:
 
 
 POST_ROUTES: dict[str, PostRoute] = {
-    "/api/dashboard/config": _post("dashboard_config_save"),
-    "/api/account/type": _post("account_type_save"),
-    "/api/account/card": _post("account_card_save"),
-    "/api/account/emergency-fund": _post("account_emergency_fund_save"),
-    "/api/commodity/price": _post("commodity_price_save"),
+    "/api/dashboard/config": dashboard_config_save,
+    "/api/account/type": account_type_save,
+    "/api/account/card": account_card_save,
+    "/api/account/emergency-fund": account_emergency_fund_save,
+    "/api/commodity/price": commodity_price_save,
     "/api/currency/quote": _currency_quote,
-    "/api/plan/settings": _post("plan_settings_save"),
-    "/api/account/fsa-years": _post("account_fsa_years_save"),
+    "/api/plan/settings": plan_settings_save,
+    "/api/account/fsa-years": account_fsa_years_save,
     "/api/fsa/claim/save": fsa_claim_save,
     "/api/fsa/claim/delete": fsa_claim_delete,
     "/api/fsa/claim/close": fsa_claim_close,
@@ -317,8 +359,8 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/reconciliation/complete": reconciliation_complete,
     "/api/reconciliation/cancel": reconciliation_cancel,
     "/api/reconciliation/reopen": reconciliation_reopen,
-    "/api/import": _post("import_local"),
-    "/api/import/review": _post("import_review_resolve"),
+    "/api/import": import_local,
+    "/api/import/review": import_review_resolve,
     "/api/import/csv/inspect": csv_inspect,
     "/api/import/csv/preview": csv_preview,
     "/api/import/csv": csv_import,
@@ -357,31 +399,31 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/rule/delete": rule_delete,
     "/api/rule/move": rule_move,
     "/api/rules/accept": rules_accept,
-    "/api/due-review": _post("due_review_resolve"),
-    "/api/post-scheduled": _post_without_body("post_scheduled"),
-    "/api/scheduled/occurrences": _post("scheduled_occurrence_options"),
-    "/api/scheduled/save": _post("scheduled_save"),
-    "/api/scheduled/formula-save": _post("scheduled_formula_save"),
-    "/api/scheduled/delete": _post("scheduled_delete"),
-    "/api/scheduled/duplicate": _post("scheduled_duplicate"),
-    "/api/scheduled/draft": _post("scheduled_draft"),
-    "/api/loan/preview": _post("loan_preview"),
-    "/api/loan/save": _post("loan_save"),
-    "/api/historical-estimate/accept": _post("historical_estimate_accept"),
-    "/api/review/match": _post("review_match"),
-    "/api/review/reject": _post("review_reject"),
-    "/api/review/skip": _post("review_skip"),
-    "/api/review/fsa-attach": _post("review_fsa_attach"),
-    "/api/review/unexpected": _post("review_unexpected"),
-    "/api/scenario/save": _post("scenario_save"),
-    "/api/scenario/duplicate": _post("scenario_duplicate"),
-    "/api/scenario/delete": _post("scenario_delete"),
-    "/api/scenario/period/save": _post("scenario_period_save"),
-    "/api/scenario/period/delete": _post("scenario_period_delete"),
-    "/api/scenario/event/save": _post("scenario_event_save"),
-    "/api/scenario/event/suppress": _post("scenario_event_suppress"),
-    "/api/projection/calculate": _post("projection_calculate"),
-    "/api/projection/compare": _post("projection_compare"),
-    "/api/projection/explain": _post("projection_explain"),
-    "/api/projection/save": _post("projection_save"),
+    "/api/due-review": due_review_resolve,
+    "/api/post-scheduled": _without_body(post_scheduled),
+    "/api/scheduled/occurrences": scheduled_occurrence_options,
+    "/api/scheduled/save": scheduled_save,
+    "/api/scheduled/formula-save": scheduled_formula_save,
+    "/api/scheduled/delete": scheduled_delete,
+    "/api/scheduled/duplicate": scheduled_duplicate,
+    "/api/scheduled/draft": scheduled_draft,
+    "/api/loan/preview": loan_preview,
+    "/api/loan/save": loan_save,
+    "/api/historical-estimate/accept": historical_estimate_accept,
+    "/api/review/match": review_match,
+    "/api/review/reject": review_reject,
+    "/api/review/skip": review_skip,
+    "/api/review/fsa-attach": review_fsa_attach,
+    "/api/review/unexpected": review_unexpected,
+    "/api/scenario/save": scenario_save,
+    "/api/scenario/duplicate": scenario_duplicate,
+    "/api/scenario/delete": scenario_delete,
+    "/api/scenario/period/save": scenario_period_save,
+    "/api/scenario/period/delete": scenario_period_delete,
+    "/api/scenario/event/save": scenario_event_save,
+    "/api/scenario/event/suppress": scenario_event_suppress,
+    "/api/projection/calculate": projection_calculate,
+    "/api/projection/compare": projection_compare,
+    "/api/projection/explain": projection_explain,
+    "/api/projection/save": projection_save,
 }

@@ -9,8 +9,9 @@ from pathlib import Path
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.utils.user_paths import companion_path
-from .resources import ResourceError
-from .server import Api
+from .context import Api
+from .controls import ResourceError
+from .import_resource import import_local
 
 
 def import_upload(
@@ -61,13 +62,14 @@ def import_upload(
             # keep it and return its path for inspect, preview, and import.
             return {"format": "csv", "path": str(target)}
         try:
-            return api.import_local(
+            return import_local(
+                api,
                 {
                     "path": str(target),
                     "include_scheduled": True,
                     "number_format": number_format,
                     "date_format": date_format,
-                }
+                },
             )
         except Exception:
             if previous is None:

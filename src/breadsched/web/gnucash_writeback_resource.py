@@ -18,10 +18,11 @@ from ..gen.services.gnucash_writeback import (
     set_writeback_keep_backups,
     writeback_keep_backups,
 )
+from .controls import service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def gnucash_writeback(api: Api, query: QueryParams) -> dict[str, object]:
@@ -72,7 +73,7 @@ def gnucash_writeback_apply(api: Api, payload: Mapping[str, Any]) -> dict[str, o
         raise ValueError("transactions must be a list of transaction handles")
     result = apply_writeback(api.db, ApplyWriteback(tuple(raw)))
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {
         "written": [change.transaction for change in result.value.written],
         "backup": result.value.backup,
@@ -85,5 +86,5 @@ def gnucash_writeback_settings(api: Api, payload: Mapping[str, Any]) -> dict[str
         raise ValueError("keep_backups must be a whole number")
     result = set_writeback_keep_backups(api.db, keep)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"keep_backups": result.value}

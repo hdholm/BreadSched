@@ -1,6 +1,6 @@
 # BreadSched Household Financial Manager roadmap
 
-This file is the **authoritative source for unfinished BreadSched feaure work**.
+This file is the **authoritative source for unfinished BreadSched feature work**.
 Completed milestones are retained in [`CHANGELOG.md`](CHANGELOG.md).
 
 Published releases are listed on the repository's GitHub Releases page; each
@@ -25,13 +25,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Architecture
 
-- Split oversized modules/functions as part of the service/resource ownership
-  work, especially the remaining seams in `web/server.py`: the scheduled, loan,
-  scenario, review, and import handlers still parse JSON inline on `Api`
-  (register, entry, reconciliation, and FSA claims now have resource adapters). Continue
-  consolidating web control parsers where ownership is clear. Split large GUI test modules
-  only when the resulting fixture ownership and runtime isolation improve; do not
-  optimize for a line-count threshold alone.
+- Split oversized modules/functions where ownership is clear. Split large GUI test
+  modules only when the resulting fixture ownership and runtime isolation improve;
+  do not optimize for a line-count threshold alone.
 
 
 ## Register workflow
@@ -117,7 +113,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Expand claim/import automation without conflating benefit availability with the
   custodial account ledger balance.
 
-- Expand FSA semantics to accomodate Dependent Care FSAs (e.g., no EOB
+- Expand FSA semantics to accommodate Dependent Care FSAs (e.g., no EOB
   involvement.)
 
 ## Import and GnuCash interoperability

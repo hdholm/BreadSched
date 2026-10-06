@@ -1,16 +1,16 @@
-# BreadSched Houehold Financial Manager
+# BreadSched Household Financial Manager
 
 BreadSched is a household finance application for tracking income and expenses,
 planning cash flow from dated financial events, and projecting household finances
 under saved assumptions and alternate scenarios.
 
 GTK4 is the primary/reference interface and Linux is the primary native desktop
-target. There is a  web interface that uses the same data, planning rules, and
+target. There is a web interface that uses the same data, planning rules, and
 financial engines.
 
 BreadSched is intended over time to cover the household-finance workflows for
 which a user might otherwise rely on GnuCash, KMyMoney, HomeBank, ActualBudget,
-beancount, Fireflay III, or Quicken Classic, without reproducing business
+beancount, Firefly III, or Quicken Classic, without reproducing business
 accounting features. GnuCash compatibility remains a strict requirement while
 BreadSched's standalone household feature set matures.
 
@@ -26,7 +26,7 @@ be able to read your data with a new version.
 ## Why the name BreadSched?
 
 The application is focused heavily on cash flow, but most of the good,
-descrptive names that invoke cash, money, funds, coins, plan, insight, map,
+descriptive names that invoke cash, money, funds, coins, plan, insight, map,
 projection, stream, flow, road, oracle, advisor, vision or schedule are already
 used by some one for some thing.  **Bread** is a slang term for money and
 **Sched** is an obvious diminutive of schedule; together they provide memorable
@@ -66,7 +66,7 @@ portal and books kept outside Documents.
 
 ```bash
 pip install -e ".[gui,dev]"          # PyGObject + GTK 4 runtime are also required
-pytest                               # GUI tests skiped when GTK is unavailable
+pytest                               # GUI tests skipped when GTK is unavailable
 breadsched --help                    # command line
 breadsched sample sample.breadsched  # separate synthetic learning book
 breadsched-gtk household.breadsched  # GTK4 desktop interface

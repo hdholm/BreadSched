@@ -1,13 +1,26 @@
-"""Read-only projection month explanation for the web presentation."""
+"""Web projection: detached drafts, their reports and month explanations, and saving."""
 
 from __future__ import annotations
+
+from typing import TYPE_CHECKING
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import projection
 from ..gen.engine.completeness import combine
 from ..gen.engine.projection_bridge import month_bridges, projection_bridges
 from ..gen.lib import Scenario
+from ..gen.services import (
+    SaveBaseAssumptions,
+    SaveScenarioAssumptions,
+    save_base_assumptions,
+    save_scenario_assumptions,
+)
 from ..presentation import projection_goal_notes
+from .controls import service_error
+from .scenario_resource import assumptions_from_payload, management_base_scenario
+
+if TYPE_CHECKING:
+    from .context import Api
 
 
 def projection_month_report(db: DbSQLite, scenario: Scenario, month_index: int) -> dict:
@@ -201,3 +214,104 @@ def projection_comparison_report(
             ],
         },
     }
+
+
+def projection_draft(
+    db: DbSQLite, scenario_handle: str | None = None, years: int | None = None
+) -> Scenario:
+    """Return a detached projection scenario safe for browser-side editing."""
+    if scenario_handle:
+        stored = db.get_scenario(scenario_handle)
+        if stored is None:
+            raise KeyError(scenario_handle)
+        scenario = stored.clone()
+    else:
+        scenario = management_base_scenario(db)
+    if years is not None:
+        if years < 1 or years > 100:
+            raise ValueError("projection years must be between 1 and 100")
+        scenario.years = years
+    return scenario
+
+
+def apply_projection_payload(db: DbSQLite, scenario: Scenario, payload: dict) -> Scenario:
+    """Apply editable projection controls to a detached scenario."""
+    years = int(payload.get("years", scenario.years))
+    if years < 1 or years > 100:
+        raise ValueError("projection years must be between 1 and 100")
+    scenario.years = years
+    previous = scenario.effective_assumptions()
+    updated = assumptions_from_payload(
+        db, payload.get("assumptions", previous.serialize()), previous
+    )
+    if scenario.inherits_base_assumptions:
+        for field in scenario.assumption_sources():
+            if getattr(updated, field) != getattr(previous, field):
+                scenario.set_assumption_override(field, getattr(updated, field))
+        scenario.assumptions.per_account = dict(updated.per_account)
+    else:
+        scenario.assumptions = updated
+    return scenario
+
+
+def projection_explain(api: Api, payload: dict) -> dict:
+    """Explain one month of the currently applied projection draft."""
+    scenario = projection_draft(api.db, payload.get("handle"))
+    apply_projection_payload(api.db, scenario, payload)
+    return projection_month_report(api.db, scenario, int(payload["month_index"]))
+
+
+def scenario_projection(
+    api: Api, scenario_handle: str | None = None, years: int | None = None
+) -> dict:
+    """Calculate a persisted Base/saved scenario without mutating it."""
+    return projection_report(
+        api.db, projection_draft(api.db, scenario_handle, years), base=scenario_handle is None
+    )
+
+
+def projection_calculate(api: Api, payload: dict) -> dict:
+    """Calculate an edited projection draft without persisting the edits."""
+    handle = str(payload.get("handle") or "").strip() or None
+    scenario = projection_draft(api.db, handle)
+    apply_projection_payload(api.db, scenario, payload)
+    return projection_report(api.db, scenario, base=handle is None)
+
+
+def projection_compare(api: Api, payload: dict) -> dict:
+    """Compare an edited projection draft with another persisted scenario."""
+    handle = str(payload.get("handle") or "").strip() or None
+    compare_handle = str(payload.get("compare_handle") or "").strip() or None
+    if handle == compare_handle:
+        raise ValueError("choose two different scenarios to compare")
+
+    primary = projection_draft(api.db, handle)
+    apply_projection_payload(api.db, primary, payload)
+    comparison = projection_draft(api.db, compare_handle)
+    comparison.years = primary.years
+
+    return projection_comparison_report(
+        api.db,
+        primary,
+        comparison,
+        primary_base=handle is None,
+        comparison_base=compare_handle is None,
+    )
+
+
+def projection_save(api: Api, payload: dict) -> dict:
+    """Persist projection controls explicitly, preserving hidden model fields."""
+    handle = str(payload.get("handle") or "").strip() or None
+    scenario = projection_draft(api.db, handle)
+    apply_projection_payload(api.db, scenario, payload)
+    if handle is None:
+        base_result = save_base_assumptions(api.db, SaveBaseAssumptions(scenario.assumptions))
+        if not base_result.ok:
+            raise service_error(base_result.errors[0])
+        return projection_report(api.db, scenario, base=True)
+    result = save_scenario_assumptions(
+        api.db, SaveScenarioAssumptions(scenario, existing_handle=handle)
+    )
+    if not result.ok:
+        raise service_error(result.errors[0])
+    return projection_report(api.db, scenario)

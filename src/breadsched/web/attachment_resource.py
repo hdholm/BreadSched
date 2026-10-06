@@ -30,9 +30,10 @@ from ..gen.services import (
 )
 from ..gen.services.contracts import ServiceError
 from ..presentation import service_error_message
+from .controls import ResourceError, service_error
 
 if TYPE_CHECKING:
-    from .server import Api
+    from .context import Api
 
 __all__ = [
     "attachment_content",
@@ -49,7 +50,6 @@ MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024
 
 
 def _refuse(status: int, code: str, field: str) -> Exception:
-    from .resources import ResourceError  # resources imports this module
 
     error = ServiceError(code, (field,))
     return ResourceError(status, code, error.fields, service_error_message(error))
@@ -79,7 +79,7 @@ def _text(payload: Mapping[str, Any], key: str) -> str:
 
 def _changed(api: Api, result: Any) -> dict[str, object]:
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     transaction = result.value
     return {
         "handle": transaction.handle,
@@ -99,7 +99,7 @@ def transaction_tags(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
 def _contained(api: Api, location: str) -> str:
     confined = contained_location(api.db, location)
     if isinstance(confined, ServiceError):
-        raise api._service_resource_error(confined)
+        raise service_error(confined)
     return confined
 
 

@@ -18,10 +18,11 @@ from ..gen.services.payees import (
     preview_payee_proposals,
     save_payee,
 )
+from .controls import service_error
 
 if TYPE_CHECKING:
+    from .context import Api
     from .resources import QueryParams
-    from .server import Api
 
 
 def _text(payload: Mapping[str, Any], key: str, *, optional: bool = False) -> str | None:
@@ -82,7 +83,7 @@ def payee_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     )
     result = save_payee(api.db, request)
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {
         "handle": result.value.handle,
         "name": result.value.name,
@@ -93,7 +94,7 @@ def payee_save(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
 def payee_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     result = delete_payee(api.db, _text(payload, "handle") or "")
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"cleared": result.value}
 
 
@@ -101,7 +102,7 @@ def payee_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     """Accept every current proposal, or only the listed ``transactions``."""
     result = apply_payee_proposals(api.db, _texts(payload, "transactions"))
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"assigned": result.value.assigned, "unchanged": result.value.unchanged}
 
 
@@ -111,5 +112,5 @@ def transaction_payee(api: Api, payload: Mapping[str, Any]) -> dict[str, object]
         api.db, _text(payload, "transaction") or "", _text(payload, "payee", optional=True)
     )
     if result.value is None:
-        raise api._service_resource_error(result.errors[0])
+        raise service_error(result.errors[0])
     return {"transaction": result.value.handle, "payee": result.value.payee}
