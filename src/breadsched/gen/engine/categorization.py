@@ -11,6 +11,11 @@ Only a transaction that still has exactly one split on an import placeholder
 source already chose is therefore never replaced, and a split transaction is never
 given a guessed category. Proposals are read-only; the service applies accepted
 ones.
+
+A description rule may also name a payee (``set_payee``): its proposal then sets
+that payee too, but only on a transaction that has none, so a payee the user or a
+payee match already chose is never replaced. A payee rule needs no such field; it
+matched because the payee was already set.
 """
 
 from __future__ import annotations
@@ -54,12 +59,16 @@ def placeholder_handles() -> tuple[tuple[tuple[str, str], str], ...]:
 
 @dataclass(frozen=True, slots=True)
 class CategoryRule:
-    """Match exactly one of ``payee`` or ``key``; propose ``category``."""
+    """Match exactly one of ``payee`` or ``key``; propose ``category``.
+
+    A ``key`` rule may also propose ``set_payee`` for a transaction with no payee.
+    """
 
     handle: str
     category: str
     payee: str | None = None
     key: str | None = None
+    set_payee: str | None = None
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -67,6 +76,7 @@ class CategoryRule:
             "category": self.category,
             "payee": self.payee,
             "key": self.key,
+            "set_payee": self.set_payee,
         }
 
     @classmethod
@@ -76,6 +86,7 @@ class CategoryRule:
             category=str(data["category"]),
             payee=data.get("payee"),
             key=data.get("key"),
+            set_payee=data.get("set_payee"),
         )
 
     def matches(self, payee: str | None, key: str) -> bool:
@@ -105,6 +116,9 @@ class CategoryProposal:
     rule_position: int
     rule: CategoryRule
     conflicts: tuple[CategoryConflict, ...] = ()
+    #: The payee accepting also sets: the rule's ``set_payee`` when the
+    #: transaction has no payee yet, else ``None``.
+    payee: str | None = None
 
 
 def load_rules(db: DbBase) -> list[CategoryRule]:
@@ -150,6 +164,7 @@ def propose_categories(db: DbBase) -> list[CategoryProposal]:
                 position,
                 rule,
                 conflicts,
+                rule.set_payee if transaction.payee is None else None,
             )
         )
     proposals.sort(key=lambda item: (item.when, item.transaction), reverse=True)

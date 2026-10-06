@@ -197,6 +197,8 @@ _SERVICE_MESSAGES = {
     ),
     "rule.match.duplicate": "Another rule already matches that payee or description",
     "rule.payee.not_found": "That payee no longer exists",
+    "rule.set_payee.payee_match": "Only a description rule can also set a payee",
+    "rule.set_payee.not_found": "The payee to set no longer exists",
     "rule.category.invalid": "Choose an income or expense category that is not a placeholder",
     "rule.not_found": "That rule no longer exists",
     "rule.position.invalid": "Choose a position within the rule list",

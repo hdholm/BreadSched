@@ -442,9 +442,14 @@ async function showRules() {
     ...data.payees.map((item) => el("option", { value:item.handle }, item.name)));
   const category = el("select", { name:"category" },
     ...data.categories.map((item) => el("option", { value:item.handle }, item.name)));
+  const setPayee = el("select", { name:"set_payee" },
+    el("option", { value:"" }, "(no payee)"),
+    ...data.payees.map((item) => el("option", { value:item.handle }, item.name)));
+  const setPayeeLabel = el("label", {}, "Also set payee", setPayee);
   const syncKind = () => {
     description.hidden = kind.value !== "description";
     payee.hidden = kind.value !== "payee";
+    setPayeeLabel.hidden = kind.value !== "description";
   };
   kind.addEventListener("change", syncKind);
   syncKind();
@@ -453,7 +458,10 @@ async function showRules() {
     run(async () => {
       const body = { category:category.value };
       if (kind.value === "payee") body.payee = payee.value || null;
-      else body.description = description.value;
+      else {
+        body.description = description.value;
+        if (setPayee.value) body.set_payee = setPayee.value;
+      }
       await post("/api/rule/add", body);
       say("Rule added.");
       await refresh();
@@ -462,12 +470,14 @@ async function showRules() {
     el("label", {}, "Match", kind),
     el("label", {}, "Matching", description, payee),
     el("label", {}, "Category", category),
+    setPayeeLabel,
     el("button", { class:"action primary", type:"submit" }, "Add rule"));
   const last = data.rules.length;
   const ruleRows = data.rules.map((rule) => el("tr", {},
     el("td", { class:"num" }, String(rule.position)),
     el("td", {}, rule.payee ? `Payee ${rule.payee_name || rule.payee}` : `Description ${rule.key}`),
     el("td", {}, rule.category_name),
+    el("td", {}, rule.set_payee ? (rule.set_payee_name || rule.set_payee) : "—"),
     el("td", {},
       el("button", { class:"action", type:"button", disabled:rule.position === 1 ? "disabled" : null,
         onclick:run(async () => {
@@ -495,14 +505,17 @@ async function showRules() {
       .join("; ");
     return el("tr", {}, el("td", {}, box), el("td", {}, item.date),
       el("td", {}, item.description), el("td", { class:"num" }, money(item.amount)),
-      el("td", {}, item.category_name), el("td", { class:"num" }, String(item.rule_position)),
+      el("td", {}, item.payee ? `${item.category_name}; payee ${item.payee_name || item.payee}`
+        : item.category_name),
+      el("td", { class:"num" }, String(item.rule_position)),
       el("td", {}, conflicts || "—"));
   });
   const accept = el("button", { class:"action primary", type:"button",
     disabled:data.proposals.length ? null : "disabled",
     onclick:run(async () => {
       const result = await post("/api/rules/accept", { transactions:[...chosen] });
-      say(`Categorized ${result.assigned} transaction(s); ${result.unchanged} left unchanged.`);
+      say(`Categorized ${result.assigned} transaction(s); ${result.unchanged} left unchanged`
+        + (result.payees_set ? `; set the payee on ${result.payees_set}.` : "."));
       await refresh();
     }) }, "Accept selected");
   return el("div", {},
@@ -510,10 +523,11 @@ async function showRules() {
       "Rules propose a category for imported transactions still in Uncategorized CSV or "
       + "Uncategorized OFX. The first matching rule decides; a later rule that would choose "
       + "differently is listed as a conflict. A category you chose is never replaced, and "
-      + "nothing changes until you accept."),
+      + "nothing changes until you accept. A description rule can also set a payee on a "
+      + "transaction that has none."),
     el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Rules"),
       data.rules.length
-        ? table([{ label:"Rule", num:true }, "Matches", "Category", ""], ruleRows)
+        ? table([{ label:"Rule", num:true }, "Matches", "Category", "Sets payee", ""], ruleRows)
         : el("p", { class:"note" }, "No rules yet."),
       form),
     el("div", { class:"panel panel-pad-16" }, el("h2", {}, "Proposals"),

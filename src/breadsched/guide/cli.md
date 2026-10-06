@@ -270,6 +270,8 @@ tags and document count.
 
 ```sh
 breadsched rules book.breadsched --add-description "CORNER GROCER #1234" --category "Expenses:Groceries"
+breadsched rules book.breadsched --add-description "CORNER GROCER" --category "Expenses:Groceries" \
+    --set-payee "Corner Grocer"                     # also set a payee where there is none
 breadsched rules book.breadsched --add-payee "City Power" --category "Expenses:Utilities" --position 1
 breadsched rules book.breadsched                     # list rules in priority order
 breadsched rules book.breadsched --preview           # proposals, deciding rule, conflicts

@@ -55,7 +55,8 @@ class RulesDialog(BoundedWindow):
                     "Uncategorized CSV or Uncategorized OFX. The first matching rule "
                     "decides; a later rule that would choose differently is listed as a "
                     "conflict. A category you chose is never replaced, and nothing changes "
-                    "until you accept."
+                    "until you accept. A description rule can also set a payee on a "
+                    "transaction that has none."
                 ),
                 xalign=0,
                 wrap=True,
@@ -89,6 +90,10 @@ class RulesDialog(BoundedWindow):
         self.category_picker = bounded_dropdown(
             [db.full_name(account) for account in self.categories] or ["(no categories)"]
         )
+        self.set_payee_label = Gtk.Label(label="Also set payee")
+        self.set_payee_picker = bounded_dropdown(
+            ["(no payee)", *(payee.name for payee in self.payees)]
+        )
         add_button = Gtk.Button(label="Add rule")
         add_button.add_css_class("suggested-action")
         add_button.connect("clicked", lambda _b: self.add_rule())
@@ -99,6 +104,8 @@ class RulesDialog(BoundedWindow):
             self.payee_picker,
             Gtk.Label(label="Category"),
             self.category_picker,
+            self.set_payee_label,
+            self.set_payee_picker,
             add_button,
         ):
             form.append(widget)
@@ -122,6 +129,8 @@ class RulesDialog(BoundedWindow):
         by_payee = MATCH_KINDS[self.kind_picker.get_selected()] == "payee"
         self.description_entry.set_visible(not by_payee)
         self.payee_picker.set_visible(by_payee)
+        self.set_payee_label.set_visible(not by_payee)
+        self.set_payee_picker.set_visible(not by_payee)
 
     def _name(self, handle: str) -> str:
         return self.db.full_name(handle) or handle
@@ -133,22 +142,24 @@ class RulesDialog(BoundedWindow):
         payee_names = {payee.handle: payee.name for payee in self.db.iter_payees()}
         rules = list_rules(self.db)
         _clear(self.rule_rows)
-        for column, heading in enumerate(("Rule", "Matches", "Category")):
+        for column, heading in enumerate(("Rule", "Matches", "Category", "Sets payee")):
             label = Gtk.Label(label=heading, xalign=0)
             label.add_css_class("dim")
             self.rule_rows.attach(label, column, 0, 1, 1)
         if not rules:
-            self.rule_rows.attach(Gtk.Label(label="No rules yet.", xalign=0), 0, 1, 3, 1)
+            self.rule_rows.attach(Gtk.Label(label="No rules yet.", xalign=0), 0, 1, 4, 1)
         for position, rule in enumerate(rules, start=1):
             matches = (
                 f"Payee {payee_names.get(rule.payee, rule.payee)}"
                 if rule.payee
                 else f"Description {rule.key}"
             )
-            for column, text in enumerate((str(position), matches, self._name(rule.category))):
+            sets = payee_names.get(rule.set_payee, rule.set_payee) if rule.set_payee else "—"
+            texts = (str(position), matches, self._name(rule.category), sets)
+            for column, text in enumerate(texts):
                 self.rule_rows.attach(Gtk.Label(label=text, xalign=0), column, position, 1, 1)
             for column, (label, target) in enumerate(
-                (("Up", position - 1), ("Down", position + 1)), start=3
+                (("Up", position - 1), ("Down", position + 1)), start=4
             ):
                 button = Gtk.Button(label=label)
                 button.set_sensitive(1 <= target <= len(rules))
@@ -158,7 +169,7 @@ class RulesDialog(BoundedWindow):
                 self.rule_rows.attach(button, column, position, 1, 1)
             delete = Gtk.Button(label="Delete")
             delete.connect("clicked", lambda _b, handle=rule.handle: self.delete(handle))
-            self.rule_rows.attach(delete, 5, position, 1, 1)
+            self.rule_rows.attach(delete, 6, position, 1, 1)
 
         proposals = preview_category_proposals(self.db).value or ()
         self.proposal_checks = {}
@@ -188,7 +199,11 @@ class RulesDialog(BoundedWindow):
                 (item.when.isoformat(), 0),
                 (item.description, 0),
                 (item.amount.format(parens_negative=True), 1),
-                (self._name(item.category), 0),
+                (
+                    self._name(item.category)
+                    + (f"; payee {payee_names.get(item.payee, item.payee)}" if item.payee else ""),
+                    0,
+                ),
                 (str(item.rule_position), 1),
                 (conflicts or "—", 0),
             )
@@ -217,6 +232,11 @@ class RulesDialog(BoundedWindow):
                 else None
             ),
             description=None if by_payee else self.description_entry.get_text(),
+            set_payee=(
+                self.payees[self.set_payee_picker.get_selected() - 1].handle
+                if not by_payee and 0 < self.set_payee_picker.get_selected() <= len(self.payees)
+                else None
+            ),
         )
         if by_payee and request.payee is None:
             self._message("Add a payee before making a payee rule.", True)
@@ -258,9 +278,10 @@ class RulesDialog(BoundedWindow):
             self._message(service_error_message(result.errors[0]), True)
             return None
         self.refresh()
+        payees = f"; set the payee on {result.value.payees_set}" if result.value.payees_set else ""
         self._message(
             f"Categorized {result.value.assigned} transaction(s); "
-            f"{result.value.unchanged} left unchanged.",
+            f"{result.value.unchanged} left unchanged{payees}.",
             False,
         )
         return result.value

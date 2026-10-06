@@ -1593,6 +1593,15 @@ value, memo, and handle, in one undo step. GTK's Rules dialog, the web **Rules**
 view (`web/rules_resource.py`), and `breadsched rules` are adapters over this
 service.
 
+A description rule may also carry `set_payee` (stored beside the other fields, so
+older builds ignore it). Its proposal's `payee` is that handle only while the
+transaction has no payee; accepting sets it only if the transaction still has none
+and the payee still exists, and reports the count (`AppliedCategories.payees_set`).
+A payee rule cannot set a payee (`rule.set_payee.payee_match`): it matched because
+the payee was already set. `services/payees.delete_payee` removes rules matching the
+deleted payee and clears it from rules that would set it, in the same undoable
+transaction, so no rule points at a missing payee.
+
 ### Tags and linked documents
 
 Tags reuse `PrimaryObject.tags` on `Transaction`; linked documents are

@@ -9,9 +9,10 @@ rewritten.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..db.sqlite import DbSQLite
+from ..engine.categorization import RULES_KEY, load_rules
 from ..engine.payees import PayeeProposal, match_key, payee_index, propose_payees
 from ..lib.payee import Payee
 from ..lib.transaction import Transaction
@@ -79,7 +80,11 @@ def save_payee(db: DbSQLite, request: SavePayee) -> ServiceResult[Payee]:
 
 
 def delete_payee(db: DbSQLite, handle: str) -> ServiceResult[int]:
-    """Delete a payee and clear it from its transactions; returns how many."""
+    """Delete a payee and clear it from its transactions; returns how many.
+
+    A categorization rule matching the payee goes with it, and a description rule
+    that would set it keeps its category but no longer sets a payee.
+    """
     payee = db.get_payee(handle)
     if payee is None:
         return ServiceResult.failure(ServiceError("payee.not_found", ("handle",)))
@@ -90,6 +95,14 @@ def delete_payee(db: DbSQLite, handle: str) -> ServiceResult[int]:
                 transaction.payee = None
                 db.commit_transaction(transaction, txn)
                 cleared += 1
+        rules = load_rules(db)
+        kept = [
+            replace(rule, set_payee=None) if rule.set_payee == handle else rule
+            for rule in rules
+            if rule.payee != handle
+        ]
+        if kept != rules:
+            db.set_metadata(RULES_KEY, [rule.serialize() for rule in kept], txn)
         db.remove_payee(handle, txn)
     return ServiceResult.success(cleared)
 

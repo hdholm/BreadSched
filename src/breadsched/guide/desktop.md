@@ -426,7 +426,8 @@ it).
 
 Choose **Actions → Categorization Rules…**. Choose whether a rule matches a
 description (enter an example) or a payee, choose the category, and choose **Add
-rule**. **Up** and **Down** change a rule's priority and **Delete** removes it
+rule**. For a description rule, **Also set payee** chooses a payee to record on a
+matching transaction that has none; the **Sets payee** column shows it. **Up** and **Down** change a rule's priority and **Delete** removes it
 (**Edit → Undo** restores it). The **Proposals** list shows each transaction's
 proposed category, the deciding rule, and any later rule that would have chosen
 differently; every proposal starts checked. Clear any you do not want and choose

@@ -5409,7 +5409,7 @@ class TestRules:
         status, accepted = client.post(
             "/api/rules/accept", {"transactions": [handles["City Power"]]}
         )
-        assert status == 200 and accepted == {"assigned": 1, "unchanged": 0}
+        assert status == 200 and accepted == {"assigned": 1, "unchanged": 0, "payees_set": 0}
         stored = client.database.get_transaction(handles["City Power"])
         assert rent.handle in {split.account for split in stored.splits}
         assert stored.description == "City Power"
@@ -5423,6 +5423,29 @@ class TestRules:
         assert status == 200
         _status, after = client.get("/api/rules")
         assert [rule["handle"] for rule in after["rules"]] == [added["handle"]]
+
+    def test_a_description_rule_sets_a_payee_when_accepted(self, client, tmp_path):
+        handles = self._import(client, tmp_path)
+        rent = client.database.get_account_by_name("Expenses:Rent")
+        _status, payee = client.post("/api/payee/save", {"name": "Corner Grocer"})
+        grocer = payee["handle"]
+        status, added = client.post(
+            "/api/rule/add",
+            {"category": rent.handle, "description": "corner grocer", "set_payee": grocer},
+        )
+        assert status == 200 and added["set_payee"] == grocer
+        _status, listed = client.get("/api/rules")
+        assert listed["rules"][0]["set_payee_name"] == "Corner Grocer"
+        [proposal] = listed["proposals"]
+        assert (proposal["payee"], proposal["payee_name"]) == (grocer, "Corner Grocer")
+        _status, accepted = client.post("/api/rules/accept", {})
+        assert accepted == {"assigned": 1, "unchanged": 0, "payees_set": 1}
+        assert client.database.get_transaction(handles["CORNER GROCER #1"]).payee == grocer
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/rule/add", {"category": rent.handle, "description": "x y", "set_payee": 5}
+            )
+        assert caught.value.code == 400
 
     def test_rejected_requests_leave_rules_unchanged(self, client, tmp_path):
         rent = client.database.get_account_by_name("Expenses:Rent")

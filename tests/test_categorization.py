@@ -227,3 +227,89 @@ def test_cli_adds_previews_and_accepts(tmp_path, capsys):
     assert json.loads(capsys.readouterr().out)["assigned"] == 2
     assert main([*command, "--add-description", "#12", "--category", category]) == 2
     assert "at least one word without digits" in capsys.readouterr().err
+
+
+def test_a_description_rule_can_also_set_a_payee(db, book, imported):
+    grocer = save_payee(db, SavePayee("Corner Grocer")).value
+    rule = add_rule(
+        db, AddRule(category=book.groceries, description="CORNER GROCER", set_payee=grocer.handle)
+    ).value
+    assert rule.set_payee == grocer.handle
+    assert list_rules(db)[0].set_payee == grocer.handle
+    # A payee already chosen is never replaced: only the other transaction gets one.
+    other = save_payee(db, SavePayee("Grocer Outlet")).value
+    assign_payee(db, imported["Corner Grocer 0987"], other.handle)
+
+    proposals = {item.description: item for item in preview_category_proposals(db).value}
+    assert proposals["CORNER GROCER #1234"].payee == grocer.handle
+    assert proposals["Corner Grocer 0987"].payee is None
+
+    applied = apply_category_proposals(db).value
+    assert (applied.assigned, applied.payees_set) == (2, 1)
+    assert db.get_transaction(imported["CORNER GROCER #1234"]).payee == grocer.handle
+    assert db.get_transaction(imported["Corner Grocer 0987"]).payee == other.handle
+
+
+def test_a_payee_chosen_after_the_preview_is_kept(db, book, imported):
+    grocer = save_payee(db, SavePayee("Corner Grocer")).value
+    other = save_payee(db, SavePayee("Grocer Outlet")).value
+    add_rule(
+        db, AddRule(category=book.groceries, description="CORNER GROCER", set_payee=grocer.handle)
+    )
+    assign_payee(db, imported["CORNER GROCER #1234"], other.handle)
+    applied = apply_category_proposals(db, (imported["CORNER GROCER #1234"],)).value
+    assert (applied.assigned, applied.payees_set) == (1, 0)
+    assert db.get_transaction(imported["CORNER GROCER #1234"]).payee == other.handle
+
+
+def test_set_payee_is_refused_on_payee_rules_and_for_missing_payees(db, book):
+    power = save_payee(db, SavePayee("City Power")).value
+    before = list_rules(db)
+    refused = add_rule(
+        db, AddRule(category=book.utilities, payee=power.handle, set_payee=power.handle)
+    )
+    assert [error.code for error in refused.errors] == ["rule.set_payee.payee_match"]
+    missing = add_rule(db, AddRule(category=book.utilities, description="Power", set_payee="nope"))
+    assert [error.code for error in missing.errors] == ["rule.set_payee.not_found"]
+    assert list_rules(db) == before
+
+
+def test_deleting_a_payee_cleans_the_rules_that_name_it(db, book):
+    from breadsched.gen.services.payees import delete_payee
+
+    grocer = save_payee(db, SavePayee("Corner Grocer")).value
+    add_rule(db, AddRule(category=book.groceries, payee=grocer.handle))
+    add_rule(db, AddRule(category=book.groceries, description="GROCER", set_payee=grocer.handle))
+    assert delete_payee(db, grocer.handle).ok
+    [kept] = list_rules(db)
+    assert (kept.key, kept.set_payee, kept.category) == ("grocer", None, book.groceries)
+    db.undo()
+    assert [rule.set_payee for rule in list_rules(db)] == [None, grocer.handle]
+
+
+def test_cli_sets_a_payee_with_a_description_rule(tmp_path, capsys):
+    import json
+
+    from breadsched.cli.main import main
+    from breadsched.gen.sample_book import create_sample_book
+
+    book = tmp_path / "cli.breadsched"
+    create_sample_book(book, as_of=date(2026, 8, 15))
+    statement = tmp_path / "statement.csv"
+    statement.write_text(STATEMENT, encoding="utf-8")
+    mapping = ["--date", "Date", "--amount", "Amount", "--description", "Description"]
+    command = ["import-csv", str(book), str(statement), "--account", "Checking", *mapping]
+    assert main(command) == 0
+    assert main(["payees", str(book), "--add", "Corner Grocer"]) == 0
+    capsys.readouterr()
+    rules = ["rules", str(book)]
+    added = [*rules, "--add-description", "corner grocer", "--category", "Expenses:Groceries"]
+    assert main([*added, "--set-payee", "Corner Grocer"]) == 0
+    assert "payee Corner Grocer" in capsys.readouterr().out
+    assert main([*rules, "--json"]) == 0
+    [rule] = json.loads(capsys.readouterr().out)
+    assert rule["set_payee_name"] == "Corner Grocer"
+    assert main([*rules, "--preview", "--json"]) == 0
+    assert {item["payee_name"] for item in json.loads(capsys.readouterr().out)} == {"Corner Grocer"}
+    assert main([*rules, "--accept-all", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["payees_set"] == 2

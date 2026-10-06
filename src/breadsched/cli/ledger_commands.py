@@ -144,6 +144,7 @@ def cmd_rules(args: argparse.Namespace) -> int:
             if not args.category:
                 raise CommandError("--category is required when adding a rule")
             payee = _find_payee(db, args.add_payee).handle if args.add_payee else None
+            set_payee = _find_payee(db, args.set_payee).handle if args.set_payee else None
             rule = check(
                 add_rule(
                     db,
@@ -152,13 +153,20 @@ def cmd_rules(args: argparse.Namespace) -> int:
                         payee=payee,
                         description=args.add_description,
                         position=args.position,
+                        set_payee=set_payee,
                     ),
                 )
             )
             emit(
-                {"handle": rule.handle, "category": rule.category, "key": rule.key},
+                {
+                    "handle": rule.handle,
+                    "category": rule.category,
+                    "key": rule.key,
+                    "set_payee": rule.set_payee,
+                },
                 args,
-                f"Added rule: {rule.key or args.add_payee} -> {name(rule.category)}",
+                f"Added rule: {rule.key or args.add_payee} -> {name(rule.category)}"
+                + (f", payee {args.set_payee}" if args.set_payee else ""),
             )
             return 0
         if args.delete:
@@ -179,12 +187,18 @@ def cmd_rules(args: argparse.Namespace) -> int:
             )
             applied = check(apply_category_proposals(db, chosen))
             emit(
-                {"assigned": applied.assigned, "unchanged": applied.unchanged},
+                {
+                    "assigned": applied.assigned,
+                    "unchanged": applied.unchanged,
+                    "payees_set": applied.payees_set,
+                },
                 args,
                 f"Categorized {applied.assigned} transaction(s); "
-                f"{applied.unchanged} left unchanged",
+                f"{applied.unchanged} left unchanged"
+                + (f"; set the payee on {applied.payees_set}" if applied.payees_set else ""),
             )
             return 0
+        payee_names = {payee.handle: payee.name for payee in db.iter_payees()}
         if args.preview:
             proposals = check(preview_category_proposals(db))
             emit(
@@ -196,6 +210,8 @@ def cmd_rules(args: argparse.Namespace) -> int:
                         "amount": item.amount,
                         "category": item.category,
                         "category_name": name(item.category),
+                        "payee": item.payee,
+                        "payee_name": payee_names.get(item.payee or ""),
                         "rule_position": item.rule_position,
                         "conflicts": [
                             {"rule_position": c.rule_position, "category_name": name(c.category)}
@@ -212,7 +228,12 @@ def cmd_rules(args: argparse.Namespace) -> int:
                             item.transaction[:8],
                             item.description,
                             item.amount.format(parens_negative=True),
-                            name(item.category),
+                            name(item.category)
+                            + (
+                                f"; payee {payee_names.get(item.payee, item.payee)}"
+                                if item.payee
+                                else ""
+                            ),
                             str(item.rule_position),
                             "; ".join(
                                 f"rule {c.rule_position}: {name(c.category)}"
@@ -229,7 +250,6 @@ def cmd_rules(args: argparse.Namespace) -> int:
                 else "No uncategorized imported transactions match a rule.",
             )
             return 0
-        payee_names = {payee.handle: payee.name for payee in db.iter_payees()}
         rules = list_rules(db)
         emit(
             [
@@ -241,6 +261,8 @@ def cmd_rules(args: argparse.Namespace) -> int:
                     "key": rule.key,
                     "category": rule.category,
                     "category_name": name(rule.category),
+                    "set_payee": rule.set_payee,
+                    "set_payee_name": payee_names.get(rule.set_payee or ""),
                 }
                 for position, rule in enumerate(rules, start=1)
             ],
@@ -253,10 +275,11 @@ def cmd_rules(args: argparse.Namespace) -> int:
                         if rule.payee
                         else f"description {rule.key}",
                         name(rule.category),
+                        payee_names.get(rule.set_payee, rule.set_payee) if rule.set_payee else "-",
                     ]
                     for position, rule in enumerate(rules, start=1)
                 ],
-                ["rule", "matches", "category"],
+                ["rule", "matches", "category", "sets payee"],
                 right={0},
             )
             if rules
@@ -1097,6 +1120,11 @@ def register(add: AddCommand) -> None:
     rules_cmd.add_argument("--add-description", metavar="TEXT", help="match this description")
     rules_cmd.add_argument("--add-payee", metavar="PAYEE", help="match this payee (name or handle)")
     rules_cmd.add_argument("--category", help="income or expense category for a new rule")
+    rules_cmd.add_argument(
+        "--set-payee",
+        metavar="PAYEE",
+        help="with --add-description: also set this payee on a transaction that has none",
+    )
     rules_cmd.add_argument(
         "--position", type=int, help="1-based position for a new rule (default: last)"
     )
