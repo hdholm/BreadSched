@@ -113,6 +113,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.selected == 'true'
     runs-on: windows-latest
+    # A silent installer that waits forever must fail the job, not hold it for hours.
+    timeout-minutes: 30
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TESTED_SHA: ${{ github.event.workflow_run.head_sha }}
@@ -146,6 +148,11 @@ jobs:
             mingw-w64-ucrt-x86_64-librsvg
             mingw-w64-ucrt-x86_64-adwaita-icon-theme
             mingw-w64-ucrt-x86_64-nsis
+
+      - name: Provide NSIS plugins
+        # MSYS2's NSIS 3.13 package carries no plugins; the official build does.
+        shell: pwsh
+        run: choco install nsis --no-progress -y
 
       - name: Build the installer
         run: packaging/windows/build-installer.sh dist/windows

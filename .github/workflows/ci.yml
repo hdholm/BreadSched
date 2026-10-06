@@ -171,6 +171,8 @@ jobs:
   windows-installer:
     name: Build and test Windows installer
     runs-on: windows-latest
+    # A silent installer that waits forever must fail the job, not hold it for hours.
+    timeout-minutes: 30
     defaults:
       run:
         shell: msys2 {0}
@@ -191,6 +193,11 @@ jobs:
             mingw-w64-ucrt-x86_64-librsvg
             mingw-w64-ucrt-x86_64-adwaita-icon-theme
             mingw-w64-ucrt-x86_64-nsis
+
+      - name: Provide NSIS plugins
+        # MSYS2's NSIS 3.13 package carries no plugins; the official build does.
+        shell: pwsh
+        run: choco install nsis --no-progress -y
 
       - name: Build the installer
         run: packaging/windows/build-installer.sh dist/windows

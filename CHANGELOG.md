@@ -23,6 +23,13 @@ section. Commits and pull requests hold the complete history.
 - **Fixed:** the browser's Verify page always showed "Could not load: main is not
   defined" instead of its result; it now reports the book and **Verify again**
   reruns it.
+- **Windows installer build.** MSYS2's NSIS 3.13 ships no plugins, so `makensis`
+  could not find nsDialogs. The CI and release jobs install the official NSIS build
+  (`choco install nsis`), and the build script compiles with that release's own
+  `makensis.exe` and x86-unicode plugins (an installer built by MSYS2's makensis
+  with the official plugins hung in a silent upgrade), falls back to MSYS2's
+  makensis only with plugins of its own, and stops with the NSIS files it found when
+  there are none. Both installer jobs now time out after 30 minutes.
 
 ## 0.2.0a217 - 2026-10-06
 
