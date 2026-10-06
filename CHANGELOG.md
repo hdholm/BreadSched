@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a244 - 2026-10-06
+
+- **Holdings, cost basis, and gains.** `engine/cost_basis` derives each security
+  account's lots from its splits (first in, first out, exact shares), realized
+  gains per sale and by year, and the unrealized gain against the latest market
+  quote in the same currency; zero-cost arrivals, sales beyond recorded purchases,
+  mixed currencies, and missing or foreign quotes are named, never approximated.
+  The GTK Accounts view gains **Actions → Holdings and Cost Basis…**
+  (`HoldingsDialog`), the browser's Accounts page **Holdings and cost basis…**
+  (`/api/holdings`), and the command line `breadsched holdings [--lots]
+  [--as-of]` (new `cli/investment_commands`). Nothing is stored.
+
 ## 0.2.0a243 - 2026-10-06
 
 - **Cash runway in every projection and comparison.** `Projection.runway()`

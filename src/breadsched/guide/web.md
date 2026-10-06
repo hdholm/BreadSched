@@ -59,6 +59,11 @@ accepts currencies already in the book; it does not create a new currency or alt
 ledger transactions. The account data also include the signed number of days since
 each quote (`quote_age_days`), with negative days identifying a future-dated quote.
 
+**Holdings and cost basis…** in **Accounts** lists each holding's shares, cost,
+market value, and unrealized gain; open a holding for its lots, sales, and notes
+(`/api/holdings`, share counts as exact decimal text). See
+[Holdings and cost basis](../USER_GUIDE.md#holdings-and-cost-basis).
+
 ## Enter transactions in the register
 
 The register has a blank row at the bottom for a new entry, **Split** for split

@@ -290,6 +290,13 @@ class AccountTreeView(BaseView):
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
+    def _on_holdings(self, _button) -> None:
+        if self.db is None:
+            return
+        from ..dialogs.holdings_dialog import HoldingsDialog
+
+        HoldingsDialog(self.get_root(), self.db).present()
+
     def _on_exchange_rate(self, _button) -> None:
         if self.db is None:
             return

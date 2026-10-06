@@ -3166,6 +3166,51 @@ class TestDerivedPlanView:
         assert reloaded.assumption_sources()["income_growth"] == "Inherited future"
         assert reloaded.effective_assumptions().income_growth == Decimal("0.0125")
 
+    def test_holdings_show_cost_basis_lots_and_gains(self, app, window, populated_book):
+        from breadsched.gen.lib import Account, AccountType, Commodity, Split, Transaction
+        from breadsched.gui.dialogs.holdings_dialog import HoldingsDialog
+
+        app.open_book(populated_book)
+        db = app.db
+        assets = next(item for item in db.iter_accounts() if item.name == "Assets")
+        checking = next(item for item in db.iter_accounts() if item.atype is AccountType.BANK)
+        fund = Commodity(namespace="FUND", mnemonic="IDX", fullname="Index", fraction=1000)
+        account = Account(
+            name="Index",
+            atype=AccountType.INVESTMENT,
+            parent=assets.handle,
+            commodity=fund.handle,
+            commodity_scu=1000,
+        )
+        trades = []
+        for when, quantity, value in (
+            (date(2025, 1, 2), "3", "300"),
+            (date(2025, 6, 2), "-1", "-150"),
+        ):
+            trade = Transaction(post_date=when, description="Trade")
+            trade.currency = checking.commodity
+            trade.splits = [
+                Split(account.handle, Money(value), quantity=Money(quantity)),
+                Split(checking.handle, -Money(value)),
+            ]
+            trades.append(trade)
+        with db.transaction("Holding") as txn:
+            db.add_commodity(fund, txn)
+            db.add_account(account, txn)
+            for trade in trades:
+                db.add_transaction(trade, txn)
+
+        window.show_category("accounts")
+        dialog = HoldingsDialog(window, db)
+        try:
+            [holding] = dialog.holdings
+            assert (holding.quantity, holding.cost) == (Money(2), Money(200))
+            [detail] = dialog.details
+            assert "realized 2025: 50.00" in detail.get_label()
+            assert detail.get_label().startswith("Assets:Index: 2 shares cost 200.00")
+        finally:
+            dialog.destroy()
+
     def test_retirement_drawdowns_are_added_edited_and_removed(self, app, window, populated_book):
         from breadsched.gen.lib import Account, AccountType, Money, Scenario
         from breadsched.gen.services import drawdown_accounts
@@ -7352,6 +7397,7 @@ class TestDialogsFitTheScreen:
         ("fsa_claims_dialog", "FsaClaimsDialog", None),
         ("gnucash_writeback_dialog", "GnuCashWritebackDialog", None),
         ("historical_estimates_dialog", "HistoricalEstimatesDialog", None),
+        ("holdings_dialog", "HoldingsDialog", None),
         ("import_dialog", "ImportDialog", None),
         ("loan_dialog", "LoanDialog", None),
         ("net_worth_history_dialog", "NetWorthHistoryDialog", None),

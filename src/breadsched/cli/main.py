@@ -22,6 +22,7 @@ from . import (
     benefit_commands,
     book_commands,
     import_commands,
+    investment_commands,
     ledger_commands,
     plan_commands,
     projection_commands,
@@ -40,6 +41,7 @@ COMMAND_MODULES = (
     plan_commands,
     benefit_commands,
     projection_commands,
+    investment_commands,
 )
 
 
