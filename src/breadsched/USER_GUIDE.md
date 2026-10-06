@@ -1129,6 +1129,13 @@ Imports run as one atomic undo step; a cancelled import writes nothing
 ([desktop](guide/desktop.md#import-files), [browser](guide/web.md#import-files),
 [command line](guide/cli.md#import-files)).
 
+Every import ends with a summary. **Skipped records by reason** gives one line per
+reason, most frequent first, with how many records it stopped and the first few of
+them, for example *4 x only one split, with no value (for example "Coffee",
+"Lunch", "Fuel", and 1 more)*. Warnings that are not about one skipped record
+(such as a guessed number format) follow on their own, and **No problems found**
+means neither kind occurred.
+
 Re-import updates source-owned data and removes source transactions that have
 disappeared. A deleted source transaction still referenced by a BreadSched
 reconciliation or FSA claim is retained and reported for review, and one that is

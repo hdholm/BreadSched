@@ -2811,6 +2811,15 @@ class TestImportApi:
         renumbered = statement(("b1", "20260301", "-9.99"))
         status, held = client.upload("b.ofx", renumbered)
         assert status == 200 and held["possible_duplicates"] == 1
+        assert held["problems"] == [
+            {
+                "reason": "possible duplicate of a transaction already in this account on the "
+                "same date for the same amount",
+                "count": 1,
+                "examples": ["Shop"],
+            }
+        ]
+        assert "(for example “Shop”)" in held["detail"]
         assert len(list(client.database.iter_transactions())) == before
         with pytest.raises(urllib.error.HTTPError) as caught:
             client.upload("b.ofx", renumbered, include_duplicates="yes")

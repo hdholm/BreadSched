@@ -1904,6 +1904,16 @@ overrides, execution options, and recording the last successful source. Adapters
 retain only transport parsing, background-job presentation, and result rendering;
 stable preflight codes and field paths are independent of their English wording.
 
+Import reports: `ImportResult.skip` records each rejected record's reason and
+subject, and `warn` records everything else in `notices` (both still go to
+`warnings`, kept whole for callers that log every message). `problems()` groups
+skipped records by reason, most frequent first, as `ImportProblem` values with the
+count and the first three subjects; `detail()` writes one line per reason with
+those examples (each cut to 60 characters) and then only the notices, so a file
+with hundreds of rejected rows no longer buries the warnings that matter under one
+line per row. The CLI's JSON and the browser's import and CSV import responses
+carry `problems` too, and the CLI adds `notices`.
+
 Transaction deletion synchronization uses a separate complete-scan inventory keyed
 by the stable GnuCash chart-root identity, with the canonical source path only as a
 fallback. A previously observed transaction GUID that is absent from the source is

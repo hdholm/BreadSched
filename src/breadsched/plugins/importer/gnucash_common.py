@@ -51,6 +51,7 @@ _SKIPPED_HISTORY_KEY = "import.skipped_history"
 _SOURCE_INVENTORY_KEY = "import.source_inventory"
 
 __all__ = [
+    "ImportProblem",
     "ImportResult",
     "ImportSink",
     "detect_format",
@@ -58,6 +59,36 @@ __all__ = [
     "preserve_breadsched_schedule_state",
     "recurrence_interval",
 ]
+
+
+#: How many example records each skip reason names in an import report.
+PROBLEM_EXAMPLES = 3
+
+
+@dataclass(frozen=True, slots=True)
+class ImportProblem:
+    """One reason records were skipped, how often, and the first records it hit."""
+
+    reason: str
+    count: int
+    examples: tuple[str, ...]
+
+    def as_dict(self) -> dict[str, object]:
+        return {"reason": self.reason, "count": self.count, "examples": list(self.examples)}
+
+    def text(self) -> str:
+        """``count x reason``, then the example records and how many more there are."""
+        line = f"{self.count} x {self.reason}"
+        if not self.examples:
+            return line
+        shown = ", ".join(_example(subject) for subject in self.examples)
+        more = self.count - len(self.examples)
+        return f"{line} (for example {shown}{f', and {more} more' if more > 0 else ''})"
+
+
+def _example(subject: str, width: int = 60) -> str:
+    text = " ".join(subject.split())
+    return f"“{text if len(text) <= width else text[: width - 1] + '…'}”"
 
 
 @dataclass
@@ -94,7 +125,11 @@ class ImportResult:
     skipped_new: int = 0
     skipped_repeated: int = 0
     skipped_resolved: int = 0
+    #: Every message: one per skipped record, then the other warnings.
     warnings: list[str] = field(default_factory=list)
+    #: Warnings that are not about one skipped record (format guesses, adopted
+    #: accounts, ...); skipped records are reported by reason instead.
+    notices: list[str] = field(default_factory=list)
     #: One entry per rejected record: (reason, identification). Kept separate from
     #: warnings so a caller can report counts by reason without parsing prose.
     skipped_details: list[tuple[str, str]] = field(default_factory=list)
@@ -143,6 +178,7 @@ class ImportResult:
 
     def warn(self, message: str) -> None:
         self.warnings.append(message)
+        self.notices.append(message)
         LOG.warning(message)
 
     def reasons(self) -> dict[str, int]:
@@ -151,6 +187,17 @@ class ImportResult:
         for reason, _subject in self.skipped_details:
             counts[reason] = counts.get(reason, 0) + 1
         return counts
+
+    def problems(self, examples: int = PROBLEM_EXAMPLES) -> list[ImportProblem]:
+        """Skipped records grouped by reason, most frequent first, with examples."""
+        grouped: dict[str, list[str]] = {}
+        for reason, subject in self.skipped_details:
+            grouped.setdefault(reason, []).append(subject)
+        ordered = sorted(grouped.items(), key=lambda item: -len(item[1]))
+        return [
+            ImportProblem(reason, len(subjects), tuple(subjects[:examples]))
+            for reason, subjects in ordered
+        ]
 
     def finish(self, db: DbSQLite, txn: DbTxn) -> None:
         """Compare and transactionally retain skipped records for this source."""
@@ -341,18 +388,18 @@ class ImportResult:
                 f"{self.skipped_new} new, {self.skipped_repeated} repeated, "
                 f"{self.skipped_resolved} resolved"
             )
-        reasons = self.reasons()
-        if reasons:
+        problems = self.problems()
+        if problems:
             lines.append("")
             lines.append("Skipped records by reason:")
-            lines.extend(f"  {count} x {reason}" for reason, count in reasons.items())
-        if self.warnings:
+            lines.extend(f"  {problem.text()}" for problem in problems)
+        if self.notices:
             lines.append("")
-            lines.append(f"{len(self.warnings)} warning(s):")
-            lines.extend(f"  - {w}" for w in self.warnings[:limit])
-            if len(self.warnings) > limit:
-                lines.append(f"  ... and {len(self.warnings) - limit} more")
-        else:
+            lines.append(f"{len(self.notices)} warning(s):")
+            lines.extend(f"  - {w}" for w in self.notices[:limit])
+            if len(self.notices) > limit:
+                lines.append(f"  ... and {len(self.notices) - limit} more")
+        elif not problems:
             lines.append("")
             lines.append("No problems found.")
         if self.log_path:
