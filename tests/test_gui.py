@@ -4298,7 +4298,11 @@ class TestDashboardView:
         groups = [item for item in shown if isinstance(item, MissedGroup)]
         assert groups, shown
         rent = next(item for item in groups if item.name == "Sample rent")
-        assert sum(1 for item in shown if item.name == "Sample rent") == 1
+        # One row for the missed dates; an occurrence due today is pending and
+        # keeps a row of its own.
+        rent_rows = [item for item in shown if item.name == "Sample rent"]
+        assert [item for item in rent_rows if isinstance(item, MissedGroup)] == [rent]
+        assert all(item.next_due >= date.today() for item in rent_rows if item is not rent)
         assert view._due_in(rent).startswith(f"{rent.count} missed, ")
         assert _due_date(rent) == f"{rent.next_due.isoformat()} to {rent.last_due.isoformat()}"
         assert rent.frequency == "every month"
