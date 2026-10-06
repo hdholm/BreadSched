@@ -118,8 +118,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Import scheduled transactions from additional formats where represented
   reliably.
 
-- Improve import summaries/problem reporting.
-
 - Cover richer transfer/category mapping and real-world QIF/OFX deviations.
 
 - Investigate/cover older GnuCash SQLite timezone/date conventions.

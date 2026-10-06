@@ -52,6 +52,7 @@ def import_local(api: Api, payload: dict) -> dict:
     return {
         "format": imported.format_name,
         "detail": imported.result.detail(limit=50),
+        "problems": [problem.as_dict() for problem in imported.result.problems()],
         "held": imported.result.transactions_held,
         "possible_duplicates": imported.result.possible_duplicates,
         "reimbursement_notice": reimbursement_notice(

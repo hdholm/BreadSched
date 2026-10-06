@@ -130,6 +130,43 @@ class TestOtherDefects:
         assert "Skipped records by reason:" in detail
         assert "1 x only one split, with no value" in detail
 
+    def test_the_report_names_examples_once_and_keeps_other_warnings_apart(self, db, tmp_path):
+        from breadsched.plugins.importer.gnucash_common import ImportResult
+
+        result = ImportResult()
+        for name in ("Empty one", "Empty two", "Empty three", "Empty four"):
+            result.skip("only one split, with no value", name)
+        result.skip("no post date", "Undated")
+        result.warn("Adopted the existing Checking account")
+
+        [common, rare] = result.problems()
+        assert (common.reason, common.count, common.examples) == (
+            "only one split, with no value",
+            4,
+            ("Empty one", "Empty two", "Empty three"),
+        )
+        assert rare.as_dict() == {"reason": "no post date", "count": 1, "examples": ["Undated"]}
+        detail = result.detail()
+        assert (
+            "  4 x only one split, with no value (for example “Empty one”, “Empty two”, "
+            "“Empty three”, and 1 more)"
+        ) in detail
+        assert "  1 x no post date (for example “Undated”)" in detail
+        # Each skipped record is reported once, by reason; the warnings are the rest.
+        assert "1 warning(s):\n  - Adopted the existing Checking account" in detail
+        assert "skipped Empty one" not in detail
+        assert "No problems found." not in detail
+        assert len(result.warnings) == 6 and result.notices == [
+            "Adopted the existing Checking account"
+        ]
+
+    def test_a_long_example_is_shortened(self, db, tmp_path):
+        from breadsched.plugins.importer.gnucash_common import ImportResult
+
+        result = ImportResult()
+        result.skip("bad amount", "x" * 80)
+        assert f"“{'x' * 59}…”" in result.detail()
+
     def test_a_clean_book_reports_no_problems(self, db, tmp_path):
         book = create_book(tmp_path / "clean.gnucash", CHART, [HEALTHY])
         result = gnucash_sqlite.import_book(db, book.path)
@@ -320,6 +357,11 @@ class TestCliDiagnostics:
         payload = json.loads(capsys.readouterr().out)
         assert payload["skipped"] == 1
         assert payload["skipped_by_reason"]
+        [problem] = payload["problems"]
+        assert (problem["reason"], problem["count"]) == ("only one split, with no value", 1)
+        [example] = problem["examples"]
+        assert "'Empty'" in example
+        assert all(not notice.startswith("skipped ") for notice in payload["notices"])
 
     def test_a_missing_source_file_is_a_clean_error(self, tmp_path, capsys):
         from breadsched.cli.main import main as cli

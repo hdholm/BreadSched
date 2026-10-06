@@ -195,6 +195,7 @@ def csv_import(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
         "transfers_linked": imported.result.transactions_linked,
         "skipped": imported.result.skipped,
         "detail": imported.result.detail(limit=50),
+        "problems": [problem.as_dict() for problem in imported.result.problems()],
         "reimbursement_notice": reimbursement_notice(
             len(reimbursement_proposals(api.db).value or ())
         ),

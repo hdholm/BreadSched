@@ -10,6 +10,16 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a230 - 2026-10-06
+
+- **Import summaries group problems by reason.** Each skip reason is one line with
+  its count and the first three records it stopped (`ImportResult.problems()`,
+  `ImportProblem`), most frequent first, and the warnings that follow are only those
+  not about one skipped record (`ImportResult.notices`), so a file with many
+  rejected rows no longer hides the other warnings. GTK, the browser, and the CLI
+  show the new summary; CLI JSON adds `problems` and `notices`, and the browser's
+  import and CSV import responses add `problems`.
+
 ## 0.2.0a229 - 2026-10-06
 
 - **Plan shows reimbursable expenses' gross and net cost.** An expense category's
