@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.activity import (
+from ...gen.engine.plan_detail import (
     CategoryPeriodDetail,
     MortgagePaymentPeriodDetail,
     PlanningFlowPeriodDetail,

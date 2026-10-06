@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from breadsched.gen.engine import activity, planning
+from breadsched.gen.engine import activity, plan_detail, planning
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -348,7 +348,7 @@ class TestCategoryPlanning:
         with db.transaction("future plan") as txn:
             db.add_scheduled(bill, txn)
 
-        detail = activity.explain_category_period(
+        detail = plan_detail.explain_category_period(
             db,
             book.utilities,
             date(2026, 3, 1),
@@ -365,7 +365,7 @@ class TestCategoryPlanning:
         with db.transaction("explain future plan") as txn:
             db.add_scheduled(bill, txn)
 
-        detail = activity.explain_category_period(
+        detail = plan_detail.explain_category_period(
             db,
             book.utilities,
             date(2026, 3, 1),
@@ -398,7 +398,7 @@ class TestCategoryPlanning:
             db.add_transaction(unresolved, txn)
             db.add_transaction(unexpected, txn)
 
-        detail = activity.explain_category_period(
+        detail = plan_detail.explain_category_period(
             db,
             book.utilities,
             date(2026, 3, 1),
@@ -605,7 +605,7 @@ class TestPlanningFlowClassification:
         assert report.activity.periods[0].planned_expense == Money("1600")
         assert escrow_flow.planned == [Money("450")]
         assert principal_flow.planned == [Money("800")]
-        detail = activity.explain_planning_flow_period(
+        detail = plan_detail.explain_planning_flow_period(
             db,
             PlanningFlowKind.ESCROW_FUNDING,
             escrow.handle,
@@ -615,7 +615,7 @@ class TestPlanningFlowClassification:
         assert "principal only reduces the liability" in " ".join(
             detail.planned_events[0].explanation
         )
-        payment_detail = activity.explain_mortgage_payment_period(
+        payment_detail = plan_detail.explain_mortgage_payment_period(
             db,
             loan.handle,
             date(2026, 1, 1),
@@ -668,7 +668,7 @@ class TestPlanningFlowClassification:
         assert mortgage.planned == [Money("2400")]
         assert mortgage.actual == [Money("2400")]
         assert mortgage.variance == [Money(0)]
-        detail = activity.explain_mortgage_payment_period(
+        detail = plan_detail.explain_mortgage_payment_period(
             db,
             loan.handle,
             date(2026, 1, 1),
@@ -789,7 +789,7 @@ class TestPlanningFlowClassification:
         assert len(report.mortgage_payments) == 1
         assert report.mortgage_payments[0].account == old_loan.handle
         assert report.mortgage_payments[0].planned == [Money("2500")]
-        detail = activity.explain_mortgage_payment_period(
+        detail = plan_detail.explain_mortgage_payment_period(
             db,
             old_loan.handle,
             date(2026, 1, 1),
@@ -843,7 +843,7 @@ class TestPlanningFlowClassification:
         with db.transaction("plan retirement contribution") as txn:
             db.add_scheduled(contribution, txn)
 
-        detail = activity.explain_planning_flow_period(
+        detail = plan_detail.explain_planning_flow_period(
             db,
             PlanningFlowKind.RETIREMENT_SAVING,
             book.brokerage,
@@ -879,7 +879,7 @@ class TestPlanningFlowClassification:
             db.add_account(retirement, txn)
             db.add_scheduled(contribution, txn)
 
-        detail = activity.explain_planning_flow_period(
+        detail = plan_detail.explain_planning_flow_period(
             db,
             PlanningFlowKind.RETIREMENT_SAVING,
             retirement.handle,

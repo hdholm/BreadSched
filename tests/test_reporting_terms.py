@@ -12,7 +12,7 @@ from datetime import date
 
 import pytest
 
-from breadsched.gen.engine import activity, planning
+from breadsched.gen.engine import activity, plan_detail, planning
 from breadsched.gen.lib import (
     AccountClass,
     Money,
@@ -251,7 +251,7 @@ class TestCellDetail:
             db, _spend(book, date(2026, 9, 5), "40.00"), _spend(book, date(2026, 9, 25), "100.00")
         )
 
-        detail = activity.explain_category_period(
+        detail = plan_detail.explain_category_period(
             db, book.utilities, date(2026, 9, 1), date(2026, 9, 30), as_of=AS_OF
         )
         by_date = {

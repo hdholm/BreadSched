@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a228 - 2026-10-06
+
+- **Commit-time verification has its own module.** The checks that refuse a write
+  batch leaving the book inconsistent (about 650 lines) moved from `gen/db/sqlite`
+  to `gen/db/change_verification.ChangeVerification`, which `DbSQLite` now extends.
+  No behavior changed.
+- **Plan detail has its own engine module.** The three Plan cell explanations, their
+  detail types, and their explanation helpers (about 600 lines) moved from
+  `engine/activity` to `engine/plan_detail`; the classification helpers both modules
+  need (`planning_flow_decision`, `escrow_planning_flows`, `mortgage_payment`) became
+  public in `activity`. GTK, web, the Expense Explorer service, and the tests import
+  the explanations from `plan_detail`. An architecture test keeps `activity` free of
+  the explanations and private helpers inside it. No behavior changed.
+
 ## 0.2.0a227 - 2026-10-06
 
 - **QIF imports hold back possible duplicates.** A new QIF bank, cash, or card row

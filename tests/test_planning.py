@@ -4,7 +4,7 @@ from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 
-from breadsched.gen.engine import activity, planning, projection, schedule
+from breadsched.gen.engine import plan_detail, planning, projection, schedule
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -146,12 +146,12 @@ class TestEventDomain:
         assert sources[book.utilities] == "per-leg amount effective 2026-07-01"
         assert event.as_dict()["amount_explanations"][1]["source"] == sources[book.utilities]
 
-        plan_detail = activity.explain_category_period(
+        cell = plan_detail.explain_category_period(
             db, book.utilities, effective, date(2026, 7, 31), as_of=effective
         )
         assert any(
             "Amount for Utilities: per-leg amount effective 2026-07-01." in line
-            for line in plan_detail.planned_events[0].explanation
+            for line in cell.planned_events[0].explanation
         )
 
         scenario = Scenario(
