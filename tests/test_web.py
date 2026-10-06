@@ -2545,9 +2545,11 @@ class TestThreadSafety:
         assert Decimal(str(after["own_balance"])) == Decimal(str(balance.to_decimal())) - 25
 
     def test_read_snapshots_close_without_disturbing_the_writer_lock(self, book_path, monkeypatch):
+        from breadsched.gen.db.book_lock import BookWriterLock
+
         db = DbSQLite()
         db.load(str(book_path))
-        lock_path = DbSQLite._writer_lock_path(str(book_path))
+        lock_path = BookWriterLock.lock_path(str(book_path))
         lock_contents = lock_path.read_text(encoding="utf-8")
         closed_readers: list[DbSQLite] = []
         close = DbSQLite.close
