@@ -540,7 +540,11 @@ Normal writes are verified incrementally from the records already captured by th
 database transaction. Changed objects are checked for their own domain invariants
 and derived-index rows, and deletions check reverse references that could make
 untouched objects invalid. A changed ledger transaction verifies only its own
-``split_index`` rows rather than rebuilding the complete index.
+``split_index`` rows rather than rebuilding the complete index. These checks live
+in `gen/db/change_verification.ChangeVerification`, a `DbBase` subclass that
+`DbSQLite` extends; they read through the public object API and the open connection
+(`_require`, declared abstract there), so the storage module holds storage and
+transactions only.
 
 ``verify_book()`` remains the exhaustive diagnostic for explicit verification,
 backup/restore validation, tests, and corruption investigation.
@@ -651,6 +655,14 @@ the cash leg is only the counterpart and must not appear as a second logical flo
 The non-cash source remains the inspectable planning-purpose row, while the bridge
 shows the distribution once as a positive cash contribution. Planned totals cover
 the selected horizon.
+
+Plan detail lives in `engine/plan_detail`, beside the grid in `engine/activity`
+that it explains: `explain_category_period`, `explain_planning_flow_period`, and
+`explain_mortgage_payment_period` rebuild one cell from `build_activity_report` and
+the same public classification helpers the grid uses (`planning_flow_decision`,
+`escrow_planning_flows`, `mortgage_payment`), so a drill-down cannot disagree with
+its cell. `activity` never imports the explanations, and an architecture test keeps
+private helpers from crossing that boundary.
 
 Classification decisions are report data, not presentation guesses. Plan detail
 names the account type and accounting class that caused an Income/Expense split to

@@ -15,6 +15,8 @@ from ...gen.engine.activity import (
     PlanMeasure,
     PlanSettings,
     ReportingPeriod,
+)
+from ...gen.engine.plan_detail import (
     explain_category_period,
     explain_mortgage_payment_period,
     explain_planning_flow_period,

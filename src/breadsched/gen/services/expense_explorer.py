@@ -6,14 +6,13 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine.activity import (
+from ..engine.activity import PeriodActivity, PlanMeasure
+from ..engine.completeness import Completeness
+from ..engine.plan_detail import (
     CategoryActualDetail,
     CategoryPlannedDetail,
-    PeriodActivity,
-    PlanMeasure,
     explain_category_period,
 )
-from ..engine.completeness import Completeness
 from ..lib.account import AccountClass
 from ..lib.money import Money
 from .contracts import ServiceError, ServiceResult

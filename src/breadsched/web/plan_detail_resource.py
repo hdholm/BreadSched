@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import activity
+from ..gen.engine import plan_detail
 from ..gen.lib import Assumptions, PlanningFlowKind, Scenario
 
 
@@ -39,14 +39,14 @@ def plan_detail_report(
         scenario_name = "Base scenario"
 
     detail: (
-        activity.CategoryPeriodDetail
-        | activity.PlanningFlowPeriodDetail
-        | activity.MortgagePaymentPeriodDetail
+        plan_detail.CategoryPeriodDetail
+        | plan_detail.PlanningFlowPeriodDetail
+        | plan_detail.MortgagePaymentPeriodDetail
     )
     if requirement_kind:
         if requirement_kind != "mortgage":
             raise ValueError("unknown Plan cash-requirement kind")
-        mortgage_detail = activity.explain_mortgage_payment_period(
+        mortgage_detail = plan_detail.explain_mortgage_payment_period(
             db, account_handle, start, end, scenario=scenario
         )
         detail = mortgage_detail
@@ -59,7 +59,7 @@ def plan_detail_report(
         }
     elif flow_kind:
         kind = PlanningFlowKind(flow_kind)
-        flow_detail = activity.explain_planning_flow_period(
+        flow_detail = plan_detail.explain_planning_flow_period(
             db, kind, account_handle, start, end, scenario=scenario
         )
         detail = flow_detail
@@ -71,7 +71,7 @@ def plan_detail_report(
             "kind": kind.value,
         }
     else:
-        category_detail = activity.explain_category_period(
+        category_detail = plan_detail.explain_category_period(
             db, account_handle, start, end, scenario=scenario
         )
         detail = category_detail

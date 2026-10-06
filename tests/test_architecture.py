@@ -758,6 +758,59 @@ class TestServiceBoundaries:
         assert calls.isdisjoint({"add_scheduled", "remove_scheduled", "db.transaction"})
 
 
+class TestEngineBoundaries:
+    def test_plan_cell_explanations_build_on_the_activity_report(self):
+        """Plan drill-down lives beside the Plan grid it explains, never inside it.
+
+        ``engine/plan_detail`` rebuilds one cell from ``activity``'s own report, so
+        the explanation cannot disagree with the grid; ``activity`` never needs the
+        explanations, and no private helper crosses the module boundary.
+        """
+        engine = SRC / "gen" / "engine"
+        activity_tree = ast.parse((engine / "activity.py").read_text(encoding="utf-8"))
+        detail_tree = ast.parse((engine / "plan_detail.py").read_text(encoding="utf-8"))
+        activity_imports = {
+            alias.name
+            for node in ast.walk(activity_tree)
+            if isinstance(node, ast.ImportFrom)
+            for alias in node.names
+        } | {
+            node.module or ""
+            for node in ast.walk(activity_tree)
+            if isinstance(node, ast.ImportFrom)
+        }
+        assert "plan_detail" not in activity_imports
+        assert not any(name.startswith("explain_") for name in _defined(activity_tree))
+        from_activity = [
+            alias.name
+            for node in ast.walk(detail_tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "activity"
+            for alias in node.names
+        ]
+        assert "build_activity_report" in from_activity
+        assert [name for name in from_activity if name.startswith("_")] == []
+
+    def test_commit_verification_is_separate_from_storage(self):
+        """``DbSQLite`` stores rows; ``ChangeVerification`` checks what a batch changed."""
+        from breadsched.gen.db.change_verification import ChangeVerification
+        from breadsched.gen.db.sqlite import DbSQLite
+
+        assert issubclass(DbSQLite, ChangeVerification)
+        tree = ast.parse((SRC / "gen" / "db" / "sqlite.py").read_text(encoding="utf-8"))
+        storage = next(
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "DbSQLite"
+        )
+        assert [
+            node.name
+            for node in storage.body
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("_verify_")
+        ] == []
+
+
+def _defined(tree: ast.Module) -> set[str]:
+    return {node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
+
+
 class TestWebBoundaries:
     def test_the_request_context_holds_only_the_book(self):
         """Every handler is a resource adapter; ``Api`` carries the open book alone."""

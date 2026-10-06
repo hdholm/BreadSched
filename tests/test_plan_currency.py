@@ -132,7 +132,7 @@ def test_missing_quote_excludes_and_lists_foreign_activity(db, euro_book):
 
 
 def test_converted_actual_reconciles_detail_and_explorer_remaining(db, euro_book):
-    from breadsched.gen.engine.activity import explain_category_period
+    from breadsched.gen.engine.plan_detail import explain_category_period
     from breadsched.gen.services.expense_explorer import query_expense_explorer
     from breadsched.gen.services.plan import PlanQuery
 
