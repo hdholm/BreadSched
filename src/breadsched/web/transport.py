@@ -24,10 +24,29 @@ from .upload_resource import import_upload
 
 LOG = get_logger(__name__)
 STATIC = Path(__file__).parent / "static"
+#: The page's classic scripts, in the order ``index.html`` loads them. They share one
+#: global scope: ``core.js`` first, one script per area, and ``app.js`` (navigation
+#: and start-up) last, once every view's renderer is defined.
+SCRIPTS = (
+    "core.js",
+    "controls.js",
+    "accounts.js",
+    "entry.js",
+    "schedules.js",
+    "imports.js",
+    "plan.js",
+    "scenarios.js",
+    "review.js",
+    "projection.js",
+    "household.js",
+    "book.js",
+    "dashboard.js",
+    "app.js",
+)
 STATIC_ASSETS = {
     "index.html": ("index.html", "text/html; charset=utf-8"),
     "style.css": ("style.css", "text/css; charset=utf-8"),
-    "app.js": ("app.js", "application/javascript; charset=utf-8"),
+    **{name: (name, "application/javascript; charset=utf-8") for name in SCRIPTS},
 }
 MAX_JSON_BODY = 64 * 1024
 MAX_UPLOAD_BODY = 32 * 1024 * 1024
