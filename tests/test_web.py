@@ -2733,6 +2733,36 @@ class TestImportApi:
         assert len(list(client.database.iter_transactions())) == transactions
         assert len(list((book_path.parent / (book_path.name + ".uploads")).glob("*.qif"))) == 1
 
+    def test_an_ofx_upload_holds_possible_duplicates_unless_included(self, client):
+        def statement(*rows):
+            body = "".join(
+                f"<STMTTRN><TRNTYPE>DEBIT<DTPOSTED>{when}120000<TRNAMT>{amount}"
+                f"<FITID>{fitid}<NAME>Shop</STMTTRN>"
+                for fitid, when, amount in rows
+            )
+            return (
+                "OFXHEADER:100\n\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD"
+                "<BANKACCTFROM><BANKID>1<ACCTID>00005678<ACCTTYPE>CHECKING</BANKACCTFROM>"
+                f"<BANKTRANLIST>{body}</BANKTRANLIST></STMTRS></STMTTRNRS></BANKMSGSRSV1></OFX>"
+            ).encode()
+
+        assert client.upload("a.ofx", statement(("a1", "20260301", "-9.99")))[0] == 200
+        before = len(list(client.database.iter_transactions()))
+        renumbered = statement(("b1", "20260301", "-9.99"))
+        status, held = client.upload("b.ofx", renumbered)
+        assert status == 200 and held["possible_duplicates"] == 1
+        assert len(list(client.database.iter_transactions())) == before
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.upload("b.ofx", renumbered, include_duplicates="yes")
+        assert caught.value.code == 400
+        status, included = client.upload("b.ofx", renumbered, include_duplicates="1")
+        assert status == 200 and included["possible_duplicates"] == 0
+        assert len(list(client.database.iter_transactions())) == before + 1
+        _status, defaults = client.get("/api/import")
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/import", {"path": defaults["path"], "include_duplicates": "yes"})
+        assert caught.value.code == 400
+
     def test_browser_upload_rejects_invalid_filename_and_restores_prior_source(self, client):
         content = b"!Type:Bank\nD01/01/2026\nT1.00\nPExample\n^\n"
         client.upload("statement.qif", content)

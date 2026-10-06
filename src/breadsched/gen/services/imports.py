@@ -25,6 +25,9 @@ class ImportBook:
     include_scheduled: bool = True
     number_format: str = "auto"
     date_format: str = "auto"
+    #: Also import OFX rows matching a transaction already in the account on the
+    #: same date for the same amount, instead of holding them back.
+    include_duplicates: bool = False
     notify: bool = True
     progress: ImportProgress | None = None
 
@@ -73,6 +76,8 @@ def import_book(db: DbSQLite, request: ImportBook) -> ServiceResult[ImportedBook
         kwargs["progress"] = request.progress
     if plugin.id in {"qif", "ofx"}:
         kwargs["number_format"] = request.number_format
+    if plugin.id == "ofx":
+        kwargs["include_duplicates"] = request.include_duplicates
     if plugin.id == "qif":
         kwargs["date_format"] = request.date_format
 

@@ -1232,6 +1232,17 @@ category you chose or split after the first import is kept. If the bank corrects
 amount, a single category follows the new amount. A transaction you split across
 several categories is left unchanged, with a warning to review it.
 
+An OFX/QFX bank or card statement can repeat what is already in the account: a
+payment you typed in, a CSV statement you imported, or the same activity downloaded
+again under a different bank identifier. A new statement row is therefore held back
+as a **possible duplicate** when the account already has a transaction from
+elsewhere on the same date for the same amount. Each existing transaction answers
+for one row, so two identical payments on one day are held back only as often as the
+book already has them, and the statement's own transactions never count. The import
+summary says how many were held back; import again with **Include possible
+duplicates** (`--include-duplicates` on the command line) to add them. QIF imports
+do not check for these yet.
+
 An OFX/QFX file from a brokerage imports its transactions too. BreadSched creates
 an account under **Assets** named for the brokerage and account number, with a
 **Cash** account and one account per security you traded (using a security already

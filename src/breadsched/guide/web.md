@@ -221,7 +221,8 @@ retained beside the native book in a `<book>.uploads` directory; keep that direc
 with the book if you want to repeat an import from its remembered path. Uploading
 the same filename again refreshes the same source identity; different filenames are
 separate sources. Import options and warning details are shared with the path-based
-workflow.
+workflow. **Include possible duplicates** also imports OFX rows otherwise held back
+as possible duplicates.
 
 ### Import a CSV statement
 

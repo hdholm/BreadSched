@@ -2029,6 +2029,17 @@ the corrected statement amount. Several counterparts under a changed amount are
 left unchanged with a warning rather than re-apportioned. GnuCash imports keep full
 source ownership of every split.
 
+A new OFX bank or card row is held back as a possible duplicate
+(`ImportResult.possible_duplicates`, also a skipped record) when
+`plugins/importer/duplicates.DuplicateGuard` finds an unclaimed transaction in the
+source account on the same date with the same split value. The guard indexes the
+account once, leaves out every handle this statement produces (computed by
+`ofx._row_handle` in a pre-pass, so identical rows and re-imports never match
+themselves), and lets each existing transaction claim at most one row. A row whose
+handle already exists is a re-import and is never checked. `include_duplicates`
+(import service, CLI, GTK, browser) turns the guard off. QIF handles depend on the
+resolved categories, so QIF has no such pre-pass and no guard yet.
+
 CSV statements (`plugins/importer/csv_import.py`) are read through an explicit
 column mapping. Encoding, delimiter, date order, and decimal convention use the
 same whole-file evidence rule, and an all-ambiguous date column is refused rather

@@ -5,6 +5,14 @@ statement transaction aggregates use the same tag names in both generations, so
 this importer deliberately extracts those aggregates and scalar tags directly.
 That keeps the parser deterministic, standard-library-only, and tolerant of the
 legacy files still downloaded from many financial institutions.
+
+Re-importing a statement recognizes its rows by FITID (or, without one, by the
+row's own facts) and changes nothing. A new row that matches a transaction from
+elsewhere in the same account (entered by hand, imported from a CSV, or imported
+from an earlier statement under a different FITID) on the same date for the same
+amount is held back as a possible duplicate, one row per existing transaction,
+unless the caller includes possible duplicates. The statement's own transactions
+never count as such a match.
 """
 
 from __future__ import annotations
@@ -25,6 +33,7 @@ from ...gen.utils.amount_input import (
     parse_decimal_amount,
 )
 from ...gen.utils.logs import get_logger
+from .duplicates import DuplicateGuard
 from .gnucash_common import ImportResult, ImportSink
 from .quotes import record_security_quote
 
@@ -120,6 +129,42 @@ def _source_account(
         commodity=commodity,
         description=f"Imported OFX account ending {tail}",
     ).handle
+
+
+def _row_handle(
+    block: str,
+    account_id: str,
+    fallback_counts: dict[tuple[object, ...], int],
+    number_format: NumberFormat,
+) -> str | None:
+    """The stable transaction handle of one STMTTRN, or ``None`` when it is unreadable.
+
+    A FITID identifies the row; without one, its own facts and their occurrence
+    count in this statement do, so identical rows stay distinct.
+    """
+    try:
+        post_date = _parse_date(_tag(block, "DTPOSTED"))
+        amount = _parse_amount(_tag(block, "TRNAMT"), number_format)
+    except ValueError:
+        return None
+    fitid = _tag(block, "FITID")
+    if fitid:
+        identity = fitid
+    else:
+        memo = _tag(block, "MEMO")
+        description = _tag(block, "NAME") or memo or _tag(block, "TRNTYPE") or "OFX transaction"
+        fallback = (
+            account_id,
+            post_date.isoformat(),
+            str(amount),
+            description,
+            memo,
+            _tag(block, "CHECKNUM"),
+        )
+        occurrence = fallback_counts.get(fallback, 0) + 1
+        fallback_counts[fallback] = occurrence
+        identity = _stable_handle("fallback", *fallback, occurrence)
+    return _stable_handle("transaction", account_id, identity)
 
 
 def _counter_account(sink: ImportSink, db: DbSQLite, amount: Money) -> str:
@@ -303,6 +348,7 @@ def import_book(
     progress: Callable[[str, int, int], None] | None = None,
     number_format: NumberFormat | Literal["auto"] = "auto",
     notify: bool = True,
+    include_duplicates: bool = False,
 ) -> ImportResult:
     """Import OFX/QFX bank and credit-card statement transactions."""
     del include_scheduled
@@ -362,6 +408,14 @@ def import_book(
         if progress is not None:
             progress("Reading OFX transactions", done, len(transaction_blocks))
 
+    # This statement's own rows, so a re-imported row is never its own duplicate.
+    family_counts: dict[tuple[object, ...], int] = {}
+    family = {
+        handle
+        for block in transaction_blocks
+        if (handle := _row_handle(block, account_id, family_counts, detected_format))
+    }
+
     with db.transaction(message or f"Import {source.name}", batch=True, notify=notify) as txn:
         sink = ImportSink(db, txn, result)
         result.scan("transaction")
@@ -369,6 +423,7 @@ def import_book(
         statement_currency = db.get_commodity(commodity)
         fraction = statement_currency.fraction if statement_currency is not None else 100
         source_account = _source_account(sink, db, account_id, account_type, institution, commodity)
+        guard = None if include_duplicates else DuplicateGuard(db, source_account, family)
         fallback_counts: dict[tuple[object, ...], int] = {}
         for index, block in enumerate(transaction_blocks, 1):
             report(index)
@@ -383,26 +438,12 @@ def import_book(
                     kind="transaction",
                 )
                 continue
-            fitid = _tag(block, "FITID")
             name = _tag(block, "NAME")
             memo = _tag(block, "MEMO")
             description = name or memo or _tag(block, "TRNTYPE") or "OFX transaction"
+            handle = _row_handle(block, account_id, fallback_counts, detected_format)
+            assert handle is not None
             counter = _counter_account(sink, db, amount)
-            if fitid:
-                identity = fitid
-            else:
-                fallback = (
-                    account_id,
-                    post_date.isoformat(),
-                    str(amount),
-                    description,
-                    memo,
-                    _tag(block, "CHECKNUM"),
-                )
-                occurrence = fallback_counts.get(fallback, 0) + 1
-                fallback_counts[fallback] = occurrence
-                identity = _stable_handle("fallback", *fallback, occurrence)
-            handle = _stable_handle("transaction", account_id, identity)
             rate_info = _transaction_rate(block)
             if rate_info is not None:
                 code, raw_rate, foreign_amounts = rate_info
@@ -430,6 +471,17 @@ def import_book(
                     )
                     if foreign_amounts:
                         amount = (amount * rate).quantize(fraction)
+            if guard is not None and db.get_transaction(handle) is None:
+                if guard.claim(post_date, amount) is not None:
+                    result.possible_duplicates += 1
+                    result.skip(
+                        "possible duplicate of a transaction already in this account on the "
+                        "same date for the same amount",
+                        description,
+                        identity=handle,
+                        kind="transaction",
+                    )
+                    continue
             splits = sink.keep_local_categories(
                 handle,
                 source_account,

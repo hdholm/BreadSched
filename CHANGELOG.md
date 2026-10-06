@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a226 - 2026-10-06
+
+- **OFX imports hold back possible duplicates.** A new OFX/QFX bank or card row
+  matching a transaction already in the account from elsewhere (typed in, from a CSV,
+  or from a statement with a different FITID) on the same date for the same amount is
+  held back and reported (`ImportResult.possible_duplicates`), one row per existing
+  transaction; the statement's own rows never match themselves. `include_duplicates`
+  on the import service, CLI `import --include-duplicates`, and **Include possible
+  duplicates** in the GTK import dialog and the browser import form (JSON and upload
+  query `include_duplicates`) import them. QIF is not covered yet.
+
 ## 0.2.0a225 - 2026-10-06
 
 - **Expected reimbursements in Plan and Projection.** A receivable with an expected

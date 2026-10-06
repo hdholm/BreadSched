@@ -50,6 +50,7 @@ def cmd_import(args: argparse.Namespace) -> int:
                 source=args.source,
                 format=args.format,
                 include_scheduled=not args.no_scheduled,
+                include_duplicates=args.include_duplicates,
             ),
         )
         if not imported.ok:
@@ -85,6 +86,7 @@ def cmd_import(args: argparse.Namespace) -> int:
             "transactions_retained": result.transactions_retained,
             "transactions_held": result.transactions_held,
             "transactions_kept": result.transactions_kept,
+            "possible_duplicates": result.possible_duplicates,
             "splits": result.splits,
             "splits_new": result.splits_new,
             "splits_refreshed": result.splits_refreshed,
@@ -489,6 +491,12 @@ def register(add: AddCommand) -> None:
     imp.add_argument("--format", help="force an importer instead of detecting one")
     imp.add_argument("--no-scheduled", action="store_true", help="skip scheduled transactions")
     imp.add_argument("--max-warnings", type=int, default=10)
+    imp.add_argument(
+        "--include-duplicates",
+        action="store_true",
+        help="OFX: also import rows matching a transaction already in the account on the "
+        "same date for the same amount (held back by default)",
+    )
     imp.add_argument(
         "--no-infer",
         action="store_true",

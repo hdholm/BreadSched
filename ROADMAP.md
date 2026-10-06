@@ -119,7 +119,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Import scheduled transactions from additional formats where represented
   reliably.
 
-- Expand duplicate/re-import tests, including cross-file duplicate heuristics.
+- Hold possible duplicates in QIF imports as OFX imports do, and expand
+  duplicate/re-import tests.
 
 - Improve import summaries/problem reporting.
 
