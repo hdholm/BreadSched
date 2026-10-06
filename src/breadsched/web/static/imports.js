@@ -274,7 +274,7 @@ async function showImport() {
     el("label", {}, "Or enter a path visible to BreadSched", path),
     el("label", {}, "Number format", numberFormat),
     el("label", {}, "QIF date order", dateFormat),
-    el("label", { title:"An OFX row matching a transaction already in the account on the "
+    el("label", { title:"A QIF or OFX row matching a transaction already in the account on the "
       + "same date for the same amount is otherwise held back" },
       el("span", {}, "Include possible duplicates "), duplicates),
     el("button", { class:"action primary", type:"submit" }, "Import"));

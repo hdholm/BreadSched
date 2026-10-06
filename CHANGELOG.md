@@ -10,6 +10,16 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a227 - 2026-10-06
+
+- **QIF imports hold back possible duplicates.** A new QIF bank, cash, or card row
+  matching a transaction already in the account from elsewhere on the same date for
+  the same amount is held back and reported, as OFX rows are, one row per existing
+  transaction. New rows are decided after the whole file's handles are known, so an
+  export's own rows never match each other in any order. `include_duplicates` and
+  the CLI, GTK, and browser choices now apply to QIF too. QIF investment records are
+  not checked.
+
 ## 0.2.0a226 - 2026-10-06
 
 - **OFX imports hold back possible duplicates.** A new OFX/QFX bank or card row
