@@ -19,8 +19,10 @@ from ..gen.lib import (
 from ..gen.services import (
     CloseClaim,
     ReopenClaim,
+    SetReimbursementOverride,
     close_claim,
     reopen_claim,
+    set_reimbursement_override,
 )
 from ..gen.services.receivables import (
     RecordWriteOff,
@@ -582,6 +584,52 @@ def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
     return 0
 
 
+def _scenario_expectation(db: DbSQLite, args: argparse.Namespace) -> int:
+    """Change, in one scenario, what a payer is expected to reimburse and when."""
+    if not args.scenario:
+        raise CommandError("--scenario NAME is required with --expect")
+    scenario = db.get_scenario_by_name(args.scenario)
+    if scenario is None:
+        raise CommandError(f"no scenario named {args.scenario!r}")
+    receivable = _find_receivable(db, args.expect)
+    result = set_reimbursement_override(
+        db,
+        SetReimbursementOverride(
+            scenario.handle,
+            receivable.handle,
+            amount=Money(args.amount) if args.amount else None,
+            on=date.fromisoformat(args.on) if args.on else None,
+        ),
+    )
+    if not result.ok or result.value is None:
+        raise CommandError(service_error_message(result.errors[0]))
+    overrides = result.value.reimbursement_overrides
+    change = overrides.get(receivable.handle)
+    emit(
+        {
+            "scenario": result.value.name,
+            "reimbursement_overrides": {
+                handle: {"amount": item.amount, "on": item.on} for handle, item in overrides.items()
+            },
+        },
+        args,
+        f"{result.value.name}: {receivable.payer} "
+        + (
+            "reimbursement expected as the receivable says"
+            if change is None
+            else ", ".join(
+                part
+                for part in (
+                    f"pays {change.amount.format()}" if change.amount is not None else "",
+                    f"on {change.on.isoformat()}" if change.on is not None else "",
+                )
+                if part
+            )
+        ),
+    )
+    return 0
+
+
 def cmd_receivables(args: argparse.Namespace) -> int:
     """List reimbursable expenses, add or resolve one, or link ledger splits."""
     read_only = not (
@@ -594,11 +642,14 @@ def cmd_receivables(args: argparse.Namespace) -> int:
         or args.write_off
         or args.delete
         or args.accept_proposals
+        or args.expect
     )
     db = open_book(args.book, "r" if read_only else "w")
     try:
         if args.costs:
             return _receivable_costs(db, args)
+        if args.expect:
+            return _scenario_expectation(db, args)
         if args.proposals or args.accept_proposals:
             proposals = reimbursement_proposals(db).value or ()
             if args.accept_proposals:
@@ -938,8 +989,10 @@ def register(add: AddCommand) -> None:
         metavar="RECEIVABLE",
         help="give up on collecting part or all of the balance (with --amount --on)",
     )
-    receivables_cmd.add_argument("--amount", help="write-off amount")
-    receivables_cmd.add_argument("--on", metavar="DATE", help="date of the dispute or write-off")
+    receivables_cmd.add_argument("--amount", help="write-off or scenario amount")
+    receivables_cmd.add_argument(
+        "--on", metavar="DATE", help="date of the dispute or write-off, or the scenario's date"
+    )
     receivables_cmd.add_argument("--reason", help="write-off reason")
     receivables_cmd.add_argument(
         "--proposals",
@@ -952,6 +1005,13 @@ def register(add: AddCommand) -> None:
         help="link every current reimbursement proposal",
     )
     receivables_cmd.add_argument("--delete", metavar="RECEIVABLE", help="delete a receivable")
+    receivables_cmd.add_argument(
+        "--expect",
+        metavar="RECEIVABLE",
+        help="in --scenario, expect --amount back (0 for nothing) on --on DATE; with "
+        "neither, the scenario expects what the receivable says",
+    )
+    receivables_cmd.add_argument("--scenario", metavar="NAME", help="saved scenario for --expect")
     receivables_cmd.set_defaults(func=cmd_receivables)
 
     goals_cmd = add(

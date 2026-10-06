@@ -372,7 +372,8 @@ def delete_receivable(db: DbSQLite, handle: str) -> ServiceResult[str]:
     """Delete a receivable and its reclassifications; linked transactions are untouched.
 
     An FSA claim covering the rest of its expense is unlinked in the same edit,
-    so the claim again expects the whole EOB responsibility (issue #192).
+    so the claim again expects the whole EOB responsibility (issue #192), and any
+    scenario's change to its expected reimbursement is dropped.
     """
     receivable = db.get_receivable(handle)
     if receivable is None:
@@ -382,6 +383,9 @@ def delete_receivable(db: DbSQLite, handle: str) -> ServiceResult[str]:
             if claim.receivable == handle:
                 claim.receivable = None
                 db.commit_fsa_claim(claim, txn)
+        for scenario in list(db.iter_scenarios()):
+            if scenario.reimbursement_overrides.pop(handle, None) is not None:
+                db.commit_scenario(scenario, txn)
         for posting in receivable.postings:
             if db.get_transaction(posting) is not None:
                 db.remove_transaction(posting, txn)

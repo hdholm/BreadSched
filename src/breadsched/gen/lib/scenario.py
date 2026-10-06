@@ -35,6 +35,7 @@ __all__ = [
     "Drawdown",
     "GoalOverride",
     "OneOff",
+    "ReimbursementOverride",
     "ScenarioSchedule",
     "Assumptions",
     "AssumptionPeriod",
@@ -222,6 +223,44 @@ class GoalOverride:
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, GoalOverride) and self.serialize() == other.serialize()
+
+
+class ReimbursementOverride:
+    """How one scenario changes a reimbursement a payer is still expected to send.
+
+    ``amount`` is what the payer pays in this scenario (zero for nothing), never more
+    than what is still owed; the rest is projected as written off on the receipt
+    date, back into the expense. ``on`` moves the expected date. ``None`` keeps the
+    receivable's own value.
+    """
+
+    __slots__ = ("amount", "on")
+
+    def __init__(self, amount: Money | None = None, on: date | None = None) -> None:
+        self.amount = amount
+        self.on = on
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "amount": (
+                [self.amount.numerator, self.amount.denominator]
+                if self.amount is not None
+                else None
+            ),
+            "on": self.on.isoformat() if self.on else None,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ReimbursementOverride:
+        amount = data.get("amount")
+        on = data.get("on")
+        return cls(
+            amount=Money(*amount) if amount is not None else None,
+            on=date.fromisoformat(on) if on else None,
+        )
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, ReimbursementOverride) and self.serialize() == other.serialize()
 
 
 class ScenarioSchedule:
@@ -657,6 +696,8 @@ class Scenario(PrimaryObject):
         self.one_offs: list[OneOff] = []
         #: Savings-goal changes by goal handle; every other goal applies unchanged.
         self.goal_overrides: dict[str, GoalOverride] = {}
+        #: Expected-reimbursement changes by receivable handle (projection only).
+        self.reimbursement_overrides: dict[str, ReimbursementOverride] = {}
         #: Balance-dependent withdrawals this scenario models (projection only).
         self.drawdowns: list[Drawdown] = []
 
@@ -844,6 +885,10 @@ class Scenario(PrimaryObject):
                 handle: item.serialize() for handle, item in sorted(self.goal_overrides.items())
             },
             "drawdowns": [item.serialize() for item in self.drawdowns],
+            "reimbursement_overrides": {
+                handle: item.serialize()
+                for handle, item in sorted(self.reimbursement_overrides.items())
+            },
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -896,6 +941,10 @@ class Scenario(PrimaryObject):
             for handle, item in data.get("goal_overrides", {}).items()
         }
         self.drawdowns = [Drawdown.from_dict(item) for item in data.get("drawdowns", [])]
+        self.reimbursement_overrides = {
+            handle: ReimbursementOverride.from_dict(item)
+            for handle, item in data.get("reimbursement_overrides", {}).items()
+        }
 
     def account_references(self) -> set[str]:
         """Every account this scenario names, which must exist while it is saved."""

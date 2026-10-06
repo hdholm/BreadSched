@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone
     from .gen.engine.projection import Projection
+    from .gen.engine.reimbursement_outlook import ReimbursementOutlook
     from .gen.engine.savings_goals import GoalProgress
     from .gen.lib.scenario import GoalOverride
     from .gen.services.plan import PlanGoalMilestone
@@ -241,6 +242,13 @@ _SERVICE_MESSAGES = {
     "scenario.drawdown.account": "Choose a non-cash asset account to withdraw from",
     "scenario.drawdown.into": "Choose a spendable cash account to pay the withdrawals into",
     "scenario.drawdown.method": "Give either a yearly amount or a yearly percentage, not both",
+    "scenario.reimbursement.not_expected": (
+        "Only a reimbursement still expected on a future date can be changed in a scenario"
+    ),
+    "scenario.reimbursement.amount": (
+        "The amount expected back must be between zero and what is still owed"
+    ),
+    "scenario.reimbursement.date": "The expected date cannot be in the past",
     "scenario.drawdown.amount": "The yearly amount must be more than zero",
     "scenario.drawdown.rate": "The yearly percentage must be more than 0% and at most 100%",
     "scenario.drawdown.dates": "The end date cannot be before the start date",
@@ -537,6 +545,37 @@ def projection_goal_notes(result: Projection) -> list[str]:
         )
     notes.extend(f"Goal {goal_milestone_text(item)}." for item in result.goal_milestones)
     return notes
+
+
+def reimbursement_outlook_text(item: ReimbursementOutlook) -> str:
+    """One expected reimbursement's gross and net cost in a projection scenario."""
+    receivable = item.receivable
+    label = f"{receivable.payer}: {receivable.description}"
+    earlier = item.reimbursed + item.written_off
+    before = f", {earlier.format()} already reimbursed or written off" if earlier else ""
+    if item.expected > 0:
+        expected = f"{item.expected.format()} expected back on {item.expected_on.isoformat()}"
+    else:
+        expected = f"nothing expected back (written off on {item.expected_on.isoformat()})"
+    shortfall = (
+        f"; {item.shortfall.format()} of what is owed is not expected and is projected "
+        "as written off"
+        if item.shortfall > 0 and item.expected > 0
+        else ""
+    )
+    changed = " (changed in this scenario)" if item.changed else ""
+    return (
+        f"Reimbursable {label}{changed}: gross cost {item.gross.format()}{before}; "
+        f"{expected}{shortfall}; net household cost {item.net_cost.format()}."
+    )
+
+
+def projection_notes(result: Projection) -> list[str]:
+    """Goal and expected-reimbursement notes a projection shows in every interface."""
+    return [
+        *projection_goal_notes(result),
+        *(reimbursement_outlook_text(item) for item in result.reimbursements),
+    ]
 
 
 def plan_goal_text(milestone: PlanGoalMilestone) -> str:

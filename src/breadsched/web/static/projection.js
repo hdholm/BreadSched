@@ -260,10 +260,15 @@ async function showProjection() {
     ? el("section", { class: "projection-goals" }, el("h3", {}, "Savings goals"),
       ...data.goal_notes.map((line) => el("p", { class: "note" }, line)))
     : null;
+  const reimbursementNotes = (data.reimbursement_notes || []).length
+    ? el("section", { class: "projection-reimbursements" },
+      el("h3", {}, "Reimbursable expenses: gross and net cost"),
+      ...data.reimbursement_notes.map((line) => el("p", { class: "note" }, line)))
+    : null;
   return el("div", {},
     el("h2", {}, "Projection"),
     form, cards, completenessDetails(data.completeness, "Projection"), chart(data.rows),
-    comparisonView, goalNotes, warnings,
+    comparisonView, goalNotes, reimbursementNotes, warnings,
     (data.bridges || []).length ? el("details", { class: "projection-bridge" },
       el("summary", {}, "How the projection reconciles"),
       el("p", { class: "note" }, "From the first month's opening to the last month's "

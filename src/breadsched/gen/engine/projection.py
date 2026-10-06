@@ -32,6 +32,7 @@ from .conversion import (
 from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
 from .goal_projection import GoalMilestone, project_goals
+from .reimbursement_outlook import ReimbursementOutlook, reimbursement_outlook
 
 __all__ = [
     "MonthLedger",
@@ -402,6 +403,8 @@ class Projection:
     warnings: list[str] = field(default_factory=list)
     #: Each savings goal's target date in this scenario (pinned unless overridden).
     goal_milestones: list[GoalMilestone] = field(default_factory=list)
+    #: Each reimbursement expected in the range, with its gross and net cost.
+    reimbursements: list[ReimbursementOutlook] = field(default_factory=list)
     #: Opening balances and events left out for lack of an exchange rate (#236).
     excluded: tuple[Excluded, ...] = ()
 
@@ -1329,6 +1332,7 @@ def _project_events(
     for row, goals in zip(result.rows, goal_months, strict=True):
         row.goals_set_aside = goals.set_aside
         row.goals_held = goals.held
+    result.reimbursements = reimbursement_outlook(db, scenario, start, end)
     _report_progress(progress, end, start, end, "Complete")
     return result
 

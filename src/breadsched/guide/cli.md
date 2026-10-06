@@ -299,7 +299,13 @@ breadsched receivables book.breadsched --delete RECEIVABLE
 breadsched receivables book.breadsched --proposals         # credits that look like money back
 breadsched receivables book.breadsched --accept-proposals  # link every current proposal
 breadsched receivables book.breadsched --costs 2026-01-01 2026-12-31  # gross and net cost
+breadsched receivables book.breadsched --scenario Careful --expect RECEIVABLE \
+    --amount 90 --on 2026-12-15   # in that scenario only; --amount 0 for nothing
+breadsched receivables book.breadsched --scenario Careful --expect RECEIVABLE  # undo
 ```
+
+`project` lists each expected reimbursement's gross and net cost in its notes and,
+with `--json`, under `reimbursements`.
 
 Link the split that records the cost with `--attach-expense`, and the split that
 credits money back (a deposit's other split posted to the same expense account,

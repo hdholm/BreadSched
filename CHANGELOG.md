@@ -10,6 +10,22 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a237 - 2026-10-06
+
+- **Projection shows reimbursable expenses' gross and net cost, and scenarios can
+  change what a payer is expected to send.** `Scenario.reimbursement_overrides`
+  (`ReimbursementOverride`: amount paid, zero for nothing, and expected date) changes
+  an expected reimbursement in one scenario; what it does not expect is projected as
+  written off on that date back into the expense (`planning.receivable_receipt_events`
+  via `engine/reimbursement_outlook.scenario_receipts`), so the receivable still
+  empties and the shortfall is projected spending. `Projection.reimbursements` lists
+  each receipt's gross cost, earlier reimbursements and write-offs, what the scenario
+  expects, and the net household cost, worded by
+  `presentation.reimbursement_outlook_text` in GTK, the browser (`reimbursements`,
+  `reimbursement_notes`), print, and `project`. `set_reimbursement_override` validates
+  and stores changes; `receivables --scenario NAME --expect RECEIVABLE [--amount]
+  [--on]` sets or clears one; deleting a receivable drops them.
+
 ## 0.2.0a236 - 2026-10-06
 
 - **Retirement drawdowns in the desktop and browser.** The desktop scenario manager

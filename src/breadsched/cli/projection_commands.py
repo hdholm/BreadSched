@@ -34,7 +34,8 @@ from ..gen.services import (
 )
 from ..presentation import (
     goal_milestone_text,
-    projection_goal_notes,
+    projection_notes,
+    reimbursement_outlook_text,
     service_error_message,
 )
 from .common import (
@@ -257,6 +258,10 @@ def cmd_project(args: argparse.Namespace) -> int:
                     for index, r in enumerate(result.rows)
                 ],
                 "goal_milestones": milestones,
+                "reimbursements": [
+                    {**item.as_dict(), "text": reimbursement_outlook_text(item)}
+                    for item in result.reimbursements
+                ],
                 **(
                     {
                         "bridge_period": bridges[0],
@@ -280,7 +285,7 @@ def cmd_project(args: argparse.Namespace) -> int:
                 )
             else:
                 print(f"  Lowest cash balance: {result.minimum_cash.format()}")
-            for note in projection_goal_notes(result):
+            for note in projection_notes(result):
                 print(f"  {note}")
             if not result.completeness.complete:
                 print(f"  {result.completeness.label}: the figures above leave out:")
