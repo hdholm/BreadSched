@@ -21,6 +21,10 @@ section. Commits and pull requests hold the complete history.
   comparison, and says so. The web and CLI milestone JSON now come from one
   `GoalMilestone.as_dict` and add `cash_account`, `account`, `account_name`,
   `account_close`, and `account_held`.
+- **GTK tests run in parallel in CI.** The session-bus GTK run now uses two xdist
+  workers (`make test-gui-parallel`); the serial run stays as the diagnostic path.
+  Test application identities include the xdist worker, so processes sharing a bus
+  never collide.
 
 ## 0.2.0a220 - 2026-10-06
 

@@ -15,6 +15,7 @@ from __future__ import annotations
 import gc
 import importlib
 import itertools
+import os
 import re
 import shutil
 import threading
@@ -93,7 +94,9 @@ def app(tmp_path):
     session bus exists — which is a developer's machine, not a CI runner, so the
     failure only shows up where it is least expected.
     """
-    identifier = f"{APP_ID}.Test{next(_APP_IDS)}"
+    # The xdist worker keeps identities distinct between processes sharing a bus.
+    worker = os.environ.get("PYTEST_XDIST_WORKER", "main").replace("gw", "Worker")
+    identifier = f"{APP_ID}.{worker.capitalize()}.Test{next(_APP_IDS)}"
     application = BreadSchedApplication(
         application_id=identifier,
         unique=False,
@@ -154,6 +157,21 @@ class TestApplicationIdentity:
         second.register()
         assert second.get_is_registered()
         assert app.get_is_registered()
+
+    def test_test_identities_are_valid_and_distinct_per_xdist_worker(self, app):
+        from breadsched.gui.gi_setup import Gio
+
+        identifier = app.get_application_id()
+        assert Gio.Application.id_is_valid(identifier)
+        worker = os.environ.get("PYTEST_XDIST_WORKER", "main").replace("gw", "Worker")
+        assert f".{worker.capitalize()}.Test" in identifier
+
+    def test_ci_runs_gtk_tests_serially_and_in_bounded_parallel(self):
+        workflow = (Path(__file__).resolve().parent.parent / ".github/workflows/ci.yml").read_text(
+            encoding="utf-8"
+        )
+        assert "xvfb-run -a .venv/bin/pytest -m gui -v" in workflow
+        assert "dbus-run-session -- xvfb-run -a .venv/bin/pytest -m gui -n 2" in workflow
 
     def test_windows_use_the_installed_application_icon(self, app):
         assert Gtk.Window.get_default_icon_name() == APP_ID
