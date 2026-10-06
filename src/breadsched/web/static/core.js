@@ -7,7 +7,7 @@ let state = {
   accounts: [], account: launchParams.get("account"), plan: null, review: null,
   planPrintDetail: false, expenseCategory: null, expenseIndex: 0, expenseSort: "actual",
   expenseRollover: false,
-  scenarioManager: null, scenarioPeriod: null, scenarioEvent: null,
+  scenarioManager: null, scenarioPeriod: null, scenarioEvent: null, scenarioDrawdown: null,
   // A page opened for one scenario ("Open in new tab") starts on it; "" is Base.
   projectionData: null, projectionHandle: launchParams.get("scenario"),
   projectionCompareHandle: null,

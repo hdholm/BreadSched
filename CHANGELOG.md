@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a236 - 2026-10-06
+
+- **Retirement drawdowns in the desktop and browser.** The desktop scenario manager
+  gains **Edit retirement drawdowns…**, a list with add, edit, and remove, and an
+  editor for the source and cash accounts, dates, and either a fixed yearly amount
+  (rising with inflation or level) or a yearly share of the balance. The browser's
+  Manage scenarios page gains the same **Retirement drawdowns** section through
+  `/api/scenario/drawdown/save` and `/delete`; `/api/scenarios` lists the eligible
+  accounts. Both use the shared drawdown services, so a refused entry changes
+  nothing. **Save as scenario** in Projection keeps a scenario's drawdowns.
+
 ## 0.2.0a235 - 2026-10-06
 
 - **Retirement drawdown in scenarios.** `Scenario.drawdowns` withdraws monthly from

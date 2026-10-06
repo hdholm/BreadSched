@@ -835,6 +835,11 @@ month's detail. Drawdowns belong to their own scenario: they are not posted, do 
 appear in the Plan, and a child scenario does not inherit them. Older BreadSched
 versions ignore a scenario's drawdowns and drop them if they save that scenario.
 
+Set drawdowns up from a saved scenario in the
+[desktop](guide/desktop.md#plan-and-projection) or
+[browser](guide/web.md#plan-and-projection) scenario manager, or with
+[`breadsched drawdown`](guide/cli.md#projection-and-scenarios).
+
 ### How a projection reconciles
 
 Every projected balance is explained, not estimated from a total. For each month,

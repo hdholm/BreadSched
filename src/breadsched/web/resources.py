@@ -110,6 +110,8 @@ from .savings_goal_resource import (
 )
 from .scenario_resource import (
     scenario_delete,
+    scenario_drawdown_delete,
+    scenario_drawdown_save,
     scenario_duplicate,
     scenario_event_save,
     scenario_event_suppress,
@@ -420,6 +422,8 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/scenario/delete": scenario_delete,
     "/api/scenario/period/save": scenario_period_save,
     "/api/scenario/period/delete": scenario_period_delete,
+    "/api/scenario/drawdown/save": scenario_drawdown_save,
+    "/api/scenario/drawdown/delete": scenario_drawdown_delete,
     "/api/scenario/event/save": scenario_event_save,
     "/api/scenario/event/suppress": scenario_event_suppress,
     "/api/projection/calculate": projection_calculate,

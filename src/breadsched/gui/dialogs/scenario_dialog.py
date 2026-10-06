@@ -90,6 +90,7 @@ class SaveScenarioDialog(BoundedWindow):
         target.account_assumption_suppressions = set(self.scenario.account_assumption_suppressions)
         target.opening_overrides = dict(self.scenario.opening_overrides)
         target.one_offs = list(self.scenario.one_offs)
+        target.drawdowns = list(self.scenario.drawdowns)
         target.assumption_periods = list(self.scenario.assumption_periods)
         target.schedule_overrides = list(self.scenario.schedule_overrides)
 

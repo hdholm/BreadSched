@@ -145,6 +145,13 @@ under the chart shows them across the whole projection (see
 [How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)). **Open in new tab** keeps the chosen
 scenario's projection in another browser tab.
 
+Under **Retirement drawdowns** on the same page, **Add drawdown…** sets up a saved
+scenario's [retirement drawdown](../USER_GUIDE.md#retirement-drawdown): the account to
+withdraw from, the cash account to pay into, the start date, an optional end date, and
+either a fixed yearly amount (optionally rising with expense inflation) or a yearly
+share of the balance in percent. **Edit** and **Remove** change or delete a drawdown;
+a refused entry explains why and changes nothing.
+
 ### Explore expenses
 
 Apply the Plan controls first, then scroll to **Expense Explorer** on the Plan page,

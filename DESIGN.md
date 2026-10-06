@@ -1164,7 +1164,12 @@ exactly one of a positive amount or a rate in (0, 1], and an end not before the 
 `Scenario.account_references` names every account a scenario uses (rates, opening
 overrides, one-offs, dated periods, goal purchase accounts, and both drawdown
 accounts); whole-book and change verification both use it, so deleting any of
-those accounts is refused.
+those accounts is refused. The GTK `DrawdownsDialog` (from the scenario manager) and
+the browser's **Retirement drawdowns** section call the same services through
+`/api/scenario/drawdown/save` and `/delete`, whose adapter only parses input (a
+browser percent is divided by 100 as a decimal, never a float) and returns the
+scenario payload with its `drawdowns`; `/api/scenarios` lists `drawdown_sources` and
+`drawdown_targets`.
 
 ## Valuation and reporting
 

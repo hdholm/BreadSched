@@ -4172,6 +4172,67 @@ class TestScenarioManagementApi:
         period = saved["periods"][0]
         assert period["per_account"] == {account["handle"]: "0.035"}
 
+    def test_drawdowns_can_be_added_edited_refused_and_deleted(self, client):
+        _status, listing = client.get("/api/scenarios")
+        sources = {item["name"]: item["handle"] for item in listing["drawdown_sources"]}
+        targets = {item["name"]: item["handle"] for item in listing["drawdown_targets"]}
+        assert "Assets:Checking" in targets and "Assets:Checking" not in sources
+        _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
+        handle = scenario["handle"]
+        request = {
+            "handle": handle,
+            "account": sources["Assets:401(k)"],
+            "into": targets["Assets:Checking"],
+            "start": "2040-07-01",
+            "end": "",
+            "method": "amount",
+            "annual_amount": "36,000.00",
+            "annual_rate": "",
+            "escalate": True,
+        }
+        _status, saved = client.post("/api/scenario/drawdown/save", request)
+        (drawdown,) = saved["drawdowns"]
+        assert drawdown["annual_amount"] == "36000.00" and drawdown["annual_rate"] is None
+
+        edited_request = {
+            **request,
+            "drawdown": drawdown["handle"],
+            "method": "rate",
+            "annual_percent": "4.1",
+            "end": "2060-12-31",
+        }
+        _status, edited = client.post("/api/scenario/drawdown/save", edited_request)
+        (changed,) = edited["drawdowns"]
+        assert (changed["handle"], changed["annual_rate"], changed["annual_amount"]) == (
+            drawdown["handle"],
+            "0.041",
+            None,
+        )
+        assert changed["end"] == "2060-12-31"
+
+        for bad, code in (
+            ({"annual_percent": "150"}, "scenario.drawdown.rate"),
+            ({"into": sources["Assets:401(k)"]}, "scenario.drawdown.into"),
+            ({"end": "2030-01-01"}, "scenario.drawdown.dates"),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/scenario/drawdown/save", {**edited_request, **bad})
+            assert caught.value.code == 400
+            assert json.loads(caught.value.read())["code"] == code
+        _status, unchanged = client.get("/api/scenarios")
+        stored = next(item for item in unchanged["scenarios"] if item["handle"] == handle)
+        assert stored["drawdowns"] == [changed]
+
+        _status, removed = client.post(
+            "/api/scenario/drawdown/delete", {"handle": handle, "drawdown": changed["handle"]}
+        )
+        assert removed["drawdowns"] == []
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/scenario/drawdown/delete", {"handle": handle, "drawdown": changed["handle"]}
+            )
+        assert caught.value.code == 404
+
     def test_dated_assumptions_can_be_added_edited_and_deleted(self, client):
         _status, scenario = client.post("/api/scenario/duplicate", {"handle": None})
         handle = scenario["handle"]

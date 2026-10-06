@@ -28,6 +28,7 @@ from ..planning_context import (
 )
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
+from .drawdown_dialog import DrawdownsDialog
 
 __all__ = ["ScenarioManagerDialog"]
 
@@ -42,7 +43,7 @@ _ASSUMPTIONS = (
 
 
 class ScenarioManagerDialog(BoundedWindow):
-    """Rename, duplicate, delete, and edit a saved scenario's base assumptions."""
+    """Rename, duplicate, delete, and edit a saved scenario's assumptions and drawdowns."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, manager) -> None:
         super().__init__(title="Manage scenarios", transient_for=parent, modal=True)
@@ -150,6 +151,16 @@ class ScenarioManagerDialog(BoundedWindow):
         self.event_summary.add_css_class("dim")
         self.editor.append(self.event_summary)
 
+        drawdown_row = Gtk.Box(spacing=8)
+        self.drawdown_summary = Gtk.Label(xalign=0, wrap=True)
+        self.drawdown_summary.add_css_class("dim")
+        self.drawdown_summary.set_hexpand(True)
+        drawdown_row.append(self.drawdown_summary)
+        self.drawdown_button = Gtk.Button(label="Edit retirement drawdowns…")
+        self.drawdown_button.connect("clicked", self._on_edit_drawdowns)
+        drawdown_row.append(self.drawdown_button)
+        self.editor.append(drawdown_row)
+
         self.status = Gtk.Label(xalign=0, wrap=True)
         box.append(self.status)
 
@@ -208,6 +219,7 @@ class ScenarioManagerDialog(BoundedWindow):
         self.duplicate_button.set_sensitive(enabled)
         self.delete_button.set_sensitive(enabled and not base)
         self.timeline_button.set_sensitive(enabled and not base)
+        self.drawdown_button.set_sensitive(enabled and not base)
         self.name_entry.set_sensitive(enabled and not base)
         self.description_entry.set_sensitive(enabled and not base)
         self.parent_label.set_visible(enabled and not base)
@@ -218,6 +230,7 @@ class ScenarioManagerDialog(BoundedWindow):
             self.timeline_summary.set_text("No saved scenarios yet.")
             self.account_summary.set_text("")
             self.event_summary.set_text("")
+            self.drawdown_summary.set_text("")
             return
 
         self.name_entry.set_text("Base scenario" if base else scenario.name)
@@ -243,11 +256,13 @@ class ScenarioManagerDialog(BoundedWindow):
             self.event_summary.set_text(
                 "Base scenario uses the book's baseline scheduled and estimated activity."
             )
+            self.drawdown_summary.set_text("Retirement drawdowns belong to saved scenarios.")
         else:
             self.timeline_summary.set_text(f"{periods} dated assumption period(s).")
             self.event_summary.set_text(
                 f"{changes} scenario-specific recurring event change(s) are preserved here."
             )
+            self.drawdown_summary.set_text(f"{len(scenario.drawdowns)} retirement drawdown(s).")
         self.status.set_text("")
         self.status.remove_css_class("negative")
 
@@ -403,6 +418,17 @@ class ScenarioManagerDialog(BoundedWindow):
         if scenario is None or self._base_selected():
             return
         AssumptionTimelineDialog(self, self.db, scenario, self._timeline_saved).present()
+
+    def _on_edit_drawdowns(self, _button) -> None:
+        scenario = self._selected()
+        if scenario is None or self._base_selected():
+            return
+        DrawdownsDialog(self, self.db, scenario, self._drawdowns_saved).present()
+
+    def _drawdowns_saved(self, handle: str) -> None:
+        self._reload(handle)
+        self.status.set_text("Retirement drawdowns saved.")
+        self.status.remove_css_class("negative")
 
     def _timeline_saved(self, handle: str) -> None:
         self._reload(handle)

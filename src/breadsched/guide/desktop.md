@@ -288,6 +288,13 @@ Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection. T
 keep several scenarios open at once, use **New tab** in Projection (see
 [Find your way around](#find-your-way-around)).
 
+To model [retirement drawdown](../USER_GUIDE.md#retirement-drawdown), choose a saved
+scenario in **Scenarios**, then **Edit retirement drawdowns…**. **Add…** asks for the
+account to withdraw from, the cash account to pay into, the start date, an optional
+end date, and either **A fixed yearly amount** (with **Rise with expense inflation
+each year**) or **A yearly share of the balance (%)**. **Edit…** changes the chosen
+drawdown and **Remove** deletes it; a refused entry explains why and changes nothing.
+
 ### Explore expenses
 
 Apply the Plan controls first, then choose the **Explore** toolbar icon while Plan

@@ -912,3 +912,40 @@ def test_a_withheld_net_worth_names_what_it_leaves_out(page, served):
     assert detail.endswith("no exchange rate")
     page.wait_for_selector("h2:has-text('Net worth history')")
     assert page.locator("svg.net-worth-chart text.chart-unavailable").count() >= 1
+
+
+def test_a_scenario_drawdown_is_added_from_manage_scenarios(page, served):
+    from decimal import Decimal
+
+    from breadsched.gen.lib import Account, AccountType, Scenario
+    from breadsched.gen.services import drawdown_accounts
+
+    db, httpd = served
+    today = date.today()
+    assets = next(item for item in db.iter_accounts() if item.name == "Assets")
+    scenario = Scenario(name="Retire early", start=today.replace(day=1), years=5)
+    with db.transaction("Retirement account and scenario") as txn:
+        db.add_account(Account(name="IRA", atype=AccountType.RETIREMENT, parent=assets.handle), txn)
+        db.add_scenario(scenario, txn)
+    sources, targets = drawdown_accounts(db)
+    page.goto(f"http://127.0.0.1:{httpd.server_port}/#token={httpd.token}")
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Plan", exact=True).first.click()
+    page.get_by_role("button", name="Manage scenarios…").click()
+    page.wait_for_selector("h2:has-text('Manage scenarios')")
+    page.locator(".toolbar select").first.select_option(label="Retire early")
+    page.get_by_role("button", name="Add drawdown…").click()
+    editor = page.locator("form.drawdown-editor")
+    editor.locator("select[name=account]").select_option(value=sources[0])
+    editor.locator("select[name=into]").select_option(value=targets[0])
+    editor.locator("input[name=method][value=rate]").check()
+    editor.locator("input[name=annual_rate]").fill("4.1")
+    editor.get_by_role("button", name="Save drawdown").click()
+    page.wait_for_selector("text=Drawdown saved.")
+    page.wait_for_selector("text=4.1% of the balance a year")
+    (stored,) = db.get_scenario(scenario.handle).drawdowns
+    assert (stored.account, stored.into, stored.annual_rate) == (
+        sources[0],
+        targets[0],
+        Decimal("0.041"),
+    )
