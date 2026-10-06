@@ -166,11 +166,15 @@ def test_windows_installer_carries_its_runtime_and_is_tested_in_ci():
     assert "-m breadsched.cli.main" in build and "-m breadsched.gui" in script
     # The NSIS plugin directory is named explicitly: MSYS2's NSIS 3.13 reports none.
     assert "!addplugindir /x86-unicode" in build and "nsDialogs.dll" in build
-    assert 'makensis -V2 -X"!addplugindir /x86-unicode' in build
+    assert '"$makensis_bin" -V2 -X"!addplugindir /x86-unicode' in build
+    # makensis, its stubs, and its plugins come from one NSIS release.
+    assert '"$nsis/makensis.exe"' in build and '"$nsis/Plugins/x86-unicode"' in build
     # MSYS2's NSIS carries no plugins, so CI provides the official build's.
     for name in ("ci.yml", "release.yml"):
         text = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
         assert text.index("choco install nsis") < text.index("build-installer.sh"), name
+        job = text[text.index("runs-on: windows-latest\n") :]
+        assert "timeout-minutes: 30" in job[: job.index("steps:")], name
     # Per-user, and an upgrade replaces the runtime without touching books.
     assert "RequestExecutionLevel user" in script
     assert 'RMDir /r "$INSTDIR\\runtime"' in script

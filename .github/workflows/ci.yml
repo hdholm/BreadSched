@@ -171,6 +171,8 @@ jobs:
   windows-installer:
     name: Build and test Windows installer
     runs-on: windows-latest
+    # A silent installer that waits forever must fail the job, not hold it for hours.
+    timeout-minutes: 30
     defaults:
       run:
         shell: msys2 {0}

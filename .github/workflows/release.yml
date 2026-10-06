@@ -113,6 +113,8 @@ jobs:
     needs: prepare
     if: needs.prepare.outputs.selected == 'true'
     runs-on: windows-latest
+    # A silent installer that waits forever must fail the job, not hold it for hours.
+    timeout-minutes: 30
     env:
       VERSION: ${{ needs.prepare.outputs.version }}
       TESTED_SHA: ${{ github.event.workflow_run.head_sha }}

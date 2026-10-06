@@ -2478,8 +2478,11 @@ the wheel into an MSYS2 UCRT64 prefix beside Python, GTK 4, PyGObject, and cairo
 stages that prefix under `runtime\` without development files, adds launchers and
 the icon, and compiles `breadsched.nsi`, naming the x86-unicode NSIS plugin directory
 (nsDialogs, nsExec) with `!addplugindir`. MSYS2's NSIS 3.13 ships no plugins, so CI
-and release install the official NSIS build with Chocolatey to provide them; the
-script stops before `makensis` when no plugin directory is found.
+and release install the official NSIS build with Chocolatey, and the script compiles
+with that release's own `makensis.exe` so the stubs and plugins match (mixing
+MSYS2's makensis with the official plugins produced an installer that hung in a
+silent upgrade). MSYS2's makensis is used only with plugins of its own; otherwise
+the script stops before compiling. Both installer jobs time out after 30 minutes.
 
 - It installs per user (no administrator rights) under
   `%LOCALAPPDATA%\Programs\BreadSched` and registers under HKCU. Books never live
