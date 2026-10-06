@@ -27,6 +27,8 @@ section. Commits and pull requests hold the complete history.
   parsers. Removed dead Plan date helpers and a `transport`/`server` import cycle.
   Behavior is unchanged except that a one-time schedule's editor may now leave the
   end date or count filled; both are ignored, as the scenario editor already did.
+  A web Dashboard test that failed on any day a sample occurrence fell due (it
+  counted that day's pending bill as missed) now counts only overdue dates.
   No schema change.
 
 ## 0.2.0a215 - 2026-10-01

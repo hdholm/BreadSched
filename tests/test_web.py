@@ -3265,7 +3265,13 @@ class TestDashboardApi:
         total = sum(Decimal(entry["amount"]) for entry in rent["occurrences"])
         assert Decimal(rent["amount"]) == total
         assert rent["frequency"] == "every month"
-        assert sum(1 for item in board["bills"] if item["name"] == "Sample rent") == rent["missed"]
+        # An occurrence due today is pending, not missed, and keeps its own row.
+        overdue = [
+            item
+            for item in board["bills"]
+            if item["name"] == "Sample rent" and item["next_due"] < today.isoformat()
+        ]
+        assert len(overdue) == rent["missed"]
 
     def test_the_endpoint_answers(self, client):
         status, payload = client.get("/api/dashboard")
