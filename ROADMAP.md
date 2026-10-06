@@ -83,9 +83,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Add richer charts, cash-runway comparisons, and deeper account explanations.
 
-- Compare savings goals held in non-cash accounts with that account's projected
-  balance (projection rows carry only summed holdings today), and let a scenario
-  model a goal's purchase as a dated one-off after its target date.
+- Let a scenario model a savings goal's purchase as a dated one-off after its
+  target date.
 
 - Evolve assumptions toward extensible dated rules (salary changes, retirement,
   pensions/Social Security, temporary expenses, mortgage payoff, changing

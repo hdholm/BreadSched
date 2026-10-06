@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a221 - 2026-10-06
+
+- **Goals in non-cash accounts are compared with the account's projected balance.**
+  A savings goal held in a brokerage or other non-cash asset account now has a
+  Projection milestone that compares that account's projected closing balance in the
+  target month with everything goals in that account have set aside then
+  (`GoalMilestone.account_close`, `account_held`, `covered`), instead of saying it is
+  not compared. An account excluded from projection is still listed without a
+  comparison, and says so. The web and CLI milestone JSON now come from one
+  `GoalMilestone.as_dict` and add `cash_account`, `account`, `account_name`,
+  `account_close`, and `account_held`.
+
 ## 0.2.0a220 - 2026-10-06
 
 - **Contextual help.** Import (file, CSV, held GnuCash changes, write-back),

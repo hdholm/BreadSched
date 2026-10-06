@@ -1095,7 +1095,12 @@ the day before the scenario, funds each month's gap from that scenario's own
 projected income, and holds the whole target from the target month. Projection rows
 carry `goals_set_aside`, `goals_held`, and `cash_after_goals`, milestones record
 whether projected cash covers goal money, and `first_goal_shortfall` is the first
-month cash covers bills but not goals. Plan lists goals whose target date falls in its
+month cash covers bills but not goals. A goal in a non-cash asset account is
+compared with that account's projected closing balance (`MonthLedger.closing_holdings`,
+passed to `project_goals`) in its target month against every earmark on that account
+then (`GoalMilestone.account_close` and `account_held`); an account excluded from
+projection has no balance, so `covered` stays `None`. `GoalMilestone.as_dict` is the
+one JSON shape the web and CLI return. Plan lists goals whose target date falls in its
 range with what they have actually set aside.
 
 `services.savings_goals` owns validation and every write (save, allocate, close,

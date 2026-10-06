@@ -949,7 +949,11 @@ more income or a later target sets money aside more slowly. Each goal's target
 month appears as a milestone. It says whether the projected cash then covers
 everything set aside for goals in cash accounts. If cash covers bills but not goal
 money, the projection names the first month that happens. A goal held in a
-non-cash account is listed but not compared with cash. The projection CSV export
+non-cash account, such as a brokerage account, is compared instead with that
+account's projected balance in its target month: the milestone says whether the
+balance covers everything goals in that account have set aside. An account left
+out of projections has no projected balance, so its goals are listed without a
+comparison. The projection CSV export
 adds each month's goal money and the cash left after it.
 
 In **Plan**, goals whose target date falls in the range are listed with their
