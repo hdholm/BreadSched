@@ -87,6 +87,61 @@ scenario are included. Open it in the desktop application or the browser, inspec
 Dashboard, then select the following month in Plan. The sample is for exploration,
 not financial advice or a template whose amounts should be copied into a real book.
 
+### Walkthrough: set up a household
+
+This walkthrough builds a working household book from nothing. The
+[command line](guide/cli.md#walkthrough-set-up-a-household) has the same steps as
+commands you can run as written; in the desktop application or the browser, use the
+screens linked from each step. Use your own names and amounts; the walkthrough's are
+invented.
+
+1. **Create the book.** A new book starts with Assets, Liabilities, Equity,
+   Income, and Expenses.
+2. **Add accounts with opening balances**
+   ([Organize and edit accounts](#organize-and-edit-accounts)): a checking and a
+   savings account, a retirement account, and a credit card, each with its balance
+   on one opening date. Equity takes the other side, so net worth is right from the
+   first day. Give the card its usual payment, payment day, and paying account so
+   the Dashboard counts the payment as a bill
+   ([Credit-card payments](#credit-card-payments)).
+3. **Add income and expense categories**, such as Salary, Housing, Groceries, and
+   Utilities.
+4. **Describe the money that comes and goes**
+   ([Scheduled activity](#scheduled-activity),
+   [Commitments and estimates](#commitments-and-estimates)). Pay and rent are
+   usually scheduled transactions; spending that varies, such as groceries, is a
+   Plan estimate. Add a loan with [Create a loan](#create-a-loan) so each payment
+   splits principal and interest, and schedule regular transfers into savings or
+   retirement.
+5. **Add a savings goal** ([Savings goals](#savings-goals)) for something you are
+   saving toward.
+6. **Check the near term.** The Dashboard
+   ([Dashboard and near-term cash](#dashboard-and-near-term-cash)) shows what is
+   liquid, what is needed in the next 30 days, and what goals set aside; the
+   [Plan](#plan) shows each month's planned income and spending.
+7. **Save a Base scenario and project it** ([Projection and scenarios](#projection-and-scenarios))
+   to see cash and net worth year by year, and whether each goal is covered.
+
+From then on, record what actually happens (enter, import, or review transactions)
+and the Plan compares it with what was expected.
+
+### Walkthrough: compare scenarios
+
+Scenarios answer "what if" without changing the book
+([command line](guide/cli.md#walkthrough-compare-scenarios)):
+
+1. Save a new scenario under Base, changing only what differs: here lower
+   investment returns and higher inflation
+   ([desktop](guide/desktop.md#plan-and-projection),
+   [browser](guide/web.md#plan-and-projection)).
+2. Change a savings goal in that scenario only, such as a later target date
+   ([Savings goals](#savings-goals)); Base keeps the original.
+3. Project the new scenario, then compare it with Base year by year. The
+   comparison lists each year's net worth in both and the difference.
+
+A child scenario inherits everything from its parent, so later changes to Base
+carry into it unless it overrides them.
+
 ## Understand the model
 
 ### Ledger and exact amounts

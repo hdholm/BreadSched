@@ -383,6 +383,72 @@ are under `bridges` (see
 scenarios year by year. See
 [Projection and scenarios](../USER_GUIDE.md#projection-and-scenarios).
 
+## Walkthrough: set up a household
+
+These commands build a small, invented household from an empty book: accounts with
+opening balances, a credit card paid from checking, monthly income and spending
+estimates, a savings goal, and a five-year Base scenario. Run them in an empty
+folder; every name and amount is an example to replace with your own. See
+[Walkthrough: set up a household](../USER_GUIDE.md#walkthrough-set-up-a-household).
+
+```bash
+breadsched init household.breadsched
+breadsched account household.breadsched add --name Checking --type BANK --parent Assets \
+    --opening 4200 --opening-date 2026-09-30
+breadsched account household.breadsched add --name Savings --type BANK --parent Assets \
+    --opening 12000 --opening-date 2026-09-30
+breadsched account household.breadsched add --name "Retirement 401k" --type RETIREMENT \
+    --parent Assets --opening 85000 --opening-date 2026-09-30
+breadsched account household.breadsched add --name "Credit Card" --type "CREDIT CARD" \
+    --parent Liabilities --opening -650 --opening-date 2026-09-30 \
+    --payment-account Assets:Checking --payment-day 20 --usual-payment 650
+breadsched account household.breadsched add --name Salary --type INCOME --parent Income
+breadsched account household.breadsched add --name Groceries --type EXPENSE --parent Expenses
+breadsched account household.breadsched add --name Housing --type EXPENSE --parent Expenses
+breadsched account household.breadsched add --name Utilities --type EXPENSE --parent Expenses
+breadsched estimate household.breadsched add --name Pay --account Income:Salary \
+    --funded-from Assets:Checking --amount -5200 --every month --start 2026-10-25
+breadsched estimate household.breadsched add --name Rent --account Expenses:Housing \
+    --funded-from Assets:Checking --amount 1850 --every month --start 2026-10-01
+breadsched estimate household.breadsched add --name Groceries --account Expenses:Groceries \
+    --funded-from Assets:Checking --amount 650 --every month --start 2026-10-05
+breadsched estimate household.breadsched add --name Utilities --account Expenses:Utilities \
+    --funded-from Assets:Checking --amount 240 --every month --start 2026-10-12
+breadsched goals household.breadsched --add "New roof" --account Assets:Savings \
+    --target 9000 --by 2027-09-30 --start 2026-10-01
+breadsched scenario household.breadsched save --name Base --years 5 --start 2026-10-01
+breadsched dashboard household.breadsched --as-of 2026-10-06
+breadsched activity household.breadsched --start 2026-10-01 --end 2026-12-31 --as-of 2026-10-06
+breadsched project household.breadsched --scenario Base
+```
+
+An opening balance is the account's own value on the opening date: a negative
+balance on a liability is money owed. An estimate's `--amount` is what each
+occurrence posts to `--account`, so an expense is positive and income is negative.
+Estimates feed the Plan, Dashboard, and Projection but never post; record what
+actually happens with `add`, an import, or Review. Loans (with principal and
+interest) and transfers into savings or retirement are scheduled in the
+[desktop](desktop.md#scheduled-activity) or [browser](web.md#scheduled-activity).
+
+## Walkthrough: compare scenarios
+
+Continuing in the same folder, this saves a scenario under Base with lower returns,
+higher inflation, and a later roof, then compares the two year by year. See
+[Walkthrough: compare scenarios](../USER_GUIDE.md#walkthrough-compare-scenarios).
+
+```bash
+breadsched scenario household.breadsched save --name "Lower returns" --parent Base \
+    --years 5 --start 2026-10-01 --investment-return 0.03 --inflation 0.035
+breadsched goals household.breadsched --override "New roof" --scenario "Lower returns" \
+    --by 2028-03-31
+breadsched project household.breadsched --scenario "Lower returns"
+breadsched compare household.breadsched Base "Lower returns"
+```
+
+A child scenario inherits everything from its parent except what it changes; Base
+itself is unchanged. `compare` lists each year's net worth in both scenarios and the
+difference.
+
 ## Protect and recover a book
 
 ```bash

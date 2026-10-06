@@ -193,12 +193,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   Keep the guide usable as a standalone document and packaged for offline help; do
   not make a documentation generator a runtime requirement.
 
-- Add a generic-household walkthrough that creates a comprehensive chart of
-  accounts, recurring income/expenses, savings/debt/retirement flows, and Base plan.
-
-- Add a multiple-scenario walkthrough that duplicates Base and compares alternate
-  assumptions/scheduled estimates.
-
 
 
 ## Packaging and release quality
