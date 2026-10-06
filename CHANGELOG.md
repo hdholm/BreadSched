@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a234 - 2026-10-06
+
+- **Older GnuCash SQLite books keep their dates east of UTC.** GnuCash before 2.6.10
+  stored a posting date as local midnight in UTC, so a book from a household ahead
+  of UTC (Europe, Asia, Australia, New Zealand) imported every transaction and
+  schedule a day early. `parse_gnc_sql_posting_date` reads a time of day from 11:00
+  UTC on as the next day (GnuCash's own neutral-time range in reverse), for SQLite
+  post dates, schedule start and end dates, and write-back's reading of the book.
+  Prices and XML dates are read as before. Re-importing such a book corrects the
+  dates.
+
 ## 0.2.0a233 - 2026-10-06
 
 - **Property-based money tests and fuzzed malformed imports.**

@@ -18,7 +18,7 @@ import hashlib
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +56,7 @@ __all__ = [
     "ImportSink",
     "detect_format",
     "parse_gnc_date",
+    "parse_gnc_sql_posting_date",
     "preserve_breadsched_schedule_state",
     "recurrence_interval",
 ]
@@ -461,6 +462,44 @@ def parse_gnc_date(raw: str | None) -> date:
         except ValueError:
             continue
     raise ValueError(f"unrecognised GnuCash date {raw!r}")
+
+
+#: The earliest UTC time of day an older GnuCash SQL book can store for a date
+#: that belongs to the *next* calendar day: local midnight in zones ahead of UTC.
+#: GnuCash's own neutral time, 10:59:00 UTC, sits just before it.
+_EAST_OF_UTC_FROM = (11, 0, 0)
+
+
+def parse_gnc_sql_posting_date(raw: str | None) -> date:
+    """The calendar date of a posting or schedule date stored in a GnuCash SQL book.
+
+    SQL books store these as UTC timestamps without a zone. GnuCash 2.6.10 and
+    later write 10:59:00 UTC, which is the same calendar day everywhere from UTC-10:59
+    to UTC+13:00. Earlier versions wrote the user's *local midnight* converted to
+    UTC: 05:00:00 for a household in UTC-5 (the same day), but 22:00:00 on the day
+    before for one in UTC+2. Truncating those to the UTC date moved every date a day
+    early for households east of UTC.
+
+    So a time of day from 11:00:00 UTC on is read as local midnight east of UTC and
+    belongs to the next day, and anything earlier (UTC, the Americas, and GnuCash's
+    neutral time) to the same day. This is GnuCash's own neutral-time range read in
+    reverse; it misplaces only dates written in UTC-11, UTC-12, or UTC+14. A date
+    without a time of day, or with an explicit zone, is read as written.
+    """
+    if not raw or not raw.strip():
+        raise ValueError("missing GnuCash date")
+    text = raw.strip()
+    when: datetime | None = None
+    if len(text) == 14 and text.isdigit():
+        when = datetime.strptime(text, "%Y%m%d%H%M%S")
+    else:
+        try:
+            when = datetime.strptime(text.replace("T", " "), "%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            return parse_gnc_date(raw)
+    if (when.hour, when.minute, when.second) >= _EAST_OF_UTC_FROM:
+        return when.date() + timedelta(days=1)
+    return when.date()
 
 
 def recurrence_interval(period: PeriodType, raw: object) -> int:

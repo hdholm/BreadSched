@@ -46,7 +46,12 @@ from xml.sax.saxutils import escape, quoteattr
 from ...gen.db.sqlite import DbSQLite
 from ...gen.lib.money import Money
 from ...gen.lib.transaction import ReconcileState, Transaction
-from ..importer.gnucash_common import money_from_fraction, money_from_pair, parse_gnc_date
+from ..importer.gnucash_common import (
+    money_from_fraction,
+    money_from_pair,
+    parse_gnc_date,
+    parse_gnc_sql_posting_date,
+)
 
 __all__ = [
     "FINGERPRINT_KEY",
@@ -221,7 +226,7 @@ def _read_sqlite(path: Path) -> SourceBook:
                 row["guid"],
                 currency[1] if currency else "",
                 row["num"] or "",
-                _safe_date(row["post_date"]),
+                _safe_date(row["post_date"], sql=True),
                 row["description"] or "",
                 {},
             )
@@ -796,9 +801,12 @@ def _change(
     )
 
 
-def _safe_date(raw: object) -> date | None:
+def _safe_date(raw: object, *, sql: bool = False) -> date | None:
+    """The date GnuCash stored, read the way the importer read it; ``None`` if unreadable."""
     try:
-        return parse_gnc_date(str(raw)) if raw else None
+        if not raw:
+            return None
+        return parse_gnc_sql_posting_date(str(raw)) if sql else parse_gnc_date(str(raw))
     except ValueError:
         return None
 

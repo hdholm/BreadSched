@@ -26,6 +26,7 @@ from .gnucash_common import (
     money_from_pair,
     open_gnucash_sqlite,
     parse_gnc_date,
+    parse_gnc_sql_posting_date,
     preserve_breadsched_schedule_state,
     recurrence_interval,
 )
@@ -204,7 +205,7 @@ def read_transactions(
             out.append(
                 {
                     "guid": row["guid"],
-                    "date": parse_gnc_date(row["post_date"]).isoformat(),
+                    "date": parse_gnc_sql_posting_date(row["post_date"]).isoformat(),
                     "description": row["description"] or "",
                     "num": row["num"] or "",
                     "splits": splits,
@@ -529,7 +530,7 @@ def _import_transactions(conn: sqlite3.Connection, sink: ImportSink, report=None
                 row["description"] or "",
             )
         try:
-            post_date = parse_gnc_date(row["post_date"])
+            post_date = parse_gnc_sql_posting_date(row["post_date"])
         except ValueError as exc:
             sink.result.skip(
                 str(exc),
@@ -565,8 +566,8 @@ def _import_scheduled(conn: sqlite3.Connection, sink: ImportSink, db: DbSQLite, 
         raw_period = (recurrence["recurrence_period_type"] or "month").lower()
         period = PERIOD_MAP.get(raw_period, PeriodType.MONTH)
         try:
-            start = parse_gnc_date(recurrence["recurrence_period_start"])
-            end = parse_gnc_date(row["end_date"]) if row["end_date"] else None
+            start = parse_gnc_sql_posting_date(recurrence["recurrence_period_start"])
+            end = parse_gnc_sql_posting_date(row["end_date"]) if row["end_date"] else None
         except ValueError as exc:
             sink.result.skip(
                 str(exc),

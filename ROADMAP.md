@@ -119,8 +119,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Cover richer transfer/category mapping and real-world QIF/OFX deviations.
 
-- Investigate/cover older GnuCash SQLite timezone/date conventions.
-
 - **Outbound interoperability and portable archives.** Define documented,
   loss-minimizing exports for supported household ledger/planning data and a
   versioned portable archival format with a human-readable manifest, integrity
