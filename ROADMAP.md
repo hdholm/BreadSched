@@ -194,10 +194,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Improve crash recovery, diagnostic logging, and privacy-safe error reporting.
 
-- Add property-based monetary arithmetic tests and fuzz-style malformed-import
-  tests where they add useful coverage.
-
-
 
 ## Project governance and community health
 

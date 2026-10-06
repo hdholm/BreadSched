@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a233 - 2026-10-06
+
+- **Property-based money tests and fuzzed malformed imports.**
+  `tests/test_money_properties.py` checks over generated amounts that money
+  arithmetic is exact, rounding is half away from zero at any denominator,
+  allocation keeps every minor unit, and the GnuCash and text forms read back.
+  `tests/test_import_fuzz.py` feeds generated malformed QIF, OFX, and CSV statements
+  to the importers: each finishes or refuses cleanly, writes nothing when it
+  refuses, leaves a book that verifies, and re-imports without adding transactions.
+  No defect was found; no application code changed.
+
 ## 0.2.0a232 - 2026-10-06
 
 - **Categorization rules can set a payee.** A description rule may name a payee

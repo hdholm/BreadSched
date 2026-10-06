@@ -2552,6 +2552,17 @@ checking generator-owned occurrence identity and serialization round trips. Name
 regression cases remain valuable for explaining specific historical failures; the
 property layer complements rather than replaces them.
 
+Money has the same layer (`tests/test_money_properties.py`): arithmetic agrees with
+exact rational arithmetic, quantizing and `to_decimal` both round half away from
+zero at any denominator, `allocate` never loses or invents a minor unit and keeps
+shares within one unit of each other, and the GnuCash pair and text forms read back
+what they wrote. `tests/test_import_fuzz.py` feeds generated QIF, OFX, and CSV
+statements built from plausible fragments, truncations, and noise to the importers:
+an import must finish or refuse with a ValueError (the CSV service with a failed
+result), write nothing when it refuses, leave a book that `verify_book()` accepts,
+and add nothing when the same file is imported again. Both run in the ordinary
+suite with bounded example counts.
+
 ### GTK runtime availability
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
