@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a225 - 2026-10-06
+
+- **Expected reimbursements in Plan and Projection.** A receivable with an expected
+  date becomes a planned one-off receipt on that date: what is still owed moves from
+  the receivable account into the cash account that paid the expense (the card's
+  paying account for a card-paid expense; `receivables.expected_receipt`,
+  `planning.receivable_receipt_events`). Projected cash rises only from the
+  expected date and net worth is unchanged. Disputed, overdue, settled, and
+  written-off receivables are not counted on. The receipt is never posted and is
+  replaced by the real, linked reimbursement.
+
 ## 0.2.0a224 - 2026-10-06
 
 - **Dependent care FSAs.** An FSA account can be marked dependent care

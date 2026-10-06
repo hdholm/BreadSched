@@ -26,6 +26,7 @@ from ..lib.transaction import (
     Transaction,
 )
 from .currency import reporting_currency_handle
+from .receivables import expected_receipt
 
 __all__ = [
     "EventSource",
@@ -425,7 +426,40 @@ def scenario_events(
         if start <= item.when <= end
     )
     events.extend(goal_purchase_events(db, scenario, start, end))
+    events.extend(receivable_receipt_events(db, start, end))
     return sorted(events, key=lambda item: (item.when, item.planned_date, item.key))
+
+
+def receivable_receipt_events(db: DbSQLite, start: date, end: date) -> list[PlannedEvent]:
+    """Reimbursements still expected, as one-off receipts on their expected dates.
+
+    Each moves what the payer still owes out of the receivable account into the
+    cash account that paid the expense (``receivables.expected_receipt``), so the
+    expected money counts as cash only from the day it is due. A disputed or overdue
+    receivable is not counted on. These are expectations: they never post, and the
+    actual reimbursement, once recorded, settles the receivable instead.
+    """
+    found: list[PlannedEvent] = []
+    for receivable in db.iter_receivables():
+        receipt = expected_receipt(db, receivable)
+        if receipt is None or not start <= receipt.when <= end:
+            continue
+        found.append(
+            PlannedEvent(
+                key=f"receivable:{receivable.handle}:{receipt.when.isoformat()}",
+                planned_date=receipt.when,
+                source=EventSource.ONE_OFF,
+                source_handle=None,
+                description=f"Expected from {receivable.payer}: {receivable.description}",
+                expected_splits=(
+                    PlannedSplit(receipt.cash_account, receipt.amount),
+                    PlannedSplit(receipt.account, -receipt.amount),
+                ),
+                expected_amount=receipt.amount,
+                placeholder=True,
+            )
+        )
+    return found
 
 
 def goal_purchase_events(

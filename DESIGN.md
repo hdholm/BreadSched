@@ -1612,6 +1612,16 @@ the linked splits plus any dispute or write-off: **written off** (a deliberate,
 terminal decision), **settled**, **disputed**, **partial**, or **open**. What is owed
 is the expected amount, or the whole linked expense, never more than the expense.
 
+Expected receipts: `receivables.expected_receipt` gives an open or partly reimbursed
+receivable with a receivable account, a reporting-currency posting, and an
+`expected_cash_date` on or after today the amount still owed and the cash account
+that paid its expense (a card's `card_payment_account` for a card-paid expense);
+disputed, overdue, settled, and written-off receivables have none.
+`planning.receivable_receipt_events` turns each into a placeholder `ONE_OFF` planned
+event (cash +remaining, receivable account −remaining) in every scenario's events, so
+Plan and Projection count it as cash only from its date, never escalate it, and leave
+net worth unchanged.
+
 `services/receivables.py` validates every write: linked splits must be in
 expense-class accounts, expense links positive and reimbursement links negative, and
 no split linked twice. The database refuses to delete a transaction a receivable

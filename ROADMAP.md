@@ -42,11 +42,9 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
-- Carry reimbursable expense and receivable status into Plan, Projection, and
-  Dashboard liquidity: distinguish incurred expense, collectible asset, and
-  expected dated cash receipt. A disputed or overdue claim must not be treated as
-  spendable cash. Show gross cost and net household cost without double-counting
-  reimbursements, including scenario changes and write-offs.
+- Show reimbursable expenses' gross cost and net household cost in Plan and
+  Projection without double-counting reimbursements, including scenario changes and
+  write-offs.
 
 
 ## Scheduled transactions and loans
