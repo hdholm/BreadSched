@@ -1634,6 +1634,24 @@ event (cash +remaining, receivable account −remaining) in every scenario's eve
 Plan and Projection count it as cash only from its date, never escalate it, and leave
 net worth unchanged.
 
+Gross and net cost: an expense category's Plan actual is already the net household
+cost, because the tracking posting moves what is owed out of the category and each
+reimbursement credit is cancelled by its posting. `receivables.plan_adjustments`
+names the receivables' owned postings and linked reimbursement splits;
+`activity.build_activity_report` copies those splits (converted like the rest) into
+`ActualActivity.reimbursable_splits`, and `build_category_report` negates their
+expense-class values into `CategoryActivity.reimbursable`, rolled up like `actual`.
+So `gross = actual + reimbursable` is what was spent, and `reimbursable` is what was
+reimbursed or is still owed less write-offs; nothing is added twice, because a
+reimbursement's credit and its posting cancel in both figures.
+`own_reimbursable` (the account alone) selects `CategoryReport.reimbursable_categories`,
+so a parent category is not listed beside its children. `plan_detail` sums the same
+splits into `CategoryPeriodDetail.reimbursable`. `presentation.plan_reimbursable_text`
+and `plan_detail_cost_text` give the sentences GTK, web, print, and
+`receivables --costs` show; a range holding only a write-off of an earlier expense
+reads as a raised net cost with no gross cost. Projection does not yet distinguish
+gross from net cost.
+
 `services/receivables.py` validates every write: linked splits must be in
 expense-class accounts, expense links positive and reimbursement links negative, and
 no split linked twice. The database refuses to delete a transaction a receivable

@@ -7,6 +7,7 @@ from datetime import date
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import plan_detail
 from ..gen.lib import Assumptions, PlanningFlowKind, Scenario
+from ..presentation import plan_detail_cost_text
 
 
 def plan_detail_report(
@@ -89,6 +90,7 @@ def plan_detail_report(
             "planned": detail.planned,
             "actual": detail.actual,
             "variance": detail.variance,
+            **_cost(detail),
         },
         "planned": [
             {
@@ -122,4 +124,15 @@ def plan_detail_report(
             }
             for item in detail.actual_transactions
         ],
+    }
+
+
+def _cost(detail: object) -> dict[str, object]:
+    """A category cell's gross and net cost, when reimbursements changed it."""
+    if not isinstance(detail, plan_detail.CategoryPeriodDetail) or not detail.reimbursable:
+        return {}
+    return {
+        "gross": detail.gross,
+        "reimbursable": detail.reimbursable,
+        "cost_text": plan_detail_cost_text(detail.gross, detail.reimbursable, detail.actual),
     }

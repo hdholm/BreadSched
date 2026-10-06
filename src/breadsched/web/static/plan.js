@@ -522,6 +522,11 @@ async function showPlan() {
         el("h2", {}, "Savings goals reaching their target"),
         ...data.goal_milestones.map((item) => el("p", { class: "note" }, item.text)))]
       : []),
+    ...((data.reimbursable?.categories || []).length
+      ? [el("section", { class: "plan-reimbursable" },
+        el("h2", {}, data.reimbursable.heading),
+        ...data.reimbursable.categories.map((item) => el("p", { class: "note" }, item.text)))]
+      : []),
     ...(data.currency?.notes || []).map((line) => el("p", {
       class: `note plan-currency-note${line.startsWith("Not included") ? " neg" : ""}`,
     }, line)),
@@ -607,6 +612,7 @@ async function openPlanDetail(
             el("div", { class: "label" }, label),
             el("div", { class: `value ${value != null && Number(value) < 0 ? "neg" : ""}` },
               value == null ? "—" : money(value))))),
+      ...(summary.cost_text ? [el("p", { class: "note plan-detail-cost" }, summary.cost_text)] : []),
       el("h3", {}, "Planned occurrences"),
       plannedRows.length
         ? table(["Planned", "Description", "Source", "Status",

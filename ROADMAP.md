@@ -42,9 +42,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
-- Show reimbursable expenses' gross cost and net household cost in Plan and
-  Projection without double-counting reimbursements, including scenario changes and
-  write-offs.
+- Show reimbursable expenses' gross cost and net household cost in Projection
+  (Plan shows both), including scenario changes to expected reimbursements.
 
 
 ## Scheduled transactions and loans

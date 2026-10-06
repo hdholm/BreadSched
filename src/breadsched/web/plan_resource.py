@@ -11,7 +11,7 @@ from ..gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
 from ..gen.engine.completeness import combine
 from ..gen.lib import AccountClass, Money
 from ..gen.services import PlanQuery, query_plan
-from ..presentation import plan_goal_text
+from ..presentation import PLAN_REIMBURSABLE_HEADING, plan_goal_text, plan_reimbursable_text
 from .controls import ResourceError
 
 if TYPE_CHECKING:
@@ -283,6 +283,20 @@ def plan_report(
             }
             for item in plan.goal_milestones
         ],
+        "reimbursable": {
+            "heading": PLAN_REIMBURSABLE_HEADING,
+            "categories": [
+                {
+                    "account": row.account,
+                    "full_name": row.full_name,
+                    "gross": sum(row.gross, start=Money(0)),
+                    "reimbursable": row.reimbursable_total,
+                    "net": sum(row.actual, start=Money(0)),
+                    "text": plan_reimbursable_text(row),
+                }
+                for row in report.reimbursable_categories
+            ],
+        },
         "periods": [
             {
                 "label": item.label,

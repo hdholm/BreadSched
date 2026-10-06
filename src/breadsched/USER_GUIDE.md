@@ -1103,6 +1103,19 @@ replaces it. A disputed receivable, one whose expected date has passed, and one
 settled or written off are not counted on, so a doubtful reimbursement never shows
 as spendable cash.
 
+The Plan's Actual figures for an expense category are your net household cost: what
+you bear after reimbursements, and after what is still expected back. Under
+**Reimbursable expenses: gross and net cost**, the Plan lists each category whose
+cost a receivable changed in the range, with its gross cost (what was spent),
+what was reimbursed or is still expected back, and the net household cost. A
+reimbursement is never counted twice: money back only replaces what was already
+expected. A write-off stays part of the net cost; when one falls in a later range
+than the expense, that range's line says so. Opening a Plan cell shows the same gross
+and net cost for that period, and the printed Plan includes the list
+([desktop](guide/desktop.md#reimbursable-expenses),
+[browser](guide/web.md#reimbursable-expenses),
+[command line](guide/cli.md#reimbursable-expenses)).
+
 ## Import and GnuCash interoperability
 
 BreadSched imports GnuCash SQLite and compressed XML books and preserves source

@@ -6,9 +6,11 @@ import gettext
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from .gen.lib.money import Money
 from .gen.services import ServiceError
 
 if TYPE_CHECKING:
+    from .gen.engine.activity import CategoryActivity
     from .gen.engine.fsa import FsaYearStatus
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone
@@ -535,6 +537,42 @@ def plan_goal_text(milestone: PlanGoalMilestone) -> str:
         f"{milestone.target_date.isoformat()}{changed}; {milestone.set_aside.format()} set "
         f"aside so far, {milestone.remaining.format()} to go. Contributions are transfers, "
         "not expenses."
+    )
+
+
+#: Heading for the Plan's reimbursable-expense notes in every interface.
+PLAN_REIMBURSABLE_HEADING = "Reimbursable expenses: gross and net cost"
+
+
+def plan_reimbursable_text(row: CategoryActivity) -> str:
+    """An expense category's gross cost beside its net household cost in the range.
+
+    The category's actual figure is already the net household cost; the
+    reimbursable amount is what was reimbursed or is still expected back, less
+    write-offs. A negative amount is a write-off of a reimbursement expected in an
+    earlier period, which raises this range's net cost without new spending.
+    """
+    gross = sum(row.gross, start=Money(0))
+    net = gross - row.reimbursable_total
+    back = row.reimbursable_total
+    if back < 0:
+        return (
+            f"{row.full_name}: net household cost {net.format()} includes "
+            f"{(-back).format()} written off from an earlier reimbursable expense; gross "
+            f"cost {gross.format()}."
+        )
+    return (
+        f"{row.full_name}: gross cost {gross.format()}, {back.format()} reimbursed or "
+        f"expected back, net household cost {net.format()}."
+    )
+
+
+def plan_detail_cost_text(gross: Money, reimbursable: Money, net: Money) -> str:
+    """A Plan cell's gross and net cost when reimbursements changed it."""
+    return (
+        f"Gross cost {gross.format(parens_negative=True)}; reimbursed or expected back "
+        f"{reimbursable.format(parens_negative=True)}; the Actual figure is the net "
+        f"household cost, {net.format(parens_negative=True)}."
     )
 
 

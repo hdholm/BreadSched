@@ -294,6 +294,7 @@ breadsched receivables book.breadsched                # list with status and age
 breadsched receivables book.breadsched --delete RECEIVABLE
 breadsched receivables book.breadsched --proposals         # credits that look like money back
 breadsched receivables book.breadsched --accept-proposals  # link every current proposal
+breadsched receivables book.breadsched --costs 2026-01-01 2026-12-31  # gross and net cost
 ```
 
 Link the split that records the cost with `--attach-expense`, and the split that
@@ -305,7 +306,12 @@ currency. The list shows what is owed, the account, and any FSA-claim overlap, a
 warns under the table when an expense is also on an FSA claim. When an FSA claim
 covers the rest of a receivable's bill (linked on the claim in the desktop or
 browser), a line under the table shows what the payer, the FSA, and you each pay,
-and `--json` lists it under `shared_costs`. See
+and `--json` lists it under `shared_costs`.
+
+`--costs START END` lists each expense category a receivable changed between two
+dates with its gross cost, the amount reimbursed or expected back, and the net
+household cost, the figures the Plan shows (`--json` gives `gross`,
+`reimbursable`, and `net`). See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
 ## FSA claims

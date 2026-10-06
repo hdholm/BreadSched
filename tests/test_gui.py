@@ -2902,6 +2902,63 @@ class TestDerivedPlanView:
         assert not view.summary.get_text().startswith("Partial")
         assert not any("partial" in text for text in grid_texts())
 
+    def test_plan_shows_reimbursable_gross_and_net_cost(self, app, window, populated_book):
+        from breadsched.gen.engine import plan_detail
+        from breadsched.gen.lib import Money, Transaction
+        from breadsched.gen.lib.account import AccountClass
+        from breadsched.gen.services.receivables import (
+            SaveReceivable,
+            attach_expense_split,
+            save_receivable,
+        )
+        from breadsched.gui.dialogs.plan_detail_dialog import PlanDetailDialog
+
+        app.open_book(populated_book)
+        window.show_category("plan")
+        view = window._views["plan"]
+        assert not view.reimbursable_note.get_visible()
+        accounts = [item for item in app.db.iter_accounts() if not item.placeholder]
+        expense = next(item for item in accounts if item.account_class is AccountClass.EXPENSE)
+        cash = next(item for item in accounts if item.is_spendable_cash)
+        when = view._start_date.replace(day=3)
+        spent = Transaction.simple(when, "Clinic", expense.handle, cash.handle, "200.00")
+        with app.db.transaction("Clinic") as txn:
+            app.db.add_transaction(spent, txn)
+        split = next(item for item in spent.splits if item.account == expense.handle)
+        receivable = save_receivable(
+            app.db,
+            SaveReceivable(incurred_date=when, payer="Acme", expected_amount=Money("150.00")),
+        ).value
+        assert attach_expense_split(app.db, receivable.handle, spent.handle, split.handle).ok
+
+        view.refresh()
+        assert view.reimbursable_note.get_visible()
+        text = view.reimbursable_note.get_text()
+        assert text.startswith("Reimbursable expenses: gross and net cost:")
+        assert f"{app.db.full_name(expense)}: gross cost" in text
+        assert "150.00 reimbursed or expected back" in text
+
+        detail = plan_detail.explain_category_period(
+            app.db, expense.handle, when.replace(day=1), when.replace(day=28)
+        )
+        dialog = PlanDetailDialog(
+            window, app.db, detail, period_label="Month", scenario_name="Base"
+        )
+        try:
+            labels = []
+            stack = [dialog.get_child()]
+            while stack:
+                widget = stack.pop()
+                if isinstance(widget, Gtk.Label):
+                    labels.append(widget.get_text())
+                child = widget.get_first_child()
+                while child is not None:
+                    stack.append(child)
+                    child = child.get_next_sibling()
+            assert any(label.startswith("Gross cost ") for label in labels)
+        finally:
+            dialog.destroy()
+
     def test_detaching_does_not_try_to_read_book_metadata(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("plan")

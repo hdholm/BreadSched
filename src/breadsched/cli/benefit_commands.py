@@ -7,6 +7,7 @@ from datetime import date
 from typing import Any
 
 from ..gen.db.sqlite import DbSQLite
+from ..gen.engine import activity
 from ..gen.lib import (
     FsaClaim,
     FsaClaimEvent,
@@ -39,6 +40,7 @@ from ..gen.services.receivables import (
 )
 from ..presentation import (
     goal_status_text,
+    plan_reimbursable_text,
     service_error_message,
     shared_cost_text,
 )
@@ -554,6 +556,32 @@ def cmd_claims(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
+    """Each expense category's gross and net cost in a date range, as Plan shows it."""
+    start, end = (parse_date(value) for value in args.costs)
+    if start is None or end is None or end < start:
+        raise CommandError("--costs needs a start date and an end date on or after it")
+    report = activity.build_category_report(db, start, end)
+    rows = report.reimbursable_categories
+    payload = [
+        {
+            "account": row.account,
+            "category": row.full_name,
+            "gross": sum(row.gross, start=Money(0)).format(),
+            "reimbursable": row.reimbursable_total.format(),
+            "net": sum(row.actual, start=Money(0)).format(),
+        }
+        for row in rows
+    ]
+    text = (
+        "\n".join(plan_reimbursable_text(row) for row in rows)
+        if rows
+        else "No expense category had reimbursements in that range."
+    )
+    emit(payload, args, text)
+    return 0
+
+
 def cmd_receivables(args: argparse.Namespace) -> int:
     """List reimbursable expenses, add or resolve one, or link ledger splits."""
     read_only = not (
@@ -569,6 +597,8 @@ def cmd_receivables(args: argparse.Namespace) -> int:
     )
     db = open_book(args.book, "r" if read_only else "w")
     try:
+        if args.costs:
+            return _receivable_costs(db, args)
         if args.proposals or args.accept_proposals:
             proposals = reimbursement_proposals(db).value or ()
             if args.accept_proposals:
@@ -862,6 +892,13 @@ def register(add: AddCommand) -> None:
         "--add", metavar="PAYER", help="create a receivable for this payer"
     )
     receivables_cmd.add_argument("--incurred", metavar="DATE", help="date the expense was incurred")
+    receivables_cmd.add_argument(
+        "--costs",
+        nargs=2,
+        metavar=("START", "END"),
+        help="each expense category's gross cost, amount reimbursed or expected back, and "
+        "net household cost between two dates, as the Plan shows them",
+    )
     receivables_cmd.add_argument("--description", help="what the expense was for")
     receivables_cmd.add_argument("--expected", metavar="AMOUNT", help="amount expected back")
     receivables_cmd.add_argument(

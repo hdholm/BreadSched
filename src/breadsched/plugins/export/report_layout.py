@@ -23,7 +23,13 @@ from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint
 from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ...gen.services.plan import PlanGoalMilestone
-from ...presentation import goal_status_text, plan_goal_text, projection_goal_notes
+from ...presentation import (
+    PLAN_REIMBURSABLE_HEADING,
+    goal_status_text,
+    plan_goal_text,
+    plan_reimbursable_text,
+    projection_goal_notes,
+)
 
 __all__ = [
     "Card",
@@ -595,6 +601,16 @@ def plan_layout(
         *_notes(report.currency_notes),
     ]
     sections = [Section(tuple(lead))]
+    if report.reimbursable_categories:
+        sections.append(
+            Section(
+                (
+                    Heading(PLAN_REIMBURSABLE_HEADING),
+                    *_notes(plan_reimbursable_text(row) for row in report.reimbursable_categories),
+                ),
+                name="plan-reimbursable",
+            )
+        )
     if goal_milestones:
         sections.append(
             Section(
