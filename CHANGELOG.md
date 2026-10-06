@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a218 - 2026-10-06
+
+- **The browser page's script is split by area.** The 5,500-line `app.js` is now
+  fourteen classic scripts in `web/static/`: `core.js` (state, DOM and number
+  helpers, API calls), `controls.js` (shared schedule editors), `accounts`, `entry`,
+  `schedules`, `imports`, `plan`, `scenarios`, `review`, `projection`, `household`,
+  `book`, and `dashboard`, and `app.js`, now only navigation and start-up, loaded
+  last. `web.transport.SCRIPTS` lists them in load order and is the transport's
+  allowlist; `index.html` loads them in that order. New tests check the order, that
+  only `app.js` runs top-level code, and (in a browser) that every view loads.
+- **Fixed:** the browser's Verify page always showed "Could not load: main is not
+  defined" instead of its result; it now reports the book and **Verify again**
+  reruns it.
+
 ## 0.2.0a217 - 2026-10-06
 
 - **The command line is split by area.** The 4,900-line `cli/main.py` now only builds

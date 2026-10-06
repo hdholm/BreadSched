@@ -123,7 +123,11 @@ them to a parallel-safe stage.
 
 Rendered web views are checked in `tests/test_web_browser.py`, which drives
 headless Chromium through Playwright and skips when Playwright or Chromium is not
-installed. When you change how `app.js` builds a view, install `playwright` in the
+installed. The page's JavaScript is one classic script per area in
+`web/static/` (listed, in load order, by `web.transport.SCRIPTS`); add a view's code
+to its area's script, keep `core.js` free of view code, and leave start-up in
+`app.js`, which loads last. Check every script with `node --check`. When you change
+how a script builds a view, install `playwright` in the
 development environment and run that file (set `BREADSCHED_CHROMIUM` to a Chromium
 executable if Playwright cannot find one). Keep a static assertion in `test_web.py`
 for anything the browser test guards, so CI without a browser still catches it.

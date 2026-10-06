@@ -268,4 +268,5 @@ includes the applied Expense Explorer with its selected comparison and detail.
 
 - If the web interface reports an internal error, include its correlation ID in
   the report; the server returns that ID even when diagnostic output is unavailable.
-- **Verify** checks the open book, like `breadsched verify`.
+- **Verify** checks the open book, like `breadsched verify`, and lists any problems
+  found; **Verify again** reruns the check.

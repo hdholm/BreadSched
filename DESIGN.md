@@ -177,7 +177,17 @@ Browser CSS and JavaScript are packaged static assets,
 all events are registered from JavaScript, and charts construct SVG through namespaced
 DOM nodes rather than interpolating markup. This permits a directive-specific Content
 Security Policy with no inline-script or inline-style exception.
-The transport serves only the three named packaged static assets. It resolves each
+The page's JavaScript is one classic script per area, loaded in the order
+``web.transport.SCRIPTS`` lists: ``core.js`` (page state, DOM and number helpers,
+the authenticated API calls), ``controls.js`` (editors several views share), one
+script each for accounts and registers, entry, schedules and paychecks, imports, the
+Plan, scenarios, Review, the Projection, household records, Verify and the guide,
+and the Dashboards, then ``app.js`` (navigation and start-up). Classic scripts share
+one global scope, so a view calls another area's function directly, but top-level
+code runs only in ``app.js``, after every renderer is defined; a test enforces both
+the order and that rule, and a browser test opens every view.
+The transport serves only the named packaged static assets: the page, the
+stylesheet, and those scripts. It resolves each
 fixed filename and verifies it remains beneath the static root before checking or
 reading it; arbitrary request paths cannot select a filesystem file.
 

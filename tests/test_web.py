@@ -9,6 +9,7 @@ that a tool with no authentication refuses to listen on anything but loopback.
 from __future__ import annotations
 
 import json
+import re
 import socket
 import sys
 import threading
@@ -50,6 +51,7 @@ from breadsched.web.projection_resource import (
 from breadsched.web.resources import GET_ROUTES, QueryParams
 from breadsched.web.scenario_resource import scenarios_report
 from breadsched.web.server import serve
+from breadsched.web.transport import SCRIPTS
 
 
 def raw_http(client, request: bytes) -> tuple[int, dict]:
@@ -65,6 +67,12 @@ def raw_http(client, request: bytes) -> tuple[int, dict]:
     head, body = response.split(b"\r\n\r\n", 1)
     status = int(head.split(b"\r\n", 1)[0].split()[1])
     return status, json.loads(body)
+
+
+def page_scripts(client) -> tuple[int, bytes, object]:
+    """Every script the page loads, joined in load order, as one ``raw`` response."""
+    parts = [client.raw(f"/{name}")[1] for name in SCRIPTS]
+    return 200, b"\n".join(parts), None
 
 
 #: Seconds a test request may take. A loaded Windows CI runner has stalled one
@@ -241,13 +249,13 @@ class TestItServes:
     def test_the_current_view_has_a_printable_browser_presentation(self, client):
         _status, body, _headers = client.raw("/")
         page = body.decode("utf-8")
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         script = body.decode("utf-8")
         _status, body, _headers = client.raw("/style.css")
         style = body.decode("utf-8")
 
         assert 'id="print-view"' in page
-        assert 'src="/app.js"' in page
+        assert all(f'src="/{name}"' in page for name in SCRIPTS)
         assert 'href="/style.css"' in page
         assert "window.print()" in script
         assert "@media print" in style
@@ -259,10 +267,28 @@ class TestItServes:
         assert "header { display: none !important; }" in style
         assert ".plan-table thead th { position: static; }" in style
 
+    def test_the_page_loads_every_area_script_in_order(self, client):
+        """Classic scripts share one scope; start-up runs only after all are defined."""
+        _status, body, _headers = client.raw("/")
+        page = body.decode("utf-8")
+        loaded = re.findall(r'<script src="/([\w-]+\.js)"></script>', page)
+        assert tuple(loaded) == SCRIPTS
+        assert SCRIPTS[0] == "core.js" and SCRIPTS[-1] == "app.js"
+        for name in SCRIPTS:
+            status, script, headers = client.raw(f"/{name}")
+            assert status == 200
+            assert headers.get_content_type() == "application/javascript"
+            top_level_statements = [
+                line
+                for line in script.decode("utf-8").splitlines()
+                if re.match(r"[A-Za-z_$][\w$.]*\(", line)
+            ]
+            assert bool(top_level_statements) == (name == "app.js"), name
+
     def test_static_assets_need_no_inline_code_or_html_svg_interpolation(self, client):
         _status, body, _headers = client.raw("/")
         page = body.decode("utf-8")
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         script = body.decode("utf-8")
 
         assert "<style" not in page
@@ -274,20 +300,20 @@ class TestItServes:
 
     def test_tables_accept_value_rows_and_group_totals_format_amounts(self, client):
         """Issue #132 guard for runtimes without a browser (see test_web_browser.py)."""
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         script = body.decode("utf-8")
 
         assert "Array.isArray(row)" in script
         assert "dashboardMoney(g.equity === null ? g.total : g.equity)" not in script
 
     def test_accounts_offer_read_only_imported_metadata_details(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         page = body.decode("utf-8")
         assert "openAccountDetails" in page
         assert "Read-only GnuCash provenance" in page
 
     def test_schedule_occurrence_controls_are_structured(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         text = body.decode("utf-8")
         assert "timelineEditor" in text
         assert "occurrenceTimelineEditor" in text
@@ -2265,14 +2291,14 @@ class TestPlanApi:
         assert caught.value.code == 400
 
     def test_page_exposes_plan_not_the_legacy_budget_view(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         page = body.decode()
         assert '"Scheduled", "Payroll", "Plan", "Review", "Projection"' in page
         assert "async function showPlan" in page
         assert "async function showBudget" not in page
 
     def test_plan_values_are_keyboard_accessible_buttons(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         script = body.decode()
         _status, body, _headers = client.raw("/style.css")
         style = body.decode()
@@ -3747,7 +3773,7 @@ class TestDashboardApi:
         assert changed["emergency_fund_included"] is False
 
     def test_the_page_opens_on_the_dashboard(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         page = body.decode()
         assert ': "Dashboard"' in page
         assert 'launchParams.get("view")' in page
@@ -3840,7 +3866,7 @@ class TestReviewApi:
         assert review["actuals"] == []
 
     def test_page_exposes_review_between_plan_and_projection(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         page = body.decode()
         assert '"Plan", "Review", "Projection"' in page
         assert "async function showReview" in page
@@ -4074,7 +4100,7 @@ class TestScenarioManagementApi:
 
 class TestScenarioManagementPage:
     def test_plan_links_to_scenario_management(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         page = body.decode()
         assert '"Manage scenarios…"' in page
         assert "async function showScenarios" in page
@@ -4425,7 +4451,7 @@ class TestScenarioEventWebParity:
         assert suppressed["changes"][0]["source_schedule"] == source["handle"]
 
     def test_page_has_sticky_plan_context_and_dashboard_group_cards(self, client):
-        _status, body, _headers = client.raw("/app.js")
+        _status, body, _headers = page_scripts(client)
         script = body.decode()
         _status, body, _headers = client.raw("/style.css")
         style = body.decode()

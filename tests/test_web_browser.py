@@ -1,6 +1,6 @@
 """Rendered web views, checked in a real browser where one is available.
 
-The JSON API tests cannot see how ``app.js`` turns data into DOM. These tests run
+The JSON API tests cannot see how the page's scripts turn data into DOM. These tests run
 headless Chromium through Playwright and skip when Playwright or a Chromium build is
 not installed (set ``BREADSCHED_CHROMIUM`` to an executable to choose one).
 """
@@ -63,6 +63,39 @@ def page(served):
         yield view
         browser.close()
         assert errors == []
+
+
+def test_every_view_loads_from_its_area_script(page):
+    """Each navigation button renders its view; none reports a load failure."""
+    page.wait_for_selector("#nav button")
+    names = page.locator("#nav button").all_inner_texts()
+    assert len(names) >= 15
+    for name in names:
+        page.evaluate(
+            "(name) => [...document.querySelectorAll('#nav button')]"
+            ".find((button) => button.textContent === name).click()",
+            name,
+        )
+        page.wait_for_function(
+            "(name) => document.body.dataset.view === name"
+            " && document.getElementById('view').textContent.trim() !== 'Loading…'",
+            arg=name,
+        )
+        assert page.locator("#view").inner_text().strip(), name
+        assert "Could not load" not in page.locator("#view").inner_text(), name
+
+
+def test_verify_reports_the_book_and_runs_again(page):
+    """The Verify page used to fail with "main is not defined" before showing a result."""
+    page.wait_for_selector("#nav button")
+    page.evaluate(
+        "() => [...document.querySelectorAll('#nav button')]"
+        ".find((button) => button.textContent === 'Verify').click()"
+    )
+    page.wait_for_selector("text=No problems found")
+    page.get_by_role("button", name="Verify again").click()
+    page.wait_for_selector("text=No problems found")
+    assert "Could not load" not in page.locator("#view").inner_text()
 
 
 def test_dashboard_tables_have_rows_and_group_totals_are_amounts(page):
