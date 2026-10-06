@@ -20,6 +20,7 @@ from ..gen.services.savings_goals import (
     delete_savings_goal,
     goal_accounts,
     goal_overrides,
+    purchase_accounts,
     query_savings_goals,
     reopen_savings_goal,
     save_savings_goal,
@@ -101,6 +102,8 @@ def savings_goals(api: Api, query: QueryParams) -> dict[str, object]:
                 "target_amount": override.target_amount,
                 "target_date": override.target_date,
                 "excluded": override.excluded,
+                "purchase_on": override.purchase_on,
+                "purchase_account": override.purchase_account,
                 "text": goal_override_text(scenario.name, override),
             }
             for scenario, override in changes.get(item.goal.handle, [])
@@ -112,6 +115,9 @@ def savings_goals(api: Api, query: QueryParams) -> dict[str, object]:
         "held": report.held,
         "goals": goals,
         "accounts": [{"handle": handle, "name": name} for handle, name in goal_accounts(api.db)],
+        "purchase_accounts": [
+            {"handle": handle, "name": name} for handle, name in purchase_accounts(api.db)
+        ],
         "scenarios": [
             {"handle": scenario.handle, "name": scenario.name}
             for scenario in sorted(api.db.iter_scenarios(), key=lambda item: item.name.casefold())
@@ -174,6 +180,8 @@ def savings_goal_override(api: Api, payload: Mapping[str, Any]) -> dict[str, obj
         ),
         target_date=_date(payload, "target_date", optional=True),
         excluded=excluded,
+        purchase_on=_date(payload, "purchase_on", optional=True),
+        purchase_account=_text(payload, "purchase_account", optional=True) or None,
     )
     scenario = _result(api, set_goal_override(api.db, request))
     override = scenario.goal_overrides.get(request.goal)

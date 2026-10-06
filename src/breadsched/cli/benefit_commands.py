@@ -149,6 +149,10 @@ def cmd_goals(args: argparse.Namespace) -> int:
                         target_amount=Money(args.target) if args.target else None,
                         target_date=parse_date(args.by),
                         excluded=args.leave_out,
+                        purchase_on=parse_date(args.buy_on),
+                        purchase_account=(
+                            resolve_account(db, args.buy_into).handle if args.buy_into else None
+                        ),
                     ),
                 )
             )
@@ -161,6 +165,12 @@ def cmd_goals(args: argparse.Namespace) -> int:
                 parts = [
                     f"target {override.target_amount.format()}" if override.target_amount else "",
                     f"by {override.target_date.isoformat()}" if override.target_date else "",
+                    (
+                        f"bought on {override.purchase_on.isoformat()} into "
+                        f"{db.full_name(override.purchase_account)}"
+                        if override.purchase_on and override.purchase_account
+                        else ""
+                    ),
                 ]
                 text = f"{scenario.name} changes the goal: " + ", ".join(p for p in parts if p)
             emit(
@@ -930,11 +940,22 @@ def register(add: AddCommand) -> None:
     goals_cmd.add_argument(
         "--override",
         metavar="GOAL",
-        help="change a goal in one scenario (--scenario, with --target/--by or --leave-out; "
-        "none of those clears the change)",
+        help="change a goal in one scenario (--scenario, with --target/--by, --buy-on with "
+        "--buy-into, or --leave-out; none of those clears the change)",
     )
     goals_cmd.add_argument("--scenario", metavar="NAME", help="scenario for --override")
     goals_cmd.add_argument(
         "--leave-out", action="store_true", help="with --override: leave the goal out"
+    )
+    goals_cmd.add_argument(
+        "--buy-on",
+        metavar="DATE",
+        help="with --override: the scenario spends the target on this date (on or after the "
+        "target date)",
+    )
+    goals_cmd.add_argument(
+        "--buy-into",
+        metavar="ACCOUNT",
+        help="with --buy-on: the expense or asset account the purchase goes to",
     )
     goals_cmd.set_defaults(func=cmd_goals)

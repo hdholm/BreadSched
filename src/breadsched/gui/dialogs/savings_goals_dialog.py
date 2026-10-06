@@ -23,6 +23,7 @@ from ...gen.services.savings_goals import (
     delete_savings_goal,
     goal_accounts,
     goal_overrides,
+    purchase_accounts,
     query_savings_goals,
     reopen_savings_goal,
     save_savings_goal,
@@ -133,9 +134,15 @@ class SavingsGoalsDialog(BoundedWindow):
         self.override_target = Gtk.Entry(placeholder_text="Target amount", width_chars=12)
         self.override_date = Gtk.Entry(placeholder_text="Target date", width_chars=12)
         self.override_excluded = Gtk.CheckButton(label="Leave out")
+        # Model the purchase in that scenario: the target is spent on this date.
+        self.purchase_on = Gtk.Entry(placeholder_text="Buy on", width_chars=12)
+        self.purchase_on.set_tooltip_text(
+            "In this scenario, spend the target on this date (on or after the target date)"
+        )
+        self.purchase_picker = bounded_dropdown()
         self.override_button = Gtk.Button(label="Apply to scenario")
         self.override_button.set_tooltip_text(
-            "Leave both fields empty and Leave out unchecked to follow the goal unchanged"
+            "Leave every field empty and Leave out unchecked to follow the goal unchanged"
         )
         self.override_button.connect("clicked", lambda _b: self.apply_override())
         for widget in (
@@ -147,6 +154,11 @@ class SavingsGoalsDialog(BoundedWindow):
         ):
             override.append(widget)
         box.append(override)
+        purchase = Gtk.Box(spacing=8)
+        purchase.append(Gtk.Label(label="Purchase in that scenario"))
+        purchase.append(self.purchase_on)
+        purchase.append(self.purchase_picker)
+        box.append(purchase)
 
         self.status = Gtk.Label(xalign=0, wrap=True, selectable=True)
         box.append(self.status)
@@ -154,6 +166,8 @@ class SavingsGoalsDialog(BoundedWindow):
         scroll_body(self)
         self._accounts: list[str] = []
         self._scenarios: list[str] = []
+        #: Accounts a purchase can go to; index 0 of the picker is "no purchase".
+        self._purchase_accounts: list[str] = []
         self._load_accounts()
         self.edit(None)
         self.refresh()
@@ -168,6 +182,11 @@ class SavingsGoalsDialog(BoundedWindow):
         self._scenarios = [scenario.handle for scenario in scenarios]
         self.scenario_picker.set_model(
             Gtk.StringList.new([scenario.name for scenario in scenarios])
+        )
+        purchases = purchase_accounts(self.db)
+        self._purchase_accounts = [handle for handle, _name in purchases]
+        self.purchase_picker.set_model(
+            Gtk.StringList.new(["No purchase", *(f"Buy into {name}" for _h, name in purchases)])
         )
 
     def refresh(self) -> None:
@@ -324,17 +343,31 @@ class SavingsGoalsDialog(BoundedWindow):
             return False
         target_text = self.override_target.get_text().strip()
         date_text = self.override_date.get_text().strip()
+        bought_text = self.purchase_on.get_text().strip()
         try:
             target = self._money(self.override_target, "target amount") if target_text else None
             when = self._date(self.override_date, "target date") if date_text else None
+            bought = self._date(self.purchase_on, "purchase date") if bought_text else None
         except ValueError as exc:
             self._message(str(exc), True)
             return False
         scenario = self._scenarios[self.scenario_picker.get_selected()]
+        picked = self.purchase_picker.get_selected()
+        into = (
+            self._purchase_accounts[picked - 1]
+            if 0 < picked <= len(self._purchase_accounts)
+            else None
+        )
         result = set_goal_override(
             self.db,
             SetGoalOverride(
-                scenario, self.editing, target, when, self.override_excluded.get_active()
+                scenario,
+                self.editing,
+                target,
+                when,
+                self.override_excluded.get_active(),
+                purchase_on=bought,
+                purchase_account=into,
             ),
         )
         if result.value is None:

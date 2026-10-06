@@ -231,6 +231,13 @@ _SERVICE_MESSAGES = {
     ),
     "savings_goal.dates.invalid": "The target date must be after the start date",
     "savings_goal.not_found": "That savings goal no longer exists",
+    "savings_goal.purchase.incomplete": "Give both the purchase date and the account it buys into",
+    "savings_goal.purchase.before_target": (
+        "The purchase date must be on or after the goal's target date"
+    ),
+    "savings_goal.purchase.account": (
+        "Buy into an expense or asset account other than the one holding the goal"
+    ),
     "savings_goal.closed": "That savings goal is closed",
     "savings_goal.open": "That savings goal is not closed",
     "savings_goal.allocation.invalid": "The amount to allocate must be more than zero",
@@ -494,6 +501,7 @@ def goal_override_text(scenario_name: str, override: GoalOverride) -> str:
     parts = [
         f"target {override.target_amount.format()}" if override.target_amount else "",
         f"by {override.target_date.isoformat()}" if override.target_date else "",
+        f"bought on {override.purchase_on.isoformat()}" if override.purchase_on else "",
     ]
     return f"{scenario_name}: " + ", ".join(part for part in parts if part)
 
@@ -524,6 +532,16 @@ def plan_goal_text(milestone: PlanGoalMilestone) -> str:
 
 def goal_milestone_text(milestone: GoalMilestone) -> str:
     """A goal's target date in one projection, in the words every interface shows."""
+    text = _goal_milestone_verdict(milestone)
+    if milestone.purchase_on is not None:
+        text += (
+            f"; this scenario buys it on {milestone.purchase_on.isoformat()} into "
+            f"{milestone.purchase_account_name}"
+        )
+    return text
+
+
+def _goal_milestone_verdict(milestone: GoalMilestone) -> str:
     goal = milestone.goal
     changed = " (changed in this scenario)" if milestone.overridden else ""
     head = (

@@ -10,7 +10,11 @@ that month's income over the income projected from that month through the target
 month, so the whole target is set aside by the target month. Projected months
 are the unit, not days. Extra allocations dated in the horizon are set aside in
 the month they fall in. Without projected income, the gap is spread by day. A
-goal spends nothing: after its target month the whole target stays set aside.
+goal spends nothing: after its target month the whole target stays set aside,
+unless the scenario models its purchase (``GoalOverride.purchase_on``). That
+purchase is a planned one-off moving the target out of the goal's account
+(``planning.goal_purchase_events``), so from the purchase month the goal sets
+nothing aside.
 
 Money set aside for a goal held in a cash account is held from projected cash,
 so ``cash_after_goals`` shows what a scenario leaves spendable. A goal held in a
@@ -62,6 +66,9 @@ class GoalMilestone:
     goals_held: Money | None
     #: The goal's account, by full name.
     account_name: str = ""
+    #: The purchase this scenario models, if any, and the account it is bought into.
+    purchase_on: date | None = None
+    purchase_account_name: str = ""
     #: For a non-cash account: its projected closing balance in the target month,
     #: and what every goal held in it has set aside then. ``None`` for a cash
     #: account, outside the horizon, or for an account the projection leaves out.
@@ -100,6 +107,8 @@ class GoalMilestone:
             "account_close": self.account_close,
             "account_held": self.account_held,
             "covered": self.covered,
+            "purchase_on": self.purchase_on,
+            "purchase_account_name": self.purchase_account_name,
         }
 
 
@@ -155,8 +164,14 @@ def project_goals(
         cash = account is not None and account.atype.is_cash_like and not account.placeholder
         target = goal.target_amount
         current = min(target, goal_progress(db, goal, day_before).set_aside)
+        override = scenario.goal_overrides.get(goal.handle)
+        bought = override.purchase_on if override is not None and override.purchases else None
         by_month: list[Money] = []
         for index, (start, end) in enumerate(zip(months, ends, strict=True)):
+            if bought is not None and bought <= end:
+                # Spent: the purchase one-off has taken the money out of the account.
+                by_month.append(Money(0))
+                continue
             extra = sum(
                 (
                     item.amount
@@ -205,6 +220,8 @@ def project_goals(
              if start <= goal.target_date <= end),
             None,
         )  # fmt: skip
+        override = scenario.goal_overrides.get(goal.handle)
+        purchase = override if override is not None and override.purchases else None
         balance = held_there = None
         if not cash and target_index is not None and account_close is not None:
             balance = account_close[target_index].get(goal.account)
@@ -222,6 +239,12 @@ def project_goals(
                 cash_close[target_index] if target_index is not None else None,
                 held[target_index] if target_index is not None else None,
                 account_name=db.full_name(goal.account) or "",
+                purchase_on=purchase.purchase_on if purchase is not None else None,
+                purchase_account_name=(
+                    db.full_name(purchase.purchase_account) or ""
+                    if purchase is not None and purchase.purchase_account
+                    else ""
+                ),
                 account_close=balance,
                 account_held=held_there,
             )

@@ -83,9 +83,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Add richer charts, cash-runway comparisons, and deeper account explanations.
 
-- Let a scenario model a savings goal's purchase as a dated one-off after its
-  target date.
-
 - Evolve assumptions toward extensible dated rules (salary changes, retirement,
   pensions/Social Security, temporary expenses, mortgage payoff, changing
   return or inflation regimes) instead of hard-coded special cases.

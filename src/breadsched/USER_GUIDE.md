@@ -997,6 +997,15 @@ goal's target amount or target date, or leave the goal out, without changing the
 itself or any other scenario. The change applies from the goal's start date, as if
 the scenario's target had always applied.
 
+A scenario can also model what the goal is for: give a purchase date, on or after
+the target date, and the expense or asset account it buys into (a roof repair
+expense, say, or a car asset). On that date the scenario moves the target, as that
+scenario sets it, out of the goal's account into the purchase account, and from that
+month the goal sets nothing aside. The purchase shows in the scenario's Plan and
+Projection as a one-off; it never posts, is never raised by inflation, and other
+scenarios, including Base, are unchanged. Leaving the goal out of a scenario drops
+its purchase too.
+
 In **Projection**, each month shows what goals have set aside by its end. The
 projection starts from what each goal has actually set aside, then applies the same
 rule to the scenario's own projected income, month by month, so a scenario with

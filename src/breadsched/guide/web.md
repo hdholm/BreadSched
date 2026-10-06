@@ -167,7 +167,8 @@ goals** includes closed goals. The Dashboard lists each open goal under **Saving
 goals**; choose a goal's name to open **Goals**. After **Edit**, the form below the
 goal form changes that goal in one scenario: choose the scenario, enter a different
 target amount or target date or check **Leave out**, and choose **Apply to
-scenario** (with nothing entered, the scenario follows the goal unchanged).
+scenario** (with nothing entered, the scenario follows the goal unchanged). **Buy
+on** and **Buy into** model the purchase in that scenario.
 **Scenario changes** lists every change. **Projection** shows a **Savings goals**
 section, and **Plan** lists goals reaching their target in its range. See
 [Savings goals](../USER_GUIDE.md#savings-goals).

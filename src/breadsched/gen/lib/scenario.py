@@ -88,20 +88,30 @@ class GoalOverride:
     """How one scenario changes a savings goal that otherwise applies to every scenario.
 
     Goals are pinned: each scenario inherits every goal unchanged unless it
-    overrides the target amount or date, or leaves the goal out.
+    overrides the target amount or date, or leaves the goal out. A scenario may
+    also model the purchase the goal saves for: on ``purchase_on`` (on or after the
+    target date) the target leaves the goal's account for ``purchase_account``.
     """
 
-    __slots__ = ("excluded", "target_amount", "target_date")
+    __slots__ = ("excluded", "purchase_account", "purchase_on", "target_amount", "target_date")
 
     def __init__(
         self,
         target_amount: Money | None = None,
         target_date: date | None = None,
         excluded: bool = False,
+        purchase_on: date | None = None,
+        purchase_account: str | None = None,
     ) -> None:
         self.target_amount = target_amount
         self.target_date = target_date
         self.excluded = excluded
+        self.purchase_on = purchase_on
+        self.purchase_account = purchase_account
+
+    @property
+    def purchases(self) -> bool:
+        return self.purchase_on is not None and self.purchase_account is not None
 
     def serialize(self) -> dict[str, Any]:
         return {
@@ -112,16 +122,21 @@ class GoalOverride:
             ),
             "target_date": self.target_date.isoformat() if self.target_date else None,
             "excluded": self.excluded,
+            "purchase_on": self.purchase_on.isoformat() if self.purchase_on else None,
+            "purchase_account": self.purchase_account,
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> GoalOverride:
         amount = data.get("target_amount")
         when = data.get("target_date")
+        bought = data.get("purchase_on")
         return cls(
             target_amount=Money(*amount) if amount is not None else None,
             target_date=date.fromisoformat(when) if when else None,
             excluded=bool(data.get("excluded", False)),
+            purchase_on=date.fromisoformat(bought) if bought else None,
+            purchase_account=data.get("purchase_account"),
         )
 
     def __eq__(self, other: object) -> bool:
