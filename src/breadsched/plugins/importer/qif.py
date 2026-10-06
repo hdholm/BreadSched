@@ -4,6 +4,14 @@ The parser intentionally uses only the Python standard library.  QIF has no stab
 record identifiers, so deterministic UUID5 handles are derived from account names
 and transaction content.  Re-importing the same export therefore updates/adopts the
 same objects as far as the source format permits.
+
+A new bank, cash, or card row that matches a transaction from elsewhere in the
+same account (entered by hand, or imported from a statement in another format)
+on the same date for the same amount is held back as a possible duplicate, one
+row per existing transaction, unless the caller includes possible duplicates. A
+row's handle depends on the categories it resolves to, so new rows are decided
+after every row's handle is known; the file's own transactions never count as
+such a match.
 """
 
 from __future__ import annotations
@@ -23,6 +31,7 @@ from ...gen.utils.amount_input import (
     parse_decimal_amount,
 )
 from ...gen.utils.logs import get_logger
+from .duplicates import DuplicateGuard
 from .gnucash_common import ImportResult, ImportSink
 from .quotes import record_security_quote
 
@@ -323,6 +332,7 @@ def import_book(
     number_format: NumberFormat | Literal["auto"] = "auto",
     date_format: QifDateFormat | Literal["auto"] = "auto",
     notify: bool = True,
+    include_duplicates: bool = False,
 ) -> ImportResult:
     """Import QIF bank, cash, credit-card, and investment accounts and transactions.
 
@@ -416,6 +426,9 @@ def import_book(
             investments.learn_security(record)
         done = 0
         identity_counts: dict[tuple[object, ...], int] = {}
+        # Every handle this file produces, and the new rows waiting on them.
+        family: set[str] = set()
+        new_rows: list[tuple[str, str, date, Money, str, str, list[dict]]] = []
         for record in records:
             if not record:
                 continue
@@ -522,19 +535,44 @@ def import_book(
             occurrence = identity_counts.get(identity, 0) + 1
             identity_counts[identity] = occurrence
             handle = _stable_handle("transaction", *identity, occurrence)
+            family.add(handle)
             kept = sink.keep_local_categories(handle, source_account, raw_splits)
             if kept is None:
                 result.observe("transaction", handle)
                 result.transactions_unchanged += 1
                 continue
-            sink.transaction(
-                handle,
-                post_date,
-                fields.get("P", "").strip() or fields.get("M", "").strip() or "QIF transaction",
-                None,
-                fields.get("N", ""),
-                kept,
+            description = (
+                fields.get("P", "").strip() or fields.get("M", "").strip() or "QIF transaction"
             )
+            if not include_duplicates and db.get_transaction(handle) is None:
+                new_rows.append(
+                    (
+                        handle,
+                        source_account,
+                        post_date,
+                        amount,
+                        description,
+                        fields.get("N", ""),
+                        kept,
+                    )
+                )
+                continue
+            sink.transaction(handle, post_date, description, None, fields.get("N", ""), kept)
+        guards = {
+            account: DuplicateGuard(db, account, family) for account in {row[1] for row in new_rows}
+        }
+        for handle, source_account, post_date, amount, description, number, kept in new_rows:
+            if guards[source_account].claim(post_date, amount) is not None:
+                result.possible_duplicates += 1
+                result.skip(
+                    "possible duplicate of a transaction already in this account on the "
+                    "same date for the same amount",
+                    description,
+                    identity=handle,
+                    kind="transaction",
+                )
+                continue
+            sink.transaction(handle, post_date, description, None, number, kept)
         report("Finishing", done)
         result.finish(db, txn)
     if notify:

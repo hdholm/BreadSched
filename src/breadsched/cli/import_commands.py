@@ -494,7 +494,7 @@ def register(add: AddCommand) -> None:
     imp.add_argument(
         "--include-duplicates",
         action="store_true",
-        help="OFX: also import rows matching a transaction already in the account on the "
+        help="QIF, OFX: also import rows matching a transaction already in the account on the "
         "same date for the same amount (held back by default)",
     )
     imp.add_argument(

@@ -379,7 +379,7 @@ detection when a file is ambiguous. Imports run in the background as one
 atomic undo step. Leave the open book and source file in place until completion or
 cancellation; a cancelled import writes nothing. After an import, BreadSched says
 how many reimbursement proposals are waiting. **Include possible duplicates** also
-imports OFX rows otherwise held back as possible duplicates.
+imports QIF and OFX rows otherwise held back as possible duplicates.
 
 ### Import a CSV statement
 

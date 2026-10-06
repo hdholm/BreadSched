@@ -123,8 +123,8 @@ class ImportDialog(BoundedWindow):
 
         self.duplicates_check = Gtk.CheckButton(label="Include possible duplicates")
         self.duplicates_check.set_tooltip_text(
-            "An OFX row matching a transaction already in the account on the same date for "
-            "the same amount is otherwise held back"
+            "A QIF or OFX row matching a transaction already in the account on the same date "
+            "for the same amount is otherwise held back"
         )
         box.append(self.duplicates_check)
 

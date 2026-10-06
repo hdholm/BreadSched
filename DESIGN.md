@@ -2037,8 +2037,13 @@ account once, leaves out every handle this statement produces (computed by
 `ofx._row_handle` in a pre-pass, so identical rows and re-imports never match
 themselves), and lets each existing transaction claim at most one row. A row whose
 handle already exists is a re-import and is never checked. `include_duplicates`
-(import service, CLI, GTK, browser) turns the guard off. QIF handles depend on the
-resolved categories, so QIF has no such pre-pass and no guard yet.
+(import service, CLI, GTK, browser) turns the guard off. QIF bank, cash, and card
+rows get the same guard. A QIF handle depends on the categories the row resolves
+to, so there is no pre-pass: the import loop writes rows whose handle already
+exists, collects every handle the file produces and defers the new rows, then
+builds one guard per source account that leaves out the whole family before
+deciding the deferred rows. The file's own rows therefore never match each other,
+in whatever order they appear. QIF investment records are not checked.
 
 CSV statements (`plugins/importer/csv_import.py`) are read through an explicit
 column mapping. Encoding, delimiter, date order, and decimal convention use the
