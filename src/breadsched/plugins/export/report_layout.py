@@ -18,7 +18,7 @@ from ...gen.engine.activity import PlanMeasure
 from ...gen.engine.category_report import CategoryReport
 from ...gen.engine.completeness import Completeness, combine
 from ...gen.engine.dashboard import Dashboard, MissedGroup
-from ...gen.engine.projection import Projection
+from ...gen.engine.projection_result import Projection
 from ...gen.lib.account import AccountClass
 from ...gen.lib.money import Money
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer, SpendingPoint

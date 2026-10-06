@@ -819,6 +819,35 @@ class TestEngineBoundaries:
         assert "build_activity_report" in from_activity
         assert [name for name in from_activity if name.startswith("_")] == []
 
+    def test_projection_results_are_separate_from_the_engine(self):
+        """``projection_result`` holds results; only ``projection`` calculates them.
+
+        Print, export, the bridge, and presentation read result types without
+        importing the engine, and ``projection`` re-exports the same classes.
+        """
+        from breadsched.gen.engine import projection, projection_result
+
+        engine = SRC / "gen" / "engine"
+        result_tree = ast.parse((engine / "projection_result.py").read_text(encoding="utf-8"))
+        modules = {
+            node.module or "" for node in ast.walk(result_tree) if isinstance(node, ast.ImportFrom)
+        }
+        assert "projection" not in modules
+        for name in projection_result.__all__:
+            assert getattr(projection, name) is getattr(projection_result, name)
+        for path in (
+            engine / "projection_bridge.py",
+            SRC / "plugins" / "export" / "report_layout.py",
+            SRC / "plugins" / "export" / "csv_export.py",
+            SRC / "plugins" / "export" / "html_report.py",
+        ):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            imported = {
+                node.module or "" for node in ast.walk(tree) if isinstance(node, ast.ImportFrom)
+            }
+            assert not any(module.endswith("engine.projection") for module in imported), path
+            assert "projection" not in imported, path
+
     def test_commit_verification_is_separate_from_storage(self):
         """``DbSQLite`` stores rows; ``ChangeVerification`` checks what a batch changed."""
         from breadsched.gen.db.change_verification import ChangeVerification

@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .gen.engine.fsa import FsaYearStatus
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone
-    from .gen.engine.projection import Projection
+    from .gen.engine.projection_result import Projection
     from .gen.engine.reimbursement_outlook import ReimbursementOutlook
     from .gen.engine.savings_goals import GoalProgress
     from .gen.lib.scenario import GoalOverride, ReimbursementOverride
