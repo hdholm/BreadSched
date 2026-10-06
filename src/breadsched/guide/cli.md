@@ -36,6 +36,8 @@ breadsched dashboard household.breadsched --json
 breadsched activity household.breadsched --start 2026-06-01 --end 2026-12-31 \
     --as-of 2026-06-30
 breadsched holdings household.breadsched --lots   # cost basis, lots, and gains
+breadsched account household.breadsched edit --name "Assets:Brokerage" \
+    --cost-basis average                          # or fifo (the default)
 ```
 
 Start the other interfaces on the same book with `breadsched gui household.breadsched`

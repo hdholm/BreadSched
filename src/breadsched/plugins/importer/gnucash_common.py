@@ -784,7 +784,9 @@ class ImportSink:
         imported.atype = existing.atype
         imported.notes = existing.notes
         imported.fsa_years = list(existing.fsa_years)
+        imported.fsa_dependent_care = existing.fsa_dependent_care
         imported.annual_return = existing.annual_return
+        imported.cost_basis_method = existing.cost_basis_method
         imported.annual_interest = existing.annual_interest
         imported.exclude_from_projection = existing.exclude_from_projection
         imported.group = existing.group

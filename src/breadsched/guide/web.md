@@ -61,7 +61,9 @@ each quote (`quote_age_days`), with negative days identifying a future-dated quo
 
 **Holdings and cost basis…** in **Accounts** lists each holding's shares, cost,
 market value, and unrealized gain; open a holding for its lots, sales, and notes
-(`/api/holdings`, share counts as exact decimal text). See
+(`/api/holdings`, share counts as exact decimal text). An Investment or Retirement
+account's settings choose **Cost of shares sold** (first in, first out, or average
+cost; `/api/account/cost-basis`). See
 [Holdings and cost basis](../USER_GUIDE.md#holdings-and-cost-basis).
 
 ## Enter transactions in the register

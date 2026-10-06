@@ -524,6 +524,10 @@ def _apply_account_options(db: DbSQLite, account: Account, args) -> None:
         if account.atype is not AccountType.FSA:
             raise CommandError("--dependent-care applies only to an FSA account")
         account.fsa_dependent_care = args.dependent_care
+    if args.cost_basis is not None:
+        if account.atype not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
+            raise CommandError("--cost-basis applies only to an Investment or Retirement account")
+        account.cost_basis_method = args.cost_basis
     if args.group is not None:
         account.group = args.group
     if args.linked_asset:
@@ -578,6 +582,12 @@ def register(add: AddCommand) -> None:
         metavar="yes|no",
         help="for an FSA: a dependent care FSA pays only what has been contributed, "
         "needs no EOB, and carries nothing over",
+    )
+    account.add_argument(
+        "--cost-basis",
+        choices=["fifo", "average"],
+        help="for a security account: whether a sale's cost is its oldest shares' (fifo) "
+        "or the average of every share held",
     )
     account.add_argument("--usual-payment", help="typical payment on a card")
     account.add_argument("--payment-day", type=int)

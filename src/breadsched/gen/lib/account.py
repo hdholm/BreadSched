@@ -344,6 +344,9 @@ class Account(PrimaryObject):
 
         # Projection hints.  These are what turn a chart of accounts into a model.
         self.annual_return: Decimal = Decimal("0")  # investment growth, e.g. 0.06
+        #: How a sale's cost is taken from a security's lots: "fifo" (oldest shares
+        #: first) or "average" (the average cost of every share held).
+        self.cost_basis_method: str = "fifo"
         self.annual_interest: Decimal = Decimal("0")  # cost of a liability, e.g. 0.1899
         self.exclude_from_projection: bool = False
 
@@ -432,6 +435,7 @@ class Account(PrimaryObject):
             "fsa_years": [year.serialize() for year in self.fsa_years],
             "fsa_dependent_care": self.fsa_dependent_care,
             "annual_return": str(self.annual_return),
+            "cost_basis_method": self.cost_basis_method,
             "annual_interest": str(self.annual_interest),
             "exclude_from_projection": self.exclude_from_projection,
             "group": self.group,
@@ -490,6 +494,7 @@ class Account(PrimaryObject):
         self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
         self.fsa_dependent_care = bool(data.get("fsa_dependent_care", False))
         self.annual_return = Decimal(data.get("annual_return", "0"))
+        self.cost_basis_method = str(data.get("cost_basis_method", "fifo"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))
         self.exclude_from_projection = data.get("exclude_from_projection", False)
         self.group = data.get("group", "")

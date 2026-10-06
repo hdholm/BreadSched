@@ -920,7 +920,12 @@ cost, their market value at the latest price, and the unrealized gain or loss. O
 holding to see its lots (each purchase still held, with its cost) and each sale with
 what it brought, what the shares sold had cost, and the realized gain; realized gains
 are also totalled by year. A sale takes the oldest shares first ("first in, first
-out"). Nothing is stored: the figures come from the security account's transactions
+out") unless the account is set to **Average cost**, where each share sold costs the
+average of every share held and each lot gives up the same fraction of itself.
+Choose the method in the account's settings (**Cost of shares sold** in the desktop
+account editor, **Cost of shares sold** in the browser's Accounts settings, or
+`breadsched account BOOK edit --name ACCOUNT --cost-basis average`); changing it
+recalculates every past sale. Nothing is stored: the figures come from the security account's transactions
 each time, so correcting a transaction corrects them.
 
 BreadSched says when it cannot be exact rather than guessing. Shares that arrived

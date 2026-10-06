@@ -67,6 +67,7 @@ def accounts(api: Api) -> list[dict]:
                     "source_guid": account.source_guid,
                     "source_fields": [field.serialize() for field in account.source_fields],
                     "fsa_dependent_care": account.fsa_dependent_care,
+                    "cost_basis_method": account.cost_basis_method,
                     "fsa_years": [
                         {
                             "start": year.start.isoformat(),
@@ -180,6 +181,26 @@ def commodity_price_save(api: Api, payload: dict) -> dict:
         "date": quote_date,
         "price": value,
     }
+
+
+def account_cost_basis_save(api: Api, payload: dict) -> dict:
+    """Choose how a security account's sales take cost: fifo or average."""
+    handle = str(payload.get("handle", ""))
+    stored = api.db.get_account(handle)
+    if stored is None:
+        raise KeyError(handle)
+    if stored.atype not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
+        raise ValueError("cost basis applies only to an Investment or Retirement account")
+    source = Account.from_dict(stored.serialize())
+    account = Account.from_dict(stored.serialize())
+    account.cost_basis_method = str(payload.get("method", "")).strip()
+    result = save_account(
+        api.db,
+        SaveAccount(account, existing_handle=account.handle, source=source),
+    )
+    if not result.ok:
+        raise service_error(result.errors[0])
+    return {"handle": account.handle, "method": account.cost_basis_method}
 
 
 def account_type_save(api: Api, payload: dict) -> dict:

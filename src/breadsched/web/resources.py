@@ -9,6 +9,7 @@ from urllib.parse import parse_qs
 
 from .account_resource import (
     account_card_save,
+    account_cost_basis_save,
     account_emergency_fund_save,
     account_fsa_years_save,
     account_type_save,
@@ -347,6 +348,7 @@ def _currency_quote(api: Api, body: Mapping[str, Any]) -> object:
 
 POST_ROUTES: dict[str, PostRoute] = {
     "/api/dashboard/config": dashboard_config_save,
+    "/api/account/cost-basis": account_cost_basis_save,
     "/api/account/type": account_type_save,
     "/api/account/card": account_card_save,
     "/api/account/emergency-fund": account_emergency_fund_save,
