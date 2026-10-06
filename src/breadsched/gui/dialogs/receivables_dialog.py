@@ -33,8 +33,13 @@ from ...gen.services.receivables import (
     save_receivable,
     shared_costs,
 )
+from ...gen.services.scenarios import SetReimbursementOverride, set_reimbursement_override
 from ...gen.utils.amount_input import parse_user_amount
-from ...presentation import service_error_message, shared_cost_text
+from ...presentation import (
+    reimbursement_override_text,
+    service_error_message,
+    shared_cost_text,
+)
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow, scroll_body
 from ..widgets.choice import bounded_dropdown
@@ -231,6 +236,36 @@ class ReceivablesDialog(BoundedWindow):
             write_row.append(widget)
         write_row.append(record)
         self.detail.append(write_row)
+
+        # A saved scenario may expect less, nothing, or later; others are unchanged.
+        scenario_row = Gtk.Box(spacing=8)
+        self.scenario_picker = bounded_dropdown()
+        self.scenario_amount = Gtk.Entry(placeholder_text="as expected", xalign=1)
+        self.scenario_amount.add_css_class("numeric")
+        self.scenario_amount.set_tooltip_text(
+            "What the payer pays in that scenario; 0 for nothing. The rest is projected "
+            "as written off."
+        )
+        self.scenario_date = Gtk.Entry(placeholder_text="YYYY-MM-DD")
+        self.scenario_date.set_tooltip_text("When the payer pays in that scenario")
+        self.scenario_button = Gtk.Button(label="Apply to scenario")
+        self.scenario_button.set_tooltip_text(
+            "Leave both fields empty to expect what the receivable says"
+        )
+        self.scenario_button.connect("clicked", lambda _b: self.apply_scenario())
+        for widget in (
+            Gtk.Label(label="In scenario"),
+            self.scenario_picker,
+            self.scenario_amount,
+            self.scenario_date,
+            self.scenario_button,
+        ):
+            scenario_row.append(widget)
+        self.detail.append(scenario_row)
+        self.scenario_changes = Gtk.Label(xalign=0, wrap=True)
+        self.scenario_changes.add_css_class("dim")
+        self.detail.append(self.scenario_changes)
+        self._scenarios: list[str] = []
         box.append(self.detail)
 
         self.status = Gtk.Label(xalign=0, wrap=True, selectable=True)
@@ -431,6 +466,28 @@ class ReceivablesDialog(BoundedWindow):
             receivable.disputed_on.isoformat() if receivable.disputed_on else ""
         )
         self.dispute_note.set_text(receivable.dispute_note)
+        self._fill_scenarios(receivable)
+
+    def _fill_scenarios(self, receivable: Receivable) -> None:
+        scenarios = sorted(self.db.iter_scenarios(), key=lambda item: item.name.casefold())
+        selected = self.scenario_picker.get_selected()
+        self._scenarios = [item.handle for item in scenarios]
+        self.scenario_picker.set_model(Gtk.StringList.new([item.name for item in scenarios]))
+        if self._scenarios:
+            self.scenario_picker.set_selected(min(selected, len(self._scenarios) - 1))
+        self.scenario_button.set_sensitive(bool(self._scenarios))
+        changes = [
+            reimbursement_override_text(item.name, item.reimbursement_overrides[receivable.handle])
+            for item in scenarios
+            if receivable.handle in item.reimbursement_overrides
+        ]
+        self.scenario_changes.set_text(
+            "Scenario changes: " + "; ".join(changes)
+            if changes
+            else "Every scenario expects what this receivable says."
+            if self._scenarios
+            else "Save a scenario to plan for a payer paying less, nothing, or later."
+        )
 
     def _fill_pickers(self, receivable: Receivable) -> None:
         """Offer recent unlinked expense-account splits, costs and credits apart."""
@@ -539,6 +596,35 @@ class ReceivablesDialog(BoundedWindow):
         self.refresh()
         self._message(message, False)
         return receivable
+
+    def apply_scenario(self) -> bool:
+        """Change what the chosen scenario expects back for the loaded receivable."""
+        if self.editing is None or not self._scenarios:
+            return False
+        try:
+            amount = self._money(self.scenario_amount, "amount", optional=True)
+            when = self._date(self.scenario_date, "date", optional=True)
+        except ValueError as error:
+            self._message(str(error), True)
+            return False
+        result = set_reimbursement_override(
+            self.db,
+            SetReimbursementOverride(
+                self._scenarios[self.scenario_picker.get_selected()], self.editing, amount, when
+            ),
+        )
+        if result.value is None:
+            self._message(service_error_message(result.errors[0]), True)
+            return False
+        override = result.value.reimbursement_overrides.get(self.editing)
+        self._refresh_detail()
+        self._message(
+            reimbursement_override_text(result.value.name, override) + "."
+            if override is not None
+            else f"{result.value.name} expects what the receivable says.",
+            False,
+        )
+        return True
 
     def delete(self) -> bool:
         """Delete the loaded receivable; its transactions are untouched."""

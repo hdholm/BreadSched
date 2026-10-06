@@ -1724,7 +1724,11 @@ notes), the browser (`reimbursements` and `reimbursement_notes` on the projectio
 payload), print, and `project`. `services.scenarios.set_reimbursement_override`
 refuses a receivable not currently expected, an amount outside zero to what is owed,
 and a past date, and clears the change when both are empty; deleting a receivable
-drops every scenario's change to it in the same undo step.
+drops every scenario's change to it in the same undo step. The GTK receivables
+dialog's **In scenario** row and the browser's (`/api/receivable/scenario`, with
+`scenarios` and each receivable's `scenario_changes` on `/api/receivables`) only
+parse input and call that service; `presentation.reimbursement_override_text` words
+each change.
 
 `services/receivables.py` validates every write: linked splits must be in
 expense-class accounts, expense links positive and reimbursement links negative, and

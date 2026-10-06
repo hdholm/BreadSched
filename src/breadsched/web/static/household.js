@@ -230,6 +230,33 @@ async function showReimbursables() {
   const today = new Date().toISOString().slice(0, 10);
   const selected = data.receivables.find((item) => item.handle === state.receivableOpen) || null;
   const field = (name, attrs = {}) => el("input", { name, ...attrs });
+  // A saved scenario may expect less, nothing, or later from the payer.
+  const scenarioRow = (selected) => {
+    if (!(data.scenarios || []).length) {
+      return el("p", { class:"note" },
+        "Save a scenario to plan for a payer paying less, nothing, or later.");
+    }
+    const picker = el("select", { "aria-label":"Scenario" },
+      data.scenarios.map((item) => el("option", { value:item.handle }, item.name)));
+    const amount = field("scenario_amount", { inputmode:"decimal", placeholder:"as expected",
+      "aria-label":"Amount expected in scenario" });
+    const when = field("scenario_on", { type:"date", "aria-label":"Date expected in scenario" });
+    const changes = selected.scenario_changes || [];
+    return el("div", {},
+      el("div", { class:"toolbar" }, el("strong", {}, "In scenario"), picker, amount, when,
+        el("button", { class:"action", type:"button",
+          title:"Leave both fields empty to expect what the receivable says",
+          onclick:run(async () => {
+            const changed = await post("/api/receivable/scenario", {
+              scenario:picker.value, receivable:selected.handle,
+              amount:amount.value, on:when.value });
+            say(`${changed.text}.`);
+            await refresh();
+          }) }, "Apply to scenario")),
+      el("p", { class:"note" }, changes.length
+        ? `Scenario changes: ${changes.map((item) => item.text).join("; ")}`
+        : "Every scenario expects what this receivable says."));
+  };
   const payer = field("payer", { placeholder:"Acme Insurance",
     value:selected?.payer || "", "aria-label":"Payer" });
   const description = field("description", { placeholder:"What it was for",
@@ -393,6 +420,7 @@ async function showReimbursables() {
           say("Wrote off the amount; it is back in the expense account.");
           await refresh();
         }) }, "Record write-off")),
+      scenarioRow(selected),
       el("div", { class:"toolbar" },
         el("button", { class:"action", type:"button", onclick:run(async () => {
           if (!window.confirm(`Delete the receivable from ${selected.payer}? `

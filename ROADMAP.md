@@ -41,8 +41,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Ensure planning classifications feed Plan, Projection explanations, scenario
   comparison, and Dashboard consistently.
 
-- Edit a scenario's expected reimbursements (amount and date) in the desktop and
-  browser; the engine, service, command line, and Projection display exist.
 
 
 ## Scheduled transactions and loans

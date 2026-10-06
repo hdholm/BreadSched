@@ -7513,6 +7513,54 @@ class TestReceivablesDialog:
         finally:
             dialog.destroy()
 
+    def test_a_scenario_expects_less_of_a_reimbursement(self, app, window, populated_book):
+        from breadsched.gen.lib import Scenario
+        from breadsched.gen.services.receivables import (
+            SaveReceivable,
+            attach_expense_split,
+            save_receivable,
+        )
+        from breadsched.gui.dialogs.receivables_dialog import ReceivablesDialog
+
+        db, rent_txn, _rent, cost = self._book(app, populated_book)
+        due = date.today() + timedelta(days=30)
+        receivable = save_receivable(
+            db,
+            SaveReceivable(rent_txn.post_date, "Acme Insurance", "Visit", expected_cash_date=due),
+        ).value
+        assert attach_expense_split(db, receivable.handle, rent_txn.handle, cost.handle).ok
+        scenario = Scenario(name="Careful", start=date.today().replace(day=1), years=1)
+        with db.transaction("Scenario") as txn:
+            db.add_scenario(scenario, txn)
+        dialog = ReceivablesDialog(window, db)
+        try:
+            dialog.edit(receivable.handle)
+            assert dialog.scenario_button.get_sensitive()
+            assert dialog.scenario_changes.get_text() == (
+                "Every scenario expects what this receivable says."
+            )
+            dialog.scenario_amount.set_text("-5")
+            assert dialog.apply_scenario() is False
+            assert db.get_scenario(scenario.handle).reimbursement_overrides == {}
+
+            dialog.scenario_amount.set_text("100")
+            dialog.scenario_date.set_text((due + timedelta(days=10)).isoformat())
+            assert dialog.apply_scenario() is True
+            stored = db.get_scenario(scenario.handle).reimbursement_overrides[receivable.handle]
+            assert (stored.amount, stored.on) == (Money(100), due + timedelta(days=10))
+            assert dialog.scenario_changes.get_text() == (
+                f"Scenario changes: Careful: 100.00 expected back, on "
+                f"{(due + timedelta(days=10)).isoformat()}"
+            )
+
+            dialog.scenario_amount.set_text("")
+            dialog.scenario_date.set_text("")
+            assert dialog.apply_scenario() is True
+            assert db.get_scenario(scenario.handle).reimbursement_overrides == {}
+            assert dialog.status.get_text() == "Careful expects what the receivable says."
+        finally:
+            dialog.destroy()
+
     def test_link_dispute_write_off_and_unlink_leave_linked_transactions_alone(
         self, app, window, populated_book
     ):

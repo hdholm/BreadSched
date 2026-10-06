@@ -949,3 +949,49 @@ def test_a_scenario_drawdown_is_added_from_manage_scenarios(page, served):
         targets[0],
         Decimal("0.041"),
     )
+
+
+def test_a_scenario_expects_less_of_a_reimbursement(page, served):
+    from datetime import timedelta
+
+    from breadsched.gen.lib import AccountClass, Money, Scenario, Transaction
+    from breadsched.gen.services.receivables import (
+        SaveReceivable,
+        attach_expense_split,
+        save_receivable,
+    )
+
+    db, _httpd = served
+    today = date.today()
+    expense = next(
+        a
+        for a in db.iter_accounts()
+        if a.account_class is AccountClass.EXPENSE and not a.placeholder and not a.hidden
+    )
+    bank = next(a for a in db.iter_accounts() if a.name == "Checking")
+    visit = Transaction.simple(today, "Clinic", expense.handle, bank.handle, Money("90"))
+    scenario = Scenario(name="Careful", start=today.replace(day=1), years=1)
+    with db.transaction("Browser fixture") as txn:
+        db.add_transaction(visit, txn)
+        db.add_scenario(scenario, txn)
+    receivable = save_receivable(
+        db,
+        SaveReceivable(
+            incurred_date=today,
+            payer="Acme Insurance",
+            expected_cash_date=today + timedelta(days=30),
+        ),
+    ).value
+    cost = next(s for s in visit.splits if s.account == expense.handle)
+    assert attach_expense_split(db, receivable.handle, visit.handle, cost.handle).ok
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Reimbursables", exact=True).first.click()
+    page.get_by_role("button", name="Open", exact=True).first.click()
+    page.wait_for_selector("text=Every scenario expects what this receivable says.")
+    page.fill("input[aria-label='Amount expected in scenario']", "40")
+    page.locator("select[aria-label='Scenario']").select_option(label="Careful")
+    page.get_by_role("button", name="Apply to scenario").click()
+    page.wait_for_selector("text=Scenario changes: Careful: 40.00 expected back")
+    stored = db.get_scenario(scenario.handle).reimbursement_overrides[receivable.handle]
+    assert (stored.amount, stored.on) == (Money(40), None)

@@ -17,7 +17,7 @@ if TYPE_CHECKING:
     from .gen.engine.projection import Projection
     from .gen.engine.reimbursement_outlook import ReimbursementOutlook
     from .gen.engine.savings_goals import GoalProgress
-    from .gen.lib.scenario import GoalOverride
+    from .gen.lib.scenario import GoalOverride, ReimbursementOverride
     from .gen.services.plan import PlanGoalMilestone
 
 _LOCALE_DIR = Path(__file__).with_name("locale")
@@ -568,6 +568,18 @@ def reimbursement_outlook_text(item: ReimbursementOutlook) -> str:
         f"Reimbursable {label}{changed}: gross cost {item.gross.format()}{before}; "
         f"{expected}{shortfall}; net household cost {item.net_cost.format()}."
     )
+
+
+def reimbursement_override_text(scenario_name: str, override: ReimbursementOverride) -> str:
+    """How one scenario changes an expected reimbursement."""
+    parts = []
+    if override.amount is not None:
+        parts.append(
+            f"{override.amount.format()} expected back" if override.amount else "nothing expected"
+        )
+    if override.on is not None:
+        parts.append(f"on {override.on.isoformat()}")
+    return f"{scenario_name}: " + ", ".join(parts)
 
 
 def projection_notes(result: Projection) -> list[str]:

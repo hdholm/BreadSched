@@ -10,6 +10,16 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a238 - 2026-10-06
+
+- **Change a scenario's expected reimbursement on the desktop and in the browser.**
+  An open receivable gains an **In scenario** row (scenario, amount expected back,
+  date, **Apply to scenario**) and a line listing every scenario's change, in the GTK
+  receivables dialog and on the browser's Reimbursables page
+  (`/api/receivable/scenario`; `/api/receivables` adds `scenarios` and each
+  receivable's `scenario_changes`). Both call `set_reimbursement_override`, so a
+  refused change leaves the scenario as it was; empty fields clear the change.
+
 ## 0.2.0a237 - 2026-10-06
 
 - **Projection shows reimbursable expenses' gross and net cost, and scenarios can
