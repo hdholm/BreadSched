@@ -67,6 +67,21 @@ def _choice(raw: Mapping[str, Any], key: str) -> str:
     return value
 
 
+def _splits(raw: Mapping[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Split column pairs; a pair left entirely blank in the form is ignored."""
+    items = raw.get("splits") or []
+    if not isinstance(items, list):
+        raise ValueError("splits must be a list")
+    pairs = []
+    for item in items:
+        if not isinstance(item, Mapping):
+            raise ValueError("each split must be an object")
+        category, amount = _text(item, "category").strip(), _text(item, "amount").strip()
+        if category or amount:
+            pairs.append((category, amount))
+    return tuple(pairs)
+
+
 def _mapping(payload: Mapping[str, Any]) -> CsvMapping:
     raw = payload.get("mapping")
     if not isinstance(raw, Mapping):
@@ -88,6 +103,7 @@ def _mapping(payload: Mapping[str, Any]) -> CsvMapping:
         delimiter=_text(raw, "delimiter", "auto") or "auto",
         header=_flag(raw, "header", True),
         invert=_flag(raw, "invert", False),
+        splits=_splits(raw),
     )
 
 
@@ -154,6 +170,10 @@ def csv_preview(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
                 "category": api.db.full_name(row.category) if row.category else None,
                 "payee": payee_names.get(row.payee) if row.payee else None,
                 "note": row.note,
+                "splits": [
+                    {"category": api.db.full_name(account), "amount": str(value.to_decimal())}
+                    for account, value in row.splits
+                ],
             }
             for row in preview.rows
         ],

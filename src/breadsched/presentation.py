@@ -266,6 +266,9 @@ _SERVICE_MESSAGES = {
     "import.csv.account.invalid": "Choose a bank, cash, card, or other posting asset or liability",
     "import.csv.column.not_found": "A mapped column is not in the CSV file",
     "import.csv.amount.mapping": "Map either one amount column or debit and credit columns",
+    "import.csv.split.mapping": (
+        "Map either one category column or split columns, each with a category and an amount"
+    ),
     "import.csv.date_format.ambiguous": (
         "Every date could be day-first or month-first; choose the date order"
     ),

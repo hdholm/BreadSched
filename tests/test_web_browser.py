@@ -145,6 +145,36 @@ def test_csv_statement_maps_previews_and_imports(page, served, tmp_path):
     assert len(list(db.iter_transactions())) == before + 2
 
 
+def test_csv_split_columns_preview_and_import(page, served, tmp_path):
+    db, _httpd = served
+    statement = tmp_path / "split.csv"
+    statement.write_text(
+        "Date,Description,Amount,Cat 1,Amt 1,Cat 2,Amt 2\n"
+        "2026-09-01,Warehouse,-30.00,Expenses:Groceries,-20.00,Expenses:Utilities,-10.00\n",
+        encoding="utf-8",
+    )
+    page.get_by_role("button", name="Import", exact=True).first.click()
+    page.wait_for_selector("text=CSV statement")
+    panel = page.locator("div.panel:has(h2:text('CSV statement'))")
+    panel.locator("input[type=file]").set_input_files(str(statement))
+    panel.get_by_role("button", name="Read columns").click()
+    page.wait_for_selector("text=Check the suggested columns")
+    for number in (1, 2):
+        panel.get_by_role("button", name="Add split columns").click()
+        panel.get_by_label(f"Split {number} category column").select_option(f"Cat {number}")
+        panel.get_by_label(f"Split {number} amount column").select_option(f"Amt {number}")
+
+    panel.get_by_role("button", name="Preview").click()
+    page.wait_for_selector("text=New: 1")
+    category = panel.locator("tbody tr").first.locator("td").nth(4).inner_text()
+    assert category == "Expenses:Groceries (20.00); Expenses:Utilities (10.00)"
+
+    panel.locator("button.primary").click()
+    page.wait_for_selector("text=Already imported: 1")
+    [posted] = [item for item in db.iter_transactions() if item.description == "Warehouse"]
+    assert len(posted.splits) == 3
+
+
 def test_payees_view_adds_a_payee_and_accepts_proposals(page, served):
     db, _httpd = served
     transaction = next(iter(db.iter_transactions()))

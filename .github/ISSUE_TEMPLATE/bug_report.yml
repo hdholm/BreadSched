@@ -1,0 +1,66 @@
+name: Bug report
+description: Something BreadSched does wrongly, including a wrong financial result.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        **Do not attach or paste an unsanitized financial book, GnuCash file, bank
+        statement, or screenshot showing real account numbers, balances, or
+        transactions.** Reduce the problem to a synthetic example (`breadsched sample`
+        creates a synthetic book) or describe the structure that triggers it, with
+        neutral names and arbitrary amounts. Report security problems privately
+        instead (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `breadsched --version`, or Help → About.
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      options:
+        - Desktop (GTK)
+        - Browser
+        - Command line
+        - More than one
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: Operating system and how BreadSched was installed (Windows installer, Flatpak, pip, source).
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from a new or sample book where you can.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual result
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Error output
+      description: >-
+        A traceback, the browser's correlation ID, or `--log-file` output, with any
+        account names, amounts, and file paths replaced.
+      render: text
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This report contains no unsanitized financial data, book, statement, or screenshot of real accounts.
+          required: true

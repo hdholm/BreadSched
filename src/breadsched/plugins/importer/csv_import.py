@@ -2,7 +2,9 @@
 
 CSV has no standard layout, so nothing is guessed about which column means what:
 the caller maps the date, the amount (or separate debit and credit columns), and
-optionally the description and memo. Encoding, delimiter, date order, and decimal
+optionally the description and memo. A row may also be split: each mapped pair of
+a category column and an amount column becomes one split, and the pairs must add up
+exactly to the row's amount or the row is refused. Encoding, delimiter, date order, and decimal
 convention are detected from the whole file unless chosen, and an ambiguous date
 order is refused rather than assumed.
 
@@ -97,6 +99,10 @@ class CsvMapping:
     header: bool = True
     #: Flip every sign, for exports that show money out as positive.
     invert: bool = False
+    #: Split columns: (category column, amount column) pairs. Each filled pair
+    #: is one split of the row; their amounts, in the row's sign convention, must
+    #: add up to the row's amount. Replaces the single ``category`` column.
+    splits: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +125,8 @@ class CsvRow:
     payee: str | None = None
     #: A note that does not stop the row, such as an unknown payee.
     note: str = ""
+    #: Mapped splits as (category account, amount), adding up to ``amount``.
+    splits: tuple[tuple[str, Money], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,6 +302,17 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         raise CsvMappingError(
             "import.csv.amount.mapping", "map an amount column or debit/credit columns"
         )
+    if mapping.splits and mapping.category:
+        raise CsvMappingError(
+            "import.csv.split.mapping", "map either one category column or split columns"
+        )
+    if any(
+        not (category or "").strip() or not (amount or "").strip()
+        for category, amount in mapping.splits
+    ):
+        raise CsvMappingError(
+            "import.csv.split.mapping", "each split needs a category column and an amount column"
+        )
     source = Path(path)
     records, encoding, delimiter = _load_records(source, mapping.encoding, mapping.delimiter)
     first_line = 1
@@ -313,6 +332,13 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
     category_col = _column(mapping.category, labels, mapping.header, "category")
     payee_col = _column(mapping.payee, labels, mapping.header, "payee")
     currency_col = _column(mapping.currency, labels, mapping.header, "currency")
+    split_cols = [
+        (
+            _column(category, labels, mapping.header, f"split {number} category"),
+            _column(amount, labels, mapping.header, f"split {number} amount"),
+        )
+        for number, (category, amount) in enumerate(mapping.splits, start=1)
+    ]
     assert date_col is not None
     resolve = _Resolver(db, account)
 
@@ -337,7 +363,7 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
     amount_cells = [
         cell(row, index)
         for _line, row in numbered
-        for index in (amount_col, debit_col, credit_col)
+        for index in (amount_col, debit_col, credit_col, *(amount for _c, amount in split_cols))
         if index is not None
     ]
     number_format: NumberFormat | None
@@ -404,6 +430,11 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
         problem = resolve.currency(cell(source_row, currency_col))
         category, category_problem = resolve.category(cell(source_row, category_col))
         problem = problem or category_problem
+        splits: tuple[tuple[str, Money], ...] = ()
+        if split_cols and not problem:
+            splits, problem = _row_splits(
+                source_row, cell, split_cols, amount, number_format, mapping.invert, resolve
+            )
         if problem:
             rows.append(CsvRow(line, when, amount, description, memo, "invalid", problem))
             continue
@@ -426,6 +457,7 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
                     category=category,
                     payee=payee,
                     note=note,
+                    splits=splits,
                 )
             )
             continue
@@ -442,6 +474,7 @@ def read_statement(db: DbSQLite, path: str | Path, account: str, mapping: CsvMap
                 category=category,
                 payee=payee,
                 note=note,
+                splits=splits,
             )
         )
     rows = _offer_transfers(rows, candidates)
@@ -513,6 +546,46 @@ class _Resolver:
         return (found, "") if found else (None, f"payee {text!r} is not in the book")
 
 
+def _row_splits(
+    row, cell, split_cols, amount: Money, number_format, invert: bool, resolve: _Resolver
+) -> tuple[tuple[tuple[str, Money], ...], str]:
+    """The row's filled split pairs, or why they cannot post as given.
+
+    A pair with neither cell filled is unused. Nothing is inferred: a pair needs
+    both its category and its amount, each category must be an account in the book,
+    and the amounts must add up exactly to the row's amount; no balancing split is
+    invented. Zero-amount pairs are dropped.
+    """
+    splits: list[tuple[str, Money]] = []
+    for number, (category_col, amount_col) in enumerate(split_cols, start=1):
+        category_text, amount_text = cell(row, category_col), cell(row, amount_col)
+        if not category_text and not amount_text:
+            continue
+        if not category_text:
+            return (), f"split {number} has an amount but no category"
+        if not amount_text:
+            return (), f"split {number} has a category but no amount"
+        try:
+            value = Money(parse_decimal_amount(amount_text, number_format))
+        except ValueError as exc:
+            return (), f"bad split {number} amount: {exc}"
+        account, problem = resolve.category(category_text)
+        if problem or account is None:
+            return (), f"split {number}: {problem}"
+        if value:
+            splits.append((account, -value if invert else value))
+    if not splits:
+        return (), ""
+    total = Money(0)
+    for _account, value in splits:
+        total = total + value
+    if total != amount:
+        return (), (
+            f"the splits add up to {total.format()}, but the row's amount is {amount.format()}"
+        )
+    return tuple(splits), ""
+
+
 def _row_amount(row, cell, amount_col, debit_col, credit_col, number_format) -> Money:
     if amount_col is not None:
         text = cell(row, amount_col)
@@ -582,7 +655,7 @@ def _offer_transfers(rows: list[CsvRow], candidates: list[_TransferSide]) -> lis
         (abs((row.when - side.when).days), index, side.when, side.transaction, side)
         for index, row in enumerate(rows)
         # A row with a mapped category already says where its money went.
-        if row.status == "new" and row.when is not None and row.category is None
+        if row.status == "new" and row.when is not None and row.category is None and not row.splits
         for side in candidates
         if side.amount == row.amount and abs((row.when - side.when).days) <= TRANSFER_WINDOW_DAYS
     )
@@ -661,17 +734,19 @@ def import_rows(
                     result.observe("transaction", row.identity)
                     result.transactions_linked += 1
                     continue
-            counter = row.category or _counter_account(sink, db, row.amount)
+            target = {"account": preview.account, "value": row.amount, "memo": row.memo}
+            if row.splits:
+                legs = [{"account": account, "value": -value} for account, value in row.splits]
+            else:
+                counter = row.category or _counter_account(sink, db, row.amount)
+                legs = [{"account": counter, "value": -row.amount}]
             sink.transaction(
                 row.identity,
                 row.when,
                 row.description or row.memo or "CSV transaction",
                 None,
                 "",
-                [
-                    {"account": preview.account, "value": row.amount, "memo": row.memo},
-                    {"account": counter, "value": -row.amount},
-                ],
+                [target, *legs],
                 payee=row.payee,
             )
         result.finish(db, txn)

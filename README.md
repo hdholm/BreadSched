@@ -43,7 +43,8 @@ rhyme for a name.
   desktop, **Guide** in the browser, and `breadsched guide` on the command line.
 - [`ROADMAP.md`](ROADMAP.md) is the current future work plan for broader
   features.  GitHub issues are used to track bugs and more limited feature
-  requests.
+  requests; never attach a real financial book or statement to one. Report
+  security problems privately as [`SECURITY.md`](SECURITY.md) describes.
 - [`CHANGELOG.md`](CHANGELOG.md) records completed changes by version; older
   versions are condensed and link their release notes.
 - [`DESIGN.md`](DESIGN.md) explains the current architecture and design

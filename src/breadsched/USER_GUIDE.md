@@ -1230,6 +1230,17 @@ another currency is invalid rather than imported at the wrong value. BreadSched
 never creates accounts, payees, or currencies from these columns. Re-importing a
 row already imported leaves it untouched even if its category cell has changed.
 
+A statement that splits one charge across several categories, such as a warehouse
+store receipt or a payroll deposit, can be mapped with **split columns** instead of
+one category column: a category column and an amount column for each split. Each
+filled pair becomes one split of the transaction, its amount written in the same
+sign as the row's amount (an export that shows money out as positive is inverted,
+splits included). The filled splits must add up exactly to the row's amount; if
+they do not, or a pair has a category without an amount (or the reverse), or a
+category names no account, the row is invalid and the preview says why. BreadSched
+never adds a balancing split. A row with no filled pair uses **Uncategorized CSV**,
+and a split row is not offered as a possible transfer.
+
 ### Bank downloads through AqBanking
 
 BreadSched does not connect to banks directly, and does not bundle AqBanking (the

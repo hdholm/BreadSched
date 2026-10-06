@@ -145,6 +145,15 @@ fresh measured baseline. The script creates its own temporary checkout to avoid
 reusing mutation cache. Review survivors and update the documented exemption and
 ratchet only after a deliberate measurement, not merely to make a failing gate pass.
 
+## Issues and security reports
+
+Report bugs and limited feature requests with the issue forms; broader plans belong
+in `ROADMAP.md`. Report a suspected vulnerability privately, as `SECURITY.md`
+describes, never in a public issue. No issue, report, or pull request may attach an
+unsanitized financial book, GnuCash file, statement, or screenshot of real accounts;
+the forms require confirming this. `.github/CODEOWNERS` names the maintainer as
+reviewer for every path.
+
 ## Pull-request workflow
 
 BreadSched development uses focused GitHub pull requests. When work is naturally

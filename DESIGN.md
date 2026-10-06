@@ -2022,6 +2022,17 @@ the payee is passed to `ImportSink.transaction(payee=...)` (set only on a new
 transaction), and a row with a category is never offered as a possible transfer.
 These cells are not part of the row identity, so an accepted row is never
 re-categorized by re-import.
+Split columns (`CsvMapping.splits`, pairs of category and amount columns) replace
+the single category column; mapping both, or a pair missing one column, is the
+`import.csv.split.mapping` error. Per row, `_row_splits` skips a pair with both
+cells empty, refuses a half-filled pair, resolves each category through the same
+`_Resolver.category`, parses the amount with the file's detected number format
+(split amount cells count as evidence for it), applies `invert` to it as to the row,
+and drops a zero amount. The filled amounts must sum exactly to the row's amount;
+otherwise the row is invalid with both totals in its reason, and no balancing split
+is added. `import_rows` posts the target leg and one counter leg per split (negated),
+so the transaction balances by construction. A split row is never offered as a
+possible transfer, and its splits are not part of the row identity.
 A possible transfer is a remaining new row whose value equals the placeholder split
 of a two-split, reporting-currency transaction elsewhere: one split in another
 asset or liability account, the other in an import placeholder (`placeholder_handles()`:

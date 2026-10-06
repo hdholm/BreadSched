@@ -223,7 +223,10 @@ In **Import**, use the **CSV statement** section. Choose the file from the brows
 columns**. BreadSched shows the detected encoding and delimiter with the first rows
 and suggests columns from their headers; check each suggestion. Choose the account
 and any date order, decimal, or sign options, then **Preview** to see every row's
-status. **Link possible transfers** joins each possible-transfer pair. **Import**
+status. **Link possible transfers** joins each possible-transfer pair. **Add split
+columns** adds a category and an amount column for one split of each row; add one
+pair per split and leave **Category column** at (none). The preview's Category
+column lists each row's splits. **Import**
 writes the previewed rows as one undo step, and the preview refreshes to show them
 as already imported. See
 [Import a CSV statement](../USER_GUIDE.md#import-a-csv-statement).

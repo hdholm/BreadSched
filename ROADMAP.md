@@ -122,10 +122,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   transactions, reconciliation, commodities, schedules, formula loans, and unusual
   but valid structures.
 
-- Extend CSV import mapping to split columns (several category/amount pairs per
-  row). Reject ambiguous mappings rather than inventing ledger accounts or
-  balancing splits, as the category, payee, and currency columns already do.
-
 - Add reviewed commodity/security mapping where imported identifiers cannot be
   matched safely and extend price import to additional source formats where present.
 
@@ -236,9 +232,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Project governance and community health
 
-- Add `SECURITY.md`, privacy-aware issue forms, and `CODEOWNERS`; extend the
-  initial pull-request template as contribution patterns emerge. Security and field-
-  report forms must repeat the existing prohibition on uploading unsanitized
-  financial books and provide a private vulnerability-reporting route. Add a code of
-  conduct when the project is ready to invite a broader contributor community rather
-  than copying one without an enforcement/contact plan.
+- Extend the pull-request template and issue forms as contribution patterns
+  emerge. Add a code of conduct when the project is ready to invite a broader
+  contributor community rather than copying one without an enforcement/contact plan.

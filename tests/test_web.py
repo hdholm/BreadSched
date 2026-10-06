@@ -4893,6 +4893,57 @@ class TestCsvImport:
             **extra,
         }
 
+    def test_split_columns_post_balanced_splits_or_refuse(self, client, tmp_path):
+        path = tmp_path / "split.csv"
+        path.write_text(
+            "Date,Description,Amount,Cat 1,Amt 1,Cat 2,Amt 2\n"
+            "2026-02-03,Warehouse,-30.00,Expenses:Rent,-20.00,Expenses:Rent,-10.00\n"
+            "2026-02-04,Short,-30.00,Expenses:Rent,-20.00,,\n",
+            encoding="utf-8",
+        )
+        mapping = {
+            "date": "Date",
+            "amount": "Amount",
+            "description": "Description",
+            "splits": [
+                {"category": "Cat 1", "amount": "Amt 1"},
+                {"category": "Cat 2", "amount": "Amt 2"},
+                {"category": "", "amount": ""},
+            ],
+        }
+        request = self._request(client, path, mapping=mapping)
+        status, preview = client.post("/api/import/csv/preview", request)
+        assert status == 200
+        warehouse, short = preview["rows"]
+        assert warehouse["splits"] == [
+            {"category": "Expenses:Rent", "amount": "-20.00"},
+            {"category": "Expenses:Rent", "amount": "-10.00"},
+        ]
+        assert short["status"] == "invalid"
+        assert short["reason"] == "the splits add up to -20.00, but the row's amount is -30.00"
+
+        before = len(list(client.database.iter_transactions()))
+        refused = {**mapping, "category": "Cat 1"}
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/import/csv", self._request(client, path, mapping=refused))
+        error = json.loads(caught.value.read())
+        assert (caught.value.code, error["code"], error["fields"]) == (
+            400,
+            "import.csv.split.mapping",
+            ["splits"],
+        )
+        assert len(list(client.database.iter_transactions())) == before
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/import/csv/preview",
+                self._request(client, path, mapping={**mapping, "splits": "Cat 1"}),
+            )
+        assert caught.value.code == 400
+
+        status, imported = client.post("/api/import/csv", request)
+        assert status == 200 and imported["new"] == 1
+        assert len(list(client.database.iter_transactions())) == before + 1
+
     def test_category_column_maps_to_an_account_or_refuses_the_row(self, client, tmp_path):
         path = tmp_path / "categorized.csv"
         path.write_text(
@@ -4964,6 +5015,7 @@ class TestCsvImport:
             "category": None,
             "payee": None,
             "note": "",
+            "splits": [],
         }
         assert len(list(client.database.iter_transactions())) == before
 

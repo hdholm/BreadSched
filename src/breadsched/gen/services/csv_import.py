@@ -38,6 +38,7 @@ __all__ = [
 _FIELDS = {
     "import.csv.column.not_found": ("mapping",),
     "import.csv.amount.mapping": ("amount",),
+    "import.csv.split.mapping": ("splits",),
     "import.csv.date_format.ambiguous": ("date_format",),
     "import.csv.date_format.conflict": ("date_format",),
     "import.csv.number_format.conflict": ("number_format",),
