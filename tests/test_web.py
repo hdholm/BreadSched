@@ -1989,6 +1989,7 @@ class TestPlanApi:
             "cash_bridge",
             "column_totals",
             "goal_milestones",
+            "reimbursable",
             "completeness",
         }
         assert payload["completeness"]["horizon"]["status"] == "complete"
@@ -2317,6 +2318,65 @@ class TestPlanApi:
 
         assert Money(detail["summary"]["actual"]) == Money("1800.00")
         assert detail["actuals"][0]["description"] == "Rent"
+
+    def test_plan_shows_a_reimbursable_expenses_gross_and_net_cost(self, client):
+        from breadsched.gen.services.receivables import (
+            SaveReceivable,
+            attach_expense_split,
+            save_receivable,
+        )
+
+        db = client.database
+        rent = db.get_account_by_name("Rent")
+        paid = next(
+            t
+            for t in db.iter_transactions()
+            if t.post_date.year == 2026
+            and t.post_date.month == 1
+            and any(s.account == rent.handle for s in t.splits)
+        )
+        split = next(s for s in paid.splits if s.account == rent.handle)
+        receivable = save_receivable(
+            db,
+            SaveReceivable(
+                incurred_date=paid.post_date,
+                payer="Employer",
+                description="Relocation rent",
+                expected_amount=Money("600.00"),
+            ),
+        ).value
+        assert attach_expense_split(db, receivable.handle, paid.handle, split.handle).ok
+
+        _status, plan = client.get("/api/plan?from=2026-01&through=2026-01")
+        [row] = plan["reimbursable"]["categories"]
+        assert row["full_name"] == "Expenses:Rent"
+        assert (Money(row["gross"]), Money(row["reimbursable"]), Money(row["net"])) == (
+            Money("1800.00"),
+            Money("600.00"),
+            Money("1200.00"),
+        )
+        assert row["text"] == (
+            "Expenses:Rent: gross cost 1,800.00, 600.00 reimbursed or expected back, "
+            "net household cost 1,200.00."
+        )
+        query = urllib.parse.urlencode(
+            {"account": rent.handle, "start": "2026-01-01", "end": "2026-01-31"}
+        )
+        _status, detail = client.get(f"/api/plan/detail?{query}")
+        summary = detail["summary"]
+        assert Money(summary["actual"]) == Money("1200.00")
+        assert (Money(summary["gross"]), Money(summary["reimbursable"])) == (
+            Money("1800.00"),
+            Money("600.00"),
+        )
+        assert summary["cost_text"].startswith("Gross cost 1,800.00;")
+        # A category no receivable touches reports no cost split.
+        salary = db.get_account_by_name("Salary")
+        query = urllib.parse.urlencode(
+            {"account": salary.handle, "start": "2026-01-01", "end": "2026-01-31"}
+        )
+        _status, income = client.get(f"/api/plan/detail?{query}")
+        assert "cost_text" not in income["summary"]
 
     def test_invalid_range_is_a_bad_request(self, client):
         with pytest.raises(urllib.error.HTTPError) as caught:

@@ -183,6 +183,10 @@ receivable, checked; choose **Accept selected** to link them. A warning appears 
 a linked expense is also on an FSA claim, and the open receivable shows what is
 owed and the account holding it.
 
+**Plan** lists each expense category a receivable changed under **Reimbursable
+expenses: gross and net cost**, and a Plan cell's detail shows its gross cost and
+what was reimbursed or expected back below the Plan, Actual, and Variance cards.
+
 **FSA Dashboard** first lists **Proposed claim links**, FSA statement lines that
 clearly belong on one claim, each checked; **Link selected** links them. Import and
 reconciliation say when proposals are waiting.

@@ -10,6 +10,7 @@ from ...gen.engine.plan_detail import (
     MortgagePaymentPeriodDetail,
     PlanningFlowPeriodDetail,
 )
+from ...presentation import plan_detail_cost_text
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 
@@ -66,6 +67,18 @@ class PlanDetailDialog(BoundedWindow):
         )
         summary.add_css_class("heading")
         outer.append(summary)
+        reimbursable = getattr(detail, "reimbursable", None)
+        if reimbursable:
+            cost = Gtk.Label(
+                label=plan_detail_cost_text(
+                    detail.actual + reimbursable, reimbursable, detail.actual
+                ),
+                xalign=0,
+                wrap=True,
+                selectable=True,
+            )
+            cost.add_css_class("dim-label")
+            outer.append(cost)
 
         notebook = Gtk.Notebook()
         notebook.set_vexpand(True)

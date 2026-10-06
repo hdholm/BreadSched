@@ -11,7 +11,7 @@ the grid.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from ..db.sqlite import DbSQLite
@@ -107,12 +107,21 @@ class CategoryPeriodDetail:
     planned_events: tuple[CategoryPlannedDetail, ...]
     actual_transactions: tuple[CategoryActualDetail, ...]
     as_of: date
+    #: What reimbursements took or are expected to take off this expense
+    #: category's cost in the period, less write-offs; ``actual`` is the net
+    #: household cost.
+    reimbursable: Money = field(default_factory=lambda: Money(0))
 
     @property
     def variance(self) -> Money | None:
         if self.start > self.as_of:
             return None
         return self.actual - self.planned
+
+    @property
+    def gross(self) -> Money:
+        """The cost before reimbursement: the net actual plus ``reimbursable``."""
+        return self.actual + self.reimbursable
 
 
 @dataclass(frozen=True, slots=True)
@@ -225,6 +234,7 @@ def explain_category_period(
     actual_rows: list[CategoryActualDetail] = []
     planned_total = Money(0)
     actual_total = Money(0)
+    reimbursable_total = Money(0)
 
     for bucket in report.periods:
         for event in bucket.planned_events:
@@ -267,6 +277,12 @@ def explain_category_period(
             )
 
         for actual in bucket.actual_transactions:
+            if account.account_class is AccountClass.EXPENSE:
+                reimbursable_total = reimbursable_total - _sum_money(
+                    split.amount
+                    for split in actual.reimbursable_splits
+                    if split.account in included
+                )
             splits = actual.splits
             value = category_amount(splits)
             if value == Money(0):
@@ -317,6 +333,7 @@ def explain_category_period(
         planned_events=tuple(planned_rows),
         actual_transactions=tuple(actual_rows),
         as_of=as_of or date.today(),
+        reimbursable=reimbursable_total,
     )
 
 

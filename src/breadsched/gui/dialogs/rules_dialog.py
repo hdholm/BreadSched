@@ -62,7 +62,7 @@ class RulesDialog(BoundedWindow):
             )
         )
 
-        rule_scroller = Gtk.ScrolledWindow(min_content_height=140, vexpand=True)
+        rule_scroller = Gtk.ScrolledWindow(min_content_height=120, vexpand=True)
         self.rule_rows = Gtk.Grid(column_spacing=14, row_spacing=4)
         rule_scroller.set_child(self.rule_rows)
         box.append(rule_scroller)
@@ -106,7 +106,7 @@ class RulesDialog(BoundedWindow):
         self._sync_kind()
 
         box.append(Gtk.Label(label="Proposals", xalign=0, css_classes=["heading"]))
-        proposal_scroller = Gtk.ScrolledWindow(min_content_height=200, vexpand=True)
+        proposal_scroller = Gtk.ScrolledWindow(min_content_height=160, vexpand=True)
         self.proposal_rows = Gtk.Grid(column_spacing=14, row_spacing=4)
         proposal_scroller.set_child(self.proposal_rows)
         box.append(proposal_scroller)

@@ -28,7 +28,11 @@ from ...gen.services import (
     query_plan,
     suppress_scenario_schedule,
 )
-from ...presentation import plan_goal_text
+from ...presentation import (
+    PLAN_REIMBURSABLE_HEADING,
+    plan_goal_text,
+    plan_reimbursable_text,
+)
 from ..gi_setup import Gtk
 from ..planning_context import (
     baseline_scenario,
@@ -204,6 +208,11 @@ class PlanView(BaseView):
         self.goal_note.set_margin_end(12)
         self.goal_note.set_margin_bottom(8)
         self.append(self.goal_note)
+        self.reimbursable_note = Gtk.Label(xalign=0, wrap=True, visible=False, selectable=True)
+        self.reimbursable_note.set_margin_start(12)
+        self.reimbursable_note.set_margin_end(12)
+        self.reimbursable_note.set_margin_bottom(8)
+        self.append(self.reimbursable_note)
 
         note = Gtk.Label(
             label=(
@@ -614,6 +623,12 @@ class PlanView(BaseView):
             + "\n".join(plan_goal_text(item) for item in self.goal_milestones)
         )
         self.goal_note.set_visible(bool(self.goal_milestones))
+        reimbursable = self._report.reimbursable_categories
+        self.reimbursable_note.set_text(
+            f"{PLAN_REIMBURSABLE_HEADING}:\n"
+            + "\n".join(plan_reimbursable_text(row) for row in reimbursable)
+        )
+        self.reimbursable_note.set_visible(bool(reimbursable))
         self.review_actuals_button.set_sensitive(activity.unresolved_actual_count > 0)
         self._update_scenario_actions()
         self._render()

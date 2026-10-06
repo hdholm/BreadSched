@@ -10,6 +10,26 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a229 - 2026-10-06
+
+- **Plan shows reimbursable expenses' gross and net cost.** An expense category's
+  Plan actual is the net household cost; the Plan now also lists, under
+  **Reimbursable expenses: gross and net cost**, each category a receivable changed
+  in the range with its gross cost, what was reimbursed or is still expected back,
+  and the net cost (`CategoryActivity.reimbursable`, `gross`,
+  `CategoryReport.reimbursable_categories`, from `receivables.plan_adjustments`).
+  A reimbursement is never counted twice and a write-off stays in the net cost. A
+  Plan cell's detail gives the same figures (`CategoryPeriodDetail.reimbursable`,
+  `gross`), in GTK, the browser (`reimbursable` on `/api/plan`, `gross`,
+  `reimbursable`, and `cost_text` in a detail's `summary`), and print;
+  `receivables --costs START END` lists them on the command line.
+- **The categorization rules dialog fits a laptop screen with larger fonts.** Its
+  rule and proposal lists ask for 120 and 160 pixels at least (from 140 and 200) and
+  still grow with the window; it needed 604 of the audit's 600 pixels on a desktop
+  with larger fonts. `make test-gui` and `make test-gui-parallel` run the GTK tests
+  on a virtual display through `xvfb-run` when it is installed, so no windows flash
+  on screen; `GUI_VISIBLE=1` shows them.
+
 ## 0.2.0a228 - 2026-10-06
 
 - **Commit-time verification has its own module.** The checks that refuse a write

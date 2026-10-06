@@ -48,6 +48,7 @@ __all__ = [
     "owned_postings",
     "planned_postings",
     "posting_currency",
+    "plan_adjustments",
     "propose_reimbursements",
     "receivable_summary",
 ]
@@ -307,6 +308,23 @@ POSTING_NOTE = (
 def owned_postings(db: DbSQLite) -> set[str]:
     """Handles of every reclassification transaction a receivable owns."""
     return {handle for receivable in db.iter_receivables() for handle in receivable.postings}
+
+
+def plan_adjustments(db: DbSQLite) -> tuple[frozenset[str], frozenset[str]]:
+    """What separates a reimbursable expense's gross cost from its net cost.
+
+    Returns the handles of every reclassification transaction a receivable owns and
+    of every linked reimbursement split. An expense category's actual activity is
+    already the net household cost; adding back these splits' expense-class values
+    gives the gross cost before anything was reimbursed, expected back, or written
+    off (a write-off stays in the net cost).
+    """
+    postings: set[str] = set()
+    reimbursements: set[str] = set()
+    for receivable in db.iter_receivables():
+        postings.update(receivable.postings)
+        reimbursements.update(link.split for link in receivable.reimbursements)
+    return frozenset(postings), frozenset(reimbursements)
 
 
 @dataclass(frozen=True, slots=True)

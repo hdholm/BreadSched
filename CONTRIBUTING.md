@@ -122,7 +122,9 @@ mutable objects. GTK runtime tests also run in two xdist workers in CI (`make
 test-gui-parallel`, under a session bus). Each test's application gets an identity
 that includes its worker, its own settings directory, and its own book, so keep new
 GTK tests free of process-global widget state; `make test-gui` remains the serial
-path for diagnosing a failure.
+path for diagnosing a failure. Both targets run the windows on a virtual X display
+through `xvfb-run` when it is installed, so they do not flash on your screen; set
+`GUI_VISIBLE=1` (for example `make test-gui GUI_VISIBLE=1`) to watch them.
 
 Rendered web views are checked in `tests/test_web_browser.py`, which drives
 headless Chromium through Playwright and skips when Playwright or Chromium is not

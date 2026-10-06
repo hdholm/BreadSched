@@ -39,6 +39,7 @@ from .planning import (
     scenario_events,
     scheduled_events,
 )
+from .receivables import plan_adjustments
 
 __all__ = [
     "ActualActivity",
@@ -169,6 +170,10 @@ class ActualActivity:
     planning_resolution: PlanningResolution = PlanningResolution.UNRESOLVED
     splits: tuple[PlannedSplit, ...] = ()
     converted_from: str | None = None
+    #: Splits that separate a reimbursable expense's gross cost from its net cost:
+    #: every split of a receivable's reclassification transaction and each linked
+    #: reimbursement split, converted like ``splits``.
+    reimbursable_splits: tuple[PlannedSplit, ...] = ()
 
     @property
     def unresolved(self) -> bool:
@@ -425,6 +430,22 @@ class CategoryActivity:
     planned: list[Money]
     actual: list[Money]
     variance: list[Money | None]
+    #: Per period, what reimbursements took or are expected to take off this expense
+    #: category's gross cost (``actual`` is the net household cost), less write-offs.
+    reimbursable: list[Money] = field(default_factory=list)
+    #: ``reimbursable`` over the range for this account alone, without children.
+    own_reimbursable: Money = field(default_factory=lambda: Money(0))
+
+    @property
+    def gross(self) -> list[Money]:
+        """Per period, the cost before reimbursement: net actual plus reimbursable."""
+        if not self.reimbursable:
+            return list(self.actual)
+        return [net + back for net, back in zip(self.actual, self.reimbursable, strict=True)]
+
+    @property
+    def reimbursable_total(self) -> Money:
+        return _sum_money(self.reimbursable)
 
     def values(self, measure: PlanMeasure) -> Sequence[Money | None]:
         if measure is PlanMeasure.PLANNED:
@@ -589,6 +610,11 @@ class CategoryReport:
     @property
     def expenses(self) -> tuple[CategoryActivity, ...]:
         return tuple(row for row in self.categories if row.account_class is AccountClass.EXPENSE)
+
+    @property
+    def reimbursable_categories(self) -> tuple[CategoryActivity, ...]:
+        """Expense categories whose own cost was partly reimbursed or expected back."""
+        return tuple(row for row in self.expenses if row.own_reimbursable != Money(0))
 
     def category_totals(
         self, account_class: AccountClass, measure: PlanMeasure
@@ -933,6 +959,7 @@ def _actual_activity(
     accounts: dict[str, Account],
     factor: Fraction = Fraction(1),
     converted_from: str | None = None,
+    adjustments: tuple[frozenset[str], frozenset[str]] = (frozenset(), frozenset()),
 ) -> ActualActivity:
     splits = ReportingConverter.splits(
         tuple(
@@ -943,6 +970,16 @@ def _actual_activity(
                 split.investment_activity,
             )
             for split in transaction.splits
+        ),
+        factor,
+    )
+    postings, reimbursements = adjustments
+    owned = transaction.handle in postings
+    reimbursable = ReportingConverter.splits(
+        tuple(
+            PlannedSplit(split.account, split.value)
+            for split in transaction.splits
+            if owned or split.handle in reimbursements
         ),
         factor,
     )
@@ -973,6 +1010,7 @@ def _actual_activity(
         planning_resolution=transaction.planning_resolution,
         splits=splits,
         converted_from=converted_from,
+        reimbursable_splits=reimbursable,
     )
 
 
@@ -1196,6 +1234,7 @@ def build_activity_report(
         bucket.planned_income = bucket.planned_income + income
         bucket.planned_expense = bucket.planned_expense + expense
 
+    adjustments = plan_adjustments(db)
     for transaction in db.iter_transactions(start=start, end=end):
         bucket = _index_for(periods, transaction.post_date)
         if bucket is None:
@@ -1222,6 +1261,7 @@ def build_activity_report(
             accounts,
             factor,
             currency if factor != 1 else None,
+            adjustments,
         )
         bucket.actual_transactions.append(actual)
         bucket.actual_amount = bucket.actual_amount + actual.amount
@@ -1281,7 +1321,9 @@ def _category_rows(
     direct_planned: dict[str, list[Money]],
     direct_actual: dict[str, list[Money]],
     as_of: date,
+    direct_reimbursable: dict[str, list[Money]] | None = None,
 ) -> list[CategoryActivity]:
+    direct_reimbursable = direct_reimbursable or {}
     active = set(direct_planned) | set(direct_actual)
     for handle in list(active):
         account = accounts.get(handle)
@@ -1320,6 +1362,7 @@ def _category_rows(
         full_name = db.full_name(account)
         planned_values = rolled(handle, direct_planned)
         actual_values = rolled(handle, direct_actual)
+        reimbursable_values = rolled(handle, direct_reimbursable)
         rows.append(
             CategoryActivity(
                 account=handle,
@@ -1331,6 +1374,8 @@ def _category_rows(
                 planned=planned_values,
                 actual=actual_values,
                 variance=_period_variances(planned_values, actual_values, periods, as_of),
+                reimbursable=reimbursable_values,
+                own_reimbursable=_sum_money(direct_reimbursable.get(handle, ())),
             )
         )
     rows.sort(key=lambda row: (row.account_class.value, row.full_name.casefold()))
@@ -1447,6 +1492,7 @@ def build_category_report(
     periods = activity.periods
     direct_planned: dict[str, list[Money]] = {}
     direct_actual: dict[str, list[Money]] = {}
+    direct_reimbursable: dict[str, list[Money]] = {}
     bridge_planned: dict[CashBridgeKind, list[Money]] = {}
     bridge_actual: dict[CashBridgeKind, list[Money]] = {}
     flow_planned: dict[tuple[PlanningFlowKind, str], list[Money]] = {}
@@ -1588,6 +1634,11 @@ def build_category_report(
             for handle, amount in escrow.restored_expenses.items():
                 values = amounts(direct_actual, handle)
                 values[period_index] = values[period_index] + amount
+            for adjustment in actual.reimbursable_splits:
+                account = accounts.get(adjustment.account)
+                if account is not None and account.account_class is AccountClass.EXPENSE:
+                    values = amounts(direct_reimbursable, account.handle)
+                    values[period_index] = values[period_index] - adjustment.amount
 
     rows = _category_rows(
         db,
@@ -1596,6 +1647,7 @@ def build_category_report(
         direct_planned,
         direct_actual,
         effective_as_of,
+        direct_reimbursable,
     )
     position = _planned_cash_position(db, start, end, accounts, scenario, effective_as_of)
     bridge_rows = _cash_bridge_rows(periods, bridge_planned, bridge_actual, effective_as_of)

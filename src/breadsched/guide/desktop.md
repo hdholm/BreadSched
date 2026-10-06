@@ -370,6 +370,11 @@ The claim and the receivable then show what the payer, the FSA, and you each pay
 and **Needs review** when that comes to more than was paid. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
+The **Plan** lists each expense category a receivable changed under **Reimbursable
+expenses: gross and net cost**, below the savings goals, and a Plan cell's detail
+window shows its gross cost and what was reimbursed or expected back under the Plan,
+Actual, and Variance line.
+
 ## Import files
 
 **File → Import GnuCash Book into Current Book…** (`Ctrl+I`) reads GnuCash, QIF,
