@@ -117,21 +117,7 @@ def projection_report(
         "completeness": result.completeness.as_dict(),
         "warnings": list(result.warnings),
         "goal_notes": projection_goal_notes(result),
-        "goal_milestones": [
-            {
-                "goal": item.goal.handle,
-                "name": item.goal.name,
-                "target": item.target,
-                "target_date": item.target_date,
-                "overridden": item.overridden,
-                "month_index": item.month_index,
-                "set_aside": item.set_aside,
-                "cash_close": item.cash_close,
-                "goals_held": item.goals_held,
-                "covered": item.covered,
-            }
-            for item in result.goal_milestones
-        ],
+        "goal_milestones": [item.as_dict() for item in result.goal_milestones],
         "rows": [
             {
                 "label": row.label,

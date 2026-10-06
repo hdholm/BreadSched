@@ -240,20 +240,7 @@ def cmd_project(args: argparse.Namespace) -> int:
             )
             print()
         milestones = [
-            {
-                "goal": item.goal.handle,
-                "name": item.goal.name,
-                "target": item.target,
-                "target_date": item.target_date,
-                "overridden": item.overridden,
-                "month_index": item.month_index,
-                "set_aside": item.set_aside,
-                "cash_close": item.cash_close,
-                "goals_held": item.goals_held,
-                "covered": item.covered,
-                "text": goal_milestone_text(item),
-            }
-            for item in result.goal_milestones
+            {**item.as_dict(), "text": goal_milestone_text(item)} for item in result.goal_milestones
         ]
         emit(
             {

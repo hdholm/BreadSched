@@ -548,3 +548,103 @@ def test_plan_lists_goals_reaching_their_target_in_range(db, book):
     )
     assert "Savings goals reaching their target" in html
     assert "600.00 set aside so far" in html
+
+
+def _brokerage_goals(db, book):
+    from breadsched.gen.lib import Split
+
+    opening = Money(5000)
+
+    _monthly_pay(db, book, last_posted=date(2026, 6, 1))
+    with db.transaction("Opening brokerage") as txn:
+        db.add_transaction(
+            Transaction(
+                post_date=date(2026, 1, 2),
+                description="Opening",
+                splits=[Split(book.brokerage, opening), Split(book.opening, -opening)],
+            ),
+            txn,
+        )
+    goals = []
+    for name, account in (
+        ("New roof", book.brokerage),
+        ("Car", book.brokerage),
+        ("Holiday", book.savings),
+    ):
+        goal = SavingsGoal(
+            name=name,
+            account=account,
+            target_amount=Money(1200),
+            start_date=date(2026, 1, 1),
+            target_date=date(2026, 12, 31),
+        )
+        with db.transaction("Goal") as txn:
+            db.add_savings_goal(goal, txn)
+        goals.append(goal)
+    return tuple(goals)
+
+
+def test_a_goal_in_a_non_cash_account_is_compared_with_its_projected_balance(db, book):
+    from breadsched.gen.engine import projection
+    from breadsched.gen.lib import Scenario
+    from breadsched.presentation import goal_milestone_text
+
+    roof, car, _cash = _brokerage_goals(db, book)
+    result = projection.project(db, Scenario(name="Next year", start=date(2026, 7, 1), years=1))
+
+    milestones = {item.goal.handle: item for item in result.goal_milestones}
+    item = milestones[roof.handle]
+    assert not item.cash_account and item.month_index == 5
+    assert item.account_name == "Assets:Brokerage"
+    assert item.account_close == result.rows[5].ledger.closing_holdings[book.brokerage]
+    # Both goals in the brokerage account count against its balance; cash goals do not.
+    assert item.account_held == Money(2400) == milestones[car.handle].account_held
+    assert item.covered is True
+    assert item.cash_close == result.rows[5].cash_close
+    assert result.rows[5].goals_held == Money(1200)
+    text = goal_milestone_text(item)
+    assert "Assets:Brokerage is projected at" in text and "which covers the 2,400.00" in text
+    data = item.as_dict()
+    assert (data["account_close"], data["account_held"], data["covered"]) == (
+        item.account_close,
+        Money(2400),
+        True,
+    )
+
+
+def test_a_short_non_cash_account_does_not_cover_its_goals(db, book):
+    from breadsched.gen.engine import projection
+    from breadsched.gen.lib import Scenario
+    from breadsched.presentation import goal_milestone_text
+
+    roof, _car, _cash = _brokerage_goals(db, book)
+    scenario = Scenario(name="Lean", start=date(2026, 7, 1), years=1)
+    scenario.opening_overrides[book.brokerage] = Money(100)
+
+    [item] = [
+        m for m in projection.project(db, scenario).goal_milestones if m.goal.handle == roof.handle
+    ]
+
+    assert item.account_close is not None and item.account_close < Money(2400)
+    assert item.covered is False
+    assert "which does not cover the 2,400.00 set aside there" in goal_milestone_text(item)
+
+
+def test_a_goal_in_an_account_left_out_of_the_projection_is_not_compared(db, book):
+    from breadsched.gen.engine import projection
+    from breadsched.gen.lib import Scenario
+    from breadsched.presentation import goal_milestone_text
+
+    roof, _car, _cash = _brokerage_goals(db, book)
+    account = db.get_account(book.brokerage)
+    account.exclude_from_projection = True
+    with db.transaction("Leave out") as txn:
+        db.commit_account(account, txn)
+
+    result = projection.project(db, Scenario(name="Next year", start=date(2026, 7, 1), years=1))
+
+    [item] = [m for m in result.goal_milestones if m.goal.handle == roof.handle]
+    assert (item.account_close, item.account_held, item.covered) == (None, None, None)
+    assert goal_milestone_text(item).endswith(
+        "held in Assets:Brokerage, which this projection does not project, so it is not compared"
+    )

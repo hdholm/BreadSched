@@ -118,8 +118,11 @@ embedding personal financial information.
 Core tests may run concurrently under pytest-xdist. Tests must therefore use
 pytest-provided temporary paths or other worker-local resources and must not assume
 exclusive ownership of fixed ports, filenames, environment state, or process-global
-mutable objects. GTK runtime tests remain serial until the roadmap explicitly moves
-them to a parallel-safe stage.
+mutable objects. GTK runtime tests also run in two xdist workers in CI (`make
+test-gui-parallel`, under a session bus). Each test's application gets an identity
+that includes its worker, its own settings directory, and its own book, so keep new
+GTK tests free of process-global widget state; `make test-gui` remains the serial
+path for diagnosing a failure.
 
 Rendered web views are checked in `tests/test_web_browser.py`, which drives
 headless Chromium through Playwright and skips when Playwright or Chromium is not

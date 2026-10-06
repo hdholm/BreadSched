@@ -2,7 +2,7 @@
 # Preserve any caller-provided PYTHONPATH entries after the local src directory.
 export PYTHONPATH := $(CURDIR)/src$(if $(PYTHONPATH),:$(PYTHONPATH))
 
-.PHONY: install test test-core test-performance test-hardening test-gui test-ordered lint fmt format-check typecheck typecheck-extended build check demo cov all
+.PHONY: install test test-core test-performance test-hardening test-gui test-gui-parallel test-ordered lint fmt format-check typecheck typecheck-extended build check demo cov all
 
 install:
 	pip install -e ".[dev]"
@@ -23,6 +23,10 @@ test-hardening:
 
 test-gui:
 	pytest -m gui
+
+# Bounded GTK concurrency; test-gui stays the serial diagnostic path.
+test-gui-parallel:
+	pytest -m gui -n 2
 
 # Deterministic order, for bisecting a failure found by the randomised run.
 test-ordered:

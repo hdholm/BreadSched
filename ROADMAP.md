@@ -83,9 +83,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Add richer charts, cash-runway comparisons, and deeper account explanations.
 
-- Compare savings goals held in non-cash accounts with that account's projected
-  balance (projection rows carry only summed holdings today), and let a scenario
-  model a goal's purchase as a dated one-off after its target date.
+- Let a scenario model a savings goal's purchase as a dated one-off after its
+  target date.
 
 - Evolve assumptions toward extensible dated rules (salary changes, retirement,
   pensions/Social Security, temporary expenses, mortgage payoff, changing
@@ -166,13 +165,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 - Continue real GTK runtime testing for selections, dialogs, focus transitions,
   model replacement, multiple windows, and GTK API-version differences.
-
-- **Run GTK tests safely in parallel.** Introduce bounded pytest-xdist concurrency
-  only after each worker has isolated application IDs, settings, books/import files,
-  display/session-bus resources where required, and GTK main-context lifecycle.
-  Prove the suite is order-independent and free of process-global widget state;
-  start with a conservative worker count and retain the serial GTK target as the
-  deterministic diagnostic path.
 
 - Improve first-run UX, preferences, actionable errors, icons/resources, and
   native desktop polish without moving financial logic into GUI code.

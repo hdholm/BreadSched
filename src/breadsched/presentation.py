@@ -532,9 +532,19 @@ def goal_milestone_text(milestone: GoalMilestone) -> str:
     if milestone.month_index is None:
         return f"{head}; the target date is outside this projection"
     if milestone.covered is None:
-        return f"{head}; held in a non-cash account, so not compared with projected cash"
-    assert milestone.cash_close is not None and milestone.goals_held is not None
+        return (
+            f"{head}; held in {milestone.account_name or 'a non-cash account'}, which this "
+            "projection does not project, so it is not compared"
+        )
     verdict = "covers" if milestone.covered else "does not cover"
+    if not milestone.cash_account:
+        assert milestone.account_close is not None and milestone.account_held is not None
+        return (
+            f"{head}; {milestone.account_name} is projected at "
+            f"{milestone.account_close.format(parens_negative=True)}, which {verdict} the "
+            f"{milestone.account_held.format()} set aside there for goals then"
+        )
+    assert milestone.cash_close is not None and milestone.goals_held is not None
     return (
         f"{head}; projected cash of {milestone.cash_close.format(parens_negative=True)} "
         f"{verdict} the {milestone.goals_held.format()} set aside for goals then"

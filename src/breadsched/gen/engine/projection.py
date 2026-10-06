@@ -1199,6 +1199,7 @@ def _project_events(
         [row.month for row in result.rows],
         [row.income for row in result.rows],
         [row.cash_close for row in result.rows],
+        [row.ledger.closing_holdings for row in result.rows],
     )
     for row, goals in zip(result.rows, goal_months, strict=True):
         row.goals_set_aside = goals.set_aside

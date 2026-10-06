@@ -14,13 +14,15 @@ goal spends nothing: after its target month the whole target stays set aside.
 
 Money set aside for a goal held in a cash account is held from projected cash,
 so ``cash_after_goals`` shows what a scenario leaves spendable. A goal held in a
-non-cash account is reported but not compared with cash, because a projection
-row does not carry that account's projected balance.
+non-cash asset account, such as a brokerage account, is compared at its target
+month with that account's projected closing balance against everything goals in
+that account have set aside then. An account the projection leaves out has no
+projected balance, so its goals are reported without a comparison.
 """
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from fractions import Fraction
@@ -58,13 +60,47 @@ class GoalMilestone:
     set_aside: Money | None
     cash_close: Money | None
     goals_held: Money | None
+    #: The goal's account, by full name.
+    account_name: str = ""
+    #: For a non-cash account: its projected closing balance in the target month,
+    #: and what every goal held in it has set aside then. ``None`` for a cash
+    #: account, outside the horizon, or for an account the projection leaves out.
+    account_close: Money | None = None
+    account_held: Money | None = None
 
     @property
     def covered(self) -> bool | None:
-        """Whether projected cash covers every earmark held from it that month."""
-        if self.cash_close is None or self.goals_held is None or not self.cash_account:
+        """Whether the money holding the goal covers every earmark on it that month.
+
+        Cash goals compare projected cash with everything held from cash; a non-cash
+        goal compares its account's projected balance with that account's earmarks.
+        """
+        if self.cash_account:
+            if self.cash_close is None or self.goals_held is None:
+                return None
+            return self.cash_close >= self.goals_held
+        if self.account_close is None or self.account_held is None:
             return None
-        return self.cash_close >= self.goals_held
+        return self.account_close >= self.account_held
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "goal": self.goal.handle,
+            "name": self.goal.name,
+            "target": self.target,
+            "target_date": self.target_date,
+            "overridden": self.overridden,
+            "cash_account": self.cash_account,
+            "account": self.goal.account,
+            "account_name": self.account_name,
+            "month_index": self.month_index,
+            "set_aside": self.set_aside,
+            "cash_close": self.cash_close,
+            "goals_held": self.goals_held,
+            "account_close": self.account_close,
+            "account_held": self.account_held,
+            "covered": self.covered,
+        }
 
 
 def effective_goals(
@@ -96,8 +132,13 @@ def project_goals(
     months: Sequence[date],
     income: Sequence[Money],
     cash_close: Sequence[Money],
+    account_close: Sequence[Mapping[str, Money]] | None = None,
 ) -> tuple[list[GoalMonth], list[GoalMilestone]]:
-    """Month-end earmarks for every row, and each goal's target-date milestone."""
+    """Month-end earmarks for every row, and each goal's target-date milestone.
+
+    ``account_close`` gives each row's projected closing balance by non-cash asset
+    account; goals held in those accounts are compared with it.
+    """
     if not months:
         return [], []
     fraction = reporting_fraction(db)
@@ -150,6 +191,13 @@ def project_goals(
                 held[index] = held[index] + current
         earmarks.append((goal, overridden, cash, by_month))
     rows = [GoalMonth(amount, hold) for amount, hold in zip(set_aside, held, strict=True)]
+    # What goals in each non-cash account have set aside, month by month.
+    by_account: dict[str, list[Money]] = {}
+    for goal, _overridden, cash, by_month in earmarks:
+        if not cash:
+            totals = by_account.setdefault(goal.account, [Money(0)] * len(months))
+            for index, amount in enumerate(by_month):
+                totals[index] = totals[index] + amount
     milestones: list[GoalMilestone] = []
     for goal, overridden, cash, by_month in earmarks:
         target_index = next(
@@ -157,6 +205,11 @@ def project_goals(
              if start <= goal.target_date <= end),
             None,
         )  # fmt: skip
+        balance = held_there = None
+        if not cash and target_index is not None and account_close is not None:
+            balance = account_close[target_index].get(goal.account)
+            if balance is not None:
+                held_there = by_account[goal.account][target_index]
         milestones.append(
             GoalMilestone(
                 goal,
@@ -168,6 +221,9 @@ def project_goals(
                 by_month[target_index] if target_index is not None else None,
                 cash_close[target_index] if target_index is not None else None,
                 held[target_index] if target_index is not None else None,
+                account_name=db.full_name(goal.account) or "",
+                account_close=balance,
+                account_held=held_there,
             )
         )
     return rows, milestones

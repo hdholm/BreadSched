@@ -510,11 +510,14 @@ jobs:
       - name: Build and drive every view under a virtual display
         run: xvfb-run -a .venv/bin/pytest -m gui -v
 
-      - name: Repeat with a session bus present
+      - name: Repeat in two parallel workers with a session bus present
         # A CI runner has no D-Bus session, but a developer's desktop does, and
         # GApplication behaves differently when it can export itself on the bus.
-        # Without this step that difference is only ever found by a user.
-        run: dbus-run-session -- xvfb-run -a .venv/bin/pytest -m gui
+        # Without this step that difference is only ever found by a user. Two
+        # xdist workers share the bus and the display, which proves each test's
+        # application identity, settings, and book stay its own; the serial run
+        # above remains the deterministic diagnostic path.
+        run: dbus-run-session -- xvfb-run -a .venv/bin/pytest -m gui -n 2
 
       - name: Full suite with a display present
         run: xvfb-run -a .venv/bin/pytest
