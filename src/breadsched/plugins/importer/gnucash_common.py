@@ -84,6 +84,9 @@ class ImportResult:
     transactions_linked: int = 0
     #: Second register copies of a transfer already imported from the same file.
     transfers_paired: int = 0
+    #: Statement rows held back because the account already has a transaction from
+    #: elsewhere on the same date for the same amount (also counted as skipped).
+    possible_duplicates: int = 0
     splits_new: int = 0
     splits_refreshed: int = 0
     splits_unchanged: int = 0
@@ -296,6 +299,11 @@ class ImportResult:
     def detail(self, limit: int = 20) -> str:
         """A multi-line report: the summary, why things were skipped, then warnings."""
         lines = [self.describe()]
+        if self.possible_duplicates:
+            lines.append(
+                f"Possible duplicates: {self.possible_duplicates} held back; import "
+                "again with possible duplicates included to add them"
+            )
         if self.transactions or self.transactions_removed or self.transactions_retained:
             lines.append(
                 "Transactions: "

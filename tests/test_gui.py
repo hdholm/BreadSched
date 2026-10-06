@@ -966,6 +966,34 @@ class TestImportDialogState:
         assert dialog.number_format.get_visible() is True
         assert dialog.date_format.get_visible() is False
 
+    def test_possible_ofx_duplicates_are_held_unless_included(self, dialog, tmp_path):
+        def statement(name, fitid):
+            path = tmp_path / name
+            path.write_text(
+                "OFXHEADER:100\n\n<OFX><BANKMSGSRSV1><STMTTRNRS><STMTRS><CURDEF>USD"
+                "<BANKACCTFROM><BANKID>1<ACCTID>00009999<ACCTTYPE>CHECKING</BANKACCTFROM>"
+                "<BANKTRANLIST><STMTTRN><TRNTYPE>DEBIT<DTPOSTED>20260304<TRNAMT>-12.50"
+                f"<FITID>{fitid}<NAME>Shop</STMTTRN></BANKTRANLIST></STMTRS></STMTTRNRS>"
+                "</BANKMSGSRSV1></OFX>"
+            )
+            return str(path)
+
+        assert dialog.duplicates_check.get_active() is False
+        dialog.set_source(statement("a.ofx", "a1"))
+        dialog._on_import(None)
+        assert dialog.wait_for_background()
+        count = len(list(dialog.db.iter_transactions()))
+        dialog.set_source(statement("b.ofx", "b1"))
+        dialog._on_import(None)
+        assert dialog.wait_for_background()
+        assert "Possible duplicates: 1 held back" in dialog.result_view.get_text()
+        assert len(list(dialog.db.iter_transactions())) == count
+        dialog.duplicates_check.set_active(True)
+        dialog.set_source(statement("b.ofx", "b1"))
+        dialog._on_import(None)
+        assert dialog.wait_for_background()
+        assert len(list(dialog.db.iter_transactions())) == count + 1
+
     def test_a_result_is_cleared_when_another_file_is_chosen(
         self, dialog, gnucash_sqlite_path, gnucash_xml_path
     ):

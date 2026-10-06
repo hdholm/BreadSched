@@ -313,6 +313,9 @@ class Handler(BaseHTTPRequestHandler):
             filename = query.text("filename", required=True)
             number_format = query.text("number_format") or "auto"
             date_format = query.text("date_format") or "auto"
+            duplicates = query.text("include_duplicates") or "0"
+            if duplicates not in {"0", "1"}:
+                raise QueryError("query.invalid", ("include_duplicates",))
             query.finish()
         except QueryError as exc:
             self._discard_body(MAX_UPLOAD_BODY)
@@ -339,6 +342,7 @@ class Handler(BaseHTTPRequestHandler):
                     content=content,
                     number_format=number_format,
                     date_format=date_format,
+                    include_duplicates=duplicates == "1",
                 )
             self._json(200, result)
         except ResourceError as exc:

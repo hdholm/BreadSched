@@ -121,6 +121,13 @@ class ImportDialog(BoundedWindow):
         )
         box.append(self.scheduled_check)
 
+        self.duplicates_check = Gtk.CheckButton(label="Include possible duplicates")
+        self.duplicates_check.set_tooltip_text(
+            "An OFX row matching a transaction already in the account on the same date for "
+            "the same amount is otherwise held back"
+        )
+        box.append(self.duplicates_check)
+
         self.debug_check = Gtk.CheckButton(
             label="Write a detailed log next to the file being imported"
         )
@@ -256,6 +263,7 @@ class ImportDialog(BoundedWindow):
         self.import_button.set_sensitive(False)
         self.choose_button.set_sensitive(False)
         self.scheduled_check.set_sensitive(False)
+        self.duplicates_check.set_sensitive(False)
         self.debug_check.set_sensitive(False)
         self.number_format.set_sensitive(False)
         self.date_format.set_sensitive(False)
@@ -274,6 +282,7 @@ class ImportDialog(BoundedWindow):
             )
 
         include_scheduled = self.scheduled_check.get_active()
+        include_duplicates = self.duplicates_check.get_active()
         number_format = ("auto", "dot", "comma")[self.number_format.get_selected()]
         date_format = ("auto", "month-first", "day-first")[self.date_format.get_selected()]
 
@@ -285,6 +294,7 @@ class ImportDialog(BoundedWindow):
                         source=path,
                         format=plugin.id,
                         include_scheduled=include_scheduled,
+                        include_duplicates=include_duplicates,
                         number_format=number_format,
                         date_format=date_format,
                         notify=False,
@@ -378,6 +388,7 @@ class ImportDialog(BoundedWindow):
         self.import_button.set_sensitive(True)
         self.choose_button.set_sensitive(True)
         self.scheduled_check.set_sensitive(True)
+        self.duplicates_check.set_sensitive(True)
         self.debug_check.set_sensitive(True)
         self.number_format.set_sensitive(True)
         self.date_format.set_sensitive(True)

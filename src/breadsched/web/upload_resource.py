@@ -22,6 +22,7 @@ def import_upload(
     content: bytes,
     number_format: str = "auto",
     date_format: str = "auto",
+    include_duplicates: bool = False,
 ) -> dict:
     """Import a selected file; reuse its path for later uploads of the same name."""
     if (
@@ -69,6 +70,7 @@ def import_upload(
                     "include_scheduled": True,
                     "number_format": number_format,
                     "date_format": date_format,
+                    "include_duplicates": include_duplicates,
                 },
             )
         except Exception:

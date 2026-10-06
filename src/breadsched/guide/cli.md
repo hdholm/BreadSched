@@ -163,7 +163,9 @@ chooses the importer when detection cannot. QIF and OFX/QFX decimal and date
 conventions are inferred from the whole file; when a file is too ambiguous for that,
 import it from the [desktop](desktop.md#import-files) or [browser](web.md#import-files),
 which offer explicit choices. JSON output includes how many reimbursement proposals
-are waiting after the import.
+are waiting after the import, and `possible_duplicates`: OFX rows held back because
+the account already has a transaction on that date for that amount;
+`--include-duplicates` imports them.
 
 ### Import a CSV statement
 

@@ -235,15 +235,18 @@ async function showImport() {
     el("option", { value:"month-first" }, "Month first (MM/DD)"),
     el("option", { value:"day-first" }, "Day first (DD/MM)"));
   const result = el("pre", { class:"note" });
+  const duplicates = el("input", { type:"checkbox" });
   const form = el("form", { class:"entry", onsubmit: async (event) => {
     event.preventDefault();
     const data = Object.fromEntries(new FormData(event.target).entries());
     data.include_scheduled = true;
+    data.include_duplicates = duplicates.checked;
     try {
       let response;
       if (file.files.length) {
         const query = new URLSearchParams({ filename:file.files[0].name,
-          number_format:data.number_format, date_format:data.date_format });
+          number_format:data.number_format, date_format:data.date_format,
+          include_duplicates:duplicates.checked ? "1" : "0" });
         const upload = await fetch(`/api/import/upload?${query}`, {
           method:"POST", headers:{ ...apiHeaders(), "Content-Type":"application/octet-stream" },
           body:file.files[0],
@@ -271,6 +274,9 @@ async function showImport() {
     el("label", {}, "Or enter a path visible to BreadSched", path),
     el("label", {}, "Number format", numberFormat),
     el("label", {}, "QIF date order", dateFormat),
+    el("label", { title:"An OFX row matching a transaction already in the account on the "
+      + "same date for the same amount is otherwise held back" },
+      el("span", {}, "Include possible duplicates "), duplicates),
     el("button", { class:"action primary", type:"submit" }, "Import"));
   return el("div", {},
     el("p", { class:"note" }, "Choose a QIF, OFX, or GnuCash file (up to 32 MiB), or enter a path visible to the BreadSched process. Uploading the same filename again refreshes that source. Auto-detection is recommended; choose an explicit number or date format when the source is ambiguous."),

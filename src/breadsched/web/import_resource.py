@@ -31,6 +31,9 @@ def import_local(api: Api, payload: dict) -> dict:
     include_scheduled = payload.get("include_scheduled", True)
     if not isinstance(include_scheduled, bool):
         raise ValueError("include_scheduled must be true or false")
+    include_duplicates = payload.get("include_duplicates", False)
+    if not isinstance(include_duplicates, bool):
+        raise ValueError("include_duplicates must be true or false")
     result = import_book(
         api.db,
         ImportBook(
@@ -39,6 +42,7 @@ def import_local(api: Api, payload: dict) -> dict:
             include_scheduled=include_scheduled,
             number_format=str(payload.get("number_format") or "auto"),
             date_format=str(payload.get("date_format") or "auto"),
+            include_duplicates=include_duplicates,
         ),
     )
     if not result.ok:
@@ -49,6 +53,7 @@ def import_local(api: Api, payload: dict) -> dict:
         "format": imported.format_name,
         "detail": imported.result.detail(limit=50),
         "held": imported.result.transactions_held,
+        "possible_duplicates": imported.result.possible_duplicates,
         "reimbursement_notice": reimbursement_notice(
             len(reimbursement_proposals(api.db).value or ())
         ),
