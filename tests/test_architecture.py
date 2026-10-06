@@ -1064,3 +1064,29 @@ class TestPackagedResources:
         assert "web/static/*.html" in declared
         assert "web/static/*.css" in declared
         assert "web/static/*.js" in declared
+
+
+class TestCommunityHealth:
+    """Reports never invite real financial data, and vulnerabilities go privately."""
+
+    ROOT = Path(__file__).resolve().parent.parent
+
+    def test_security_policy_routes_reports_privately(self):
+        policy = (self.ROOT / "SECURITY.md").read_text(encoding="utf-8")
+        assert "Report a vulnerability" in policy
+        assert "Never attach an unsanitized financial book" in policy
+        config = (self.ROOT / ".github/ISSUE_TEMPLATE/config.yml").read_text(encoding="utf-8")
+        assert "blank_issues_enabled: false" in config
+        assert "/security/advisories/new" in config
+
+    @pytest.mark.parametrize("form", ["bug_report.yml", "feature_request.yml"])
+    def test_issue_forms_require_the_privacy_confirmation(self, form):
+        text = (self.ROOT / ".github/ISSUE_TEMPLATE" / form).read_text(encoding="utf-8")
+        privacy = text.split("id: privacy", 1)[1]
+        assert "no unsanitized financial data" in privacy
+        assert "required: true" in privacy
+        assert "\t" not in text
+
+    def test_every_path_has_a_code_owner(self):
+        owners = (self.ROOT / ".github/CODEOWNERS").read_text(encoding="utf-8")
+        assert any(line.startswith("* @") for line in owners.splitlines())

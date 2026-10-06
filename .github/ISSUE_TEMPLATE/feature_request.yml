@@ -1,0 +1,40 @@
+name: Feature request
+description: A limited change to how BreadSched works. Broader plans live in ROADMAP.md.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Check ROADMAP.md first; broader features are planned there. Describe the
+        household situation with neutral names and arbitrary amounts, never real
+        financial data.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The financial task or situation, and what BreadSched does today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      multiple: true
+      options:
+        - Desktop (GTK)
+        - Browser
+        - Command line
+        - Not interface-specific
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This request contains no unsanitized financial data, book, statement, or screenshot of real accounts.
+          required: true

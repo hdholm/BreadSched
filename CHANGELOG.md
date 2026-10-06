@@ -22,6 +22,11 @@ section. Commits and pull requests hold the complete history.
   category column is refused (`import.csv.split.mapping`). Split rows are not offered
   as transfers, and re-import still never changes an accepted row. Previews show
   each row's splits (CLI table and `--json`, GTK, browser).
+- **Security policy, issue forms, and code owners.** `SECURITY.md` routes
+  vulnerabilities to GitHub's private vulnerability reporting and repeats the rule
+  against attaching unsanitized financial data. Bug and feature issue forms require
+  confirming that no real financial data is included; blank issues are off and the
+  chooser links the private report. `.github/CODEOWNERS` names the maintainer.
 
 ## 0.2.0a218 - 2026-10-06
 

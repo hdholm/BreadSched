@@ -232,9 +232,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Project governance and community health
 
-- Add `SECURITY.md`, privacy-aware issue forms, and `CODEOWNERS`; extend the
-  initial pull-request template as contribution patterns emerge. Security and field-
-  report forms must repeat the existing prohibition on uploading unsanitized
-  financial books and provide a private vulnerability-reporting route. Add a code of
-  conduct when the project is ready to invite a broader contributor community rather
-  than copying one without an enforcement/contact plan.
+- Extend the pull-request template and issue forms as contribution patterns
+  emerge. Add a code of conduct when the project is ready to invite a broader
+  contributor community rather than copying one without an enforcement/contact plan.
