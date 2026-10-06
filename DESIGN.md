@@ -65,7 +65,7 @@ Presentations: GTK4, web, CLI, print  gui/, web/, cli/, plugins/export/
 | GTK windows, dialogs, printing, background jobs | `gui/` | touch widgets from a worker thread |
 | HTTP routes, query parsing, response shape | `web/resources.py` and the `web/*_resource.py` adapters | perform validation or writes the service owns |
 | HTTP authentication, framing, limits, static files | `web/transport.py` | import financial engines |
-| Command-line parsing and text/JSON output | `cli/main.py` | keep its own copy of a financial rule |
+| Command-line parsing and text/JSON output | `cli/*_commands.py`, dispatched by `cli/main.py` | keep its own copy of a financial rule |
 | Report layout shared by GTK printing and the browser | `plugins/export/report_layout.py` | recompute values from the view |
 
 Background work: a Projection or other long calculation runs in a worker with its
@@ -191,6 +191,25 @@ their GET requests deliberately fall back to the serialized writer connection.
 Console diagnostics resolve stderr when emitted, since a captured stream can
 close while a web request thread remains active. Unexpected web failures send
 their sanitized correlation-ID response even if a logging handler fails.
+
+### Command line
+
+`cli/main.py` only builds the argument parser and dispatches: it maps user-fixable
+errors (`CommandError`, `DbError`, a missing or unreadable file) to exit status 2
+without a traceback and configures logging. Each area's subcommands live in one
+module that defines both their parsers, in a `register(add)` function, and their
+handlers: `book_commands` (create, back up, restore, migrate, verify, guide, export,
+read GnuCash, start web or GTK), `import_commands` (book, CSV, held changes,
+write-back, inference), `ledger_commands` (accounts, registers, balances, rates,
+transactions, rules, payees, tags, attachments), `plan_commands` (schedules,
+Review, due review, Plan matches, activity, estimates, paychecks),
+`benefit_commands` (FSA claims, receivables, goals), and `projection_commands`
+(projections, scenarios, comparison, net worth, Dashboard). `cli.common` holds the
+helpers they share (date parsing, JSON and table output, book and account lookup)
+and imports no command module. Like the web adapters, a command parses arguments
+into a typed service request or engine call and formats the result; architecture
+tests check that the entry point defines no handlers and that every command's
+handler is in the module that registers it.
 
 ### GTK and web parity
 

@@ -235,7 +235,7 @@ class BreadSchedApplication(Gtk.Application):
             return
         from argparse import Namespace
 
-        from ..cli.main import cmd_init
+        from ..cli.book_commands import cmd_init
 
         target = Path(file.get_path())
         try:
@@ -293,7 +293,7 @@ class BreadSchedApplication(Gtk.Application):
 
         from argparse import Namespace
 
-        from ..cli.main import cmd_init
+        from ..cli.book_commands import cmd_init
 
         target.parent.mkdir(parents=True, exist_ok=True)
         cmd_init(Namespace(book=str(target), json=True))
@@ -350,7 +350,7 @@ class BreadSchedApplication(Gtk.Application):
 
         from argparse import Namespace
 
-        from ..cli.main import cmd_init
+        from ..cli.book_commands import cmd_init
 
         target = Path(file.get_path())
         try:

@@ -475,7 +475,7 @@ class TestServiceBoundaries:
         assert "remember_import_source" not in calls
 
     def test_cli_import_uses_the_typed_service(self):
-        calls = calls_in_function(SRC / "cli/main.py", "cmd_import")
+        calls = calls_in_function(SRC / "cli/import_commands.py", "cmd_import")
         assert "import_book" in calls
         assert "run" not in calls
         assert "remember_import_source" not in calls
@@ -531,7 +531,7 @@ class TestServiceBoundaries:
         ),
     )
     def test_cli_review_mutations_use_typed_services(self, function_name, service_call):
-        calls = calls_in_function(SRC / "cli/main.py", function_name)
+        calls = calls_in_function(SRC / "cli/plan_commands.py", function_name)
         assert service_call in calls
         assert calls.isdisjoint(
             {"actualize_transaction", "reject_candidate", "mark_unexpected", "db.transaction"}
@@ -591,7 +591,7 @@ class TestServiceBoundaries:
         )
 
     def test_cli_scenario_lifecycle_uses_typed_services(self):
-        calls = calls_in_function(SRC / "cli/main.py", "cmd_scenario")
+        calls = calls_in_function(SRC / "cli/projection_commands.py", "cmd_scenario")
         assert {"save_scenario", "delete_scenario"} <= calls
         assert calls.isdisjoint(
             {"add_scenario", "commit_scenario", "remove_scenario", "db.transaction"}
@@ -664,7 +664,7 @@ class TestServiceBoundaries:
         ),
     )
     def test_cli_transaction_mutations_use_typed_services(self, function_name, service_call):
-        calls = calls_in_function(SRC / "cli/main.py", function_name)
+        calls = calls_in_function(SRC / "cli/ledger_commands.py", function_name)
         assert service_call in calls
         assert calls.isdisjoint(
             {"add_transaction", "commit_transaction", "remove_transaction", "db.transaction"}
@@ -712,7 +712,7 @@ class TestServiceBoundaries:
         )
 
     def test_cli_account_mutations_use_typed_services(self):
-        calls = calls_in_function(SRC / "cli/main.py", "cmd_account")
+        calls = calls_in_function(SRC / "cli/ledger_commands.py", "cmd_account")
         assert {"save_account", "delete_account"} <= calls
         assert calls.isdisjoint(
             {
@@ -753,7 +753,7 @@ class TestServiceBoundaries:
         )
 
     def test_cli_estimate_writes_use_schedule_services(self):
-        calls = calls_in_function(SRC / "cli/main.py", "cmd_estimate")
+        calls = calls_in_function(SRC / "cli/plan_commands.py", "cmd_estimate")
         assert {"save_schedule", "delete_schedule"} <= calls
         assert calls.isdisjoint({"add_scheduled", "remove_scheduled", "db.transaction"})
 
@@ -793,6 +793,49 @@ class TestWebBoundaries:
         assert 'reader.load(path, mode="r")' in source
         assert '"writer_db": db' in source
         assert "with self.lock:" in source
+
+
+class TestCliBoundaries:
+    """The CLI entry point only parses and dispatches; each area owns its commands."""
+
+    COMMAND_MODULES = sorted((SRC / "cli").glob("*_commands.py"))
+
+    def test_the_entry_point_defines_no_command_handlers(self):
+        tree = ast.parse((SRC / "cli" / "main.py").read_text(encoding="utf-8"))
+        functions = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+        assert functions == {"build_parser", "main"}
+
+    @pytest.mark.parametrize("path", COMMAND_MODULES, ids=lambda path: path.stem)
+    def test_each_command_is_registered_beside_its_handler(self, path):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        defined = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+        assert "register" in defined
+        handlers = {
+            keyword.value.id
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "set_defaults"
+            for keyword in node.keywords
+            if keyword.arg == "func" and isinstance(keyword.value, ast.Name)
+        }
+        assert handlers and handlers <= defined
+
+    def test_shared_helpers_depend_on_no_command_module(self):
+        tree = ast.parse((SRC / "cli" / "common.py").read_text(encoding="utf-8"))
+        local = [
+            node for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.level == 1
+        ]
+        assert local == []
+
+    def test_every_subcommand_has_one_handler(self):
+        from breadsched.cli.main import build_parser
+
+        parser = build_parser()
+        actions = [a for a in parser._actions if a.dest == "command"]
+        choices = actions[0].choices
+        assert {"init", "import", "add", "scheduled", "claims", "project"} <= set(choices)
+        assert all(callable(sub.get_default("func")) for sub in choices.values())
 
 
 class TestSuiteIsLocationIndependent:

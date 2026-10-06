@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a217 - 2026-10-06
+
+- **The command line is split by area.** The 4,900-line `cli/main.py` now only builds
+  the parser and dispatches. Each area's subcommands, parsers and handlers together,
+  moved to `cli/book_commands`, `import_commands`, `ledger_commands`,
+  `plan_commands`, `benefit_commands`, and `projection_commands`, with shared
+  helpers in `cli.common`. Every subcommand's options and help are unchanged;
+  `breadsched --help` now lists the commands grouped by area. New architecture
+  tests keep handlers out of the entry point and beside their parsers. The GTK
+  New Book action imports `cmd_init` from `cli.book_commands`.
+
 ## 0.2.0a216 - 2026-10-05
 
 - **Every web request handler is a resource adapter.** The scheduled, historical
