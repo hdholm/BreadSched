@@ -47,6 +47,10 @@ messages or pull requests.
   the open book. Parse controls several adapters share once, in `web.controls` or
   `web.schedule_controls`. Moving a handler should preserve the full response, saved
   controls, scenario comparison, and error contract in route-level tests.
+- Add a command-line subcommand to the `cli/*_commands.py` module for its area,
+  with its parser in that module's `register(add)` and its handler beside it;
+  `cli/main.py` only builds the parser and dispatches. Shared helpers belong in
+  `cli.common`.
 - For web financial writes, presentation adapters may assemble typed service inputs,
   but the shared service must own financial validation and the entire transaction.
   Cover a rejected request with a before/after persistence assertion.

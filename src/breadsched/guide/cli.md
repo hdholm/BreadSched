@@ -7,7 +7,8 @@ done in the [Desktop guide](desktop.md) or the [Browser guide](web.md).
 Every command takes the book path first. Many commands support `--json` for
 structured output, and `-v` (or `-vv`) logs progress and warnings to stderr. Use
 `breadsched --help` and `breadsched COMMAND --help` for the exact command surface in
-your installed release.
+your installed release; `breadsched --help` lists the commands grouped by area
+(book, import, ledger, Plan, claims and goals, projection).
 
 On Windows, the installer puts `breadsched.cmd` in its installation folder. Run it
 from there, or choose **Add the breadsched command to PATH** when installing (see
