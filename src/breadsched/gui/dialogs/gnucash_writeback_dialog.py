@@ -20,6 +20,7 @@ from ...gen.services.gnucash_writeback import (
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.help import help_row
 
 __all__ = ["GnuCashWritebackDialog"]
 
@@ -39,6 +40,7 @@ class GnuCashWritebackDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(18)
         self.set_child(outer)
+        outer.prepend(help_row("writeback"))
 
         self.summary = Gtk.Label(xalign=0, wrap=True)
         outer.append(self.summary)

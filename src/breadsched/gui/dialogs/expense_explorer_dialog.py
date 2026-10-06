@@ -10,6 +10,7 @@ from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.chart import LineChart, Series
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 
 
 class ExpenseExplorerDialog(BoundedWindow):
@@ -26,6 +27,7 @@ class ExpenseExplorerDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(outer, f"set_margin_{side}")(12)
         self.set_child(outer)
+        outer.prepend(help_row("expenses"))
         controls = Gtk.Box(spacing=8)
         outer.append(controls)
         controls.append(Gtk.Label(label="Period"))

@@ -21,6 +21,7 @@ from ...gen.services.payees import (
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.help import help_row
 
 __all__ = ["PayeesDialog"]
 
@@ -41,6 +42,7 @@ class PayeesDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("payees"))
         box.append(
             Gtk.Label(
                 label=(

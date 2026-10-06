@@ -207,9 +207,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Add a multiple-scenario walkthrough that duplicates Base and compares alternate
   assumptions/scheduled estimates.
 
-- Add contextual help links from complex GTK and browser workflows into the
-  packaged guide (already available in both) where they materially improve
-  discovery.
 
 
 ## Packaging and release quality

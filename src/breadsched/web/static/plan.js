@@ -135,7 +135,7 @@ async function expenseExplorerPanel(currentPlan) {
   const selected = choices.find((item) => item.account === state.expenseCategory) || choices[0];
   const index = Math.min(state.expenseIndex, Math.max(0, data.totals.length - 1));
   const panel = el("section", { class: "expense-explorer" },
-    el("h2", {}, "Expense Explorer"),
+    helpHeading("Expense Explorer", "expenses"),
     el("p", { class: "note" },
       "Blue: category plan · Orange: full-period actual. Remaining uses actual through today. Merchant groups use actuals only."));
   if (!selected) return panel;

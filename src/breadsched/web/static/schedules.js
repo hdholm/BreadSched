@@ -257,7 +257,8 @@ async function openDueReviewDialog() {
     } catch (error) { say(error.message, "error"); }
   };
   backdrop.append(el("section", { class:"detail-dialog wide" },
-    el("div", { class:"detail-heading" }, el("h2", {}, "Scheduled transactions due")),
+    el("div", { class:"detail-heading" },
+      helpHeading("Scheduled transactions due", "due-review")),
     el("p", { class:"note" }, "Choose what to do with each date. Nothing is posted until you apply, and the batch is one undo step."),
     el("table", {}, el("tbody", {}, ...rows)),
     el("div", { class:"toolbar" },

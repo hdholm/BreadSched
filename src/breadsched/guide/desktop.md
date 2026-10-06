@@ -24,7 +24,9 @@ without GTK.
 
 Press `F1` or choose **Help → User Guide** to open this guide. The switcher at the
 top shows the overview or the desktop, browser, or command-line part, and a link to
-another part opens it.
+another part opens it. **Help** in an import, reconciliation, schedule, paycheck,
+payee, rule, reimbursable, goal, Expense Explorer, or net worth history window opens
+the guide at that window's section.
 
 ### Install on Windows
 

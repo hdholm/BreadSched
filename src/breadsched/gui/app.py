@@ -17,6 +17,7 @@ from ..gen.db.sqlite import DbSQLite  # noqa: E402
 from ..gen.utils.logs import get_logger  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
 from ..presentation import book_open_notice  # noqa: E402
+from ..user_guide import help_target
 from .gi_setup import Gdk, Gio, GLib, Gtk
 from .user_guide import UserGuideWindow
 from .viewmanager import CATEGORIES as MENU_CATEGORIES  # noqa: E402
@@ -561,11 +562,20 @@ class BreadSchedApplication(Gtk.Application):
 
     def on_user_guide(self, *_args) -> None:
         """Present the packaged guide, reusing its window when it is already open."""
-        for window in self.get_windows():
-            if isinstance(window, UserGuideWindow):
-                window.present()
-                return
-        UserGuideWindow(self, self.props.active_window).present()
+        self.show_guide()
+
+    def show_guide(self, topic: str | None = None) -> UserGuideWindow:
+        """Present the guide; with ``topic``, at that workflow's desktop section."""
+        guide = next(
+            (window for window in self.get_windows() if isinstance(window, UserGuideWindow)),
+            None,
+        )
+        if guide is None:
+            guide = UserGuideWindow(self, self.props.active_window)
+        if topic is not None:
+            guide.show_part(*help_target(topic, "desktop"))
+        guide.present()
+        return guide
 
     def _report(self, message: str) -> None:
         window = self.props.active_window

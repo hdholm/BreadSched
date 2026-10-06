@@ -21,8 +21,11 @@ interface you use. Three companion parts give the steps for each interface:
 
 Every interface can show all four parts: **Help → User Guide** (`F1`) in the
 desktop application, the **Guide** page in the browser, and `breadsched guide`
-(`overview`, `desktop`, `web`, or `cli`) on the command line. The interfaces share
-one book and one set of rules, so you can move between them freely.
+(`overview`, `desktop`, `web`, or `cli`) on the command line. Windows and pages for
+longer workflows, such as imports, reconciliation, schedules, paychecks, payees,
+rules, reimbursables, and goals, also have a **Help** button that opens their
+section of the desktop or browser part. The interfaces share one book and one set
+of rules, so you can move between them freely.
 
 ## Getting started
 

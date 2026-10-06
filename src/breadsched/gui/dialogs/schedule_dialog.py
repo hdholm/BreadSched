@@ -50,6 +50,7 @@ from ...gen.utils.amount_input import parse_user_amount
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 from ..widgets.schedule_timeline import (
     DatedAmountListEditor,
     DateListEditor,
@@ -186,6 +187,7 @@ class ScheduleDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("scheduled"))
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
         self.content_scroller = Gtk.ScrolledWindow(child=content)

@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a220 - 2026-10-06
+
+- **Contextual help.** Import (file, CSV, held GnuCash changes, write-back),
+  reconciliation, schedule, due review, paycheck, Expense Explorer, net worth history,
+  payee, rule, reimbursable, and goal workflows have a **Help** button that opens the
+  guide at their section: in GTK, the guide window at the desktop part's heading; in
+  the browser, a new tab on **Guide** at the browser part's heading, leaving the form
+  as it was. One shared table, `user_guide.HELP_TOPICS`, names each topic's heading;
+  `GET /api/guide?topic=` resolves it for the browser. Tests require each heading to
+  exist in both parts and each interface's topics to come from the table. Help
+  buttons are hidden when printing a browser page.
+
 ## 0.2.0a219 - 2026-10-06
 
 - **CSV split columns.** A CSV statement row can post to several categories: map a

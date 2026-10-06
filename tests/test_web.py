@@ -6073,10 +6073,17 @@ class TestGuideRoute:
         assert overview["files"]["desktop.md"] == "desktop"
         status, web = client.get("/api/guide?part=web")
         assert status == 200 and web["markdown"].startswith("# Browser guide")
-        for query in ("part=missing", "other=1"):
+        assert overview["anchor"] is None
+        for query in ("part=missing", "other=1", "topic=missing", "topic=payroll&part=web"):
             with pytest.raises(urllib.error.HTTPError) as caught:
                 client.get(f"/api/guide?{query}")
             assert caught.value.code == 400
+
+    def test_a_help_topic_opens_the_browser_part_at_its_heading(self, client):
+        status, data = client.get("/api/guide?topic=csv-import")
+        assert status == 200
+        assert (data["part"], data["anchor"]) == ("web", "import-a-csv-statement")
+        assert "\n### Import a CSV statement\n" in data["markdown"]
 
 
 class TestSavingsGoalScenarioRoutes:

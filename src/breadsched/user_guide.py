@@ -16,10 +16,12 @@ from posixpath import basename
 
 __all__ = [
     "GUIDE_PARTS",
+    "HELP_TOPICS",
     "GuidePart",
     "GuideLink",
     "guide_part",
     "heading_slug",
+    "help_target",
     "read_guide",
     "resolve_link",
 ]
@@ -62,6 +64,41 @@ def heading_slug(heading: str) -> str:
     text = re.sub(r"[`*_]", "", heading).strip().lower()
     text = re.sub(r"[^\w\- ]", "", text)
     return text.replace(" ", "-")
+
+
+#: Contextual help: a workflow's **Help** button opens this heading in the
+#: guide part for its interface (``desktop`` or ``web``). Each heading exists in
+#: both parts; a test keeps them so.
+HELP_TOPICS: dict[str, str] = {
+    "csv-import": "Import a CSV statement",
+    "import": "Import files",
+    "held-import": "Review held GnuCash changes",
+    "writeback": "Write changes back to GnuCash",
+    "reconcile": "Reconcile a statement",
+    "scheduled": "Scheduled activity",
+    "due-review": "Review due transactions",
+    "payroll": "Paychecks and pay changes",
+    "plan": "Plan and projection",
+    "expenses": "Explore expenses",
+    "net-worth": "Net worth history",
+    "payees": "Payees",
+    "rules": "Categorization rules",
+    "reimbursables": "Reimbursable expenses",
+    "goals": "Savings goals",
+}
+
+#: The interfaces that show contextual help, and the guide part each opens.
+HELP_PARTS = ("desktop", "web")
+
+
+def help_target(topic: str, interface: str) -> tuple[str, str]:
+    """The guide part and heading slug a **Help** button opens.
+
+    Raises ``KeyError`` for an unknown topic or an interface without help.
+    """
+    if interface not in HELP_PARTS:
+        raise KeyError(interface)
+    return interface, heading_slug(HELP_TOPICS[topic])
 
 
 @dataclass(frozen=True, slots=True)

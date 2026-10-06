@@ -89,3 +89,38 @@ def test_the_command_line_prints_and_lists_the_parts(capsys):
     assert [item["part"] for item in listed] == ["overview", "desktop", "web", "cli"]
     assert main(["guide", "web", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["title"] == "Browser"
+
+
+def test_every_help_topic_names_a_heading_in_both_interface_parts():
+    from breadsched.user_guide import HELP_TOPICS, help_target
+
+    for topic in HELP_TOPICS:
+        for interface in ("desktop", "web"):
+            part, anchor = help_target(topic, interface)
+            assert part == interface
+            assert anchor in _anchors(part), (topic, interface)
+    with pytest.raises(KeyError):
+        help_target("no-such-topic", "web")
+    with pytest.raises(KeyError):
+        help_target("csv-import", "cli")
+
+
+def test_every_help_button_uses_a_known_topic_and_every_topic_is_used():
+    """Both interfaces' Help buttons name topics from the one shared table."""
+    from pathlib import Path
+
+    from breadsched.user_guide import HELP_TOPICS
+
+    root = Path(__file__).resolve().parent.parent / "src" / "breadsched"
+    gtk = set()
+    for path in (root / "gui").rglob("*.py"):
+        gtk |= set(re.findall(r'help_(?:row|button)\("([\w-]+)"\)', path.read_text("utf-8")))
+    scripts = "\n".join(path.read_text("utf-8") for path in (root / "web" / "static").glob("*.js"))
+    web = set(re.findall(r'helpButton\("([\w-]+)"\)', scripts))
+    web |= set(re.findall(r'helpHeading\([^;]*?, "([\w-]+)"\)', scripts))
+    views = re.search(r"const VIEW_HELP = \{(.*?)\};", scripts, re.DOTALL)
+    assert views is not None
+    web |= set(re.findall(r':\s*"([\w-]+)"', views.group(1)))
+    assert gtk and web
+    assert gtk <= set(HELP_TOPICS) and web <= set(HELP_TOPICS)
+    assert gtk | web == set(HELP_TOPICS)

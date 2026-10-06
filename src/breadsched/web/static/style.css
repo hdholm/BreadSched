@@ -189,6 +189,7 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 }
 .detail-dialog h2 { margin:0; font-size:18px; }
 .detail-dialog h3 { margin:16px 0 8px; }
+.help-heading { display:flex; gap:12px; align-items:baseline; }
 .detail-heading { display:flex; gap:12px; align-items:flex-start; justify-content:space-between; }
 .detail-summary { margin-top:12px; }
 @media (max-width: 800px) { .review-grid { grid-template-columns: 1fr; } }
@@ -197,7 +198,7 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
   :root { --ink: #000; --dim: #4b4b4b; --line: #bfc3c8; --bg: #fff; --panel: #fff; }
   body { background: #fff; font-size: 10pt; }
   header { display: none !important; }
-  nav, #print-view, #message, .detail-backdrop { display: none !important; }
+  nav, #print-view, #message, .detail-backdrop, button.help { display: none !important; }
   main { padding: 0; max-width: none; }
   .print-only { display: block; }
   #print-title { font-size: 20pt; margin: 0 0 10px; }

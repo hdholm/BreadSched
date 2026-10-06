@@ -902,7 +902,7 @@ async function openReconciliation(account) {
           }}, "Finish")));
   }
   const body = el("section", {class:"detail-dialog wide"},
-    el("h2", {}, `Reconcile — ${data.account.name}`),
+    helpHeading(`Reconcile — ${data.account.name}`, "reconcile"),
     data.reimbursement_notice ? el("p", {class:"note"}, data.reimbursement_notice) : null,
     data.claim_link_notice ? el("p", {class:"note"}, data.claim_link_notice) : null,
     content,

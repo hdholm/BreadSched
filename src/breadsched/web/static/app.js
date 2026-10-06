@@ -8,6 +8,13 @@ const RENDERERS = {
   Guide: showGuide,
 };
 
+// Views whose workflow has a section in the browser guide get a Help button.
+const VIEW_HELP = {
+  Scheduled: "scheduled", Payroll: "payroll", Plan: "plan", Projection: "plan",
+  Import: "import", Payees: "payees", Rules: "rules", Reimbursables: "reimbursables",
+  Goals: "goals",
+};
+
 function switchTo(name) { current = name; render(); }
 
 // Open a view in another browser tab, which keeps its own place and scenario.
@@ -29,7 +36,10 @@ async function render() {
   document.getElementById("print-title").textContent = current;
   view.replaceChildren(el("p", { class: "note" }, "Loading…"));
   try {
-    view.replaceChildren(await RENDERERS[current]());
+    const content = await RENDERERS[current]();
+    const help = VIEW_HELP[current];
+    view.replaceChildren(...(help
+      ? [el("div", { class: "toolbar view-help" }, helpButton(help)), content] : [content]));
   } catch (error) {
     view.replaceChildren(el("p", { class: "note neg" }, `Could not load: ${error.message}`));
   }

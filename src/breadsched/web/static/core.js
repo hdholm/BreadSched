@@ -11,6 +11,8 @@ let state = {
   // A page opened for one scenario ("Open in new tab") starts on it; "" is Base.
   projectionData: null, projectionHandle: launchParams.get("scenario"),
   projectionCompareHandle: null,
+  // A Help button opens a page on the Guide at its workflow's heading.
+  guideTopic: launchParams.get("help"),
   projectionComparison: null,
 };
 let historicalEstimateDialog = null;
@@ -97,6 +99,16 @@ async function post(path, body) {
   if (!response.ok) throw new Error(payload.error || response.statusText);
   return payload;
 }
+
+// Contextual help: open this workflow's section of the browser guide in another
+// tab, so a form or dialog in progress here is kept.
+const helpButton = (topic) => el("button", {
+  class: "action help", type: "button", "data-help": topic,
+  title: "Open the guide section for this page in a new tab",
+  onclick: () => openInNewTab("Guide", { help: topic }),
+}, "Help");
+const helpHeading = (text, topic, attrs = {}) => el("div", { class: "help-heading" },
+  el("h2", attrs, text), helpButton(topic));
 
 function say(text, kind) {
   const box = document.getElementById("message");
