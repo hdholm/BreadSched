@@ -1103,6 +1103,16 @@ projection has no balance, so `covered` stays `None`. `GoalMilestone.as_dict` is
 one JSON shape the web and CLI return. Plan lists goals whose target date falls in its
 range with what they have actually set aside.
 
+A goal override can also model the purchase (`GoalOverride.purchase_on`,
+`purchase_account`). `planning.goal_purchase_events` turns it into a scenario-only
+`ONE_OFF` planned event (placeholder, two balanced splits: the target into the
+purchase account, out of the goal's account), so Plan and Projection share it and it
+is never escalated. `project_goals` sets nothing aside from the purchase month on,
+and the milestone records the purchase. `services.savings_goals.set_goal_override`
+refuses an incomplete purchase, a date before the target date, and an account that
+is not a non-placeholder expense or asset other than the goal's own; leaving the
+goal out drops the purchase.
+
 `services.savings_goals` owns validation and every write (save, allocate, close,
 reopen, delete, and scenario overrides, which a goal deletion removes in the same
 undo step); allocations cannot exceed the target, and deleting a goal's account is

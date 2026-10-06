@@ -119,23 +119,33 @@ async function showGoals() {
     placeholder:"Target amount" });
   const overrideDate = el("input", { name:"override_date", type:"date" });
   const overrideExcluded = el("input", { name:"override_excluded", type:"checkbox" });
+  // Optionally model the purchase: the target is spent on this date, in this scenario only.
+  const purchaseOn = el("input", { name:"purchase_on", type:"date" });
+  const purchaseAccount = el("select", { name:"purchase_account" },
+    el("option", { value:"" }, "(no purchase)"),
+    ...(data.purchase_accounts || []).map((item) => el("option", { value:item.handle }, item.name)));
   const overrideForm = el("form", { class:"entry goal-override", hidden:"hidden",
     onsubmit:(event) => {
       event.preventDefault();
       run(async () => {
         const saved = await post("/api/savings-goal/override", {
           handle:editing, scenario:overrideScenario.value, target_amount:overrideTarget.value,
-          target_date:overrideDate.value, excluded:overrideExcluded.checked });
+          target_date:overrideDate.value, excluded:overrideExcluded.checked,
+          purchase_on:purchaseOn.value, purchase_account:purchaseAccount.value });
         say(saved.text + ".");
         await refresh();
       })();
     } },
-    el("p", { class:"note" }, "Change ", overrideGoal, " in one scenario. Leave both fields "
-      + "empty and Leave out unchecked to follow the goal unchanged."),
+    el("p", { class:"note" }, "Change ", overrideGoal, " in one scenario. To model what it is "
+      + "saved for, give a purchase date on or after the target date and the expense or asset "
+      + "account it buys into. Leave every field empty and Leave out unchecked to follow the "
+      + "goal unchanged."),
     el("label", {}, "Scenario", overrideScenario),
     el("label", {}, "Target amount", overrideTarget),
     el("label", {}, "Target date", overrideDate),
     el("label", {}, overrideExcluded, " Leave out"),
+    el("label", {}, "Buy on", purchaseOn),
+    el("label", {}, "Buy into", purchaseAccount),
     el("button", { class:"action", type:"submit" }, "Apply to scenario"));
   const rows = data.goals.map((goal) => {
     const amount = el("input", { inputmode:"decimal", placeholder:"Amount", size:"8",

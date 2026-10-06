@@ -4319,6 +4319,47 @@ class TestDashboardView:
         finally:
             dialog.destroy()
 
+    def test_savings_goals_dialog_models_a_purchase_in_one_scenario(self, app, window, tmp_path):
+        from breadsched.gen.lib import Scenario
+        from breadsched.gen.sample_book import create_sample_book
+        from breadsched.gen.services import (
+            SaveSavingsGoal,
+            goal_accounts,
+            purchase_accounts,
+            save_savings_goal,
+        )
+
+        path = tmp_path / "goals-purchase.breadsched"
+        today = date.today()
+        create_sample_book(path, as_of=today)
+        app.open_book(str(path))
+        handle, _name = goal_accounts(app.db)[0]
+        target_date = today.replace(year=today.year + 1)
+        goal = save_savings_goal(
+            app.db, SaveSavingsGoal("Roof", handle, Money(900), target_date, today)
+        ).value
+        scenario = Scenario(name="Lean", start=today.replace(day=1))
+        with app.db.transaction("Scenario") as txn:
+            app.db.add_scenario(scenario, txn)
+        into = next(h for h, name in purchase_accounts(app.db) if name.startswith("Expenses:"))
+        dialog = app.on_savings_goals()
+        try:
+            dialog.edit(goal.handle)
+            dialog.scenario_picker.set_selected(dialog._scenarios.index(scenario.handle))
+            dialog.purchase_on.set_text(target_date.isoformat())
+            dialog.purchase_picker.set_selected(dialog._purchase_accounts.index(into) + 1)
+            assert dialog.apply_override()
+            stored = app.db.get_scenario(scenario.handle).goal_overrides[goal.handle]
+            assert (stored.purchase_on, stored.purchase_account) == (target_date, into)
+            assert "bought on" in dialog.goal_rows.get_child_at(7, 1).get_label()
+            # A purchase before the target date is refused and keeps the stored change.
+            dialog.purchase_on.set_text(today.isoformat())
+            assert not dialog.apply_override()
+            assert app.db.get_scenario(scenario.handle).goal_overrides[goal.handle] == stored
+            assert "on or after the goal's target date" in dialog.status.get_text()
+        finally:
+            dialog.destroy()
+
     def test_dashboard_lists_each_savings_goal(self, app, window, tmp_path):
         from breadsched.gen.sample_book import create_sample_book
         from breadsched.gen.services import SaveSavingsGoal, goal_accounts, save_savings_goal

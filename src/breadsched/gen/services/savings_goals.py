@@ -32,6 +32,7 @@ __all__ = [
     "close_savings_goal",
     "delete_savings_goal",
     "goal_accounts",
+    "purchase_accounts",
     "query_savings_goals",
     "reopen_savings_goal",
     "save_savings_goal",
@@ -77,6 +78,18 @@ def goal_accounts(db: DbSQLite) -> list[tuple[str, str]]:
         and not account.placeholder
         and account.account_class is AccountClass.ASSET
         and (account.commodity or reporting) == reporting
+    ]
+    return sorted(found, key=lambda item: item[1].casefold())
+
+
+def purchase_accounts(db: DbSQLite) -> list[tuple[str, str]]:
+    """(handle, full name) of every expense or asset account a goal's purchase can go to."""
+    found = [
+        (account.handle, db.full_name(account))
+        for account in db.iter_accounts()
+        if not account.is_root
+        and not account.placeholder
+        and account.account_class in (AccountClass.EXPENSE, AccountClass.ASSET)
     ]
     return sorted(found, key=lambda item: item[1].casefold())
 
@@ -210,6 +223,31 @@ class SetGoalOverride:
     target_amount: Money | None = None
     target_date: date | None = None
     excluded: bool = False
+    #: Model the purchase: on this date (on or after the target date) the target
+    #: moves from the goal's account into ``purchase_account`` (an expense or asset).
+    purchase_on: date | None = None
+    purchase_account: str | None = None
+
+
+def _purchase_error(db: DbSQLite, goal, request: SetGoalOverride) -> ServiceError | None:
+    if request.purchase_on is None and request.purchase_account is None:
+        return None
+    if request.purchase_on is None or not request.purchase_account:
+        field = "purchase_on" if request.purchase_on is None else "purchase_account"
+        return ServiceError("savings_goal.purchase.incomplete", (field,))
+    target_date = request.target_date or goal.target_date
+    if request.purchase_on < target_date:
+        return ServiceError("savings_goal.purchase.before_target", ("purchase_on",))
+    account = db.get_account(request.purchase_account)
+    if (
+        account is None
+        or account.placeholder
+        or account.is_root
+        or account.handle == goal.account
+        or account.account_class not in (AccountClass.EXPENSE, AccountClass.ASSET)
+    ):
+        return ServiceError("savings_goal.purchase.account", ("purchase_account",))
+    return None
 
 
 def set_goal_override(db: DbSQLite, request: SetGoalOverride) -> ServiceResult[Scenario]:
@@ -226,10 +264,24 @@ def set_goal_override(db: DbSQLite, request: SetGoalOverride) -> ServiceResult[S
         )
     if request.target_date is not None and request.target_date <= goal.start_date:
         return ServiceResult.failure(ServiceError("savings_goal.dates.invalid", ("target_date",)))
+    if not request.excluded and (problem := _purchase_error(db, goal, request)) is not None:
+        return ServiceResult.failure(problem)
+    # A goal left out of the scenario is bought by nobody.
+    purchase_on = None if request.excluded else request.purchase_on
+    purchase_account = None if request.excluded else request.purchase_account
     override: GoalOverride | None = GoalOverride(
-        request.target_amount, request.target_date, request.excluded
+        request.target_amount,
+        request.target_date,
+        request.excluded,
+        purchase_on,
+        purchase_account,
     )
-    if not request.excluded and request.target_amount is None and request.target_date is None:
+    if (
+        not request.excluded
+        and request.target_amount is None
+        and request.target_date is None
+        and purchase_on is None
+    ):
         override = None
     if override is None:
         scenario.goal_overrides.pop(goal.handle, None)

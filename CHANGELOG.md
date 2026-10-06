@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a223 - 2026-10-06
+
+- **A scenario can model a savings goal's purchase.** A goal override can name a
+  purchase date (on or after the target date) and an expense or asset account; that
+  scenario's Plan and Projection then show a one-off moving the target out of the
+  goal's account into it (`planning.goal_purchase_events`), never escalated and never
+  posted, and the goal sets nothing aside from that month. The milestone says when
+  the scenario buys it. Base and other scenarios are unchanged; leaving the goal out
+  drops its purchase. The service refuses an incomplete purchase, an early date, or
+  an unsuitable account (`savings_goal.purchase.*`) without changing the scenario.
+  CLI `goals --override … --buy-on DATE --buy-into ACCOUNT`; GTK **Purchase in that
+  scenario**; browser **Buy on** and **Buy into**; `/api/savings-goals` adds
+  `purchase_accounts`.
+
 ## 0.2.0a222 - 2026-10-06
 
 - **Walkthroughs.** The guide's overview walks through setting up a household

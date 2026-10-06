@@ -6087,6 +6087,55 @@ class TestGuideRoute:
 
 
 class TestSavingsGoalScenarioRoutes:
+    def test_a_goal_purchase_is_modelled_in_one_scenario_through_the_route(self, client):
+        from breadsched.gen.lib import Scenario
+
+        _status, listing = client.get("/api/savings-goals")
+        account = next(item for item in listing["accounts"] if item["name"].endswith("Checking"))
+        into = next(
+            item for item in listing["purchase_accounts"] if item["name"].startswith("Expenses:")
+        )
+        today = date.today()
+        target_date = today.replace(year=today.year + 1)
+        _status, saved = client.post(
+            "/api/savings-goal/save",
+            {
+                "name": "Roof",
+                "account": account["handle"],
+                "target_amount": "1200",
+                "start_date": today.isoformat(),
+                "target_date": target_date.isoformat(),
+            },
+        )
+        scenario = Scenario(name="Lean", start=today.replace(day=1))
+        with client.database.transaction("Scenario") as txn:
+            client.database.add_scenario(scenario, txn)
+        body = {
+            "handle": saved["handle"],
+            "scenario": scenario.handle,
+            "purchase_on": target_date.isoformat(),
+            "purchase_account": into["handle"],
+        }
+        status, changed = client.post("/api/savings-goal/override", body)
+        assert status == 200
+        assert changed["text"] == f"Lean: bought on {target_date.isoformat()}"
+        _status, listing = client.get("/api/savings-goals")
+        [override] = listing["goals"][0]["overrides"]
+        assert (override["purchase_on"], override["purchase_account"]) == (
+            target_date.isoformat(),
+            into["handle"],
+        )
+        _status, projected = client.get(f"/api/projection?scenario={scenario.handle}")
+        [milestone] = projected["goal_milestones"]
+        assert milestone["purchase_on"] == target_date.isoformat()
+        assert milestone["purchase_account_name"] == into["name"]
+        before = client.database.get_scenario(scenario.handle).serialize()
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post("/api/savings-goal/override", {**body, "purchase_on": today.isoformat()})
+        error = json.loads(caught.value.read())
+        assert (caught.value.code, error["code"]) == (400, "savings_goal.purchase.before_target")
+        assert client.database.get_scenario(scenario.handle).serialize() == before
+
     def test_a_goal_is_changed_in_one_scenario_through_the_route(self, client):
         from breadsched.gen.lib import Scenario
 

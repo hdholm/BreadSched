@@ -424,7 +424,47 @@ def scenario_events(
         for index, item in enumerate(scenario.one_offs)
         if start <= item.when <= end
     )
+    events.extend(goal_purchase_events(db, scenario, start, end))
     return sorted(events, key=lambda item: (item.when, item.planned_date, item.key))
+
+
+def goal_purchase_events(
+    db: DbSQLite, scenario: Scenario, start: date, end: date
+) -> list[PlannedEvent]:
+    """The purchases a scenario models for its savings goals, as one-off events.
+
+    Each moves the goal's target (as the scenario sets it) out of the goal's account
+    into the purchase account on the purchase date. It is a scenario estimate: it
+    never posts, and like other one-offs its amount is not escalated.
+    """
+    found: list[PlannedEvent] = []
+    for handle, override in scenario.goal_overrides.items():
+        if override.excluded or not override.purchases:
+            continue
+        assert override.purchase_on is not None and override.purchase_account is not None
+        goal = db.get_savings_goal(handle)
+        if goal is None or not goal.is_open(override.purchase_on):
+            continue
+        if not start <= override.purchase_on <= end:
+            continue
+        amount = override.target_amount or goal.target_amount
+        splits = (
+            PlannedSplit(override.purchase_account, amount),
+            PlannedSplit(goal.account, -amount),
+        )
+        found.append(
+            PlannedEvent(
+                key=f"goal-purchase:{scenario.handle}:{goal.handle}:{override.purchase_on}",
+                planned_date=override.purchase_on,
+                source=EventSource.ONE_OFF,
+                source_handle=None,
+                description=f"Buy: {goal.name}",
+                expected_splits=splits,
+                expected_amount=amount,
+                placeholder=True,
+            )
+        )
+    return found
 
 
 def event_by_key(db: DbSQLite, key: str) -> PlannedEvent | None:

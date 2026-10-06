@@ -313,7 +313,9 @@ this window.
 To change a goal in one scenario, load it with **Edit**, choose the scenario after
 **In scenario**, and enter a different target amount or target date, or check
 **Leave out**; then choose **Apply to scenario**. With both fields empty and **Leave
-out** unchecked, the scenario follows the goal unchanged again. **Scenario changes**
+out** unchecked, the scenario follows the goal unchanged again. To model the
+purchase in that scenario, also enter the purchase date (**Buy on**) and choose the
+account under **Purchase in that scenario**. **Scenario changes**
 lists every change. Projection shows each goal's target month and what goals have
 set aside in its notes, and Plan lists goals whose target date falls in its range.
 See [Savings goals](../USER_GUIDE.md#savings-goals).
