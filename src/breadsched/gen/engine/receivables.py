@@ -309,6 +309,65 @@ def owned_postings(db: DbSQLite) -> set[str]:
     return {handle for receivable in db.iter_receivables() for handle in receivable.postings}
 
 
+@dataclass(frozen=True, slots=True)
+class ExpectedReceipt:
+    """Money a payer is still expected to send, on its expected date."""
+
+    receivable: Receivable
+    when: date
+    amount: Money
+    #: The receivable-type account the money leaves.
+    account: str
+    #: The cash account it is expected in: the one that paid the expense, or the
+    #: account a card that paid it is paid from.
+    cash_account: str
+
+
+def _paying_cash_account(db: DbSQLite, receivable: Receivable) -> str | None:
+    for link in receivable.expenses:
+        transaction = db.get_transaction(link.transaction)
+        if transaction is None:
+            continue
+        for split in transaction.splits:
+            account = db.get_account(split.account)
+            if account is None or split.handle == link.split:
+                continue
+            if account.is_spendable_cash:
+                return account.handle
+            if account.atype is AccountType.CREDIT and account.card_payment_account:
+                return account.card_payment_account
+    return None
+
+
+def expected_receipt(
+    db: DbSQLite, receivable: Receivable, *, as_of: date | None = None
+) -> ExpectedReceipt | None:
+    """The receipt to plan for, or ``None`` when none should be counted on.
+
+    Only an open or partly reimbursed receivable with an expected date on or after
+    ``as_of`` (default today), held in a receivable account in the reporting
+    currency, is expected. A disputed or overdue one is not spendable cash, so it
+    is left out, as is one whose paying cash account cannot be found.
+    """
+    today = as_of or date.today()
+    when = receivable.expected_cash_date
+    if receivable.account is None or when is None or when < today:
+        return None
+    try:
+        summary = receivable_summary(db, receivable, as_of=today)
+        currency = posting_currency(db, receivable)
+    except ReceivableError:
+        return None
+    if summary.status not in (ReceivableStatus.OPEN, ReceivableStatus.PARTIAL):
+        return None
+    if summary.remaining <= 0 or currency not in (None, reporting_currency_handle(db)):
+        return None
+    cash = _paying_cash_account(db, receivable)
+    if cash is None:
+        return None
+    return ExpectedReceipt(receivable, when, summary.remaining, receivable.account, cash)
+
+
 def posting_currency(db: DbSQLite, receivable: Receivable) -> str | None:
     """The one transaction currency of the linked splits; ``None`` if nothing is linked.
 

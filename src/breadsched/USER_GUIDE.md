@@ -1094,6 +1094,15 @@ A GnuCash re-import that
 would delete a transaction a receivable depends on is refused, the same protection
 FSA claims already have.
 
+Give a receivable an **expected by** date and the Plan and Projection expect the
+money on that date: what is still owed moves from the receivable account into the
+cash account that paid the expense (or, for a card, the account the card is paid
+from), so projected cash rises only from the day it is due, and net worth is
+unchanged. It is an expectation, never posted; the real reimbursement, once linked,
+replaces it. A disputed receivable, one whose expected date has passed, and one
+settled or written off are not counted on, so a doubtful reimbursement never shows
+as spendable cash.
+
 ## Import and GnuCash interoperability
 
 BreadSched imports GnuCash SQLite and compressed XML books and preserves source
