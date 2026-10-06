@@ -20,8 +20,9 @@ from ..presentation import book_open_notice  # noqa: E402
 from ..user_guide import help_target
 from .gi_setup import Gdk, Gio, GLib, Gtk
 from .user_guide import UserGuideWindow
-from .viewmanager import CATEGORIES as MENU_CATEGORIES  # noqa: E402
-from .viewmanager import VIEW_ACTIONS, ViewManager, view_action_name  # noqa: E402
+from .view_catalog import CATEGORIES as MENU_CATEGORIES  # noqa: E402
+from .view_catalog import VIEW_ACTIONS, view_action_name  # noqa: E402
+from .viewmanager import ViewManager  # noqa: E402
 
 __all__ = ["BreadSchedApplication", "main"]
 
