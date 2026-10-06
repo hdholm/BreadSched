@@ -124,3 +124,34 @@ def test_every_help_button_uses_a_known_topic_and_every_topic_is_used():
     assert gtk and web
     assert gtk <= set(HELP_TOPICS) and web <= set(HELP_TOPICS)
     assert gtk | web == set(HELP_TOPICS)
+
+
+def _walkthrough_commands(heading: str) -> list[list[str]]:
+    """The ``breadsched`` commands in a CLI guide section's code blocks, as argv."""
+    import shlex
+
+    text = read_guide("cli")
+    section = text.split(f"\n## {heading}\n", 1)[1].split("\n## ", 1)[0]
+    commands: list[list[str]] = []
+    for block in re.findall(r"```bash\n(.*?)```", section, re.DOTALL):
+        for command in block.replace("\\\n", " ").splitlines():
+            if command.strip():
+                argv = shlex.split(command)
+                assert argv[0] == "breadsched", command
+                commands.append(argv[1:])
+    return commands
+
+
+def test_the_command_line_walkthroughs_run_as_written(tmp_path, monkeypatch, capsys):
+    """Each walkthrough command succeeds in order, in an empty folder."""
+    from breadsched.cli.main import main
+
+    monkeypatch.chdir(tmp_path)
+    household = _walkthrough_commands("Walkthrough: set up a household")
+    scenarios = _walkthrough_commands("Walkthrough: compare scenarios")
+    assert len(household) >= 10 and len(scenarios) >= 3
+    for argv in household + scenarios:
+        assert main(argv) == 0, argv
+    output = capsys.readouterr().out
+    assert "covers the 9,000.00 set aside for goals" in output
+    assert "Lower returns" in output.rsplit("month", 1)[-1]

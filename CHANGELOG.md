@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a222 - 2026-10-06
+
+- **Walkthroughs.** The guide's overview walks through setting up a household
+  (accounts with opening balances, a card with its payment, income and spending,
+  loans and transfers, a savings goal, the Dashboard and Plan, and a Base
+  projection) and comparing scenarios (a child of Base with different assumptions
+  and a scenario-only goal change), linking each step to its section. The CLI guide
+  gives both as commands, and a test runs them in order exactly as printed, so they
+  cannot drift from the command line.
+- `breadsched estimate --help` now says what `--amount` means: what each occurrence
+  posts to `--account`, positive for an expense and negative for income.
+
 ## 0.2.0a221 - 2026-10-06
 
 - **Goals in non-cash accounts are compared with the account's projected balance.**

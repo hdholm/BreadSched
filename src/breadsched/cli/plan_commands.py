@@ -879,7 +879,11 @@ def register(add: AddCommand) -> None:
         "--funded-from",
         help="the account the money moves to or from",
     )
-    estimate.add_argument("--amount")
+    estimate.add_argument(
+        "--amount",
+        help="what each occurrence posts to --account: positive for an expense, "
+        "negative for income",
+    )
     estimate.add_argument(
         "--every",
         default="month",
