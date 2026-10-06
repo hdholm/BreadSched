@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a231 - 2026-10-06
+
+- **Dashboard bills have their own module.** Bill cycles, `BillRow`, missed-occurrence
+  grouping, income-weighted reserves, and the pending cash flow behind liquidity
+  (about 470 lines) moved from `engine/dashboard` to `engine/dashboard_bills`;
+  `dashboard` re-exports the public names. No behavior changed.
+- **Historical-estimate statistics have their own module.** The pure history
+  statistics (robust sample, typical amount, recurrence inference and next start,
+  cadence, trend, seasonality, and confidence, about 520 lines with their evidence
+  types) moved from `engine/estimates` to `engine/estimate_history`, which never
+  reads the book; an architecture test keeps it that way. The golden estimate tests
+  pass unchanged. No behavior changed.
+
 ## 0.2.0a230 - 2026-10-06
 
 - **Import summaries group problems by reason.** Each skip reason is one line with
