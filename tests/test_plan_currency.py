@@ -13,7 +13,8 @@ from datetime import date
 import pytest
 
 from breadsched.gen.engine import valuation
-from breadsched.gen.engine.activity import build_activity_report, build_category_report
+from breadsched.gen.engine.activity import build_activity_report
+from breadsched.gen.engine.category_report import build_category_report
 from breadsched.gen.engine.currency import reporting_currency_handle
 from breadsched.gen.lib import (
     Commodity,
@@ -161,7 +162,7 @@ def test_converted_actual_reconciles_detail_and_explorer_remaining(db, euro_book
 
 
 def test_currency_notes_disclose_quote_or_exclusion(db, euro_book):
-    from breadsched.gen.engine.activity import currency_notes
+    from breadsched.gen.engine.category_report import currency_notes
 
     _book, euro = euro_book
     missing = build_category_report(db, START, END, as_of=AS_OF)

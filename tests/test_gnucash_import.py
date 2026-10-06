@@ -21,7 +21,7 @@ from gnucash_fixtures import (
     write_transaction,
 )
 
-from breadsched.gen.engine import activity, ledger, valuation
+from breadsched.gen.engine import category_report, ledger, valuation
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -493,7 +493,7 @@ class TestSqliteImport:
             db.commit_account(escrow, txn)
 
         gnucash_sqlite.import_book(db, gnucash_sqlite_path.path)
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         escrow_flow = next(

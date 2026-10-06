@@ -7,13 +7,8 @@ from dataclasses import dataclass
 from datetime import date
 
 from ..db.sqlite import DbSQLite
-from ..engine.activity import (
-    CategoryReport,
-    PlanMeasure,
-    PlanSettings,
-    ReportingPeriod,
-    build_category_report,
-)
+from ..engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
+from ..engine.category_report import CategoryReport, build_category_report
 from ..engine.goal_projection import effective_goals
 from ..engine.savings_goals import goal_progress
 from ..lib.money import Money

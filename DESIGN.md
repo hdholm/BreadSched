@@ -656,8 +656,17 @@ The non-cash source remains the inspectable planning-purpose row, while the brid
 shows the distribution once as a positive cash contribution. Planned totals cover
 the selected horizon.
 
-Plan detail lives in `engine/plan_detail`, beside the grid in `engine/activity`
-that it explains: `explain_category_period`, `explain_planning_flow_period`, and
+`engine/activity` dates planned occurrences and actual ledger activity into display
+periods (`build_activity_report`); `engine/category_report` turns that report into
+the Plan's rows (`build_category_report`: income and expense categories, the cash
+bridge, planning flows, mortgage payments), the projected spendable-cash position,
+and the currency notes and completeness. `activity` never imports it, and the
+classification helpers both need (`split_totals`, `economic_planning_flow_amounts`,
+`redundant_cash_flow_split`, `inferred_planning_flow`, `escrow_planning_flows`,
+`mortgage_payment`) are public in `activity`, so no private name crosses the
+boundary; an architecture test checks both.
+
+Plan detail lives in `engine/plan_detail`, beside the grid it explains: `explain_category_period`, `explain_planning_flow_period`, and
 `explain_mortgage_payment_period` rebuild one cell from `build_activity_report` and
 the same public classification helpers the grid uses (`planning_flow_decision`,
 `escrow_planning_flows`, `mortgage_payment`), so a drill-down cannot disagree with
@@ -1695,7 +1704,7 @@ cost, because the tracking posting moves what is owed out of the category and ea
 reimbursement credit is cancelled by its posting. `receivables.plan_adjustments`
 names the receivables' owned postings and linked reimbursement splits;
 `activity.build_activity_report` copies those splits (converted like the rest) into
-`ActualActivity.reimbursable_splits`, and `build_category_report` negates their
+`ActualActivity.reimbursable_splits`, and `category_report.build_category_report` negates their
 expense-class values into `CategoryActivity.reimbursable`, rolled up like `actual`.
 So `gross = actual + reimbursable` is what was spent, and `reimbursable` is what was
 reimbursed or is still owed less write-offs; nothing is added twice, because a

@@ -13,7 +13,7 @@ from datetime import date
 import pytest
 from test_projection import flat_assumptions
 
-from breadsched.gen.engine import activity, dashboard, projection, valuation
+from breadsched.gen.engine import category_report, dashboard, projection, valuation
 from breadsched.gen.engine.completeness import (
     Completeness,
     CompletenessStatus,
@@ -155,7 +155,7 @@ class TestPlanIsAPartialSubtotal:
     def test_missing_rate_marks_the_period_and_horizon_partial(self, db, book, euro):
         _euro_schedule(db, book, euro)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 9, 1), date(2026, 10, 31), as_of=AS_OF
         )
 
@@ -183,7 +183,7 @@ class TestPlanIsAPartialSubtotal:
         _euro_schedule(db, book, euro)
         _quote(db, euro)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 10, 1), date(2026, 10, 31), as_of=AS_OF
         )
 
@@ -195,7 +195,7 @@ class TestPlanIsAPartialSubtotal:
         _euro_schedule(db, book, euro)
         _quote(db, euro, "0.5", inverse=True)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 10, 1), date(2026, 10, 31), as_of=AS_OF
         )
 
@@ -419,7 +419,7 @@ class TestSurfaces:
 
         _euro_schedule(db, book, euro)
         _foreign_cash(db, book, euro)
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 10, 1), date(2026, 10, 31), as_of=AS_OF
         )
 

@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from breadsched.gen.engine import activity, plan_detail, planning
+from breadsched.gen.engine import activity, category_report, plan_detail, planning
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -209,7 +209,7 @@ class TestCategoryPlanning:
         with db.transaction("weekly estimate") as txn:
             db.add_scheduled(groceries, txn)
 
-        report = activity.build_category_report(db, date(2026, 1, 1), date(2026, 1, 31))
+        report = category_report.build_category_report(db, date(2026, 1, 1), date(2026, 1, 31))
         row = next(item for item in report.expenses if item.account == book.groceries)
         assert row.planned == [Money("1500.00")]
         assert row.actual == [Money(0)]
@@ -225,7 +225,7 @@ class TestCategoryPlanning:
         )
         scenario = Scenario(name="Higher grocery plan", schedule_overrides=[groceries])
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db,
             date(2026, 1, 1),
             date(2026, 1, 31),
@@ -246,7 +246,7 @@ class TestCategoryPlanning:
         with db.transaction("transfer") as txn:
             db.add_scheduled(transfer, txn)
 
-        report = activity.build_category_report(db, date(2026, 2, 1), date(2026, 2, 28))
+        report = category_report.build_category_report(db, date(2026, 2, 1), date(2026, 2, 28))
         assert report.income == ()
         assert report.expenses == ()
 
@@ -255,7 +255,7 @@ class TestCategoryPlanning:
         with db.transaction("utility estimate") as txn:
             db.add_scheduled(bill, txn)
 
-        report = activity.build_category_report(db, date(2026, 3, 1), date(2026, 3, 31))
+        report = category_report.build_category_report(db, date(2026, 3, 1), date(2026, 3, 31))
         parent = next(item for item in report.expenses if item.account == book.expenses)
         utility = next(item for item in report.expenses if item.account == book.utilities)
         assert parent.planned == [Money("125.00")]
@@ -266,7 +266,7 @@ class TestCategoryPlanning:
         with db.transaction("utility estimate") as txn:
             db.add_scheduled(bill, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db,
             date(2026, 3, 1),
             date(2026, 3, 31),
@@ -286,7 +286,7 @@ class TestCategoryPlanning:
         with db.transaction("three month estimate") as txn:
             db.add_scheduled(bill, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db,
             date(2026, 1, 1),
             date(2026, 3, 31),
@@ -330,7 +330,7 @@ class TestCategoryPlanning:
             db.add_scheduled(bill, txn)
             db.add_transaction(future_actual, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db,
             date(2026, 1, 1),
             date(2026, 3, 31),
@@ -440,7 +440,7 @@ class TestPlanningFlowClassification:
                 txn,
             )
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         flows = {(row.kind, row.account): row.actual[0] for row in report.planning_flows}
@@ -469,7 +469,7 @@ class TestPlanningFlowClassification:
                 txn,
             )
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         flows = {(row.kind, row.account): row.actual[0] for row in report.planning_flows}
@@ -492,7 +492,7 @@ class TestPlanningFlowClassification:
                 txn,
             )
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         assert report.planning_flows == []
@@ -521,12 +521,12 @@ class TestPlanningFlowClassification:
         assert activity_report.periods[0].actual_expense == Money("100")
         assert activity_report.actual_cash_change == Money("-100")
 
-        category_report = activity.build_category_report(
+        plan_report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
-        utilities = next(row for row in category_report.categories if row.account == book.utilities)
+        utilities = next(row for row in plan_report.categories if row.account == book.utilities)
         assert utilities.actual == [Money(0)]
-        flows = {(row.kind, row.account): row.actual[0] for row in category_report.planning_flows}
+        flows = {(row.kind, row.account): row.actual[0] for row in plan_report.planning_flows}
         assert flows[(PlanningFlowKind.ESCROW_FUNDING, escrow.handle)] == Money("100")
 
     def test_partial_escrow_payout_only_suppresses_the_covered_expense(self, db, book):
@@ -556,7 +556,7 @@ class TestPlanningFlowClassification:
             returned.add_split(Split(book.checking, Money("30")))
             db.add_transaction(returned, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         utilities = next(row for row in report.categories if row.account == book.utilities)
@@ -586,7 +586,7 @@ class TestPlanningFlowClassification:
             db.add_account(loan, txn)
             db.add_scheduled(payment, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         escrow_flow = next(
@@ -661,7 +661,7 @@ class TestPlanningFlowClassification:
         with db.transaction("Post mortgage") as txn:
             db.add_transaction(posted, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         mortgage = report.mortgage_payments[0]
@@ -696,7 +696,7 @@ class TestPlanningFlowClassification:
             db.add_account(loan, txn)
             db.add_scheduled(payment, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         assert report.mortgage_payments[0].planned == [Money("1050")]
@@ -725,7 +725,7 @@ class TestPlanningFlowClassification:
             db.add_account(loan, txn)
             db.add_transaction(purchase, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
         assert report.mortgage_payments == []
@@ -782,7 +782,7 @@ class TestPlanningFlowClassification:
             for event in events:
                 db.add_scheduled(event, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
 
@@ -816,7 +816,7 @@ class TestPlanningFlowClassification:
         with db.transaction("plan retirement contribution") as txn:
             db.add_scheduled(contribution, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
 
@@ -912,7 +912,7 @@ class TestPlanningFlowClassification:
         with db.transaction("plan split contribution") as txn:
             db.add_scheduled(contribution, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
 
@@ -944,7 +944,7 @@ class TestPlanningFlowClassification:
             db.add_scheduled(contribution, txn)
             db.add_transaction(actual, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
 
@@ -968,7 +968,7 @@ class TestPlanningFlowClassification:
         with db.transaction("retirement income") as txn:
             db.add_transaction(withdrawal, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
 
@@ -996,7 +996,7 @@ class TestPlanningFlowClassification:
         with db.transaction("planned retirement income") as txn:
             db.add_scheduled(withdrawal, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2025, 12, 31)
         )
 
@@ -1025,7 +1025,7 @@ class TestPlanningFlowClassification:
         with db.transaction("planned card charge") as txn:
             db.add_scheduled(charge, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2025, 12, 31)
         )
         bridge = {row.kind: row.planned[0] for row in report.cash_bridge}
@@ -1070,7 +1070,7 @@ class TestPlanningFlowClassification:
                 txn,
             )
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2025, 12, 31)
         )
 
@@ -1108,7 +1108,7 @@ class TestPlanningFlowClassification:
         with db.transaction("match contribution") as txn:
             db.add_transaction(actual, txn)
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
 

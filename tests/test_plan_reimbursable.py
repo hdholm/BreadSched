@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from breadsched.gen.engine import activity, plan_detail
+from breadsched.gen.engine import activity, category_report, plan_detail
 from breadsched.gen.lib import Money, Transaction
 from breadsched.gen.services.receivables import (
     RecordWriteOff,
@@ -59,7 +59,7 @@ def _clinic(db, book, *, reimbursed=None, written_off=None):
 
 
 def _groceries(db, book):
-    report = activity.build_category_report(db, MARCH, APRIL_END, as_of=APRIL_END)
+    report = category_report.build_category_report(db, MARCH, APRIL_END, as_of=APRIL_END)
     return report, next(row for row in report.categories if row.account == book.groceries)
 
 
@@ -118,7 +118,7 @@ def test_an_earlier_reimbursement_written_off_raises_net_cost_without_spending(d
     from breadsched.presentation import plan_reimbursable_text
 
     _clinic(db, book, written_off="50.00")
-    report = activity.build_category_report(db, date(2026, 4, 1), APRIL_END, as_of=APRIL_END)
+    report = category_report.build_category_report(db, date(2026, 4, 1), APRIL_END, as_of=APRIL_END)
     [row] = report.reimbursable_categories
     assert (row.reimbursable_total, sum(row.gross, Money(0))) == (Money("-50.00"), Money(0))
     assert plan_reimbursable_text(row) == (

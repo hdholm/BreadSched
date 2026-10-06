@@ -12,7 +12,7 @@ from datetime import date
 
 import pytest
 
-from breadsched.gen.engine import activity, plan_detail, planning
+from breadsched.gen.engine import activity, category_report, plan_detail, planning
 from breadsched.gen.lib import (
     AccountClass,
     Money,
@@ -57,11 +57,13 @@ def _plan(db, *schedules: ScheduledTransaction) -> None:
             db.add_scheduled(schedule, txn)
 
 
-def _september(db, as_of: date = AS_OF) -> activity.CategoryReport:
-    return activity.build_category_report(db, date(2026, 9, 1), date(2026, 9, 30), as_of=as_of)
+def _september(db, as_of: date = AS_OF) -> category_report.CategoryReport:
+    return category_report.build_category_report(
+        db, date(2026, 9, 1), date(2026, 9, 30), as_of=as_of
+    )
 
 
-def _row(report: activity.CategoryReport, account: str) -> activity.CategoryActivity:
+def _row(report: category_report.CategoryReport, account: str) -> category_report.CategoryActivity:
     return next(item for item in report.expenses if item.account == account)
 
 
@@ -171,7 +173,7 @@ class TestDatesAroundAsOf:
     def test_a_horizon_starting_after_as_of_has_no_through_figures(self, db, book):
         _plan(db, _once(book, "Electric", date(2026, 10, 7), "100.00"))
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 10, 1), date(2026, 10, 31), as_of=AS_OF
         )
 
@@ -203,7 +205,7 @@ class TestPeriodsAroundAsOf:
         return db
 
     def test_past_current_and_future_periods(self, history, book):
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             history, date(2026, 7, 1), date(2026, 12, 31), as_of=AS_OF
         )
         row = _row(report, book.utilities)
@@ -226,7 +228,7 @@ class TestPeriodsAroundAsOf:
 
     @pytest.mark.parametrize("period", list(activity.ReportingPeriod))
     def test_through_figures_do_not_depend_on_the_grouping(self, history, period):
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             history, date(2026, 7, 1), date(2026, 12, 31), period=period, as_of=AS_OF
         )
 
@@ -296,7 +298,7 @@ class TestPlanSources:
         scenario = Scenario(name="Higher bills", schedule_overrides=[schedule])
 
         base = _september(db)
-        alternate = activity.build_category_report(
+        alternate = category_report.build_category_report(
             db, date(2026, 9, 1), date(2026, 9, 30), scenario=scenario, as_of=AS_OF
         )
 

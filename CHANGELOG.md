@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a239 - 2026-10-06
+
+- **The Plan's category report has its own module.** `engine/activity` (1,689 lines)
+  both dated activity into periods and built the Plan's rows. `CategoryReport`,
+  `CategoryActivity`, `CashBridgeActivity`, `CashPosition`, `PlanningFlowActivity`,
+  `MortgagePaymentActivity`, `build_category_report`, `currency_notes`, the
+  projected spendable-cash position, and the row builders moved to
+  `engine/category_report` (865 lines), which reads `activity` and is never imported
+  by it; `activity` is now 889 lines. The classification helpers both use became
+  public (`split_totals`, `economic_planning_flow_amounts`,
+  `redundant_cash_flow_split`) instead of crossing as private names. The services,
+  GTK Plan view, web, CLI, print, and tests import from the new module, and an
+  architecture test checks the boundary. No behavior changed.
+
 ## 0.2.0a238 - 2026-10-06
 
 - **Change a scenario's expected reimbursement on the desktop and in the browser.**

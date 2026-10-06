@@ -1,6 +1,6 @@
 """Explain one Plan cell from the same exact-dated activity stream.
 
-The Plan grid (`activity.build_category_report`) sums dated planned occurrences and
+The Plan grid (`category_report.build_category_report`) sums dated planned occurrences and
 actual ledger transactions into display periods. A drill-down asks why one cell has
 its value: these functions rebuild that period's activity for one category, planning
 flow, or mortgage payment and return each contributing planned occurrence and actual
