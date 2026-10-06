@@ -2348,6 +2348,15 @@ fails on any link to a missing part or heading.
   one in the default browser.
 - The browser's **Guide** page reads `GET /api/guide?part=` (`web/guide_resource.py`)
   and renders the guide's small Markdown subset as DOM nodes, never as HTML text.
+- Contextual help: `user_guide.HELP_TOPICS` maps each workflow topic to a heading
+  present in both the desktop and browser parts, and `help_target(topic, interface)`
+  gives the part and anchor. GTK dialogs place `widgets.help.help_row(topic)` at
+  their top; its button calls the application's `show_guide(topic)`, which reuses
+  the guide window. Browser views (`VIEW_HELP` in `app.js`) and sections
+  (`helpHeading` in `core.js`) open `?view=Guide&help=<topic>` in a new tab, which
+  reads `GET /api/guide?topic=` for the browser part and its `anchor`, so an open
+  dialog or form keeps its contents. Tests require every heading to exist in both
+  parts and every topic used by either interface to be in the table.
 - `breadsched guide [overview|desktop|web|cli]` prints a part; `--list` names them.
 
 The Markdown files remain the only content source: each surface performs a

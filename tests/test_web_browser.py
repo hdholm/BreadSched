@@ -175,6 +175,20 @@ def test_csv_split_columns_preview_and_import(page, served, tmp_path):
     assert len(posted.splits) == 3
 
 
+def test_help_opens_the_workflow_section_of_the_guide_in_a_new_tab(page):
+    page.get_by_role("button", name="Import", exact=True).first.click()
+    page.wait_for_selector("text=CSV statement")
+    panel = page.locator("div.panel:has(h2:text('CSV statement'))")
+    with page.context.expect_page() as opened:
+        panel.locator("button[data-help=csv-import]").click()
+    guide = opened.value
+    guide.wait_for_selector("#guide-import-a-csv-statement")
+    assert guide.evaluate("() => document.body.dataset.view") == "Guide"
+    assert "Browser" in guide.locator("[aria-selected=true]").inner_text()
+    # The page with the form stays where it was.
+    assert page.evaluate("() => document.body.dataset.view") == "Import"
+
+
 def test_payees_view_adds_a_payee_and_accepts_proposals(page, served):
     db, _httpd = served
     transaction = next(iter(db.iter_transactions()))

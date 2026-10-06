@@ -29,6 +29,7 @@ from ...presentation import claim_link_notice, reimbursement_notice, service_err
 from ..gi_setup import GLib, Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 
 __all__ = ["CsvImportDialog"]
 
@@ -90,6 +91,7 @@ class CsvImportDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("csv-import"))
 
         intro = Gtk.Label(
             label=(

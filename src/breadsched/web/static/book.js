@@ -25,8 +25,14 @@ const guideSlug = (text) => "guide-" + text.replace(/[`*_]/g, "").trim().toLower
   .replace(/[^\p{L}\p{N}_\- ]/gu, "").replace(/ /g, "-");
 
 async function showGuide() {
-  const data = await get("/api/guide?part=" + encodeURIComponent(state.guidePart || "overview"));
-  const anchor = state.guideAnchor;
+  // A workflow's Help button names a topic; the server picks its part and heading.
+  const topic = state.guideTopic;
+  state.guideTopic = null;
+  const data = await get(topic
+    ? "/api/guide?topic=" + encodeURIComponent(topic)
+    : "/api/guide?part=" + encodeURIComponent(state.guidePart || "overview"));
+  state.guidePart = data.part;
+  const anchor = topic ? data.anchor : state.guideAnchor;
   state.guideAnchor = null;
   const jump = (id) => document.getElementById(id)?.scrollIntoView();
   const open = (part, target) => {

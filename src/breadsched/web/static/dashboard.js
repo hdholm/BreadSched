@@ -186,7 +186,7 @@ async function netWorthHistory() {
         el("ul", {}, ...(item.completeness?.detail || []).map((line) => el("li", {}, line))));
   };
   return el("section", { class: "net-worth-history" },
-    el("h2", {}, "Net worth history"),
+    helpHeading("Net worth history", "net-worth"),
     el("p", { class: "note" }, "Assets less debts, market-valued at each period end "
       + `(the last one on ${data.as_of}). A missing quote leaves that point blank `
       + "rather than guessing a conversion."),

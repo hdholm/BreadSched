@@ -1202,6 +1202,49 @@ class TestMenuBarAndToolbar:
         finally:
             guide.destroy()
 
+    def test_a_help_topic_opens_the_desktop_guide_at_its_heading(self, app):
+        from breadsched.gui.user_guide import UserGuideWindow
+
+        guide = app.show_guide("csv-import")
+        try:
+            assert isinstance(guide, UserGuideWindow)
+            assert guide.part == "desktop"
+            assert guide.text_view.get_buffer().get_mark("h:import-a-csv-statement") is not None
+            assert app.show_guide("payroll") is guide
+            assert [w for w in app.get_windows() if isinstance(w, UserGuideWindow)] == [guide]
+        finally:
+            guide.destroy()
+
+    def test_workflow_dialogs_have_a_help_button_for_their_topic(self, app, window, populated_book):
+        from breadsched.gui.dialogs.csv_import_dialog import CsvImportDialog
+        from breadsched.gui.dialogs.payee_dialog import PayeesDialog
+        from breadsched.gui.dialogs.rules_dialog import RulesDialog
+        from breadsched.gui.gi_setup import Gtk
+        from breadsched.gui.user_guide import UserGuideWindow
+
+        app.open_book(populated_book)
+        for make, heading in (
+            (CsvImportDialog, "h:import-a-csv-statement"),
+            (PayeesDialog, "h:payees"),
+            (RulesDialog, "h:categorization-rules"),
+        ):
+            dialog = make(window, app.db)
+            try:
+                buttons = [
+                    widget
+                    for widget in _descendants(dialog)
+                    if isinstance(widget, Gtk.Button) and widget.get_label() == "Help"
+                ]
+                assert len(buttons) == 1, make.__name__
+                buttons[0].emit("clicked")
+                guides = [w for w in app.get_windows() if isinstance(w, UserGuideWindow)]
+                assert len(guides) == 1 and guides[0].part == "desktop"
+                assert guides[0].text_view.get_buffer().get_mark(heading) is not None
+            finally:
+                dialog.destroy()
+        for guide in [w for w in app.get_windows() if isinstance(w, UserGuideWindow)]:
+            guide.destroy()
+
     def test_there_is_a_separate_icon_toolbar(self, window):
         children = []
         child = window.toolbar.get_first_child()

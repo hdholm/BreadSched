@@ -47,6 +47,7 @@ from ...presentation import service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 from ..widgets.choice import bounded_dropdown
+from ..widgets.help import help_row
 
 __all__ = ["PAY_PERIODS", "PayrollDialog"]
 
@@ -118,6 +119,7 @@ class PayrollDialog(BoundedWindow):
         for side in ("top", "bottom", "start", "end"):
             getattr(box, f"set_margin_{side}")(18)
         self.set_child(box)
+        box.prepend(help_row("payroll"))
 
         top = Gtk.Box(spacing=8)
         top.append(Gtk.Label(label="Paycheck"))

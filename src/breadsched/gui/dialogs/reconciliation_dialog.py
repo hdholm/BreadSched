@@ -23,6 +23,7 @@ from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import claim_link_notice, reimbursement_notice, service_error_message
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
+from ..widgets.help import help_row
 
 __all__ = ["ReconciliationDialog"]
 
@@ -49,6 +50,7 @@ class ReconciliationDialog(BoundedWindow):
         close.connect("clicked", lambda *_: self.close())
         outer.append(close)
         self.set_child(outer)
+        outer.prepend(help_row("reconcile"))
         self._render()
 
     def _clear(self) -> None:

@@ -21,7 +21,12 @@ The navigation bar offers the work areas (**Dashboard**, **FSA Dashboard**,
 **Accounts**, **Register**, **Scheduled**, **Plan**, **Review**, **Projection**) and
 **Enter**, **Import**, **Payees**, **Rules**, **Reimbursables**, **Goals**, **Verify**, and
 **Guide**. **Guide** shows this guide: choose the overview or the desktop, browser,
-or command-line part, and a link to another part opens it there.
+or command-line part, and a link to another part opens it there. **Help** on
+**Scheduled**, **Payroll**, **Plan**, **Projection**, **Import**, **Payees**,
+**Rules**, **Reimbursables**, and **Goals**, and in the CSV statement, write-back,
+reconciliation, due review, held GnuCash changes, Expense Explorer, and net worth
+history sections, opens this guide at that section in a new browser tab, so the
+form you were filling in stays as it was.
 
 **Open in new tab** in Register and Projection opens that account's register, or
 the scenario's projection, in another browser tab. Each browser tab keeps its own

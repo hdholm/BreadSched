@@ -50,7 +50,8 @@ async function openImportReviewDialog() {
     } catch (error) { say(error.message, "error"); }
   };
   backdrop.append(el("section", { class:"detail-dialog wide" },
-    el("div", { class:"detail-heading" }, el("h2", {}, "GnuCash changes to reconciled transactions")),
+    el("div", { class:"detail-heading" },
+      helpHeading("GnuCash changes to reconciled transactions", "held-import")),
     el("p", { class:"note" }, `GnuCash changed or deleted ${data.changes.length} reconciled transaction(s). They were left unchanged. Choose what to do with each.`),
     el("div", { class:"toolbar" },
       el("button", { class:"action", type:"button", onclick:()=>setAll("keep") },
@@ -178,7 +179,7 @@ async function csvImportPanel() {
     try { await action(); } catch (error) { say(error.message, "error"); }
   };
   return el("div", { class:"panel panel-pad-16" },
-    el("h2", {}, "CSV statement"),
+    helpHeading("CSV statement", "csv-import"),
     el("p", { class:"note" },
       "Choose the statement and its account, map the columns, and preview. Nothing is "
       + "written until you import. Re-importing the same rows adds nothing and keeps any "
@@ -295,7 +296,7 @@ async function writebackPanel() {
       } catch (error) { say(error.message, "error"); }
     } });
   const panel = el("div", { class:"panel panel-pad-16 writeback" },
-    el("h2", {}, "Write changes to GnuCash"));
+    helpHeading("Write changes to GnuCash", "writeback"));
   if (!data.available) {
     panel.append(el("p", { class:"note" }, data.message),
       el("label", {}, "Backups to keep ", keep));
