@@ -848,6 +848,28 @@ class TestEngineBoundaries:
             assert not any(module.endswith("engine.projection") for module in imported), path
             assert "projection" not in imported, path
 
+    def test_gnucash_writeback_layers_only_depend_downward(self):
+        """Reading, planning, writing, and applying a write-back are separate layers.
+
+        ``gnucash_source`` reads, ``gnucash_writeback_plan`` plans from it,
+        ``gnucash_book_writers`` writes a plan, and ``gnucash_writeback`` applies,
+        verifies, and re-exports; each imports only the layers below it, and no
+        private name crosses a module.
+        """
+        export = SRC / "plugins" / "export"
+        layers = [
+            "gnucash_source",
+            "gnucash_writeback_plan",
+            "gnucash_book_writers",
+            "gnucash_writeback",
+        ]
+        for index, name in enumerate(layers):
+            tree = ast.parse((export / f"{name}.py").read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if isinstance(node, ast.ImportFrom) and node.module in layers:
+                    assert layers.index(node.module) < index, (name, node.module)
+                    assert not any(alias.name.startswith("_") for alias in node.names), name
+
     def test_commit_verification_is_separate_from_storage(self):
         """``DbSQLite`` stores rows; ``ChangeVerification`` checks what a batch changed."""
         from breadsched.gen.db.change_verification import ChangeVerification

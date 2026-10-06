@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a241 - 2026-10-06
+
+- **GnuCash write-back is split into layers.** `plugins/export/gnucash_writeback`
+  (1,467 lines) read both book formats, planned, wrote, and verified. Reading and
+  the fingerprint moved to `gnucash_source` (442 lines), planning to
+  `gnucash_writeback_plan` (378), and the SQLite and XML writers to
+  `gnucash_book_writers` (470); `gnucash_writeback` (303) backs up, applies,
+  verifies, records, and re-exports the same public API. Helpers that cross a module
+  became public (`preflight`, `table_names`, `xml_namespaces`, `write_sqlite`,
+  `write_xml`, and others). The importers record the fingerprint through
+  `gnucash_source`. An architecture test checks that each layer imports only those
+  below it. No behavior changed.
+
 ## 0.2.0a240 - 2026-10-06
 
 - **Projection results have their own module.** `engine/projection` (1,389 lines)

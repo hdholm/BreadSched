@@ -228,7 +228,7 @@ def import_book(
     notify: bool = True,
 ) -> ImportResult:
     """Copy a GnuCash SQLite book into an open BreadSched database."""
-    from ..export.gnucash_writeback import file_digest, record_fingerprint
+    from ..export.gnucash_source import file_digest, record_fingerprint
 
     result = ImportResult(source=str(path), source_format="sqlite")
     LOG.info("importing GnuCash SQLite book %s", path)
