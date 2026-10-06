@@ -30,6 +30,9 @@ class FsaYearStatus:
     carried_in: Money = Money(0)
     #: Unused election this closed year carries into the next; not forfeited.
     carried_over: Money = Money(0)
+    #: A dependent care FSA: ``remaining`` is what has been contributed less what
+    #: was used, rather than the election less what was used.
+    dependent_care: bool = False
     #: The flows behind ``used`` (see :mod:`fsa_flows`): paid from the FSA card
     #: straight to a provider, paid out to a bank account, and credited back to
     #: the card by a provider. ``used`` is their net, less ``repaid``.
@@ -80,6 +83,10 @@ def year_status(
     A plan with a carryover limit carries up to that much of a year's unused
     election into the account's next funding year once the run-out ends; only
     the rest is forfeited. The next year's availability includes it from then.
+
+    A dependent care FSA pays out only what has been contributed: its
+    availability is the year's payroll funding less what was used, never more
+    than the election, and it never carries over.
     """
     when = as_of or date.today()
     totals = dict.fromkeys(FsaFlowKind, Money(0))
@@ -106,14 +113,17 @@ def year_status(
         - repaid
     )
     carried_in = _carried_in(db, account, year, when)
-    remaining_raw = year.election + carried_in - used
+    if account.fsa_dependent_care:
+        remaining_raw = min(funded, year.election) - used
+    else:
+        remaining_raw = year.election + carried_in - used
     available = remaining_raw if remaining_raw > 0 else Money(0)
     overage = -remaining_raw if remaining_raw < 0 else Money(0)
     runout = year.runout_through or year.through
     closed = when > runout
     remaining = Money(0) if closed else available
     carried_over = Money(0)
-    if closed and year.carryover_limit is not None:
+    if closed and year.carryover_limit is not None and not account.fsa_dependent_care:
         carried_over = min(available, year.carryover_limit)
     forfeited = available - carried_over if closed else Money(0)
     return FsaYearStatus(
@@ -126,6 +136,7 @@ def year_status(
         forfeited,
         when,
         repaid=repaid,
+        dependent_care=account.fsa_dependent_care,
         carried_in=carried_in,
         carried_over=carried_over,
         direct_payments=totals[FsaFlowKind.DIRECT_PAYMENT],
@@ -142,7 +153,7 @@ def previous_year(account: Account, year: FsaFundingYear) -> FsaFundingYear | No
 
 def _carried_in(db: DbSQLite, account: Account, year: FsaFundingYear, when: date) -> Money:
     prior = previous_year(account, year)
-    if prior is None or prior.carryover_limit is None:
+    if prior is None or prior.carryover_limit is None or account.fsa_dependent_care:
         return Money(0)
     closes = prior.runout_through or prior.through
     if when <= closes:

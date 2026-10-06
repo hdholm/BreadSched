@@ -189,6 +189,15 @@ def _relationship_errors(
 
 def _fsa_errors(account: Account) -> list[ServiceError]:
     years = sorted(account.fsa_years, key=lambda year: year.start)
+    if account.fsa_dependent_care:
+        for index, year in enumerate(years):
+            if year.carryover_limit is not None:
+                return [
+                    ServiceError(
+                        "account.fsa.dependent_care.carryover",
+                        (f"fsa_years.{index}.carryover_limit",),
+                    )
+                ]
     for index, (earlier, later) in enumerate(zip(years, years[1:], strict=False), 1):
         if later.start <= earlier.through:
             return [ServiceError("account.fsa.years.overlap", (f"fsa_years.{index}",))]

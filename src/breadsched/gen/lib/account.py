@@ -338,6 +338,9 @@ class Account(PrimaryObject):
         #: Typed, read-only GnuCash fields which BreadSched does not interpret.
         self.source_fields: list[GnuCashAccountField] = []
         self.fsa_years: list[FsaFundingYear] = []
+        #: A dependent care FSA: only what has been contributed is available, claims
+        #: need no EOB, and nothing carries over. Otherwise a health care FSA.
+        self.fsa_dependent_care: bool = False
 
         # Projection hints.  These are what turn a chart of accounts into a model.
         self.annual_return: Decimal = Decimal("0")  # investment growth, e.g. 0.06
@@ -427,6 +430,7 @@ class Account(PrimaryObject):
             "source_type": self.source_type,
             "source_fields": [field.serialize() for field in self.source_fields],
             "fsa_years": [year.serialize() for year in self.fsa_years],
+            "fsa_dependent_care": self.fsa_dependent_care,
             "annual_return": str(self.annual_return),
             "annual_interest": str(self.annual_interest),
             "exclude_from_projection": self.exclude_from_projection,
@@ -484,6 +488,7 @@ class Account(PrimaryObject):
             self.source_notes = legacy_notes if imported_note == legacy_notes else ""
             self.notes = "" if imported_note == legacy_notes else legacy_notes
         self.fsa_years = [FsaFundingYear.from_dict(year) for year in data.get("fsa_years", [])]
+        self.fsa_dependent_care = bool(data.get("fsa_dependent_care", False))
         self.annual_return = Decimal(data.get("annual_return", "0"))
         self.annual_interest = Decimal(data.get("annual_interest", "0"))
         self.exclude_from_projection = data.get("exclude_from_projection", False)

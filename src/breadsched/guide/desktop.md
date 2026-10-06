@@ -346,7 +346,8 @@ switches between status, FSA account, funding year, and provider.
 
 An FSA account's funding years are edited in the account dialog. Each year's second
 line takes the plan's **Carryover limit** and **Grace through** date, either or
-both; the FSA Dashboard's **Carried in** and **Carried over** columns show where
+both, and **Dependent care FSA** marks a dependent care plan; the FSA Dashboard's
+**Carried in** and **Carried over** columns show where
 unused election went, and **How used** shows what was paid from the FSA card,
 reimbursed to your bank, and refunded to the card.
 

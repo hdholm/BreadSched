@@ -21,6 +21,8 @@ function openFsaYearsEditor(account) {
     rows.append(row);
   };
   (account.fsa_years || []).forEach(addRow);
+  const dependentCare = el("input", { type:"checkbox", name:"dependent_care",
+    checked:account.fsa_dependent_care ? "checked" : null });
   const save = async () => {
     const years = Array.from(rows.children).map((row) => {
       const inputs = row.querySelectorAll("input");
@@ -30,7 +32,8 @@ function openFsaYearsEditor(account) {
         carryover_limit: inputs[4].value.trim() || null, grace_through: inputs[5].value || null,
       };
     });
-    await post("/api/account/fsa-years", { handle:account.handle, years });
+    await post("/api/account/fsa-years", { handle:account.handle, years,
+      dependent_care:dependentCare.checked });
     backdrop.remove();
     say("FSA funding years saved.");
     render();
@@ -40,6 +43,8 @@ function openFsaYearsEditor(account) {
     el("p", { class:"note" },
       "Election availability is independent of the custodial ledger balance. "
       + "A run-out date permits explicitly assigned prior-year claims after year-end."),
+    el("label", {}, dependentCare, " Dependent care FSA: pays only what has been contributed "
+      + "so far; claims need no EOB; nothing carries over"),
     rows,
     el("div", { class:"toolbar" },
       el("button", { class:"action", type:"button", onclick:()=>addRow() }, "Add funding year"),

@@ -10,6 +10,22 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a224 - 2026-10-06
+
+- **Dependent care FSAs.** An FSA account can be marked dependent care
+  (`Account.fsa_dependent_care`; GTK account dialog, browser FSA editor, CLI
+  `account --dependent-care yes|no`). Its availability is what has been contributed
+  that year (at most the election) less what was used, rather than the whole
+  election; a claim on it needs no EOB, so what was paid is what the FSA owes, and it
+  stays open while contributions can still arrive instead of reading as out of funds;
+  a carryover limit is refused (`account.fsa.dependent_care.carryover`). The FSA
+  Dashboard and `claims --years` mark the account; web and CLI JSON add
+  `dependent_care`.
+- **Fixed:** the browser's account settings routes (FSA years, type, emergency
+  fund, card payment) edited the stored account object in place, so a save the
+  service refused could leave the open book's copy changed until reload. They now
+  edit a copy.
+
 ## 0.2.0a223 - 2026-10-06
 
 - **A scenario can model a savings goal's purchase.** A goal override can name a

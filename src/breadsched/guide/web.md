@@ -193,7 +193,8 @@ counting the claims that need it; the Dashboard shows the count as a tile.
 FSA account, funding year, or provider.
 
 The FSA funding-year editor in Accounts takes each year's carryover limit and
-grace-period end, either or both, and the FSA Dashboard shows what each year carried in and carried
+grace-period end, either or both, and **Dependent care FSA** marks a dependent care
+plan, and the FSA Dashboard shows what each year carried in and carried
 over, and under **How used** what was paid from the FSA card, reimbursed to your
 bank, and refunded to the card.
 

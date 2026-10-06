@@ -308,6 +308,11 @@ and `--json` lists it under `shared_costs`. See
 
 ## FSA claims
 
+`breadsched account BOOK edit --name "Assets:Dependent care FSA" --dependent-care yes`
+marks a dependent care FSA (see
+[FSA and benefit accounts](../USER_GUIDE.md#fsa-and-benefit-accounts)); the FSA year
+listing (`claims BOOK --years`) marks it, and its `--json` adds `dependent_care`.
+
 `breadsched claims BOOK` totals FSA claims by status, then lists each claim that
 needs attention and why (no EOB after 30 days, a claim deadline within 30 days, a
 rejected reimbursement, or figures that need review). `--by account`, `--by year`,
