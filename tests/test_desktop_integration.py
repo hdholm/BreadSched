@@ -164,6 +164,9 @@ def test_windows_installer_carries_its_runtime_and_is_tested_in_ci():
     # The installed icon and launchers match the application identity.
     assert f"data/icons/{ICON.name}" in build
     assert "-m breadsched.cli.main" in build and "-m breadsched.gui" in script
+    # The NSIS plugin directory is named explicitly: MSYS2's NSIS 3.13 reports none.
+    assert "!addplugindir /x86-unicode" in build and "nsDialogs.dll" in build
+    assert 'makensis -V2 "${plugin_args[@]}"' in build
     # Per-user, and an upgrade replaces the runtime without touching books.
     assert "RequestExecutionLevel user" in script
     assert 'RMDir /r "$INSTDIR\\runtime"' in script

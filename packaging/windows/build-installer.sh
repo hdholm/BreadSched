@@ -61,7 +61,22 @@ cp "$here/user_path.py" "$stage/user_path.py"
 # Run by the installer and uninstaller to stop gdbus.exe helpers from this runtime.
 cp "$here/stop-helpers.ps1" "$stage/stop-helpers.ps1"
 
-makensis -V2 -DVERSION="$version" -DSTAGE="$(cygpath -w "$stage")" \
+# Name the Unicode plugin directory (nsDialogs for the MUI pages, nsExec for the
+# helper scripts) instead of relying on makensis to find one: MSYS2's NSIS 3.13
+# reports no plugin directory at all. Prefer the prefix's own plugins, then an
+# NSIS installed on the machine (GitHub's Windows images carry one).
+plugin_dll=$(find "$prefix" "/c/Program Files (x86)/NSIS" "/c/Program Files/NSIS" \
+    -ipath '*x86-unicode*' -iname 'nsDialogs.dll' -print -quit 2>/dev/null || true)
+plugin_args=()
+if [ -n "$plugin_dll" ] && [ -f "$(dirname "$plugin_dll")/nsExec.dll" ]; then
+    plugin_dir=$(cygpath -w "$(dirname "$plugin_dll")")
+    echo "NSIS plugins: $plugin_dir"
+    plugin_args=(-X"!addplugindir /x86-unicode \"$plugin_dir\"")
+else
+    echo "warning: no NSIS x86-unicode plugin directory with nsDialogs and nsExec found" >&2
+fi
+
+makensis -V2 "${plugin_args[@]}" -DVERSION="$version" -DSTAGE="$(cygpath -w "$stage")" \
     -DOUTFILE="$(cygpath -w "$out/BreadSched-$version-setup.exe")" \
     "$(cygpath -w "$here/breadsched.nsi")"
 

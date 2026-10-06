@@ -23,6 +23,10 @@ section. Commits and pull requests hold the complete history.
 - **Fixed:** the browser's Verify page always showed "Could not load: main is not
   defined" instead of its result; it now reports the book and **Verify again**
   reruns it.
+- **Windows installer build.** MSYS2's NSIS 3.13 no longer reports a plugin
+  directory, so `makensis` could not find nsDialogs; the build script now locates
+  the x86-unicode plugins (in the MSYS2 prefix or a machine-wide NSIS) and passes
+  them with `!addplugindir`.
 
 ## 0.2.0a217 - 2026-10-06
 
