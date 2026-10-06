@@ -66,6 +66,7 @@ def accounts(api: Api) -> list[dict]:
                     ),
                     "source_guid": account.source_guid,
                     "source_fields": [field.serialize() for field in account.source_fields],
+                    "fsa_dependent_care": account.fsa_dependent_care,
                     "fsa_years": [
                         {
                             "start": year.start.isoformat(),
@@ -183,10 +184,12 @@ def commodity_price_save(api: Api, payload: dict) -> dict:
 
 def account_type_save(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", ""))
-    account = api.db.get_account(handle)
-    if account is None:
+    stored = api.db.get_account(handle)
+    if stored is None:
         raise KeyError(handle)
-    source = Account.from_dict(account.serialize())
+    # Edit a copy: a save the service refuses must leave the stored account as it was.
+    source = Account.from_dict(stored.serialize())
+    account = Account.from_dict(stored.serialize())
     raw_type = str(payload.get("type", ""))
     try:
         account_type = AccountType(raw_type.strip().upper())
@@ -208,10 +211,12 @@ def account_type_save(api: Api, payload: dict) -> dict:
 
 def account_emergency_fund_save(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", ""))
-    account = api.db.get_account(handle)
-    if account is None:
+    stored = api.db.get_account(handle)
+    if stored is None:
         raise KeyError(handle)
-    source = Account.from_dict(account.serialize())
+    # Edit a copy: a save the service refuses must leave the stored account as it was.
+    source = Account.from_dict(stored.serialize())
+    account = Account.from_dict(stored.serialize())
     if not account.emergency_fund_eligible:
         raise ValueError("this account type is always excluded from the emergency fund")
     account.emergency_fund_override = bool(payload.get("included"))
@@ -230,10 +235,12 @@ def account_emergency_fund_save(api: Api, payload: dict) -> dict:
 def account_card_save(api: Api, payload: dict) -> dict:
     """Persist the account-owned definition of a credit-card payment."""
     handle = str(payload.get("handle", ""))
-    account = api.db.get_account(handle)
-    if account is None:
+    stored = api.db.get_account(handle)
+    if stored is None:
         raise KeyError(handle)
-    source = Account.from_dict(account.serialize())
+    # Edit a copy: a save the service refuses must leave the stored account as it was.
+    source = Account.from_dict(stored.serialize())
+    account = Account.from_dict(stored.serialize())
     if account.atype is not AccountType.CREDIT:
         raise ValueError("card payment settings require a Credit card account")
     raw_full = payload.get("pays_in_full", True)
@@ -280,10 +287,12 @@ def account_card_save(api: Api, payload: dict) -> dict:
 
 def account_fsa_years_save(api: Api, payload: dict) -> dict:
     handle = str(payload.get("handle", ""))
-    account = api.db.get_account(handle)
-    if account is None:
+    stored = api.db.get_account(handle)
+    if stored is None:
         raise KeyError(handle)
-    source = Account.from_dict(account.serialize())
+    # Edit a copy: a save the service refuses must leave the stored account as it was.
+    source = Account.from_dict(stored.serialize())
+    account = Account.from_dict(stored.serialize())
     if account.atype is not AccountType.FSA:
         raise ValueError("FSA funding years require an FSA account")
     years: list[FsaFundingYear] = []
@@ -306,6 +315,10 @@ def account_fsa_years_save(api: Api, payload: dict) -> dict:
         if later.start <= earlier.through:
             raise ValueError("FSA funding years cannot overlap")
     account.fsa_years = years
+    dependent_care = payload.get("dependent_care", account.fsa_dependent_care)
+    if not isinstance(dependent_care, bool):
+        raise ValueError("dependent_care must be true or false")
+    account.fsa_dependent_care = dependent_care
     result = save_account(
         api.db,
         SaveAccount(account, existing_handle=account.handle, source=source),

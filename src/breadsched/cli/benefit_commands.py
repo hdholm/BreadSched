@@ -350,7 +350,7 @@ def _claim_link_proposals(db, args: argparse.Namespace) -> int:
 def _fsa_years(db, args: argparse.Namespace) -> int:
     """Open and recently closed FSA benefit years, with how each was used."""
     from ..gen.engine import fsa
-    from ..presentation import fsa_usage_text
+    from ..presentation import fsa_account_text, fsa_usage_text
 
     statuses = fsa.dashboard_statuses(db, as_of=parse_date(args.as_of) or date.today())
     if args.account:
@@ -359,6 +359,7 @@ def _fsa_years(db, args: argparse.Namespace) -> int:
     payload = [
         {
             "account": db.full_name(status.account),
+            "dependent_care": status.dependent_care,
             "start": status.year.start,
             "through": status.year.through,
             "runout_through": status.year.runout_through,
@@ -381,7 +382,7 @@ def _fsa_years(db, args: argparse.Namespace) -> int:
         return 0
     rows = [
         [
-            db.full_name(status.account),
+            fsa_account_text(db.full_name(status.account), status.dependent_care),
             status.label,
             status.phase,
             status.year.election.format(),

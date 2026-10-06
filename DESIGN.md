@@ -1676,6 +1676,14 @@ use the money. A grace period extends `service_through`, so a grace-period servi
 be claimed against either year and the household chooses; grace-period claims tagged
 to the earlier year reduce what it can carry over.
 
+**Dependent care.** `Account.fsa_dependent_care` marks a dependent care FSA. Its
+`year_status` availability is the year's funding, at most the election, less what was
+used, and it never carries in or over (`services.accounts` refuses a carryover limit
+with `account.fsa.dependent_care.carryover`). A claim whose allocations are all on
+dependent care FSAs takes what was paid as its responsibility when no EOB is entered,
+so it never waits for an EOB, and it stays open rather than out of funds while a
+funding year it draws on can still receive contributions.
+
 **Flows.** `engine.fsa_flows.classify` gives every split on an FSA account one
 `FsaFlowKind` from its sign and the other splits' accounts: positive and tagged with a
 funding year is a claim's *repayment*; positive from an expense account (and no income

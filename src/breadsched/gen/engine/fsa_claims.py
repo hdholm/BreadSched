@@ -784,13 +784,18 @@ def claim_summary(
     available = Money(0)
     target_total = Money(0)
     has_targets = False
+    dependent_care = bool(claim.allocations)
+    #: Whether a funding year this claim draws on can still receive contributions.
+    contributions_open = False
     for allocation in claim.allocations:
         account = db.get_account(allocation.account)
         if account is None:
             raise ValueError("claim allocation account no longer exists")
+        dependent_care = dependent_care and account.fsa_dependent_care
         year = _allocation_year(db, allocation)
         year_status = fsa.year_status(db, account, year, as_of=when)
         available = available + year_status.remaining
+        contributions_open = contributions_open or when <= year.through
         reimbursed = reimbursed + _sum_links(db, allocation.reimbursements)
         repaid = repaid + _sum_links(db, allocation.repayments)
         for rejection in allocation.rejections:
@@ -801,6 +806,11 @@ def claim_summary(
             has_targets = True
             target_total = target_total + allocation.target
 
+    # A dependent care claim has no EOB: what was paid is what is owed.
+    responsibility = claim.eob_responsibility
+    if responsibility is None and dependent_care:
+        responsibility = max(net_paid, Money(0))
+
     # A payer covering part of this expense leaves the FSA only the remainder,
     # and nothing at all until the EOB says what the patient owes (issue #192).
     payer: Receivable | None = None
@@ -809,8 +819,8 @@ def claim_summary(
         payer = _linked_receivable(db, claim)
         payer_share = _payer_share(db, payer, when)
         eob_part = Money(0)
-        if claim.eob_responsibility is not None:
-            eob_part = min(max(net_paid, Money(0)), claim.eob_responsibility)
+        if responsibility is not None:
+            eob_part = min(max(net_paid, Money(0)), responsibility)
         over_allocated = max(payer_share + eob_part - net_paid, Money(0))
 
     # Money paid back to the FSA undoes that much reimbursement.
@@ -818,11 +828,11 @@ def claim_summary(
     if net_paid < 0:
         reimbursable = Money(0)
         status = FsaClaimStatus.NEEDS_REVIEW
-    elif claim.eob_responsibility is None:
+    elif responsibility is None:
         reimbursable = net_paid if payer is None else Money(0)
         status = FsaClaimStatus.NEEDS_REVIEW if over_allocated > 0 else FsaClaimStatus.WAITING_EOB
     else:
-        reimbursable = min(net_paid, claim.eob_responsibility)
+        reimbursable = min(net_paid, responsibility)
         if payer is not None:
             reimbursable = min(reimbursable, max(net_paid - payer_share, Money(0)))
         if over_allocated > 0:
@@ -833,7 +843,8 @@ def claim_summary(
             status = FsaClaimStatus.OVER_REIMBURSED
         elif reimbursable > 0 and reimbursed >= reimbursable:
             status = FsaClaimStatus.FULLY_REIMBURSED
-        elif available <= 0:
+        elif available <= 0 and not (dependent_care and contributions_open):
+            # A dependent care FSA pays as contributions arrive during the year.
             status = FsaClaimStatus.CLOSED_NO_FUNDS
         elif reimbursed > 0:
             status = FsaClaimStatus.PARTIAL
@@ -865,7 +876,7 @@ def claim_summary(
             payer_share=payer_share,
             fsa_share=reimbursable,
             your_share=net_paid - payer_share - reimbursable,
-            waiting_eob=claim.eob_responsibility is None,
+            waiting_eob=responsibility is None,
             over_allocated=over_allocated,
         )
     return FsaClaimSummary(

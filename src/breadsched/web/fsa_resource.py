@@ -107,6 +107,7 @@ def fsa_dashboard(api: Api, query: QueryParams) -> dict[str, object]:
                 "repaid": _amount(status.repaid),
                 "usage_text": fsa_usage_text(status),
                 "remaining": _amount(status.remaining),
+                "dependent_care": status.dependent_care,
                 "overage": _amount(status.overage),
                 "carryover_limit": (
                     _amount(status.year.carryover_limit)

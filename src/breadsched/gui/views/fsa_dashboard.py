@@ -5,7 +5,7 @@ from __future__ import annotations
 from ...gen.engine import fsa
 from ...gen.engine.fsa_claim_report import claim_report
 from ...gen.services import accept_claim_links, claim_link_proposals
-from ...presentation import claim_role_label, fsa_usage_text
+from ...presentation import claim_role_label, fsa_account_text, fsa_usage_text
 from ..gi_setup import Gtk
 from ..widgets.choice import bounded_dropdown
 from ._base import BaseView
@@ -203,7 +203,7 @@ class FsaDashboardView(BaseView):
             self.fsa_grid.attach(label, column_index, 0, 1, 1)
         for row_index, status in enumerate(statuses, start=1):
             values = (
-                self.db.full_name(status.account),
+                fsa_account_text(self.db.full_name(status.account), status.dependent_care),
                 status.label,
                 status.phase,
                 status.year.election.format(),

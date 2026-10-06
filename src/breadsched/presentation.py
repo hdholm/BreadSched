@@ -43,6 +43,9 @@ _SERVICE_MESSAGES = {
     "account.card.payment_account.not_found": "The card payment account no longer exists",
     "account.card.payment_account.invalid": "Choose a Bank or Cash payment account",
     "account.card.payment_account.hidden": "A hidden account cannot fund a new card payment",
+    "account.fsa.dependent_care.carryover": (
+        "A dependent care FSA cannot carry unused money into the next plan year"
+    ),
     "account.fsa.years.overlap": "FSA funding years cannot overlap",
     "account.source_fields.read_only": (
         "Imported name, parent, code, and description are controlled by the source book"
@@ -393,6 +396,11 @@ CLAIM_ROLE_LABELS = {
 
 def claim_role_label(role: str) -> str:
     return CLAIM_ROLE_LABELS.get(role, role.replace("_", " "))
+
+
+def fsa_account_text(name: str, dependent_care: bool) -> str:
+    """An FSA account's name, marked when it is a dependent care FSA."""
+    return f"{name} (dependent care)" if dependent_care else name
 
 
 def fsa_usage_text(status: FsaYearStatus) -> str:

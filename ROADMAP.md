@@ -109,9 +109,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Expand claim/import automation without conflating benefit availability with the
   custodial account ledger balance.
 
-- Expand FSA semantics to accommodate Dependent Care FSAs (e.g., no EOB
-  involvement.)
-
 ## Import and GnuCash interoperability
 
 - Continue representative GnuCash compatibility fixtures for accounts,

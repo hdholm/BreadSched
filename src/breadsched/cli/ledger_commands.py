@@ -975,6 +975,10 @@ def cmd_account(args: argparse.Namespace) -> int:
 
 def _apply_account_options(db: DbSQLite, account: Account, args) -> None:
     """Shared between add and edit: the relationship fields."""
+    if args.dependent_care is not None:
+        if account.atype is not AccountType.FSA:
+            raise CommandError("--dependent-care applies only to an FSA account")
+        account.fsa_dependent_care = args.dependent_care
     if args.group is not None:
         account.group = args.group
     if args.linked_asset:
@@ -1022,6 +1026,13 @@ def register(add: AddCommand) -> None:
         type=boolean,
         metavar="yes|no",
         help="for a credit card: whether a balance is carried",
+    )
+    account.add_argument(
+        "--dependent-care",
+        type=boolean,
+        metavar="yes|no",
+        help="for an FSA: a dependent care FSA pays only what has been contributed, "
+        "needs no EOB, and carries nothing over",
     )
     account.add_argument("--usual-payment", help="typical payment on a card")
     account.add_argument("--payment-day", type=int)

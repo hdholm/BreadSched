@@ -901,6 +901,14 @@ healthcare payments, reimbursements, allocations, refunds, and rejected attempts
 Use FSA Dashboard to review open and recently closed benefit years and unresolved
 claims. Money waiting in an FSA is an FSA asset: net worth, never liquidity.
 
+Mark an FSA as a **dependent care FSA** when it pays for child or dependent care
+rather than health care. It follows that plan's rules: only what has been
+contributed so far is available (never more than the election), so a large daycare
+bill early in the year is paid as payroll contributions arrive and the claim stays
+open meanwhile; a claim needs no EOB, so what was paid is what the FSA owes; and
+nothing carries over, so a carryover limit is refused. A grace period and a run-out
+still apply. The FSA Dashboard marks the account **(dependent care)**.
+
 A claim needs attention when something is left for you to do:
 
 - its figures disagree and it shows **Needs review**;

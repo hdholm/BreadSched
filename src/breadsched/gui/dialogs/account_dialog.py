@@ -219,6 +219,14 @@ class AccountDialog(BoundedWindow):
         )
         fsa_note.add_css_class("dim")
         self.fsa_box.append(fsa_note)
+        self.fsa_dependent_care = Gtk.CheckButton(
+            label="Dependent care FSA",
+            active=bool(account is not None and account.fsa_dependent_care),
+        )
+        self.fsa_dependent_care.set_tooltip_text(
+            "Pays only what has been contributed so far; claims need no EOB; nothing carries over"
+        )
+        self.fsa_box.append(self.fsa_dependent_care)
         self.fsa_box.append(self.fsa_rows)
         add_fsa = Gtk.Button(label="Add funding year")
         add_fsa.connect("clicked", lambda *_: self._add_fsa_year_row())
@@ -595,6 +603,7 @@ class AccountDialog(BoundedWindow):
         account.group = self.group_entry.get_text().strip()
         if account.atype is AccountType.FSA:
             account.fsa_years = self._fsa_year_values()
+            account.fsa_dependent_care = self.fsa_dependent_care.get_active()
         account.placeholder = self.placeholder_check.get_active()
         account.hidden = self.hidden_check.get_active()
         if self.parents:

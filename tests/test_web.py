@@ -645,6 +645,39 @@ class TestItServes:
         fsa_account = next(row for row in accounts if row["name"] == "401(k)")
         assert fsa_account["fsa_years"][0]["election"] == "3000.00"
 
+    def test_an_fsa_is_marked_dependent_care_and_refuses_a_carryover(self, client):
+        _status, accounts = client.get("/api/accounts")
+        retirement = next(row for row in accounts if row["name"] == "401(k)")
+        client.post("/api/account/type", {"handle": retirement["handle"], "type": "FSA"})
+        year = {"start": "2026-01-01", "through": "2026-12-31", "election": "5000.00"}
+        status, _payload = client.post(
+            "/api/account/fsa-years",
+            {"handle": retirement["handle"], "years": [year], "dependent_care": True},
+        )
+        assert status == 200
+        _status, accounts = client.get("/api/accounts")
+        stored = next(row for row in accounts if row["name"] == "401(k)")
+        assert stored["fsa_dependent_care"] is True
+        before = client.database.get_account(retirement["handle"]).serialize()
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/account/fsa-years",
+                {
+                    "handle": retirement["handle"],
+                    "years": [{**year, "carryover_limit": "500"}],
+                    "dependent_care": True,
+                },
+            )
+        error = json.loads(caught.value.read())
+        assert (caught.value.code, error["code"]) == (400, "account.fsa.dependent_care.carryover")
+        assert client.database.get_account(retirement["handle"]).serialize() == before
+        with pytest.raises(urllib.error.HTTPError) as caught:
+            client.post(
+                "/api/account/fsa-years",
+                {"handle": retirement["handle"], "years": [year], "dependent_care": "yes"},
+            )
+        assert caught.value.code == 400
+
     def test_fsa_plan_rules_are_saved_shown_and_checked(self, client):
         _status, accounts = client.get("/api/accounts")
         retirement = next(row for row in accounts if row["name"] == "401(k)")

@@ -4824,6 +4824,27 @@ class TestAccountDialogConstruction:
         with pytest.raises(ValueError, match="after the run-out"):
             dialog._fsa_year_values()
 
+    def test_an_fsa_can_be_marked_dependent_care(self, app, window, populated_book):
+        from breadsched.gen.lib import AccountType
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
+
+        app.open_book(populated_book)
+        account = app.db.get_account_by_name("Assets:Checking Account")
+        account.atype = AccountType.FSA
+        dialog = AccountDialog(window, app.db, account)
+        try:
+            assert not dialog.fsa_dependent_care.get_active()
+            dialog.fsa_dependent_care.set_active(True)
+            assert dialog.build().fsa_dependent_care
+        finally:
+            dialog.destroy()
+        account.fsa_dependent_care = True
+        reopened = AccountDialog(window, app.db, account)
+        try:
+            assert reopened.fsa_dependent_care.get_active()
+        finally:
+            reopened.destroy()
+
     def test_security_price_dialog_creates_an_exact_dated_quote(self, app, window, populated_book):
         from breadsched.gui.dialogs.security_price_dialog import SecurityPriceDialog
 
