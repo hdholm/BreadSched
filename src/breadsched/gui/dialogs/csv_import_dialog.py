@@ -99,7 +99,10 @@ class CsvImportDialog(BoundedWindow):
                 "transaction already in the account on the same date and amount is held "
                 "back unless you include possible duplicates. A row that looks like the "
                 "other side of an uncategorized transfer already imported into another "
-                "account is imported as new unless you link transfers."
+                "account is imported as new unless you link transfers. Instead of one "
+                "category column, a row can be split: add a category column and an amount "
+                "column for each split. A row's filled splits must add up exactly to its "
+                "amount, in the same sign as the amount, or it is not imported."
             ),
             xalign=0,
             wrap=True,
@@ -160,6 +163,13 @@ class CsvImportDialog(BoundedWindow):
         grid.attach(self.include_duplicates, 2, 5, 2, 1)
         self.link_transfers = Gtk.CheckButton(label="Link possible transfers")
         grid.attach(self.link_transfers, 2, 6, 2, 1)
+        add_split = Gtk.Button(label="Add split columns")
+        add_split.connect("clicked", lambda *_: self.add_split())
+        grid.attach(add_split, 0, 6, 2, 1)
+        #: (category, amount) column pickers, one pair per split.
+        self.split_pickers: list[tuple[Gtk.DropDown, Gtk.DropDown]] = []
+        self.split_grid = Gtk.Grid(column_spacing=10, row_spacing=6)
+        box.append(self.split_grid)
 
         self.layout_label = Gtk.Label(xalign=0, wrap=True)
         self.layout_label.add_css_class("dim")
@@ -225,6 +235,10 @@ class CsvImportDialog(BoundedWindow):
             picker.set_model(Gtk.StringList.new(options))
             guess = _guess(self.columns, _GUESSES[field])
             picker.set_selected(options.index(guess) if guess else 0)
+        for pair in self.split_pickers:
+            for picker in pair:
+                picker.set_model(Gtk.StringList.new(options))
+                picker.set_selected(0)
         # One signed amount column wins over separate debit and credit guesses.
         if self._selected("amount"):
             self.pickers["debit"].set_selected(0)
@@ -240,9 +254,34 @@ class CsvImportDialog(BoundedWindow):
 
     # -------------------------------------------------------------- mapping
 
-    def _selected(self, field: str) -> str | None:
-        index = self.pickers[field].get_selected()
+    def add_split(self) -> tuple[Gtk.DropDown, Gtk.DropDown]:
+        """Add one split's category and amount column pickers."""
+        options = ["(none)", *self.columns]
+        pair = (bounded_dropdown(options), bounded_dropdown(options))
+        self.split_pickers.append(pair)
+        row = len(self.split_pickers) - 1
+        for offset, (label, picker) in enumerate(zip(("category", "amount"), pair, strict=True)):
+            self.split_grid.attach(
+                Gtk.Label(label=f"Split {row + 1} {label} column", xalign=0), offset * 2, row, 1, 1
+            )
+            self.split_grid.attach(picker, offset * 2 + 1, row, 1, 1)
+        return pair
+
+    def _column_at(self, picker: Gtk.DropDown) -> str | None:
+        index = picker.get_selected()
         return self.columns[index - 1] if 0 < index <= len(self.columns) else None
+
+    def _selected(self, field: str) -> str | None:
+        return self._column_at(self.pickers[field])
+
+    def _splits(self) -> tuple[tuple[str, str], ...]:
+        """Split pairs; a pair with neither column chosen is ignored."""
+        pairs = []
+        for category_picker, amount_picker in self.split_pickers:
+            category, amount = self._column_at(category_picker), self._column_at(amount_picker)
+            if category or amount:
+                pairs.append((category or "", amount or ""))
+        return tuple(pairs)
 
     def mapping(self) -> CsvMapping:
         return CsvMapping(
@@ -259,6 +298,7 @@ class CsvImportDialog(BoundedWindow):
             number_format=self.NUMBER_FORMATS[self.number_format.get_selected()],  # type: ignore[arg-type]
             header=self.header.get_active(),
             invert=self.invert.get_active(),
+            splits=self._splits(),
         )
 
     def _request(self) -> CsvImportRequest | None:
@@ -303,7 +343,11 @@ class CsvImportDialog(BoundedWindow):
                     row.when.isoformat() if row.when else "",
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
-                    self.db.full_name(row.category) if row.category else "",
+                    "; ".join(
+                        f"{self.db.full_name(account)} {value.format(parens_negative=True)}"
+                        for account, value in row.splits
+                    )
+                    or (self.db.full_name(row.category) if row.category else ""),
                     payees.get(row.payee, "") if row.payee else "",
                     _STATUS_LABELS[row.status],
                     row.reason or row.note,

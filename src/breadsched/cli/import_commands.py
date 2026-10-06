@@ -129,6 +129,25 @@ def _reimbursement_note(count: int) -> str:
     return f"\n{notice} (breadsched receivables BOOK --proposals)" if notice else ""
 
 
+def _split_columns(values: list[str] | None) -> tuple[tuple[str, str], ...]:
+    """``CATEGORY=AMOUNT`` column pairs from repeated ``--split`` options."""
+    pairs = []
+    for value in values or ():
+        category, separator, amount = value.partition("=")
+        if not separator or not category.strip() or not amount.strip():
+            raise CommandError(
+                f"--split {value!r}: give the category and amount columns as CATEGORY=AMOUNT"
+            )
+        pairs.append((category.strip(), amount.strip()))
+    return tuple(pairs)
+
+
+def _splits_text(db, splits) -> str:
+    return "; ".join(
+        f"{db.full_name(account)} {value.format(parens_negative=True)}" for account, value in splits
+    )
+
+
 def cmd_import_csv(args: argparse.Namespace) -> int:
     """Preview or import a CSV statement into one account through a column mapping."""
     db = open_book(args.book, "r" if args.preview else "w")
@@ -152,6 +171,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                 delimiter=args.delimiter,
                 header=not args.no_header,
                 invert=args.invert,
+                splits=_split_columns(args.split),
             ),
             include_duplicates=args.include_duplicates,
             link_transfers=args.link_transfers,
@@ -168,7 +188,7 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                     row.amount.format(parens_negative=True) if row.amount is not None else "",
                     row.description,
                     row.status.replace("_", " "),
-                    row.reason or row.note,
+                    row.reason or row.note or _splits_text(db, row.splits),
                 ]
                 for row in preview.rows
             ]
@@ -202,6 +222,10 @@ def cmd_import_csv(args: argparse.Namespace) -> int:
                             "category": db.full_name(row.category) if row.category else None,
                             "payee": row.payee,
                             "note": row.note,
+                            "splits": [
+                                {"category": db.full_name(account), "amount": value}
+                                for account, value in row.splits
+                            ],
                         }
                         for row in preview.rows
                     ],
@@ -492,6 +516,13 @@ def register(add: AddCommand) -> None:
     csv_cmd.add_argument(
         "--category",
         help="category column: an existing account's full name or unique name",
+    )
+    csv_cmd.add_argument(
+        "--split",
+        action="append",
+        metavar="CATEGORY=AMOUNT",
+        help="a split's category and amount columns; repeat for each split. Filled splits "
+        "must add up to the row's amount (use instead of --category)",
     )
     csv_cmd.add_argument("--payee", help="payee column: a payee already in the book")
     csv_cmd.add_argument("--currency", help="currency column; rows in another currency are refused")

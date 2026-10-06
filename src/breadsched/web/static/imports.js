@@ -94,6 +94,22 @@ async function csvImportPanel() {
   const layout = el("p", { class:"note" });
   const preview = el("div", {});
   let source = "";
+  // Split columns: each pair of a category column and an amount column is one split.
+  let columns = [];
+  const fillColumns = (select) => select.replaceChildren(el("option", { value:"" }, "(none)"),
+    ...columns.map((name) => el("option", { value:name }, name)));
+  const splitPairs = [];
+  const splitRows = el("div", { class:"csv-splits" });
+  const addSplit = () => {
+    const pair = { category: columnSelect(), amount: columnSelect() };
+    fillColumns(pair.category);
+    fillColumns(pair.amount);
+    splitPairs.push(pair);
+    const number = splitPairs.length;
+    splitRows.append(el("div", { class:"toolbar" },
+      el("label", {}, `Split ${number} category column`, pair.category),
+      el("label", {}, `Split ${number} amount column`, pair.amount)));
+  };
   const request = () => ({
     path: source,
     account: account.value,
@@ -103,6 +119,7 @@ async function csvImportPanel() {
       ...Object.fromEntries(Object.entries(fields).map(([key, select]) => [key, select.value])),
       date_format: dateFormat.value, number_format: numberFormat.value,
       header: header.checked, invert: invert.checked,
+      splits: splitPairs.map((pair) => ({ category:pair.category.value, amount:pair.amount.value })),
     },
   });
   const guess = (columns, patterns) => columns.find((name) =>
@@ -122,10 +139,9 @@ async function csvImportPanel() {
       if (!source) throw new Error("Choose a CSV file or enter a local path.");
     }
     const data = await post("/api/import/csv/inspect", { path:source, header:header.checked });
-    for (const select of Object.values(fields)) {
-      select.replaceChildren(el("option", { value:"" }, "(none)"),
-        ...data.columns.map((name) => el("option", { value:name }, name)));
-    }
+    columns = data.columns;
+    for (const select of Object.values(fields)) fillColumns(select);
+    for (const pair of splitPairs) { fillColumns(pair.category); fillColumns(pair.amount); }
     fields.date.value = guess(data.columns, [/date/i, /datum/i]);
     fields.amount.value = guess(data.columns, [/^amount$/i, /betrag/i, /amount/i]);
     fields.debit.value = fields.amount.value ? "" : guess(data.columns, [/debit/i, /withdraw/i]);
@@ -151,7 +167,11 @@ async function csvImportPanel() {
     preview.replaceChildren(table(["Line", "Date", {label:"Amount",num:true},
       "Description", "Category", "Payee", "Status", "Reason"], data.rows.map((row) => [
       String(row.line), row.date || "", row.amount === null ? "" : money(row.amount),
-      row.description, row.category || "", row.payee || "", labels[row.status],
+      row.description,
+      row.splits.length
+        ? row.splits.map((split) => `${split.category} ${money(split.amount)}`).join("; ")
+        : row.category || "",
+      row.payee || "", labels[row.status],
       row.reason || row.note || ""])));
   };
   const run = (action) => async () => {
@@ -168,7 +188,9 @@ async function csvImportPanel() {
       + "account is imported as new unless you link transfers. An optional category column "
       + "must name an existing account (its full name, or a name no other account shares); "
       + "a payee column matches payees you already have; a currency column must match the "
-      + "account's currency."),
+      + "account's currency. Instead of one category column, a row can be split: map a "
+      + "category column and an amount column for each split. A row's filled splits must "
+      + "add up exactly to its amount, in the same sign as the amount, or it is not imported."),
     el("form", { class:"entry", onsubmit:(event) => event.preventDefault() },
       el("label", {}, "Choose a CSV file", file),
       el("label", {}, "Or enter a path visible to BreadSched", path),
@@ -177,6 +199,8 @@ async function csvImportPanel() {
       el("label", {}, "Account", account),
       ...Object.entries(fields).map(([key, select]) =>
         el("label", {}, `${key[0].toUpperCase()}${key.slice(1)} column`, select)),
+      splitRows,
+      el("button", { class:"action", type:"button", onclick:addSplit }, "Add split columns"),
       el("label", {}, "Date order", dateFormat),
       el("label", {}, "Number format", numberFormat),
       el("label", {}, el("span", {}, "Money out is shown positive "), invert),

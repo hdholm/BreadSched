@@ -179,6 +179,10 @@ Run the same command without `--preview` to import. Other options:
 
 - `--debit` and `--credit` instead of one signed `--amount` column; `--memo`;
 - `--category`, `--payee`, and `--currency` for the optional columns;
+- `--split CATEGORY=AMOUNT` maps one split's category and amount columns, repeated
+  for each split (instead of `--category`), for example
+  `--split "Cat 1=Amt 1" --split "Cat 2=Amt 2"`. The preview shows each row's
+  splits, and `--json` lists them under `splits`;
 - `--include-duplicates` imports possible duplicates instead of holding them back;
 - `--link-transfers` turns each possible transfer into one transfer between the two
   accounts;

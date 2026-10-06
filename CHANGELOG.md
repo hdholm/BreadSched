@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a219 - 2026-10-06
+
+- **CSV split columns.** A CSV statement row can post to several categories: map a
+  category column and an amount column for each split (`CsvMapping.splits`; CLI
+  `import-csv --split CATEGORY=AMOUNT`, repeated; **Add split columns** in the GTK
+  dialog and the browser's CSV section). The filled splits, in the row's sign
+  convention, must add up exactly to the row's amount; a mismatch, a half-filled
+  pair, or an unknown category makes the row invalid with its reason, and no
+  balancing split or account is invented. Mapping split columns together with one
+  category column is refused (`import.csv.split.mapping`). Split rows are not offered
+  as transfers, and re-import still never changes an accepted row. Previews show
+  each row's splits (CLI table and `--json`, GTK, browser).
+
 ## 0.2.0a218 - 2026-10-06
 
 - **The browser page's script is split by area.** The 5,500-line `app.js` is now

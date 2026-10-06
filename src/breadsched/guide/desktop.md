@@ -381,7 +381,9 @@ Choose **File → Import CSV Statement…** and choose the file; BreadSched read
 columns at once, shows the first rows, and suggests the mapping. Adjust the account,
 columns, and options, choose **Preview**, then **Import**. Clearing **First row is a
 header** rereads the file with numbered columns. **Link possible transfers** joins
-each possible-transfer pair. See
+each possible-transfer pair. **Add split columns** adds a category and an amount
+column picker for one split of each row; add one pair per split and leave the
+**Category column** empty. See
 [Import a CSV statement](../USER_GUIDE.md#import-a-csv-statement).
 
 ### Review held GnuCash changes

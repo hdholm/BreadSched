@@ -5219,6 +5219,48 @@ class TestCsvImportDialog:
         assert dialog.mapping().debit is None
         assert "utf-8" in dialog.layout_label.get_text()
 
+    def test_split_columns_map_pairs_and_post_balanced_splits(self, dialog, tmp_path, app):
+        from breadsched.gen.lib.account import AccountClass
+
+        first, second = sorted(
+            app.db.full_name(account)
+            for account in app.db.iter_accounts()
+            if account.account_class is AccountClass.EXPENSE and not account.placeholder
+        )[:2]
+        self._load(
+            dialog,
+            tmp_path,
+            "Date,Description,Amount,Cat 1,Amt 1,Cat 2,Amt 2\n"
+            f"2026-09-01,Warehouse,-30.00,{first},-20.00,{second},-10.00\n",
+        )
+        options = ["(none)", *dialog.columns]
+        for (category, amount), picker in zip(
+            (("Cat 1", "Amt 1"), ("Cat 2", "Amt 2")),
+            (dialog.add_split(), dialog.add_split()),
+            strict=True,
+        ):
+            picker[0].set_selected(options.index(category))
+            picker[1].set_selected(options.index(amount))
+        dialog.add_split()  # left empty: ignored
+
+        assert dialog.mapping().splits == (("Cat 1", "Amt 1"), ("Cat 2", "Amt 2"))
+        preview = dialog.preview()
+        assert preview is not None
+        assert [row.status for row in preview.rows] == ["new"]
+        assert len(preview.rows[0].splits) == 2
+        assert dialog.import_rows() is not None
+        posted = [item for item in app.db.iter_transactions() if item.description == "Warehouse"]
+        assert len(posted) == 1 and len(posted[0].splits) == 3
+
+    def test_reading_new_columns_resets_the_split_pickers(self, dialog, tmp_path):
+        self._load(dialog, tmp_path)
+        category, amount = dialog.add_split()
+        category.set_selected(1)
+        amount.set_selected(3)
+        dialog.read_columns()
+        assert (category.get_selected(), amount.get_selected()) == (0, 0)
+        assert dialog.mapping().splits == ()
+
     def test_preview_lists_rows_without_writing(self, dialog, tmp_path, app):
         self._load(dialog, tmp_path)
         before = len(list(app.db.iter_transactions()))
