@@ -240,9 +240,8 @@ async function showProjection() {
               money(value)),
             completenessFlag(comparison.delta_completeness)))),
       el("p", { class: "note" },
-        `Differences are ${scenarioData.name} minus ${comparison.scenario.name}. `
-        + `Cash shortfall: ${s.first_shortfall || "never"} vs `
-        + `${comparison.summary.first_shortfall || "never"}.`),
+        `Differences are ${scenarioData.name} minus ${comparison.scenario.name}.`),
+      el("p", { class: "note runway-comparison" }, comparison.runway_comparison),
       inherited ? el("p", { class: "note" },
         `${comparison.scenario.name} inherits ${inherited} annual assumption(s) through its parent chain.`)
         : null,
@@ -256,6 +255,10 @@ async function showProjection() {
 
   const warnings = data.warnings && data.warnings.length
     ? el("p", { class: "note neg" }, data.warnings.join("  ")) : null;
+  const runwayNotes = (data.runway_notes || []).length
+    ? el("section", { class: "projection-runway" }, el("h3", {}, "Cash runway"),
+      ...data.runway_notes.map((line) => el("p", { class: "note" }, line)))
+    : null;
   const goalNotes = (data.goal_notes || []).length
     ? el("section", { class: "projection-goals" }, el("h3", {}, "Savings goals"),
       ...data.goal_notes.map((line) => el("p", { class: "note" }, line)))
@@ -268,7 +271,7 @@ async function showProjection() {
   return el("div", {},
     el("h2", {}, "Projection"),
     form, cards, completenessDetails(data.completeness, "Projection"), chart(data.rows),
-    comparisonView, goalNotes, reimbursementNotes, warnings,
+    comparisonView, runwayNotes, goalNotes, reimbursementNotes, warnings,
     (data.bridges || []).length ? el("details", { class: "projection-bridge" },
       el("summary", {}, "How the projection reconciles"),
       el("p", { class: "note" }, "From the first month's opening to the last month's "

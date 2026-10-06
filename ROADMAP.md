@@ -72,7 +72,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Projection and scenarios
 
-- Add richer charts, cash-runway comparisons, and deeper account explanations.
+- Add richer charts and deeper account explanations.
 
 - Evolve assumptions toward extensible dated rules (salary changes, retirement,
   pensions/Social Security, temporary expenses, mortgage payoff, changing

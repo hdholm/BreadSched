@@ -29,7 +29,7 @@ from ...gen.services import (
 )
 from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger  # noqa: E402
-from ...presentation import projection_notes
+from ...presentation import projection_notes, runway_comparison_text
 from ..background import BackgroundJob
 from ..gi_setup import GLib, Gtk
 from ..planning_context import (
@@ -544,8 +544,21 @@ class ProjectionView(BaseView):
                 + "; ".join(coverage.detail())
             ]
         )
+        comparison_notes = (
+            []
+            if self._comparison is None
+            else [
+                runway_comparison_text(
+                    result.scenario.name,
+                    result.runway(),
+                    self._comparison.scenario.name,
+                    self._comparison.runway(),
+                )
+            ]
+        )
         self._show_projection_notes(
-            [*coverage_notes, *projection_notes(result), *result.warnings], bullets=True
+            [*coverage_notes, *projection_notes(result), *comparison_notes, *result.warnings],
+            bullets=True,
         )
 
     def _show_projection_notes(self, notes: list[str], *, bullets: bool = False) -> None:

@@ -283,6 +283,10 @@ shows the Cash, Investments, Debts, and Net worth bridges for that month, and
 **Across the whole projection** the same from the first month to the last (see
 [How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)).
 
+The notes under the Projection chart begin with the
+[cash runway](../USER_GUIDE.md#cash-runway); with **Compare** they also say which
+scenario's cash lasts longer.
+
 Projection runs longer calculations in the background and lets you cancel them.
 Use **New Scenario** and **Scenarios** in Plan, and **Compare** in Projection. To
 keep several scenarios open at once, use **New tab** in Projection (see
