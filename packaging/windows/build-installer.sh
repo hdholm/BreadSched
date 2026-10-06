@@ -63,20 +63,21 @@ cp "$here/stop-helpers.ps1" "$stage/stop-helpers.ps1"
 
 # Name the Unicode plugin directory (nsDialogs for the MUI pages, nsExec for the
 # helper scripts) instead of relying on makensis to find one: MSYS2's NSIS 3.13
-# reports no plugin directory at all. Prefer the prefix's own plugins, then an
-# NSIS installed on the machine (GitHub's Windows images carry one).
+# ships no plugins at all. Prefer the prefix's own plugins, then an NSIS installed
+# on the machine (CI installs the official build for this).
 plugin_dll=$(find "$prefix" "/c/Program Files (x86)/NSIS" "/c/Program Files/NSIS" \
     -ipath '*x86-unicode*' -iname 'nsDialogs.dll' -print -quit 2>/dev/null || true)
-plugin_args=()
-if [ -n "$plugin_dll" ] && [ -f "$(dirname "$plugin_dll")/nsExec.dll" ]; then
-    plugin_dir=$(cygpath -w "$(dirname "$plugin_dll")")
-    echo "NSIS plugins: $plugin_dir"
-    plugin_args=(-X"!addplugindir /x86-unicode \"$plugin_dir\"")
-else
-    echo "warning: no NSIS x86-unicode plugin directory with nsDialogs and nsExec found" >&2
+if [ -z "$plugin_dll" ] || [ ! -f "$(dirname "$plugin_dll")/nsExec.dll" ]; then
+    echo "error: no NSIS x86-unicode plugin directory with nsDialogs and nsExec found" >&2
+    find "$prefix" "/c/Program Files (x86)/NSIS" "/c/Program Files/NSIS" \
+        -iname '*.dll' -ipath '*nsis*' 2>/dev/null | head -n 40 >&2 || true
+    exit 1
 fi
+plugin_dir=$(cygpath -w "$(dirname "$plugin_dll")")
+echo "NSIS plugins: $plugin_dir"
 
-makensis -V2 "${plugin_args[@]}" -DVERSION="$version" -DSTAGE="$(cygpath -w "$stage")" \
+makensis -V2 -X"!addplugindir /x86-unicode \"$plugin_dir\"" \
+    -DVERSION="$version" -DSTAGE="$(cygpath -w "$stage")" \
     -DOUTFILE="$(cygpath -w "$out/BreadSched-$version-setup.exe")" \
     "$(cygpath -w "$here/breadsched.nsi")"
 

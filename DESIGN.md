@@ -2477,7 +2477,9 @@ rather than asking users to assemble Python and GTK: `build-installer.sh` instal
 the wheel into an MSYS2 UCRT64 prefix beside Python, GTK 4, PyGObject, and cairo,
 stages that prefix under `runtime\` without development files, adds launchers and
 the icon, and compiles `breadsched.nsi`, naming the x86-unicode NSIS plugin directory
-(nsDialogs, nsExec) with `!addplugindir` because MSYS2's NSIS 3.13 reports none.
+(nsDialogs, nsExec) with `!addplugindir`. MSYS2's NSIS 3.13 ships no plugins, so CI
+and release install the official NSIS build with Chocolatey to provide them; the
+script stops before `makensis` when no plugin directory is found.
 
 - It installs per user (no administrator rights) under
   `%LOCALAPPDATA%\Programs\BreadSched` and registers under HKCU. Books never live

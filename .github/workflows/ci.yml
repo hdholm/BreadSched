@@ -192,6 +192,11 @@ jobs:
             mingw-w64-ucrt-x86_64-adwaita-icon-theme
             mingw-w64-ucrt-x86_64-nsis
 
+      - name: Provide NSIS plugins
+        # MSYS2's NSIS 3.13 package carries no plugins; the official build does.
+        shell: pwsh
+        run: choco install nsis --no-progress -y
+
       - name: Build the installer
         run: packaging/windows/build-installer.sh dist/windows
 
