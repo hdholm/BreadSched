@@ -816,6 +816,25 @@ clock. A calculation from edited draft controls remains temporary until you
 explicitly save those controls. The Projection summary and scenario comparison use
 the same dated calculation.
 
+### Retirement drawdown
+
+A scenario can draw down a retirement or investment account into a cash account,
+monthly from a start date, to model living on savings. Choose one method:
+
+- **A fixed yearly amount**, withdrawn in twelve equal monthly parts. By default it
+  rises with the scenario's expense inflation on each anniversary of the start, so
+  it keeps its spending power; turn that off for a level amount.
+- **A yearly share of the balance**, such as 4%, withdrawn as one twelfth of that
+  share of the account's projected balance each month. Withdrawals then shrink or
+  grow with the account.
+
+An optional end date stops the withdrawals. A withdrawal never takes more than the
+account holds; when the money runs out, the projection warns and takes what is left.
+A withdrawal from a retirement account shows as a retirement distribution in the
+month's detail. Drawdowns belong to their own scenario: they are not posted, do not
+appear in the Plan, and a child scenario does not inherit them. Older BreadSched
+versions ignore a scenario's drawdowns and drop them if they save that scenario.
+
 ### How a projection reconciles
 
 Every projected balance is explained, not estimated from a total. For each month,

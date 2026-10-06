@@ -10,6 +10,25 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a235 - 2026-10-06
+
+- **Retirement drawdown in scenarios.** `Scenario.drawdowns` withdraws monthly from
+  a holding account into spendable cash from a start date until an optional end:
+  a fixed yearly amount that rises with the scenario's expense inflation on each
+  anniversary (or stays level), or a yearly share of the account's projected
+  balance on each withdrawal date. The projection sizes each withdrawal from the
+  state on its date and applies it as a scenario-only placeholder event, so a
+  retirement account's withdrawal is a retirement distribution and the ledger and
+  bridges reconcile; a withdrawal is capped at the balance, with a "runs out of
+  money" warning. `services.scenarios.save_drawdown`, `remove_drawdown`, and
+  `drawdown_accounts` validate and store rules, refusing without changing the
+  scenario; the new `breadsched drawdown` command lists, saves, and removes them.
+  Rules are stored in the scenario document, with no schema change.
+- **Scenario account references in one place.** `Scenario.account_references`
+  replaces three copies of the same list in book and change verification and adds
+  drawdown accounts and a goal override's purchase account, which an account
+  deletion previously left dangling.
+
 ## 0.2.0a234 - 2026-10-06
 
 - **Older GnuCash SQLite books keep their dates east of UTC.** GnuCash before 2.6.10

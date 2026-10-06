@@ -985,6 +985,100 @@ class TestScenarios:
     def test_an_unknown_scenario_is_a_clean_error(self, planned):
         assert main(["project", planned, "--scenario", "Ghost"]) == 2
 
+    def test_a_drawdown_is_saved_listed_projected_and_removed(self, capsys, planned):
+        run(
+            capsys,
+            "account",
+            planned,
+            "add",
+            "--name",
+            "IRA",
+            "--type",
+            "RETIREMENT",
+            "--parent",
+            "Assets",
+            "--opening",
+            "240000",
+            "--opening-date",
+            "2025-12-01",
+        )
+        run(
+            capsys,
+            "scenario",
+            planned,
+            "save",
+            "--name",
+            "Retire",
+            "--years",
+            "2",
+            "--start",
+            "2026-01-01",
+            "--investment-return",
+            "0",
+            "--inflation",
+            "0",
+        )
+        common = ("--scenario", "Retire")
+        refused = main(
+            [
+                "drawdown",
+                planned,
+                "save",
+                *common,
+                "--account",
+                "Assets:IRA",
+                "--into",
+                "Assets:Checking Account",
+                "--start",
+                "2026-01-01",
+            ]
+        )
+        assert refused == 2
+        saved = run_json(
+            capsys,
+            "drawdown",
+            planned,
+            "save",
+            *common,
+            "--account",
+            "Assets:IRA",
+            "--into",
+            "Assets:Checking Account",
+            "--start",
+            "2026-01-01",
+            "--annual-amount",
+            "24000",
+        )
+        assert saved["account"] == "Assets:IRA" and saved["escalate"] is True
+        rows = run_json(capsys, "drawdown", planned, "list", *common)
+        assert [row["annual_amount"] for row in rows] == ["24000.00"]
+
+        projected = run_json(capsys, "project", planned, "--scenario", "Retire", "--monthly")
+        first = projected["rows"][0]
+        assert first["retirement_distributions"] == "2000.00"
+
+        run_json(
+            capsys,
+            "drawdown",
+            planned,
+            "save",
+            *common,
+            "--account",
+            "Assets:IRA",
+            "--into",
+            "Assets:Checking Account",
+            "--start",
+            "2026-01-01",
+            "--annual-rate",
+            "4%",
+            "--handle",
+            saved["handle"][:8],
+        )
+        (row,) = run_json(capsys, "drawdown", planned, "list", *common)
+        assert row["annual_rate"] == "0.04" and row["annual_amount"] is None
+        run_json(capsys, "drawdown", planned, "remove", *common, "--handle", saved["handle"][:8])
+        assert run_json(capsys, "drawdown", planned, "list", *common) == []
+
 
 class TestScheduledCommands:
     def test_lists_and_posts_due_occurrences(self, capsys, tmp_path, db, book_path):

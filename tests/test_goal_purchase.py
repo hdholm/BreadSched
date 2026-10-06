@@ -149,6 +149,17 @@ def test_leaving_the_goal_out_drops_its_purchase(db, book, household):
     assert cleared.ok and goal.handle not in db.get_scenario(scenario.handle).goal_overrides
 
 
+def test_a_purchase_account_cannot_be_deleted_from_under_the_scenario(db, book, household):
+    from breadsched.gen.db.base import DbError
+
+    goal, scenario, _base = household
+    assert _buy(db, goal, scenario, account=book.utilities).ok
+    with pytest.raises(DbError, match="scenario.missing_account"):
+        with db.transaction("Remove") as txn:
+            db.remove_account(book.utilities, txn)
+    assert db.get_account(book.utilities) is not None
+
+
 def test_an_older_override_without_a_purchase_still_loads():
     from breadsched.gen.lib.scenario import GoalOverride
 

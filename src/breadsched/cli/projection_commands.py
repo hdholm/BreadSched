@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import date
+from decimal import Decimal, InvalidOperation
 
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
@@ -16,14 +17,18 @@ from ..gen.engine import (
 from ..gen.engine.projection_bridge import month_bridges, projection_bridges
 from ..gen.lib import (
     Assumptions,
+    Drawdown,
     Money,
     Scenario,
 )
 from ..gen.services import (
     DeleteScenario,
+    SaveDrawdown,
     SaveScenario,
     SaveScenarioAssumptions,
     delete_scenario,
+    remove_drawdown,
+    save_drawdown,
     save_scenario,
     save_scenario_assumptions,
 )
@@ -38,6 +43,7 @@ from .common import (
     emit,
     open_book,
     parse_date,
+    resolve_account,
     table,
 )
 
@@ -459,6 +465,111 @@ def cmd_scenario(args: argparse.Namespace) -> int:
         db.close()
 
 
+def _drawdown_json(db: DbSQLite, drawdown: Drawdown) -> dict[str, object]:
+    return {
+        "handle": drawdown.handle,
+        "account": db.full_name(drawdown.account),
+        "into": db.full_name(drawdown.into),
+        "start": drawdown.start,
+        "end": drawdown.end,
+        "annual_amount": drawdown.annual_amount,
+        "annual_rate": drawdown.annual_rate,
+        "escalate": drawdown.escalate,
+    }
+
+
+def _drawdown_rate(text: str | None) -> Decimal | None:
+    if text is None:
+        return None
+    try:
+        return Decimal(text.strip().rstrip("%")) / (100 if text.strip().endswith("%") else 1)
+    except InvalidOperation as exc:
+        raise CommandError(f"not a rate: {text!r}") from exc
+
+
+def cmd_drawdown(args: argparse.Namespace) -> int:
+    db = open_book(args.book, "r" if args.action == "list" else "w")
+    try:
+        scenario = db.get_scenario_by_name(args.scenario)
+        if scenario is None:
+            raise CommandError(f"no scenario named {args.scenario!r}")
+        if args.action == "list":
+            rows = [_drawdown_json(db, item) for item in scenario.drawdowns]
+            emit(
+                rows,
+                args,
+                table(
+                    [
+                        [
+                            str(row["handle"])[:8],
+                            str(row["account"]),
+                            str(row["into"]),
+                            str(row["start"]),
+                            str(row["end"] or ""),
+                            (
+                                f"{row['annual_rate']:%}/yr of balance"
+                                if row["annual_rate"] is not None
+                                else f"{row['annual_amount']}/yr"
+                                + (" + inflation" if row["escalate"] else "")
+                            ),
+                        ]
+                        for row in rows
+                    ],
+                    ["handle", "from", "into", "start", "end", "withdraws"],
+                ),
+            )
+            return 0
+        if args.action == "remove":
+            if not args.handle:
+                raise CommandError("remove needs --handle")
+            matches = [
+                item.handle for item in scenario.drawdowns if item.handle.startswith(args.handle)
+            ]
+            if len(matches) != 1:
+                raise CommandError(f"no single drawdown matches {args.handle!r}")
+            removed = remove_drawdown(db, scenario.handle, matches[0])
+            if not removed.ok:
+                raise CommandError(service_error_message(removed.errors[0]))
+            emit({"removed": matches[0]}, args, f"Removed drawdown {matches[0][:8]}")
+            return 0
+        if not (args.account and args.into and args.start):
+            raise CommandError("save needs --account, --into and --start")
+        handle = None
+        if args.handle:
+            matches = [
+                item.handle for item in scenario.drawdowns if item.handle.startswith(args.handle)
+            ]
+            if len(matches) != 1:
+                raise CommandError(f"no single drawdown matches {args.handle!r}")
+            handle = matches[0]
+        start = parse_date(args.start)
+        assert start is not None
+        result = save_drawdown(
+            db,
+            SaveDrawdown(
+                scenario.handle,
+                resolve_account(db, args.account).handle,
+                resolve_account(db, args.into).handle,
+                start,
+                annual_amount=Money(args.annual_amount) if args.annual_amount else None,
+                annual_rate=_drawdown_rate(args.annual_rate),
+                end=parse_date(args.end),
+                escalate=not args.level,
+                handle=handle,
+            ),
+        )
+        if not result.ok or result.value is None:
+            raise CommandError(service_error_message(result.errors[0]))
+        emit(
+            _drawdown_json(db, result.value),
+            args,
+            f"Saved drawdown {result.value.handle[:8]} in {scenario.name!r}",
+        )
+        return 0
+    finally:
+        db.close()
+
+
 def cmd_compare(args: argparse.Namespace) -> int:
     db = open_book(args.book, "r")
     try:
@@ -834,6 +945,21 @@ def register(add: AddCommand) -> None:
     scenario.add_argument("--start")
     assumption_flags(scenario)
     scenario.set_defaults(func=cmd_scenario)
+
+    drawdown = add("drawdown", "List, save or remove a scenario's retirement drawdowns")
+    drawdown.add_argument("action", choices=["list", "save", "remove"])
+    drawdown.add_argument("--scenario", required=True, help="saved scenario name")
+    drawdown.add_argument("--account", help="holding account withdrawn from")
+    drawdown.add_argument("--into", help="spendable cash account paid into")
+    drawdown.add_argument("--start", help="first withdrawal; later ones fall on its day")
+    drawdown.add_argument("--end", help="last day withdrawals happen")
+    drawdown.add_argument("--annual-amount", help="fixed yearly amount, taken monthly")
+    drawdown.add_argument("--annual-rate", help="yearly share of the balance, e.g. 0.04 or 4%%")
+    drawdown.add_argument(
+        "--level", action="store_true", help="do not grow a fixed amount with inflation"
+    )
+    drawdown.add_argument("--handle", help="drawdown to replace or remove (prefix)")
+    drawdown.set_defaults(func=cmd_drawdown)
 
     compare = add("compare", "Compare two saved scenarios year by year")
     compare.add_argument("base")

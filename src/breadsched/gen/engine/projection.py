@@ -18,7 +18,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountClass, AccountType
 from ..lib.money import Money, Rate
 from ..lib.recurrence import add_months
-from ..lib.scenario import Assumptions, Scenario, ScenarioSchedule
+from ..lib.scenario import Assumptions, Drawdown, Scenario, ScenarioSchedule
 from ..lib.scheduled import ScheduledTransaction, ScheduleGrowthPolicy
 from ..lib.transaction import InvestmentActivityKind
 from . import investment, planning, valuation
@@ -953,6 +953,105 @@ def _apply_event(
     return cash
 
 
+def _drawdown_date(drawdown: Drawdown, month: date) -> date | None:
+    """The day in ``month`` a drawdown withdraws on, or ``None`` if it is inactive."""
+    last = (add_months(month, 1, day=1) - timedelta(days=1)).day
+    when = month.replace(day=min(drawdown.start.day, last))
+    return when if drawdown.active(when) else None
+
+
+class _Drawdowns:
+    """Sizes each scenario drawdown from the projected state on its withdrawal date."""
+
+    def __init__(
+        self,
+        db: DbSQLite,
+        result: Projection,
+        scenario: Scenario,
+        timeline: _AssumptionTimeline,
+        accounts: dict[str, Account],
+        fraction: int,
+    ) -> None:
+        self.db = db
+        self.result = result
+        self.scenario = scenario
+        self.timeline = timeline
+        self.accounts = accounts
+        self.fraction = fraction
+        # Escalation applied so far: (anniversaries counted, factor).
+        self._escalation: dict[str, tuple[int, Decimal]] = {}
+
+    def due(self, month: date) -> list[tuple[date, Drawdown]]:
+        found: list[tuple[date, Drawdown]] = []
+        for drawdown in self.scenario.drawdowns:
+            when = _drawdown_date(drawdown, month)
+            if when is not None:
+                found.append((when, drawdown))
+        return found
+
+    def _factor(self, drawdown: Drawdown, when: date) -> Decimal:
+        years = (when.year - drawdown.start.year) - (
+            (when.month, when.day) < (drawdown.start.month, drawdown.start.day)
+        )
+        counted, factor = self._escalation.get(drawdown.handle, (0, _ONE))
+        while counted < years:
+            counted += 1
+            anniversary = add_months(drawdown.start, counted * 12)
+            rate = self.timeline.at(max(anniversary, self.timeline.start)).expense_inflation
+            factor = factor * (_ONE + rate.decimal)
+        self._escalation[drawdown.handle] = (counted, factor)
+        return factor
+
+    def event(
+        self, drawdown: Drawdown, when: date, holdings: dict[str, Money]
+    ) -> planning.PlannedEvent | None:
+        account = self.accounts.get(drawdown.account)
+        into = self.accounts.get(drawdown.into)
+        if account is None or account.handle not in holdings:
+            _warn_once(
+                self.result,
+                "a drawdown's account is not a projected holding; its withdrawals are left out",
+            )
+            return None
+        if into is None or not into.is_spendable_cash:
+            _warn_once(
+                self.result,
+                f"a drawdown from {account.name!r} pays into an account that is not "
+                "projected spendable cash; its withdrawals are left out",
+            )
+            return None
+        balance = holdings[account.handle]
+        if drawdown.annual_rate is not None:
+            wanted = balance * (drawdown.annual_rate / 12)
+        elif drawdown.annual_amount is not None:
+            factor = self._factor(drawdown, when) if drawdown.escalate else _ONE
+            wanted = (drawdown.annual_amount / 12) * factor
+        else:
+            return None
+        wanted = wanted.quantize(self.fraction)
+        amount = min(wanted, balance) if balance > 0 else Money(0)
+        if amount < wanted:
+            _warn_once(
+                self.result,
+                f"the drawdown from {account.name!r} runs out of money on "
+                f"{when:%Y-%m-%d}; later withdrawals take only what is left",
+            )
+        if amount <= 0:
+            return None
+        return planning.PlannedEvent(
+            key=f"drawdown:{self.scenario.handle}:{drawdown.handle}:{when.isoformat()}",
+            planned_date=when,
+            source=planning.EventSource.ONE_OFF,
+            description=f"Drawdown from {account.name}",
+            expected_splits=(
+                planning.PlannedSplit(into.handle, amount),
+                planning.PlannedSplit(account.handle, -amount),
+            ),
+            expected_amount=amount,
+            placeholder=True,
+        )
+
+
 def _project_events(
     db: DbSQLite, scenario: Scenario, progress: ProgressCallback | None = None
 ) -> Projection:
@@ -1086,6 +1185,7 @@ def _project_events(
         if start <= event.when <= end:
             events_by_month.setdefault((event.when.year, event.when.month), []).append(event)
 
+    drawdowns = _Drawdowns(db, result, scenario, timeline, accounts, fraction)
     for index in range(scenario.months):
         month = add_months(start, index, day=1)
         next_month = add_months(start, index + 1, day=1)
@@ -1095,7 +1195,32 @@ def _project_events(
         flows = _EventMonthFlows()
         cursor = month
 
-        for event in events_by_month.get((month.year, month.month), []):
+        # A drawdown is sized from the state on its own date, after that day's events.
+        scheduled: list[tuple[date, int, planning.PlannedEvent | Drawdown]] = [
+            (event.when, 0, event) for event in events_by_month.get((month.year, month.month), [])
+        ]
+        scheduled.extend((when, 1, item) for when, item in drawdowns.due(month))
+        scheduled.sort(key=lambda entry: (entry[0], entry[1]))
+        for when, _order, item in scheduled:
+            if isinstance(item, Drawdown):
+                cash = _advance_event_state(
+                    timeline,
+                    accounts,
+                    cursor,
+                    when,
+                    cash,
+                    holdings,
+                    debts,
+                    flows,
+                    schedule_driven_liabilities,
+                )
+                cursor = when
+                drawn = drawdowns.event(item, when, holdings)
+                if drawn is None:
+                    continue
+                event = drawn
+            else:
+                event = item
             _report_progress(progress, event.when, start, end, "Applying scheduled events")
             cash = _advance_event_state(
                 timeline,

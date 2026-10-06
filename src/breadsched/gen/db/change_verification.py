@@ -221,10 +221,7 @@ class ChangeVerification(DbBase):
                     )
         elif table == "scenario":
             scenario = Scenario.from_dict(data)
-            refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
-            refs.update(item.account for item in scenario.one_offs)
-            for period in scenario.assumption_periods:
-                refs.update(period.per_account)
+            refs = scenario.account_references()
             for account_handle in sorted(refs):
                 if self.get_account(account_handle) is None:
                     issues.append(
@@ -561,11 +558,7 @@ class ChangeVerification(DbBase):
                         )
                     )
             for scenario in self.iter_scenarios():
-                refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
-                refs.update(item.account for item in scenario.one_offs)
-                for period in scenario.assumption_periods:
-                    refs.update(period.per_account)
-                if handle in refs:
+                if handle in scenario.account_references():
                     issues.append(
                         BookIssue(
                             "scenario.missing_account",

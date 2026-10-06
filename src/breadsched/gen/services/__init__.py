@@ -138,11 +138,15 @@ from .savings_goals import (
 from .scenarios import (
     DeleteScenario,
     DuplicateScenario,
+    SaveDrawdown,
     SavedScenario,
     SaveScenario,
     SuppressScenarioSchedule,
     delete_scenario,
+    drawdown_accounts,
     duplicate_scenario,
+    remove_drawdown,
+    save_drawdown,
     save_scenario,
     suppress_scenario_schedule,
 )
@@ -215,6 +219,7 @@ __all__ = [
     "SaveScenarioAssumptions",
     "SaveScenario",
     "SuppressScenarioSchedule",
+    "SaveDrawdown",
     "FixedScheduleInput",
     "FixedSplitInput",
     "FormulaScheduleInput",
@@ -346,4 +351,7 @@ __all__ = [
     "duplicate_scenario",
     "save_scenario",
     "suppress_scenario_schedule",
+    "drawdown_accounts",
+    "remove_drawdown",
+    "save_drawdown",
 ]

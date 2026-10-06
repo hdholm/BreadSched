@@ -32,6 +32,7 @@ from .scheduled import (
 
 __all__ = [
     "ASSUMPTION_FIELDS",
+    "Drawdown",
     "GoalOverride",
     "OneOff",
     "ScenarioSchedule",
@@ -81,6 +82,86 @@ class OneOff:
             account=data["account"],
             amount=Money(*data["amount"]),
             description=data.get("description", ""),
+        )
+
+
+class Drawdown:
+    """A scenario's monthly withdrawals from a holding account into spendable cash.
+
+    From ``start`` (and until ``end``, if given) the projection withdraws, on the
+    start date's day of every month, either a fixed ``annual_amount`` / 12 that
+    grows with the scenario's expense inflation on each anniversary of ``start``
+    (when ``escalate``), or ``annual_rate`` / 12 of the account's projected
+    balance on that day. A withdrawal never takes the account below zero. The
+    amounts depend on projected balances, so drawdowns exist only in the
+    projection: they never post and are not part of the Plan.
+    """
+
+    __slots__ = (
+        "account",
+        "annual_amount",
+        "annual_rate",
+        "end",
+        "escalate",
+        "handle",
+        "into",
+        "start",
+    )
+
+    def __init__(
+        self,
+        account: str,
+        into: str,
+        start: date,
+        *,
+        annual_amount: Money | None = None,
+        annual_rate: Decimal | None = None,
+        end: date | None = None,
+        escalate: bool = True,
+        handle: str | None = None,
+    ) -> None:
+        self.handle = handle or create_handle()
+        self.account = account
+        self.into = into
+        self.start = start
+        self.end = end
+        self.annual_amount = annual_amount
+        self.annual_rate = annual_rate
+        self.escalate = escalate
+
+    def active(self, when: date) -> bool:
+        return when >= self.start and (self.end is None or when <= self.end)
+
+    def serialize(self) -> dict[str, Any]:
+        return {
+            "handle": self.handle,
+            "account": self.account,
+            "into": self.into,
+            "start": self.start.isoformat(),
+            "end": self.end.isoformat() if self.end else None,
+            "annual_amount": (
+                [self.annual_amount.numerator, self.annual_amount.denominator]
+                if self.annual_amount is not None
+                else None
+            ),
+            "annual_rate": str(self.annual_rate) if self.annual_rate is not None else None,
+            "escalate": self.escalate,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> Drawdown:
+        amount = data.get("annual_amount")
+        rate = data.get("annual_rate")
+        end = data.get("end")
+        return cls(
+            str(data["account"]),
+            str(data["into"]),
+            date.fromisoformat(data["start"]),
+            annual_amount=Money(*amount) if amount is not None else None,
+            annual_rate=Decimal(rate) if rate is not None else None,
+            end=date.fromisoformat(end) if end else None,
+            escalate=bool(data.get("escalate", True)),
+            handle=str(data["handle"]),
         )
 
 
@@ -576,6 +657,8 @@ class Scenario(PrimaryObject):
         self.one_offs: list[OneOff] = []
         #: Savings-goal changes by goal handle; every other goal applies unchanged.
         self.goal_overrides: dict[str, GoalOverride] = {}
+        #: Balance-dependent withdrawals this scenario models (projection only).
+        self.drawdowns: list[Drawdown] = []
 
     @classmethod
     def derived_from_base(cls, base: Assumptions, **kwargs: Any) -> Scenario:
@@ -760,6 +843,7 @@ class Scenario(PrimaryObject):
             "goal_overrides": {
                 handle: item.serialize() for handle, item in sorted(self.goal_overrides.items())
             },
+            "drawdowns": [item.serialize() for item in self.drawdowns],
         }
 
     def _unserialize(self, data: dict[str, Any]) -> None:
@@ -811,6 +895,22 @@ class Scenario(PrimaryObject):
             handle: GoalOverride.from_dict(item)
             for handle, item in data.get("goal_overrides", {}).items()
         }
+        self.drawdowns = [Drawdown.from_dict(item) for item in data.get("drawdowns", [])]
+
+    def account_references(self) -> set[str]:
+        """Every account this scenario names, which must exist while it is saved."""
+        refs = set(self.assumptions.per_account) | set(self.opening_overrides)
+        refs.update(item.account for item in self.one_offs)
+        for period in self.assumption_periods:
+            refs.update(period.per_account)
+        refs.update(
+            item.purchase_account
+            for item in self.goal_overrides.values()
+            if item.purchase_account is not None
+        )
+        for drawdown in self.drawdowns:
+            refs.update((drawdown.account, drawdown.into))
+        return refs
 
     def __repr__(self) -> str:
         return f"<Scenario {self.name!r} {self.years}y>"
