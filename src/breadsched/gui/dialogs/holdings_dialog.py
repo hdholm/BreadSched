@@ -7,7 +7,7 @@ from datetime import date
 from ...gen.db.sqlite import DbSQLite
 from ...gen.engine.cost_basis import HoldingCostBasis, holdings_cost_basis, shares_text
 from ...gen.lib.money import Money
-from ...presentation import holding_cost_text
+from ...presentation import holding_cost_text, lot_move_text
 from ..gi_setup import Gtk
 from ..widgets.bounded import BoundedWindow
 
@@ -95,6 +95,10 @@ class HoldingsDialog(BoundedWindow):
                 f"{sale.gain.format(parens_negative=True)}"
                 for sale in item.sales
             ]
+            for move in item.moves:
+                other = db.get_account(move.other_account) if move.other_account else None
+                text = lot_move_text(move, db.full_name(other) if other is not None else None)
+                lines.append(text[:1].upper() + text[1:])
             for line in lines:
                 box.append(_cell(line))
             for problem in item.problems:

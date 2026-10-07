@@ -62,7 +62,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
   projection UI/comparison/explanations.
 
 - Let a sale name specific lots instead of the account's first-in, first-out or
-  average-cost method, and carry cost basis through transfers between accounts and share splits.
+  average-cost method.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.
@@ -106,6 +106,10 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Continue representative GnuCash compatibility fixtures for accounts,
   transactions, reconciliation, commodities, schedules, formula loans, and unusual
   but valid structures.
+
+- Import a GnuCash stock split recorded as a single zero-value split (now skipped
+  and reported, so its shares are missing) as a share split, deciding how the lone
+  split is stored and how write-back leaves it unchanged in GnuCash.
 
 - Add reviewed commodity/security mapping where imported identifiers cannot be
   matched safely and extend price import to additional source formats where present.

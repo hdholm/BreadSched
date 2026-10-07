@@ -925,12 +925,28 @@ average of every share held and each lot gives up the same fraction of itself.
 Choose the method in the account's settings (**Cost of shares sold** in the desktop
 account editor, **Cost of shares sold** in the browser's Accounts settings, or
 `breadsched account BOOK edit --name ACCOUNT --cost-basis average`); changing it
-recalculates every past sale. Nothing is stored: the figures come from the security account's transactions
+recalculates every past sale.
+
+Moving shares between your own Investment or Retirement accounts is not a sale:
+when a transaction takes shares out of one account and puts the same number of the
+same security into another, the shares keep their purchase dates and cost, nothing
+is realized, and later sales from the receiving account use that cost. A share split
+is a transaction that changes the number of shares with no value on any leg (enter
+the new shares at zero value, balanced by a zero amount to any account, such as
+Opening Balances); every lot then holds proportionally more (or, for a reverse
+split, fewer) shares at the same cost. Each transfer and split is listed with the
+holding's lots and sales. On a single day, shares received count before shares sent
+or sold; shares moved both ways between the same two accounts on one day cannot be
+traced to lots, so they count as a sale and a purchase at their recorded values and
+are named. A GnuCash stock split recorded as a single split is
+skipped on import and named in the import report; enter it in BreadSched as above.
+Nothing is stored: the figures come from the security account's transactions
 each time, so correcting a transaction corrects them.
 
 BreadSched says when it cannot be exact rather than guessing. Shares that arrived
-with no recorded cost (a transfer in, or a share split recorded as new shares) count
-at zero cost and are named; shares sold beyond the recorded purchases have no known
+with no recorded cost from outside your security accounts (or with no shares already
+held to split) count at zero cost and are named; shares moved out beyond what the
+account's history bought reach the other account with no cost and are named; shares sold beyond the recorded purchases have no known
 cost; and without a price, or with a price in another currency than the cost, there
 is no unrealized gain. Open it from **Actions → Holdings and Cost Basis…** in the
 desktop Accounts view, **Holdings and cost basis…** in the browser's Accounts page,

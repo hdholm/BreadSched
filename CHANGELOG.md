@@ -10,6 +10,22 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a247 - 2026-10-06
+
+- **Cost basis follows transfers and share splits.** Shares moved between two of
+  the book's security accounts of the same security are no longer a sale and a new
+  purchase: the sending account removes lots by its method without realizing a gain,
+  and the receiving account adopts those exact lots with their purchase dates and
+  cost (`LotMove`, re-derived from the sender, never stored). A transaction that
+  changes shares at zero value with every other leg zero is a share split: each
+  lot's shares scale by the same exact factor and its cost stays, where before it
+  opened a zero-cost lot (or, for a reverse split, realized a loss). Transfers and
+  splits are listed in the GTK Holdings dialog, the browser (`moves` with text in
+  `/api/holdings`), and `holdings --lots`. Shares moved out beyond the recorded
+  purchases are named, and reach the other account at zero cost, rather than guessed.
+- The roadmap records that a GnuCash stock split stored as a single zero-value
+  split is still skipped (and reported) on import.
+
 ## 0.2.0a246 - 2026-10-06
 
 - **Average cost basis.** An Investment or Retirement account can use average cost

@@ -4,15 +4,21 @@ Lots are never stored: like a receivable's status, they are recomputed from the
 splits of each investment or retirement account that holds a security. Each split
 that adds shares opens a lot at its value (what was paid, in the transaction's
 currency); each split that removes shares sells first-in, first-out from the open
-lots, and the gain realized is the proceeds less the cost of the shares it took.
-What is still held is the open lots; its unrealized gain is its market value (from
+lots (or, for an account set to average cost, the same fraction of every lot), and
+the gain realized is the proceeds less the cost of the shares it took. Shares that
+move to another security account of the same commodity are not sold: their lots,
+with their purchase dates and cost, move with them. A change of shares in a
+transaction where nothing carries value (any other leg is zero) is a share split:
+every lot's shares change by the same factor and its cost stays. What is still held
+is the open lots; its unrealized gain is its market value (from
 ``valuation.account_value``, with the quote it used) less that cost.
 
-Nothing is approximated. Shares that arrive with no recorded value (a transfer in
-or a share split) open a lot at zero cost and are named; a sale of more shares than
-the account's history bought is named and its uncovered part has no realized gain;
-an account whose splits use more than one currency, or whose quote is missing or in
-another currency than its cost, has no unrealized gain.
+Nothing is approximated. Shares that arrive with no recorded value and nothing to
+split (no shares held, or from outside the book's security accounts) open a lot at
+zero cost and are named; a sale of more shares than the account's history bought is
+named and its uncovered part has no realized gain; an account whose splits use more
+than one currency, or whose quote is missing or in another currency than its cost,
+has no unrealized gain.
 """
 
 from __future__ import annotations
@@ -24,12 +30,14 @@ from datetime import date
 from ..db.sqlite import DbSQLite
 from ..lib.account import Account, AccountType
 from ..lib.money import Money
+from ..lib.transaction import Transaction
 from .currency import reporting_currency_handle
 from .valuation import AccountValuation, account_value
 
 __all__ = [
     "HoldingCostBasis",
     "Lot",
+    "LotMove",
     "RealizedGain",
     "cost_basis",
     "holdings_cost_basis",
@@ -73,6 +81,28 @@ class RealizedGain:
 
 
 @dataclass(frozen=True, slots=True)
+class LotMove:
+    """Shares that changed without a sale: a transfer between accounts or a share split.
+
+    A transfer carries its lots (purchase dates and cost) to the other account; a
+    split changes every lot's shares by the same factor and keeps its cost.
+    """
+
+    when: date
+    #: ``"transfer_in"``, ``"transfer_out"``, or ``"split"``.
+    kind: str
+    #: Shares added (positive) or removed (negative).
+    quantity: Money
+    #: Cost basis carried with the shares (zero for a split).
+    cost: Money
+    transaction: str
+    other_account: str | None = None
+    lots: tuple[Lot, ...] = ()
+    #: Shares held just before a split.
+    held: Money | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class HoldingCostBasis:
     """One security account's open lots, realized gains, and unrealized gain."""
 
@@ -82,6 +112,7 @@ class HoldingCostBasis:
     sales: tuple[RealizedGain, ...]
     valuation: AccountValuation
     problems: tuple[str, ...] = ()
+    moves: tuple[LotMove, ...] = ()
 
     @property
     def quantity(self) -> Money:
@@ -149,6 +180,18 @@ class HoldingCostBasis:
                 }
                 for sale in self.sales
             ],
+            "moves": [
+                {
+                    "when": move.when,
+                    "kind": move.kind,
+                    "quantity": shares_text(move.quantity),
+                    "cost": move.cost,
+                    "transaction": move.transaction,
+                    "other_account": move.other_account,
+                    "held": None if move.held is None else shares_text(move.held),
+                }
+                for move in self.moves
+            ],
             "realized_by_year": {str(year): gain for year, gain in self.realized_by_year().items()},
             "problems": list(self.problems),
         }
@@ -161,73 +204,187 @@ def _is_security(db: DbSQLite, account: Account) -> bool:
     return commodity is not None and not commodity.is_currency
 
 
+def _take(open_lots: list[Lot], wanted: Money, method: str) -> tuple[list[Lot], list[Lot], Money]:
+    """Remove ``wanted`` shares: the lots left, the parts taken, and the shares uncovered.
+
+    First in, first out takes the oldest lots whole and splits the last one; average
+    cost takes the same fraction of every lot, so each share taken costs the average.
+    """
+    held = sum((lot.quantity for lot in open_lots), Money(0))
+    if not held:
+        return open_lots, [], wanted
+    covered = min(wanted, held)
+    if method == "average":
+        share = covered / held
+        taken = [
+            Lot(lot.acquired, lot.quantity * share, lot.cost * share, lot.transaction)
+            for lot in open_lots
+        ]
+        left = [
+            Lot(lot.acquired, lot.quantity - part.quantity, lot.cost - part.cost, lot.transaction)
+            for lot, part in zip(open_lots, taken, strict=True)
+            if lot.quantity - part.quantity > 0
+        ]
+        return left, taken, wanted - covered
+    left = list(open_lots)
+    taken = []
+    remaining = covered
+    while remaining > 0:
+        lot = left[0]
+        if lot.quantity <= remaining:
+            taken.append(left.pop(0))
+            remaining = remaining - lot.quantity
+        else:
+            part = lot.cost * (remaining / lot.quantity)
+            taken.append(Lot(lot.acquired, remaining, part, lot.transaction))
+            left[0] = Lot(lot.acquired, lot.quantity - remaining, lot.cost - part, lot.transaction)
+            remaining = Money(0)
+    return left, taken, wanted - covered
+
+
+def _transfer_partner(
+    db: DbSQLite, account: Account, txn: Transaction, quantity: Money
+) -> Account | None:
+    """The other security account of the same commodity this split's shares moved to or from."""
+    for split in txn.splits:
+        if split.account == account.handle or split.quantity != -quantity:
+            continue
+        other = db.get_account(split.account)
+        if other is not None and other.commodity == account.commodity and _is_security(db, other):
+            return other
+    return None
+
+
+def _is_share_split(account: Account, txn: Transaction, value: Money) -> bool:
+    """A change of shares with no value anywhere: no other split moves money or shares."""
+    return value == 0 and all(
+        split.account == account.handle or (split.value == 0 and split.quantity == 0)
+        for split in txn.splits
+    )
+
+
 def cost_basis(
-    db: DbSQLite, account: Account | str, *, as_of: date | None = None
+    db: DbSQLite,
+    account: Account | str,
+    *,
+    as_of: date | None = None,
+    _visiting: frozenset[tuple[str, date | None]] = frozenset(),
 ) -> HoldingCostBasis | None:
-    """First-in, first-out lots of one security account; ``None`` if it holds cash."""
+    """The lots of one security account, by its method; ``None`` if it holds cash."""
     obj = db.get_account(account) if isinstance(account, str) else account
     if obj is None or not _is_security(db, obj):
         return None
+    visiting = _visiting | {(obj.handle, as_of)}
+    method = obj.cost_basis_method
     book = reporting_currency_handle(db)
     open_lots: list[Lot] = []
     sales: list[RealizedGain] = []
+    moves: list[LotMove] = []
     currencies: set[str] = set()
     zero_cost = Money(0)
     uncovered_total = Money(0)
-    for row in db.split_rows(obj.handle, end=as_of):
+    moved_uncovered = Money(0)
+    problems: list[str] = []
+    # Within a day, shares arrive before any leave, so a same-day purchase and sale
+    # (or a transfer back) never depends on the order of split handles.
+    rows = sorted(
+        db.split_rows(obj.handle, end=as_of),
+        key=lambda row: (row["post_date"], row["quantity_num"] < 0),
+    )
+    txns = {row["txn"]: db.get_transaction(row["txn"]) for row in rows}
+    partners: dict[int, Account] = {}
+    directions: dict[tuple[str, str], set[bool]] = defaultdict(set)
+    for index, row in enumerate(rows):
+        txn = txns[row["txn"]]
+        quantity = Money(row["quantity_num"], row["quantity_den"])
+        found = None if txn is None or not quantity else _transfer_partner(db, obj, txn, quantity)
+        if found is not None:
+            partners[index] = found
+            directions[(row["post_date"], found.handle)].add(quantity > 0)
+    for index, row in enumerate(rows):
         quantity = Money(row["quantity_num"], row["quantity_den"])
         value = Money(row["value_num"], row["value_den"])
         when = date.fromisoformat(row["post_date"])
         currencies.add(row["currency"] or book)
+        if not quantity:
+            continue
+        txn = txns[row["txn"]]
+        held = sum((lot.quantity for lot in open_lots), Money(0))
+        if txn is not None and _is_share_split(obj, txn, value) and held and held + quantity > 0:
+            # A share split (or reverse split) changes every lot's shares, not its cost.
+            factor = (held + quantity) / held
+            open_lots = [
+                Lot(lot.acquired, lot.quantity * factor, lot.cost, lot.transaction)
+                for lot in open_lots
+            ]
+            moves.append(LotMove(when, "split", quantity, Money(0), row["txn"], held=held))
+            continue
+        partner = partners.get(index)
+        if partner is not None and len(directions[(row["post_date"], partner.handle)]) > 1:
+            # Shares moved both ways between the same accounts on one day cannot be
+            # matched to lots in either; each leg stays a sale or purchase at its value.
+            problems.append(
+                f"shares moved both ways with {db.full_name(partner)} on {when.isoformat()} "
+                "count as a sale and a purchase at their recorded values"
+            )
+            partner = None
+        if partner is not None and quantity < 0:
+            # Shares moved to another account keep their cost; nothing is realized.
+            open_lots, taken, uncovered = _take(open_lots, -quantity, method)
+            moved_uncovered = moved_uncovered + uncovered
+            moves.append(
+                LotMove(
+                    when,
+                    "transfer_out",
+                    quantity,
+                    sum((lot.cost for lot in taken), Money(0)),
+                    row["txn"],
+                    partner.handle,
+                    tuple(taken),
+                )
+            )
+            continue
+        if partner is not None and (partner.handle, when) not in visiting:
+            source = cost_basis(db, partner, as_of=when, _visiting=visiting)
+            sent = next(
+                (
+                    move
+                    for move in (source.moves if source is not None else ())
+                    if move.kind == "transfer_out" and move.transaction == row["txn"]
+                ),
+                None,
+            )
+            if sent is not None:
+                arrived = list(sent.lots)
+                carried = sum((lot.quantity for lot in arrived), Money(0))
+                if carried < quantity:
+                    zero_cost = zero_cost + quantity - carried
+                    arrived.append(Lot(when, quantity - carried, Money(0), row["txn"]))
+                # Moved lots keep their purchase dates, so they sell in that order.
+                open_lots = sorted(open_lots + arrived, key=lambda lot: lot.acquired)
+                moves.append(
+                    LotMove(
+                        when,
+                        "transfer_in",
+                        quantity,
+                        sum((lot.cost for lot in arrived), Money(0)),
+                        row["txn"],
+                        partner.handle,
+                        tuple(arrived),
+                    )
+                )
+                continue
         if quantity > 0:
             if value == 0:
                 zero_cost = zero_cost + quantity
             open_lots.append(Lot(when, quantity, value, row["txn"]))
-        elif quantity < 0 and obj.cost_basis_method == "average" and open_lots:
-            # Average cost: every open lot gives up the same share of itself, so
-            # each sold share costs the average of every share held.
-            held = sum((lot.quantity for lot in open_lots), Money(0))
+        else:
             sold = -quantity
-            covered = min(sold, held)
-            share = covered / held
-            cost = sum((lot.cost * share for lot in open_lots), Money(0))
-            open_lots = [
-                Lot(
-                    lot.acquired,
-                    lot.quantity - lot.quantity * share,
-                    lot.cost - lot.cost * share,
-                    lot.transaction,
-                )
-                for lot in open_lots
-                if lot.quantity - lot.quantity * share > 0
-            ]
-            remaining = sold - covered
-            proceeds = -value * (covered / sold)
+            open_lots, taken, remaining = _take(open_lots, sold, method)
+            cost = sum((lot.cost for lot in taken), Money(0))
+            proceeds = -value * ((sold - remaining) / sold)
             uncovered_total = uncovered_total + remaining
             sales.append(RealizedGain(when, sold, proceeds, cost, row["txn"], remaining))
-        elif quantity < 0:
-            remaining = -quantity
-            cost = Money(0)
-            while remaining > 0 and open_lots:
-                lot = open_lots[0]
-                if lot.quantity <= remaining:
-                    cost = cost + lot.cost
-                    remaining = remaining - lot.quantity
-                    open_lots.pop(0)
-                else:
-                    share = remaining / lot.quantity
-                    taken = lot.cost * share
-                    cost = cost + taken
-                    open_lots[0] = Lot(
-                        lot.acquired, lot.quantity - remaining, lot.cost - taken, lot.transaction
-                    )
-                    remaining = Money(0)
-            sold = -quantity
-            covered = sold - remaining
-            proceeds = -value * (covered / sold) if sold else Money(0)
-            uncovered_total = uncovered_total + remaining
-            sales.append(RealizedGain(when, sold, proceeds, cost, row["txn"], remaining))
-    problems: list[str] = []
     if zero_cost:
         problems.append(
             f"{shares_text(zero_cost)} shares arrived with no recorded cost (a transfer in "
@@ -237,6 +394,11 @@ def cost_basis(
         problems.append(
             f"{shares_text(uncovered_total)} shares were sold beyond the recorded purchases; "
             "their cost and gain are unknown"
+        )
+    if moved_uncovered:
+        problems.append(
+            f"{shares_text(moved_uncovered)} shares were moved out beyond the recorded "
+            "purchases; the receiving account has no cost for them"
         )
     currency = next(iter(currencies)) if len(currencies) == 1 else None
     if len(currencies) > 1:
@@ -254,6 +416,7 @@ def cost_basis(
         tuple(sales),
         valued,
         tuple(problems),
+        tuple(moves),
     )
 
 
