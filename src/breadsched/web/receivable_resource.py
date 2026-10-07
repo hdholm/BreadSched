@@ -30,7 +30,8 @@ from ..gen.services.receivables import (
     save_receivable,
     shared_costs,
 )
-from ..presentation import shared_cost_text
+from ..gen.services.scenarios import SetReimbursementOverride, set_reimbursement_override
+from ..presentation import reimbursement_override_text, shared_cost_text
 from .controls import input_money, service_error
 
 if TYPE_CHECKING:
@@ -127,6 +128,7 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
     summaries = _result(api, list_receivables(api.db, as_of=date.today()))
     costs, credits = _result(api, receivable_candidates(api.db))
     proposals = _result(api, reimbursement_proposals(api.db, as_of=date.today()))
+    scenarios = sorted(api.db.iter_scenarios(), key=lambda item: item.name.casefold())
     return {
         "proposals": [
             {
@@ -169,9 +171,23 @@ def receivables(api: Api, query: QueryParams) -> dict[str, object]:
                 "shared_costs": _shared(api, item.receivable.handle),
                 "expenses": _linked(api, item.receivable.expenses),
                 "reimbursements": _linked(api, item.receivable.reimbursements),
+                "scenario_changes": [
+                    {
+                        "scenario": scenario.handle,
+                        "amount": scenario.reimbursement_overrides[item.receivable.handle].amount,
+                        "on": scenario.reimbursement_overrides[item.receivable.handle].on,
+                        "text": reimbursement_override_text(
+                            scenario.name,
+                            scenario.reimbursement_overrides[item.receivable.handle],
+                        ),
+                    }
+                    for scenario in scenarios
+                    if item.receivable.handle in scenario.reimbursement_overrides
+                ],
             }
             for item in summaries
         ],
+        "scenarios": [{"handle": item.handle, "name": item.name} for item in scenarios],
         "costs": [_candidate(api, item) for item in costs],
         "credits": [_candidate(api, item) for item in credits],
         "accounts": [
@@ -253,6 +269,32 @@ def receivable_dispute(api: Api, payload: Mapping[str, Any]) -> dict[str, object
             ),
         )
     return {"handle": saved.handle}
+
+
+def receivable_scenario(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
+    """Change what one scenario expects back for a receivable; blank fields clear it."""
+    raw_amount = (_text(payload, "amount", optional=True) or "").strip()
+    scenario = _result(
+        api,
+        set_reimbursement_override(
+            api.db,
+            SetReimbursementOverride(
+                _text(payload, "scenario") or "",
+                _text(payload, "receivable") or "",
+                input_money(dict(payload), raw_amount) if raw_amount else None,
+                _date(payload, "on", optional=True),
+            ),
+        ),
+    )
+    override = scenario.reimbursement_overrides.get(_text(payload, "receivable"))
+    return {
+        "scenario": scenario.handle,
+        "text": (
+            reimbursement_override_text(scenario.name, override)
+            if override is not None
+            else f"{scenario.name} expects what the receivable says"
+        ),
+    }
 
 
 def receivable_write_off(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:

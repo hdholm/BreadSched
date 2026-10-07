@@ -257,3 +257,42 @@ def test_web_projection_and_print_show_the_gross_and_net_cost(db, book):
     html = projection_html(projection.project(db, stored))
     assert "Reimbursable expenses: gross and net cost" in html
     assert "net household cost 60.00" in html
+
+
+def test_web_route_changes_and_lists_a_scenario_expectation(db, book):
+    from breadsched.web.context import Api
+    from breadsched.web.controls import ResourceError
+    from breadsched.web.receivable_resource import receivable_scenario, receivables
+    from breadsched.web.resources import QueryParams
+
+    receivable = _receivable(db, book)
+    scenario = _scenario(db)
+    api = Api(db)
+    request = {
+        "scenario": scenario.handle,
+        "receivable": receivable.handle,
+        "amount": "1,000.00",
+        "on": "",
+    }
+    with pytest.raises(ResourceError) as refused:
+        receivable_scenario(api, request)
+    assert refused.value.code == "scenario.reimbursement.amount"
+    assert db.get_scenario(scenario.handle).reimbursement_overrides == {}
+
+    changed = receivable_scenario(api, {**request, "amount": "0"})
+    assert changed["text"] == "Careful: nothing expected"
+    listing = receivables(api, QueryParams(""))
+    assert listing["scenarios"] == [{"handle": scenario.handle, "name": "Careful"}]
+    [row] = listing["receivables"]
+    assert row["scenario_changes"] == [
+        {
+            "scenario": scenario.handle,
+            "amount": Money(0),
+            "on": None,
+            "text": "Careful: nothing expected",
+        }
+    ]
+
+    cleared = receivable_scenario(api, {**request, "amount": ""})
+    assert cleared["text"] == "Careful expects what the receivable says"
+    assert receivables(api, QueryParams(""))["receivables"][0]["scenario_changes"] == []

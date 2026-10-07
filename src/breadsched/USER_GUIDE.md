@@ -1148,9 +1148,12 @@ spending and net worth carry the shortfall while other scenarios still expect th
 whole amount. Under **Reimbursable expenses: gross and net cost**, each Projection
 (and the printed Projection) lists every reimbursement expected in its range with
 the gross cost, anything already reimbursed or written off, what the scenario
-expects back and when, and the net household cost. The command line changes a
-scenario's expectation with `receivables --scenario NAME --expect RECEIVABLE`;
-desktop and browser editors follow.
+expects back and when, and the net household cost. Change a scenario's
+expectation from the receivable's **In scenario** row in the
+[desktop](guide/desktop.md#reimbursable-expenses) or
+[browser](guide/web.md#reimbursable-expenses), or with
+`receivables --scenario NAME --expect RECEIVABLE` on the
+[command line](guide/cli.md#reimbursable-expenses).
 
 ## Import and GnuCash interoperability
 

@@ -224,6 +224,13 @@ receivable then show what the payer, the FSA, and you each pay, and **Needs
 review** when that comes to more than was paid. See
 [Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses).
 
+To plan for the payer paying less, nothing, or later in one saved scenario, open the
+receivable and use the **In scenario** row: choose the scenario, enter the amount
+expected back (0 for nothing) and the date, and choose **Apply to scenario**. Leave
+both empty to expect what the receivable says again. The line below lists every
+scenario's change, and that scenario's Projection shows the gross and net cost (see
+[Reimbursable expenses](../USER_GUIDE.md#reimbursable-expenses)).
+
 ## Import files
 
 In **Import**, select a QIF, OFX/QFX, or GnuCash file from the browser (up to
