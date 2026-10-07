@@ -2037,6 +2037,18 @@ reason and never written. Dates use the book's own post-date style (14-digit or
 `YYYY-MM-DD HH:MM:SS` in SQLite, `YYYY-MM-DD HH:MM:SS +0000` in XML) at GnuCash's
 neutral 10:59:00.
 
+GnuCash SQL books store posting and schedule dates as zone-less UTC timestamps.
+GnuCash 2.6.10 and later write 10:59:00 UTC; earlier versions wrote the user's
+local midnight in UTC, so a book from a household in UTC+2 holds 22:00:00 on the
+previous day. `gnucash_common.parse_gnc_sql_posting_date` therefore reads a time of
+day from 11:00:00 UTC on as the next calendar day and anything earlier as the same
+day: GnuCash's neutral-time range (UTC-10:59 to UTC+13:00) read in reverse, wrong
+only for UTC-11, UTC-12, and UTC+14. The SQLite importer uses it for transaction
+post dates and schedule start and end dates, and write-back uses it to read the
+book's current dates, so a comparison never reports a day's shift as a change.
+Price timestamps (a quote's real time) and XML dates (which carry their own offset)
+keep `parse_gnc_date`, which takes the date as written.
+
 Applying recomputes the preview, re-reads the book, and copies it to
 `<book>-gnucash-backups/<source>.<timestamp>.bak`. SQLite runs every chosen
 statement in one `BEGIN IMMEDIATE` transaction (a changed row count aborts). XML

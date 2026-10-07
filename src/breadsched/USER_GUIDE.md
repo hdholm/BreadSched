@@ -1145,6 +1145,11 @@ Local planning
 decisions are not overwritten by source refreshes. BreadSched does not connect to
 banks itself; see [Bank downloads through AqBanking](#bank-downloads-through-aqbanking).
 
+GnuCash books saved as SQLite by GnuCash before 2.6.10 stored each date as local
+midnight in UTC. BreadSched reads those dates as the calendar day you entered,
+including in time zones ahead of UTC, where an earlier BreadSched placed them a day
+early; importing such a book again moves those transactions to their correct date.
+
 ### Keep GnuCash and BreadSched side by side
 
 Because import is one-way, choose one application as the ledger of record for
