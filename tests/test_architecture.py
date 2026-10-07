@@ -790,6 +790,35 @@ class TestEngineBoundaries:
         assert "build_activity_report" in from_activity
         assert [name for name in from_activity if name.startswith("_")] == []
 
+    def test_the_plan_category_report_builds_on_the_activity_report(self):
+        """The Plan's rows live in ``category_report``; ``activity`` only dates activity.
+
+        ``category_report`` turns ``activity``'s dated report into the Plan's rows and
+        cash position; ``activity`` never imports it or defines its report types, and
+        no private helper crosses the boundary.
+        """
+        engine = SRC / "gen" / "engine"
+        activity_tree = ast.parse((engine / "activity.py").read_text(encoding="utf-8"))
+        report_tree = ast.parse((engine / "category_report.py").read_text(encoding="utf-8"))
+        activity_modules = {
+            node.module or ""
+            for node in ast.walk(activity_tree)
+            if isinstance(node, ast.ImportFrom)
+        }
+        assert "category_report" not in activity_modules
+        assert {"CategoryReport", "build_category_report", "CashPosition"}.isdisjoint(
+            _defined(activity_tree)
+        )
+        assert {"CategoryReport", "build_category_report", "CashPosition"} <= _defined(report_tree)
+        from_activity = [
+            alias.name
+            for node in ast.walk(report_tree)
+            if isinstance(node, ast.ImportFrom) and node.module == "activity"
+            for alias in node.names
+        ]
+        assert "build_activity_report" in from_activity
+        assert [name for name in from_activity if name.startswith("_")] == []
+
     def test_commit_verification_is_separate_from_storage(self):
         """``DbSQLite`` stores rows; ``ChangeVerification`` checks what a batch changed."""
         from breadsched.gen.db.change_verification import ChangeVerification

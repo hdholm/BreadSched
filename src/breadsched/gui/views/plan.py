@@ -10,12 +10,8 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date
 
-from ...gen.engine.activity import (
-    CategoryReport,
-    PlanMeasure,
-    PlanSettings,
-    ReportingPeriod,
-)
+from ...gen.engine.activity import PlanMeasure, PlanSettings, ReportingPeriod
+from ...gen.engine.category_report import CategoryReport
 from ...gen.engine.plan_detail import (
     explain_category_period,
     explain_mortgage_payment_period,

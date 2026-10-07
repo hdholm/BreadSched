@@ -13,7 +13,7 @@ from datetime import date
 
 import pytest
 
-from breadsched.gen.engine import activity, fsa, fsa_flows
+from breadsched.gen.engine import activity, category_report, fsa, fsa_flows
 from breadsched.gen.engine.fsa_flows import FsaFlowKind
 from breadsched.gen.lib import (
     Account,
@@ -112,7 +112,7 @@ class TestPlanCountsExpenseOnce:
     def test_medical_expense_and_fsa_flows_in_plan(self, db, book, flows):
         account, medical, _posted = flows
 
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 3, 1), date(2026, 3, 31), as_of=date(2026, 3, 31)
         )
 

@@ -10,7 +10,7 @@ from .gen.lib.money import Money
 from .gen.services import ServiceError
 
 if TYPE_CHECKING:
-    from .gen.engine.activity import CategoryActivity
+    from .gen.engine.category_report import CategoryActivity
     from .gen.engine.fsa import FsaYearStatus
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone

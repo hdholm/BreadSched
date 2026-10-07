@@ -7,7 +7,7 @@ from datetime import date
 from typing import Any
 
 from ..gen.db.sqlite import DbSQLite
-from ..gen.engine import activity
+from ..gen.engine import category_report
 from ..gen.lib import (
     FsaClaim,
     FsaClaimEvent,
@@ -563,7 +563,7 @@ def _receivable_costs(db: DbSQLite, args: argparse.Namespace) -> int:
     start, end = (parse_date(value) for value in args.costs)
     if start is None or end is None or end < start:
         raise CommandError("--costs needs a start date and an end date on or after it")
-    report = activity.build_category_report(db, start, end)
+    report = category_report.build_category_report(db, start, end)
     rows = report.reimbursable_categories
     payload = [
         {

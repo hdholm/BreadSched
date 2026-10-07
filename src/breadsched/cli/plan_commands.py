@@ -8,6 +8,7 @@ from datetime import date
 from ..gen.db.sqlite import DbSQLite
 from ..gen.engine import (
     activity,
+    category_report,
     estimates,
     planning,
     schedule,
@@ -512,7 +513,7 @@ def cmd_activity(args: argparse.Namespace) -> int:
                 f"{signed(report.cash_variance_through_as_of)}. Period columns include "
                 "everything dated in each period, even after that date."
             )
-        notes = activity.currency_notes(db, report)
+        notes = category_report.currency_notes(db, report)
         if not report.completeness.complete:
             # Totals are subtotals of what converted; say so beside them (#236).
             notes = (f"{report.completeness.label}: totals leave out the amounts below.", *notes)

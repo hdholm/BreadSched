@@ -340,10 +340,10 @@ class TestLoanSetup:
         assert result.rows[-1].liabilities > Money(0)
 
     def test_plan_separates_interest_expense_from_debt_principal(self, db, terms):
-        from breadsched.gen.engine import activity
+        from breadsched.gen.engine import category_report
 
         create_loan(db, terms, opening_balance=False)
-        report = activity.build_category_report(
+        report = category_report.build_category_report(
             db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
         )
 

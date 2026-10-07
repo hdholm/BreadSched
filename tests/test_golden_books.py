@@ -16,7 +16,8 @@ from golden_books import (
 )
 
 from breadsched.gen.engine import projection
-from breadsched.gen.engine.activity import ReportingPeriod, build_category_report
+from breadsched.gen.engine.activity import ReportingPeriod
+from breadsched.gen.engine.category_report import build_category_report
 from breadsched.gen.lib import Scenario
 from breadsched.gen.services.plan import PlanQuery, query_plan
 

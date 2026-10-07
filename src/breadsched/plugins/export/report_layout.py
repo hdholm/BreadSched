@@ -14,7 +14,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from itertools import zip_longest
 
-from ...gen.engine.activity import CategoryReport, PlanMeasure
+from ...gen.engine.activity import PlanMeasure
+from ...gen.engine.category_report import CategoryReport
 from ...gen.engine.completeness import Completeness, combine
 from ...gen.engine.dashboard import Dashboard, MissedGroup
 from ...gen.engine.projection import Projection

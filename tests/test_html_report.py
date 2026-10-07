@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from breadsched.gen.engine import activity, dashboard, projection
+from breadsched.gen.engine import activity, category_report, dashboard, projection
 from breadsched.gen.lib import (
     Account,
     AccountType,
@@ -86,7 +86,7 @@ def test_plan_report_uses_selected_measure_horizon_totals_and_scenario(db, book)
             ),
             txn,
         )
-    report = activity.build_category_report(
+    report = category_report.build_category_report(
         db,
         date(2026, 1, 1),
         date(2026, 3, 31),
@@ -134,7 +134,7 @@ def test_plan_report_shows_whole_mortgage_payment_as_non_additive(db, book):
             ),
             txn,
         )
-    report = activity.build_category_report(
+    report = category_report.build_category_report(
         db, date(2026, 1, 1), date(2026, 1, 31), as_of=date(2026, 1, 31)
     )
 
