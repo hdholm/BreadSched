@@ -1014,6 +1014,13 @@ projection that balances mathematically can still be financially wrong.
 
 ### Historical estimates
 
+`engine/estimates` gathers a category's planned and actual history from the book and
+turns it into proposals; the statistics it applies (robust sample, typical amount,
+recurrence and next start, cadence, trend, seasonality, and confidence, with their
+evidence types) are pure functions in `engine/estimate_history`, which never reads
+the book. `estimates` calls them through the module (`estimate_stats.…`), and an
+architecture test keeps `estimate_history` free of database and planning imports.
+
 Scheduled commitments and estimates use the same underlying event model. Historical
 analysis produces an unsaved schedule draft; Base and saved-scenario UIs must route
 that draft through their ordinary schedule editor before persistence. The draft
@@ -1269,6 +1276,13 @@ as-of. A wholly future horizon reports the through-as-of values as not applicabl
 not zero.
 
 ### Dashboard
+
+`engine/dashboard` assembles the view from account groups and totals;
+`engine/dashboard_bills` owns the scheduled-bill side it uses (cycle lengths and
+`BillRow` normalisation, missed-occurrence grouping, income-weighted reserves, and
+the pending cash flow behind liquidity) and never imports `dashboard`, which
+re-exports `BillRow`, `MissedGroup`, `group_missed`, and `DAYS_PER_MONTH` for its
+callers.
 
 Dashboard totals never depend on groups. Net worth, Assets, and Debts are always the
 whole-book reporting-currency valuation of every asset and liability account

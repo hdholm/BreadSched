@@ -806,6 +806,32 @@ class TestEngineBoundaries:
             if isinstance(node, ast.FunctionDef) and node.name.startswith("_verify_")
         ] == []
 
+    def test_estimate_statistics_never_read_the_book(self):
+        """History statistics are pure; ``estimates`` alone gathers the book's activity."""
+        path = SRC / "gen" / "engine" / "estimate_history.py"
+        modules = {
+            node.module or ""
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.ImportFrom)
+        }
+        assert not {"db.sqlite", "planning", "activity", "ledger"} & modules
+        estimates = (SRC / "gen" / "engine" / "estimates.py").read_text(encoding="utf-8")
+        assert "from . import estimate_history as estimate_stats" in estimates
+
+    def test_dashboard_bills_stand_apart_from_the_dashboard(self):
+        """Bill rows and reserves never reach back into the view that assembles them."""
+        path = SRC / "gen" / "engine" / "dashboard_bills.py"
+        modules = {
+            node.module or ""
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8")))
+            if isinstance(node, ast.ImportFrom)
+        }
+        assert "dashboard" not in modules
+        from breadsched.gen.engine import dashboard, dashboard_bills
+
+        assert dashboard.BillRow is dashboard_bills.BillRow
+        assert dashboard.MissedGroup is dashboard_bills.MissedGroup
+
 
 def _defined(tree: ast.Module) -> set[str]:
     return {node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
