@@ -23,6 +23,7 @@ from .goal_projection import GoalMilestone
 from .reimbursement_outlook import ReimbursementOutlook
 
 __all__ = [
+    "CashRunway",
     "ComparisonRow",
     "MonthLedger",
     "MonthRow",
@@ -308,6 +309,8 @@ class Projection:
     goal_milestones: list[GoalMilestone] = field(default_factory=list)
     #: Each reimbursement expected in the range, with its gross and net cost.
     reimbursements: list[ReimbursementOutlook] = field(default_factory=list)
+    #: Accounts a drawdown emptied, with the first withdrawal it could not make whole.
+    depletions: list[tuple[str, date]] = field(default_factory=list)
     #: Opening balances and events left out for lack of an exchange rate (#236).
     excluded: tuple[Excluded, ...] = ()
 
@@ -376,6 +379,21 @@ class Projection:
                 return row
         return None
 
+    def runway(self) -> CashRunway:
+        """How long projected cash lasts, its low point, and what runs out when."""
+        shortfall = self.first_shortfall()
+        goal_shortfall = self.first_goal_shortfall()
+        lowest = min(self.rows, key=lambda row: row.cash_close, default=None)
+        return CashRunway(
+            months=len(self.rows),
+            months_covered=shortfall.index if shortfall is not None else len(self.rows),
+            first_shortfall=shortfall.month if shortfall is not None else None,
+            lowest_cash=lowest.cash_close if lowest is not None else Money(0),
+            lowest_month=lowest.month if lowest is not None else None,
+            first_goal_shortfall=goal_shortfall.month if goal_shortfall is not None else None,
+            depletions=tuple(self.depletions),
+        )
+
     def first_shortfall(self) -> MonthRow | None:
         """The month the current account first goes negative, if it ever does."""
         for row in self.rows:
@@ -422,6 +440,42 @@ def _sum(values) -> Money:
     for value in values:
         total = total + value
     return total
+
+
+@dataclass(frozen=True, slots=True)
+class CashRunway:
+    """How long one projection's spendable cash lasts.
+
+    ``months_covered`` counts the months before the first one that closes with
+    negative cash (all of them when none does). The low point, the first month
+    cash no longer covers what savings goals set aside, and each drawdown account
+    that runs out complete the picture.
+    """
+
+    months: int
+    months_covered: int
+    first_shortfall: date | None
+    lowest_cash: Money
+    lowest_month: date | None
+    first_goal_shortfall: date | None
+    #: (account name, date) for each drawdown account that ran out.
+    depletions: tuple[tuple[str, date], ...] = ()
+
+    @property
+    def lasts(self) -> bool:
+        return self.first_shortfall is None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "months": self.months,
+            "months_covered": self.months_covered,
+            "lasts": self.lasts,
+            "first_shortfall": self.first_shortfall,
+            "lowest_cash": self.lowest_cash,
+            "lowest_month": self.lowest_month,
+            "first_goal_shortfall": self.first_goal_shortfall,
+            "depletions": [{"account": name, "date": when} for name, when in self.depletions],
+        }
 
 
 class ComparisonRow(TypedDict):

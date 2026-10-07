@@ -406,7 +406,9 @@ the whole projection, and `--bridge 2027-03` those for one month; with `--json` 
 are under `bridges` (see
 [How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)).
 `scenario` also reparents and deletes scenarios; `compare` compares two saved
-scenarios year by year. See
+scenarios year by year and then says which one's cash lasts longer. `project` ends
+with the [cash runway](../USER_GUIDE.md#cash-runway) (under `runway` with `--json`).
+See
 [Projection and scenarios](../USER_GUIDE.md#projection-and-scenarios).
 
 `drawdown` lists, saves, and removes a saved scenario's

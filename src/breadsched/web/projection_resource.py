@@ -15,7 +15,12 @@ from ..gen.services import (
     save_base_assumptions,
     save_scenario_assumptions,
 )
-from ..presentation import projection_goal_notes, reimbursement_outlook_text
+from ..presentation import (
+    projection_goal_notes,
+    reimbursement_outlook_text,
+    runway_comparison_text,
+    runway_lines,
+)
 from .controls import service_error
 from .scenario_resource import assumptions_from_payload, management_base_scenario
 
@@ -118,6 +123,8 @@ def projection_report(
         "warnings": list(result.warnings),
         "goal_notes": projection_goal_notes(result),
         "goal_milestones": [item.as_dict() for item in result.goal_milestones],
+        "runway": result.runway().as_dict(),
+        "runway_notes": runway_lines(result.runway()),
         "reimbursements": [item.as_dict() for item in result.reimbursements],
         "reimbursement_notes": [reimbursement_outlook_text(item) for item in result.reimbursements],
         "rows": [
@@ -165,6 +172,13 @@ def projection_comparison_report(
                 "assumption_sources": comparison.assumption_sources(comparison.start),
             },
             "summary": comparison_summary,
+            "runway": comparison_result.runway().as_dict(),
+            "runway_comparison": runway_comparison_text(
+                primary.name,
+                primary_result.runway(),
+                comparison.name,
+                comparison_result.runway(),
+            ),
             "completeness": comparison_result.completeness.as_dict(),
             # A difference is only as complete as both of its inputs.
             "delta_completeness": combine(

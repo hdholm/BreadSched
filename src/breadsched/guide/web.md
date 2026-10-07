@@ -143,7 +143,9 @@ dated events, and assumption sources; **How this month reconciles** shows its Ca
 Investments, Debts, and Net worth bridges, and **How the projection reconciles**
 under the chart shows them across the whole projection (see
 [How a projection reconciles](../USER_GUIDE.md#how-a-projection-reconciles)). **Open in new tab** keeps the chosen
-scenario's projection in another browser tab.
+scenario's projection in another browser tab. **Cash runway** under the chart gives
+the [cash runway](../USER_GUIDE.md#cash-runway), and a comparison says which
+scenario's cash lasts longer.
 
 Under **Retirement drawdowns** on the same page, **Add drawdown…** sets up a saved
 scenario's [retirement drawdown](../USER_GUIDE.md#retirement-drawdown): the account to

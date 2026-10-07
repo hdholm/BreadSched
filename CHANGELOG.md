@@ -10,6 +10,16 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a243 - 2026-10-06
+
+- **Cash runway in every projection and comparison.** `Projection.runway()`
+  (`CashRunway`) gives how many months cash covers before it first goes negative
+  (or that it lasts), the lowest cash and when, the first goal shortfall, and each
+  drawdown account that runs out (`Projection.depletions`). `runway_lines` and
+  `runway_comparison_text` show it in the GTK projection notes, the browser's
+  **Cash runway** section and comparison, the printed Projection and comparison,
+  and after `project` (`runway` in `--json`) and `compare`.
+
 ## 0.2.0a242 - 2026-10-06
 
 - **The SQLite backend's lock, copies, and index checks have their own modules.**

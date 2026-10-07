@@ -31,6 +31,8 @@ from ...presentation import (
     plan_reimbursable_text,
     projection_goal_notes,
     reimbursement_outlook_text,
+    runway_comparison_text,
+    runway_lines,
 )
 
 __all__ = [
@@ -739,6 +741,7 @@ def projection_layout(
     ]
     if result.warnings:
         blocks.append(Paragraph("  ".join(result.warnings), warning=True))
+    blocks += [Heading("Cash runway"), *_notes(runway_lines(result.runway()))]
     goal_notes = projection_goal_notes(result)
     if goal_notes:
         blocks += [Heading("Savings goals"), *_notes(goal_notes)]
@@ -835,6 +838,7 @@ def _projection_comparison(result: Projection, comparison: Projection) -> list[B
             ),
             tuple(rows),
         ),
+        *_notes([runway_comparison_text(name, result.runway(), other, comparison.runway())]),
     ]
 
 

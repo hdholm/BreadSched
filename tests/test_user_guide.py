@@ -154,4 +154,6 @@ def test_the_command_line_walkthroughs_run_as_written(tmp_path, monkeypatch, cap
         assert main(argv) == 0, argv
     output = capsys.readouterr().out
     assert "covers the 9,000.00 set aside for goals" in output
-    assert "Lower returns" in output.rsplit("month", 1)[-1]
+    header = next(line for line in output.splitlines() if line.lstrip().startswith("month"))
+    assert "Lower returns" in header
+    assert "Lower returns: cash " in output

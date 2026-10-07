@@ -36,6 +36,7 @@ from ..presentation import (
     goal_milestone_text,
     projection_notes,
     reimbursement_outlook_text,
+    runway_comparison_text,
     service_error_message,
 )
 from .common import (
@@ -258,6 +259,7 @@ def cmd_project(args: argparse.Namespace) -> int:
                     for index, r in enumerate(result.rows)
                 ],
                 "goal_milestones": milestones,
+                "runway": result.runway().as_dict(),
                 "reimbursements": [
                     {**item.as_dict(), "text": reimbursement_outlook_text(item)}
                     for item in result.reimbursements
@@ -276,15 +278,7 @@ def cmd_project(args: argparse.Namespace) -> int:
         )
 
         if not args.json:
-            shortfall = result.first_shortfall()
             print()
-            if shortfall:
-                print(
-                    f"  Cash runs out in {shortfall.label} "
-                    f"({shortfall.cash_close.format(parens_negative=True)})"
-                )
-            else:
-                print(f"  Lowest cash balance: {result.minimum_cash.format()}")
             for note in projection_notes(result):
                 print(f"  {note}")
             if not result.completeness.complete:
@@ -606,6 +600,14 @@ def cmd_compare(args: argparse.Namespace) -> int:
                 right={1, 2, 3},
             ),
         )
+        if not args.json:
+            print()
+            print(
+                "  "
+                + runway_comparison_text(
+                    left_scenario.name, left.runway(), right_scenario.name, right.runway()
+                )
+            )
         return 0
     finally:
         db.close()

@@ -976,6 +976,13 @@ class TestScenarios:
         rows = run_json(capsys, "compare", planned, "Careful", "Hopeful")
         assert len(rows) == 5
         assert float(rows[-1]["net_worth_delta"]) > 0
+        code, text = run(capsys, "compare", planned, "Careful", "Hopeful")
+        assert code == 0
+        assert "Careful: cash " in text and "Hopeful: cash " in text
+        projected = run_json(capsys, "project", planned, "--scenario", "Careful")
+        assert projected["runway"]["months"] == 60
+        code, text = run(capsys, "project", planned, "--scenario", "Careful")
+        assert "Cash lasts the whole projection" in text or "Cash runs out in" in text
 
     def test_deleting_a_scenario(self, capsys, planned):
         run(capsys, "scenario", planned, "save", "--name", "Temp")

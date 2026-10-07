@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from .gen.engine.fsa import FsaYearStatus
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone
-    from .gen.engine.projection_result import Projection
+    from .gen.engine.projection_result import CashRunway, Projection
     from .gen.engine.reimbursement_outlook import ReimbursementOutlook
     from .gen.engine.savings_goals import GoalProgress
     from .gen.lib.scenario import GoalOverride, ReimbursementOverride
@@ -582,9 +582,52 @@ def reimbursement_override_text(scenario_name: str, override: ReimbursementOverr
     return f"{scenario_name}: " + ", ".join(parts)
 
 
+def runway_lines(runway: CashRunway) -> list[str]:
+    """How long cash lasts in one projection, in the words every interface shows."""
+    if runway.first_shortfall is None:
+        lines = [f"Cash lasts the whole projection ({runway.months} months)."]
+    else:
+        lines = [
+            f"Cash runs out in {runway.first_shortfall:%b %Y}, after "
+            f"{runway.months_covered} month{'' if runway.months_covered == 1 else 's'}."
+        ]
+    if runway.lowest_month is not None:
+        lines.append(
+            f"Lowest cash: {runway.lowest_cash.format(parens_negative=True)} in "
+            f"{runway.lowest_month:%b %Y}."
+        )
+    # The first month cash stops covering goal money is a savings-goal note.
+    lines.extend(f"{name} runs out in {when:%b %Y}." for name, when in runway.depletions)
+    return lines
+
+
+def runway_comparison_text(
+    primary: str, primary_runway: CashRunway, other: str, other_runway: CashRunway
+) -> str:
+    """Which of two scenarios' cash lasts longer, and by how much."""
+
+    def lasts(name: str, runway: CashRunway) -> str:
+        if runway.first_shortfall is None:
+            return f"{name}: cash lasts the whole {runway.months} months"
+        return (
+            f"{name}: cash runs out in {runway.first_shortfall:%b %Y} "
+            f"({runway.months_covered} months)"
+        )
+
+    gap = other_runway.months_covered - primary_runway.months_covered
+    if gap == 0:
+        verdict = "the same runway"
+    else:
+        longer = other if gap > 0 else primary
+        months = abs(gap)
+        verdict = f"{longer} lasts {months} month{'' if months == 1 else 's'} longer"
+    return f"{lasts(primary, primary_runway)}; {lasts(other, other_runway)}; {verdict}."
+
+
 def projection_notes(result: Projection) -> list[str]:
-    """Goal and expected-reimbursement notes a projection shows in every interface."""
+    """Runway, goal, and expected-reimbursement notes every interface shows."""
     return [
+        *runway_lines(result.runway()),
         *projection_goal_notes(result),
         *(reimbursement_outlook_text(item) for item in result.reimbursements),
     ]

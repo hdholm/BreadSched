@@ -816,6 +816,17 @@ clock. A calculation from edited draft controls remains temporary until you
 explicitly save those controls. The Projection summary and scenario comparison use
 the same dated calculation.
 
+### Cash runway
+
+Every projection says how long your spendable cash lasts: either that it lasts the
+whole projection, or the month it first goes negative and how many months it covers
+before then. It also gives the lowest projected cash and when, and the month any
+[retirement drawdown](#retirement-drawdown) empties its account. When you compare
+two scenarios, BreadSched says which one's cash lasts longer and by how many months.
+The desktop shows this in the notes under the Projection chart, the browser under
+**Cash runway**, the printed Projection in its own section, and the command line
+after `project` and `compare`.
+
 ### Retirement drawdown
 
 A scenario can draw down a retirement or investment account into a cash account,

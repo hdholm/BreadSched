@@ -32,6 +32,7 @@ from .currency import reporting_fraction
 from .escrow import recognition as escrow_recognition
 from .goal_projection import project_goals
 from .projection_result import (
+    CashRunway,
     ComparisonRow,
     MonthLedger,
     MonthRow,
@@ -44,6 +45,7 @@ from .projection_result import (
 from .reimbursement_outlook import reimbursement_outlook
 
 __all__ = [
+    "CashRunway",
     "ComparisonRow",
     "MonthLedger",
     "MonthRow",
@@ -610,6 +612,7 @@ class _Drawdowns:
         self.fraction = fraction
         # Escalation applied so far: (anniversaries counted, factor).
         self._escalation: dict[str, tuple[int, Decimal]] = {}
+        self._depleted: set[str] = set()
 
     def due(self, month: date) -> list[tuple[date, Drawdown]]:
         found: list[tuple[date, Drawdown]] = []
@@ -661,6 +664,9 @@ class _Drawdowns:
         wanted = wanted.quantize(self.fraction)
         amount = min(wanted, balance) if balance > 0 else Money(0)
         if amount < wanted:
+            if drawdown.handle not in self._depleted:
+                self._depleted.add(drawdown.handle)
+                self.result.depletions.append((account.name, when))
             _warn_once(
                 self.result,
                 f"the drawdown from {account.name!r} runs out of money on "

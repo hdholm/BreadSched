@@ -985,6 +985,15 @@ Changing Base then flows through every inherited field without disturbing local
 overrides. Plan, Projection, comparisons, and both scenario managers expose whether
 an effective value came from Base, the saved scenario, or one of its dated overrides.
 
+`Projection.runway()` returns a `CashRunway`: the horizon in months, the months
+covered before the first month that closes with negative cash, that month, the
+lowest cash and its month, the first goal shortfall, and each drawdown account the
+engine recorded as running out (`Projection.depletions`, set the first time a
+drawdown withdraws less than it asked for). `presentation.runway_lines` and
+`runway_comparison_text` word it for GTK's projection notes, the browser
+(`runway`, `runway_notes`, and the comparison's `runway` and `runway_comparison`),
+print, and the `project` and `compare` commands.
+
 `engine/projection` calculates; `engine/projection_result` holds what it returns
 (`Projection`, `MonthRow`, `MonthLedger`, `ProjectionProgress`, the month-detail
 types, and `compare`), which `projection` re-exports. The bridge, print, CSV
