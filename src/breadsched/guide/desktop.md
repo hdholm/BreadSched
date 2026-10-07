@@ -156,6 +156,9 @@ For an Investment or Retirement account, use **Security Price** (a toolbar icon 
 Accounts, or **Actions → Security Price…** there) to define a security and record an
 exact dated price. See
 [Security prices and current value](../USER_GUIDE.md#security-prices-and-current-value).
+**Actions → Holdings and Cost Basis…** in Accounts lists each holding's shares, cost,
+market value, and unrealized gain; expand a holding for its lots, sales, and notes
+(see [Holdings and cost basis](../USER_GUIDE.md#holdings-and-cost-basis)).
 
 ## Enter transactions in a register
 

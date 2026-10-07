@@ -42,6 +42,7 @@ from .gnucash_writeback_resource import (
     gnucash_writeback_settings,
 )
 from .guide_resource import guide
+from .holdings_resource import holdings
 from .import_resource import import_defaults, import_local, import_review, import_review_resolve
 from .loan_resource import loan_options, loan_preview, loan_save
 from .net_worth_resource import net_worth_change, net_worth_history
@@ -312,6 +313,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/plan/detail": _plan_detail,
     "/api/expense-explorer": _expense_explorer,
     "/api/net-worth-history": net_worth_history,
+    "/api/holdings": holdings,
     "/api/net-worth-change": net_worth_change,
     "/api/review": _review,
     "/api/scenarios": _without_query(scenarios),

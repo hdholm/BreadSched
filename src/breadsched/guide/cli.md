@@ -35,6 +35,7 @@ breadsched balance household.breadsched --as-of 2026-06-30
 breadsched dashboard household.breadsched --json
 breadsched activity household.breadsched --start 2026-06-01 --end 2026-12-31 \
     --as-of 2026-06-30
+breadsched holdings household.breadsched --lots   # cost basis, lots, and gains
 ```
 
 Start the other interfaces on the same book with `breadsched gui household.breadsched`

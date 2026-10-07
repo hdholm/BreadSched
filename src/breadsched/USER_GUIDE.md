@@ -911,7 +911,25 @@ retirement-context holding legs and does not change total holdings.
 
 Unclassified legacy movements use a compatible directional fallback, but explicit
 classification is needed to distinguish income, fees, and rollovers. BreadSched does
-not currently calculate tax, lots, or cost basis.
+not calculate tax.
+
+### Holdings and cost basis
+
+**Holdings and cost basis** lists each security you hold with its shares, what they
+cost, their market value at the latest price, and the unrealized gain or loss. Open a
+holding to see its lots (each purchase still held, with its cost) and each sale with
+what it brought, what the shares sold had cost, and the realized gain; realized gains
+are also totalled by year. A sale takes the oldest shares first ("first in, first
+out"). Nothing is stored: the figures come from the security account's transactions
+each time, so correcting a transaction corrects them.
+
+BreadSched says when it cannot be exact rather than guessing. Shares that arrived
+with no recorded cost (a transfer in, or a share split recorded as new shares) count
+at zero cost and are named; shares sold beyond the recorded purchases have no known
+cost; and without a price, or with a price in another currency than the cost, there
+is no unrealized gain. Open it from **Actions → Holdings and Cost Basis…** in the
+desktop Accounts view, **Holdings and cost basis…** in the browser's Accounts page,
+or `breadsched holdings` (with `--lots` for the detail).
 
 ### Escrow
 

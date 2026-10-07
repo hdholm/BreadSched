@@ -11,6 +11,7 @@ from .gen.services import ServiceError
 
 if TYPE_CHECKING:
     from .gen.engine.category_report import CategoryActivity
+    from .gen.engine.cost_basis import HoldingCostBasis
     from .gen.engine.fsa import FsaYearStatus
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone
@@ -763,3 +764,25 @@ def configure_language(languages: list[str] | None = None) -> None:
         languages=languages,
         fallback=True,
     )
+
+
+def holding_cost_text(holding: HoldingCostBasis) -> str:
+    """One holding's shares, cost basis, market value, and gains, in plain words."""
+    from .gen.engine.cost_basis import shares_text
+
+    parts = [f"{shares_text(holding.quantity)} shares cost {holding.cost.format()}"]
+    market = holding.market_value
+    gain = holding.unrealized_gain
+    if market is not None and gain is not None:
+        parts.append(f"worth {market.format()}")
+        parts.append(f"unrealized {'gain' if gain >= 0 else 'loss'} {abs(gain).format()}")
+    realized = holding.realized_by_year()
+    if realized:
+        parts.append(
+            "realized "
+            + ", ".join(
+                f"{year}: {amount.format(parens_negative=True)}"
+                for year, amount in realized.items()
+            )
+        )
+    return "; ".join(parts) + "."

@@ -184,6 +184,49 @@ async function openLoanEditor() {
   document.body.append(backdrop);
 }
 
+// Each security's cost basis: open lots first in, first out, sales, and gains.
+async function openHoldings() {
+  const data = await get("/api/holdings");
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const optional = (value) => value === null ? "—" : money(value);
+  const rows = data.holdings.map((item) => el("tr", {},
+    el("td", {}, item.name),
+    el("td", { class:"num" }, item.quantity),
+    el("td", { class:"num" }, money(item.cost)),
+    el("td", { class:"num" }, optional(item.market_value)),
+    el("td", { class:item.unrealized_gain === null ? "num" : cls(item.unrealized_gain) },
+      optional(item.unrealized_gain))));
+  const details = data.holdings.map((item) => el("details", { class:"panel holding" },
+    el("summary", {}, `${item.name}: ${item.text}`),
+    item.lots.length ? table(["Bought", { label:"Shares", num:true }, { label:"Cost", num:true }],
+      item.lots.map((lot) => el("tr", {}, el("td", {}, lot.acquired),
+        el("td", { class:"num" }, lot.quantity), el("td", { class:"num" }, money(lot.cost)))))
+      : el("p", { class:"note" }, "No shares held."),
+    item.sales.length ? table(["Sold", { label:"Shares", num:true },
+      { label:"Proceeds", num:true }, { label:"Cost", num:true }, { label:"Gain", num:true }],
+      item.sales.map((sale) => el("tr", {}, el("td", {}, sale.sold),
+        el("td", { class:"num" }, sale.quantity), el("td", { class:"num" }, money(sale.proceeds)),
+        el("td", { class:"num" }, money(sale.cost)),
+        el("td", { class:cls(sale.gain) }, money(sale.gain))))) : null,
+    ...item.problems.map((problem) => el("p", { class:"note neg" }, problem))));
+  backdrop.append(el("section", { class:"detail-dialog holdings-dialog" },
+    el("h2", {}, "Holdings and cost basis"),
+    el("p", { class:"note" },
+      "Lots come from each security account's transactions: a sale takes the oldest "
+      + "shares first. Gains compare with the latest quote; nothing is stored or rewritten."),
+    data.holdings.length
+      ? table(["Holding", { label:"Shares", num:true }, { label:"Cost", num:true },
+          { label:"Market value", num:true }, { label:"Unrealized", num:true }], rows)
+      : el("p", { class:"note" }, "No security holdings."),
+    ...details,
+    el("div", { class:"toolbar" }, el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"))));
+  document.body.append(backdrop);
+}
+
 async function openSecurityPriceEditor() {
   const data = await get("/api/commodities");
   const backdrop = el("div", {
@@ -801,7 +844,10 @@ async function showAccounts() {
       "Security price…"),
       el("button", { class:"action", type:"button",
         onclick:()=>openCurrencyRateEditor().catch((error)=>say(error.message,"error")) },
-      "Exchange rate…")),
+      "Exchange rate…"),
+      el("button", { class:"action", type:"button",
+        onclick:()=>openHoldings().catch((error)=>say(error.message,"error")) },
+      "Holdings and cost basis…")),
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them. Investment values use the latest dated price "

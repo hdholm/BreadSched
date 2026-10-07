@@ -1254,9 +1254,20 @@ currency (so Projection reports it as unconverted), and is left out of totals.
 source, then the exchange quote's date, source, and inverse path, or the missing
 rate) shared by the GTK and web Accounts views, CLI `accounts`, and Dashboard group
 members, so no surface implies a conversion that was not performed. Foreign-exchange graphs,
-automatic quote retrieval, lot/cost-basis accounting, and projected market prices
-are separate concerns and must not be approximated by treating monetary amounts as
+automatic quote retrieval, and projected market prices are separate concerns and must not be approximated by treating monetary amounts as
 prices or quantities.
+
+Cost basis (`engine/cost_basis`) is derived, never stored, like a receivable's
+status: each security account's splits are read in date order, a split adding
+shares opens a lot at its transaction-currency value, and a split removing shares
+consumes lots first in, first out with exact rational shares (`Money * Fraction`),
+recording proceeds, cost, and any shares sold beyond the recorded purchases.
+`HoldingCostBasis` compares the open lots' cost with `account_value`'s market value
+only when that value is a market quote in the same currency, and names zero-cost
+arrivals, uncovered sales, mixed currencies, and a missing or foreign quote instead
+of approximating. `presentation.holding_cost_text` words it for the GTK
+`HoldingsDialog`, the browser (`/api/holdings`, shares as exact decimal text), and
+`breadsched holdings`.
 
 Ordinary foreign-currency account valuation uses the latest direct quote on or
 before the as-of date, then the latest eligible reverse pair if no direct applies,

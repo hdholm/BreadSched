@@ -61,7 +61,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 - Use per-account and dated account-specific return/rate assumptions throughout
   projection UI/comparison/explanations.
 
-- Add investment lots and cost basis.
+- Let a sale name specific lots (or use average cost) instead of first in, first
+  out, and carry cost basis through transfers between accounts and share splits.
 
 - Add optional online quote retrieval with explicit provenance, staleness, and
   failure behavior; manual and imported quotes must remain usable offline.
