@@ -211,6 +211,8 @@ async function openHoldings() {
         el("td", { class:"num" }, sale.quantity), el("td", { class:"num" }, money(sale.proceeds)),
         el("td", { class:"num" }, money(sale.cost)),
         el("td", { class:cls(sale.gain) }, money(sale.gain))))) : null,
+    item.moves.length ? el("ul", { class:"holding-moves" },
+      ...item.moves.map((move) => el("li", {}, move.text))) : null,
     ...item.problems.map((problem) => el("p", { class:"note neg" }, problem))));
   backdrop.append(el("section", { class:"detail-dialog holdings-dialog" },
     el("h2", {}, "Holdings and cost basis"),

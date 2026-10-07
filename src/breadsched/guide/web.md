@@ -60,7 +60,8 @@ ledger transactions. The account data also include the signed number of days sin
 each quote (`quote_age_days`), with negative days identifying a future-dated quote.
 
 **Holdings and cost basis…** in **Accounts** lists each holding's shares, cost,
-market value, and unrealized gain; open a holding for its lots, sales, and notes
+market value, and unrealized gain; open a holding for its lots, sales, transfers,
+share splits, and notes
 (`/api/holdings`, share counts as exact decimal text). An Investment or Retirement
 account's settings choose **Cost of shares sold** (first in, first out, or average
 cost; `/api/account/cost-basis`). See

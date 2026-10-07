@@ -3186,6 +3186,8 @@ class TestDerivedPlanView:
         for when, quantity, value in (
             (date(2025, 1, 2), "3", "300"),
             (date(2025, 6, 2), "-1", "-150"),
+            # Two for one: a change of shares with no value on either leg.
+            (date(2025, 7, 1), "2", "0"),
         ):
             trade = Transaction(post_date=when, description="Trade")
             trade.currency = checking.commodity
@@ -3204,10 +3206,16 @@ class TestDerivedPlanView:
         dialog = HoldingsDialog(window, db)
         try:
             [holding] = dialog.holdings
-            assert (holding.quantity, holding.cost) == (Money(2), Money(200))
+            assert (holding.quantity, holding.cost) == (Money(4), Money(200))
             [detail] = dialog.details
             assert "realized 2025: 50.00" in detail.get_label()
-            assert detail.get_label().startswith("Assets:Index: 2 shares cost 200.00")
+            assert detail.get_label().startswith("Assets:Index: 4 shares cost 200.00")
+            lines = []
+            child = detail.get_child().get_first_child()
+            while child is not None:
+                lines.append(child.get_label())
+                child = child.get_next_sibling()
+            assert "Share split 2025-07-01: 2 shares became 4" in lines
         finally:
             dialog.destroy()
 

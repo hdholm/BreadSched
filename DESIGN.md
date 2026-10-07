@@ -1267,7 +1267,19 @@ open lot so each sold share costs the pool's average. The method is a per-accoun
 setting validated by the account service (`COST_BASIS_METHODS`) and kept across a
 GnuCash re-import, like the dependent-care flag; sales are
 recalculated, never re-stored, when it changes. Each sale records proceeds, cost,
-and any shares sold beyond the recorded purchases.
+and any shares sold beyond the recorded purchases. A split whose transaction gives
+the opposite quantity to another security account of the same commodity is a
+transfer (`LotMove`): the sender removes lots by its method without realizing
+anything, and the receiver re-derives the sender as of that date and adopts the
+exact lots it sent, keeping their purchase dates (so first in, first out stays in
+purchase order). Within a day, splits adding shares are read before splits removing
+them, so the result never depends on split-handle order. Shares moved both ways
+between the same two accounts on one day cannot be matched to lots and stay a named
+sale and purchase at their recorded values; for longer same-day cycles,
+re-derivation carries a visiting set of (account, date) pairs and falls back rather
+than recursing. A transaction whose other legs are all zero in value and
+quantity, changing shares at zero value while shares are held, is a share split:
+every lot's shares scale by the same exact factor and its cost stays.
 `HoldingCostBasis` compares the open lots' cost with `account_value`'s market value
 only when that value is a market quote in the same currency, and names zero-cost
 arrivals, uncovered sales, mixed currencies, and a missing or foreign quote instead

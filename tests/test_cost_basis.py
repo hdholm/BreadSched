@@ -103,8 +103,8 @@ def test_cost_shares_and_gains_stay_exact_over_thirds(db, book):
 
 def test_unknown_costs_are_named_not_guessed(db, book):
     account, fund, usd = _fund(db, book)
+    _trade(db, account, usd, book.opening, date(2024, 12, 1), "2", "0", "Transfer in")
     _trade(db, account, usd, book.checking, date(2025, 1, 1), "2", "200")
-    _trade(db, account, usd, book.opening, date(2025, 2, 1), "2", "0", "Share split")
     _trade(db, account, usd, book.checking, date(2025, 3, 1), "-6", "-600")
 
     result = cost_basis(db, account)
@@ -276,3 +276,197 @@ def test_web_and_cli_choose_the_method(db, book, tmp_path, capsys):
         assert reopened.get_account(account.handle).cost_basis_method == "fifo"
     finally:
         reopened.close()
+
+
+def _second_holding(db, book, fund, name="IRA holding"):
+    other = Account(
+        name=name,
+        atype=AccountType.RETIREMENT,
+        parent=book.assets,
+        commodity=fund.handle,
+        commodity_scu=1000,
+    )
+    with db.transaction("Second holding") as txn:
+        db.add_account(other, txn)
+    return other
+
+
+def _move(db, usd, source, target, when, quantity, value):
+    move = Transaction(post_date=when, description="Move shares")
+    move.currency = usd.handle
+    move.splits = [
+        Split(source.handle, -Money(value), quantity=-Money(quantity)),
+        Split(target.handle, Money(value), quantity=Money(quantity)),
+    ]
+    with db.transaction("Move shares") as txn:
+        db.add_transaction(move, txn)
+    return move
+
+
+def book_opening(db):
+    return next(item.handle for item in db.iter_accounts() if item.name == "Opening Balances")
+
+
+def _share_split(db, account, when, quantity):
+    change = Transaction(post_date=when, description="Stock split")
+    change.splits = [
+        Split(account.handle, Money(0), quantity=Money(quantity)),
+        Split(book_opening(db), Money(0)),
+    ]
+    with db.transaction("Stock split") as txn:
+        db.add_transaction(change, txn)
+    return change
+
+
+def test_a_transfer_carries_lots_and_realizes_nothing(db, book):
+    account, fund, usd = _fund(db, book)
+    ira = _second_holding(db, book, fund)
+    first = _trade(db, account, usd, book.checking, date(2024, 1, 10), "10", "1000")
+    _trade(db, account, usd, book.checking, date(2025, 1, 10), "10", "1500")
+    # The transfer is recorded at market value; the cost moves, not that value.
+    move = _move(db, usd, account, ira, date(2025, 6, 1), "12", "2400")
+    _trade(db, ira, usd, book.checking, date(2026, 1, 5), "-11", "-2200")
+
+    source = cost_basis(db, account)
+    assert source.sales == ()
+    [moved_out] = source.moves
+    assert (moved_out.kind, moved_out.quantity, moved_out.cost, moved_out.other_account) == (
+        "transfer_out",
+        Money(-12),
+        Money(1300),
+        ira.handle,
+    )
+    assert (source.quantity, source.cost) == (Money(8), Money(1200))
+
+    target = cost_basis(db, ira)
+    [moved_in] = target.moves
+    assert (moved_in.kind, moved_in.cost, moved_in.transaction) == (
+        "transfer_in",
+        Money(1300),
+        move.handle,
+    )
+    # The 10 shares bought in 2024 sell first, at their original cost.
+    [sale] = target.sales
+    assert (sale.cost, sale.gain) == (Money(1150), Money(1050))
+    [lot] = target.lots
+    assert (lot.acquired, lot.quantity, lot.cost, lot.transaction) == (
+        date(2025, 1, 10),
+        Money(1),
+        Money(150),
+        target.moves[0].lots[1].transaction,
+    )
+    assert target.moves[0].lots[0].transaction == first.handle
+    assert target.problems == ("no market quote, so there is no unrealized gain",)
+    assert target.as_dict()["moves"][0]["quantity"] == "12"
+
+
+def test_an_average_cost_account_moves_the_average(db, book):
+    account, fund, usd = _fund(db, book)
+    ira = _second_holding(db, book, fund)
+    _trade(db, account, usd, book.checking, date(2024, 1, 10), "10", "1000")
+    _trade(db, account, usd, book.checking, date(2025, 1, 10), "10", "1500")
+    account = _use_average(db, account)
+    _move(db, usd, account, ira, date(2025, 6, 1), "4", "800")
+
+    assert cost_basis(db, account).cost == Money(2000)
+    assert cost_basis(db, ira).cost == Money(500)
+
+
+def test_a_share_split_changes_shares_not_cost(db, book):
+    account, fund, usd = _fund(db, book)
+    _trade(db, account, usd, book.checking, date(2024, 1, 10), "10", "1000")
+    _trade(db, account, usd, book.checking, date(2025, 1, 10), "10", "1500")
+    _share_split(db, account, date(2025, 3, 1), "20")
+    _trade(db, account, usd, book.checking, date(2025, 9, 1), "-20", "-1800")
+    _share_split(db, account, date(2025, 10, 1), "-10")
+
+    result = cost_basis(db, account)
+
+    first_split, reverse = result.moves
+    assert (first_split.kind, first_split.held, first_split.quantity) == (
+        "split",
+        Money(20),
+        Money(20),
+    )
+    assert (reverse.held, reverse.quantity) == (Money(20), Money(-10))
+    # Two for one: the first 20 shares are the 2024 purchase at 50 each.
+    [sale] = result.sales
+    assert (sale.cost, sale.gain) == (Money(1000), Money(800))
+    [lot] = result.lots
+    assert (lot.quantity, lot.cost) == (Money(10), Money(1500))
+    assert result.problems == ("no market quote, so there is no unrealized gain",)
+
+
+def test_a_transfer_beyond_the_purchases_is_named(db, book):
+    account, fund, usd = _fund(db, book)
+    ira = _second_holding(db, book, fund)
+    _trade(db, account, usd, book.checking, date(2024, 1, 10), "2", "200")
+    _move(db, usd, account, ira, date(2025, 6, 1), "5", "500")
+
+    source = cost_basis(db, account)
+    target = cost_basis(db, ira)
+
+    assert source.problems == (
+        "3 shares were moved out beyond the recorded purchases; the receiving account "
+        "has no cost for them",
+    )
+    [moved_in] = target.moves
+    assert moved_in.cost == Money(200)
+    assert target.problems[0].startswith("3 shares arrived with no recorded cost")
+
+
+def test_a_same_day_exchange_both_ways_is_not_matched(db, book):
+    account, fund, usd = _fund(db, book)
+    ira = _second_holding(db, book, fund)
+    _trade(db, account, usd, book.checking, date(2024, 1, 10), "4", "400")
+    _move(db, usd, account, ira, date(2025, 6, 1), "3", "450")
+    _move(db, usd, ira, account, date(2025, 6, 1), "1", "150")
+
+    source = cost_basis(db, account)
+    target = cost_basis(db, ira)
+
+    # Each leg is a sale or purchase at its recorded value; nothing recurses.
+    assert source.moves == () and target.moves == ()
+    assert [sale.gain for sale in source.sales] == [Money(150)]
+    assert (source.quantity, source.cost) == (Money(2), Money(250))
+    assert (target.quantity, target.cost) == (Money(2), Money(300))
+    assert any("moved both ways with Assets:IRA holding" in note for note in source.problems)
+
+
+def test_moves_are_worded_for_every_interface(db, book, tmp_path, capsys):
+    from breadsched.cli.main import main
+    from breadsched.gen.db.sqlite import DbSQLite
+    from breadsched.presentation import lot_move_text
+    from breadsched.web.context import Api
+    from breadsched.web.holdings_resource import holdings
+    from breadsched.web.resources import QueryParams
+
+    account, fund, usd = _fund(db, book)
+    ira = _second_holding(db, book, fund)
+    _trade(db, account, usd, book.checking, date(2024, 1, 10), "10", "1000")
+    _share_split(db, account, date(2025, 3, 1), "10")
+    _move(db, usd, account, ira, date(2025, 6, 1), "4", "800")
+
+    split, moved = cost_basis(db, account).moves
+    assert lot_move_text(split) == "share split 2025-03-01: 10 shares became 20"
+    assert lot_move_text(moved, "Assets:IRA holding") == (
+        "moved out 2025-06-01 to Assets:IRA holding: 4 shares, cost 200.00"
+    )
+    [received] = cost_basis(db, ira).moves
+    assert lot_move_text(received, "Assets:Index holding") == (
+        "moved in 2025-06-01 from Assets:Index holding: 4 shares, cost 200.00"
+    )
+
+    payload = holdings(Api(db), QueryParams(""))
+    texts = [move["text"] for item in payload["holdings"] for move in item["moves"]]
+    assert "moved in 2025-06-01 from Assets:Index holding: 4 shares, cost 200.00" in texts
+
+    path = tmp_path / "moves.breadsched"
+    db.backup_to(str(path))
+    assert main(["holdings", str(path), "--lots"]) == 0
+    text = capsys.readouterr().out
+    assert "  share split 2025-03-01: 10 shares became 20" in text
+    assert "  moved out 2025-06-01 to Assets:IRA holding: 4 shares, cost 200.00" in text
+    reopened = DbSQLite()
+    reopened.load(str(path), mode="r")
+    reopened.close()

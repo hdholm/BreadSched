@@ -11,7 +11,7 @@ from .gen.services import ServiceError
 
 if TYPE_CHECKING:
     from .gen.engine.category_report import CategoryActivity
-    from .gen.engine.cost_basis import HoldingCostBasis
+    from .gen.engine.cost_basis import HoldingCostBasis, LotMove
     from .gen.engine.fsa import FsaYearStatus
     from .gen.engine.fsa_claims import SharedCost
     from .gen.engine.goal_projection import GoalMilestone
@@ -788,3 +788,21 @@ def holding_cost_text(holding: HoldingCostBasis) -> str:
             )
         )
     return "; ".join(parts) + "."
+
+
+def lot_move_text(move: LotMove, other_name: str | None = None) -> str:
+    """A transfer of shares or a share split, in plain words (lower case, for a list)."""
+    from .gen.engine.cost_basis import shares_text
+
+    day = move.when.isoformat()
+    if move.kind == "split":
+        held = move.held if move.held is not None else Money(0)
+        return (
+            f"share split {day}: {shares_text(held)} shares became "
+            f"{shares_text(held + move.quantity)}"
+        )
+    other = other_name or "another account"
+    shares = shares_text(abs(move.quantity))
+    if move.kind == "transfer_out":
+        return f"moved out {day} to {other}: {shares} shares, cost {move.cost.format()}"
+    return f"moved in {day} from {other}: {shares} shares, cost {move.cost.format()}"

@@ -157,7 +157,8 @@ Accounts, or **Actions → Security Price…** there) to define a security and r
 exact dated price. See
 [Security prices and current value](../USER_GUIDE.md#security-prices-and-current-value).
 **Actions → Holdings and Cost Basis…** in Accounts lists each holding's shares, cost,
-market value, and unrealized gain; expand a holding for its lots, sales, and notes
+market value, and unrealized gain; expand a holding for its lots, sales, transfers,
+share splits, and notes
 (see [Holdings and cost basis](../USER_GUIDE.md#holdings-and-cost-basis)). An
 Investment or Retirement account's editor chooses **Cost of shares sold**: first in,
 first out, or average cost.

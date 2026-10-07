@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from ..gen.engine.cost_basis import holdings_cost_basis, shares_text
-from ..presentation import holding_cost_text
+from ..presentation import holding_cost_text, lot_move_text
 from .common import AddCommand, emit, open_book, parse_date, table
 
 
@@ -36,6 +36,10 @@ def cmd_holdings(args: argparse.Namespace) -> int:
                         f"shares for {sale.proceeds.format()}, cost {sale.cost.format()}, "
                         f"gain {sale.gain.format(parens_negative=True)}"
                     )
+                for move in item.moves:
+                    other = db.get_account(move.other_account) if move.other_account else None
+                    name = db.full_name(other) if other is not None else None
+                    lines.append(f"  {lot_move_text(move, name)}")
             lines.extend(f"  note: {problem}" for problem in item.problems)
         summary = table(
             [
@@ -67,8 +71,12 @@ def register(add: AddCommand) -> None:
     """Add the investment subcommands."""
     holdings = add(
         "holdings",
-        "Each security's shares, cost basis (first in, first out), and gains",
+        "Each security's shares, cost basis, and gains",
     )
     holdings.add_argument("--as-of", help="holdings as at this date (YYYY-MM-DD)")
-    holdings.add_argument("--lots", action="store_true", help="list open lots and each sale")
+    holdings.add_argument(
+        "--lots",
+        action="store_true",
+        help="list open lots, each sale, and each transfer or share split",
+    )
     holdings.set_defaults(func=cmd_holdings)
