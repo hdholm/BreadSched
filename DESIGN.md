@@ -2078,6 +2078,15 @@ first), or GnuCash holds its lock (the SQLite `gnclock` table, or an XML book's
 `<book>.LCK` file). Because the source is proven unchanged, every difference is a
 local edit.
 
+The plugin is four layers, each importing only those below it (an architecture
+test checks this, and that no private name crosses a module): `gnucash_source`
+reads either format into `SourceBook` and holds the fingerprint and `preflight`
+refusals; `gnucash_writeback_plan` compares BreadSched with it
+(`plan_writeback`, `WritebackChange`, `TargetTxn`); `gnucash_book_writers` holds
+`write_sqlite` and `write_xml`; and `gnucash_writeback` backs up, applies,
+verifies, records the result, and re-exports the public API. The importers record
+the fingerprint through `gnucash_source`.
+
 Both formats are read into one neutral view (`SourceBook`: accounts with their
 commodity and SCU, currencies, and every real transaction with its splits, lots,
 and reconcile state; XML template transactions are excluded). Planning compares
