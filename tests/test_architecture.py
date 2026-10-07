@@ -984,10 +984,7 @@ class TestWarningPolicy:
         of it would also have hidden the Gtk.CssProvider deprecation this project
         did need to act on.
         """
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib
+        import tomllib
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
@@ -1132,10 +1129,7 @@ class TestPackagedResources:
         assert 'STYLE = """' not in source
 
     def test_all_web_assets_are_declared_as_package_data(self):
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib
+        import tomllib
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())

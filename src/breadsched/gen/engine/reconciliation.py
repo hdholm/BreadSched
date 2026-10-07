@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass
@@ -269,7 +269,7 @@ def complete(db: DbSQLite, handle: str) -> Reconciliation:
         split.reconcile_date = reconciliation.statement_date
 
     reconciliation.status = ReconciliationStatus.COMPLETED
-    reconciliation.completed_at = datetime.now(timezone.utc)
+    reconciliation.completed_at = datetime.now(UTC)
     reconciliation.cancelled_at = None
     reconciliation.audit_events.append(
         ReconciliationEvent("completed", reconciliation.completed_at)
@@ -287,7 +287,7 @@ def cancel(db: DbSQLite, handle: str) -> Reconciliation:
     """Close an unfinished session without changing any ledger split."""
     reconciliation = _require_open(db, handle)
     reconciliation.status = ReconciliationStatus.CANCELLED
-    reconciliation.cancelled_at = datetime.now(timezone.utc)
+    reconciliation.cancelled_at = datetime.now(UTC)
     reconciliation.audit_events.append(
         ReconciliationEvent("cancelled", reconciliation.cancelled_at)
     )
@@ -356,7 +356,7 @@ def reopen(db: DbSQLite, handle: str) -> Reconciliation:
     reconciliation.status = ReconciliationStatus.OPEN
     reconciliation.completed_at = None
     reconciliation.cancelled_at = None
-    reconciliation.audit_events.append(ReconciliationEvent("reopened", datetime.now(timezone.utc)))
+    reconciliation.audit_events.append(ReconciliationEvent("reopened", datetime.now(UTC)))
     with db.transaction("Reopen reconciliation") as txn:
         for transaction in transactions.values():
             db.commit_transaction(transaction, txn)

@@ -38,7 +38,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 from xml.sax.saxutils import escape, quoteattr
@@ -891,7 +891,7 @@ def _sqlite_apply(conn: sqlite3.Connection, book: SourceBook, change: WritebackC
     currency_guid = book.currencies[target.currency][0]
     posted = _sql_stamp(target.post_date, style)
     if operation.action == "new":
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         entered = (
             now.strftime("%Y%m%d%H%M%S")
             if style == "compact"
@@ -1127,7 +1127,7 @@ def _xml_transaction_element(
         _ts(posted, ns, target.post_date)
         entered = ET.SubElement(element, q("trn:date-entered"))
         stamp = ET.SubElement(entered, q("ts:date"))
-        stamp.text = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S +0000")
+        stamp.text = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S +0000")
         ET.SubElement(element, q("trn:description"))
         ET.SubElement(element, q("trn:splits"))
     _set_child(element, q("trn:num"), target.num, order)

@@ -256,7 +256,7 @@ def _load_records(source: Path, encoding: str, delimiter: str) -> tuple[list[lis
     try:
         records = list(csv.reader(text.splitlines(keepends=True), delimiter=chosen_delimiter))
     except csv.Error as exc:
-        # Python 3.10's reader refuses a NUL byte; later versions read it as text.
+        # The reader refuses some bytes (NUL before Python 3.11) and oversized fields.
         raise CsvMappingError(
             "import.csv.file.unreadable", f"the file is not CSV text: {exc}"
         ) from exc

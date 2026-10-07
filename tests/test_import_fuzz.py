@@ -141,7 +141,7 @@ def _import(importer, text: str, suffix: str):
 
 @settings(max_examples=150, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(qif_files())
-# Python 3.10's csv reader refuses a NUL byte where later versions read it.
+# A NUL byte: Python's csv reader refused it before 3.11, so it stays an example.
 @example("!Type:Prices\nD01/15/2026\nT\x00")
 def test_malformed_qif_never_corrupts_the_book(text):
     _import(qif, text, ".qif")

@@ -2575,6 +2575,12 @@ collection or startup into a traceback.
 
 ### Packaging
 
+BreadSched requires Python 3.11 or later (`requires-python`), and CI tests 3.11
+through 3.14 on Linux, macOS, and Windows; the Flatpak and Windows installer
+bundle their own interpreter. Python 3.10 support was dropped in 0.2.0a233
+(alpha software, and 3.10 reaches end of life in October 2026), which also removed
+the `tomli` fallback.
+
 **Flatpak.** The manifest builds the application into `/app` with the GNOME 49 SDK
 and grants Documents access (the default book location) and network access (the
 loopback web interface). Desktop integration files under `data/` are named by the

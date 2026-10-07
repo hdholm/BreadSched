@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from enum import Enum
 from typing import Any
 
@@ -63,7 +63,7 @@ class Reconciliation(PrimaryObject):
         self.status = (
             status if isinstance(status, ReconciliationStatus) else ReconciliationStatus(status)
         )
-        self.opened_at = datetime.now(timezone.utc)
+        self.opened_at = datetime.now(UTC)
         self.completed_at: datetime | None = None
         self.cancelled_at: datetime | None = None
         self.audit_events = [ReconciliationEvent("opened", self.opened_at)]

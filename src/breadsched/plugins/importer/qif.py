@@ -274,7 +274,7 @@ def _import_prices(
         try:
             row = next(csv.reader([line], skipinitialspace=True), [])
         except csv.Error:
-            # Python 3.10's reader refuses a NUL byte; later versions read it as text.
+            # The reader refuses some bytes (NUL before Python 3.11) and oversized fields.
             sink.result.skip("QIF price line is unreadable", line[:40], kind="price")
             continue
         if len(row) < 3:

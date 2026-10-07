@@ -7,7 +7,7 @@ name = "breadsched"
 dynamic = ["version"]
 description = "Event-driven cash-flow planning and multi-year projection personal financial management tool"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "AGPL-3.0-or-later"
 authors = [{ name = "Howard Holm" }]
 keywords = ["finance", "budget", "cashflow", "gtk4"]
@@ -33,7 +33,6 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.8",
     "build>=1.2",
-    "tomli>=2.0; python_version < '3.11'",
 ]
 
 [project.scripts]
@@ -84,13 +83,16 @@ also_copy = ["src/breadsched"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B"]
+# StrEnum changes what str() and format() return for each member, which the
+# stored and displayed values of the existing str-mixin enums depend on.
+ignore = ["UP042"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 ignore_missing_imports = true
 warn_unused_configs = true
 warn_redundant_casts = true

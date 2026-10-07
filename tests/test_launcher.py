@@ -166,7 +166,6 @@ class TestCliSubcommand:
         assert "gui" in capsys.readouterr().out
 
 
-@pytest.mark.skipif(sys.version_info < (3, 11), reason="tomllib needs 3.11")
 @pytest.mark.skipif(not _HAS_GTK4, reason="GTK4 is not importable")
 class TestStartingSuccessfully:
     """Requires PyGObject importable; the run() call itself is stubbed out."""
@@ -188,12 +187,8 @@ class TestStartingSuccessfully:
 class TestEntryPoints:
     def test_the_gui_script_points_at_the_launcher(self):
         """A console script bound to app:main would traceback without GTK."""
+        import tomllib
         from pathlib import Path
-
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
@@ -208,12 +203,8 @@ class TestEntryPoints:
         assert spec is not None
 
     def test_the_cli_script_is_breadsched(self):
+        import tomllib
         from pathlib import Path
-
-        try:
-            import tomllib
-        except ModuleNotFoundError:
-            import tomli as tomllib
 
         root = Path(__file__).resolve().parent.parent
         config = tomllib.loads((root / "pyproject.toml").read_text())
