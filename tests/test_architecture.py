@@ -870,6 +870,28 @@ class TestEngineBoundaries:
                     assert layers.index(node.module) < index, (name, node.module)
                     assert not any(alias.name.startswith("_") for alias in node.names), name
 
+    def test_book_files_lock_and_storage_checks_are_separate_from_storage(self):
+        """``DbSQLite`` stores objects; the lock, copies, and index checks live apart.
+
+        ``book_lock`` owns the single-writer lock, ``backups`` the backup, restore,
+        and read-snapshot copies, and ``storage_verification`` the derived-index
+        checks; none of them imports the backend.
+        """
+        db_dir = SRC / "gen" / "db"
+        tree = ast.parse((db_dir / "sqlite.py").read_text(encoding="utf-8"))
+        storage = next(
+            node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "DbSQLite"
+        )
+        methods = {node.name for node in storage.body if isinstance(node, ast.FunctionDef)}
+        assert methods.isdisjoint({"_writer_lock_path", "_pid_is_alive", "_acquire_book_lock"})
+        assert "_snapshot_of" not in _defined(tree)
+        for name in ("book_lock", "backups", "storage_verification"):
+            module = ast.parse((db_dir / f"{name}.py").read_text(encoding="utf-8"))
+            imported = {
+                node.module or "" for node in ast.walk(module) if isinstance(node, ast.ImportFrom)
+            }
+            assert "sqlite" not in imported, name
+
     def test_commit_verification_is_separate_from_storage(self):
         """``DbSQLite`` stores rows; ``ChangeVerification`` checks what a batch changed."""
         from breadsched.gen.db.change_verification import ChangeVerification

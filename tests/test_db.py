@@ -159,7 +159,7 @@ class TestReadSnapshots:
             writer.close()
 
     def test_a_failed_copy_closes_the_source_connection(self):
-        from breadsched.gen.db.sqlite import _snapshot_of
+        from breadsched.gen.db.backups import snapshot_of
 
         class Source:
             closed = False
@@ -171,7 +171,7 @@ class TestReadSnapshots:
                 Source.closed = True
 
         with pytest.raises(sqlite3.OperationalError):
-            _snapshot_of(Source())
+            snapshot_of(Source())
         assert Source.closed
 
     def test_verification_still_reads_the_file_itself(self, tmp_path):

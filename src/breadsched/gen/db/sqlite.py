@@ -14,8 +14,6 @@ this account" and "the balance on this date" index scans instead of full scans.
 from __future__ import annotations
 
 import json
-import os
-import socket
 import sqlite3
 import threading
 import time
@@ -36,10 +34,13 @@ from ..lib.scenario import Assumptions, Scenario
 from ..lib.scheduled import ScheduledTransaction
 from ..lib.transaction import Transaction
 from ..utils.logs import get_logger
-from ..utils.user_paths import companion_path, portal_document_id, sync_service_for_path
+from ..utils.user_paths import portal_document_id, sync_service_for_path
+from .backups import backup_connection, migration_backup_path, restore_backup, snapshot_of
 from .base import DbError, DbReadonlyError, DbTxn
+from .book_lock import BookWriterLock
 from .change_verification import ChangeVerification
 from .migrations import MIGRATIONS, MIN_SUPPORTED_SCHEMA_VERSION
+from .storage_verification import derived_column_issues, split_index_issues
 from .verification import BookIssue, BookVerification, verify_domain
 
 LOG = get_logger(__name__)
@@ -162,38 +163,9 @@ _TABLES: dict[str, tuple[type, str]] = {
 }
 
 
-def migration_backup_path(book: str | Path, version: int) -> Path:
-    """Where the verified backup made before migrating ``book`` from ``version`` goes.
-
-    Beside the book, or in BreadSched's data folder when the book was reached
-    through the document portal and nothing can be written beside it.
-    """
-    return companion_path(book, f".pre-migration-v{version}.bak")
-
-
 def is_portal_book(path: str | Path | None) -> bool:
     """Whether ``path`` is a file the sandbox reaches only through the document portal."""
     return bool(path) and path != ":memory:" and portal_document_id(str(path)) is not None
-
-
-def _snapshot_of(source: sqlite3.Connection) -> sqlite3.Connection:
-    """An in-memory copy of ``source``'s one committed generation; closes ``source``.
-
-    SQLite's backup copies every page under one shared lock (restarting if the
-    writer commits meanwhile), so the copy never mixes generations. The copy is
-    detached from the file: later commits are invisible to it and it never holds
-    up the writer, at the cost of the book's size in memory.
-    """
-    snapshot = sqlite3.connect(":memory:", check_same_thread=False)
-    try:
-        source.backup(snapshot)
-        snapshot.execute("PRAGMA query_only=ON")
-    except Exception:
-        snapshot.close()
-        raise
-    finally:
-        source.close()
-    return snapshot
 
 
 class DbSQLite(ChangeVerification):
@@ -208,118 +180,16 @@ class DbSQLite(ChangeVerification):
         self._write_lock = threading.RLock()
         self._tolerate_malformed = False
         self._verification_load_issues: dict[tuple[str, str], BookIssue] = {}
-        self._book_lock_path: Path | None = None
-        self._book_lock_token: str | None = None
+        self._book_lock: BookWriterLock | None = None
         #: Where the verified backup made before the last migration was written.
         self.migration_backup: str | None = None
 
     # ------------------------------------------------------------- life cycle
 
-    @staticmethod
-    def _writer_lock_path(path: str) -> Path:
-        resolved = Path(path).expanduser().resolve()
-        return resolved.with_name(f"{resolved.name}.lock")
-
-    @staticmethod
-    def _pid_is_alive(pid: int) -> bool:
-        if pid <= 0:
-            return False
-        if os.name == "nt":
-            # ``os.kill(pid, 0)`` is a harmless existence probe on POSIX. On
-            # Windows, however, signal value 0 is CTRL_C_EVENT and can interrupt
-            # the process whose liveness we are trying to inspect. Query a process
-            # handle instead and treat access-denied or unexpected errors
-            # conservatively as evidence that the process may still be alive.
-            import ctypes
-
-            win_dll = getattr(ctypes, "WinDLL", None)
-            if win_dll is None:  # pragma: no cover - defensive Windows fallback
-                return True
-            kernel32 = win_dll("kernel32", use_last_error=True)
-            process_query_limited_information = 0x1000
-            handle = kernel32.OpenProcess(process_query_limited_information, False, pid)
-            if handle:
-                kernel32.CloseHandle(handle)
-                return True
-            error_invalid_parameter = 87
-            get_last_error = getattr(ctypes, "get_last_error", lambda: 0)
-            return get_last_error() != error_invalid_parameter
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        except OSError:
-            return True
-        return True
-
-    def _acquire_book_lock(self, path: str) -> None:
-        if path == ":memory:":
-            return
-        lock_path = self._writer_lock_path(path)
-        hostname = socket.gethostname()
-        token = os.urandom(16).hex()
-        payload = {
-            "pid": os.getpid(),
-            "host": hostname,
-            "token": token,
-            "book": str(Path(path).expanduser().resolve()),
-        }
-        while True:
-            try:
-                fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-            except FileExistsError:
-                try:
-                    existing = json.loads(lock_path.read_text(encoding="utf-8"))
-                except (OSError, ValueError, TypeError):
-                    existing = {}
-                owner_host = existing.get("host")
-                owner_pid = existing.get("pid")
-                stale = (
-                    owner_host == hostname
-                    and isinstance(owner_pid, int)
-                    and not self._pid_is_alive(owner_pid)
-                )
-                if stale:
-                    try:
-                        lock_path.unlink()
-                    except FileNotFoundError:
-                        pass
-                    continue
-                owner = "another process"
-                if owner_host and owner_pid:
-                    owner = f"PID {owner_pid} on {owner_host}"
-                raise DbError(
-                    f"book is already open for writing by {owner}; "
-                    "close that writer or open this book read-only"
-                ) from None
-            else:
-                with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                    json.dump(payload, handle, sort_keys=True)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-                self._book_lock_path = lock_path
-                self._book_lock_token = token
-                return
-
     def _release_book_lock(self) -> None:
-        lock_path = self._book_lock_path
-        token = self._book_lock_token
-        self._book_lock_path = None
-        self._book_lock_token = None
-        if lock_path is None or token is None:
-            return
-        try:
-            existing = json.loads(lock_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return
-        if existing.get("token") != token:
-            return
-        try:
-            lock_path.unlink()
-        except FileNotFoundError:
-            pass
+        lock, self._book_lock = self._book_lock, None
+        if lock is not None:
+            lock.release()
 
     def load(self, path: str, mode: str = "w") -> None:
         """Open ``path`` writable (``"w"``) or as a read-only snapshot (``"r"``).
@@ -370,7 +240,7 @@ class DbSQLite(ChangeVerification):
         existing_book = path != ":memory:" and Path(path).exists() and Path(path).stat().st_size > 0
 
         if not self.readonly:
-            self._acquire_book_lock(path)
+            self._book_lock = BookWriterLock.acquire(path)
 
         # Read-only means read-only at SQLite level, not merely at our Python API.
         # This prevents PRAGMAs or accidental direct SQL from modifying the book.
@@ -379,7 +249,7 @@ class DbSQLite(ChangeVerification):
                 uri = Path(path).resolve().as_uri() + "?mode=ro"
                 source = sqlite3.connect(uri, uri=True, check_same_thread=False)
                 if snapshot:
-                    self._conn = _snapshot_of(source)
+                    self._conn = snapshot_of(source)
                 else:
                     # Verification diagnoses the file itself, damage included.
                     self._conn = source
@@ -509,50 +379,9 @@ class DbSQLite(ChangeVerification):
             conn.rollback()
             raise
 
-    @staticmethod
-    def _remove_sqlite_sidecars(path: Path) -> None:
-        for suffix in ("-wal", "-shm", "-journal"):
-            Path(str(path) + suffix).unlink(missing_ok=True)
-
     def backup_to(self, destination: str, *, overwrite: bool = False) -> str:
-        """Write a consistent, sidecar-free backup of the currently open book.
-
-        SQLite's backup API includes committed pages that still live in the WAL,
-        unlike copying only the main database file.  The destination is assembled
-        under a temporary name and atomically installed only after its SQLite
-        integrity check succeeds.
-        """
-        source = self._require()
-        target = Path(destination)
-        source_path = self.path
-        if source_path is not None and source_path != ":memory:":
-            try:
-                if target.resolve() == Path(source_path).resolve():
-                    raise DbError("backup destination must differ from the open book")
-            except FileNotFoundError:
-                pass
-        if target.exists() and not overwrite:
-            raise DbError(f"backup destination already exists: {target}")
-        target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(target.name + ".tmp")
-        temporary.unlink(missing_ok=True)
-        backup = sqlite3.connect(temporary)
-        try:
-            source.backup(backup)
-            backup.commit()
-            rows = backup.execute("PRAGMA integrity_check").fetchall()
-            problems = [str(row[0]) for row in rows if str(row[0]).lower() != "ok"]
-            if problems:
-                raise DbError("backup failed SQLite integrity check: " + "; ".join(problems))
-        except Exception:
-            backup.close()
-            temporary.unlink(missing_ok=True)
-            raise
-        else:
-            backup.close()
-        self._remove_sqlite_sidecars(target)
-        os.replace(temporary, target)
-        return str(target)
+        """Write a consistent, sidecar-free backup of the currently open book."""
+        return backup_connection(self._require(), destination, self.path, overwrite=overwrite)
 
     def _backup_before_migration(self, version: int) -> str | None:
         """Preserve a verified snapshot before the first migration write."""
@@ -564,84 +393,19 @@ class DbSQLite(ChangeVerification):
 
     @classmethod
     def restore_backup(cls, source: str, destination: str, *, overwrite: bool = False) -> str:
-        """Restore a verified BreadSched backup to ``destination``.
+        """Restore a verified BreadSched backup to ``destination`` (see ``backups``)."""
 
-        Restores never overwrite an existing book silently.  When overwrite is
-        explicitly requested, a consistent ``.pre-restore.bak`` copy of the old
-        book is made first so a mistaken restore remains reversible.
-        """
-        source_path = Path(source)
-        target = Path(destination)
-        if not source_path.exists():
-            raise DbError(f"backup does not exist: {source}")
-        if source_path.resolve() == target.resolve():
-            raise DbError("backup source and restore destination must differ")
-        if target.exists() and not overwrite:
-            raise DbError(f"restore destination already exists: {target}")
-
-        report = cls.verify_path(str(source_path))
-        if report.sqlite:
-            raise DbError("backup failed SQLite integrity check: " + "; ".join(report.sqlite))
-        if report.issues:
-            first = report.issues[0]
-            raise DbError(f"backup failed logical verification: {first.code}: {first.message}")
-
-        # Hold the ordinary writer lock for the destination throughout preservation
-        # and replacement. Replacing a pathname beneath a live SQLite connection
-        # can split two writers across different inodes and corrupt either copy.
-        target.parent.mkdir(parents=True, exist_ok=True)
-        guard = cls()
-        guard._acquire_book_lock(str(target))
-        try:
-            if target.exists():
-                # Opening writable while our external writer guard is held lets
-                # SQLite recover a genuine hot rollback journal before we preserve
-                # the destination. A read-only open cannot perform that recovery.
-                recovery = sqlite3.connect(target)
-                try:
-                    rows = recovery.execute("PRAGMA integrity_check").fetchall()
-                    problems = [str(row[0]) for row in rows if str(row[0]).lower() != "ok"]
-                    if problems:
-                        raise DbError(
-                            "existing destination failed SQLite recovery: " + "; ".join(problems)
-                        )
-                finally:
-                    recovery.close()
-                old = cls()
-                old.load(str(target), mode="r")
-                try:
-                    old.backup_to(str(companion_path(target, ".pre-restore.bak")), overwrite=True)
-                finally:
-                    old.close()
-
-            temporary = target.with_name(target.name + ".restore.tmp")
-            temporary.unlink(missing_ok=True)
-            source_conn = sqlite3.connect(source_path)
-            restored = sqlite3.connect(temporary)
+        def preserve(target: Path, copy: Path) -> None:
+            old = cls()
+            old.load(str(target), mode="r")
             try:
-                source_conn.backup(restored)
-                restored.commit()
-            except Exception:
-                restored.close()
-                source_conn.close()
-                temporary.unlink(missing_ok=True)
-                raise
-            else:
-                restored.close()
-                source_conn.close()
-            try:
-                copied = cls.verify_path(str(temporary))
-            except Exception:
-                temporary.unlink(missing_ok=True)
-                raise
-            if not copied.ok:
-                temporary.unlink(missing_ok=True)
-                raise DbError("restored copy failed verification before installation")
-            cls._remove_sqlite_sidecars(target)
-            os.replace(temporary, target)
-        finally:
-            guard._release_book_lock()
-        return str(target)
+                old.backup_to(str(copy), overwrite=True)
+            finally:
+                old.close()
+
+        return restore_backup(
+            source, destination, overwrite=overwrite, verify=cls.verify_path, preserve=preserve
+        )
 
     def integrity_problems(self) -> list[str]:
         """Return SQLite integrity failures; an empty list means the file is sound."""
@@ -697,140 +461,12 @@ class DbSQLite(ChangeVerification):
         issues.extend(verify_domain(self))
         conn = self._require()
 
-        # Derived columns are query accelerators only; the JSON blob is
-        # authoritative.  Detect drift so indexes can be rebuilt rather than
-        # silently returning different data depending on the query path.
-        derived_specs: dict[str, tuple[str, ...]] = {
-            "commodity": ("mnemonic",),
-            "price": ("commodity", "currency", "quote_date", "source"),
-            "account": ("parent", "name", "atype"),
-            "txn": ("post_date", "description"),
-            "scheduled": ("name",),
-            "scenario": ("name",),
-            "fsa_claim": ("service_date", "provider"),
-            "receivable": ("incurred_date", "payer"),
-            "reconciliation": ("account", "statement_date", "status"),
-            "payee": ("name",),
-            "savings_goal": ("name",),
-        }
-        defaults: dict[tuple[str, str], Any] = {
-            ("commodity", "mnemonic"): "",
-            ("price", "commodity"): "",
-            ("price", "currency"): "",
-            ("price", "quote_date"): "",
-            ("price", "source"): "",
-            ("account", "parent"): None,
-            ("account", "name"): "",
-            ("account", "atype"): "",
-            ("txn", "description"): "",
-            ("scheduled", "name"): "",
-            ("scenario", "name"): "",
-            ("fsa_claim", "service_date"): "",
-            ("receivable", "incurred_date"): "",
-            ("fsa_claim", "provider"): "",
-            ("receivable", "payer"): "",
-            ("reconciliation", "account"): "",
-            ("reconciliation", "statement_date"): "",
-            ("reconciliation", "status"): "",
-            ("payee", "name"): "",
-            ("savings_goal", "name"): "",
-        }
-        for table, columns in derived_specs.items():
-            selected = ", ".join(("handle", *columns, "blob"))
-            internal_handles: dict[str, str] = {}
-            for row in conn.execute(f"SELECT {selected} FROM {table}"):
-                try:
-                    data = json.loads(row["blob"])
-                except (json.JSONDecodeError, TypeError):
-                    continue  # the malformed-object diagnostic already owns this row
-                internal = data.get("handle")
-                if internal != row["handle"]:
-                    issues.append(
-                        BookIssue(
-                            f"{table}.handle_mismatch",
-                            f"{table} row {row['handle']} contains object handle {internal!r}",
-                            row["handle"],
-                        )
-                    )
-                if internal is not None:
-                    previous = internal_handles.get(internal)
-                    if previous is not None and previous != row["handle"]:
-                        issues.append(
-                            BookIssue(
-                                f"{table}.duplicate_object_handle",
-                                f"{table} rows {previous} and {row['handle']} both contain "
-                                f"object handle {internal}",
-                                row["handle"],
-                            )
-                        )
-                    else:
-                        internal_handles[internal] = row["handle"]
-                for column in columns:
-                    expected_value = data.get(column, defaults.get((table, column)))
-                    if table == "txn" and column == "post_date" and expected_value is not None:
-                        expected_value = str(expected_value)
-                    if row[column] != expected_value:
-                        issues.append(
-                            BookIssue(
-                                f"{table}.index_mismatch",
-                                f"{table} derived column {column} disagrees with blob for "
-                                f"{row['handle']}",
-                                row["handle"],
-                            )
-                        )
+        issues.extend(derived_column_issues(conn))
 
         for claim in self.iter_fsa_claims():
             issues.extend(self._verify_fsa_claim_references(claim))
 
-        expected: dict[str, tuple[str, str, str, int, int, int, int]] = {}
-        for transaction in self.iter_transactions():
-            for split in transaction.splits:
-                expected[split.handle] = (
-                    transaction.handle,
-                    split.account,
-                    transaction.post_date.isoformat(),
-                    split.value.numerator,
-                    split.value.denominator,
-                    split.quantity.numerator,
-                    split.quantity.denominator,
-                )
-
-        actual = {
-            row["handle"]: (
-                row["txn"],
-                row["account"],
-                row["post_date"],
-                row["value_num"],
-                row["value_den"],
-                row["quantity_num"],
-                row["quantity_den"],
-            )
-            for row in conn.execute(
-                "SELECT handle, txn, account, post_date, value_num, value_den, "
-                "quantity_num, quantity_den FROM split_index"
-            )
-        }
-        for handle in sorted(expected.keys() - actual.keys()):
-            issues.append(
-                BookIssue(
-                    "split_index.missing", f"split {handle} is missing from split_index", handle
-                )
-            )
-        for handle in sorted(actual.keys() - expected.keys()):
-            issues.append(
-                BookIssue(
-                    "split_index.orphan", f"split_index contains unknown split {handle}", handle
-                )
-            )
-        for handle in sorted(expected.keys() & actual.keys()):
-            if expected[handle] != actual[handle]:
-                issues.append(
-                    BookIssue(
-                        "split_index.mismatch",
-                        f"split_index disagrees with transaction data for split {handle}",
-                        handle,
-                    )
-                )
+        issues.extend(split_index_issues(conn, self.iter_transactions()))
         seen = {(issue.code, issue.handle, issue.message) for issue in issues}
         for issue in self._verification_load_issues.values():
             key = (issue.code, issue.handle, issue.message)

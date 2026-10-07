@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a242 - 2026-10-06
+
+- **The SQLite backend's lock, copies, and index checks have their own modules.**
+  `gen/db/sqlite` (1,641 lines) also held the writer lock, backup and restore, read
+  snapshots, and the derived-index checks. `BookWriterLock` (`gen/db/book_lock`),
+  `backup_connection`, `restore_backup`, `snapshot_of`, and `migration_backup_path`
+  (`gen/db/backups`), and `derived_column_issues` and `split_index_issues`
+  (`gen/db/storage_verification`) now hold them; `DbSQLite` keeps `backup_to`,
+  `restore_backup`, and `verify_book` as delegates (1,277 lines). An architecture
+  test checks that the new modules never import the backend. No behavior changed.
+
 ## 0.2.0a241 - 2026-10-06
 
 - **GnuCash write-back is split into layers.** `plugins/export/gnucash_writeback`

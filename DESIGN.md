@@ -573,6 +573,13 @@ the pathname beneath another live writer. Verification opens malformed books in 
 special tolerant read-only mode so damage is reported rather than decoded into
 ordinary engine state.
 
+`gen/db/book_lock.BookWriterLock` owns the single-writer `<book>.lock` file,
+`gen/db/backups` the backup, restore (given the verifier and the pre-restore copy
+as callables), migration-backup path, and read-snapshot copies, and
+`gen/db/storage_verification` the derived-column and `split_index` checks that
+`verify_book()` adds to the domain pass. None of them imports the backend, and
+`DbSQLite` keeps the same public methods, delegating to them.
+
 Verification should protect invariants without imposing whole-book work on every
 small edit. Cross-cutting metadata that participates in financial workflows must
 obey the same transaction/undo rules as ordinary primary objects. A direct metadata
