@@ -147,7 +147,7 @@ form.entry label { display: flex; flex-direction: column; font-size: 12px; color
 button.destructive { color: var(--bad); }
 button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .toolbar.compact { margin: 0; gap: 4px; }
-.period-editor { padding: 14px 16px; }
+.period-editor, .drawdown-editor { padding: 14px 16px; }
 .plan-table { max-height: calc(100vh - 310px); }
 .plan-table thead th { position: sticky; top: 0; z-index: 3; }
 .plan-table th:first-child, .plan-table td:first-child { position: sticky; left: 0; background: var(--panel); z-index: 2; }

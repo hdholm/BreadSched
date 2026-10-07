@@ -207,6 +207,7 @@ async function showScenarios() {
     onchange: (event) => {
       state.scenarioManager = event.target.value;
       state.scenarioPeriod = null;
+      state.scenarioDrawdown = null;
       render();
     },
   }, data.scenarios.map((scenario) => el("option", {
@@ -416,5 +417,131 @@ async function showScenarios() {
           periodRows.length
             ? table(["Start", "Through", "Description", "Overrides", "Action"], periodRows)
             : el("p", { class: "note" }, "No dated assumption periods."),
-          periodEditor));
+          periodEditor,
+          drawdownSection(data, selected)));
+}
+
+// Retirement drawdowns: monthly withdrawals a saved scenario projects from a
+// holding account into cash. The service validates; a refusal changes nothing.
+function drawdownSection(data, selected) {
+  const sources = data.drawdown_sources || [];
+  const targets = data.drawdown_targets || [];
+  const nameOf = (handle) => ([...sources, ...targets].find((item) => item.handle === handle)
+    || { name: handle }).name;
+  // Rounded to 8 places only to hide binary floating-point noise in display.
+  const percent = (rate) => String(Number((Number(rate) * 100).toFixed(8)));
+  const describe = (drawdown) => drawdown.annual_rate !== null
+    ? `${percent(drawdown.annual_rate)}% of the balance a year`
+    : `${money(drawdown.annual_amount)} a year${drawdown.escalate ? ", rising with inflation" : ""}`;
+  const rows = selected.drawdowns.map((drawdown) => el("tr", {},
+    el("td", {}, nameOf(drawdown.account)),
+    el("td", {}, nameOf(drawdown.into)),
+    el("td", {}, drawdown.start),
+    el("td", {}, drawdown.end || "onward"),
+    el("td", {}, describe(drawdown)),
+    el("td", {},
+      el("div", { class: "toolbar compact" },
+        el("button", {
+          class: "action", type: "button",
+          onclick: () => { state.scenarioDrawdown = drawdown.handle; render(); },
+        }, "Edit"),
+        el("button", {
+          class: "action destructive", type: "button",
+          onclick: async () => {
+            try {
+              await post("/api/scenario/drawdown/delete", {
+                handle: selected.handle, drawdown: drawdown.handle,
+              });
+              state.scenarioDrawdown = null;
+              say("Drawdown removed.");
+              render();
+            } catch (error) { say(error.message, "error"); }
+          },
+        }, "Remove")))));
+
+  let editor = null;
+  const editing = selected.drawdowns.find((item) => item.handle === state.scenarioDrawdown);
+  if (state.scenarioDrawdown !== "new" && !editing) state.scenarioDrawdown = null;
+  if (state.scenarioDrawdown !== null) {
+    const choose = (name, items, value) => el("select", { name, required: "required" },
+      items.map((item) => el("option", {
+        value: item.handle, selected: item.handle === value ? "selected" : null,
+      }, item.name)));
+    const byRate = editing ? editing.annual_rate !== null : false;
+    editor = el("form", { class: "panel drawdown-editor", onsubmit: async (event) => {
+      event.preventDefault();
+      const values = new FormData(event.target);
+      const method = values.get("method");
+      const share = String(values.get("annual_rate") || "").trim();
+      try {
+        await post("/api/scenario/drawdown/save", {
+          handle: selected.handle,
+          drawdown: editing ? editing.handle : null,
+          account: values.get("account"), into: values.get("into"),
+          start: values.get("start"), end: values.get("end"), method,
+          annual_amount: values.get("annual_amount"),
+          annual_percent: share,
+          escalate: values.get("escalate") === "on",
+        });
+        state.scenarioDrawdown = null;
+        say("Drawdown saved.");
+        render();
+      } catch (error) { say(error.message, "error"); }
+    } },
+      el("h3", {}, editing ? "Edit drawdown" : "Add drawdown"),
+      el("p", { class: "note" },
+        "Withdrawals happen monthly on the start date's day. A fixed yearly amount is taken in twelve parts; a share of the balance takes a twelfth of that share of the projected balance each month. A withdrawal never takes more than the account holds."),
+      el("div", { class: "scenario-fields" },
+        el("label", {}, "Withdraw from", choose("account", sources, editing && editing.account)),
+        el("label", {}, "Pay into", choose("into", targets, editing && editing.into)),
+        el("label", {}, "Start", el("input", {
+          type: "date", name: "start", required: "required",
+          value: editing ? editing.start : new Date().toISOString().slice(0, 10),
+        })),
+        el("label", {}, "Through (blank = onward)", el("input", {
+          type: "date", name: "end", value: editing ? (editing.end || "") : "",
+        }))),
+      el("fieldset", {},
+        el("legend", {}, "Withdraw"),
+        el("label", {}, el("input", {
+          type: "radio", name: "method", value: "amount", checked: byRate ? null : "checked",
+        }), " A fixed yearly amount "),
+        el("input", {
+          name: "annual_amount", inputmode: "decimal", "aria-label": "Yearly amount",
+          value: editing && editing.annual_amount !== null ? editing.annual_amount : "",
+        }),
+        el("label", {}, el("input", {
+          type: "checkbox", name: "escalate",
+          checked: !editing || editing.escalate ? "checked" : null,
+        }), " Rise with expense inflation each year"),
+        el("br"),
+        el("label", {}, el("input", {
+          type: "radio", name: "method", value: "rate", checked: byRate ? "checked" : null,
+        }), " A yearly share of the balance (%) "),
+        el("input", {
+          name: "annual_rate", inputmode: "decimal", "aria-label": "Yearly share percent",
+          value: byRate ? percent(editing.annual_rate) : "",
+        })),
+      el("div", { class: "toolbar" },
+        el("button", { class: "action primary", type: "submit" }, "Save drawdown"),
+        el("button", {
+          class: "action", type: "button",
+          onclick: () => { state.scenarioDrawdown = null; render(); },
+        }, "Cancel")));
+  }
+
+  return el("div", {},
+    el("div", { class: "toolbar" },
+      el("h3", { class: "push-right" }, "Retirement drawdowns"),
+      el("button", {
+        class: "action", type: "button",
+        disabled: sources.length && targets.length ? null : "disabled",
+        onclick: () => { state.scenarioDrawdown = "new"; render(); },
+      }, "Add drawdown…")),
+    rows.length
+      ? table(["From", "Into", "Start", "Through", "Withdraws", "Action"], rows)
+      : el("p", { class: "note" }, sources.length && targets.length
+        ? "No drawdowns. Add one to model living on retirement or investment savings."
+        : "A drawdown needs a retirement or investment account and a cash account."),
+    editor);
 }

@@ -60,9 +60,6 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Investment and retirement modeling
 
-- Edit scenario retirement drawdowns in the desktop and browser Projection
-  scenario editors (the engine, service, and CLI exist).
-
 - Use per-account and dated account-specific return/rate assumptions throughout
   projection UI/comparison/explanations.
 

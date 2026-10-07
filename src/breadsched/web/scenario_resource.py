@@ -1,4 +1,4 @@
-"""HTTP input and output for scenarios: assumptions, dated periods, and events.
+"""HTTP input and output for scenarios: assumptions, dated periods, events, drawdowns.
 
 This adapter parses browser assumption and schedule controls and translates the
 shared scenario services' results. Validation and every write stay in
@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import TYPE_CHECKING
 
 from ..gen.db.sqlite import DbSQLite
@@ -20,6 +20,7 @@ from ..gen.lib import (
     AccountClass,
     AssumptionPeriod,
     Assumptions,
+    Drawdown,
     InvestmentActivityKind,
     PlanningFlowKind,
     Rate,
@@ -34,14 +35,18 @@ from ..gen.services import (
     FixedScheduleInput,
     SaveAssumptionPeriod,
     SaveBaseAssumptions,
+    SaveDrawdown,
     SaveFixedScenarioSchedule,
     SaveScenarioAssumptions,
     SuppressScenarioSchedule,
     delete_assumption_period,
     delete_scenario,
+    drawdown_accounts,
     duplicate_scenario,
+    remove_drawdown,
     save_assumption_period,
     save_base_assumptions,
+    save_drawdown,
     save_fixed_scenario_schedule,
     save_scenario_assumptions,
     suppress_scenario_schedule,
@@ -81,6 +86,21 @@ def scenario_payload(scenario: Scenario, *, base: bool = False) -> dict:
             for index, period in enumerate(scenario.assumption_periods)
         ],
         "schedule_changes": 0 if base else len(scenario.schedule_overrides),
+        "drawdowns": [] if base else [drawdown_payload(item) for item in scenario.drawdowns],
+    }
+
+
+def drawdown_payload(drawdown: Drawdown) -> dict:
+    """One drawdown rule; the JSON encoder writes its amount and rate as exact text."""
+    return {
+        "handle": drawdown.handle,
+        "account": drawdown.account,
+        "into": drawdown.into,
+        "start": drawdown.start.isoformat(),
+        "end": drawdown.end.isoformat() if drawdown.end else None,
+        "annual_amount": drawdown.annual_amount,
+        "annual_rate": str(drawdown.annual_rate) if drawdown.annual_rate is not None else None,
+        "escalate": drawdown.escalate,
     }
 
 
@@ -106,12 +126,20 @@ def scenarios_report(db: DbSQLite, base: Scenario) -> dict:
             }
         )
     projection_accounts.sort(key=lambda item: item["name"].casefold())
+    sources, targets = drawdown_accounts(db)
+
+    def choices(handles: list[str]) -> list[dict]:
+        named = [{"handle": handle, "name": db.full_name(handle)} for handle in handles]
+        return sorted(named, key=lambda item: item["name"].casefold())
+
     return {
         "scenarios": [
             scenario_payload(base, base=True),
             *(scenario_payload(item) for item in db.iter_scenarios()),
         ],
         "projection_accounts": projection_accounts,
+        "drawdown_sources": choices(sources),
+        "drawdown_targets": choices(targets),
     }
 
 
@@ -425,6 +453,64 @@ def scenario_period_delete(api: Api, payload: dict) -> dict:
     if not result.ok:
         raise service_error(result.errors[0])
     saved = api.db.get_scenario(scenario.handle)
+    assert saved is not None
+    return scenario_payload(saved)
+
+
+def _drawdown_rate(fraction: str, percent: str) -> Decimal | None:
+    """A yearly share of the balance, as a fraction or an exact percent (4 is 0.04).
+
+    The service checks its range.
+    """
+    text = percent or fraction
+    if not text:
+        return None
+    try:
+        value = Decimal(text.rstrip("%").strip())
+    except InvalidOperation as exc:
+        raise ValueError("the yearly share must be a number such as 4") from exc
+    return (value / 100).normalize() if percent else value
+
+
+def scenario_drawdown_save(api: Api, payload: dict) -> dict:
+    """Add or replace one drawdown; the service validates and writes it."""
+    method = str(payload.get("method") or "amount")
+    if method not in {"amount", "rate"}:
+        raise ValueError("choose a fixed amount or a share of the balance")
+    amount_text = str(payload.get("annual_amount") or "").strip()
+    rate_text = str(payload.get("annual_rate") or "").strip()
+    percent_text = str(payload.get("annual_percent") or "").strip()
+    end_text = str(payload.get("end") or "").strip()
+    handle = str(payload.get("drawdown") or "").strip() or None
+    result = save_drawdown(
+        api.db,
+        SaveDrawdown(
+            str(payload.get("handle") or "").strip(),
+            str(payload.get("account") or "").strip(),
+            str(payload.get("into") or "").strip(),
+            date.fromisoformat(str(payload.get("start") or "")),
+            annual_amount=(
+                input_money(payload, amount_text) if method == "amount" and amount_text else None
+            ),
+            annual_rate=_drawdown_rate(rate_text, percent_text) if method == "rate" else None,
+            end=date.fromisoformat(end_text) if end_text else None,
+            escalate=bool(payload.get("escalate", True)),
+            handle=handle,
+        ),
+    )
+    if not result.ok:
+        raise service_error(result.errors[0])
+    saved = api.db.get_scenario(str(payload.get("handle")))
+    assert saved is not None
+    return scenario_payload(saved)
+
+
+def scenario_drawdown_delete(api: Api, payload: dict) -> dict:
+    scenario_handle = str(payload.get("handle") or "").strip()
+    result = remove_drawdown(api.db, scenario_handle, str(payload.get("drawdown") or "").strip())
+    if not result.ok:
+        raise service_error(result.errors[0])
+    saved = api.db.get_scenario(scenario_handle)
     assert saved is not None
     return scenario_payload(saved)
 

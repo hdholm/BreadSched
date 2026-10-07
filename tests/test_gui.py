@@ -3166,6 +3166,68 @@ class TestDerivedPlanView:
         assert reloaded.assumption_sources()["income_growth"] == "Inherited future"
         assert reloaded.effective_assumptions().income_growth == Decimal("0.0125")
 
+    def test_retirement_drawdowns_are_added_edited_and_removed(self, app, window, populated_book):
+        from breadsched.gen.lib import Account, AccountType, Money, Scenario
+        from breadsched.gen.services import drawdown_accounts
+        from breadsched.gui.dialogs.drawdown_dialog import DrawdownEditDialog, DrawdownsDialog
+        from breadsched.gui.dialogs.scenario_manager_dialog import ScenarioManagerDialog
+
+        app.open_book(populated_book)
+        db = app.db
+        assets = next(item for item in db.iter_accounts() if item.name == "Assets")
+        scenario = Scenario(name="Retire", start=date(2030, 1, 1), years=10)
+        with db.transaction("Retirement setup") as txn:
+            ira = Account(name="IRA", atype=AccountType.RETIREMENT, parent=assets.handle)
+            db.add_account(ira, txn)
+            db.add_scenario(scenario, txn)
+        _sources, targets = drawdown_accounts(db)
+
+        manager = ScenarioManagerDialog(window, db, window)
+        index = next(
+            i for i, item in enumerate(manager._scenarios, 1) if item.handle == scenario.handle
+        )
+        manager.picker.set_selected(index)
+        assert manager.drawdown_button.get_sensitive() is True
+        assert manager.drawdown_summary.get_text() == "0 retirement drawdown(s)."
+
+        saved: list[str] = []
+        listing = DrawdownsDialog(manager, db, db.get_scenario(scenario.handle), saved.append)
+        editor = DrawdownEditDialog(listing, db, listing.scenario, None, listing._after_commit)
+        editor.account_picker.set_selected(editor._sources.index(ira.handle))
+        editor.into_picker.set_selected(editor._targets.index(targets[0]))
+        editor.start_entry.set_text("2031-07-01")
+        editor.amount_entry.set_text("0")
+        editor._on_save(None)
+        assert editor.status.get_text() == "The yearly amount must be more than zero"
+        assert db.get_scenario(scenario.handle).drawdowns == []
+
+        editor.amount_entry.set_text("36000")
+        editor._on_save(None)
+        (stored,) = db.get_scenario(scenario.handle).drawdowns
+        assert (stored.account, stored.into, stored.annual_amount) == (
+            ira.handle,
+            targets[0],
+            Money(36000),
+        )
+        assert stored.escalate is True and saved == [scenario.handle]
+        assert "36,000.00 a year, rising with inflation" in listing.picker.get_model().get_string(0)
+
+        change = DrawdownEditDialog(listing, db, listing.scenario, stored, listing._after_commit)
+        assert change.amount_choice.get_active() is True
+        change.rate_choice.set_active(True)
+        assert change.amount_entry.get_sensitive() is False
+        change.rate_entry.set_text("4.1")
+        change._on_save(None)
+        (changed,) = db.get_scenario(scenario.handle).drawdowns
+        assert changed.handle == stored.handle
+        assert (changed.annual_rate, changed.annual_amount) == (Decimal("0.041"), None)
+        assert "4.1% of the balance a year" in listing.picker.get_model().get_string(0)
+
+        listing._on_remove(None)
+        assert db.get_scenario(scenario.handle).drawdowns == []
+        manager._reload(scenario.handle)
+        assert manager.drawdown_summary.get_text() == "0 retirement drawdown(s)."
+
     def test_scenario_manager_reparents_without_offering_a_descendant(
         self, app, window, populated_book
     ):
@@ -7285,6 +7347,7 @@ class TestDialogsFitTheScreen:
         ("account_dialog", "AccountDialog", "account"),
         ("csv_import_dialog", "CsvImportDialog", None),
         ("dashboard_dialog", "DashboardDialog", None),
+        ("drawdown_dialog", "DrawdownsDialog", "scenario"),
         ("exchange_rate_dialog", "ExchangeRateDialog", None),
         ("fsa_claims_dialog", "FsaClaimsDialog", None),
         ("gnucash_writeback_dialog", "GnuCashWritebackDialog", None),
