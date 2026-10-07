@@ -32,9 +32,8 @@ round-trip limits, exact money, and explicit missing-currency valuations.
 
 ## Register workflow
 
-- Consider whether a categorization rule should also be able to set a payee, and
-  whether split transactions can be supported with explicit per-split rules
-  rather than a guess.
+- Consider whether split transactions can be supported with explicit per-split
+  categorization rules rather than a guess.
 
 
 ## Plan and planning-flow reporting

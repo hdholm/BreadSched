@@ -65,6 +65,8 @@ def rules(api: Api, query: QueryParams) -> dict[str, object]:
                 "key": rule.key,
                 "category": rule.category,
                 "category_name": name(rule.category),
+                "set_payee": rule.set_payee,
+                "set_payee_name": payee_names.get(rule.set_payee or ""),
             }
             for position, rule in enumerate(list_rules(db), start=1)
         ],
@@ -76,6 +78,8 @@ def rules(api: Api, query: QueryParams) -> dict[str, object]:
                 "amount": str(item.amount.to_decimal()),
                 "category": item.category,
                 "category_name": name(item.category),
+                "payee": item.payee,
+                "payee_name": payee_names.get(item.payee or ""),
                 "rule_position": item.rule_position,
                 "conflicts": [
                     {
@@ -108,11 +112,16 @@ def rule_add(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
             payee=_text(payload, "payee", optional=True),
             description=_text(payload, "description", optional=True),
             position=_position(payload, "position", optional=True),
+            set_payee=_text(payload, "set_payee", optional=True),
         ),
     )
     if result.value is None:
         raise service_error(result.errors[0])
-    return {"handle": result.value.handle, "key": result.value.key}
+    return {
+        "handle": result.value.handle,
+        "key": result.value.key,
+        "set_payee": result.value.set_payee,
+    }
 
 
 def rule_delete(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
@@ -139,4 +148,8 @@ def rules_accept(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
     result = apply_category_proposals(api.db, tuple(raw) if raw is not None else None)
     if result.value is None:
         raise service_error(result.errors[0])
-    return {"assigned": result.value.assigned, "unchanged": result.value.unchanged}
+    return {
+        "assigned": result.value.assigned,
+        "unchanged": result.value.unchanged,
+        "payees_set": result.value.payees_set,
+    }

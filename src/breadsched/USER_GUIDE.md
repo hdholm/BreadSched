@@ -1414,6 +1414,12 @@ are ever proposed, so a category you chose yourself is never replaced, and a
 transaction split across several placeholder lines is left for you. Nothing changes
 until you accept, and accepting is one undo step.
 
+A description rule can also set a payee: accepting its proposal then records that
+payee on a transaction that has none, so "CORNER GROCER #1234" becomes a Groceries
+purchase from Corner Grocer in one step. A payee you already chose is never
+replaced. Deleting a payee removes the rules that match it and stops rules from
+setting it; their categories stay.
+
 ## Print, export, and inspect
 
 Dashboard, Plan, and Projection print what the view shows, with the controls and

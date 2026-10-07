@@ -48,6 +48,8 @@ class AddRule:
     description: str | None = None
     #: 1-based position; ``None`` appends (lowest priority).
     position: int | None = None
+    #: A description rule may also set this payee on a transaction without one.
+    set_payee: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +57,8 @@ class AppliedCategories:
     assigned: int
     #: Requested transactions that no longer have a proposal.
     unchanged: int
+    #: Accepted transactions that also received the rule's payee.
+    payees_set: int = 0
 
 
 def list_rules(db: DbSQLite) -> list[CategoryRule]:
@@ -77,6 +81,13 @@ def add_rule(db: DbSQLite, request: AddRule) -> ServiceResult[CategoryRule]:
             return ServiceResult.failure(ServiceError("rule.match.empty", ("description",)))
     elif db.get_payee(request.payee or "") is None:
         return ServiceResult.failure(ServiceError("rule.payee.not_found", ("payee",)))
+    if request.set_payee is not None:
+        if request.payee is not None:
+            return ServiceResult.failure(
+                ServiceError("rule.set_payee.payee_match", ("set_payee", "payee"))
+            )
+        if db.get_payee(request.set_payee) is None:
+            return ServiceResult.failure(ServiceError("rule.set_payee.not_found", ("set_payee",)))
     category = db.get_account(request.category)
     if (
         category is None
@@ -90,7 +101,7 @@ def add_rule(db: DbSQLite, request: AddRule) -> ServiceResult[CategoryRule]:
     position = len(rules) + 1 if request.position is None else request.position
     if not 1 <= position <= len(rules) + 1:
         return ServiceResult.failure(ServiceError("rule.position.invalid", ("position",)))
-    rule = CategoryRule(create_handle(), category.handle, request.payee, key)
+    rule = CategoryRule(create_handle(), category.handle, request.payee, key, request.set_payee)
     rules.insert(position - 1, rule)
     with db.transaction("Add categorization rule") as txn:
         _store(db, rules, txn)
@@ -137,6 +148,7 @@ def apply_category_proposals(
     if any(db.get_transaction(handle) is None for handle in wanted):
         return ServiceResult.failure(ServiceError("rule.transaction.not_found", ("transactions",)))
     accepted = [current[handle] for handle in wanted if handle in current]
+    payees_set = 0
     if accepted:
         with db.transaction(f"Categorize {len(accepted)} transaction(s)") as txn:
             for proposal in accepted:
@@ -145,5 +157,15 @@ def apply_category_proposals(
                 for split in transaction.splits:
                     if split.account == proposal.placeholder:
                         split.account = proposal.category
+                # A payee chosen since the preview is never replaced.
+                if (
+                    proposal.payee is not None
+                    and transaction.payee is None
+                    and db.get_payee(proposal.payee) is not None
+                ):
+                    transaction.payee = proposal.payee
+                    payees_set += 1
                 db.commit_transaction(transaction, txn)
-    return ServiceResult.success(AppliedCategories(len(accepted), len(wanted) - len(accepted)))
+    return ServiceResult.success(
+        AppliedCategories(len(accepted), len(wanted) - len(accepted), payees_set)
+    )

@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a232 - 2026-10-06
+
+- **Categorization rules can set a payee.** A description rule may name a payee
+  (`CategoryRule.set_payee`, `AddRule.set_payee`); its proposal sets that payee on a
+  transaction with none, never replacing one, and accepting reports how many it set
+  (`AppliedCategories.payees_set`). A payee rule cannot set one
+  (`rule.set_payee.payee_match`); a missing payee is refused
+  (`rule.set_payee.not_found`). Deleting a payee now removes rules matching it and
+  clears it from rules that set it, in the same undo step. GTK and the browser add
+  **Also set payee** and a **Sets payee** column; the CLI adds `rules --set-payee`
+  and `set_payee`, `payee`, and `payees_set` in JSON.
+
 ## 0.2.0a231 - 2026-10-06
 
 - **Dashboard bills have their own module.** Bill cycles, `BillRow`, missed-occurrence
