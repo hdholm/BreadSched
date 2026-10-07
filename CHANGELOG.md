@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a240 - 2026-10-06
+
+- **Projection results have their own module.** `engine/projection` (1,389 lines)
+  held both the calculation and the types it returns. `Projection`, `MonthRow`,
+  `MonthLedger`, `ProjectionProgress`, `ProjectionAccountDetail`,
+  `ProjectionMonthDetail`, `ComparisonRow`, and `compare` moved to
+  `engine/projection_result` (456 lines), which never imports the engine;
+  `projection` re-exports them (984 lines). The conservation bridge, print, CSV
+  export, and presentation import only the result module, and an architecture test
+  checks the boundary and the re-exports. No behavior changed.
+
 ## 0.2.0a239 - 2026-10-06
 
 - **The Plan's category report has its own module.** `engine/activity` (1,689 lines)

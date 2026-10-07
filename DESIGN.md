@@ -978,6 +978,12 @@ Changing Base then flows through every inherited field without disturbing local
 overrides. Plan, Projection, comparisons, and both scenario managers expose whether
 an effective value came from Base, the saved scenario, or one of its dated overrides.
 
+`engine/projection` calculates; `engine/projection_result` holds what it returns
+(`Projection`, `MonthRow`, `MonthLedger`, `ProjectionProgress`, the month-detail
+types, and `compare`), which `projection` re-exports. The bridge, print, CSV
+export, and presentation import only the result module, and an architecture test
+keeps the result module from importing the engine.
+
 Each reporting month's `MonthLedger` records opening and closing stocks per account
 and the exact flows and effects between them, and the engine raises rather than
 return a month whose `reconciles()` check fails. `engine.projection_bridge` states

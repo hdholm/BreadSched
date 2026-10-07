@@ -22,7 +22,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from ..lib.money import Money
-from .projection import MonthLedger, Projection
+from .projection_result import MonthLedger, Projection
 
 __all__ = [
     "BridgeTerm",

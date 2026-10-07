@@ -17,7 +17,7 @@ from datetime import date
 from pathlib import Path
 
 from ...gen.db.sqlite import DbSQLite
-from ...gen.engine.projection import Projection
+from ...gen.engine.projection_result import Projection
 from ...gen.lib.money import Money
 from ...gen.services.net_worth import NetWorthChange
 

@@ -15,7 +15,7 @@ from html import escape
 from ...gen.engine.activity import PlanMeasure
 from ...gen.engine.category_report import CategoryReport
 from ...gen.engine.dashboard import Dashboard
-from ...gen.engine.projection import Projection
+from ...gen.engine.projection_result import Projection
 from ...gen.services.expense_explorer import ExpenseDrilldown, ExpenseExplorer
 from ...gen.services.net_worth import NetWorthChange, NetWorthHistory
 from ...gen.services.plan import PlanGoalMilestone
