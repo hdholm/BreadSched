@@ -339,6 +339,11 @@ class ExpectedReceipt:
     #: The cash account it is expected in: the one that paid the expense, or the
     #: account a card that paid it is paid from.
     cash_account: str
+    #: The expense account a projected write-off returns to: the largest linked
+    #: expense split's, as a recorded write-off uses.
+    expense_account: str
+    #: The linked expense and what has been reimbursed and written off so far.
+    summary: ReceivableSummary
 
 
 def _paying_cash_account(db: DbSQLite, receivable: Receivable) -> str | None:
@@ -383,7 +388,14 @@ def expected_receipt(
     cash = _paying_cash_account(db, receivable)
     if cash is None:
         return None
-    return ExpectedReceipt(receivable, when, summary.remaining, receivable.account, cash)
+    largest = max((_resolve_link(db, link)[1] for link in receivable.expenses), key=_value)
+    return ExpectedReceipt(
+        receivable, when, summary.remaining, receivable.account, cash, largest.account, summary
+    )
+
+
+def _value(split: Split) -> Money:
+    return split.value
 
 
 def posting_currency(db: DbSQLite, receivable: Receivable) -> str | None:

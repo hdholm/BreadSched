@@ -31,6 +31,7 @@ from .scenario import (
     Drawdown,
     GoalOverride,
     OneOff,
+    ReimbursementOverride,
     Scenario,
     ScenarioSchedule,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "Drawdown",
     "GoalOverride",
     "OneOff",
+    "ReimbursementOverride",
     "Rate",
     "PeriodType",
     "PlanningFlowKind",

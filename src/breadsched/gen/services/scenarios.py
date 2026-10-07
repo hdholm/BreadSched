@@ -10,7 +10,7 @@ from ..db.sqlite import DbSQLite
 from ..lib.account import AccountClass
 from ..lib.base import create_handle
 from ..lib.money import Money
-from ..lib.scenario import Drawdown, Scenario, ScenarioSchedule
+from ..lib.scenario import Drawdown, ReimbursementOverride, Scenario, ScenarioSchedule
 from .contracts import ServiceError, ServiceResult
 
 
@@ -243,3 +243,56 @@ def remove_drawdown(db: DbSQLite, scenario_handle: str, handle: str) -> ServiceR
     with db.transaction(f"Remove drawdown from {scenario.name}") as txn:
         db.commit_scenario(scenario, txn)
     return ServiceResult.success(found[0])
+
+
+@dataclass(frozen=True, slots=True)
+class SetReimbursementOverride:
+    """Change, in one scenario, what a payer is expected to reimburse and when.
+
+    ``amount`` is what the payer pays in the scenario (zero for nothing) and ``on``
+    the expected date; leaving both ``None`` returns the scenario to the
+    receivable's own expectation.
+    """
+
+    scenario: str
+    receivable: str
+    amount: Money | None = None
+    on: date | None = None
+
+
+def set_reimbursement_override(
+    db: DbSQLite, request: SetReimbursementOverride, *, today: date | None = None
+) -> ServiceResult[Scenario]:
+    """Validate and store one scenario's change to an expected reimbursement.
+
+    Only a reimbursement that is currently expected (``receivables.expected_receipt``)
+    can be changed; the amount is between zero and what is still owed, and the date
+    is not in the past. Returns the saved scenario.
+    """
+    from ..engine.receivables import expected_receipt
+
+    scenario = db.get_scenario(request.scenario)
+    if scenario is None:
+        return ServiceResult.failure(ServiceError("scenario.not_found", ("scenario",)))
+    receivable = db.get_receivable(request.receivable)
+    if receivable is None:
+        return ServiceResult.failure(ServiceError("receivable.not_found", ("receivable",)))
+    day = today or date.today()
+    receipt = expected_receipt(db, receivable, as_of=day)
+    if receipt is None:
+        return ServiceResult.failure(
+            ServiceError("scenario.reimbursement.not_expected", ("receivable",))
+        )
+    if request.amount is not None and not Money(0) <= request.amount <= receipt.amount:
+        return ServiceResult.failure(ServiceError("scenario.reimbursement.amount", ("amount",)))
+    if request.on is not None and request.on < day:
+        return ServiceResult.failure(ServiceError("scenario.reimbursement.date", ("on",)))
+    if request.amount is None and request.on is None:
+        scenario.reimbursement_overrides.pop(receivable.handle, None)
+    else:
+        scenario.reimbursement_overrides[receivable.handle] = ReimbursementOverride(
+            request.amount, request.on
+        )
+    with db.transaction(f"Change expected reimbursement in {scenario.name}") as txn:
+        db.commit_scenario(scenario, txn)
+    return ServiceResult.success(scenario)

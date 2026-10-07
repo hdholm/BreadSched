@@ -141,6 +141,7 @@ from .scenarios import (
     SaveDrawdown,
     SavedScenario,
     SaveScenario,
+    SetReimbursementOverride,
     SuppressScenarioSchedule,
     delete_scenario,
     drawdown_accounts,
@@ -148,6 +149,7 @@ from .scenarios import (
     remove_drawdown,
     save_drawdown,
     save_scenario,
+    set_reimbursement_override,
     suppress_scenario_schedule,
 )
 from .schedules import (
@@ -220,6 +222,7 @@ __all__ = [
     "SaveScenario",
     "SuppressScenarioSchedule",
     "SaveDrawdown",
+    "SetReimbursementOverride",
     "FixedScheduleInput",
     "FixedSplitInput",
     "FormulaScheduleInput",
@@ -354,4 +357,5 @@ __all__ = [
     "drawdown_accounts",
     "remove_drawdown",
     "save_drawdown",
+    "set_reimbursement_override",
 ]

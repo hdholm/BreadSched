@@ -1140,6 +1140,18 @@ and net cost for that period, and the printed Plan includes the list
 [browser](guide/web.md#reimbursable-expenses),
 [command line](guide/cli.md#reimbursable-expenses)).
 
+A projection scenario can ask "what if the payer pays less, nothing, or later?" for
+any reimbursement still expected: it can expect a smaller amount (or nothing) and
+move the expected date. Whatever that scenario does not expect back is projected
+as written off on the expected date, back into the expense, so its projected
+spending and net worth carry the shortfall while other scenarios still expect the
+whole amount. Under **Reimbursable expenses: gross and net cost**, each Projection
+(and the printed Projection) lists every reimbursement expected in its range with
+the gross cost, anything already reimbursed or written off, what the scenario
+expects back and when, and the net household cost. The command line changes a
+scenario's expectation with `receivables --scenario NAME --expect RECEIVABLE`;
+desktop and browser editors follow.
+
 ## Import and GnuCash interoperability
 
 BreadSched imports GnuCash SQLite and compressed XML books and preserves source

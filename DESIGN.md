@@ -1705,8 +1705,26 @@ so a parent category is not listed beside its children. `plan_detail` sums the s
 splits into `CategoryPeriodDetail.reimbursable`. `presentation.plan_reimbursable_text`
 and `plan_detail_cost_text` give the sentences GTK, web, print, and
 `receivables --costs` show; a range holding only a write-off of an earlier expense
-reads as a raised net cost with no gross cost. Projection does not yet distinguish
-gross from net cost.
+reads as a raised net cost with no gross cost.
+
+Scenario expectations: `Scenario.reimbursement_overrides` maps a receivable handle to
+a `ReimbursementOverride` (what the payer pays in that scenario, zero for nothing,
+and the expected date). `engine/reimbursement_outlook.scenario_receipts` applies it
+to each `expected_receipt` (an amount is capped at what is still owed; a date before
+today is ignored), and `planning.receivable_receipt_events` turns each into one
+balanced placeholder event: cash +paid, receivable −owed, and the largest linked
+expense split's account +shortfall (exactly where a recorded write-off posts). So
+the receivable still empties on that date, and the shortfall is a projected expense
+in Plan and Projection for that scenario only. `reimbursement_outlook` gives each
+receipt in a projection's range its gross cost (`ReceivableSummary.expense_total`),
+earlier reimbursements and write-offs, what the scenario expects, the shortfall,
+and `net_cost = gross − reimbursed − expected`; `Projection.reimbursements` carries
+it and `presentation.reimbursement_outlook_text` words it for GTK (projection
+notes), the browser (`reimbursements` and `reimbursement_notes` on the projection
+payload), print, and `project`. `services.scenarios.set_reimbursement_override`
+refuses a receivable not currently expected, an amount outside zero to what is owed,
+and a past date, and clears the change when both are empty; deleting a receivable
+drops every scenario's change to it in the same undo step.
 
 `services/receivables.py` validates every write: linked splits must be in
 expense-class accounts, expense links positive and reimbursement links negative, and

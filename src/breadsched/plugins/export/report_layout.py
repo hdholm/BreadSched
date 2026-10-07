@@ -29,6 +29,7 @@ from ...presentation import (
     plan_goal_text,
     plan_reimbursable_text,
     projection_goal_notes,
+    reimbursement_outlook_text,
 )
 
 __all__ = [
@@ -740,6 +741,11 @@ def projection_layout(
     goal_notes = projection_goal_notes(result)
     if goal_notes:
         blocks += [Heading("Savings goals"), *_notes(goal_notes)]
+    if result.reimbursements:
+        blocks += [
+            Heading("Reimbursable expenses: gross and net cost"),
+            *_notes(reimbursement_outlook_text(item) for item in result.reimbursements),
+        ]
     escrow = [
         f"{row.label}: {message}"
         for row in result.rows

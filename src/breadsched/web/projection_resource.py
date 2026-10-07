@@ -15,7 +15,7 @@ from ..gen.services import (
     save_base_assumptions,
     save_scenario_assumptions,
 )
-from ..presentation import projection_goal_notes
+from ..presentation import projection_goal_notes, reimbursement_outlook_text
 from .controls import service_error
 from .scenario_resource import assumptions_from_payload, management_base_scenario
 
@@ -118,6 +118,8 @@ def projection_report(
         "warnings": list(result.warnings),
         "goal_notes": projection_goal_notes(result),
         "goal_milestones": [item.as_dict() for item in result.goal_milestones],
+        "reimbursements": [item.as_dict() for item in result.reimbursements],
+        "reimbursement_notes": [reimbursement_outlook_text(item) for item in result.reimbursements],
         "rows": [
             {
                 "label": row.label,

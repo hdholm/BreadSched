@@ -29,7 +29,7 @@ from ...gen.services import (
 )
 from ...gen.utils.cancellation import OperationCancelled
 from ...gen.utils.logs import get_logger  # noqa: E402
-from ...presentation import projection_goal_notes
+from ...presentation import projection_notes
 from ..background import BackgroundJob
 from ..gi_setup import GLib, Gtk
 from ..planning_context import (
@@ -545,7 +545,7 @@ class ProjectionView(BaseView):
             ]
         )
         self._show_projection_notes(
-            [*coverage_notes, *projection_goal_notes(result), *result.warnings], bullets=True
+            [*coverage_notes, *projection_notes(result), *result.warnings], bullets=True
         )
 
     def _show_projection_notes(self, notes: list[str], *, bullets: bool = False) -> None:
