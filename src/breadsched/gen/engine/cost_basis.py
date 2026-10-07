@@ -112,9 +112,14 @@ class HoldingCostBasis:
             totals[sale.sold.year] = totals[sale.sold.year] + sale.gain
         return dict(sorted(totals.items()))
 
+    @property
+    def method(self) -> str:
+        return self.account.cost_basis_method
+
     def as_dict(self) -> dict[str, object]:
         return {
             "account": self.account.handle,
+            "method": self.method,
             "currency": self.currency,
             # Share counts as exact decimal text; amounts are money.
             "quantity": shares_text(self.quantity),
@@ -178,6 +183,28 @@ def cost_basis(
             if value == 0:
                 zero_cost = zero_cost + quantity
             open_lots.append(Lot(when, quantity, value, row["txn"]))
+        elif quantity < 0 and obj.cost_basis_method == "average" and open_lots:
+            # Average cost: every open lot gives up the same share of itself, so
+            # each sold share costs the average of every share held.
+            held = sum((lot.quantity for lot in open_lots), Money(0))
+            sold = -quantity
+            covered = min(sold, held)
+            share = covered / held
+            cost = sum((lot.cost * share for lot in open_lots), Money(0))
+            open_lots = [
+                Lot(
+                    lot.acquired,
+                    lot.quantity - lot.quantity * share,
+                    lot.cost - lot.cost * share,
+                    lot.transaction,
+                )
+                for lot in open_lots
+                if lot.quantity - lot.quantity * share > 0
+            ]
+            remaining = sold - covered
+            proceeds = -value * (covered / sold)
+            uncovered_total = uncovered_total + remaining
+            sales.append(RealizedGain(when, sold, proceeds, cost, row["txn"], remaining))
         elif quantity < 0:
             remaining = -quantity
             cost = Money(0)

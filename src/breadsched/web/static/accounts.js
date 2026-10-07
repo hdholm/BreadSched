@@ -216,7 +216,7 @@ async function openHoldings() {
     el("h2", {}, "Holdings and cost basis"),
     el("p", { class:"note" },
       "Lots come from each security account's transactions: a sale takes the oldest "
-      + "shares first. Gains compare with the latest quote; nothing is stored or rewritten."),
+      + "shares first, or the average cost where the account says so. Gains compare with the latest quote; nothing is stored or rewritten."),
     data.holdings.length
       ? table(["Holding", { label:"Shares", num:true }, { label:"Cost", num:true },
           { label:"Market value", num:true }, { label:"Unrealized", num:true }], rows)
@@ -819,7 +819,22 @@ async function showAccounts() {
     el("td", {}, account.type === "FSA"
       ? el("button", { class:"action", type:"button", onclick:()=>openFsaYearsEditor(account) },
           `${(account.fsa_years || []).length} funding year${(account.fsa_years || []).length === 1 ? "" : "s"}…`)
-      : el("span", { class:"muted" }, "—")),
+      : ["INVESTMENT", "RETIREMENT"].includes(account.type)
+        ? el("select", {
+            "aria-label":`Cost of shares sold in ${account.name}`,
+            title:"How a sale's cost comes from this security's lots",
+            onchange: async (event) => {
+              try {
+                await post("/api/account/cost-basis", {
+                  handle:account.handle, method:event.target.value });
+                say(`${account.name}: cost basis saved.`);
+              } catch (error) { say(error.message, "error"); }
+            },
+          }, [["fifo", "First in, first out"], ["average", "Average cost"]].map(
+            ([value, label]) => el("option", {
+              value, selected:account.cost_basis_method === value ? "selected" : null,
+            }, label)))
+        : el("span", { class:"muted" }, "—")),
     el("td", {}, account.type === "CREDIT CARD"
       ? el("button", {class:"action", type:"button",
           onclick:()=>openCardPaymentEditor(account, accounts)},

@@ -1,6 +1,7 @@
 """Typed application-service contracts shared by every presentation adapter."""
 
 from .accounts import (
+    COST_BASIS_METHODS,
     DeleteAccount,
     SaveAccount,
     SavedAccount,
@@ -192,6 +193,7 @@ from .transactions import (
 )
 
 __all__ = [
+    "COST_BASIS_METHODS",
     "AcceptedClaimLinks",
     "accept_claim_links",
     "claim_link_proposals",

@@ -5037,6 +5037,33 @@ class TestAccountDialogConstruction:
         finally:
             reopened.destroy()
 
+    def test_a_security_account_chooses_its_cost_basis_method(self, app, window, populated_book):
+        from breadsched.gen.lib import AccountType
+        from breadsched.gui.dialogs.account_dialog import AccountDialog
+
+        app.open_book(populated_book)
+        account = app.db.get_account_by_name("Assets:Checking Account")
+        bank = AccountDialog(window, app.db, account)
+        try:
+            assert not bank.cost_basis_box.get_visible()
+        finally:
+            bank.destroy()
+        account.atype = AccountType.INVESTMENT
+        dialog = AccountDialog(window, app.db, account)
+        try:
+            assert dialog.cost_basis_box.get_visible()
+            assert dialog.cost_basis_picker.get_selected() == 0
+            dialog.cost_basis_picker.set_selected(1)
+            assert dialog.build().cost_basis_method == "average"
+        finally:
+            dialog.destroy()
+        account.cost_basis_method = "average"
+        reopened = AccountDialog(window, app.db, account)
+        try:
+            assert reopened.cost_basis_picker.get_selected() == 1
+        finally:
+            reopened.destroy()
+
     def test_security_price_dialog_creates_an_exact_dated_quote(self, app, window, populated_book):
         from breadsched.gui.dialogs.security_price_dialog import SecurityPriceDialog
 

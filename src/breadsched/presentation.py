@@ -28,6 +28,7 @@ _translation: gettext.NullTranslations = gettext.translation(
 
 _SERVICE_MESSAGES = {
     "account.not_found": "The account no longer exists",
+    "account.cost_basis_method.invalid": "Choose first in, first out or average cost",
     "account.name.required": "Give the account a name",
     "account.name.duplicate": "An account with that name already exists under this parent",
     "account.identity.changed": "The account identity changed while it was edited",
@@ -770,7 +771,8 @@ def holding_cost_text(holding: HoldingCostBasis) -> str:
     """One holding's shares, cost basis, market value, and gains, in plain words."""
     from .gen.engine.cost_basis import shares_text
 
-    parts = [f"{shares_text(holding.quantity)} shares cost {holding.cost.format()}"]
+    basis = " at average cost" if holding.method == "average" else ""
+    parts = [f"{shares_text(holding.quantity)} shares cost {holding.cost.format()}{basis}"]
     market = holding.market_value
     gain = holding.unrealized_gain
     if market is not None and gain is not None:

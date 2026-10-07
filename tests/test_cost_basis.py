@@ -191,3 +191,88 @@ def test_cli_prints_lots_and_json(db, book, tmp_path, capsys):
     assert main(["holdings", str(path), "--json"]) == 0
     [row] = json.loads(capsys.readouterr().out)
     assert row["realized_by_year"] == {"2025": "50.00"}
+
+
+def _use_average(db, account):
+    from breadsched.gen.services import SaveAccount, save_account
+
+    source = Account.from_dict(account.serialize())
+    account.cost_basis_method = "average"
+    result = save_account(db, SaveAccount(account, existing_handle=account.handle, source=source))
+    assert result.ok, result.errors
+    return db.get_account(account.handle)
+
+
+def test_average_cost_takes_the_average_of_every_share_held(db, book):
+    account, fund, usd = _fund(db, book)
+    _trade(db, account, usd, book.checking, date(2024, 1, 10), "10", "1000")
+    _trade(db, account, usd, book.checking, date(2025, 1, 10), "10", "1500")
+    _trade(db, account, usd, book.checking, date(2026, 2, 1), "-15", "-2400")
+    account = _use_average(db, account)
+
+    result = cost_basis(db, account)
+
+    [sale] = result.sales
+    # 20 shares cost 2,500, so each costs 125; 15 sold cost 1,875.
+    assert (sale.cost, sale.gain) == (Money("1875"), Money("525"))
+    assert (result.quantity, result.cost) == (Money(5), Money("625"))
+    assert [(lot.quantity, lot.cost) for lot in result.lots] == [
+        (Money("2.5"), Money(250)),
+        (Money("2.5"), Money(375)),
+    ]
+    assert result.as_dict()["method"] == "average"
+    from breadsched.presentation import holding_cost_text
+
+    assert holding_cost_text(result).startswith("5 shares cost 625.00 at average cost")
+
+
+def test_an_unknown_method_is_refused_and_the_account_kept(db, book):
+    from breadsched.gen.services import SaveAccount, save_account
+
+    account, _fund_commodity, _usd = _fund(db, book)
+    source = Account.from_dict(account.serialize())
+    account.cost_basis_method = "lifo"
+    result = save_account(db, SaveAccount(account, existing_handle=account.handle, source=source))
+    assert [error.code for error in result.errors] == ["account.cost_basis_method.invalid"]
+    assert db.get_account(account.handle).cost_basis_method == "fifo"
+
+
+def test_web_and_cli_choose_the_method(db, book, tmp_path, capsys):
+    import pytest
+
+    from breadsched.cli.main import main
+    from breadsched.gen.db.sqlite import DbSQLite
+    from breadsched.web.account_resource import account_cost_basis_save
+    from breadsched.web.context import Api
+
+    account, _fund_commodity, _usd = _fund(db, book)
+    api = Api(db)
+    assert account_cost_basis_save(api, {"handle": account.handle, "method": "average"}) == {
+        "handle": account.handle,
+        "method": "average",
+    }
+    with pytest.raises(Exception, match="cost"):
+        account_cost_basis_save(api, {"handle": account.handle, "method": "lifo"})
+    assert db.get_account(account.handle).cost_basis_method == "average"
+    with pytest.raises(ValueError, match="Investment or Retirement"):
+        account_cost_basis_save(api, {"handle": book.checking, "method": "average"})
+
+    path = tmp_path / "method.breadsched"
+    db.backup_to(str(path))
+    assert (
+        main(
+            ["account", str(path), "edit", "--name", "Assets:Index holding", "--cost-basis", "fifo"]
+        )
+        == 0
+    )
+    assert (
+        main(["account", str(path), "edit", "--name", "Assets:Checking", "--cost-basis", "fifo"])
+        == 2
+    )
+    capsys.readouterr()
+    reopened = DbSQLite()
+    reopened.load(str(path), mode="r")
+    try:
+        assert reopened.get_account(account.handle).cost_basis_method == "fifo"
+    finally:
+        reopened.close()

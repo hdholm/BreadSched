@@ -26,7 +26,7 @@ def _money(value: Money | None) -> str:
 
 
 class HoldingsDialog(BoundedWindow):
-    """Shares, cost basis (first in, first out), market value, and gains per holding."""
+    """Shares, cost basis, market value, and gains per holding."""
 
     def __init__(self, parent: Gtk.Window | None, db: DbSQLite, as_of: date | None = None) -> None:
         super().__init__(title="Holdings and Cost Basis", transient_for=parent)
@@ -39,7 +39,8 @@ class HoldingsDialog(BoundedWindow):
         note = Gtk.Label(
             label=(
                 "Lots come from each security account's transactions: a sale takes the "
-                "oldest shares first. Gains compare with the latest quote; nothing is "
+                "oldest shares first, or the average cost where the account says so. "
+                "Gains compare with the latest quote; nothing is "
                 "stored or rewritten."
             ),
             xalign=0,

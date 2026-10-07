@@ -24,7 +24,13 @@ from ...gen.lib import (
     FsaFundingYear,
     Money,
 )
-from ...gen.services import DeleteAccount, SaveAccount, delete_account, save_account
+from ...gen.services import (
+    COST_BASIS_METHODS,
+    DeleteAccount,
+    SaveAccount,
+    delete_account,
+    save_account,
+)
 from ...gen.utils.amount_input import parse_user_amount
 from ...presentation import service_error_message
 from ..gi_setup import Gtk
@@ -232,6 +238,19 @@ class AccountDialog(BoundedWindow):
         add_fsa.connect("clicked", lambda *_: self._add_fsa_year_row())
         self.fsa_box.append(add_fsa)
         box.append(self.fsa_box)
+
+        # How a sale's cost comes from a security's lots (Holdings and Cost Basis).
+        self.cost_basis_box = Gtk.Box(spacing=8)
+        self.cost_basis_box.append(Gtk.Label(label="Cost of shares sold", xalign=0))
+        self.cost_basis_picker = bounded_dropdown(["First in, first out", "Average cost"])
+        self.cost_basis_picker.set_tooltip_text(
+            "First in, first out: a sale takes the oldest shares' cost. Average cost: "
+            "each share sold costs the average of every share held."
+        )
+        if account is not None and account.cost_basis_method == "average":
+            self.cost_basis_picker.set_selected(1)
+        self.cost_basis_box.append(self.cost_basis_picker)
+        box.append(self.cost_basis_box)
         if account is not None:
             for funding_year in account.fsa_years:
                 self._add_fsa_year_row(funding_year)
@@ -540,6 +559,9 @@ class AccountDialog(BoundedWindow):
             return
         account_type = self.selected_type
         self.fsa_box.set_visible(account_type is AccountType.FSA)
+        self.cost_basis_box.set_visible(
+            account_type in {AccountType.INVESTMENT, AccountType.RETIREMENT}
+        )
         self.loan_box.set_visible(account_type is AccountType.LOAN)
         self.card_box.set_visible(account_type is AccountType.CREDIT)
         self._on_card_changed()
@@ -604,6 +626,8 @@ class AccountDialog(BoundedWindow):
         if account.atype is AccountType.FSA:
             account.fsa_years = self._fsa_year_values()
             account.fsa_dependent_care = self.fsa_dependent_care.get_active()
+        if account.atype in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
+            account.cost_basis_method = COST_BASIS_METHODS[self.cost_basis_picker.get_selected()]
         account.placeholder = self.placeholder_check.get_active()
         account.hidden = self.hidden_check.get_active()
         if self.parents:

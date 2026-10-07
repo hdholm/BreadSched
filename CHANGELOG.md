@@ -10,6 +10,22 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a246 - 2026-10-06
+
+- **Average cost basis.** An Investment or Retirement account can use average cost
+  instead of first in, first out (`Account.cost_basis_method`, `"fifo"` by default,
+  stored in the account's serialized data with no schema change). Each sale then
+  takes the same exact fraction of every open lot, so each sold share costs the
+  average of every share held. The account service refuses an unknown method
+  (`account.cost_basis_method.invalid`) without changing the stored account. Chosen
+  in the GTK account editor (**Cost of shares sold**), the browser's account
+  settings (`/api/account/cost-basis`, refused for non-security accounts), and
+  `breadsched account edit --cost-basis {fifo,average}`; holdings text, `/api/holdings`,
+  and `holdings --json` name the method.
+- **GnuCash re-import keeps local account settings.** Re-importing a GnuCash book
+  no longer clears a Flexible Spending Account's dependent-care flag (lost since
+  0.2.0a224); it and the new cost basis method are kept like the FSA plan years.
+
 ## 0.2.0a245 - 2026-10-06
 
 - **Smaller command and window modules.** The payee, rule, tag, and attachment

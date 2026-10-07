@@ -12,6 +12,9 @@ from ..lib.money import Money
 from ..lib.transaction import Transaction
 from .contracts import ServiceError, ServiceResult
 
+#: How a sale's cost comes from a security's lots, by stored name.
+COST_BASIS_METHODS = ("fifo", "average")
+
 
 @dataclass(frozen=True, slots=True)
 class SaveAccount:
@@ -114,6 +117,8 @@ def _account_errors(
     errors.extend(_parent_errors(db, account))
     errors.extend(_relationship_errors(db, account, existing))
     errors.extend(_fsa_errors(account))
+    if account.cost_basis_method not in COST_BASIS_METHODS:
+        errors.append(ServiceError("account.cost_basis_method.invalid", ("cost_basis_method",)))
     if existing is not None and (existing.source_guid or existing.source_type):
         protected = ("name", "parent", "code", "description")
         changed = tuple(

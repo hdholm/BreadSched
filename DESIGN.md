@@ -1262,7 +1262,12 @@ Cost basis (`engine/cost_basis`) is derived, never stored, like a receivable's
 status: each security account's splits are read in date order, a split adding
 shares opens a lot at its transaction-currency value, and a split removing shares
 consumes lots first in, first out with exact rational shares (`Money * Fraction`),
-recording proceeds, cost, and any shares sold beyond the recorded purchases.
+or, when `Account.cost_basis_method` is `"average"`, takes the same fraction of every
+open lot so each sold share costs the pool's average. The method is a per-account
+setting validated by the account service (`COST_BASIS_METHODS`) and kept across a
+GnuCash re-import, like the dependent-care flag; sales are
+recalculated, never re-stored, when it changes. Each sale records proceeds, cost,
+and any shares sold beyond the recorded purchases.
 `HoldingCostBasis` compares the open lots' cost with `account_value`'s market value
 only when that value is a market quote in the same currency, and names zero-cost
 arrivals, uncovered sales, mixed currencies, and a missing or foreign quote instead

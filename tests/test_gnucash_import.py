@@ -207,6 +207,9 @@ class TestSqliteImport:
         mortgage.linked_asset = accounts["house"].handle
         mortgage.annual_interest = Decimal("0.0525")
         fsa.atype = AccountType.FSA
+        fsa.fsa_dependent_care = True
+        fund = accounts["fund"]
+        fund.cost_basis_method = "average"
         fsa.notes = "Local enrollment context"
         fsa.fsa_years = [
             FsaFundingYear(
@@ -216,7 +219,7 @@ class TestSqliteImport:
             )
         ]
         with db.transaction("Local household semantics") as txn:
-            for account in (brokerage, mortgage, fsa):
+            for account in (brokerage, mortgage, fsa, fund):
                 db.commit_account(account, txn)
 
         with sqlite3.connect(source.path) as gnc:
@@ -246,6 +249,8 @@ class TestSqliteImport:
         assert refreshed_fsa.notes == "Local enrollment context"
         assert refreshed_fsa.source_notes == "Source enrollment note"
         assert refreshed_fsa.fsa_years[0].election == Money("2400")
+        assert refreshed_fsa.fsa_dependent_care is True
+        assert refreshed_fund.cost_basis_method == "average"
 
     def test_notify_false_suppresses_the_complete_importer_boundary(self, db, gnucash_sqlite_path):
         seen = []
