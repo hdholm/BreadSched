@@ -270,7 +270,13 @@ def _import_prices(
     from ...gen.engine.currency import reporting_currency_handle
 
     currency = reporting_currency_handle(db)
-    for row in csv.reader(record, skipinitialspace=True):
+    for line in record:
+        try:
+            row = next(csv.reader([line], skipinitialspace=True), [])
+        except csv.Error:
+            # Python 3.10's reader refuses a NUL byte; later versions read it as text.
+            sink.result.skip("QIF price line is unreadable", line[:40], kind="price")
+            continue
         if len(row) < 3:
             sink.result.skip("QIF price line is incomplete", ",".join(row), kind="price")
             continue

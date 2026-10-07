@@ -290,6 +290,7 @@ _SERVICE_MESSAGES = {
     "import.csv.number_format.conflict": "The file mixes decimal-point and decimal-comma amounts",
     "import.csv.encoding.invalid": "The file cannot be read with the chosen encoding",
     "import.csv.delimiter.invalid": "Use a single-character delimiter",
+    "import.csv.file.unreadable": "The file is not CSV text",
     "schedule.due.duplicate": "Decide each due occurrence only once",
     "schedule.due.not_found": "The schedule no longer exists",
     "schedule.due.not_pending": (

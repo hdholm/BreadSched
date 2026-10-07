@@ -21,6 +21,7 @@ from breadsched.plugins.importer import ofx, qif
 hypothesis = pytest.importorskip("hypothesis")
 st = pytest.importorskip("hypothesis.strategies")
 given = hypothesis.given
+example = hypothesis.example
 settings = hypothesis.settings
 HealthCheck = hypothesis.HealthCheck
 
@@ -140,6 +141,8 @@ def _import(importer, text: str, suffix: str):
 
 @settings(max_examples=150, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(qif_files())
+# Python 3.10's csv reader refuses a NUL byte where later versions read it.
+@example("!Type:Prices\nD01/15/2026\nT\x00")
 def test_malformed_qif_never_corrupts_the_book(text):
     _import(qif, text, ".qif")
 
@@ -165,6 +168,7 @@ def csv_files(draw):
 
 @settings(max_examples=150, deadline=None, suppress_health_check=[HealthCheck.too_slow])
 @given(csv_files())
+@example("Date,Description,Amount\n\n\x00")
 def test_malformed_csv_is_refused_or_imported_whole(text):
     from breadsched.gen.lib import Account, AccountType
     from breadsched.gen.services.csv_import import CsvImportRequest, CsvMapping, import_csv

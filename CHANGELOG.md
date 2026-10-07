@@ -19,7 +19,12 @@ section. Commits and pull requests hold the complete history.
   `tests/test_import_fuzz.py` feeds generated malformed QIF, OFX, and CSV statements
   to the importers: each finishes or refuses cleanly, writes nothing when it
   refuses, leaves a book that verifies, and re-imports without adding transactions.
-  No defect was found; no application code changed.
+- **NUL bytes in CSV and QIF price files on Python 3.10.** The fuzzing found that
+  Python 3.10's `csv` reader raises on a NUL byte (later versions read it), which
+  escaped the CSV importer and QIF price sections as an unexplained error. A CSV
+  file that is not CSV text is now refused (`import.csv.file.unreadable`, "The file
+  is not CSV text") and an unreadable QIF price line is skipped and named. Both
+  inputs are pinned as explicit examples in the fuzz tests.
 
 ## 0.2.0a232 - 2026-10-06
 
