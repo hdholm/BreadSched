@@ -238,6 +238,13 @@ _SERVICE_MESSAGES = {
     ),
     "savings_goal.dates.invalid": "The target date must be after the start date",
     "savings_goal.not_found": "That savings goal no longer exists",
+    "scenario.drawdown.account": "Choose a non-cash asset account to withdraw from",
+    "scenario.drawdown.into": "Choose a spendable cash account to pay the withdrawals into",
+    "scenario.drawdown.method": "Give either a yearly amount or a yearly percentage, not both",
+    "scenario.drawdown.amount": "The yearly amount must be more than zero",
+    "scenario.drawdown.rate": "The yearly percentage must be more than 0% and at most 100%",
+    "scenario.drawdown.dates": "The end date cannot be before the start date",
+    "scenario.drawdown.not_found": "That drawdown no longer exists",
     "savings_goal.purchase.incomplete": "Give both the purchase date and the account it buys into",
     "savings_goal.purchase.before_target": (
         "The purchase date must be on or after the goal's target date"

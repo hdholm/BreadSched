@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
 
 from ..db.sqlite import DbSQLite
+from ..lib.account import AccountClass
 from ..lib.base import create_handle
-from ..lib.scenario import Scenario, ScenarioSchedule
+from ..lib.money import Money
+from ..lib.scenario import Drawdown, Scenario, ScenarioSchedule
 from .contracts import ServiceError, ServiceResult
 
 
@@ -149,3 +153,93 @@ def _unique_copy_name(db: DbSQLite, name: str) -> str:
         candidate = f"{base} {number}"
         number += 1
     return candidate
+
+
+@dataclass(frozen=True, slots=True)
+class SaveDrawdown:
+    """Add a drawdown to a scenario, or replace one (``handle``)."""
+
+    scenario: str
+    account: str
+    into: str
+    start: date
+    #: Exactly one of a fixed yearly amount or a yearly fraction of the balance.
+    annual_amount: Money | None = None
+    annual_rate: Decimal | None = None
+    end: date | None = None
+    #: Grow a fixed amount with the scenario's expense inflation each year.
+    escalate: bool = True
+    handle: str | None = None
+
+
+def drawdown_accounts(db: DbSQLite) -> tuple[list[str], list[str]]:
+    """Accounts a drawdown can withdraw from (holdings) and pay into (spendable cash)."""
+    sources: list[str] = []
+    targets: list[str] = []
+    for account in db.iter_accounts():
+        if account.placeholder or account.is_root or account.exclude_from_projection:
+            continue
+        if account.is_spendable_cash:
+            targets.append(account.handle)
+        elif account.account_class is AccountClass.ASSET:
+            sources.append(account.handle)
+    return sources, targets
+
+
+def _drawdown_error(db: DbSQLite, request: SaveDrawdown) -> ServiceError | None:
+    sources, targets = drawdown_accounts(db)
+    if request.account not in sources:
+        return ServiceError("scenario.drawdown.account", ("account",))
+    if request.into not in targets:
+        return ServiceError("scenario.drawdown.into", ("into",))
+    if (request.annual_amount is None) == (request.annual_rate is None):
+        return ServiceError("scenario.drawdown.method", ("annual_amount", "annual_rate"))
+    if request.annual_amount is not None and request.annual_amount <= 0:
+        return ServiceError("scenario.drawdown.amount", ("annual_amount",))
+    if request.annual_rate is not None and not Decimal(0) < request.annual_rate <= 1:
+        return ServiceError("scenario.drawdown.rate", ("annual_rate",))
+    if request.end is not None and request.end < request.start:
+        return ServiceError("scenario.drawdown.dates", ("end",))
+    return None
+
+
+def save_drawdown(db: DbSQLite, request: SaveDrawdown) -> ServiceResult[Drawdown]:
+    """Validate and store one drawdown in its scenario as one undo step."""
+    scenario = db.get_scenario(request.scenario)
+    if scenario is None:
+        return ServiceResult.failure(ServiceError("scenario.not_found", ("scenario",)))
+    if request.handle is not None and not any(
+        item.handle == request.handle for item in scenario.drawdowns
+    ):
+        return ServiceResult.failure(ServiceError("scenario.drawdown.not_found", ("handle",)))
+    if (problem := _drawdown_error(db, request)) is not None:
+        return ServiceResult.failure(problem)
+    drawdown = Drawdown(
+        request.account,
+        request.into,
+        request.start,
+        annual_amount=request.annual_amount,
+        annual_rate=request.annual_rate,
+        end=request.end,
+        escalate=request.escalate,
+        handle=request.handle,
+    )
+    kept = [item for item in scenario.drawdowns if item.handle != drawdown.handle]
+    scenario.drawdowns = [*kept, drawdown]
+    with db.transaction(f"Save drawdown in {scenario.name}") as txn:
+        db.commit_scenario(scenario, txn)
+    return ServiceResult.success(drawdown)
+
+
+def remove_drawdown(db: DbSQLite, scenario_handle: str, handle: str) -> ServiceResult[Drawdown]:
+    """Remove one drawdown from its scenario as one undo step."""
+    scenario = db.get_scenario(scenario_handle)
+    if scenario is None:
+        return ServiceResult.failure(ServiceError("scenario.not_found", ("scenario",)))
+    found = [item for item in scenario.drawdowns if item.handle == handle]
+    if not found:
+        return ServiceResult.failure(ServiceError("scenario.drawdown.not_found", ("handle",)))
+    scenario.drawdowns = [item for item in scenario.drawdowns if item.handle != handle]
+    with db.transaction(f"Remove drawdown from {scenario.name}") as txn:
+        db.commit_scenario(scenario, txn)
+    return ServiceResult.success(found[0])

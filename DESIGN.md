@@ -1138,6 +1138,34 @@ undo step); allocations cannot exceed the target, and deleting a goal's account 
 refused by reference verification. `presentation` gives GTK, web, CLI, and print the
 same status and milestone wording.
 
+### Retirement drawdown
+
+`Scenario.drawdowns` holds `Drawdown` rules: monthly withdrawals from a holding
+account into spendable cash from `start` (on its day of the month, clamped to short
+months) until an optional `end`. A rule withdraws either `annual_amount` / 12, grown
+by the scenario's expense inflation at each anniversary of `start` when `escalate`
+(the rate in effect on that anniversary, from the dated assumption timeline), or
+`annual_rate` / 12 of the account's projected balance on the withdrawal date. The
+amount depends on projected state, so the projection's `_Drawdowns` sizes each
+withdrawal inside the event loop: it advances balances to the date, after that day's
+planned events, then applies an ordinary scenario-only `ONE_OFF` placeholder event
+(two balanced splits), so ledger classification (a retirement account's withdrawal
+is a retirement distribution), the conservation bridge, and month detail need no
+special case. A withdrawal is capped at the balance, with one "runs out of money"
+warning; a rule whose account is not a projected holding, or whose target is not
+projected spendable cash, is left out with a warning. Drawdowns never post, are not
+Plan rows, and are not inherited by child scenarios. Rules are stored inside the
+scenario's serialized document, so there is no schema change; a version without
+drawdowns ignores them and drops them if it saves that scenario.
+`services.scenarios.save_drawdown` and `remove_drawdown` own validation and writes:
+the source must be a non-cash asset and the target spendable cash
+(`drawdown_accounts`, both excluding placeholders and projection-excluded accounts),
+exactly one of a positive amount or a rate in (0, 1], and an end not before the start.
+`Scenario.account_references` names every account a scenario uses (rates, opening
+overrides, one-offs, dated periods, goal purchase accounts, and both drawdown
+accounts); whole-book and change verification both use it, so deleting any of
+those accounts is refused.
+
 ## Valuation and reporting
 
 ### Currency conversion and valuation

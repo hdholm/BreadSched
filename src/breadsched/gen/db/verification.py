@@ -501,10 +501,7 @@ def _verify_schedules(state: _VerificationState) -> list[BookIssue]:
 def _verify_scenarios(state: _VerificationState) -> list[BookIssue]:
     issues: list[BookIssue] = []
     for scenario in state.scenarios.values():
-        refs = set(scenario.assumptions.per_account) | set(scenario.opening_overrides)
-        refs.update(item.account for item in scenario.one_offs)
-        for period in scenario.assumption_periods:
-            refs.update(period.per_account)
+        refs = scenario.account_references()
         for account_handle in sorted(refs):
             if account_handle not in state.accounts:
                 issues.append(

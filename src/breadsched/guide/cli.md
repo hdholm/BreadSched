@@ -403,6 +403,23 @@ are under `bridges` (see
 scenarios year by year. See
 [Projection and scenarios](../USER_GUIDE.md#projection-and-scenarios).
 
+`drawdown` lists, saves, and removes a saved scenario's
+[retirement drawdowns](../USER_GUIDE.md#retirement-drawdown):
+
+```bash
+breadsched drawdown household.breadsched save --scenario "Retire at 62" \
+    --account "Assets:Retirement 401k" --into Assets:Checking \
+    --start 2036-07-01 --annual-amount 42000
+breadsched drawdown household.breadsched save --scenario "Retire at 62" \
+    --account Assets:Brokerage --into Assets:Checking --start 2036-07-01 \
+    --annual-rate 4% --end 2050-12-31
+breadsched drawdown household.breadsched list --scenario "Retire at 62"
+breadsched drawdown household.breadsched remove --scenario "Retire at 62" --handle 1a2b3c4d
+```
+
+`--level` keeps a fixed amount from rising with inflation; `--handle` with `save`
+replaces an existing drawdown.
+
 ## Walkthrough: set up a household
 
 These commands build a small, invented household from an empty book: accounts with
