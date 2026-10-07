@@ -10,6 +10,17 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a245 - 2026-10-06
+
+- **Smaller command and window modules.** The payee, rule, tag, and attachment
+  commands moved from `cli/ledger_commands` (1,215 lines) to
+  `cli/categorization_commands` (603); ledger commands keep accounts, registers,
+  balances, rates, and transactions (636). The window's toolbar, views, and view
+  commands (`TOOLBAR`, `CATEGORIES`, `ViewAction`, `VIEW_ACTIONS`,
+  `view_action_name`) moved from `gui/viewmanager` to a GTK-free `gui/view_catalog`,
+  which `viewmanager` re-exports and the application now imports. Architecture
+  tests check both. No behavior changed.
+
 ## 0.2.0a244 - 2026-10-06
 
 - **Holdings, cost basis, and gains.** `engine/cost_basis` derives each security

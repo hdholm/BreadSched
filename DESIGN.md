@@ -211,7 +211,8 @@ module that defines both their parsers, in a `register(add)` function, and their
 handlers: `book_commands` (create, back up, restore, migrate, verify, guide, export,
 read GnuCash, start web or GTK), `import_commands` (book, CSV, held changes,
 write-back, inference), `ledger_commands` (accounts, registers, balances, rates,
-transactions, rules, payees, tags, attachments), `plan_commands` (schedules,
+transactions), `categorization_commands` (rules, payees, tags, attachments),
+`investment_commands` (holdings and cost basis), `plan_commands` (schedules,
 Review, due review, Plan matches, activity, estimates, paychecks),
 `benefit_commands` (FSA claims, receivables, goals), and `projection_commands`
 (projections, scenarios, comparison, net worth, Dashboard). `cli.common` holds the
@@ -2435,16 +2436,21 @@ users whose banks AqBanking serves and who cannot use this route.
 
 The main window has no sidebar, which duplicated the View menu and took width from
 every view. The toolbar is arranged around the current view: actions that work
-anywhere (`viewmanager.TOOLBAR`: open or import a book, undo, redo, new
+anywhere (`view_catalog.TOOLBAR`: open or import a book, undo, redo, new
 transaction, print), the current view's name and its own command icons
-(`view_tools`), one toggle per other view (`viewmanager.CATEGORIES`), and the book's
+(`view_tools`), one toggle per other view (`view_catalog.CATEGORIES`), and the book's
 account and transaction counts. The toolbar scrolls horizontally rather than setting
 the window's minimum width. The View menu and the view icons both target the
 stateful `win.show-category` action, and `show_category()` is the single navigation
 entry point, so the active icon and menu item always agree however a view was
 reached.
 
-View commands are declared once in `viewmanager.VIEW_ACTIONS`. Each becomes a
+`gui/view_catalog` holds that toolbar, the views, and every view's commands as
+plain data with no GTK import (an architecture test checks it), so the window and
+the application build from one catalog that can be read without a display;
+`viewmanager` re-exports it.
+
+View commands are declared once in `view_catalog.VIEW_ACTIONS`. Each becomes a
 `win.<view>-<name>` action, is listed in **Actions**, and appears in the toolbar
 only while its view is current. **Actions** lists the current view's commands
 first, then the commands that work anywhere, then every other view's commands under

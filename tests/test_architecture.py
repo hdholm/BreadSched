@@ -939,6 +939,24 @@ def _defined(tree: ast.Module) -> set[str]:
     return {node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.ClassDef))}
 
 
+class TestGuiBoundaries:
+    def test_the_view_catalog_needs_no_display(self):
+        """The toolbar, views, and view commands are plain data the window builds from."""
+        tree = ast.parse((SRC / "gui" / "view_catalog.py").read_text(encoding="utf-8"))
+        imported = {
+            node.module or ""
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.ImportFrom, ast.Import))
+            for node in [node]
+        }
+        assert not any("gi" in module.split(".") or "gi_setup" in module for module in imported)
+        from breadsched.gui import view_catalog
+
+        assert {key for key, _label, _icon in view_catalog.CATEGORIES} >= set(
+            view_catalog.VIEW_ACTIONS
+        )
+
+
 class TestWebBoundaries:
     def test_the_request_context_holds_only_the_book(self):
         """Every handler is a resource adapter; ``Api`` carries the open book alone."""
@@ -1001,6 +1019,14 @@ class TestCliBoundaries:
             if keyword.arg == "func" and isinstance(keyword.value, ast.Name)
         }
         assert handlers and handlers <= defined
+
+    def test_rules_payees_tags_and_attachments_have_their_own_module(self):
+        tree = ast.parse((SRC / "cli" / "categorization_commands.py").read_text(encoding="utf-8"))
+        defined = {node.name for node in tree.body if isinstance(node, ast.FunctionDef)}
+        assert {"cmd_rules", "cmd_payees", "cmd_tags", "cmd_attachments"} <= defined
+        ledger = ast.parse((SRC / "cli" / "ledger_commands.py").read_text(encoding="utf-8"))
+        ledger_defined = {node.name for node in ledger.body if isinstance(node, ast.FunctionDef)}
+        assert ledger_defined.isdisjoint({"cmd_rules", "cmd_payees", "cmd_tags", "cmd_attachments"})
 
     def test_shared_helpers_depend_on_no_command_module(self):
         tree = ast.parse((SRC / "cli" / "common.py").read_text(encoding="utf-8"))
