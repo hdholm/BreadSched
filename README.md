@@ -65,6 +65,8 @@ portal and books kept outside Documents.
 
 ## Install and run for development
 
+BreadSched requires Python 3.11 or later.
+
 ```bash
 pip install -e ".[gui,dev]"          # PyGObject + GTK 4 runtime are also required
 pytest                               # GUI tests skipped when GTK is unavailable

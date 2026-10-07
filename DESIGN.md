@@ -2552,6 +2552,17 @@ checking generator-owned occurrence identity and serialization round trips. Name
 regression cases remain valuable for explaining specific historical failures; the
 property layer complements rather than replaces them.
 
+Money has the same layer (`tests/test_money_properties.py`): arithmetic agrees with
+exact rational arithmetic, quantizing and `to_decimal` both round half away from
+zero at any denominator, `allocate` never loses or invents a minor unit and keeps
+shares within one unit of each other, and the GnuCash pair and text forms read back
+what they wrote. `tests/test_import_fuzz.py` feeds generated QIF, OFX, and CSV
+statements built from plausible fragments, truncations, and noise to the importers:
+an import must finish or refuse with a ValueError (the CSV service with a failed
+result), write nothing when it refuses, leave a book that `verify_book()` accepts,
+and add nothing when the same file is imported again. Both run in the ordinary
+suite with bounded example counts.
+
 ### GTK runtime availability
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
@@ -2563,6 +2574,12 @@ version, and real-launch checks so a partial system installation cannot turn tes
 collection or startup into a traceback.
 
 ### Packaging
+
+BreadSched requires Python 3.11 or later (`requires-python`), and CI tests 3.11
+through 3.14 on Linux, macOS, and Windows; the Flatpak and Windows installer
+bundle their own interpreter. Python 3.10 support was dropped in 0.2.0a233
+(alpha software, and 3.10 reaches end of life in October 2026), which also removed
+the `tomli` fallback.
 
 **Flatpak.** The manifest builds the application into `/app` with the GNOME 49 SDK
 and grants Documents access (the default book location) and network access (the

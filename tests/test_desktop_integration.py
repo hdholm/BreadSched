@@ -13,18 +13,13 @@ import importlib.util
 import json
 import shutil
 import subprocess
-import sys
+import tomllib
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
 
 from breadsched import APP_ID
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # pragma: no cover - exercised on Python 3.10 CI
-    import tomli as tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 DESKTOP = ROOT / "data" / f"{APP_ID}.desktop"

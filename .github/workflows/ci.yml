@@ -41,7 +41,7 @@ jobs:
         # application claims to run. No GTK is installed here on purpose: if the
         # suite needs a display, the layering has been broken.
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python: ["3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v7

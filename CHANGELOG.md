@@ -10,6 +10,26 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a233 - 2026-10-06
+
+- **Property-based money tests and fuzzed malformed imports.**
+  `tests/test_money_properties.py` checks over generated amounts that money
+  arithmetic is exact, rounding is half away from zero at any denominator,
+  allocation keeps every minor unit, and the GnuCash and text forms read back.
+  `tests/test_import_fuzz.py` feeds generated malformed QIF, OFX, and CSV statements
+  to the importers: each finishes or refuses cleanly, writes nothing when it
+  refuses, leaves a book that verifies, and re-imports without adding transactions.
+- **Unreadable CSV and QIF price text.** The fuzzing found that a `csv.Error`
+  (on Python 3.10, any NUL byte; on every version, an oversized field) escaped the
+  CSV importer and QIF price sections as an unexplained error. A CSV file the
+  reader refuses is now refused (`import.csv.file.unreadable`, "The file is not
+  CSV text") and an unreadable QIF price line is skipped and named. The NUL inputs
+  stay pinned as explicit examples in the fuzz tests.
+- **Python 3.10 support dropped.** `requires-python` is now `>=3.11`; CI tests
+  3.11–3.14; Ruff and mypy target 3.11 (`datetime.UTC`); the `tomli` fallback and
+  dependency are gone. Ruff's `StrEnum` rewrite (UP042) is ignored because it would
+  change the text of existing string enums.
+
 ## 0.2.0a232 - 2026-10-06
 
 - **Categorization rules can set a payee.** A description rule may name a payee

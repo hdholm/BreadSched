@@ -253,7 +253,13 @@ def _load_records(source: Path, encoding: str, delimiter: str) -> tuple[list[lis
     # same whichever platform wrote the file.
     text = text.replace("\r\n", "\n").replace("\r", "\n")
     chosen_delimiter = _delimiter(text, delimiter)
-    records = list(csv.reader(text.splitlines(keepends=True), delimiter=chosen_delimiter))
+    try:
+        records = list(csv.reader(text.splitlines(keepends=True), delimiter=chosen_delimiter))
+    except csv.Error as exc:
+        # The reader refuses some bytes (NUL before Python 3.11) and oversized fields.
+        raise CsvMappingError(
+            "import.csv.file.unreadable", f"the file is not CSV text: {exc}"
+        ) from exc
     return records, chosen_encoding, chosen_delimiter
 
 
