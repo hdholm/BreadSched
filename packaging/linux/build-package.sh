@@ -3,6 +3,8 @@
 #
 #   packaging/linux/build-package.sh deb|rpm WHEEL OUTPUT_DIR
 #
+# Prints the absolute path of the package it wrote; install it by that path.
+#
 # Both formats install the same tree: the pure-Python package in a private
 # directory (/usr/lib/breadsched), small launchers in /usr/bin that use the
 # system Python 3, and the desktop entry, AppStream metadata, and icon under

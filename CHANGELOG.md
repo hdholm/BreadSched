@@ -10,6 +10,25 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a259 - 2026-10-08
+
+- **Live quote tests.** `tests/test_online_quotes_live.py` exercises the real
+  sources end to end: every listed tsp.gov fund, ECB rates crossed into several
+  reporting currencies, Alpha Vantage (your key or its `demo` key), Finance::Quote's
+  TSP reader against the native one and another of its sources, then the service,
+  CLI, web route, and an installed `breadsched`; the GTK suite fetches live TSP
+  prices through the Online quotes dialog. Tests marked `network` run only with
+  `BREADSCHED_NETWORK_TESTS=1` and otherwise skip with that reason. A weekly *Live
+  quote sources* workflow runs them with Finance::Quote installed.
+- CONTRIBUTING and AGENTS state the principle: write the complete tests even when
+  the current environment cannot run them, gate them by the missing capability,
+  and report where they run.
+- **0.2.0a258 was not published.** Its release run installed the `.deb` as
+  `./<absolute path>`, which apt rejects (CI's own package job used a relative
+  path), and a mirror outage stopped the Windows installer job. The release
+  workflow now installs the path `build-package.sh` prints, and a release test
+  holds it; the Debian/Ubuntu and Fedora packages first ship with this version.
+
 ## 0.2.0a258 - 2026-10-08
 
 - **Debian/Ubuntu and Fedora packages.** `packaging/linux/build-package.sh` turns

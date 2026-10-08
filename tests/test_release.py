@@ -334,6 +334,9 @@ def test_release_packages_the_tested_wheel_as_deb_and_rpm():
     # The package is built from the release's own tested wheel, installed, and checked.
     assert 'wheel="release-inputs/dist/breadsched-${VERSION}-py3-none-any.whl"' in job
     assert job.index("build-package.sh") < job.index("smoke-test.sh")
+    # build-package.sh prints an absolute path; "./$file" broke the 0.2.0a258 release.
+    assert 'apt-get install -y "$file"' in job and 'dnf install -y "$file"' in job
+    assert '"./$file"' not in job
     assert "name: release-linux-${{ matrix.format }}" in job
     publication = workflow.split("\n  publish:\n", 1)[1]
     assert '"linux/breadsched_${VERSION}_all.deb" \\' in publication
@@ -387,6 +390,8 @@ def test_linux_packages_remove_the_bytecode_python_writes(tmp_path, package_form
         capture_output=True,
         text=True,
     ).stdout.strip()
+    # The release job installs exactly this path, so it must stand on its own.
+    assert Path(built).is_absolute() and Path(built).is_file()
     if package_format == "deb":
         control = tmp_path / "control"
         subprocess.run(["dpkg-deb", "-e", built, str(control)], check=True)

@@ -293,9 +293,9 @@ jobs:
           mkdir -p release-linux
           file=$(bash packaging/linux/build-package.sh "${{ matrix.format }}" "$wheel" release-linux)
           if [ "${{ matrix.format }}" = deb ]; then
-            DEBIAN_FRONTEND=noninteractive apt-get install -y "./$file"
+            DEBIAN_FRONTEND=noninteractive apt-get install -y "$file"
           else
-            dnf install -y "./$file"
+            dnf install -y "$file"
           fi
           (cd /tmp && PATH=/usr/bin:/bin bash "$GITHUB_WORKSPACE/packaging/linux/smoke-test.sh" "$VERSION")
           cd release-linux

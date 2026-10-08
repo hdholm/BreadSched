@@ -6932,6 +6932,28 @@ class TestOnlineQuotesDialog:
         finally:
             dialog.destroy()
 
+    @pytest.mark.network
+    def test_get_quotes_fetches_live_tsp_prices(self, app, window, populated_book, tmp_path):
+        """The real fetcher, from the dialog's worker to stored prices (network)."""
+        from breadsched.gen.lib import Commodity
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.dialogs.online_quotes_dialog import OnlineQuotesDialog
+
+        app.open_book(populated_book)
+        fund = Commodity(namespace="TSP", mnemonic="G", fullname="G Fund", quote_source="tsp")
+        with app.db.transaction("Fund") as txn:
+            app.db.add_commodity(fund, txn)
+        dialog = OnlineQuotesDialog(window, app.db, Settings(directory=tmp_path / "config"))
+        try:
+            dialog.get_quotes()
+            assert dialog.job.wait(120)
+            assert "G: " in dialog.results.get_text() and "(Online: tsp.gov)" in (
+                dialog.results.get_text()
+            )
+            assert [p.source for p in app.db.iter_prices(fund.handle)] == ["Online: tsp.gov"]
+        finally:
+            dialog.destroy()
+
     def test_accounts_offers_the_dialog(self, app, window, populated_book):
         app.open_book(populated_book)
         window.show_category("accounts")

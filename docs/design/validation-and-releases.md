@@ -56,6 +56,25 @@ result), write nothing when it refuses, leave a book that `verify_book()` accept
 and add nothing when the same file is imported again. Both run in the ordinary
 suite with bounded example counts.
 
+## Tests that need outside services
+
+Some behavior can be proven only against the real world: online quote sources,
+Finance::Quote under Perl, and an installed package fetching for itself. Those
+tests are written in full and gated rather than omitted. `tests/conftest.py` skips
+every test marked `network` unless `BREADSCHED_NETWORK_TESTS=1`, with a reason that
+says so; `tests/test_online_quotes_live.py` holds the quote tests (each tsp.gov fund,
+ECB rates crossed into several reporting currencies, Alpha Vantage with
+`ALPHAVANTAGE_API_KEY` or its `demo` key, Finance::Quote's TSP agreeing with the
+native reader and another of its sources through `BREADSCHED_FQ_METHOD` and
+`BREADSCHED_FQ_SYMBOL`, then the service, CLI, web route, and an installed
+`breadsched`), and `tests/test_gui.py` fetches live TSP prices through the dialog.
+Assertions hold for any trading day: positive prices in a plausible range, dated
+recently, from the expected source, and stored once. The *Live quote sources*
+workflow (`.github/workflows/live-quotes.yml`) runs them weekly and on demand with
+Finance::Quote installed, so a provider's format change is reported without making
+pull requests depend on outside services. Run them locally with
+`BREADSCHED_NETWORK_TESTS=1 pytest -m network -rs`.
+
 ## GTK runtime availability
 
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing

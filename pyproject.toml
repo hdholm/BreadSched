@@ -66,6 +66,7 @@ addopts = "-q --strict-markers"
 markers = [
     "gui: requires a GTK4 runtime",
     "performance: realistic-size performance guard; run separately from the normal matrix",
+    "network: talks to live outside services; runs only with BREADSCHED_NETWORK_TESTS=1",
 ]
 
 [tool.mutmut]

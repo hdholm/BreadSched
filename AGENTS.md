@@ -20,6 +20,9 @@ committing, or submitting work in this repository.
    in `CONTRIBUTING.md` (Pull-request workflow).
    GitHub Actions on its supported platforms, including the GTK job, is the final
    authority when a required runtime is unavailable locally.
+   A missing runtime, service, or network is never a reason to skip writing a
+   test: write the complete test, gate it with a marker or skip that names the
+   missing capability (as `CONTRIBUTING.md` describes), and report where it runs.
 5. For **each PR**, review every major document and record its disposition as
    described in `CONTRIBUTING.md` (Document review): update each document the
    PR makes inaccurate or incomplete, and give a concrete reason for each one that
