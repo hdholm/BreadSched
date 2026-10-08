@@ -16,7 +16,8 @@ committing, or submitting work in this repository.
    acceptance test before changing financial semantics where practicable.
 3. Preserve unrelated user changes and existing commit boundaries. Do not rewrite,
    discard, or conceal work merely to simplify a branch.
-4. Run the focused test slice while developing, then all gates described above.
+4. Run the focused test slice while developing, then all quality gates described
+   in `CONTRIBUTING.md` (Pull-request workflow).
    GitHub Actions on its supported platforms, including the GTK job, is the final
    authority when a required runtime is unavailable locally.
 5. For **each PR**, review every major document and record its disposition as

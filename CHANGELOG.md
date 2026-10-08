@@ -248,6 +248,10 @@ section. Commits and pull requests hold the complete history.
 
 ## 0.2.0a229 - 2026-10-06
 
+- **Not published.** Pull request #266 (0.2.0a230) merged while this version's
+  release run was still building, and the release workflow publishes only a
+  commit that is still the tip of `main`, so 0.2.0a229 has no tag, release, or
+  artifacts. Its changes were first released in 0.2.0a230.
 - **Plan shows reimbursable expenses' gross and net cost.** An expense category's
   Plan actual is the net household cost; the Plan now also lists, under
   **Reimbursable expenses: gross and net cost**, each category a receivable changed
