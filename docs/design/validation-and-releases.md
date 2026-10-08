@@ -77,6 +77,15 @@ pull requests depend on outside services. Run them locally with
 
 ## GTK runtime availability
 
+GTK tests never run on the developer's desktop by default. `tests/conftest.py`
+starts a private Xvfb for each pytest process (each xdist worker) before any test
+module imports GTK, selects GTK's X11 backend, and stops the server at exit
+(`tests/private_display.py`); `GUI_VISIBLE=1` or a host without `Xvfb` keeps the
+current display. Without it, `pytest -n auto` on a GNOME/Wayland desktop opened
+hundreds of windows from a dozen workers on the compositor and crashed GTK inside
+its Wayland event dispatch, a failure that neither CI nor `make` (both on Xvfb)
+could show.
+
 GUI tests distinguish an unavailable GTK4 runtime from a code failure. Both missing
 PyGObject (`ImportError`) and an installed PyGObject without the GTK4 typelib
 (`ValueError` from `gi.require_version`) skip the GTK module cleanly; once GTK4 is

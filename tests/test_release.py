@@ -407,3 +407,14 @@ def test_linux_packages_remove_the_bytecode_python_writes(tmp_path, package_form
         assert "$1 -eq 0" in removal
     assert "python3 -m compileall -q /usr/lib/breadsched" in install
     assert "find /usr/lib/breadsched -name __pycache__" in removal and "rm -rf" in removal
+
+
+def test_workflows_use_artifact_actions_that_run_on_node_24():
+    """upload-artifact@v4 and download-artifact@v4 run on the deprecated Node 20."""
+    for workflow in Path(".github/workflows").glob("*.yml"):
+        text = workflow.read_text(encoding="utf-8")
+        assert "actions/upload-artifact@v4" not in text, workflow
+        assert "actions/download-artifact@v4" not in text, workflow
+    release = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    assert release.count("actions/upload-artifact@v7") == 4
+    assert release.count("actions/download-artifact@v8") == 6

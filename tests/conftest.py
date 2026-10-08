@@ -29,6 +29,7 @@ from gnucash_fixtures import (
     write_price,
     write_transaction,
 )
+from private_display import start_private_display
 
 from breadsched.gen.db.sqlite import DbSQLite
 from breadsched.gen.lib import (
@@ -41,6 +42,19 @@ from breadsched.gen.lib import (
     ScheduledTransaction,
     Transaction,
 )
+
+
+def pytest_configure(config):
+    """Give this process a private Xvfb before any test module imports GTK.
+
+    Configuration runs before collection, and collecting ``test_gui`` is what
+    imports GTK, so the display is chosen in time. Each xdist worker configures
+    itself and gets its own server; ``GUI_VISIBLE=1`` keeps the current display.
+    The xdist controller runs no tests, so it starts none.
+    """
+    controller = getattr(config.option, "numprocesses", None) and not hasattr(config, "workerinput")
+    if not controller:
+        start_private_display()
 
 
 @pytest.fixture(autouse=True)
