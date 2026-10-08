@@ -25,6 +25,11 @@ Contents:
 10. [Security](docs/design/security.md)
 11. [Validation, packaging, and releases](docs/design/validation-and-releases.md)
 
+Decision records under `docs/design/decisions/` keep the measurements behind
+choices that were tested before being made:
+
+- [0001: Keep transactions as JSON with a derived split index](docs/design/decisions/0001-transaction-storage.md)
+
 ## Product boundary
 
 BreadSched is a household-finance application. Its long-term direction is to cover

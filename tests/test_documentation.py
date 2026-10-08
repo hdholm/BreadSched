@@ -16,7 +16,7 @@ DOCUMENTS = (
     "AGENTS.md",
     "DESIGN.md",
     "CHANGELOG.md",
-    *sorted(str(p.relative_to(ROOT)) for p in (ROOT / "docs" / "design").glob("*.md")),
+    *sorted(str(p.relative_to(ROOT)) for p in (ROOT / "docs" / "design").rglob("*.md")),
 )
 
 

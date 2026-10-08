@@ -13,7 +13,7 @@ release workflow compares the installed wheel's line with
 carry a stale schema window. Book
 verification includes the same application and schema details in its human and JSON
 diagnostics. The integer data-format/schema version determines whether a
-native book can be opened or must be migrated; it is currently 10. A behavior-only
+native book can be opened or must be migrated; it is currently 11. A behavior-only
 release changes only the application version. A persistent representation change
 increments the data-format version and supplies an explicit migration.
 
@@ -183,3 +183,11 @@ XDG `user-dirs.dirs` and common Windows OneDrive redirection. Because SQLite fil
 are unsafe as an only copy on many sync/network filesystems, known sync roots are
 detected and opening a book there emits a durability warning.
 
+## Decision: transactions stay JSON with a derived index
+
+Normalized transaction and split tables were measured against the current layout
+and not adopted: they made books 43% smaller but loading every transaction 1.5 to
+1.7 times slower. See
+[0001: Keep transactions as JSON with a derived split index](decisions/0001-transaction-storage.md)
+for the measurements, the reasons, and `scripts/storage_benchmark.py`, which
+repeats them.

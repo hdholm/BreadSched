@@ -10,6 +10,19 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a255 - 2026-10-08
+
+- **Storage normalization measured and declined.**
+  [Decision 0001](docs/design/decisions/0001-transaction-storage.md) records the
+  comparison of the current JSON-plus-`split_index` layout with normalized
+  transaction and split tables on a 30,000-transaction household history. The
+  normalized layout was 43% smaller but loaded every transaction 1.5 to 1.7 times
+  slower, failing the roadmap's no-worse-than-5% bar, so transactions stay JSON.
+  `scripts/storage_benchmark.py` repeats the measurement. Compact JSON (omitting
+  default fields) is listed after the first Beta as the cheaper route to smaller
+  books.
+- The storage design part named schema 10 as current; it is 11.
+
 ## 0.2.0a254 - 2026-10-08
 
 - **The browser register edits like the desktop one.** Clicking a row edits it in
