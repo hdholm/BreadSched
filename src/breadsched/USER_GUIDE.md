@@ -472,6 +472,10 @@ finish the session to mark the selected splits reconciled
 ([desktop](guide/desktop.md#reconcile-a-statement),
 [browser](guide/web.md#reconcile-a-statement)).
 
+Between statements, a register's **R** column marks entries cleared (**c**) or not
+(**n**) one at a time, and an open statement picks up the change. Reconciled
+entries (**y**) change only through their statement.
+
 Cancel leaves ledger splits unchanged and retains an audit record. The most recent
 completed statement can be reopened for correction; its entries return to Cleared
 until it balances and is finished again. Reopen later completed statements first.

@@ -17,6 +17,9 @@ from datetime import date
 
 from ...gen.engine import ledger  # noqa: E402
 from ...gen.lib.account import AccountClass, AccountType  # noqa: E402
+from ...gen.lib.transaction import ReconcileState
+from ...gen.services import ToggleCleared, toggle_cleared
+from ...presentation import service_error_message
 from ..gi_setup import Gdk, Gio, GLib, Gtk, Pango
 from ..widgets.choice import bounded_dropdown
 from ._base import (  # noqa: E402
@@ -31,6 +34,14 @@ from ._base import (  # noqa: E402
 from .blank_entry import BLANK, BLANK_PAYLOADS, BlankEntryRow, ImbalanceLine, SplitLine
 
 __all__ = ["RegisterView", "column_headings"]
+
+_RECONCILE_TIPS = {
+    ReconcileState.NOT_RECONCILED: "Not cleared: click to mark it cleared",
+    ReconcileState.CLEARED: "Cleared: click to mark it not cleared",
+    ReconcileState.RECONCILED: "Reconciled: reopen its statement to change it",
+    ReconcileState.FROZEN: "Frozen: changes only through its statement",
+    ReconcileState.VOID: "Void",
+}
 
 
 def _is_parent(payload) -> bool:
@@ -159,6 +170,10 @@ class RegisterView(BaseView):
         keys = Gtk.EventControllerKey()
         keys.connect("key-pressed", self._on_register_key)
         self.column_view.add_controller(keys)
+        # A single click on a transaction edits it where it is, as in GnuCash.
+        click = Gtk.GestureClick()
+        click.connect("released", self._on_row_clicked)
+        self.column_view.add_controller(click)
         self.column_view.append_column(
             column(
                 "Date",
@@ -181,6 +196,7 @@ class RegisterView(BaseView):
                 cell=cell("Transfer"),
             )
         )
+        self.column_view.append_column(self._reconcile_column())
         self.debit_column = column(
             "Increase",
             lambda r: r.debit.format() if r.debit else "",
@@ -218,6 +234,21 @@ class RegisterView(BaseView):
         self.table.scroller.set_vexpand(True)
         self.table.set_vexpand(True)
         self.append(self.table)
+
+        # While an account path is typed into a picker, its matches list here;
+        # the first is the one chosen, and clicking another picks it.
+        self.completion_list = Gtk.ListBox()
+        self.completion_list.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.completion_list.set_can_focus(False)
+        self.completion_list.add_css_class("boxed-list")
+        self.completion_list.update_property(
+            [Gtk.AccessibleProperty.LABEL], ["Accounts matching what you typed"]
+        )
+        self.completion_list.connect("row-activated", lambda _box, row: row.pick())
+        self.completion_list.set_visible(False)
+        for side in ("start", "end"):
+            getattr(self.completion_list, f"set_margin_{side}")(8)
+        self.append(self.completion_list)
 
         # One line under the register reports what the blank row did or why not.
         self.entry_status = Gtk.Label(xalign=0, wrap=True)
@@ -267,7 +298,129 @@ class RegisterView(BaseView):
         rows = [Row(payload) for payload in self.blank.rows()]
         store.splice(0, store.get_n_items(), rows)
 
+    # ------------------------------------------------------- reconcile column
+
+    def _reconcile_column(self) -> Gtk.ColumnViewColumn:
+        """``R``: n, c, or y for this account's split; clicking toggles n and c."""
+        factory = Gtk.SignalListItemFactory()
+
+        def on_setup(_factory, item) -> None:
+            button = Gtk.Button()
+            button.set_has_frame(False)
+            button.add_css_class("numeric")
+            button.payload = None
+            button.connect("clicked", lambda widget: self.toggle_cleared(widget.payload))
+            item.set_child(button)
+
+        def on_bind(_factory, item) -> None:
+            button = item.get_child()
+            payload = unwrap(item.get_item())
+            shown = isinstance(payload, ledger.RegisterRow)
+            button.payload = payload if shown else None
+            button.set_visible(shown)
+            if shown:
+                state = payload.split.reconcile
+                button.set_label(state.value)
+                button.set_tooltip_text(_RECONCILE_TIPS.get(state, ""))
+                button.update_property(
+                    [Gtk.AccessibleProperty.LABEL],
+                    [f"Reconcile state {state.value} for {payload.description}"],
+                )
+
+        factory.connect("setup", on_setup)
+        factory.connect("bind", on_bind)
+        col = Gtk.ColumnViewColumn(title="R", factory=factory)
+        col.set_resizable(True)
+        return col
+
+    def toggle_cleared(self, payload) -> bool:
+        """Mark the row's split cleared, or not cleared, through the reconciliation service."""
+        if self.db is None or not isinstance(payload, ledger.RegisterRow):
+            return False
+        result = toggle_cleared(
+            self.db, ToggleCleared(payload.transaction.handle, payload.split.handle)
+        )
+        if result.value is None:
+            self.set_entry_status(service_error_message(result.errors[0]), error=True)
+            return False
+        state = "cleared" if result.value is ReconcileState.CLEARED else "not cleared"
+        self.set_entry_status(f"Marked {payload.description} {state}.")
+        return True
+
     # ------------------------------------------------------ in-place editing
+
+    def _on_row_clicked(self, _gesture, presses: int, _x: float, _y: float) -> None:
+        if presses == 1:
+            # The row's own click selects it first; edit what it selected.
+            GLib.idle_add(lambda: self.edit_selected_row() and GLib.SOURCE_REMOVE)
+
+    def edit_selected_row(self) -> bool:
+        """Edit the selected transaction in place, committing any edit being left."""
+        selection = self.column_view.get_model()
+        item = selection.get_selected_item() if selection is not None else None
+        payload = unwrap(item) if item is not None else None
+        if not isinstance(payload, (ledger.RegisterRow, SplitRow)) or self._is_edited(payload):
+            return False
+        return self.edit_handle(payload.transaction.handle)
+
+    def transaction_order(self) -> list[str]:
+        """Transactions as the register shows them, top to bottom."""
+        selection = self.column_view.get_model()
+        order: list[str] = []
+        if selection is None:
+            return order
+        for index in range(selection.get_n_items()):
+            payload = unwrap(selection.get_item(index))
+            if isinstance(payload, ledger.RegisterRow):
+                order.append(payload.transaction.handle)
+        return order
+
+    def _leave(self, row: BlankEntryRow) -> bool:
+        """Commit what ``row`` holds before moving on; False keeps the user there."""
+        if row is self.editor:
+            if row.has_input():
+                return row.commit()
+            self.stop_editing()
+            return True
+        return not row.has_input() or row.commit()
+
+    def edit_handle(self, handle: str | None) -> bool:
+        """Leave the current row (committing it) and edit ``handle``, or the blank row."""
+        current = self.editor if self.editor is not None else self.blank
+        if not self._leave(current):
+            return False
+        if handle is None:
+            GLib.idle_add(lambda: self.blank.date.grab_focus() and GLib.SOURCE_REMOVE)
+            return True
+        transaction = self.db.get_transaction(handle) if self.db is not None else None
+        if transaction is None:
+            return False
+        split = next(
+            (item for item in transaction.splits if item.account == self.account_handle), None
+        )
+        if split is None:
+            return False
+        self.start_editing(transaction, split.handle)
+        return True
+
+    def move_edit(self, row: BlankEntryRow, step: int) -> bool:
+        """Up/Down: commit ``row`` and edit the transaction above or below it.
+
+        Below the last transaction is the blank row; above the first, nothing moves.
+        """
+        order = self.transaction_order()
+        if row is self.blank:
+            index = len(order)
+        elif row.editing is not None and row.editing.handle in order:
+            index = order.index(row.editing.handle)
+        else:
+            return False
+        target = index + step
+        if target < 0 or (row is self.blank and target >= len(order)):
+            return True
+        # A row that cannot commit keeps the user there, with the reason shown.
+        self.edit_handle(order[target] if target < len(order) else None)
+        return True
 
     def _on_register_key(self, _controller, keyval: int, _keycode: int, _state) -> bool:
         if keyval == Gdk.KEY_F2:

@@ -194,3 +194,47 @@ def test_only_one_open_session_and_monotonic_completed_statements(db, statement_
     reconciliation.complete(db, session.handle)
     with pytest.raises(ValueError, match="must follow"):
         reconciliation.start(db, bank.handle, date(2026, 1, 31), "800")
+
+
+def test_the_register_toggles_cleared_and_keeps_an_open_statement_in_step(db, statement_book):
+    from breadsched.gen.services import ToggleCleared, toggle_cleared
+
+    bank, cleared, pending, future = statement_book
+    split = pending.split_for(bank.handle).handle
+    result = toggle_cleared(db, ToggleCleared(pending.handle, split))
+    assert result.value is ReconcileState.CLEARED
+    assert db.get_transaction(pending.handle).split_for(bank.handle).reconcile is (
+        ReconcileState.CLEARED
+    )
+    assert toggle_cleared(db, ToggleCleared(pending.handle, split)).value is (
+        ReconcileState.NOT_RECONCILED
+    )
+
+    # With a statement open, clearing a candidate selects it and unclearing drops it;
+    # an entry after the statement date is cleared but not selected.
+    session = reconciliation.start(db, bank.handle, date(2026, 1, 31), "750")
+    assert toggle_cleared(db, ToggleCleared(pending.handle, split)).ok
+    assert split in db.get_reconciliation(session.handle).selected_splits
+    assert reconciliation.summary(db, session.handle).balanced
+    assert toggle_cleared(db, ToggleCleared(pending.handle, split)).ok
+    assert split not in db.get_reconciliation(session.handle).selected_splits
+    later = future.split_for(bank.handle).handle
+    assert toggle_cleared(db, ToggleCleared(future.handle, later)).ok
+    assert later not in db.get_reconciliation(session.handle).selected_splits
+
+
+def test_reconciled_entries_change_only_through_their_statement(db, statement_book):
+    from breadsched.gen.services import ToggleCleared, toggle_cleared
+
+    bank, *_rest = statement_book
+    opening = next(t for t in db.iter_transactions() if t.description == "Opening")
+    before = opening.serialize()
+    refused = toggle_cleared(
+        db, ToggleCleared(opening.handle, opening.split_for(bank.handle).handle)
+    )
+    assert refused.errors == (ServiceError("reconciliation.split.locked", ("split",)),)
+    assert db.get_transaction(opening.handle).serialize() == before
+    missing = toggle_cleared(db, ToggleCleared(opening.handle, "no-such-split"))
+    assert missing.errors[0].code == "reconciliation.split.missing"
+    gone = toggle_cleared(db, ToggleCleared("no-such-transaction", "x"))
+    assert gone.errors[0].code == "transaction.not_found"

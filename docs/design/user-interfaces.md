@@ -124,7 +124,22 @@ the shared transaction service, not a parallel transaction model:
 - **Split lines.** The Split toggle expands the row into lines with a memo, account,
   and amount each, a trailing empty line, and a running imbalance. Collapsing back
   is refused while more than two lines hold a split.
-- **Editing in place.** F2 loads the selected transaction into an edit-mode row: a
+- **Grid behavior.** A single click (a `Gtk.GestureClick` on the column view, acting
+  after the row's own selection) or F2 edits a transaction in place. Up/Down in an
+  edit row move between split lines, then call `RegisterView.move_edit`, which
+  takes the neighbor from the displayed order (`transaction_order`, so sorting and
+  filtering are respected) before committing the row being left through
+  `save_transaction`; a refused commit keeps the user on that row. Below the last
+  transaction is the blank row. A typed account path lists its matches in a
+  `Gtk.ListBox` under the table (not a popover, which would need a parent that
+  outlives every recycled picker). The **R** column calls
+  `services.toggle_cleared`, which flips only `n`↔`c`, refuses `y`/frozen/void,
+  and in the same database change adds a newly cleared candidate to (or removes
+  it from) the account's open statement. These behaviors are built on the existing
+  `Gtk.ColumnView` with persistent editor widgets hosted in its cells rather than a
+  separate grid widget: the hosting already survives row recycling, and sorting,
+  filtering, the column chooser, and printing keep working unchanged.
+- **Editing in place.** F2 or a click loads the transaction into an edit-mode row: a
   two-split transaction edits as one row, any other shape as split lines that record
   their stored split handles. Saving passes `existing_handle` and `source`, so
   handles, planning purposes, investment activity, and notes the row does not show

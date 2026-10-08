@@ -11,6 +11,7 @@ from ..db.sqlite import DbSQLite
 from ..engine import reconciliation
 from ..lib.money import Money
 from ..lib.reconciliation import Reconciliation
+from ..lib.transaction import ReconcileState
 from .contracts import ServiceError, ServiceResult
 
 
@@ -101,3 +102,16 @@ def reopen_reconciliation(
     request: ReconciliationAction,
 ) -> ServiceResult[Reconciliation]:
     return _result(lambda: reconciliation.reopen(db, request.handle))
+
+
+@dataclass(frozen=True, slots=True)
+class ToggleCleared:
+    transaction: str
+    split: str
+
+
+def toggle_cleared(db: DbSQLite, request: ToggleCleared) -> ServiceResult[ReconcileState]:
+    """Cycle one split between not cleared and cleared; reconciled entries refuse."""
+    if db.get_transaction(request.transaction) is None:
+        return ServiceResult.failure(ServiceError("transaction.not_found", ("transaction",)))
+    return _result(lambda: reconciliation.toggle_cleared(db, request.transaction, request.split))

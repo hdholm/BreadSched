@@ -206,13 +206,30 @@ cancelling leaves it as it was. If you switch accounts, open another
 transaction, or close a register window while the row holds typing, BreadSched
 asks whether to save it, discard it, or stay.
 
-To change an existing transaction without opening a window, select it and press
-**F2** (or choose **Actions → Edit Transaction in Place**). Its row
-turns into the same fields as the blank row, and a transaction with more than two
-splits opens its split lines underneath. Edit anything, then press **Enter** to
-save, or **Escape** to put the row back as it was. The pencil icon opens the same
-transaction in the full editor. Double-clicking a transaction also opens the full
-editor.
+To change an existing transaction, click it (or select it and press **F2**, or
+choose **Actions → Edit Transaction in Place**). Its row turns into the same fields
+as the blank row, and a transaction with more than two splits opens its split lines
+underneath. Edit anything, then press **Enter** to save, or **Escape** to put the
+row back as it was. The pencil icon opens the same transaction in the full editor,
+as does **Enter** on a selected row that is not being edited.
+
+As in GnuCash, **Up** and **Down** move from row to row while you type: they save the
+transaction you are leaving if you changed it, then edit the one above or below.
+In a split transaction they first move between its split lines. Below the last
+transaction is the blank row. If the transaction you are leaving cannot be saved,
+you stay on it and the line under the register says why. Clicking another
+transaction does the same.
+
+While you type an account path into **Transfer** or a split line's account, the
+matching accounts are listed under the register, and the first is chosen; click
+another to choose it instead.
+
+The **R** column shows each entry's reconcile state in this account: **n** (not
+cleared), **c** (cleared), or **y** (reconciled). Click **n** or **c** to switch
+between them, for example while ticking off a statement. If a statement is open
+for this account, a newly cleared entry dated on or before it is also checked
+there. A reconciled entry changes only by reopening its statement (see
+[Reconcile a statement](#reconcile-a-statement)).
 
 In the full editor, a new transaction is proposed the same way: when you leave the
 description and no split has an amount or memo yet, every split of the latest

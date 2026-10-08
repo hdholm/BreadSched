@@ -6882,6 +6882,116 @@ class TestBlankEntryRow:
             window.set_visible(False)
 
 
+class TestRegisterGrid:
+    """Every row edits in place; Up/Down commit and move; R toggles cleared."""
+
+    def _register(self, app, window, populated_book):
+        app.open_book(populated_book)
+        checking = app.db.get_account_by_name("Assets:Checking Account")
+        window.open_register(checking.handle)
+        return window._views["register"], checking
+
+    @staticmethod
+    def _select(view, handle):
+        from breadsched.gen.engine import ledger
+        from breadsched.gui.views._base import unwrap
+
+        selection = view.column_view.get_model()
+        for index in range(selection.get_n_items()):
+            payload = unwrap(selection.get_item(index))
+            if isinstance(payload, ledger.RegisterRow) and payload.transaction.handle == handle:
+                selection.set_selected(index)
+                return
+        raise AssertionError("row not shown")
+
+    def test_selecting_a_row_by_click_edits_it_in_place(self, app, window, populated_book):
+        view, _checking = self._register(app, window, populated_book)
+        order = view.transaction_order()
+        self._select(view, order[0])
+        assert view.edit_selected_row() is True
+        assert view.editor is not None and view.editor.editing.handle == order[0]
+        # Clicking the row already being edited changes nothing.
+        self._select(view, order[0])
+        assert view.edit_selected_row() is False
+
+    def test_up_and_down_commit_and_move_between_transactions(self, app, window, populated_book):
+        view, _checking = self._register(app, window, populated_book)
+        order = view.transaction_order()
+        assert len(order) >= 2
+        # From the blank row, Up edits the last transaction.
+        assert view.blank.handle_key(view.blank.description, Gdk.KEY_Up) is True
+        assert view.editor.editing.handle == order[-1]
+        editor = view.editor
+        editor.description.set_text("Changed while moving")
+        assert editor.handle_key(editor.description, Gdk.KEY_Up) is True
+        assert app.db.get_transaction(order[-1]).description == "Changed while moving"
+        assert view.editor.editing.handle == order[-2]
+        # Down past the last transaction returns to the blank row.
+        editor = view.editor
+        assert editor.split_mode  # the fixture's middle transaction has three splits
+        # Down goes into its split lines first, then past the last line onward.
+        assert editor.handle_key(editor.description, Gdk.KEY_Down) is True
+        assert view.editor is editor
+        assert editor.handle_key(editor.lines[-1].memo, Gdk.KEY_Down) is True
+        assert view.editor.editing.handle == view.transaction_order()[-1]
+        editor = view.editor
+        assert editor.handle_key(editor.date, Gdk.KEY_Down) is True
+        assert view.editor is None
+
+    def test_a_move_that_cannot_commit_stays_and_says_why(self, app, window, populated_book):
+        view, _checking = self._register(app, window, populated_book)
+        order = view.transaction_order()
+        view.edit_handle(order[-1])
+        editor = view.editor
+        before = app.db.get_transaction(order[-1]).serialize()
+        editor.description.set_text("")
+        assert editor.handle_key(editor.description, Gdk.KEY_Up) is True
+        assert view.editor is editor
+        assert "description" in view.entry_status.get_text()
+        assert app.db.get_transaction(order[-1]).serialize() == before
+
+    def test_the_r_column_toggles_cleared(self, app, window, populated_book):
+        from breadsched.gen.lib import ReconcileState
+
+        view, checking = self._register(app, window, populated_book)
+        titles = [
+            view.column_view.get_columns().get_item(i).get_title()
+            for i in range(view.column_view.get_columns().get_n_items())
+        ]
+        assert titles.index("R") == titles.index("Transfer") + 1
+        row = view._rows[0]
+        assert view.toggle_cleared(row) is True
+        stored = app.db.get_transaction(row.transaction.handle).split_for(checking.handle)
+        assert stored.reconcile is ReconcileState.CLEARED
+        assert "cleared" in view.entry_status.get_text()
+        stored_txn = app.db.get_transaction(row.transaction.handle)
+        stored_txn.split_for(checking.handle).reconcile = ReconcileState.RECONCILED
+        with app.db.transaction("Reconcile") as txn:
+            app.db.commit_transaction(stored_txn, txn)
+        view.refresh()
+        assert view.toggle_cleared(view._rows[0]) is False
+        assert "statement" in view.entry_status.get_text()
+
+    def test_matching_accounts_list_while_a_path_is_typed(self, app, window, populated_book):
+        view, _checking = self._register(app, window, populated_book)
+        blank = view.blank
+        for keyval in (Gdk.KEY_E, Gdk.KEY_colon):
+            blank.handle_key(blank.transfer, keyval)
+        listed = blank.completions()
+        assert listed and all(name.startswith("Expenses:") for name in listed)
+        assert view.completion_list.get_visible()
+        first = view.completion_list.get_row_at_index(0)
+        assert first.get_child().get_label() == listed[0]
+        # Clicking another match picks it.
+        second = view.completion_list.get_row_at_index(len(listed) - 1)
+        second.pick()
+        assert app.db.full_name(blank.transfer_handle()) == listed[-1]
+        assert not view.completion_list.get_visible()
+        blank.handle_key(blank.transfer, Gdk.KEY_E)
+        blank.handle_key(blank.transfer, Gdk.KEY_Tab)
+        assert blank.completions() == [] and not view.completion_list.get_visible()
+
+
 class TestBlankRowSplits:
     """#158 slice 2: "Split" expands the blank row into editable split lines."""
 
