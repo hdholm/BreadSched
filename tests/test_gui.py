@@ -6882,6 +6882,66 @@ class TestBlankEntryRow:
             window.set_visible(False)
 
 
+class TestOnlineQuotesDialog:
+    def test_sources_are_saved_and_quotes_fetched_in_the_background(
+        self, app, window, populated_book, tmp_path, monkeypatch
+    ):
+        from breadsched.gen.lib import Commodity
+        from breadsched.gen.services.quotes import FetchedQuote, QuoteFailure
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.gui.dialogs.online_quotes_dialog import OnlineQuotesDialog
+
+        monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
+        app.open_book(populated_book)
+        fund = Commodity(namespace="TSP", mnemonic="G", fullname="G Fund", fraction=10000)
+        with app.db.transaction("Fund") as txn:
+            app.db.add_commodity(fund, txn)
+        settings = Settings(directory=tmp_path / "config")
+        keys = []
+
+        class Fetcher:
+            def fetch(self, requests, reporting):
+                assert [item.symbol for item in requests] == ["G"]
+                return (
+                    [
+                        FetchedQuote(
+                            "G", "tsp", Decimal("18.4521"), "USD", date(2026, 10, 7), "tsp.gov"
+                        )
+                    ],
+                    [QuoteFailure("G", "tsp", "unused")][:0],
+                )
+
+        dialog = OnlineQuotesDialog(
+            window, app.db, settings, fetcher_factory=lambda key: keys.append(key) or Fetcher()
+        )
+        try:
+            entry = dialog.source_entries[fund.handle]
+            entry.set_text("two words")
+            assert dialog.save_sources() is False
+            assert "one word" in dialog.results.get_text()
+            entry.set_text("tsp")
+            dialog.key_entry.set_text("secret")
+            dialog.get_quotes()
+            assert dialog.job.wait(10)
+            assert keys == ["secret"]
+            assert app.db.get_commodity(fund.handle).quote_source == "tsp"
+            assert settings.get("quotes", "alphavantage_api_key") == "secret"
+            assert "G: 18.4521 USD on 2026-10-07 (Online: tsp.gov)" in dialog.results.get_text()
+            [price] = app.db.iter_prices(fund.handle)
+            assert price.source == "Online: tsp.gov"
+        finally:
+            dialog.destroy()
+
+    def test_accounts_offers_the_dialog(self, app, window, populated_book):
+        app.open_book(populated_book)
+        window.show_category("accounts")
+        dialog = window._views["accounts"]._on_online_quotes()
+        try:
+            assert dialog.get_title() == "Online quotes"
+        finally:
+            dialog.destroy()
+
+
 class TestRegisterGrid:
     """Every row edits in place; Up/Down commit and move; R toggles cleared."""
 

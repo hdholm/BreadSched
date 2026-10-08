@@ -18,6 +18,7 @@ from .benefits import (
 from .investments import (
     holding_cost_text,
     lot_move_text,
+    price_text,
 )
 from .messages import (
     configure_language,
@@ -59,6 +60,7 @@ __all__ = [
     "goal_override_text",
     "goal_status_text",
     "holding_cost_text",
+    "price_text",
     "lot_move_text",
     "plan_detail_cost_text",
     "plan_goal_text",

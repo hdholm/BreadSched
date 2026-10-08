@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a257 - 2026-10-08
+
+- **Online quotes in the desktop and browser.** **Accounts → Online Quotes…**
+  (GTK) and **Online quotes…** (browser) list each security and foreign currency
+  with its quote source, keep the Alpha Vantage key, show whether Finance::Quote
+  can be used, and **Get quotes**. The dialogs list what was stored and what failed
+  and why. GTK fetches in a background worker and stores on the main thread through
+  `quotes.Prefetched`. New routes: `GET /api/quotes` and `POST /api/quotes/source`,
+  `/api/quotes/key`, `/api/quotes/update`; the key is never returned, and
+  `settings.ini` is made owner-readable when it is saved. Fetched prices print at
+  their full precision (`presentation.price_text`) here and in `breadsched quotes`.
+- The roadmap's online-quotes item is complete; Fedora RPM and Ubuntu DEB packages
+  are now item 1.
+
 ## 0.2.0a256 - 2026-10-08
 
 - **Online quotes (service, sources, and command line).** A commodity's

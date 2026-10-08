@@ -75,6 +75,7 @@ HELP_TOPICS: dict[str, str] = {
     "held-import": "Review held GnuCash changes",
     "writeback": "Write changes back to GnuCash",
     "reconcile": "Reconcile a statement",
+    "online-quotes": "Online quotes",
     "scheduled": "Scheduled activity",
     "due-review": "Review due transactions",
     "payroll": "Paychecks and pay changes",

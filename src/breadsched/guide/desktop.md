@@ -162,6 +162,18 @@ share splits, and notes
 Investment or Retirement account's editor chooses **Cost of shares sold**: first in,
 first out, or average cost.
 
+## Online quotes
+
+In Accounts, choose **Actions → Online Quotes…**. Each security and foreign currency
+has a **Quote source**: `tsp` for Thrift Savings Plan funds, `alphavantage` for
+stocks and funds, `currency` for exchange rates, or a Finance::Quote method such as
+`vanguard`. Leave it empty for no online quotes. Enter your Alpha Vantage API key if
+you use that source; it is kept in your settings, readable only by you, never in the
+book. **Save sources** stores your choices, and **Get quotes** also fetches every
+quote in the background and lists what was stored and what failed and why. The
+line under Finance::Quote says whether it can be used here; the Flatpak cannot. See
+[Online quotes](../USER_GUIDE.md#online-quotes).
+
 ## Enter transactions in a register
 
 Select an account to open its register. It opens scrolled to the most recent entry

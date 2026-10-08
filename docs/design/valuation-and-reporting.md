@@ -124,7 +124,12 @@ currency, date, and source is updated in place. A quote in a currency the book
 lacks, or with no positive price, is reported and not stored. ECB rates are crossed
 through the euro into the reporting currency and rounded to 10 decimal places. The
 network code lives in `plugins/quotes` (see
-[decision 0002](decisions/0002-dependencies-and-online-quotes.md)).
+[decision 0002](decisions/0002-dependencies-and-online-quotes.md)). The GTK
+**Online Quotes** dialog fetches in a `BackgroundJob` worker that never touches the
+book and stores the answers on the main thread through `quotes.Prefetched`; the web
+adapter (`web/quote_resource.py`) and the CLI fetch and store in one call. The Alpha
+Vantage key lives in `settings.ini` (made owner-readable when saved), never in the
+book, and the web API reports only whether one is set.
 
 ## Valuation completeness
 

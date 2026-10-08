@@ -33,6 +33,7 @@ from .contracts import ServiceError, ServiceResult
 __all__ = [
     "NATIVE_SOURCES",
     "FetchedQuote",
+    "Prefetched",
     "QuoteFailure",
     "QuoteFetcher",
     "QuoteRequest",
@@ -79,6 +80,31 @@ class QuoteFetcher(Protocol):
     def fetch(
         self, requests: Sequence[QuoteRequest], reporting_currency: str
     ) -> tuple[list[FetchedQuote], list[QuoteFailure]]: ...
+
+
+class Prefetched:
+    """Answers fetched earlier (off the main thread), handed to :func:`update_quotes`.
+
+    GTK fetches in a worker, which must not write the book, then stores on the main
+    thread; requests that were not fetched are reported as not fetched.
+    """
+
+    def __init__(self, quotes: Sequence[FetchedQuote], failures: Sequence[QuoteFailure]) -> None:
+        self.quotes = list(quotes)
+        self.failures = list(failures)
+
+    def fetch(
+        self, requests: Sequence[QuoteRequest], reporting_currency: str
+    ) -> tuple[list[FetchedQuote], list[QuoteFailure]]:
+        answered = {(item.symbol, item.source) for item in self.quotes} | {
+            (item.symbol, item.source) for item in self.failures
+        }
+        missing = [
+            QuoteFailure(item.symbol, item.source, "not fetched; try again")
+            for item in requests
+            if (item.symbol, item.source) not in answered
+        ]
+        return self.quotes, self.failures + missing
 
 
 @dataclass(frozen=True, slots=True)
