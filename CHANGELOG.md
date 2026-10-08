@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a254 - 2026-10-08
+
+- **The browser register edits like the desktop one.** Clicking a row edits it in
+  place. Up/Down in a field save the row being left when it changed and edit the
+  row above or below (the blank row below the last), keeping a row that cannot
+  save. Typed account paths list their matches under the account choice, and a
+  click chooses one. A new **R** column shows each row's reconcile state; clicking
+  it posts to `POST /api/register/cleared`, which calls the shared
+  `toggle_cleared` service. `GET /api/register` rows carry `reconcile`.
+- The roadmap's register item is complete and removed; storage normalization is
+  now item 1.
+
 ## 0.2.0a253 - 2026-10-08
 
 - **The desktop register edits like GnuCash's.** A single click (or F2) edits a

@@ -327,6 +327,63 @@ def test_the_blank_row_reads_shortcuts_arithmetic_and_account_paths(page, served
     assert {split.account for split in posted.splits} == {register, expected.handle}
 
 
+def test_register_rows_edit_on_click_move_with_arrows_and_toggle_cleared(page, served):
+    """The browser register edits like the desktop one: click, Up/Down, R."""
+    from breadsched.gen.lib import ReconcileState
+
+    db, _httpd = served
+    _open_register(page)
+    register = page.locator("select").first.input_value()
+    rows = [r for r in page.locator("tbody tr.editable").all()]
+    assert len(rows) >= 2
+    last_desc = rows[-1].locator("td").nth(2).locator("div").first.inner_text()
+
+    # From the blank row, Up edits the last transaction.
+    _blank(page, "description").press("ArrowUp")
+    field = page.locator("[aria-label='Edited transaction description']")
+    field.wait_for()
+    assert field.input_value() == last_desc
+    field.fill(f"{last_desc} (moved)")
+    field.press("ArrowUp")
+    page.wait_for_selector(f"text=Saved changes to {last_desc} (moved).")
+    page.locator("[aria-label='Edited transaction description']").wait_for()
+    assert any(t.description == f"{last_desc} (moved)" for t in db.iter_transactions())
+
+    # Clicking another row's date edits that row instead.
+    page.locator("tbody tr.editable").first.locator("td").first.click()
+    page.wait_for_function(
+        "() => document.querySelectorAll(\"[aria-label='Edited transaction description']\")"
+        ".length === 1"
+    )
+    page.locator("[aria-label='Edited transaction description']").press("Escape")
+
+    # The R column toggles cleared through the shared service.
+    button = page.locator("tbody tr.editable button.reconcile").first
+    label = button.get_attribute("aria-label")
+    description = label.split(" for ", 1)[1]
+    button.click()
+    page.wait_for_selector(f"text=Marked {description} cleared.")
+    transaction = next(t for t in db.iter_transactions() if t.description == description)
+    assert transaction.split_for(register).reconcile is ReconcileState.CLEARED
+
+
+def test_typed_account_paths_list_their_matches(page, served):
+    db, _httpd = served
+    _open_register(page)
+    transfer = _blank(page, "transfer account")
+    transfer.focus()
+    transfer.press("E")
+    listing = page.locator("[aria-label='New transaction transfer account: matching accounts']")
+    listing.locator("button").first.wait_for()
+    names = listing.locator("button").all_inner_texts()
+    assert names and all(name.startswith("E") for name in names)
+    chosen = names[-1]
+    listing.locator("button").last.click()
+    expected = next(a.handle for a in db.iter_accounts() if db.full_name(a) == chosen)
+    assert transfer.input_value() == expected
+    assert listing.is_hidden()
+
+
 def test_the_blank_row_enters_balanced_split_lines(page, served):
     db, _httpd = served
     _open_register(page)
@@ -363,7 +420,7 @@ def test_a_register_row_is_edited_in_place(page, served):
     page.wait_for_selector("text=Posted Edit me.")
     original = next(t for t in db.iter_transactions() if t.description == "Edit me")
 
-    page.locator("tr:has-text('Edit me')").get_by_role("button", name="Edit").click()
+    page.locator("tr:has-text('Edit me')").get_by_role("button", name="Edit", exact=True).click()
     field = page.locator("[aria-label='Edited transaction description']")
     field.wait_for()
     field.fill("Edited in place")
@@ -374,7 +431,9 @@ def test_a_register_row_is_edited_in_place(page, served):
     assert stored.description == "Edited in place"
     assert {s.handle for s in stored.splits} == {s.handle for s in original.splits}
 
-    page.locator("tr:has-text('Edited in place')").get_by_role("button", name="Edit").click()
+    page.locator("tr:has-text('Edited in place')").get_by_role(
+        "button", name="Edit", exact=True
+    ).click()
     field = page.locator("[aria-label='Edited transaction description']")
     field.wait_for()
     field.fill("Never saved")
@@ -876,7 +935,7 @@ def test_a_claim_is_closed_and_reopened_in_the_claims_editor(page, served):
     page.wait_for_selector("text=Reopened: Appeal won")
     assert db.get_fsa_claim(claim.handle).closed_on is None
     # Each allocation can link money paid back into the FSA.
-    page.get_by_role("button", name="Edit").click()
+    page.get_by_role("button", name="Edit", exact=True).click()
     page.wait_for_selector("text=Repaid to the FSA")
 
 

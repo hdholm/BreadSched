@@ -5649,6 +5649,44 @@ class TestRegisterEntry:
     def _rent(self, client):
         return next(txn for txn in client.database.iter_transactions() if txn.description == "Rent")
 
+    def test_the_r_column_toggles_cleared_and_refuses_reconciled(self, client):
+        from breadsched.gen.lib import ReconcileState
+
+        checking, _rent = self._accounts(client)
+        rent = self._rent(client)
+        split = rent.split_for(checking.handle)
+        status, data = client.get(f"/api/register?account={checking.handle}")
+        row = next(item for item in data["rows"] if item["handle"] == rent.handle)
+        assert status == 200 and row["reconcile"] == "n"
+        status, toggled = client.post(
+            "/api/register/cleared", {"transaction": rent.handle, "split": split.handle}
+        )
+        assert status == 200 and toggled == {"reconcile": "c"}
+        assert (
+            client.database.get_transaction(rent.handle).split_for(checking.handle).reconcile
+            is ReconcileState.CLEARED
+        )
+
+        stored = client.database.get_transaction(rent.handle)
+        stored.split_for(checking.handle).reconcile = ReconcileState.RECONCILED
+        with client.database.transaction("Reconcile") as txn:
+            client.database.commit_transaction(stored, txn)
+        before = client.database.get_transaction(rent.handle).serialize()
+        for body, code, status in (
+            (
+                {"transaction": rent.handle, "split": split.handle},
+                "reconciliation.split.locked",
+                400,
+            ),
+            ({"transaction": "missing", "split": split.handle}, "transaction.not_found", 404),
+            ({"transaction": rent.handle, "split": 7}, "request.invalid", 400),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/register/cleared", body)
+            assert caught.value.code == status
+            assert json.loads(caught.value.read())["code"] == code
+        assert client.database.get_transaction(rent.handle).serialize() == before
+
     def test_a_new_entry_posts_balanced_splits_from_exact_pairs(self, client):
         checking, rent = self._accounts(client)
         status, saved = client.post(

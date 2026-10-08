@@ -1019,7 +1019,11 @@ async function showRegister() {
       continue;
     }
     const amount = Number(row.amount);
-    rows.push(el("tr", {},
+    // As in the desktop register, clicking a row edits it where it is.
+    rows.push(el("tr", { class:"editable", onclick:(event)=>{
+      if (event.target.closest("button, a, input, select, textarea")) return;
+      editRow(row.split);
+    } },
       el("td", {}, row.date),
       el("td", { class: "muted" }, row.num),
       el("td", {},
@@ -1033,12 +1037,13 @@ async function showRegister() {
           + (row.documents.some((item)=>item.missing)
             ? ` (${row.documents.filter((item)=>item.missing).length} missing)` : "")) : null),
       el("td", { class: "muted" }, row.transfer),
+      el("td", {}, reconcileButton(row)),
       el("td", { class: "num" }, amount > 0 ? money(row.amount) : ""),
       el("td", { class: "num" }, amount < 0 ? money(String(row.amount).slice(1)) : ""),
       el("td", { class: cls(row.balance) }, money(row.balance)),
       el("td", {}, el("div", { class:"row" },
         el("button", { class:"action", type:"button", title:"Edit this transaction in its row",
-          onclick:()=>leaveEntry(()=>{ state.editing = {split:row.split, focus:true}; render(); }) },
+          onclick:()=>editRow(row.split) },
           "Edit"),
         el("button", { class:"action", type:"button",
           title:"Tag this transaction and link receipts, statements, or web pages",
@@ -1062,7 +1067,7 @@ async function showRegister() {
         if (account) openReconciliation(account).catch((error)=>say(error.message,"error"));
       }}, "Reconcile…"),
       el("span", { class: "muted" }, `${data.rows.length} entries`)),
-    table(["Date", "Num", "Description", "Transfer",
+    table(["Date", "Num", "Description", "Transfer", "R",
            { label: data.debit_label, num: true }, { label: data.credit_label, num: true },
            { label: "Balance", num: true }, ""], rows));
 }

@@ -87,6 +87,47 @@ function leaveEntry(proceed) {
   proceed();
 }
 
+const RECONCILE_TIPS = {
+  n: "Not cleared: click to mark it cleared",
+  c: "Cleared: click to mark it not cleared",
+  y: "Reconciled: reopen its statement to change it",
+};
+
+function reconcileButton(row) {
+  // The R column: n and c toggle through the shared reconciliation service.
+  return el("button", { class:"action reconcile", type:"button",
+    title:RECONCILE_TIPS[row.reconcile] || "",
+    "aria-label":`Reconcile state ${row.reconcile} for ${row.description}`,
+    onclick:async (event) => {
+      event.stopPropagation();
+      try {
+        const { reconcile } = await post("/api/register/cleared",
+          { transaction:row.handle, split:row.split });
+        say(`Marked ${row.description} ${reconcile === "c" ? "cleared" : "not cleared"}.`);
+        render();
+      } catch (error) { say(error.message, "error"); }
+    } }, row.reconcile);
+}
+
+async function editRow(split) {
+  // Clicking a row, or Up/Down, leaves the row being edited by saving it when it
+  // changed; the blank row's typing is kept as it is.
+  const current = state.editing?.split;
+  if (current === split) return true;
+  if (current) {
+    const draft = entryDraft(current);
+    if (draft?.dirty) {
+      const commit = state.entryCommits?.[current];
+      if (!commit || !(await commit())) return false;
+    }
+    delete state.entryDrafts?.[current];
+  }
+  state.editing = split ? { split, focus:true } : null;
+  if (!split) state.entryFocus = { key:"blank", field:"date" };
+  render();
+  return true;
+}
+
 function registerEntry(data, usable, row) {
   const key = row ? row.split : "blank";
   const editing = Boolean(row);
@@ -95,11 +136,11 @@ function registerEntry(data, usable, row) {
   const accounts = usable.filter((item) => !item.hidden || referenced.has(item.handle));
   const transfers = accounts.filter((item) => item.handle !== state.account);
   if (!editing && (!selected || selected.hidden)) {
-    return [el("tr", { class:"entry-row" }, el("td", { colspan:"8", class:"note" },
+    return [el("tr", { class:"entry-row" }, el("td", { colspan:"9", class:"note" },
       "Hidden accounts remain readable but take no new transactions."))];
   }
   if (!editing && !transfers.length) {
-    return [el("tr", { class:"entry-row" }, el("td", { colspan:"8", class:"note" },
+    return [el("tr", { class:"entry-row" }, el("td", { colspan:"9", class:"note" },
       "No other visible account to transfer to."))];
   }
 
@@ -187,19 +228,38 @@ function registerEntry(data, usable, row) {
     // Typing completes account paths segment by segment: "Ex:Gr" picks
     // Expenses:Groceries, as in the desktop register.
     let typed = "";
-    node.addEventListener("blur", () => { typed = ""; });
+    // The matches are listed under the choice while a path is typed.
+    const list = el("div", { class:"completion", role:"listbox",
+      "aria-label":`${label}: matching accounts`, hidden:"hidden" });
+    const hideList = () => { list.hidden = true; list.replaceChildren(); };
+    const showList = (found) => {
+      if (!list.isConnected) node.after(list);
+      list.replaceChildren(...found.map((item, index) => el("button", {
+        type:"button", class: index === 0 ? "action primary" : "action", role:"option",
+        // mousedown would otherwise blur the choice and hide the list first.
+        onmousedown:(event) => event.preventDefault(),
+        onclick:() => {
+          node.value = item.handle; onchange(item.handle); touch();
+          typed = ""; hideList(); node.focus();
+        } }, item.full_name)));
+      list.hidden = !found.length;
+    };
+    node.addEventListener("blur", () => { typed = ""; hideList(); });
     node.addEventListener("keydown", async (event) => {
       if (event.key === "Backspace" && typed) typed = typed.slice(0, -1);
       else if (plainKey(event) && (event.key !== " " || typed)) typed += event.key;
       else return;
       event.preventDefault();
-      if (!typed) return;
+      if (!typed) { hideList(); return; }
       const wanted = typed;
       try {
         const query = new URLSearchParams({ text:wanted });
         const { accounts:found } = await get(`/api/entry/accounts?${query}`);
         if (wanted !== typed) return;  // a later key is already being looked up
-        const match = found.find((item) => choices.some((choice) => choice.handle === item.handle));
+        const offered = found.filter((item) =>
+          choices.some((choice) => choice.handle === item.handle)).slice(0, 8);
+        showList(offered);
+        const match = offered[0];
         if (!match) { say(`No account matches “${wanted}”.`, "error"); return; }
         node.value = match.handle;
         onchange(match.handle); touch();
@@ -345,7 +405,20 @@ function registerEntry(data, usable, row) {
         say(`Posted ${draft.description.trim()}.`);
       }
       render();
-    } catch (error) { say(error.message, "error"); }
+      return true;
+    } catch (error) { say(error.message, "error"); return false; }
+  }
+  state.entryCommits ??= {};
+  state.entryCommits[key] = commit;
+  async function move(step) {
+    // Up/Down: save this row if it changed, then edit the one above or below.
+    // Below the last transaction is the blank row.
+    const order = data.rows.map((item) => item.split);
+    const index = editing ? order.indexOf(row.split) : order.length;
+    const target = index + step;
+    if (target < 0 || (!editing && target >= order.length)) return;
+    if (!editing && draft.dirty && !(await commit())) return;
+    await editRow(target < order.length ? order[target] : null);
   }
   function cancel() {
     delete state.entryDrafts[key];
@@ -436,7 +509,11 @@ function registerEntry(data, usable, row) {
   cancelButton?.addEventListener("click", cancel);
 
   const keys = (event) => {
-    if (event.key === "Enter" && event.target.tagName !== "BUTTON") {
+    if ((event.key === "ArrowUp" || event.key === "ArrowDown")
+        && event.target.tagName === "INPUT" && !event.altKey && !event.ctrlKey) {
+      event.preventDefault();
+      move(event.key === "ArrowUp" ? -1 : 1);
+    } else if (event.key === "Enter" && event.target.tagName !== "BUTTON") {
       event.preventDefault();
       commit();
     } else if (event.key === "Escape") {
@@ -448,16 +525,17 @@ function registerEntry(data, usable, row) {
   const main = el("tr", { class:"entry-row", onkeydown:keys },
     el("td", {}, dateInput), el("td", {}, numInput), el("td", {}, description),
     el("td", {}, draft.split ? el("span", { class:"muted" }, "-- Split --") : transfer),
+    el("td", { class:"muted" }, editing ? row.reconcile : ""),
     el("td", { class:"num" }, draft.split ? null : increase),
     el("td", { class:"num" }, draft.split ? null : decrease),
     el("td", {}),
     el("td", {}, el("div", { class:"row" }, splitButton, saveButton, cancelButton)));
   const result = [main];
-  const focusable = { description };
+  const focusable = { description, date:dateInput };
   if (draft.split) {
     const imbalanceRow = el("tr", { class:"entry-row entry-line" },
       el("td", {}), el("td", {}), el("td", { class:"muted" }, "Imbalance"),
-      el("td", {}), el("td", {}), el("td", {}), imbalance, el("td", {}));
+      el("td", {}), el("td", {}), el("td", {}), el("td", {}), imbalance, el("td", {}));
     const lineRow = (line, index) => {
       const label = `${editing ? "Edited" : "New"} split ${index + 1}`;
       const memo = el("input", { value:line.memo, placeholder:"Memo", "aria-label":`${label} memo` });
@@ -479,7 +557,8 @@ function registerEntry(data, usable, row) {
       down.addEventListener("input", grow);
       return el("tr", { class:"entry-row entry-line", onkeydown:keys },
         el("td", {}), el("td", {}), el("td", {}, memo),
-        el("td", {}, account), el("td", { class:"num" }, up), el("td", { class:"num" }, down),
+        el("td", {}, account), el("td", {}), el("td", { class:"num" }, up),
+        el("td", { class:"num" }, down),
         el("td", {}), el("td", {}));
     };
     draft.lines.forEach((line, index) => result.push(lineRow(line, index)));

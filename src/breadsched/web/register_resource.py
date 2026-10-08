@@ -64,6 +64,8 @@ def register(api: Api, query: QueryParams) -> dict[str, object]:
                 # For editing the row in place (#158): this register's split
                 # and every split of the transaction.
                 "split": row.split.handle,
+                # n, c, or y for this register's split (the R column).
+                "reconcile": row.split.reconcile.value,
                 "currency": row.transaction.currency,
                 "splits": [
                     {

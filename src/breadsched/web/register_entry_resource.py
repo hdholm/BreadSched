@@ -17,9 +17,11 @@ from typing import TYPE_CHECKING, Any
 from ..gen.lib.amount import Amount
 from ..gen.services import (
     SaveTransaction,
+    ToggleCleared,
     TransactionInput,
     TransactionSplitInput,
     save_transaction,
+    toggle_cleared,
     transaction_currency,
 )
 from .controls import input_money, service_error
@@ -104,3 +106,15 @@ def register_entry_save(api: Api, payload: Mapping[str, Any]) -> dict[str, objec
     if result.value is None:
         raise service_error(result.errors[0])
     return {"handle": result.value.handle, "date": result.value.post_date}
+
+
+def register_cleared_toggle(api: Api, payload: Mapping[str, Any]) -> dict[str, object]:
+    """The R column: mark one split cleared or not cleared through the shared service."""
+    request = ToggleCleared(
+        transaction=_text(payload, "transaction") or "",
+        split=_text(payload, "split") or "",
+    )
+    result = toggle_cleared(api.db, request)
+    if result.value is None:
+        raise service_error(result.errors[0])
+    return {"reconcile": result.value.value}
