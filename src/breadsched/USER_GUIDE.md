@@ -392,8 +392,11 @@ fetches quotes for. Each fetched price is stored like any other dated price, wit
 its source shown as, for example, *Online: tsp.gov*. Fetching again on the same
 day replaces that day's online price rather than adding another. A source that
 fails is listed with its reason and changes nothing, so the prices you already
-have stay in use. The command line fetches quotes now
-([command line](guide/cli.md#online-quotes)); the desktop and browser follow.
+have stay in use. Quotes are fetched from the
+[desktop](guide/desktop.md#online-quotes), the
+[browser](guide/web.md#online-quotes), and the
+[command line](guide/cli.md#online-quotes). An Alpha Vantage key you enter is kept
+in your own settings, readable only by you, never in the book.
 
 ## Transactions and registers
 

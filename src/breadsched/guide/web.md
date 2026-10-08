@@ -65,6 +65,16 @@ account's settings choose **Cost of shares sold** (first in, first out, or avera
 cost; `/api/account/cost-basis`). See
 [Holdings and cost basis](../USER_GUIDE.md#holdings-and-cost-basis).
 
+## Online quotes
+
+In **Accounts**, choose **Online quotes…**. Type each security's or currency's
+**Quote source** (`tsp`, `alphavantage`, `currency`, or a Finance::Quote method),
+enter your Alpha Vantage API key if you use it, and choose **Get quotes**. The
+dialog lists what was stored and what failed and why. The key is saved in your
+settings and never shown again (`/api/quotes`, `/api/quotes/source`,
+`/api/quotes/key`, `/api/quotes/update`). See
+[Online quotes](../USER_GUIDE.md#online-quotes).
+
 ## Enter transactions in the register
 
 The register has a blank row at the bottom for a new entry, **Split** for split

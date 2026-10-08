@@ -5579,6 +5579,95 @@ class TestEntrySuggestion:
         assert caught.value.code == 400
 
 
+class TestOnlineQuotes:
+    """Quote sources, the key, and fetching through the shared quote service."""
+
+    @pytest.fixture
+    def quoting(self, client, tmp_path, monkeypatch):
+        from breadsched.gen.lib import Commodity
+        from breadsched.gen.utils.settings import Settings
+        from breadsched.web import quote_resource
+
+        settings = Settings(directory=tmp_path / "config")
+        monkeypatch.setattr(quote_resource, "settings", lambda: settings)
+        monkeypatch.delenv("ALPHAVANTAGE_API_KEY", raising=False)
+        fund = Commodity(namespace="TSP", mnemonic="G", fullname="G Fund", fraction=10000)
+        with client.database.transaction("Fund") as txn:
+            client.database.add_commodity(fund, txn)
+        return fund, settings, quote_resource
+
+    def test_sources_key_and_update(self, client, quoting, monkeypatch):
+        from breadsched.gen.services.quotes import FetchedQuote, QuoteFailure
+
+        fund, settings, quote_resource = quoting
+        status, data = client.get("/api/quotes")
+        assert status == 200 and data["alphavantage_key"] is False
+        row = next(item for item in data["commodities"] if item["mnemonic"] == "G")
+        assert row == {
+            "handle": fund.handle,
+            "mnemonic": "G",
+            "fullname": "G Fund",
+            "currency": False,
+            "quote_source": "",
+        }
+        assert set(data["finance_quote"]) == {"available", "reason"}
+
+        assert client.post("/api/quotes/source", {"commodity": fund.handle, "source": "tsp"})[
+            1
+        ] == {"source": "tsp"}
+        assert client.post("/api/quotes/key", {"key": "secret"})[1] == {"alphavantage_key": True}
+        assert settings.get("quotes", "alphavantage_api_key") == "secret"
+        assert "secret" not in json.dumps(client.get("/api/quotes")[1])
+
+        asked = []
+
+        class Fetcher:
+            def __init__(self, key):
+                asked.append(key)
+
+            def fetch(self, requests, reporting):
+                assert [item.symbol for item in requests] == ["G"]
+                return (
+                    [
+                        FetchedQuote(
+                            "G", "tsp", Decimal("18.4521"), "USD", date(2026, 10, 7), "tsp.gov"
+                        )
+                    ],
+                    [QuoteFailure("X", "tsp", "ignored: not requested")],
+                )
+
+        monkeypatch.setattr(quote_resource, "make_fetcher", Fetcher)
+        status, outcome = client.post("/api/quotes/update", {})
+        assert status == 200 and asked == ["secret"]
+        assert outcome["stored"] == [
+            {
+                "symbol": "G",
+                "price": "18.4521",
+                "currency": "USD",
+                "date": "2026-10-07",
+                "source": "Online: tsp.gov",
+                "changed": True,
+            }
+        ]
+        [price] = client.database.iter_prices(fund.handle)
+        assert price.source == "Online: tsp.gov"
+
+    def test_a_refused_source_leaves_the_commodity_alone(self, client, quoting):
+        fund, _settings, _resource = quoting
+        before = client.database.get_commodity(fund.handle).serialize()
+        for body, status, code in (
+            ({"commodity": fund.handle, "source": "two words"}, 400, "quotes.source.invalid"),
+            ({"commodity": fund.handle, "source": "currency"}, 400, "quotes.source.currency"),
+            ({"commodity": "missing", "source": "tsp"}, 404, "quotes.commodity.not_found"),
+            ({"commodity": fund.handle, "source": 7}, 400, "request.invalid"),
+        ):
+            with pytest.raises(urllib.error.HTTPError) as caught:
+                client.post("/api/quotes/source", body)
+            assert caught.value.code == status
+            assert json.loads(caught.value.read())["code"] == code
+        assert client.database.get_commodity(fund.handle).serialize() == before
+
+
 class TestEntryInput:
     """The browser reads register typing through the same service as GTK."""
 

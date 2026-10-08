@@ -35,7 +35,13 @@ from .sources import (
     tsp_fund_key,
 )
 
-__all__ = ["ALPHAVANTAGE_KEY_SETTING", "OnlineQuotes", "finance_quote_status"]
+__all__ = [
+    "ALPHAVANTAGE_KEY_SETTING",
+    "OnlineQuotes",
+    "alphavantage_key",
+    "finance_quote_status",
+    "save_alphavantage_key",
+]
 
 #: ``settings.ini`` section and key holding the user's Alpha Vantage API key; the
 #: ``ALPHAVANTAGE_API_KEY`` environment variable (what Finance::Quote reads) also works.
@@ -54,6 +60,29 @@ def _download(url: str) -> str:
     request = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     with urllib.request.urlopen(request, timeout=_TIMEOUT) as response:  # noqa: S310 - fixed https URLs
         return response.read().decode("utf-8-sig", errors="replace")
+
+
+def alphavantage_key(settings) -> str:
+    """The Alpha Vantage key from ``settings`` (a ``Settings``), else the environment."""
+    section, key = ALPHAVANTAGE_KEY_SETTING
+    return (settings.get(section, key) or os.environ.get("ALPHAVANTAGE_API_KEY", "")).strip()
+
+
+def save_alphavantage_key(settings, value: str) -> bool:
+    """Store (or, when empty, remove) the key in ``settings``; False if it cannot be saved."""
+    section, key = ALPHAVANTAGE_KEY_SETTING
+    if value.strip():
+        settings.set(section, key, value.strip())
+    else:
+        settings.remove(section, key)
+    if not settings.save():
+        return False
+    try:
+        # The key is a credential: only its owner may read the settings file.
+        os.chmod(settings.path, 0o600)
+    except OSError:
+        pass
+    return True
 
 
 def finance_quote_status() -> tuple[bool, str]:

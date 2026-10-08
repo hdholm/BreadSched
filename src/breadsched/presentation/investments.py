@@ -49,3 +49,10 @@ def lot_move_text(move: LotMove, other_name: str | None = None) -> str:
     if move.kind == "transfer_out":
         return f"moved out {day} to {other}: {shares} shares, cost {move.cost.format()}"
     return f"moved in {day} from {other}: {shares} shares, cost {move.cost.format()}"
+
+
+def price_text(value: Money) -> str:
+    """A price with every digit it has, up to ten places, and at least two: 18.4521."""
+    text = format(value.to_decimal(10).normalize(), "f")
+    whole, _, fraction = text.partition(".")
+    return f"{whole}.{fraction.ljust(2, '0')}"

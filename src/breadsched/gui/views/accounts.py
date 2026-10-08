@@ -290,6 +290,19 @@ class AccountTreeView(BaseView):
         dialog.connect("close-request", self.refresh_on_close)
         dialog.present()
 
+    def _on_online_quotes(self, *_args):
+        if self.db is None:
+            return None
+        from ..dialogs.online_quotes_dialog import OnlineQuotesDialog
+
+        application = self.manager.get_application() if self.manager is not None else None
+        dialog = OnlineQuotesDialog(
+            self.get_root(), self.db, getattr(application, "settings", None)
+        )
+        dialog.connect("close-request", self.refresh_on_close)
+        dialog.present()
+        return dialog
+
     def _on_holdings(self, _button) -> None:
         if self.db is None:
             return

@@ -6,14 +6,13 @@ import argparse
 
 from ..gen.services.quotes import SetQuoteSource, quote_requests, set_quote_source, update_quotes
 from ..gen.utils.settings import Settings
-from ..plugins.quotes import ALPHAVANTAGE_KEY_SETTING, OnlineQuotes, finance_quote_status
-from ..presentation import service_error_message
+from ..plugins.quotes import OnlineQuotes, alphavantage_key, finance_quote_status
+from ..presentation import price_text, service_error_message
 from .common import AddCommand, CommandError, emit, open_book, table
 
 
 def _fetcher() -> OnlineQuotes:
-    section, key = ALPHAVANTAGE_KEY_SETTING
-    return OnlineQuotes(alphavantage_key=Settings().get(section, key) or None)
+    return OnlineQuotes(alphavantage_key=alphavantage_key(Settings()) or None)
 
 
 def cmd_quotes(args: argparse.Namespace) -> int:
@@ -41,7 +40,7 @@ def cmd_quotes(args: argparse.Namespace) -> int:
         rows = [
             [
                 item.symbol,
-                item.value.format(),
+                price_text(item.value),
                 item.currency,
                 item.when.isoformat(),
                 item.source,
@@ -61,7 +60,7 @@ def cmd_quotes(args: argparse.Namespace) -> int:
                 "stored": [
                     {
                         "symbol": item.symbol,
-                        "price": str(item.value.to_decimal(10)),
+                        "price": price_text(item.value),
                         "currency": item.currency,
                         "date": item.when.isoformat(),
                         "source": item.source,

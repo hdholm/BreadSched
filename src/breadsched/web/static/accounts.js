@@ -346,6 +346,81 @@ async function openCurrencyRateEditor() {
 }
 
 
+async function openOnlineQuotes() {
+  // Choose each commodity's quote source, keep the Alpha Vantage key, and fetch.
+  const data = await get("/api/quotes");
+  const backdrop = el("div", {
+    class:"detail-backdrop",
+    onclick:(event)=>{ if (event.target === backdrop) backdrop.remove(); },
+  });
+  const hint = "tsp (Thrift Savings Plan funds), alphavantage (stocks and funds, with "
+    + "your key), currency (exchange rates, for currencies), or a Finance::Quote method";
+  const entries = data.commodities.map((item) => {
+    const input = el("input", { value:item.quote_source,
+      placeholder:item.currency ? "currency" : "none", title:hint,
+      "aria-label":`Quote source for ${item.mnemonic}` });
+    return { item, input };
+  });
+  const key = el("input", { type:"password", autocomplete:"off",
+    placeholder:data.alphavantage_key ? "saved — type to replace" : "not set",
+    "aria-label":"Alpha Vantage API key" });
+  const results = el("div", { class:"note", role:"status" });
+  const saveSources = async () => {
+    for (const { item, input } of entries) {
+      if (input.value.trim() === item.quote_source) continue;
+      await post("/api/quotes/source", { commodity:item.handle, source:input.value.trim() });
+      item.quote_source = input.value.trim();
+    }
+    if (key.value.trim()) {
+      await post("/api/quotes/key", { key:key.value.trim() });
+      key.value = "";
+      key.placeholder = "saved — type to replace";
+    }
+  };
+  const fetchQuotes = async (button) => {
+    button.disabled = true;
+    results.textContent = "Getting quotes…";
+    try {
+      await saveSources();
+      const outcome = await post("/api/quotes/update", {});
+      results.replaceChildren(
+        ...outcome.stored.map((item) => el("div", {},
+          `${item.symbol}: ${item.price} ${item.currency} on ${item.date} (${item.source})`
+          + (item.changed ? "" : ", unchanged"))),
+        ...outcome.failures.map((item) => el("div", { class:"negative" },
+          `${item.symbol}: not updated — ${item.reason}`)));
+      if (!outcome.stored.length && !outcome.failures.length) {
+        results.textContent = "No commodity has a quote source.";
+      }
+      render();
+    } finally { button.disabled = false; }
+  };
+  const getButton = el("button", { class:"action primary", type:"button" }, "Get quotes");
+  getButton.addEventListener("click", () => fetchQuotes(getButton)
+    .catch((error) => { results.textContent = error.message; say(error.message, "error"); }));
+  backdrop.append(el("section", { class:"detail-dialog" },
+    helpHeading("Online quotes", "online-quotes"),
+    el("p", { class:"note" },
+      "Give a security or currency a quote source, then choose Get quotes. Fetched "
+      + "prices are stored with their source and date; nothing is fetched unless you ask."),
+    data.commodities.length
+      ? table(["Commodity", "Name", "Quote source"], entries.map(({ item, input }) =>
+        [item.mnemonic, item.fullname, input]))
+      : el("p", { class:"note" }, "The book has no securities or foreign currencies."),
+    el("div", { class:"scenario-fields" }, el("label", {}, "Alpha Vantage API key", key)),
+    el("p", { class:"note" }, `${data.finance_quote.reason}.`
+      + (data.finance_quote.available ? "" : " Its other sources cannot be used.")),
+    results,
+    el("div", { class:"toolbar" },
+      el("span", { class:"spacer" }),
+      el("button", { class:"action", type:"button", onclick:()=>backdrop.remove() }, "Close"),
+      el("button", { class:"action", type:"button", onclick:()=>saveSources()
+        .then(() => { results.textContent = "Sources saved."; })
+        .catch((error) => say(error.message, "error")) }, "Save sources"),
+      getButton)));
+  document.body.append(backdrop);
+}
+
 // Tags and linked documents for one transaction. Documents stay outside the book,
 // in the attachment folder beside it; a missing file is marked, never dropped.
 // A file opens only if the page can show it safely; anything else is saved.
@@ -864,7 +939,10 @@ async function showAccounts() {
       "Exchange rate…"),
       el("button", { class:"action", type:"button",
         onclick:()=>openHoldings().catch((error)=>say(error.message,"error")) },
-      "Holdings and cost basis…")),
+      "Holdings and cost basis…"),
+      el("button", { class:"action", type:"button",
+        onclick:()=>openOnlineQuotes().catch((error)=>say(error.message,"error")) },
+      "Online quotes…")),
     el("p", { class: "note" },
       "Click an account to open its register. Parent rows show the total of "
       + "everything beneath them. Investment values use the latest dated price "

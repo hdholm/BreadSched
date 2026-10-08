@@ -1058,3 +1058,40 @@ def test_a_scenario_expects_less_of_a_reimbursement(page, served):
     page.wait_for_selector("text=Scenario changes: Careful: 40.00 expected back")
     stored = db.get_scenario(scenario.handle).reimbursement_overrides[receivable.handle]
     assert (stored.amount, stored.on) == (Money(40), None)
+
+
+def test_online_quotes_choose_a_source_and_fetch(page, served, monkeypatch, tmp_path):
+    from decimal import Decimal
+
+    from breadsched.gen.lib import Commodity
+    from breadsched.gen.services.quotes import FetchedQuote
+    from breadsched.gen.utils.settings import Settings
+    from breadsched.web import quote_resource
+
+    db, _httpd = served
+    monkeypatch.setattr(quote_resource, "settings", lambda: Settings(directory=tmp_path / "cfg"))
+
+    class Fetcher:
+        def __init__(self, _key):
+            pass
+
+        def fetch(self, requests, reporting):
+            return (
+                [FetchedQuote("G", "tsp", Decimal("18.4521"), "USD", date.today(), "tsp.gov")],
+                [],
+            )
+
+    monkeypatch.setattr(quote_resource, "make_fetcher", Fetcher)
+    with db.transaction("Fund") as txn:
+        db.add_commodity(Commodity(namespace="TSP", mnemonic="G", fullname="G Fund"), txn)
+
+    page.wait_for_selector("text=Pending bills")
+    page.get_by_role("button", name="Accounts", exact=True).first.click()
+    page.get_by_role("button", name="Online quotes…").click()
+    source = page.locator("[aria-label='Quote source for G']")
+    source.fill("tsp")
+    page.get_by_role("button", name="Get quotes").click()
+    page.wait_for_selector("text=G: 18.4521 USD")
+    fund = db.get_commodity_by_mnemonic("G")
+    assert fund.quote_source == "tsp"
+    assert [price.source for price in db.iter_prices(fund.handle)] == ["Online: tsp.gov"]

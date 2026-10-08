@@ -67,6 +67,7 @@ from .projection_resource import (
     projection_save,
     scenario_projection,
 )
+from .quote_resource import quote_key_save, quote_source_save, quotes, quotes_update
 from .receivable_resource import (
     receivable_accept,
     receivable_delete,
@@ -317,6 +318,7 @@ GET_ROUTES: dict[str, GetRoute] = {
     "/api/accounts": _without_query(accounts),
     "/api/loan/options": _without_query(loan_options),
     "/api/commodities": _without_query(commodities),
+    "/api/quotes": _without_query(quotes),
     "/api/fsa/claims": fsa_claims,
     "/api/register": register,
     "/api/reconciliation": reconciliation,
@@ -369,6 +371,9 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/account/emergency-fund": account_emergency_fund_save,
     "/api/commodity/price": commodity_price_save,
     "/api/currency/quote": _currency_quote,
+    "/api/quotes/source": quote_source_save,
+    "/api/quotes/key": quote_key_save,
+    "/api/quotes/update": quotes_update,
     "/api/plan/settings": plan_settings_save,
     "/api/account/fsa-years": account_fsa_years_save,
     "/api/fsa/claim/save": fsa_claim_save,

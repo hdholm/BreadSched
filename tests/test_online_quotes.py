@@ -386,7 +386,7 @@ def test_cli_lists_sets_and_fetches(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(quote_commands, "_fetcher", lambda: fetcher)
     assert cli(["quotes", path, "--dry-run", "--json"]) == 0
     preview = json.loads(capsys.readouterr().out)
-    assert preview["dry_run"] is True and preview["stored"][0]["price"] == "18.4521000000"
+    assert preview["dry_run"] is True and preview["stored"][0]["price"] == "18.4521"
     assert cli(["quotes", path]) == 0
     assert "stored" in capsys.readouterr().out
     db = DbSQLite()
