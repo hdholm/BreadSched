@@ -68,8 +68,15 @@ cost; `/api/account/cost-basis`). See
 ## Enter transactions in the register
 
 The register has a blank row at the bottom for a new entry, **Split** for split
-lines with an imbalance line, and **Edit** on any row to change it in place, with
-**Enter** to save and **Escape** to cancel. Leaving the description fills in the
+lines with an imbalance line, and in-place editing of any row: click it (or choose
+**Edit**), then **Enter** saves and **Escape** cancels. **Up** and **Down** in a
+field save the row you are leaving if you changed it and edit the one above or
+below; below the last transaction is the blank row, and a row that cannot be saved
+keeps you there with the reason. While you type an account path into an account
+choice, the matching accounts are listed under it; click one to choose it. The
+**R** column shows **n**, **c**, or **y**; click **n** or **c** to mark an entry
+cleared or not cleared (see
+[Reconcile a statement](../USER_GUIDE.md#reconcile-a-statement)). Leaving the description fills in the
 proposal from an earlier matching transaction (see
 [Transactions and registers](../USER_GUIDE.md#transactions-and-registers)). Choosing
 another account, or editing another row, while something is typed asks before

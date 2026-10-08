@@ -228,3 +228,10 @@ button.destructive:hover { border-color: var(--bad); color: var(--bad); }
 .guide { max-width: 62rem; line-height: 1.5; }
 .guide pre { overflow-x: auto; padding: 8px 12px; border: 1px solid var(--line); border-radius: 6px; }
 .guide code { font-family: ui-monospace, monospace; }
+
+/* Register: rows edit on click; typed account paths list their matches. */
+tr.editable { cursor: pointer; }
+.completion { display: flex; flex-direction: column; align-items: stretch; gap: 2px; margin-top: 4px; }
+.completion[hidden] { display: none; }
+.completion .action { text-align: left; }
+button.reconcile { min-width: 2em; font-family: monospace; }

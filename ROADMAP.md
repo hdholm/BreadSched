@@ -15,16 +15,7 @@ slice uses shared calculations and covers GTK, web, CLI, and printable output
 wherever that behavior is exposed, and preserves imported source ownership and
 round-trip limits, exact money, and explicit missing-currency valuations.
 
-1. **Web register equivalence (top priority).** The GTK register now edits every
-   row in place by click or F2, moves with Up/Down while committing, completes typed
-   account paths with the matches listed, and toggles cleared in its **R** column;
-   both registers share the entry parsing (date shortcuts, amount arithmetic,
-   account-path completion, Num stepping). The browser register still starts an edit
-   only through **Edit**, cannot move between rows with Up/Down, shows no list of
-   matching accounts, and has no **R** column. Give it equivalent editing (every capability available), using the
-   shared parsers and `toggle_cleared`; it need not match the GTK look and may be
-   less convenient for now.
-2. **Storage normalization, decided by measurement (in parallel with item 1).**
+1. **Storage normalization, decided by measurement.**
    On a separate branch, starting from schema 11, build normalized
    transaction and split tables (typed columns, foreign keys, CHECK constraints)
    with a migration, and compare them with the current blob-plus-derived-index
@@ -36,15 +27,15 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    the transaction blob. Either way, record the measurements and decision in an
    ADR. Until then `split_index` stays derived and must never silently diverge
    from its transaction blob.
-3. **Online quote retrieval.** Optional, with explicit provenance, staleness, and
+2. **Online quote retrieval.** Optional, with explicit provenance, staleness, and
    failure behavior; manual and imported quotes remain usable offline.
-4. **Specific lots and a realized-gains report.** Let a sale name the lots it
+3. **Specific lots and a realized-gains report.** Let a sale name the lots it
    sells instead of the account's first-in, first-out or average-cost method, and
    report realized gains by year from the derived lots.
-5. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
+4. **Tax-year outputs** (calendar year, US-oriented). Realized gains by tax year,
    short- and long-term; totals for categories or tags marked tax-relevant; and
    income totals by source.
-6. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
+5. **Budget jars.** Every savings goal and every scheduled estimate is a jar filled
    from planned income, as Dashboard reserves are today, and drawn down by the
    actual transactions it plans for. Reporting bundles jars by period (month,
    quarter, year) and account rather than by individual transaction or estimate,
@@ -57,7 +48,7 @@ round-trip limits, exact money, and explicit missing-currency valuations.
    transactions that settle or draw on them, to how both feed the Plan and
    Projection, with a worked example that follows one paycheck and one estimate
    through every view.
-7. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
+6. **Visualizations.** Today GTK has one Cairo line chart (Projection, Expense
    Explorer, Net worth history) and the browser has none. Build a chart model in
    non-GUI code (series, periods, exact values, labels) produced by the engines,
    drawn by the GTK Cairo widget and by inline SVG in the browser, and included in

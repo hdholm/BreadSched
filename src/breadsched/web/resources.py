@@ -86,7 +86,7 @@ from .reconciliation_resource import (
     reconciliation_start,
     reconciliation_update,
 )
-from .register_entry_resource import register_entry_save
+from .register_entry_resource import register_cleared_toggle, register_entry_save
 from .register_resource import register, transaction_add
 from .review_resource import (
     review,
@@ -393,6 +393,7 @@ POST_ROUTES: dict[str, PostRoute] = {
     "/api/transaction/attachment/remove": transaction_attachment_remove,
     "/api/transaction/attachment/relink": transaction_attachment_relink,
     "/api/register/entry": register_entry_save,
+    "/api/register/cleared": register_cleared_toggle,
     "/api/savings-goal/save": savings_goal_save,
     "/api/savings-goal/allocate": savings_goal_allocate,
     "/api/savings-goal/close": savings_goal_close,

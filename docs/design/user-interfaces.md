@@ -148,7 +148,11 @@ the shared transaction service, not a parallel transaction model:
 - **Leaving.** Switching accounts, opening another transaction, or closing a
   register window with unsaved typing asks Save / Discard / Cancel first.
 - **Web.** The browser register has the same row, split lines, and in-place editing
-  through `POST /api/register/entry`. It keeps amounts as BigInt micro-units and
+  through `POST /api/register/entry`, started by clicking a row. Up/Down call
+  `editRow`, which saves a changed row through its registered `commit` before
+  editing the neighbor in `data.rows` order; the blank row's typing is kept. Account
+  selects list the matches `GET /api/entry/accounts` returns, and the R column posts
+  to `POST /api/register/cleared` (`toggle_cleared`). It keeps amounts as BigInt micro-units and
   posts exact `[numerator, denominator]` pairs, so a comma-decimal browser cannot be
   misread, and keeps drafts across re-renders.
 
