@@ -168,6 +168,65 @@ jobs:
           PY
           breadsched --help >/dev/null
 
+  linux-packages:
+    name: Build and install the ${{ matrix.format }} package
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - format: deb
+            image: ubuntu:24.04
+          - format: rpm
+            image: fedora:latest
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install build tools
+        shell: bash
+        run: |
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              ca-certificates git python3 python3-pip python3-venv
+          else
+            dnf install -y git python3 python3-pip rpm-build
+          fi
+
+      - uses: actions/checkout@v7
+
+      - name: Build the wheel and the package from it
+        shell: bash
+        run: |
+          PIP_BREAK_SYSTEM_PACKAGES=1 python3 -m pip wheel --no-deps -w dist .
+          bash packaging/linux/build-package.sh "${{ matrix.format }}" dist/*.whl packages
+
+      - name: Install it with the distribution's package manager
+        shell: bash
+        run: |
+          if [ "${{ matrix.format }}" = deb ]; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y ./packages/*.deb
+          else
+            dnf install -y ./packages/*.rpm
+          fi
+
+      - name: Check the installed package
+        shell: bash
+        run: |
+          version=$(PYTHONPATH=src python3 -c 'from breadsched import __version__; print(__version__)')
+          cd /tmp
+          PATH=/usr/bin:/bin bash "$GITHUB_WORKSPACE/packaging/linux/smoke-test.sh" "$version"
+
+      - name: Remove it cleanly
+        shell: bash
+        run: |
+          if [ "${{ matrix.format }}" = deb ]; then
+            apt-get remove -y breadsched
+          else
+            dnf remove -y breadsched
+          fi
+          test ! -e /usr/lib/breadsched
+          test ! -e /usr/bin/breadsched
+
   windows-installer:
     name: Build and test Windows installer
     runs-on: windows-latest

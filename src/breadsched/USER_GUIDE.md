@@ -49,7 +49,9 @@ Release artifacts are built from the tested main commit with read-only repositor
 access, then published after their names and checksums are verified. The loopback
 web interface serves only its packaged page, script, and stylesheet.
 On Linux, each release also attaches a Flatpak bundle,
-`BreadSched-<version>.flatpak`. See
+`BreadSched-<version>.flatpak`, and packages for Debian and Ubuntu (`.deb`) and Fedora
+(`.rpm`). The packages use your system's Python and GTK and can use an installed
+Finance::Quote for [online quotes](#online-quotes); the Flatpak cannot. See
 [Install on Linux](guide/desktop.md#install-on-linux).
 
 For Windows, each release attaches an installer that carries its own Python and GTK

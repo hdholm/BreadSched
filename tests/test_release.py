@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -115,7 +116,7 @@ def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit()
     assert windows.index("test-installer.ps1") < stage
     assert "BreadSched-$env:VERSION-setup.exe" in windows
     assert "name: release-installer" in windows
-    assert "needs: [prepare, windows-installer, flatpak-bundle]" in publication
+    assert "needs: [prepare, windows-installer, flatpak-bundle, linux-packages]" in publication
     assert "name: release-installer" in publication
     assert '"installer/BreadSched-${VERSION}-setup.exe" \\' in publication
     assert "test-installer.ps1" not in publication and "build-installer" not in publication
@@ -123,7 +124,7 @@ def test_release_builds_and_tests_the_windows_installer_from_the_tested_commit()
 
 def test_release_builds_and_installs_the_flatpak_bundle_from_the_tested_commit():
     workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
-    bundle = workflow.split("\n  flatpak-bundle:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    bundle = workflow.split("\n  flatpak-bundle:\n", 1)[1].split("\n  linux-packages:\n", 1)[0]
     publication = workflow.split("\n  publish:\n", 1)[1]
 
     assert "needs: prepare" in bundle and "contents: write" not in bundle
@@ -135,7 +136,7 @@ def test_release_builds_and_installs_the_flatpak_bundle_from_the_tested_commit()
     assert install < bundle.index("sha256sum --check")
     assert "name: release-flatpak" in bundle
     assert "name: release-flatpak" in publication
-    assert '"flatpak/BreadSched-${VERSION}.flatpak" SHA256SUMS' in publication
+    assert '"flatpak/BreadSched-${VERSION}.flatpak" \\' in publication
     assert "flatpak-builder" not in publication
 
 
@@ -232,6 +233,13 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
     (flatpak / bundle).write_bytes(b"bundle")
     bundle_line = f"{hashlib.sha256(b'bundle').hexdigest()}  {bundle}\n"
     (flatpak / f"{bundle}.sha256").write_text(bundle_line, encoding="utf-8")
+    linux = root / "linux"
+    linux.mkdir()
+    packages = [f"breadsched_{version}_all.deb", f"breadsched-{version}-1.noarch.rpm"]
+    for package in packages:
+        (linux / package).write_bytes(package.encode())
+        digest = hashlib.sha256(package.encode()).hexdigest()
+        (linux / f"{package}.sha256").write_text(f"{digest}  {package}\n", encoding="utf-8")
 
     def validate() -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -244,9 +252,10 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
         )
 
     assert validate().returncode == 0, validate().stderr
-    # The published SHA256SUMS then covers the wheel, sdist, installer, and bundle.
+    # The published SHA256SUMS then covers the wheel, sdist, installer, bundle, and
+    # Linux packages.
     published = (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
-    assert [line.split("  ")[1] for line in published] == [*names, setup, bundle]
+    assert [line.split("  ")[1] for line in published] == [*names, setup, bundle, *packages]
     (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
 
     # A tampered installer or bundle, a Windows-style checksum line, or a stray file
@@ -260,6 +269,13 @@ def test_release_publisher_treats_artifacts_as_fixed_name_data(tmp_path: Path):
     (flatpak / bundle).write_bytes(b"tampered")
     assert validate().returncode != 0
     (flatpak / bundle).write_bytes(b"bundle")
+    (linux / packages[0]).write_bytes(b"tampered")
+    assert validate().returncode != 0
+    (linux / packages[0]).write_bytes(packages[0].encode())
+    (linux / "other.deb").write_bytes(b"x")
+    assert validate().returncode != 0
+    (linux / "other.deb").unlink()
+    (root / "SHA256SUMS").write_text("\n".join(published[:2]) + "\n", encoding="utf-8")
     (installer / "other.exe").write_bytes(b"x")
     assert validate().returncode != 0
     (installer / "other.exe").unlink()
@@ -305,3 +321,84 @@ def test_release_workflow_marks_only_alpha_versions_as_prereleases():
             check=True,
         )
         assert ("--prerelease" in result.stdout) is prerelease
+
+
+def test_release_packages_the_tested_wheel_as_deb_and_rpm():
+    workflow = Path(".github/workflows/release.yml").read_text(encoding="utf-8")
+    job = workflow.split("\n  linux-packages:\n", 1)[1].split("\n  publish:\n", 1)[0]
+    assert "needs: prepare" in job and "contents: write" not in job
+    assert "image: ubuntu:24.04" in job and "image: fedora:latest" in job
+    assert "persist-credentials: false" in job and "ref: main" in job
+    verify = job.index('test "$(git rev-parse HEAD)" = "$TESTED_SHA"')
+    assert verify < job.index("packaging/linux/build-package.sh")
+    # The package is built from the release's own tested wheel, installed, and checked.
+    assert 'wheel="release-inputs/dist/breadsched-${VERSION}-py3-none-any.whl"' in job
+    assert job.index("build-package.sh") < job.index("smoke-test.sh")
+    assert "name: release-linux-${{ matrix.format }}" in job
+    publication = workflow.split("\n  publish:\n", 1)[1]
+    assert '"linux/breadsched_${VERSION}_all.deb" \\' in publication
+    assert '"linux/breadsched-${VERSION}-1.noarch.rpm" SHA256SUMS' in publication
+
+
+def test_ci_installs_and_removes_both_linux_packages():
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+    job = workflow.split("\n  linux-packages:\n", 1)[1].split("\n  windows-installer:\n", 1)[0]
+    assert "format: deb" in job and "format: rpm" in job
+    assert "apt-get install -y ./packages/*.deb" in job
+    assert "dnf install -y ./packages/*.rpm" in job
+    assert "packaging/linux/smoke-test.sh" in job
+    assert "test ! -e /usr/lib/breadsched" in job
+
+
+@pytest.mark.parametrize("package_format", ["deb", "rpm"])
+def test_linux_packages_remove_the_bytecode_python_writes(tmp_path, package_format):
+    """Removing a package must leave nothing in /usr/lib/breadsched.
+
+    Running BreadSched as root writes __pycache__ directories the package does not
+    own, so neither dpkg nor rpm would delete them, and the directory stayed
+    behind after `dnf remove` (CI caught it for the rpm). Each package compiles
+    after installing and deletes the caches before removal.
+    """
+    tool = {"deb": "dpkg-deb", "rpm": "rpmbuild"}[package_format]
+    if shutil.which(tool) is None:
+        pytest.skip(f"{tool} is not installed; the Linux package CI jobs build and remove both")
+    # A private copy of the tree: concurrent builds would share ./build otherwise.
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    for name in ("pyproject.toml", "README.md", "LICENSE", "MANIFEST.in"):
+        if Path(name).exists():
+            shutil.copy2(name, tree / name)
+    shutil.copytree("src", tree / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
+    subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "-q", "--no-deps", "-w", str(tmp_path), str(tree)],
+        check=True,
+        capture_output=True,
+    )
+    [wheel] = tmp_path.glob("breadsched-*.whl")
+    built = subprocess.run(
+        [
+            "bash",
+            "packaging/linux/build-package.sh",
+            package_format,
+            str(wheel),
+            str(tmp_path / "out"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if package_format == "deb":
+        control = tmp_path / "control"
+        subprocess.run(["dpkg-deb", "-e", built, str(control)], check=True)
+        install = (control / "postinst").read_text(encoding="utf-8")
+        removal = (control / "prerm").read_text(encoding="utf-8")
+    else:
+        scripts = subprocess.run(
+            ["rpm", "-qp", "--scripts", built], check=True, capture_output=True, text=True
+        ).stdout
+        install = scripts.split("postinstall scriptlet", 1)[1].split("scriptlet", 1)[0]
+        removal = scripts.split("preuninstall scriptlet", 1)[1]
+        # Only a full removal clears the caches; an upgrade keeps the directory.
+        assert "$1 -eq 0" in removal
+    assert "python3 -m compileall -q /usr/lib/breadsched" in install
+    assert "find /usr/lib/breadsched -name __pycache__" in removal and "rm -rf" in removal

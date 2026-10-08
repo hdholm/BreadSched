@@ -10,6 +10,20 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a258 - 2026-10-08
+
+- **Debian/Ubuntu and Fedora packages.** `packaging/linux/build-package.sh` turns
+  the wheel into `breadsched_<version>_all.deb` or `breadsched-<version>-1.noarch.rpm`:
+  the package in a private `/usr/lib/breadsched`, launchers for the system Python
+  3, and the desktop entry, metainfo, and icon. They depend on the distribution's
+  PyGObject, pycairo, and GTK 4, and recommend Finance::Quote, which (unlike in the
+  Flatpak) online quotes can use. CI builds, installs, smoke-tests
+  (`smoke-test.sh`), and removes each in Ubuntu 24.04 and Fedora containers, and
+  each release publishes both from its tested wheel with checksums.
+  Each compiles its Python files after installing and deletes the bytecode caches
+  before removal, so removing a package leaves nothing in `/usr/lib/breadsched`.
+- The roadmap's packaging item is complete.
+
 ## 0.2.0a257 - 2026-10-08
 
 - **Online quotes in the desktop and browser.** **Accounts → Online Quotes…**

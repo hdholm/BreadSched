@@ -114,6 +114,31 @@ The release workflow builds the same manifest from the tested commit into a
 single-file bundle whose runtime comes from Flathub, installs it, checks the
 installed version, and publishes it with its checksum in `SHA256SUMS`.
 
+**Debian/Ubuntu and Fedora packages** (`packaging/linux/`). `build-package.sh deb|rpm
+WHEEL OUT` installs the wheel with `pip --target` into a private
+`/usr/lib/breadsched` (removing pip's build-specific `RECORD` and `direct_url.json`),
+writes `/usr/bin/breadsched` and `breadsched-gtk` launchers for the system
+`/usr/bin/python3`, and installs the desktop entry, metainfo, icon, and licence.
+Both formats install that one tree:
+- The `.deb` is assembled with `dpkg-deb`. It depends on `python3 (>= 3.11)`,
+  `python3-gi`, `python3-gi-cairo`, `python3-cairo`, and `gir1.2-gtk-4.0`, and
+  recommends `libfinance-quote-perl`. Its `postinst` byte-compiles for the system
+  Python and its `prerm` removes the caches.
+- The `.rpm` is built with `rpmbuild` from a generated noarch spec. It requires
+  `python3 >= 3.11`, `python3-gobject`, `python3-cairo`, and `gtk4`, and recommends
+  `perl-Finance-Quote`.
+
+Package versions use `~` for alphas (`0.2.0~a257`) so that they sort before the
+release; file names keep the plain version. Running on the host rather than in a
+sandbox is what lets these packages use an installed Finance::Quote
+([decision 0002](decisions/0002-dependencies-and-online-quotes.md)). CI builds and
+installs each in an `ubuntu:24.04` or `fedora:latest` container with the
+distribution's package manager. `smoke-test.sh` then checks both launchers'
+versions, a sample book's round trip, the GTK and cairo imports, the desktop files,
+and that Finance::Quote is found when installed. CI also checks that removal leaves
+nothing behind. The release workflow packages the release's own tested wheel the same
+way and publishes both files with their checksums in `SHA256SUMS`.
+
 **Windows installer** (`packaging/windows/`). The installer carries its own runtime
 rather than asking users to assemble Python and GTK: `build-installer.sh` installs
 the wheel into an MSYS2 UCRT64 prefix beside Python, GTK 4, PyGObject, and cairo,
