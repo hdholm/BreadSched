@@ -1586,7 +1586,9 @@ do this when they open it, and on the command line `breadsched migrate` does it.
 verified backup of the old book is written next to it first (for a book the
 Flatpak reaches only through the file chooser, in BreadSched's data folder; see
 [Install on Linux](guide/desktop.md#install-on-linux)), and the desktop
-application says where. Read-only commands never migrate; they ask you to migrate
+application says where. A large book can take several seconds to upgrade; the
+desktop window says that it is upgrading the book while it works, and the notice
+that follows comes up in front of the window. Read-only commands never migrate; they ask you to migrate
 instead.
 
 See [desktop](guide/desktop.md#protect-and-recover-a-book) and

@@ -29,6 +29,7 @@ from .messages import (
 from .notices import (
     REVIEW_ACTION_HELP,
     book_open_notice,
+    book_upgrade_progress,
     claim_link_notice,
     reimbursement_notice,
 )
@@ -51,6 +52,7 @@ __all__ = [
     "PLAN_REIMBURSABLE_HEADING",
     "REVIEW_ACTION_HELP",
     "book_open_notice",
+    "book_upgrade_progress",
     "claim_link_notice",
     "claim_role_label",
     "configure_language",

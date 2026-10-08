@@ -54,6 +54,15 @@ window gives each column between its minimum and natural width, text cells ellip
 and amount cells never do, so figures are never truncated. The appearance corrects
 concrete overlap and legibility problems; reproducing GnuCash's look is not a goal.
 
+A modal dialog is never shown behind the window it blocks (#295). Anything that can
+run before the main window is presented (start-up notices, the due review, the
+GnuCash change review) waits for `widgets.presented.when_presented(window, ...)`,
+which runs it after the window is mapped and has drawn. Opening a book that needs a
+schema upgrade first shows a busy page naming the book and its schema
+(`ViewManager.show_busy`, text from `presentation.book_upgrade_progress`) on a
+presented window, then migrates. A remembered book that needs no upgrade still
+opens before the window appears, so the start screen never flashes.
+
 Windows must stay usable on small screens whatever the book holds:
 
 - Dialogs keep minimum sizes within 800 × 600 even with very long names

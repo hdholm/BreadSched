@@ -542,6 +542,41 @@ class TestSchemaCompatibility:
             raw.executescript(sql)
         return path
 
+    def test_the_stored_schema_is_read_without_changing_the_book(self, tmp_path):
+        """Interfaces announce an upgrade before it starts (#295)."""
+        from breadsched.gen.db.sqlite import stored_schema_version
+
+        path = self._schema_6_fixture(tmp_path)
+        before = path.read_bytes()
+        assert stored_schema_version(path) == 6
+        assert path.read_bytes() == before
+        assert not Path(str(path) + ".pre-migration-v6.bak").exists()
+        DbSQLite().load(str(path))
+        assert stored_schema_version(str(path)) == 11
+
+    def test_the_stored_schema_of_something_unreadable_is_unknown(self, tmp_path):
+        from breadsched.gen.db.sqlite import stored_schema_version
+
+        assert stored_schema_version(tmp_path / "missing.breadsched") is None
+        junk = tmp_path / "junk.breadsched"
+        junk.write_text("not a database", encoding="utf-8")
+        assert stored_schema_version(junk) is None
+        spaced = tmp_path / "a book #1.breadsched"
+        with sqlite3.connect(spaced) as raw:
+            raw.execute("CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT)")
+            raw.execute("INSERT INTO metadata VALUES ('schema_version', '9')")
+        assert stored_schema_version(spaced) == 9
+
+    def test_the_upgrade_progress_names_the_book_and_its_schema(self):
+        from breadsched.presentation import book_upgrade_progress
+
+        text = book_upgrade_progress("/home/someone/Documents/house.breadsched", 9)
+        assert text.startswith("Upgrading house.breadsched from an earlier BreadSched format")
+        assert "(schema 9)" in text and "verified copy" in text
+        assert book_upgrade_progress("C:\\Books\\house.breadsched", 9).startswith(
+            "Upgrading house.breadsched "
+        )
+
     def test_schema_6_fixture_migrates_with_backup_and_version_evidence(self, tmp_path):
         path = self._schema_6_fixture(tmp_path)
         db = DbSQLite()

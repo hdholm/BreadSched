@@ -29,6 +29,20 @@ REVIEW_ACTION_HELP = {
 }
 
 
+def book_upgrade_progress(path: str, schema: int) -> str:
+    """What to show while a book from an earlier alpha is being upgraded.
+
+    The upgrade backs the book up, verifies the copy, and migrates every row, so a
+    large book takes seconds; saying so keeps the wait from looking like a hang.
+    """
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    return (
+        f"Upgrading {name} from an earlier BreadSched format (schema {schema}).\n"
+        "A verified copy of the book as it is now is saved first. "
+        "A large book can take several seconds."
+    )
+
+
 def book_open_notice(path: str, *, migration_backup: str | None = None) -> str | None:
     """What to tell the user after opening a book, or ``None`` when nothing needs saying.
 
