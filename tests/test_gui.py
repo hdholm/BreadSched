@@ -202,13 +202,12 @@ class TestDuePromptPolicy:
             app.open_book(populated_book)
             assert calls == []
 
-            # Due review is deliberately deferred by one GLib main-loop turn so
-            # the parent window is mapped before its modal child is presented.
-            from breadsched.gui.gi_setup import GLib
-
-            context = GLib.MainContext.default()
-            while not calls and context.pending():
-                context.iteration(False)
+            # Due review waits until the parent window is mapped, so its modal
+            # child cannot be covered when the parent appears (#295).
+            _spin(lambda: False, seconds=0.3)
+            assert calls == []
+            production_window.present()
+            assert _spin(lambda: bool(calls))
             assert calls == [None]
         finally:
             production_window.destroy()
@@ -224,6 +223,120 @@ class TestDuePromptPolicy:
             assert calls == []
         finally:
             quiet_window.destroy()
+
+
+def _spin(done, seconds: float = 10.0) -> bool:
+    """Run the GLib main loop until ``done()`` or ``seconds`` pass; return ``done()``."""
+    import time
+
+    context = GLib.MainContext.default()
+    deadline = time.monotonic() + seconds
+    while not done() and time.monotonic() < deadline:
+        if not context.iteration(False):
+            time.sleep(0.01)
+    return done()
+
+
+def _old_book(directory: Path) -> Path:
+    """A schema 6 book, which opening must upgrade."""
+    import sqlite3
+
+    fixture = Path(__file__).parent / "fixtures" / "native" / "schema-6.sql"
+    book = directory / "old.breadsched"
+    with sqlite3.connect(book) as raw:
+        raw.executescript(fixture.read_text(encoding="utf-8"))
+    return book
+
+
+class TestDialogsStayInFront:
+    """#295: a modal dialog must never be shown behind the window it blocks."""
+
+    def test_an_alert_waits_until_its_window_is_on_screen(self, app, window, monkeypatch):
+        shown = []
+        monkeypatch.setattr(
+            app, "_show_alert", lambda parent, message: shown.append((parent.get_mapped(), message))
+        )
+        app._report("Something to say")
+        _spin(lambda: False, seconds=0.3)
+        assert shown == []  # the window is not on screen yet
+        window.present()
+        assert _spin(lambda: bool(shown))
+        assert shown == [(True, "Something to say")]
+
+    def test_a_remembered_old_book_is_upgraded_on_a_presented_window(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        book = _old_book(tmp_path)
+        app.settings.set("general", "last_book_path", str(book))
+        app.settings.save()
+        seen = {}
+        real_open = app.open_book
+
+        def open_book(path):
+            seen["mapped"] = window.get_mapped()
+            seen["page"] = window.stack.get_visible_child_name()
+            seen["text"] = window.busy_label.get_text()
+            real_open(path)
+
+        monkeypatch.setattr(app, "open_book", open_book)
+        alerts = []
+        monkeypatch.setattr(
+            app,
+            "_show_alert",
+            lambda parent, message: alerts.append((parent.get_mapped(), message)),
+        )
+
+        app.do_activate()
+        # The upgrade has not started: the window comes up first and says why.
+        assert app.db is None
+        assert window.stack.get_visible_child_name() == "busy"
+        assert _spin(lambda: app.db is not None and bool(alerts))
+
+        assert seen["mapped"] is True and seen["page"] == "busy"
+        assert seen["text"].startswith("Upgrading old.breadsched from an earlier")
+        assert "(schema 6)" in seen["text"]
+        assert window.stack.get_visible_child_name() != "busy"
+        [(parent_mapped, message)] = alerts
+        assert parent_mapped and "upgraded to the current format" in message
+
+    def test_a_current_remembered_book_still_opens_before_the_window_appears(
+        self, app, window, populated_book
+    ):
+        app.settings.set("general", "last_book_path", populated_book)
+        app.settings.save()
+        app.do_activate()
+        assert app.db is not None  # no placeholder flash for a book that needs no upgrade
+        assert window.stack.get_visible_child_name() != "busy"
+
+    def test_opening_an_old_book_shows_progress_then_the_book(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        book = _old_book(tmp_path)
+        monkeypatch.setattr(app, "_show_alert", lambda *_: None)
+        window.present()
+        assert _spin(window.get_mapped)
+        app.open_book_announced(str(book), window=window, failure="Could not open the book")
+        assert window.stack.get_visible_child_name() == "busy"
+        assert _spin(lambda: app.db is not None)
+        assert app.book_path == str(book)
+        assert window.stack.get_visible_child_name() != "busy"
+
+    def test_a_failed_upgrade_returns_to_the_start_screen_and_says_why(
+        self, app, window, tmp_path, monkeypatch
+    ):
+        book = _old_book(tmp_path)
+        reported = []
+        monkeypatch.setattr(app, "_report", reported.append)
+
+        def fail(_path):
+            raise RuntimeError("disk full")
+
+        monkeypatch.setattr(app, "open_book", fail)
+        window.present()
+        app.open_book_announced(str(book), window=window, failure="Could not open the book")
+        assert _spin(lambda: bool(reported))
+        assert reported == ["Could not open the book: disk full"]
+        assert window.stack.get_visible_child_name() == "empty"
 
 
 class TestOpeningABook:
@@ -3787,7 +3900,6 @@ class TestImportReview:
     def test_opening_the_book_presents_the_review_before_due_schedules(
         self, app, held_book, monkeypatch
     ):
-        from breadsched.gui.gi_setup import GLib
 
         calls = []
         shown = []
@@ -3803,9 +3915,8 @@ class TestImportReview:
         monkeypatch.setattr(production_window, "prompt_for_due", lambda: calls.append("due"))
         try:
             production_window.book_opened(app.db, app.db.path)
-            context = GLib.MainContext.default()
-            while not calls and context.pending():
-                context.iteration(False)
+            production_window.present()
+            assert _spin(lambda: bool(calls))
             assert calls == ["held"]
             [review] = shown
             assert type(review).__name__ == "ImportReviewDialog"

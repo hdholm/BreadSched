@@ -10,6 +10,18 @@ work up to 0.2.0a85 is summarized by topic. Schema changes, compatibility limits
 significant security or correctness changes are called out in each condensed
 section. Commits and pull requests hold the complete history.
 
+## 0.2.0a260 - 2026-10-08
+
+- **Dialogs stay in front at start-up (#295).** Alerts and the due and GnuCash
+  change reviews wait until the main window is on screen
+  (`widgets.presented.when_presented`), so a modal dialog can no longer open behind
+  the window it blocks. Opening a book that needs a schema upgrade (the remembered
+  book at start-up, Open, or a file passed to `breadsched-gtk`) now presents the
+  window first with an "Upgrading …" page naming the book and its schema, then
+  migrates; a failed upgrade returns to the start screen and says why.
+  `stored_schema_version()` reads a book's schema without opening it for writing,
+  and `breadsched migrate` uses it.
+
 ## 0.2.0a259 - 2026-10-08
 
 - **Live quote tests.** `tests/test_online_quotes_live.py` exercises the real

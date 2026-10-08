@@ -13,16 +13,17 @@ from importlib import resources
 from pathlib import Path
 
 from .. import APP_ID, APP_NAME, __version__  # noqa: E402
-from ..gen.db.sqlite import DbSQLite  # noqa: E402
+from ..gen.db.sqlite import SCHEMA_VERSION, DbSQLite, stored_schema_version  # noqa: E402
 from ..gen.utils.logs import get_logger  # noqa: E402
 from ..gen.utils.settings import Settings  # noqa: E402
-from ..presentation import book_open_notice  # noqa: E402
+from ..presentation import book_open_notice, book_upgrade_progress  # noqa: E402
 from ..user_guide import help_target
 from .gi_setup import Gdk, Gio, GLib, Gtk
 from .user_guide import UserGuideWindow
 from .view_catalog import CATEGORIES as MENU_CATEGORIES  # noqa: E402
 from .view_catalog import VIEW_ACTIONS, view_action_name  # noqa: E402
 from .viewmanager import ViewManager  # noqa: E402
+from .widgets.presented import when_presented
 
 __all__ = ["BreadSchedApplication", "main"]
 
@@ -91,10 +92,59 @@ class BreadSchedApplication(Gtk.Application):
         window = self.props.active_window or ViewManager(self)
         # Restore the previous book before presenting the window.  If we present
         # first, the empty-book chooser is briefly visible even when there is a
-        # perfectly good remembered book to reopen.
+        # perfectly good remembered book to reopen. A book that must be upgraded
+        # is the exception: the window comes up first and says so (#295).
         if self.db is None:
-            self.reopen_last_book()
+            remembered = self.settings.get("general", "last_book_path")
+            if remembered and self._needs_upgrade(remembered) and isinstance(window, ViewManager):
+                self.open_book_announced(remembered, window=window, failure=None)
+            else:
+                self.reopen_last_book()
         window.present()
+
+    @staticmethod
+    def _needs_upgrade(path: str) -> bool:
+        schema = stored_schema_version(path)
+        return schema is not None and schema < SCHEMA_VERSION
+
+    def open_book_announced(
+        self, path: str, *, window: ViewManager | None = None, failure: str | None
+    ) -> None:
+        """Open ``path``; a book that needs upgrading first says so on screen.
+
+        Upgrading backs the book up, verifies the copy, and migrates it, which
+        blocks the main loop for seconds on a large book. The window therefore
+        shows what is happening and is presented before the upgrade starts, and
+        the notice afterwards comes up over a window that is already on screen.
+        ``failure`` prefixes the message reported if opening fails; ``None`` logs
+        the failure instead, as for the remembered book at start-up.
+        """
+        if window is None:
+            active = self.props.active_window
+            window = active if isinstance(active, ViewManager) else None
+        schema = stored_schema_version(path)
+        if window is None or schema is None or schema >= SCHEMA_VERSION:
+            self._open_or_report(path, failure)
+            return
+        window.show_busy(book_upgrade_progress(path, schema))
+        window.present()
+
+        def upgrade() -> None:
+            try:
+                self._open_or_report(path, failure)
+            finally:
+                window.show_busy(None)
+
+        when_presented(window, upgrade)
+
+    def _open_or_report(self, path: str, failure: str | None) -> None:
+        try:
+            self.open_book(path)
+        except Exception as exc:  # noqa: BLE001 - surfaced or logged below
+            if failure is None:
+                LOG.exception("could not reopen %s", path)
+            else:
+                self._report(f"{failure}: {exc}")
 
     def reopen_last_book(self) -> bool:
         """Reopen the book from last time, if it is still there.
@@ -121,7 +171,7 @@ class BreadSchedApplication(Gtk.Application):
     def do_open(self, files, n_files, hint) -> None:
         self.do_activate()
         if files:
-            self.open_book(files[0].get_path())
+            self.open_book_announced(files[0].get_path(), failure="Could not open the book")
 
     def _install_actions(self) -> None:
         for name, handler, accel in (
@@ -274,10 +324,7 @@ class BreadSchedApplication(Gtk.Application):
             file = dialog.open_finish(result)
         except GLib.Error:
             return
-        try:
-            self.open_book(file.get_path())
-        except Exception as exc:  # noqa: BLE001
-            self._report(f"Could not open the book: {exc}")
+        self.open_book_announced(file.get_path(), failure="Could not open the book")
 
     @staticmethod
     def _materialize_starter_book(target: Path) -> None:
@@ -565,12 +612,21 @@ class BreadSchedApplication(Gtk.Application):
         return guide
 
     def _report(self, message: str) -> None:
+        """Tell the user ``message`` in a modal alert over the main window.
+
+        The alert waits until its parent is on screen: shown earlier (a notice
+        from opening the remembered book at start-up), the parent could appear
+        on top of it and then refuse input while the hidden alert waits (#295).
+        """
         window = self.props.active_window
         if window is None:
             print(message, file=sys.stderr)
             return
-        alert = Gtk.AlertDialog(message=message)
-        alert.show(window)
+        when_presented(window, lambda: self._show_alert(window, message))
+
+    @staticmethod
+    def _show_alert(window: Gtk.Window, message: str) -> None:
+        Gtk.AlertDialog(message=message, modal=True).show(window)
 
 
 class ActionsMenu:

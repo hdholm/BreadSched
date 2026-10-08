@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 from .. import APP_NAME  # noqa: E402
@@ -40,6 +41,7 @@ from .view_catalog import (
     view_action_name,
 )
 from .widgets.bounded import BoundedWindow
+from .widgets.presented import when_presented
 
 # The catalog is re-exported for callers that import it from the window.
 __all__ = ["CATEGORIES", "TOOLBAR", "VIEW_ACTIONS", "ViewAction", "ViewManager", "view_action_name"]
@@ -71,7 +73,7 @@ class ViewManager(Gtk.ApplicationWindow):
         # binding views to a book. Tests and embedded windows can suppress it so
         # presenting a modal window does not pump the GLib main context.
         self._prompt_due_on_open = prompt_due_on_open
-        self._due_prompt_source: int | None = None
+        self._due_prompt_cancel: Callable[[], None] | None = None
 
         self._install_window_actions()
         self._build_header()
@@ -220,6 +222,7 @@ class ViewManager(Gtk.ApplicationWindow):
         self.tab_scroll.set_visible(False)
         outer.append(self.tab_scroll)
 
+        self.busy_label: Gtk.Label | None = None
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
         self.stack.set_vexpand(True)
@@ -233,6 +236,31 @@ class ViewManager(Gtk.ApplicationWindow):
         self.register_stack.set_hhomogeneous(False)
         self.register_stack.set_vhomogeneous(False)
         self.stack.add_named(self.register_stack, "register")
+
+    def show_busy(self, message: str | None) -> None:
+        """Show ``message`` with a spinner in place of the views, or go back with None.
+
+        Used while a book is upgraded on opening: the work blocks the main loop
+        for seconds, and a window that says what it is doing does not look hung.
+        """
+        if message is None:
+            if self.stack.get_visible_child_name() == "busy":
+                if self.db is None:
+                    self.stack.set_visible_child_name("empty")
+                else:
+                    self.show_category(CATEGORIES[0][0])
+            return
+        if self.busy_label is None:
+            page = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+            page.set_valign(Gtk.Align.CENTER)
+            page.set_halign(Gtk.Align.CENTER)
+            page.append(Gtk.Spinner(spinning=True, width_request=32, height_request=32))
+            self.busy_label = Gtk.Label(wrap=True, justify=Gtk.Justification.CENTER)
+            self.busy_label.set_max_width_chars(60)
+            page.append(self.busy_label)
+            self.stack.add_named(page, "busy")
+        self.busy_label.set_text(message)
+        self.stack.set_visible_child_name("busy")
 
     def _show_placeholder(self) -> None:
         """The start screen: four ways in, and no book opened behind your back.
@@ -290,9 +318,9 @@ class ViewManager(Gtk.ApplicationWindow):
 
     def _detach_views(self) -> None:
         """Disconnect views and cancel work that belongs to the current book."""
-        if self._due_prompt_source is not None:
-            GLib.source_remove(self._due_prompt_source)
-            self._due_prompt_source = None
+        if self._due_prompt_cancel is not None:
+            self._due_prompt_cancel()
+            self._due_prompt_cancel = None
         for view in self._all_views():
             view.set_db(None)
         # Tabs name accounts of this book; the next book starts with its own.
@@ -360,15 +388,14 @@ class ViewManager(Gtk.ApplicationWindow):
         During application activation a remembered book can be opened before the
         main window is presented. Presenting a modal transient in that interval
         lets the later parent presentation cover the dialog on some window
-        managers. Deferring one main-loop turn guarantees the parent is mapped
-        first while preserving the automatic due review.
+        managers (#295), so the review waits until this window is mapped.
         """
-        if self._due_prompt_source is not None:
-            GLib.source_remove(self._due_prompt_source)
+        if self._due_prompt_cancel is not None:
+            self._due_prompt_cancel()
         expected_db = self.db
 
-        def present_when_ready() -> bool:
-            self._due_prompt_source = None
+        def present_when_ready() -> None:
+            self._due_prompt_cancel = None
             if self.db is expected_db and self.db is not None:
                 held = self.prompt_for_held_imports()
                 if held is None:
@@ -381,9 +408,8 @@ class ViewManager(Gtk.ApplicationWindow):
                         return False
 
                     held.connect("close-request", due_after_review)
-            return GLib.SOURCE_REMOVE
 
-        self._due_prompt_source = GLib.idle_add(present_when_ready)
+        self._due_prompt_cancel = when_presented(self, present_when_ready)
 
     def prompt_for_held_imports(self) -> Gtk.Window | None:
         """Ask about GnuCash changes held back from reconciled transactions."""

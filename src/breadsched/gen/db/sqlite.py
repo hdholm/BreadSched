@@ -44,7 +44,7 @@ from .verification import BookIssue, BookVerification, verify_domain
 
 LOG = get_logger(__name__)
 
-__all__ = ["DbSQLite", "is_portal_book", "migration_backup_path"]
+__all__ = ["DbSQLite", "is_portal_book", "migration_backup_path", "stored_schema_version"]
 
 SCHEMA_VERSION = 11
 T = TypeVar("T", bound=PrimaryObject)
@@ -154,6 +154,24 @@ _TABLES: dict[str, tuple[type, str]] = {
     "receivable": (Receivable, "receivable"),
     "savings_goal": (SavingsGoal, "savings-goal"),
 }
+
+
+def stored_schema_version(path: str | Path) -> int | None:
+    """The schema version a book on disk records, read without opening it for writing.
+
+    ``None`` when the file is missing, is not a BreadSched book, or cannot be read;
+    opening the book reports those properly. Interfaces use it to say that an
+    upgrade is about to run before the (possibly slow) migration starts.
+    """
+    try:
+        raw = sqlite3.connect(f"{Path(path).resolve().as_uri()}?mode=ro", uri=True)
+        try:
+            row = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
+        finally:
+            raw.close()
+        return int(json.loads(row[0])) if row is not None else None
+    except (sqlite3.Error, OSError, ValueError, TypeError):
+        return None
 
 
 def is_portal_book(path: str | Path | None) -> bool:

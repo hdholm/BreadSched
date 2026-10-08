@@ -8,8 +8,6 @@ Here it is done by reading the file, so no GnuCash installation is required.
 from __future__ import annotations
 
 import argparse
-import json
-import sqlite3
 from datetime import date
 from pathlib import Path
 
@@ -114,14 +112,12 @@ def cmd_restore(args: argparse.Namespace) -> int:
 
 def cmd_migrate(args: argparse.Namespace) -> int:
     """Bring a book from an earlier alpha to the current schema, keeping a backup."""
-    from ..gen.db.sqlite import SCHEMA_VERSION
+    from ..gen.db.sqlite import SCHEMA_VERSION, stored_schema_version
 
     path = Path(args.book)
     if not path.exists():
         raise CommandError(f"no book at {path}")
-    with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as raw:
-        row = raw.execute("SELECT value FROM metadata WHERE key='schema_version'").fetchone()
-    before = int(json.loads(row[0])) if row is not None else None
+    before = stored_schema_version(path)
     db = open_book(str(path), "w")
     backup = db.migration_backup
     db.close()
