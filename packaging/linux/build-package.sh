@@ -121,7 +121,7 @@ Requires:       python3-gobject
 Requires:       python3-cairo
 Requires:       gtk4
 Recommends:     perl-Finance-Quote
-# The private package directory is compiled by the system Python at build time.
+# rpmbuild's byte-compilation step needs a Python for files outside site-packages.
 %global __python %{__python3}
 
 %description
@@ -132,6 +132,17 @@ $description
 
 %install
 cp -a . %{buildroot}/
+
+# As in the .deb: compile for whichever Python 3 the system has, and remove the
+# caches (compiled here or by Python at run time) before the files themselves go,
+# so removing the package leaves nothing behind in /usr/lib/breadsched.
+%post
+python3 -m compileall -q /usr/lib/breadsched >/dev/null 2>&1 || :
+
+%preun
+if [ \$1 -eq 0 ]; then
+  find /usr/lib/breadsched -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null || :
+fi
 
 %files
 /usr/lib/breadsched

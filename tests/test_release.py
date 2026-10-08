@@ -2,6 +2,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -347,3 +348,57 @@ def test_ci_installs_and_removes_both_linux_packages():
     assert "dnf install -y ./packages/*.rpm" in job
     assert "packaging/linux/smoke-test.sh" in job
     assert "test ! -e /usr/lib/breadsched" in job
+
+
+@pytest.mark.parametrize("package_format", ["deb", "rpm"])
+def test_linux_packages_remove_the_bytecode_python_writes(tmp_path, package_format):
+    """Removing a package must leave nothing in /usr/lib/breadsched.
+
+    Running BreadSched as root writes __pycache__ directories the package does not
+    own, so neither dpkg nor rpm would delete them, and the directory stayed
+    behind after `dnf remove` (CI caught it for the rpm). Each package compiles
+    after installing and deletes the caches before removal.
+    """
+    tool = {"deb": "dpkg-deb", "rpm": "rpmbuild"}[package_format]
+    if shutil.which(tool) is None:
+        pytest.skip(f"{tool} is not installed; the Linux package CI jobs build and remove both")
+    # A private copy of the tree: concurrent builds would share ./build otherwise.
+    tree = tmp_path / "tree"
+    tree.mkdir()
+    for name in ("pyproject.toml", "README.md", "LICENSE", "MANIFEST.in"):
+        if Path(name).exists():
+            shutil.copy2(name, tree / name)
+    shutil.copytree("src", tree / "src", ignore=shutil.ignore_patterns("__pycache__", "*.egg-info"))
+    subprocess.run(
+        [sys.executable, "-m", "pip", "wheel", "-q", "--no-deps", "-w", str(tmp_path), str(tree)],
+        check=True,
+        capture_output=True,
+    )
+    [wheel] = tmp_path.glob("breadsched-*.whl")
+    built = subprocess.run(
+        [
+            "bash",
+            "packaging/linux/build-package.sh",
+            package_format,
+            str(wheel),
+            str(tmp_path / "out"),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    if package_format == "deb":
+        control = tmp_path / "control"
+        subprocess.run(["dpkg-deb", "-e", built, str(control)], check=True)
+        install = (control / "postinst").read_text(encoding="utf-8")
+        removal = (control / "prerm").read_text(encoding="utf-8")
+    else:
+        scripts = subprocess.run(
+            ["rpm", "-qp", "--scripts", built], check=True, capture_output=True, text=True
+        ).stdout
+        install = scripts.split("postinstall scriptlet", 1)[1].split("scriptlet", 1)[0]
+        removal = scripts.split("preuninstall scriptlet", 1)[1]
+        # Only a full removal clears the caches; an upgrade keeps the directory.
+        assert "$1 -eq 0" in removal
+    assert "python3 -m compileall -q /usr/lib/breadsched" in install
+    assert "find /usr/lib/breadsched -name __pycache__" in removal and "rm -rf" in removal

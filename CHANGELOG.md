@@ -20,6 +20,8 @@ section. Commits and pull requests hold the complete history.
   Flatpak) online quotes can use. CI builds, installs, smoke-tests
   (`smoke-test.sh`), and removes each in Ubuntu 24.04 and Fedora containers, and
   each release publishes both from its tested wheel with checksums.
+  Each compiles its Python files after installing and deletes the bytecode caches
+  before removal, so removing a package leaves nothing in `/usr/lib/breadsched`.
 - The roadmap's packaging item is complete.
 
 ## 0.2.0a257 - 2026-10-08
